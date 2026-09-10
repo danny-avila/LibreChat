@@ -22,6 +22,10 @@ import { withTimeout } from '~/utils';
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
 
+/** A request stopped while its config initialization was still queued. Healthy
+ * joiners retry ownership instead of inheriting that request-local cancellation. */
+export class MCPConfigInitializationCanceledError extends Error {}
+
 /** Cached configs carry decrypted oauth/apiKey credentials, so the shared
  *  stores only ever see ciphertext; plaintext stays in process memory,
  *  exactly where it lived before these caches became shared. */
@@ -460,7 +464,9 @@ export class MCPServersRegistry {
     /** Tenant-scoped (also covering the single-flight map): the DB read behind
      *  a miss is filtered by the active tenant, so entries and in-flight
      *  builds must partition the same way. */
-    const cacheKey = scopedCacheKey(userId ?? '__no_user__');
+    // DB visibility depends on both user and role. Keep the role in the cache and
+    // single-flight identity so a role change cannot reuse the previous ACL result.
+    const cacheKey = scopedCacheKey(`${userId ?? '__no_user__'}::role:${role ?? '__no_role__'}`);
 
     const cached = await this.readThroughCacheAll.get(cacheKey);
     if (cached.hit) {
@@ -777,6 +783,7 @@ export class MCPServersRegistry {
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
+    limit: <T>(task: () => Promise<T>) => Promise<T> = (task) => task(),
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (!resolvedMcpConfig || Object.keys(resolvedMcpConfig).length === 0) {
       return {};
@@ -798,7 +805,12 @@ export class MCPServersRegistry {
         if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
           return;
         }
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
+        const parsed = await this.ensureSingleConfigServer(
+          serverName,
+          rawConfig,
+          allowlists,
+          limit,
+        );
         if (parsed) {
           result[serverName] = parsed;
         }
@@ -848,6 +860,7 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
+    limit: <T>(task: () => Promise<T>) => Promise<T>,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
@@ -863,10 +876,22 @@ export class MCPServersRegistry {
 
     const pending = this.pendingConfigInits.get(cacheKey);
     if (pending) {
-      return pending;
+      try {
+        return await pending;
+      } catch (error) {
+        if (error instanceof MCPConfigInitializationCanceledError) {
+          return this.ensureSingleConfigServer(serverName, rawConfig, allowlists, limit);
+        }
+        throw error;
+      }
     }
 
-    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
+    // Only the caller that owns the cold initialization consumes shared capacity.
+    // Joiners await the single-flight promise directly instead of filling every
+    // slot while the same inspection runs once.
+    const initPromise = limit(() =>
+      this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists),
+    );
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {

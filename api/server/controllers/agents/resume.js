@@ -1815,6 +1815,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       );
     }
 
+    const mcpRequestBody =
+      job.metadata.mcpRequestBody ??
+      createMCPRuntimeRequestBody({
+        messageId: job.metadata.responseMessageId,
+        conversationId: streamId,
+        codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
+        parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+      });
     const result = await initializeClient({
       req,
       res,
@@ -1822,13 +1830,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       signal: job.abortController.signal,
       jobCreatedAt: job.createdAt,
       checkpointNamespace,
-      requestBody:
-        job.metadata.mcpRequestBody ??
-        createMCPRuntimeRequestBody({
-          messageId: job.metadata.responseMessageId,
-          conversationId: streamId,
-          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
-        }),
+      foregroundRunId: mcpRequestBody.messageId,
+      requestBody: mcpRequestBody,
     });
     client = result.client;
 

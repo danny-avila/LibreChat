@@ -1116,6 +1116,11 @@ const codeEnvironmentPermissionFieldSchema = z
     }
   });
 
+/** Existing attached commands used a fixed 30-second execution budget. */
+export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
+/** Protocol-level ceiling; deployments may only lower this value. */
+export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
+
 /**
  * Typed user-tunable surface for one attached code environment. Omitted fields
  * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
@@ -1127,6 +1132,19 @@ export const codeEnvironmentUserConfigSchema = z
       .object({
         fileWrite: codeEnvironmentPermissionFieldSchema.optional(),
         commandExecution: codeEnvironmentPermissionFieldSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    limits: z
+      .object({
+        /** Maximum timeout a Bash invocation may request. Omission preserves
+         * the historical 30-second command budget. */
+        maxCommandTimeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
+          .optional(),
       })
       .strict()
       .optional(),
@@ -1183,6 +1201,10 @@ export const agentsEndpointSchema = baseEndpointSchema
         .max(MAX_SUBAGENTS_CEILING)
         .optional()
         .default(MAX_SUBAGENTS),
+      /** Maximum concurrent Code API uploads per route and authenticated principal. */
+      codeApiUploadConcurrency: z.number().int().min(1).max(100).optional().default(3),
+      /** Maximum wall-clock time spent waiting on Code API rate limits per operation. */
+      codeApiMaxRetryWaitMs: z.number().int().min(0).max(300_000).optional().default(20_000),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
@@ -1336,6 +1358,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       backgroundTasks: z
         .object({
           completionWakeups: z.boolean().optional().default(true),
+          /** Cooperative cancellation for process-local ordinary tools. Off
+           * by default so existing deployments opt into the new control. */
+          ordinaryToolCancellation: z.boolean().optional().default(false),
         })
         .optional(),
       skills: z
@@ -1934,7 +1959,10 @@ export const interfaceSchema = z
           maxPerUser: z.number().int().min(0).optional(),
           minIntervalMinutes: z.number().int().min(1).optional(),
           autoDisableAfterFailures: z.number().int().min(1).optional(),
+          admissionConcurrency: z.number().int().min(1).max(100).optional(),
           fireConcurrency: z.number().int().min(1).optional(),
+          mcpPreflightConcurrency: z.number().int().min(1).max(10).optional(),
+          mcpPreflightTimeoutMs: z.number().int().min(1000).max(600000).optional(),
           /** Refuse schedules that are not filed under a chat project. Enforced on
            *  create/update AND at every fire, so raising it later stops schedules
            *  that predate the policy instead of grandfathering them. */
@@ -2662,6 +2690,48 @@ export const configSchema = z.object({
     .object({
       allowedDomains: z.array(z.string()).optional(),
       allowedAddresses: allowedAddressesSchema,
+      catalogRecovery: z
+        .object({
+          discoveryBackoffMs: z
+            .array(
+              z
+                .number()
+                .int()
+                .positive()
+                .max(24 * 60 * 60_000),
+            )
+            .min(1)
+            .max(8)
+            .default([5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000]),
+          discoveryTimeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .max(5 * 60_000)
+            .default(3_000),
+          reauthRetryMs: z
+            .number()
+            .int()
+            .positive()
+            .max(24 * 60 * 60_000)
+            .default(30 * 60_000),
+          maxStateEntries: z.number().int().positive().max(1_000_000).default(10_000),
+          generationReadTimeoutMs: z.number().int().positive().max(10_000).default(500),
+          authorizationFenceRetryMs: z
+            .array(z.number().int().nonnegative().max(60_000))
+            .min(1)
+            .max(8)
+            .default([0, 50, 200]),
+          authorizationFenceTimeoutMs: z.number().int().positive().max(30_000).default(1_000),
+          authorizationFenceRetryIntervalMs: z
+            .number()
+            .int()
+            .positive()
+            .max(60 * 60_000)
+            .default(30_000),
+          authorizationFenceRetryBatchSize: z.number().int().positive().max(10_000).default(100),
+        })
+        .default({}),
     })
     .optional(),
   interface: interfaceSchema,
@@ -3384,6 +3454,10 @@ export enum ErrorTypes {
    * Agent selected a stateful Code API workspace scope disabled by the deployment.
    */
   STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
+  /**
+   * A conversation's selected attached workspace cannot be used as requested.
+   */
+  CODE_WORKSPACE_UNAVAILABLE = 'code_workspace_unavailable',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */

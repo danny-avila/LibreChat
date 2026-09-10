@@ -3,7 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { SubagentUpdateEvent } from 'librechat-data-provider';
+import type { SubagentUpdateEvent, SubagentIdentity } from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -61,8 +61,17 @@ jest.mock('lucide-react', () => ({
   Users: () => <span>users</span>,
 }));
 
-jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
-jest.mock('~/components/Share/MessageIcon', () => ({ __esModule: true, default: () => null }));
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': { id: 'agent-1', name: 'Analyst One', avatar: { filepath: '/analyst.png' } },
+  }),
+}));
+jest.mock('~/components/Share/MessageIcon', () => ({
+  __esModule: true,
+  default: ({ agent }: { agent: { name: string; avatar: { filepath: string } } }) => (
+    <img alt={agent.name} src={agent.avatar.filepath} />
+  ),
+}));
 jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => mockMCPServerNames }));
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/toolLabels'),
@@ -111,6 +120,7 @@ function renderWithState(args: {
   progress?: SubagentProgress | null;
   output?: string;
   toolArgs?: Record<string, unknown>;
+  subagentIdentity?: SubagentIdentity;
 }) {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   let selection: ActiveSubagentPanel | null = null;
@@ -146,6 +156,7 @@ function renderWithState(args: {
               isSubmitting={args.isSubmitting ?? false}
               args={args.toolArgs ?? { subagent_type: 'self', description: 'compute' }}
               output={args.output}
+              subagentIdentity={args.subagentIdentity}
             />
           </MessageContext.Provider>
         </RecoilRoot>
@@ -174,6 +185,58 @@ const event = (
 });
 
 describe('SubagentCall', () => {
+  it('keeps the configured name and avatar after live progress is cleared', () => {
+    const { setProgress } = renderWithState({
+      toolCallId: 'identity',
+      initialProgress: 1,
+      toolArgs: { subagent_type: 'agent-1' },
+      subagentIdentity: { subagentKind: 'agent', subagentAgentId: 'agent-1' },
+      progress: progressFromEvents({
+        subagentRunId: 'child-run',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        status: 'stop',
+        events: [],
+      }),
+    });
+    expect(screen.getByText('Analyst One')).toBeInTheDocument();
+    expect(screen.getByRole('img', { hidden: true })).toHaveAttribute('src', '/analyst.png');
+    setProgress(null);
+    expect(screen.getByText('Analyst One')).toBeInTheDocument();
+    expect(screen.getByRole('img', { hidden: true })).toHaveAttribute('src', '/analyst.png');
+  });
+
+  it.each([undefined, { subagentKind: 'graph' as const, subagentAgentId: 'graph:agent-1' }])(
+    'does not infer a saved agent from an ambiguous graph or legacy type',
+    (subagentIdentity) => {
+      const { getSelection } = renderWithState({
+        toolCallId: 'graph-identity',
+        initialProgress: 1,
+        toolArgs: { subagent_type: 'agent-1' },
+        output: 'Graph result',
+        subagentIdentity,
+      });
+      expect(screen.queryByText('Analyst One')).not.toBeInTheDocument();
+      expect(screen.getByText('users')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Ran agent' }));
+      expect(getSelection()?.subagentIdentity).toEqual(subagentIdentity);
+    },
+  );
+
+  it.each(['agent-1', 'missing-agent', 'self'])(
+    'renders saved identity %s without streaming state',
+    (agentId) => {
+      renderWithState({
+        toolCallId: 'saved-identity',
+        initialProgress: 1,
+        toolArgs: { subagent_type: agentId },
+        subagentIdentity: { subagentKind: 'agent', subagentAgentId: agentId },
+      });
+      expect(screen.queryByText('Analyst One') != null).toBe(agentId === 'agent-1');
+      expect(screen.queryByText('users') != null).toBe(agentId !== 'agent-1');
+    },
+  );
+
   it.each([
     ['Running agent', 0.3, true, 'run_step'],
     ['Ran agent', 1, false, undefined],

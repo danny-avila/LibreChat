@@ -459,7 +459,7 @@ export interface BackgroundToolResultRecord {
   taskId: string;
   toolCallId: string;
   toolName: string;
-  status: 'completed' | 'error';
+  status: 'completed' | 'error' | 'cancelled';
   output: string;
   agentId?: string;
 }
@@ -647,6 +647,7 @@ export interface MessageMethods {
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1144,6 +1145,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1193,6 +1195,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         partPatch['content.$[part].tool_call.backgroundTask.taskId'] = backgroundTask.taskId;
         partPatch['content.$[part].tool_call.backgroundTask.toolName'] = backgroundTask.toolName;
         partPatch['content.$[part].tool_call.backgroundTask.status'] = backgroundTask.status;
+        partPatch['content.$[part].tool_call.backgroundTask.cancelled'] =
+          backgroundTask.cancelled === true;
         partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
         if (backgroundTask.completionWakeup === true) {
           partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
@@ -1401,6 +1405,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             taskId?: unknown;
             toolName?: unknown;
             status?: unknown;
+            cancelled?: unknown;
             resultClaim?: { kind?: unknown; claimId?: unknown };
           };
         };
@@ -1427,7 +1432,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         taskId: task.taskId,
         toolCallId: toolCall.id,
         toolName: task.toolName,
-        status: task.status,
+        status: task.cancelled === true ? 'cancelled' : task.status,
         output: typeof toolCall.output === 'string' ? toolCall.output : '',
         ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
       });

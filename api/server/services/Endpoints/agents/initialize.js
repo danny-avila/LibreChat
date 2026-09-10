@@ -21,6 +21,7 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
+  resolveCodeExecutionWorkspaceContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -83,6 +84,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -163,6 +165,7 @@ function createToolLoader(
  * @param {Object} params.endpointOption
  * @param {number} [params.jobCreatedAt]
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
+ * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
  */
 const initializeClient = async ({
@@ -172,6 +175,7 @@ const initializeClient = async ({
   endpointOption,
   jobCreatedAt,
   checkpointNamespace,
+  foregroundRunId,
   requestBody,
 }) => {
   if (!endpointOption) {
@@ -181,6 +185,9 @@ const initializeClient = async ({
   const completionWakeupsEnabled = backgroundCompletionWakeupsEnabled(
     appConfig?.endpoints?.[EModelEndpoint.agents],
   );
+  const ordinaryToolCancellationEnabled =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.ordinaryToolCancellation ===
+    true;
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -400,7 +407,13 @@ const initializeClient = async ({
 
   const invokedSkillIdentities = new Map();
   const toolExecuteOptions = {
-    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
+    // Keep foreground cancellation owned by this request even when the agents
+    // SDK rebuilds a graph for approval resume. The SDK event's breaker signal
+    // is composed with this authoritative job signal by the handler.
+    runSignal: signal,
+    foregroundRunId,
+    ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection, runSignal) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
@@ -408,7 +421,7 @@ const initializeClient = async ({
       const result = await loadToolsForExecution({
         req,
         res,
-        signal,
+        signal: runSignal ?? signal,
         streamId,
         conversationId,
         requestBody: runtimeRequestBody,
@@ -1010,7 +1023,7 @@ const initializeClient = async ({
     const hasConfiguredCodeEnvironment =
       agent.code_environment_id != null ||
       configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const codeExecutionContext =
+    const baseCodeExecutionContext =
       lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
         ? resolveCodeExecutionContext({
             statefulSessions: statefulCodeSessions,
@@ -1022,6 +1035,15 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
+    const codeExecutionContext = baseCodeExecutionContext
+      ? await resolveCodeExecutionWorkspaceContext({
+          context: baseCodeExecutionContext,
+          requestedSelections: runtimeRequestBody?.codeWorkspaces,
+          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          environments: configuredCodeEnvironments,
+          getAppConfig,
+        })
+      : undefined;
     const {
       alwaysApplySkillPrimes,
       historicalToolNames,
@@ -1577,6 +1599,7 @@ const initializeClient = async ({
           req,
           payload,
           skillNames,
+          signal,
           accessibleSkillIds,
           executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),

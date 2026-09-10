@@ -41,6 +41,7 @@ export {
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   MCPAuthorityProofError,
+  createMCPAuthorizationFenceRetryStorage,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,

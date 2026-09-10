@@ -11,7 +11,10 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
+  isAbortError,
+  getCodeApiUploadOptions,
   withCodeApiRateLimit,
+  withCodeApiUploadRecovery,
   classifyCodeArtifact,
   isMissingSandboxPathError,
   parseSandboxImageChunk,
@@ -1138,15 +1141,18 @@ function checkIfActive(dateString) {
  * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
  * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
+ * @param {AbortSignal} [signal] - Effective run cancellation signal.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(ref, req, route = {}) {
+async function getSessionInfo(ref, req, route = {}, signal) {
   try {
+    signal?.throwIfAborted();
     const baseURL = route.baseUrl ?? getCodeBaseURL();
     const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
+    signal?.throwIfAborted();
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
      * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
@@ -1174,10 +1180,15 @@ async function getSessionInfo(ref, req, route = {}) {
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
       timeout: 5000,
+      signal,
     });
+    signal?.throwIfAborted();
 
     return response.data?.lastModified;
-  } catch (_error) {
+  } catch (error) {
+    if (signal?.aborted && isAbortError(error)) {
+      throw error;
+    }
     logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
     return null;
   }
@@ -1275,6 +1286,9 @@ const getReuploadFailureCategory = (error) => {
   ) {
     return 'resource_access_denied';
   }
+  if (status === 429 || code === 'CODE_API_RATE_LIMITED') {
+    return 'rate_limited';
+  }
   return 'reupload_failed';
 };
 
@@ -1285,6 +1299,7 @@ const getReuploadFailureCategory = (error) => {
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
  * @param {string} [options.agentResourceType] - Permission resource type for the authorized agent route
+ * @param {AbortSignal} [options.signal] - Effective run cancellation signal
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
@@ -1300,6 +1315,7 @@ const primeFiles = async (options) => {
     executionProfile = 'default',
     executionRouteKey = executionProfile,
     bridgeWorkerId,
+    signal,
   } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile, bridgeWorkerId };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
@@ -1342,6 +1358,9 @@ const primeFiles = async (options) => {
 
   const files = [];
   const sessions = new Map();
+  const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
+  /** All stale-file reuploads in this prime share one live-turn wait cap. */
+  const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
 
   /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
@@ -1442,22 +1461,40 @@ const primeFiles = async (options) => {
         const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
           FileSources.execute_code,
         );
-        const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
         /* Reupload preserves the resource identity from the existing
          * ref so codeapi re-buckets under the same sessionKey shape
          * (skill stays skill, user stays user). Without this, a
          * skill-cache-miss reupload would land in the user bucket
          * and never re-shareable cross-user. */
-        const uploaded = await uploadCodeEnvFile({
-          req: options.req,
-          stream,
-          filename: getDestination(),
-          kind: sourceRef.kind,
-          id: sourceRef.id,
-          ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
-          codeApiBaseUrl,
-          executionProfile,
-          bridgeWorkerId,
+        const uploaded = await withCodeApiUploadRecovery({
+          registry: req.app?.locals?.codeApiUploadRegistry,
+          scope: uploadOptions.scope,
+          concurrency: uploadOptions.concurrency,
+          label: `re-uploading file ${file.file_id} to the code environment`,
+          budget: uploadRateLimitBudget,
+          signal,
+          onWait: (waitMs) =>
+            logger.warn(
+              `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
+                `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
+            ),
+          openSource: async () => {
+            signal?.throwIfAborted();
+            return getDownloadStream(options.req, resolveDownloadPath(file), { signal });
+          },
+          upload: (stream) =>
+            uploadCodeEnvFile({
+              req: options.req,
+              stream,
+              filename: getDestination(),
+              kind: sourceRef.kind,
+              id: sourceRef.id,
+              ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
+              codeApiBaseUrl,
+              executionProfile,
+              bridgeWorkerId,
+              signal,
+            }),
         });
 
         /**
@@ -1497,6 +1534,10 @@ const primeFiles = async (options) => {
             `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
         );
       } catch (error) {
+        /* Cancellation is an operation outcome, not a recoverable per-file
+         * miss. Swallowing it here would keep walking and could dispatch more
+         * uploads after the foreground run has ended. */
+        signal?.throwIfAborted();
         reuploadFailures += 1;
         const failureCategory = getReuploadFailureCategory(error);
         reuploadFailureCategories.add(failureCategory);
@@ -1522,7 +1563,8 @@ const primeFiles = async (options) => {
       pushFile();
       continue;
     }
-    const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
+    const uploadTime = await getSessionInfo(ref, req, codeApiRoute, signal);
+    signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +
@@ -1927,6 +1969,7 @@ async function previewWorkspaceEdit({
  * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
  * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @param {AbortSignal} [params.signal] - Foreground run cancellation.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @returns {Promise<{base64: string, bytes: number}
@@ -1944,6 +1987,7 @@ async function readSandboxImage({
   executionRouteKey,
   maxBytes,
   req,
+  signal,
 }) {
   const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
   const preparedBuffer = getPreparedCodeOutputBuffer({
@@ -1970,7 +2014,9 @@ async function readSandboxImage({
   /** Every window is one `/exec` call against the Code API's per-user
    *  execution limiter, so the read shares one wait budget: a window that
    *  resets mid-read is worth pausing for, an exhausted budget is not. */
-  const rateLimit = createCodeApiRateLimitBudget();
+  const rateLimit = createCodeApiRateLimitBudget(
+    req?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+  );
   return readWindowedSandboxImage({
     filePath: file_path,
     baseUrl: baseURL,
@@ -1987,6 +2033,7 @@ async function readSandboxImage({
         files,
         req,
         rateLimit,
+        signal,
       }),
   });
 }
@@ -2009,6 +2056,7 @@ async function execSandboxImageChunk({
   files,
   req,
   rateLimit,
+  signal,
 }) {
   /** @type {Record<string, unknown>} */
   const postData = { lang: 'bash', code };
@@ -2026,6 +2074,7 @@ async function execSandboxImageChunk({
     const response = await withCodeApiRateLimit({
       label: `reading "${file_path}" from the sandbox`,
       budget: rateLimit,
+      signal,
       onWait: (waitMs) =>
         logger.warn(
           `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
@@ -2045,6 +2094,7 @@ async function execSandboxImageChunk({
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
           timeout: 15000,
+          signal,
         });
       },
     });

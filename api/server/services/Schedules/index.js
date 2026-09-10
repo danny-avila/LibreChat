@@ -22,6 +22,7 @@ function getService() {
   const isUserDeleting = async (userId) => !(await methods.isAgentTriggerPrincipalActive(userId));
 
   service = createSchedulesService({
+    preflightMCP: require('./mcp'),
     methods,
     getAppConfig,
     findUserById: (userId) =>

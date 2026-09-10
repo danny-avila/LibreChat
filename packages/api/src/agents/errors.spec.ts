@@ -15,6 +15,7 @@ describe('isFatalAgentInitializationError', () => {
   it.each([
     ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
     ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
     AGENT_ATTACHMENT_LIMIT_EXCEEDED,
     AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   ])('classifies %s as fatal', (code) => {

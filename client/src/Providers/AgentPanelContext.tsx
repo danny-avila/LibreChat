@@ -5,22 +5,21 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import {
-  useMCPConnectionStatus,
+  useAvailableToolsQuery,
+  useGetActionsQuery,
+  useGetStartupConfig,
+  useMCPToolsQuery,
+} from '~/data-provider';
+import {
   useMCPServerManager,
   useGetAgentsConfig,
   activateCatalog,
   useCatalogReady,
   useLocalize,
 } from '~/hooks';
-import {
-  useAvailableToolsQuery,
-  useGetActionsQuery,
-  useGetStartupConfig,
-  useMCPToolsQuery,
-} from '~/data-provider';
 import { isMCPServerReadyForAgent } from '~/components/MCP/mcpServerUtils';
 import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
-import { Panel, isEphemeralAgent } from '~/common';
+import { Panel } from '~/common';
 import store from '~/store';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -34,7 +33,13 @@ export function useAgentPanelContext() {
 }
 
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
-export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
+export function AgentPanelProvider({
+  children,
+  observeToolAuthorization = true,
+}: {
+  children: React.ReactNode;
+  observeToolAuthorization?: boolean;
+}) {
   const localize = useLocalize();
   const location = useLocation();
   /** The panel stays mounted while the sidebar is hidden (collapsed, mobile
@@ -53,10 +58,11 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
-  const { availableMCPServers, isLoading, availableMCPServersMap } = useMCPServerManager();
+  const { availableMCPServers, isLoading, availableMCPServersMap, connectionStatus } =
+    useMCPServerManager({ observeToolAuthorization });
   const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
-    enabled: !isEphemeralAgent(agent_id),
+    enabled: observeToolAuthorization,
   });
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
@@ -68,7 +74,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     enabled:
       panelVisible &&
       mcpToolsReady &&
-      !isEphemeralAgent(agent_id) &&
+      observeToolAuthorization &&
       !isLoading &&
       availableMCPServers.length > 0,
     tools: true,
@@ -76,7 +82,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const { data: mcpData, isFetching: mcpToolsFetching } = useMCPToolsQuery({
     enabled:
       mcpToolsReady &&
-      !isEphemeralAgent(agent_id) &&
+      observeToolAuthorization &&
       !isLoading &&
       availableMCPServers != null &&
       availableMCPServers.length > 0,
@@ -91,9 +97,6 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     [availableMCPServers],
   );
 
-  const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !isEphemeralAgent(agent_id) && mcpServerNames.length > 0,
-  });
   //TODO to refactor when tools come from tool box
   const mcpServersMap = useMemo(() => {
     const configuredServers = new Set(mcpServerNames);

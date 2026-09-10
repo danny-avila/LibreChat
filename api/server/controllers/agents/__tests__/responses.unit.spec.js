@@ -233,9 +233,16 @@ jest.mock('@librechat/api', () => ({
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+  getCodeWorkspaceSelections: jest.fn(),
+  createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
+    parentMessageId,
+    codeWorkspaces,
+  }) => ({
+    messageId,
+    conversationId,
+    ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
     }),
@@ -571,6 +578,35 @@ describe('createResponse controller', () => {
       off: jest.fn(),
     };
   });
+
+  it.each([false, true])(
+    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s',
+    async (continuation) => {
+      const api = require('@librechat/api');
+      const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+      const request = {
+        model: 'agent-123',
+        input: 'Hello',
+        stream: false,
+        ...(continuation ? { previous_response_id: 'previous' } : { code_workspaces: selections }),
+      };
+      api.validateResponseRequest.mockReturnValueOnce({ request });
+      if (continuation)
+        require('~/models').getConvo.mockResolvedValueOnce({
+          conversationId: 'previous',
+          codeWorkspaces: selections,
+        });
+      await createResponse(req, res);
+      expect(api.initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({ codeWorkspaces: selections }),
+        }),
+        expect.anything(),
+      );
+      if (continuation)
+        expect(require('~/models').getConvo).toHaveBeenCalledWith('user-123', 'previous');
+    },
+  );
 
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await createResponse(req, res);
@@ -1836,6 +1872,7 @@ describe('createResponse controller', () => {
       const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
       const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
+      req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
       await createResponse(req, res);
 
       const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
@@ -1863,6 +1900,7 @@ describe('createResponse controller', () => {
       );
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
       await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
         expect.objectContaining({

@@ -1,6 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
+import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
+import type {
+  CodeWorkspaceSelection,
+  TConversation,
+  TMessage,
+  TSubmission,
+} from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -14,6 +19,13 @@ const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
+const mockResolveCodeWorkspaceSubmission = jest.fn<
+  { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined,
+  [CodeWorkspaceSelection[]?]
+>(() => ({}));
+const mockCodeWorkspace = {
+  resolveSubmission: mockResolveCodeWorkspaceSubmission,
+};
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -45,6 +57,7 @@ jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({
   modes: ['ask', 'acceptEdits'],
   selected: 'ask',
 }));
+jest.mock('~/hooks/Agents/useCodeWorkspace', () => () => mockCodeWorkspace);
 jest.mock('~/hooks/Conversations/useGetConversation', () => () => mockGetLatestConversation);
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
@@ -136,6 +149,7 @@ describe('useChatFunctions ask', () => {
     jest.clearAllMocks();
     mockGetQueryData.mockReturnValue({});
     mockGetLatestConversation.mockReturnValue(null);
+    mockResolveCodeWorkspaceSubmission.mockReturnValue({});
   });
 
   it('reads an approval-mode selection made immediately before send', () => {
@@ -151,6 +165,52 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+  });
+
+  it('preallocates a durable Agents user id for the optimistic response anchor', () => {
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Queue safely', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    const userMessageId = submission.userMessage.messageId;
+    expect(submission.endpointOption.overrideUserMessageId).toBe(
+      `${userMessageId}${Constants.COMMON_DIVIDER}0`,
+    );
+    expect(createPayload(submission).payload.overrideUserMessageId).toBe(
+      `${userMessageId}${Constants.COMMON_DIVIDER}0`,
+    );
+    expect(submission.initialResponse?.clientQueueParentMessageId).toBe(userMessageId);
+  });
+
+  it('submits the latest validated workspace selection', () => {
+    const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+    mockResolveCodeWorkspaceSubmission.mockReturnValue({ codeWorkspaces: [selection] });
+    mockGetLatestConversation.mockReturnValue({
+      ...conversation('conversation-1'),
+      codeWorkspaces: [selection],
+    });
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(mockResolveCodeWorkspaceSubmission).toHaveBeenCalledWith([selection]);
+    expect(submission.codeWorkspaces).toEqual([selection]);
+  });
+
+  it('refuses to send when workspace submission resolution is not ready', () => {
+    mockResolveCodeWorkspaceSubmission.mockReturnValue(undefined);
+    const { result, setSubmission } = renderAsk([]);
+
+    expect(result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' })).toBe(
+      false,
+    );
+    expect(setSubmission).not.toHaveBeenCalled();
   });
 
   it('refuses to send to an existing conversation before its history loads', () => {
@@ -304,6 +364,7 @@ describe('useChatFunctions regenerate', () => {
     expect(submission.userMessage.responseMessageId).toBe('assistant-1_');
     expect(submission.initialResponse?.messageId).toBe('assistant-1_');
     expect(submission.initialResponse?.parentMessageId).toBe('user-1');
+    expect(submission.initialResponse?.clientQueueParentMessageId).toBe('user-1');
     expect(submission.messages.map((message) => message.messageId)).toEqual(['user-1']);
     expect(submission.regenerateMessages?.map((message) => message.messageId)).toEqual([
       'user-1',
@@ -318,6 +379,38 @@ describe('useChatFunctions regenerate', () => {
     ).toEqual(['user-1', 'assistant-1_']);
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
   });
+
+  it.each(['assistant-1', 'assistant_1_'])(
+    'marks an edited optimistic response %s with its durable user anchor',
+    (responseMessageId) => {
+      const parent = userMessage('user-1');
+      const response = {
+        ...assistantMessage(responseMessageId, parent.messageId),
+        content: [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'before' }],
+      } as TMessage;
+      const { result, setSubmission } = renderAsk([parent, response]);
+
+      act(() => {
+        result.current.ask(
+          { ...parent },
+          {
+            isRegenerate: true,
+            isEdited: true,
+            editedMessageId: responseMessageId,
+            editedContent: {
+              index: 0,
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'after',
+            },
+          },
+        );
+      });
+
+      const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+      expect(submission.initialResponse?.messageId).toBe(responseMessageId);
+      expect(submission.initialResponse?.clientQueueParentMessageId).toBe('user-1');
+    },
+  );
 });
 
 describe('useChatFunctions ask attachments', () => {

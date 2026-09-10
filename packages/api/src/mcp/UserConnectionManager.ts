@@ -352,7 +352,9 @@ export abstract class UserConnectionManager {
         `[MCP][User: ${userId}][${serverName}] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}.`,
       );
     }
-    const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
+    const ephemeralConnection =
+      opts.ephemeralConnection === true ||
+      (config ? requiresEphemeralUserConnection(config) : false);
     const requestScopedConnections = ephemeralConnection
       ? opts.requestScopedConnections
       : undefined;
@@ -582,6 +584,8 @@ export abstract class UserConnectionManager {
       oboTrustChecker,
       upstreamTokenProvider,
       oboIdentityContext,
+      onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging,
       signal,
       returnOnOAuth = false,
       connectionTimeout,
@@ -821,6 +825,8 @@ export abstract class UserConnectionManager {
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
+          onOAuthCredentialsChanged,
+          onOAuthCredentialsChanging,
         };
       } else {
         connectionOptions = {

@@ -6,6 +6,7 @@ import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
   ScheduleDeleteResult,
+  ScheduleMCPPreflight,
   ScheduleLimits,
   ScheduleUserContext,
   FireableSchedule,
@@ -114,6 +115,7 @@ export type ScheduleResumeClaimResult =
  * directly.
  */
 export interface SchedulesServiceDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods & {
     getRoleByName: (
       role?: string,
@@ -187,6 +189,7 @@ export interface SchedulesService {
   fireScheduleNow: (
     schedule: FireableSchedule,
     limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
@@ -377,7 +380,13 @@ export function createSchedulesService(
       minIntervalMinutes: config.minIntervalMinutes ?? DEFAULT_SCHEDULE_LIMITS.minIntervalMinutes,
       autoDisableAfterFailures:
         config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
+      admissionConcurrency:
+        config.admissionConcurrency ?? DEFAULT_SCHEDULE_LIMITS.admissionConcurrency,
       fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+      mcpPreflightConcurrency:
+        config.mcpPreflightConcurrency ?? DEFAULT_SCHEDULE_LIMITS.mcpPreflightConcurrency,
+      mcpPreflightTimeoutMs:
+        config.mcpPreflightTimeoutMs ?? DEFAULT_SCHEDULE_LIMITS.mcpPreflightTimeoutMs,
       requireProject: config.requireProject === true || projectId != null,
       ...(projectId != null && { projectId }),
     };
@@ -427,6 +436,7 @@ export function createSchedulesService(
   }
 
   const engineDeps: ScheduleEngineDeps = {
+    preflightMCP: deps.preflightMCP,
     methods,
     getLimits,
     // On the BASE deps, not only the engine's per-pass wrapper: fireScheduleNow
@@ -757,6 +767,7 @@ export function createSchedulesService(
   async function fireScheduleNow(
     schedule: FireableSchedule,
     limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
   ): Promise<FireResult | null> {
     // The global stop means STOP: a manual run dispatches the same billed generation as
     // an automatic one, so gating only the engine tick would leave Run Now wide open.
@@ -776,7 +787,10 @@ export function createSchedulesService(
       // Fire the FRESH leased row (post-image with the new claim token), not the
       // snapshot the route read before the lease — an edit that committed in the
       // window in between is reflected, so a stale prompt/agent is never dispatched.
-      return await fireSchedule(engineDeps, leased, limits, new Date(), { manual: true });
+      return await fireSchedule(engineDeps, leased, limits, new Date(), {
+        manual: true,
+        signal: options?.signal,
+      });
     } catch (err) {
       const released =
         claimToken != null

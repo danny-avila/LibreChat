@@ -9,6 +9,8 @@ import { useMCPServerManager } from '../useMCPServerManager';
 const mockShowToast = jest.fn();
 const mockSetMCPValues = jest.fn();
 const mockReinitialize = jest.fn();
+const mockUseMCPToolsQuery = jest.fn((_options?: unknown) => ({ data: undefined }));
+const mockUseMCPConnectionStatus = jest.fn((_options?: unknown) => ({ connectionStatus: {} }));
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
@@ -19,12 +21,13 @@ jest.mock('~/hooks', () => ({
   useHasAccess: () => true,
   useCatalogReady: () => true,
   useMCPSelect: () => ({ mcpValues: [], setMCPValues: mockSetMCPValues }),
-  useMCPConnectionStatus: () => ({ connectionStatus: {} }),
+  useMCPConnectionStatus: (options: unknown) => mockUseMCPConnectionStatus(options),
 }));
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: {} }),
   useMCPServersQuery: () => ({ data: {}, isLoading: false }),
+  useMCPToolsQuery: (options: unknown) => mockUseMCPToolsQuery(options),
 }));
 
 jest.mock('librechat-data-provider/react-query', () => ({
@@ -45,6 +48,22 @@ function deferred<T>() {
 }
 
 describe('useMCPServerManager initialization', () => {
+  it('keeps passive authorization observers opt-in for shared hook callers', () => {
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <Provider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </Provider>
+    );
+
+    const { unmount } = renderHook(() => useMCPServerManager(), { wrapper });
+
+    expect(mockUseMCPToolsQuery).toHaveBeenLastCalledWith({ enabled: false });
+    expect(mockUseMCPConnectionStatus).toHaveBeenLastCalledWith({ enabled: false });
+    unmount();
+    queryClient.clear();
+  });
+
   it.each(['success', 'error'])(
     'finishes before a slow catalog refetch ends in %s',
     async (outcome) => {

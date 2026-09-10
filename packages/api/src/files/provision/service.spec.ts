@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { AxiosError, AxiosHeaders } from 'axios';
 import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
@@ -20,9 +21,13 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: () => 'http://code.test/v1',
 }));
 
+import { createCodeApiUploadRegistry } from '~/utils';
 import { createProvisionService } from './service';
 
-const req = { user: { id: 'u1' } } as unknown as ServerRequest;
+const req = {
+  user: { id: 'u1' },
+  app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+} as unknown as ServerRequest;
 
 const makeFile = (overrides: Partial<TFile> = {}): TFile =>
   ({
@@ -73,6 +78,48 @@ describe('createProvisionService', () => {
   });
 
   describe('provisionToCodeEnv', () => {
+    it('waits out Code API throttling and reopens the upload stream', async () => {
+      const rateLimit = new AxiosError('Request failed', 'ERR_BAD_REQUEST');
+      rateLimit.response = {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: new AxiosHeaders({ 'retry-after': '0' }),
+        config: { headers: new AxiosHeaders() },
+        data: {},
+      };
+      const streams = [Readable.from('first'), Readable.from('second')];
+      const getDownloadStream = jest
+        .fn()
+        .mockResolvedValueOnce(streams[0])
+        .mockResolvedValueOnce(streams[1]);
+      const uploadCodeEnvFile = jest
+        .fn()
+        .mockRejectedValueOnce(rateLimit)
+        .mockResolvedValueOnce({ storage_session_id: 's1', file_id: 'remote-1' });
+      const { service } = buildService({
+        getStrategyFunctions: (source: string) =>
+          source === 'execute_code'
+            ? { handleFileUpload: uploadCodeEnvFile }
+            : { getDownloadStream },
+      });
+
+      await expect(
+        service.provisionToCodeEnv({
+          req,
+          file: makeFile(),
+          rateLimitBudget: {
+            limitMs: 2_000,
+            waitedMs: 0,
+            activeWaitEnds: new Set(),
+          },
+        }),
+      ).resolves.toMatchObject({ referenceSet: { codeEnvRef: { file_id: 'remote-1' } } });
+
+      expect(uploadCodeEnvFile).toHaveBeenCalledTimes(2);
+      expect(getDownloadStream).toHaveBeenCalledTimes(2);
+      expect(uploadCodeEnvFile.mock.calls.map(([args]) => args.stream)).toEqual(streams);
+    });
+
     it('renames a converted image to match its stored MIME type', async () => {
       const { service, uploadCodeEnvFile } = buildService();
 
@@ -112,9 +159,14 @@ describe('createProvisionService', () => {
     it('cancels storage acquisition and destroys a stream returned after cancellation', async () => {
       const controller = new AbortController();
       let resolveDownload!: (stream: Readable) => void;
+      let markDownloadStarted!: () => void;
+      const downloadStarted = new Promise<void>((resolve) => {
+        markDownloadStarted = resolve;
+      });
       const getDownloadStream = jest.fn(
         () =>
           new Promise<Readable>((resolve) => {
+            markDownloadStarted();
             resolveDownload = resolve;
           }),
       );
@@ -128,6 +180,7 @@ describe('createProvisionService', () => {
         signal: controller.signal,
       });
 
+      await downloadStarted;
       controller.abort();
       const stream = new Readable({ read() {} });
       const destroy = jest.spyOn(stream, 'destroy');
@@ -270,13 +323,27 @@ describe('createProvisionService', () => {
       expect(alive.has('f-agent')).toBe(true);
     });
 
-    it('sends the legacy key alongside minted headers', async () => {
+    it('prefers bearer auth when a legacy key is also configured', async () => {
+      mockGetCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer jwt' });
+      mockAxios.mockResolvedValue({ data: [] });
+      const { service } = buildService();
+
+      await service.checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
+
+      expect(mockAxios.mock.calls[0][0].headers).toEqual(
+        expect.objectContaining({ Authorization: 'Bearer jwt' }),
+      );
+      expect(mockAxios.mock.calls[0][0].headers['X-API-Key']).toBeUndefined();
+    });
+
+    it('uses the legacy key when managed bearer auth is unavailable', async () => {
       mockAxios.mockResolvedValue({ data: [] });
       const { service } = buildService();
 
       await service.checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
 
       expect(mockAxios.mock.calls[0][0].headers['X-API-Key']).toBe('legacy-key');
+      expect(mockAxios.mock.calls[0][0].headers.Authorization).toBeUndefined();
     });
 
     it('preserves references when the probe itself fails', async () => {

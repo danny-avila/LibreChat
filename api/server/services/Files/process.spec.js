@@ -37,6 +37,26 @@ jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
+  const createCodeApiRateLimitBudget = jest.fn(() => ({
+    limitMs: 20_000,
+    waitedMs: 0,
+    activeWaitEnds: new Set(),
+  }));
+  const getCodeApiUploadOptions = jest.fn(() => ({
+    scope: 'default:user-1',
+    concurrency: 3,
+    retryWaitMs: 20_000,
+  }));
+  const withCodeApiUploadRecovery = jest.fn(async ({ openSource, upload }) => {
+    try {
+      return await upload(await openSource());
+    } catch (error) {
+      if (error?.response?.status !== 429) {
+        throw error;
+      }
+      return upload(await openSource());
+    }
+  });
   const UPLOAD_EXTRACTED_TEXT_PLANS = {
     configuredOCR: 'configured_ocr',
     configuredRAG: 'configured_rag',
@@ -131,6 +151,9 @@ jest.mock('@librechat/api', () => {
     }),
     getStorageMetadata: jest.fn(() => ({})),
     getRetentionExpiry,
+    createCodeApiRateLimitBudget,
+    getCodeApiUploadOptions,
+    withCodeApiUploadRecovery,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
       if (
@@ -259,6 +282,9 @@ const {
   extractInspectableFileText,
   assertExtractedTextInspectable,
   contentFilterBlockResponse,
+  createCodeApiRateLimitBudget,
+  getCodeApiUploadOptions,
+  withCodeApiUploadRecovery,
 } = require('@librechat/api');
 
 const PDF_MIME = 'application/pdf';
@@ -1346,6 +1372,33 @@ describe('processAgentFileUpload', () => {
       }).catch(() => {});
 
       expect(codeEnvUpload).toHaveBeenCalled();
+    });
+
+    it('retries a throttled eager upload with a fresh persisted stream', async () => {
+      const rateLimited = Object.assign(new Error('rate limited'), {
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '1' } },
+      });
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-y', file_id: 'fid-y' });
+      codeEnvUpload
+        .mockRejectedValueOnce(rateLimited)
+        .mockResolvedValueOnce({ storage_session_id: 'sess-retry', file_id: 'fid-retry' });
+
+      await processAgentFileUpload({
+        req: agentsZipReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-throttled',
+        },
+      }).catch(() => {});
+
+      expect(getCodeApiUploadOptions).toHaveBeenCalledTimes(1);
+      expect(withCodeApiUploadRecovery).toHaveBeenCalledTimes(1);
+      expect(createCodeApiRateLimitBudget).toHaveBeenCalledTimes(1);
+      expect(codeEnvUpload).toHaveBeenCalledTimes(2);
+      expect(codeEnvUpload.mock.calls[0][0].stream).not.toBe(codeEnvUpload.mock.calls[1][0].stream);
     });
 
     it('defers an inferred file-search destination until tool execution', async () => {

@@ -16,7 +16,7 @@ jest.mock('~/Providers', () => ({ useAgentsMapContext: () => mockUseAgentsMapCon
 const conversation = {
   conversationId: 'conversation-1',
   endpoint: 'agents',
-  agent_id: 'agent-1',
+  agent_id: 'agent_1',
   title: 'Code',
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
@@ -29,7 +29,7 @@ describe('useCodeApprovalMode', () => {
     mockUseAgentsMapContext.mockReturnValue({});
     mockUseAgentToolPermissions.mockReturnValue({
       agent: {
-        id: 'agent-1',
+        id: 'agent_1',
         tools: ['execute_code'],
         stateful_code_sessions: true,
         code_environment_id: 'mac',
@@ -77,7 +77,7 @@ describe('useCodeApprovalMode', () => {
       };
       mockUseAgentToolPermissions.mockReturnValue({
         agent: {
-          id: 'agent-1',
+          id: 'agent_1',
           tools: ['execute_code'],
           stateful_code_sessions: true,
           code_environment_id: 'mac',
@@ -120,7 +120,7 @@ describe('useCodeApprovalMode', () => {
     },
   );
 
-  test.each(['agent-1', 'agent-2'])(
+  test.each(['agent_1', 'agent_2'])(
     'waits for unresolved root %s before full access',
     (missingId) => {
       const permissions = {
@@ -151,7 +151,7 @@ describe('useCodeApprovalMode', () => {
       const { result, rerender } = renderHook(() =>
         useCodeApprovalMode(
           { ...conversation, codeApprovalMode: 'fullAccess' },
-          { ...conversation, agent_id: 'agent-2' },
+          { ...conversation, agent_id: 'agent_2' },
         ),
       );
       expect(result.current.modes).not.toContain('fullAccess');
@@ -244,7 +244,7 @@ describe('useCodeApprovalMode', () => {
 
   test('includes attached subagents while preserving their mandatory asks', () => {
     const primary = {
-      id: 'agent-1',
+      id: 'agent_1',
       tools: [],
       stateful_code_sessions: false,
       subagents: { enabled: true, agent_ids: ['child-1', 'child-2'] },
@@ -299,20 +299,20 @@ describe('useCodeApprovalMode', () => {
 
   test('includes the active parallel conversation agent', () => {
     const primary = {
-      id: 'agent-1',
+      id: 'agent_1',
       tools: [],
       stateful_code_sessions: false,
     };
     const addedAgent = {
-      id: 'agent-2',
+      id: 'agent_2',
       tools: ['execute_code'],
       stateful_code_sessions: true,
       code_environment_id: 'mac',
     };
     mockUseAgentToolPermissions.mockImplementation((agentId?: string) => ({
-      agent: agentId === 'agent-2' ? addedAgent : primary,
+      agent: agentId === 'agent_2' ? addedAgent : primary,
     }));
-    const addedConversation = { endpoint: 'agents', agent_id: 'agent-2' } as TConversation;
+    const addedConversation = { endpoint: 'agents', agent_id: 'agent_2' } as TConversation;
 
     const { result } = renderHook(() => useCodeApprovalMode(conversation, addedConversation));
 
@@ -323,7 +323,7 @@ describe('useCodeApprovalMode', () => {
   test('does not traverse disabled subagent configurations', () => {
     mockUseAgentToolPermissions.mockReturnValue({
       agent: {
-        id: 'agent-1',
+        id: 'agent_1',
         tools: ['execute_code'],
         stateful_code_sessions: true,
         code_environment_id: 'restricted',

@@ -428,20 +428,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
-    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace, requestBody }) => {
-      // Capture the request state the controller seeds BEFORE reconstruction.
-      capturedInit = {
-        parentMessageId: req.body.parentMessageId,
-        files: req.body.files,
-        isTemporary: req.body.isTemporary,
-        turnStartedAt: req.turnStartedAt,
-        isScheduledFire: req._isScheduledFire,
-        timezone: req.body.timezone,
-        checkpointNamespace,
-        requestBody,
-      };
-      return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
-    });
+    mockInitializeClient = jest.fn(
+      async ({ req, checkpointNamespace, foregroundRunId, requestBody }) => {
+        // Capture the request state the controller seeds BEFORE reconstruction.
+        capturedInit = {
+          parentMessageId: req.body.parentMessageId,
+          files: req.body.files,
+          isTemporary: req.body.isTemporary,
+          turnStartedAt: req.turnStartedAt,
+          isScheduledFire: req._isScheduledFire,
+          timezone: req.body.timezone,
+          checkpointNamespace,
+          foregroundRunId,
+          requestBody,
+        };
+        return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
+      },
+    );
 
     app = express();
     app.use(express.json());
@@ -2799,6 +2802,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationId: CONVO_ID,
         parentMessageId: USER_MSG_ID,
       });
+      expect(capturedInit.foregroundRunId).toBe(RESPONSE_MSG_ID);
 
       expect(mockInitializeClient).toHaveBeenCalledTimes(1);
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);

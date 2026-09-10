@@ -149,6 +149,60 @@ describe('FlowStateManager', () => {
       });
     });
 
+    it('settles a fresher result over a completion from the same observed attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+      const flow = await flowManager.getFlowState('token-flow', 'mcp_get_tokens');
+      await flowManager.completeFlow('token-flow', 'mcp_get_tokens', 'old-token');
+
+      await expect(
+        flowManager.settleFlowIfCurrent(
+          'token-flow',
+          'mcp_get_tokens',
+          flow!.createdAt,
+          '',
+          'fresh-token',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'fresh-token',
+      });
+    });
+
+    it('settles a fresher result over a failure from the same observed attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+      const flow = await flowManager.getFlowState('token-flow', 'mcp_get_tokens');
+      await flowManager.failFlow('token-flow', 'mcp_get_tokens', new Error('stale failure'));
+
+      await expect(
+        flowManager.settleFlowIfCurrent(
+          'token-flow',
+          'mcp_get_tokens',
+          flow!.createdAt,
+          '',
+          'fresh-token',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'fresh-token',
+      });
+    });
+
+    it('does not settle a replacement token-flow attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+
+      await expect(
+        flowManager.settleFlowIfCurrent('token-flow', 'mcp_get_tokens', 1, '', 'old-token'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'PENDING',
+      });
+    });
+
     it('fails only the observed OAuth attempt', async () => {
       await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
       const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');
@@ -208,6 +262,35 @@ describe('FlowStateManager', () => {
           result: 'fresh-result',
         }),
       );
+    });
+
+    it('should return the externally completed result when handler loses failure race', async () => {
+      const flowId = 'failure-race-flow';
+      const type = 'test-type';
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        await flowManager.completeFlow(flowId, type, 'fresh-result');
+        throw new Error('stale failure');
+      });
+
+      expect(result).toBe('fresh-result');
+    });
+
+    it('should re-read completion that wins after its guarded failure write', async () => {
+      const flowId = 'post-failure-race-flow';
+      const type = 'test-type';
+      const originalFail = flowManager.failFlowIfCurrent.bind(flowManager);
+      jest.spyOn(flowManager, 'failFlowIfCurrent').mockImplementation(async (...args) => {
+        const failureResult = await originalFail(...args);
+        await flowManager.settleFlowIfCurrent(flowId, type, args[2], args[3], 'fresh-result');
+        return failureResult;
+      });
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        throw new Error('stale failure');
+      });
+
+      expect(result).toBe('fresh-result');
     });
 
     it('should handle flow timeout correctly', async () => {

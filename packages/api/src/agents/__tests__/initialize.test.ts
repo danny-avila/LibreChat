@@ -44,6 +44,7 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
+import type { CodeExecutionContext } from '../execution';
 import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
 // Mock logger — `format` must be a callable factory so @librechat/data-schemas
@@ -2499,6 +2500,99 @@ describe('initializeAgent — execute_code capability expansion', () => {
       delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
     }
   });
+
+  it.each([false, true])(
+    'uses the validated attached workspace operation ceiling: protectedEdit=%s',
+    async (protectedEdit) => {
+      const { agent, req, res, loadTools, db } = createMocks();
+      agent.tools = ['execute_code'];
+      agent.stateful_code_sessions = true;
+      agent.code_environment_id = 'personal-vm';
+      req.config = {
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'personal-vm',
+                  name: 'Personal VM',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  owner: 'deployment',
+                  workerId: 'worker-a',
+                  configSchema: {
+                    limits: { maxCommandTimeoutMs: 120_000 },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as NonNullable<typeof req.config>;
+      if (protectedEdit)
+        req.config.filters = {
+          files: {
+            pii: {
+              customPatterns: [{ id: 'test', label: 'test', regex: 'secret' }],
+              fields: ['content'],
+            },
+          },
+        };
+      const codeExecutionContext: CodeExecutionContext = {
+        baseUrl: 'https://code.example.com/v1',
+        codeSessionKey: 'execute_code:stateful:route:session',
+        executionProfile: 'stateful',
+        statefulSessions: true,
+        environmentId: 'personal-vm',
+        environmentType: 'attached',
+        bridgeWorkerId: 'worker-a',
+        codeEnvironmentConfigSchema: {
+          limits: { maxCommandTimeoutMs: 120_000 },
+        },
+        codeWorkspace: {
+          environmentId: 'personal-vm',
+          workspaceId: 'project-a',
+          operations: ['read_file', 'list_files', 'execute_command'],
+        },
+      };
+      if (protectedEdit) codeExecutionContext.codeWorkspace!.operations.push('edit_file');
+      loadTools.mockResolvedValue({
+        tools: [],
+        toolContextMap: {},
+        dynamicToolContextMap: {},
+        toolDefinitions: [],
+        hasDeferredTools: false,
+        codeExecutionContext,
+      });
+
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(result.codeExecutionContext).toBe(codeExecutionContext);
+      expect(result.toolDefinitions?.map(({ name }) => name).sort()).toEqual([
+        'bash_tool',
+        'list_workspace_files',
+        'read_file',
+      ]);
+      const bashTool = result.toolDefinitions?.find(({ name }) => name === 'bash_tool');
+      expect(
+        (bashTool?.parameters as { properties?: { timeoutMs?: { maximum?: number } } })?.properties
+          ?.timeoutMs?.maximum,
+      ).toBe(120_000);
+    },
+  );
 
   it('rejects a stateful environment excluded by deployment policy', async () => {
     const { agent, req, res, loadTools, db } = createMocks();

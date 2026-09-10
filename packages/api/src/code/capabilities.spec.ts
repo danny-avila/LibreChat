@@ -1,6 +1,11 @@
+import { ErrorTypes } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { CodeExecutionContext, CodeEnvironmentConfig } from '~/agents/execution';
-import { supportsProgrammaticCodeExecution } from './capabilities';
+import {
+  CodeWorkspaceSelectionError,
+  resolveCodeExecutionWorkspaceContext,
+  supportsProgrammaticCodeExecution,
+} from './capabilities';
 
 const context: CodeExecutionContext = {
   baseUrl: 'https://bridge.example',
@@ -145,6 +150,28 @@ describe('supportsProgrammaticCodeExecution', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('suppresses generic programmatic Bash after an attached workspace is selected', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    expect(
+      await supportsProgrammaticCodeExecution(
+        {
+          ...context,
+          codeWorkspace: {
+            environmentId: 'personal',
+            workspaceId: 'project-a',
+            operations: ['read_file', 'execute_command'],
+          },
+        },
+        environments,
+        getAppConfig,
+      ),
+    ).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('does not send credentials to a different execution route', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'route-token';
     const fetchSpy = jest
@@ -243,5 +270,279 @@ describe('supportsProgrammaticCodeExecution', () => {
       }),
     ).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveCodeExecutionWorkspaceContext', () => {
+  beforeEach(() => {
+    getAppConfig.mockClear();
+    process.env.TEST_CODE_CAPABILITY_TOKEN = `workspace-${Math.random()}`;
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_CODE_CAPABILITY_TOKEN;
+  });
+
+  function workspaceStatus(workspaces: unknown[], statefulWorkspace: boolean = true): Response {
+    return new Response(
+      JSON.stringify({
+        protocolVersion: 1,
+        workerId: 'worker',
+        online: true,
+        ready: true,
+        leaseExpiresInMs: 45_000,
+        capabilities: {
+          statefulWorkspace,
+          sandboxProfile: 'native-srt',
+          runtimes: ['bash'],
+          workspaceTools: {
+            protocolVersion: 1,
+            operations: ['read_file', 'list_files', 'execute_command'],
+            workspaces,
+          },
+        },
+      }),
+    );
+  }
+
+  it('binds the exact advertised workspace and its operation ceiling', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      workspaceStatus([
+        { id: 'project-a', name: 'Project A' },
+        { id: 'docs', operations: ['read_file', 'list_files'] },
+      ]),
+    );
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [
+          { environmentId: 'another-machine', workspaceId: 'other-project' },
+          { environmentId: 'personal', workspaceId: 'docs' },
+        ],
+        environments,
+        getAppConfig,
+      }),
+    ).resolves.toMatchObject({
+      codeSessionKey: 'session',
+      codeWorkspace: {
+        environmentId: 'personal',
+        workspaceId: 'docs',
+        operations: ['read_file', 'list_files'],
+      },
+    });
+  });
+
+  it('admits native workspace tools without enabling programmatic runtime execution', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(workspaceStatus([{ id: 'docs', operations: ['read_file'] }], false));
+    const resolved = await resolveCodeExecutionWorkspaceContext({
+      context,
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'docs' }],
+      environments,
+      getAppConfig,
+    });
+    expect(resolved.codeWorkspace).toEqual({
+      environmentId: 'personal',
+      workspaceId: 'docs',
+      operations: ['read_file'],
+    });
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      false,
+    );
+    expect(await supportsProgrammaticCodeExecution(resolved, environments, getAppConfig)).toBe(
+      false,
+    );
+  });
+
+  it.each([false, true])(
+    'fails closed without native workspace capabilities (ready: %s)',
+    async (ready) => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            workerId: 'worker',
+            online: true,
+            ready,
+            leaseExpiresInMs: 45_000,
+            capabilities: { statefulWorkspace: false, sandboxProfile: 'native-srt', runtimes: [] },
+          }),
+        ),
+      );
+      await expect(
+        resolveCodeExecutionWorkspaceContext({
+          context,
+          requestedSelections: [{ environmentId: 'personal', workspaceId: 'docs' }],
+          environments,
+          getAppConfig,
+        }),
+      ).rejects.toMatchObject({ reason: ready ? 'unsupported' : 'worker_unavailable' });
+    },
+  );
+
+  it.each(['worker', 'replacement', undefined])(
+    'pins deployment worker identity: %s',
+    async (workerId) => {
+      const fetch = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(workspaceStatus([{ id: 'project-a' }]));
+      const deploymentEnvironment: CodeEnvironmentConfig = {
+        id: 'fixed',
+        name: 'Fixed VM',
+        type: 'attached',
+        owner: 'deployment',
+        baseURL: context.baseUrl,
+        pairing: { workerId, tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN', allowPrincipalWorkers: false },
+      };
+      const pending = resolveCodeExecutionWorkspaceContext({
+        context: { ...context, environmentId: 'fixed' },
+        requestedSelections: [{ environmentId: 'fixed', workspaceId: 'project-a' }],
+        environments: [
+          {
+            ...deploymentEnvironment,
+            pairing: {
+              workerId: 'worker',
+              tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
+              allowPrincipalWorkers: false,
+            },
+          },
+        ],
+        getAppConfig: jest.fn(
+          async () =>
+            ({
+              endpoints: {
+                agents: { statefulCodeSessions: { environments: [deploymentEnvironment] } },
+              },
+            }) as AppConfig,
+        ),
+      });
+      if (workerId === 'worker') {
+        await expect(pending).resolves.toMatchObject({
+          codeWorkspace: { workspaceId: 'project-a' },
+        });
+      } else {
+        await expect(pending).rejects.toMatchObject({ reason: 'worker_unavailable' });
+        expect(fetch).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('uses the persisted binding when the request omits one', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(workspaceStatus([{ id: 'project-a' }]));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        persistedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
+        environments,
+        getAppConfig,
+      }),
+    ).resolves.toMatchObject({
+      codeWorkspace: { environmentId: 'personal', workspaceId: 'project-a' },
+    });
+  });
+
+  it('fails when the saved workspace disappears instead of selecting another', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(workspaceStatus([{ id: 'replacement' }]));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({
+        reason: 'missing',
+        code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+        status: 409,
+        statusCode: 409,
+      }),
+    );
+  });
+
+  it('requires a binding for the executing environment before contacting Code API', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [{ environmentId: 'another-machine', workspaceId: 'project-a' }],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({
+        reason: 'required',
+      }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed selections before contacting Code API', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [
+          {
+            environmentId: 'personal',
+            workspaceId: 'project-a',
+            operations: ['execute_command'],
+          },
+        ],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({ reason: 'invalid' }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate environment bindings before contacting Code API', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [
+          { environmentId: 'personal', workspaceId: 'project-a' },
+          { environmentId: 'personal', workspaceId: 'project-b' },
+        ],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({ reason: 'invalid' }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns an explicit unavailable error when deployment configuration cannot be loaded', async () => {
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
+        environments,
+        getAppConfig: async () => {
+          throw new Error('configuration unavailable');
+        },
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({
+        reason: 'worker_unavailable',
+      }),
+    );
   });
 });

@@ -19,6 +19,7 @@
  * ```
  */
 import { nanoid } from 'nanoid';
+import { isCodeWorkspaceSelections } from 'librechat-data-provider';
 import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
@@ -535,6 +536,15 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
     return { valid: false, error: 'conversation_id must be a string' };
   }
+  if (
+    request.code_workspaces !== undefined &&
+    !isCodeWorkspaceSelections(request.code_workspaces)
+  ) {
+    return {
+      valid: false,
+      error: 'code_workspaces must contain unique environment/workspace selections',
+    };
+  }
 
   if (request.parent_message_id !== undefined && typeof request.parent_message_id !== 'string') {
     return { valid: false, error: 'parent_message_id must be a string' };
@@ -643,6 +653,7 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
+    codeWorkspaces: request.code_workspaces,
     parentMessageId: mcpParentMessageId,
   });
   const created = Math.floor(Date.now() / 1000);

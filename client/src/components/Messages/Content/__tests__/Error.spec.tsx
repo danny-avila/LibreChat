@@ -52,11 +52,39 @@ describe('Error — typed provider errors', () => {
   it.each([
     [ErrorTypes.MODEL_NOT_FOUND, 'com_error_model_not_found'],
     [ErrorTypes.MODEL_RATE_LIMIT, 'com_error_model_rate_limit'],
+    [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE, 'com_error_code_workspace_unavailable'],
   ])('localizes the typed %s payload the server now emits', (type, key) => {
     render(<Error text={JSON.stringify({ type })} />);
 
     expect(screen.getByText(catalog[key])).toBeInTheDocument();
   });
+
+  it.each([
+    ['required', 'com_error_code_workspace_required'],
+    ['invalid', 'com_error_code_workspace_invalid'],
+    ['worker_unavailable', 'com_error_code_workspace_worker_unavailable'],
+    ['unsupported', 'com_error_code_workspace_unsupported'],
+    ['missing', 'com_error_code_workspace_missing'],
+  ])('localizes a workspace rejection with reason %s', (reason, key) => {
+    render(
+      <Error text={JSON.stringify({ type: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE, reason })} />,
+    );
+
+    expect(screen.getByText(catalog[key])).toBeInTheDocument();
+  });
+
+  it.each([{ reason: 'future_reason' }, {}])(
+    'uses safe workspace fallback copy for an unknown or legacy payload',
+    (payload) => {
+      render(
+        <Error
+          text={JSON.stringify({ type: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE, ...payload })}
+        />,
+      );
+
+      expect(screen.getByText(catalog.com_error_code_workspace_unavailable)).toBeInTheDocument();
+    },
+  );
 
   it('keeps the provider message for a LangChain code without localized copy, minus the URL', () => {
     const raw =

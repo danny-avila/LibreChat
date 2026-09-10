@@ -41,6 +41,7 @@ const {
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
+  getCodeWorkspaceSelectionErrorDetails,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -110,6 +111,7 @@ function getInitializationFailure(error) {
   return {
     status: candidateStatus,
     ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+    ...getCodeWorkspaceSelectionErrorDetails(error),
     error: error?.message || 'Failed to start generation',
   };
 }
@@ -1483,6 +1485,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
+    codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
     parentMessageId:
       editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });
@@ -1906,6 +1909,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       signal: job.abortController.signal,
       jobCreatedAt,
       checkpointNamespace: job.metadata?.checkpointNamespace,
+      foregroundRunId: mcpRequestBody.messageId,
       requestBody: mcpRequestBody,
     });
     startupTelemetry?.mark('client_initialized');
