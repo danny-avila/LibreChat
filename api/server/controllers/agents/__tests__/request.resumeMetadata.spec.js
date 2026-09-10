@@ -4252,7 +4252,7 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it.each(['submitted', 'persisted'])(
+  it.each(['submitted', 'persisted', 'overridden'])(
     'preserves %s workspace selections in the runtime envelope',
     async (source) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
@@ -4260,9 +4260,12 @@ describe('ResumableAgentController resume metadata', () => {
       const codeWorkspaces = [{ environmentId: 'machine-a', workspaceId: 'project-b' }];
       const req = {
         user: { id: 'user-123' },
-        ...(source === 'persisted' ? { resolvedConversation: { codeWorkspaces } } : {}),
+        ...(source !== 'submitted'
+          ? { resolvedConversation: { conversationId: 'conversation-123', codeWorkspaces } }
+          : {}),
         body: {
           ...(source === 'submitted' ? { codeWorkspaces } : {}),
+          ...(source === 'overridden' ? { overrideConvoId: 'target-conversation' } : {}),
           text: 'Fresh submission.',
           messageId: 'user-msg',
           clientRequestId: 'req-abc',
@@ -4284,8 +4287,13 @@ describe('ResumableAgentController resume metadata', () => {
 
       expect(initializeClient).toHaveBeenCalledWith(
         expect.objectContaining({
-          requestBody: expect.objectContaining({ codeWorkspaces }),
+          requestBody: expect.objectContaining({
+            conversationId: source === 'overridden' ? 'target-conversation' : 'conversation-123',
+          }),
         }),
+      );
+      expect(initializeClient.mock.calls[0][0].requestBody.codeWorkspaces).toEqual(
+        source === 'overridden' ? undefined : codeWorkspaces,
       );
       expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
       expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
