@@ -9,8 +9,10 @@ import {
   stripMessageUIResourceMarkers,
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
+import { escapeMeiliFilterValue } from '~/utils/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
 
@@ -969,8 +971,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       if (search && search.trim()) {
         try {
+          const tenantId = getTenantId();
+          const tenantFilter =
+            tenantId && tenantId !== SYSTEM_TENANT_ID
+              ? ` AND tenantId = "${escapeMeiliFilterValue(tenantId)}"`
+              : '';
           const searchResults = await Conversation.meiliSearch(search, {
-            filter: `user = "${user}"`,
+            filter: `user = "${escapeMeiliFilterValue(user)}"${tenantFilter}`,
             limit: MEILI_SEARCH_LIMIT,
             attributesToRetrieve: ['conversationId'],
           });

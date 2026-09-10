@@ -4,6 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import {
   createShareMethods,
   anonymizeSharedContent,
@@ -1252,6 +1253,52 @@ describe('Share Methods', () => {
       expect(result.links[0].title).toBe('Matching Share');
 
       // Verify that meiliSearch was called with the correct user filter
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId}"`,
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId'],
+      });
+    });
+
+    test('scopes search to the active tenant and escapes filter values', async () => {
+      const userId = 'user"\\id';
+      const meiliSearchMock = jest.fn().mockResolvedValue({ hits: [] });
+      Conversation.meiliSearch = meiliSearchMock;
+
+      await tenantStorage.run({ tenantId: 'tenant"\\id' }, () =>
+        shareMethods.getSharedLinks(
+          userId,
+          undefined,
+          10,
+          'createdAt',
+          'desc',
+          'search term',
+        ),
+      );
+
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: 'user = "user\\"\\\\id" AND tenantId = "tenant\\"\\\\id"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId'],
+      });
+    });
+
+    test('keeps search unscoped in system context', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const meiliSearchMock = jest.fn().mockResolvedValue({ hits: [] });
+      Conversation.meiliSearch = meiliSearchMock;
+
+      await runAsSystem(() =>
+        shareMethods.getSharedLinks(
+          userId,
+          undefined,
+          10,
+          'createdAt',
+          'desc',
+          'search term',
+        ),
+      );
+
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId}"`,
         limit: MEILI_SEARCH_LIMIT,
