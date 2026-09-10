@@ -293,6 +293,9 @@ export function resolveToolRoleGrants({
   context = 'toolRoleGrants',
 }: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
   const subject = (user ?? req?.user) as CheckAccessParams['user'];
+  /** Keyed on the request alone, so it assumes one subject per request — true of
+   *  every caller, since a request authorizes the user who made it. Pass no `req`
+   *  to resolve a different subject without reading another's cached grants. */
   const cache = req as
     | (ServerRequest & { [toolRoleGrantsKey]?: Promise<ToolRoleGrants> })
     | undefined;
