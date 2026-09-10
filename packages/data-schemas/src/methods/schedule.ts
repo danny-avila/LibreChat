@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getScheduleMCPDisabledReason } from 'librechat-data-provider';
 import type { ScheduleRunStatus, ScheduleDisabledReason } from 'librechat-data-provider';
 import type { Model, Types, AnyBulkWriteOperation } from 'mongoose';
 import type {
@@ -126,6 +127,8 @@ export interface RecordRunOutcomeParams {
    *  recovery replay that reads the row would otherwise project a dead link. */
   clearConversationId?: boolean;
   error?: string;
+  /** Sanitized per-server MCP readiness outcomes for this occurrence. */
+  mcp?: IScheduleRun['mcp'];
   durationMs?: number;
   autoDisableAfterFailures: number;
   /** Consecutive-balance-skip auto-disable threshold; required to settle a run as
@@ -279,7 +282,7 @@ export type ScheduleMethods = {
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
-    details: { conversationId: string; droppedFileIds?: string[] },
+    details: { conversationId: string; droppedFileIds?: string[]; mcp?: IScheduleRun['mcp'] },
   ) => Promise<void>;
   countActiveRuns: () => Promise<number>;
   deleteScheduleRun: (
@@ -927,12 +930,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     }
   }
 
-  /** Capacity-slot occupancy for the allocator: which slots are held by `started`
+  /** Capacity-slot occupancy for the allocator: which slots are held by generation
    *  runs, plus how many legacy rows hold no slot (they shrink the effective cap so
-   *  the bound stays conservative during rollout rather than transiently overshooting). */
+   *  the bound stays conservative during rollout rather than transiently overshooting).
+   *  Admission-only rows never dispatched and are excluded even if settlement crashed. */
   async function getCapacityOccupancy(): Promise<{ takenSlots: number[]; unslotted: number }> {
     const rows = await ScheduleRun()
-      .find({ status: 'started' })
+      .find({ status: 'started', admissionOnly: { $ne: true } })
       .select('capacitySlot')
       .lean<Array<{ capacitySlot?: number }>>();
     const takenSlots: number[] = [];
@@ -1179,6 +1183,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       conversationId: params.conversationId,
       status: params.status,
       error: params.error,
+      mcp: params.mcp,
       firedAt: params.firedAt,
     };
     const isFailure = params.status === 'error';
@@ -1254,17 +1259,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // reconciler's replay still disables. Reads current state after the count.
     if (isFailure) {
       const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
-      if (schedule?.enabled && schedule.failureCount >= params.autoDisableAfterFailures) {
+      const mcpReason = getScheduleMCPDisabledReason(params.mcp);
+      const threshold = mcpReason ? 1 : params.autoDisableAfterFailures;
+      if (schedule?.enabled && schedule.failureCount >= threshold) {
         // Carry the COUNT this decision was made on, not just the revision. The read
         // above and this write are separate statements, and a concurrent success resets
         // the failure streak to zero — a revision-only fence would still let this stale
         // decision disable a schedule whose streak had just been cleared.
         await disableSchedule(
           params.scheduleId,
-          'too_many_failures',
+          mcpReason ?? 'too_many_failures',
           undefined,
           params.expectConfigRevision,
-          { failureCount: { $gte: params.autoDisableAfterFailures } },
+          {
+            failureCount: { $gte: threshold },
+            ...(mcpReason ? { countersAsOf: params.scheduledFor } : {}),
+          },
         );
       }
     }
@@ -1469,12 +1479,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
               ? { conversationId: params.conversationId }
               : {}),
             ...(params.error ? { error: params.error } : {}),
+            ...(params.mcp ? { mcp: params.mcp } : {}),
             ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
           },
           // SETTLEMENT: a terminal outcome is the generation owner confirming the run
           // actually stopped, so this is the ONLY place the global capacity slot is
           // released. An abort request alone does not free it (see requestRunAbort).
-          $unset: { capacitySlot: 1, ...(params.clearConversationId ? { conversationId: 1 } : {}) },
+          $unset: {
+            capacitySlot: 1,
+            admissionOnly: 1,
+            ...(params.clearConversationId ? { conversationId: 1 } : {}),
+          },
         },
         { new: false },
       )
@@ -1579,13 +1594,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function setRunFireDetails(
     scheduleId: string,
     scheduledFor: Date,
-    details: { conversationId: string; droppedFileIds?: string[] },
+    details: { conversationId: string; droppedFileIds?: string[]; mcp?: IScheduleRun['mcp'] },
   ): Promise<void> {
     await ScheduleRun().updateOne(
       { scheduleId, scheduledFor },
       {
         $set: {
           conversationId: details.conversationId,
+          ...(details.mcp ? { mcp: details.mcp } : {}),
           ...(details.droppedFileIds?.length ? { droppedFileIds: details.droppedFileIds } : {}),
         },
       },

@@ -523,16 +523,19 @@ describe('recordRunOutcome', () => {
   it('error increments failureCount without disabling below the threshold', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    const mcp = [{ server: 'Notion', status: 'mcp_unavailable' as const }];
     await methods.recordRunOutcome({
       scheduleId: schedule.id,
       scheduledFor,
       status: 'error',
       error: 'provider exploded',
+      mcp,
       autoDisableAfterFailures: 3,
     });
     const run = await getRun(schedule.id, scheduledFor);
     expect(run.status).toBe('error');
     expect(run.error).toBe('provider exploded');
+    expect(run.mcp).toEqual(mcp);
     const updated = await getSchedule(schedule.id);
     expect(updated.failureCount).toBe(1);
     expect(updated.runCount).toBe(0);
@@ -869,6 +872,31 @@ describe('countActiveRuns', () => {
       autoDisableAfterFailures: 3,
     });
     expect(await methods.countActiveRuns()).toBe(1);
+  });
+});
+
+describe('getCapacityOccupancy', () => {
+  it('excludes admission-only failures that never dispatched a generation', async () => {
+    const admission = await methods.createSchedule(scheduleData());
+    const legacy = await methods.createSchedule(scheduleData());
+    const slotted = await methods.createSchedule(scheduleData());
+    await methods.reserveStartedRun(
+      runData(admission, {
+        scheduledFor: new Date('2026-07-20T12:00:00Z'),
+        admissionOnly: true,
+      }),
+    );
+    await methods.reserveStartedRun(
+      runData(legacy, { scheduledFor: new Date('2026-07-20T13:00:00Z') }),
+    );
+    await methods.reserveStartedRun(
+      runData(slotted, { scheduledFor: new Date('2026-07-20T14:00:00Z'), capacitySlot: 2 }),
+    );
+
+    await expect(methods.getCapacityOccupancy()).resolves.toEqual({
+      takenSlots: [2],
+      unslotted: 1,
+    });
   });
 });
 
@@ -3012,4 +3040,99 @@ describe('erasure sweep rotation and idempotency-key lookup', () => {
       Schedule.create(scheduleData({ cadence: { frequency: 'daily' } as ISchedule['cadence'] })),
     ).rejects.toThrow(/hour/);
   });
+});
+
+describe('scheduled MCP failure policy', () => {
+  it.each([
+    'mcp_reauth_required',
+    'mcp_configuration_missing',
+    'mcp_permission_denied',
+    'mcp_unavailable',
+  ])('records %s and disables immediately only for user action', async (reason) => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-09-09T12:00:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: `${reason}: [{"server":"Notion","status":"${reason}"}]`,
+      mcp: [{ server: 'Notion', agentId: 'research-agent', status: reason as never }],
+      autoDisableAfterFailures: 5,
+    });
+    const updated = await getSchedule(schedule.id);
+    expect(updated.failureCount).toBe(1);
+    expect(updated.enabled).toBe(reason === 'mcp_unavailable');
+    expect(updated.disabledReason).toBe(reason === 'mcp_unavailable' ? undefined : reason);
+    expect(updated.lastRun?.mcp?.[0]).toMatchObject({
+      server: 'Notion',
+      agentId: 'research-agent',
+      status: reason,
+    });
+  });
+
+  it('does not infer MCP disablement from an ordinary provider error prefix', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-09-09T12:30:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'mcp_configuration_missing: provider returned this text',
+      autoDisableAfterFailures: 5,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.failureCount).toBe(1);
+    expect(updated.enabled).toBe(true);
+    expect(updated.disabledReason).toBeUndefined();
+  });
+
+  it('uses admission response precedence for mixed MCP failures', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-09-09T12:45:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'mixed MCP failure',
+      mcp: [
+        { server: 'OAuth', status: 'mcp_reauth_required' },
+        { server: 'Private', status: 'mcp_permission_denied' },
+      ],
+      autoDisableAfterFailures: 5,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.enabled).toBe(false);
+    expect(updated.disabledReason).toBe('mcp_permission_denied');
+  });
+});
+
+it('does not apply a late MCP disable after a newer successful occurrence', async () => {
+  const schedule = await methods.createSchedule(scheduleData());
+  const older = new Date('2026-09-09T12:00:00Z');
+  const newer = new Date('2026-09-09T13:00:00Z');
+  await methods.insertScheduleRun(
+    runData(schedule, { scheduledFor: older, status: 'requires_action' }),
+  );
+  await methods.insertScheduleRun(runData(schedule, { scheduledFor: newer }));
+  await methods.recordRunOutcome({
+    scheduleId: schedule.id,
+    scheduledFor: newer,
+    status: 'success',
+    autoDisableAfterFailures: 5,
+  });
+  await methods.recordRunOutcome({
+    scheduleId: schedule.id,
+    scheduledFor: older,
+    status: 'error',
+    error: 'mcp_reauth_required: [{"server":"Notion","status":"mcp_reauth_required"}]',
+    autoDisableAfterFailures: 5,
+  });
+  expect((await getSchedule(schedule.id)).enabled).toBe(true);
 });

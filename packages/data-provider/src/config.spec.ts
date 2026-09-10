@@ -20,6 +20,59 @@ const endpointsConfig: TEndpointsConfig = {
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
+describe('scheduled MCP preflight config', () => {
+  it('bounds the separate readiness admission pool', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, admissionConcurrency: 100 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, admissionConcurrency: 101 } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('caps per-admission connection concurrency', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightConcurrency: 10 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightConcurrency: 11 } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('bounds the aggregate readiness timeout', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 600000 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 600001 } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 999 } },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe('excludedKeys', () => {
   it.each([
     '_id',

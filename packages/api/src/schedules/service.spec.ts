@@ -65,6 +65,7 @@ function makeService(
     findBalance: jest.fn(async () => null),
     upsertBalance: jest.fn(async () => null),
     initializeNullBalance: jest.fn(async () => null),
+    preflightMCP: jest.fn().mockResolvedValue([]),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     getChatProject: jest.fn(async () => ({ _id: 'proj-1' })),
     isUserDeleting: jest.fn(async () => false),
@@ -135,7 +136,10 @@ describe('manual Run Now lease cleanup', () => {
         maxPerUser: 10,
         minIntervalMinutes: 60,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     ).rejects.toThrow('user lookup failed');
@@ -169,6 +173,7 @@ describe('balance initialization', () => {
       findBalance,
       upsertBalance,
       initializeNullBalance,
+      preflightMCP: jest.fn().mockResolvedValue([]),
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       getChatProject: jest.fn(async () => ({ _id: 'proj-1' })),
       isUserDeleting: jest.fn(async () => false),
@@ -281,6 +286,7 @@ describe('balance initialization', () => {
       })),
       upsertBalance,
       initializeNullBalance,
+      preflightMCP: jest.fn().mockResolvedValue([]),
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       getChatProject: jest.fn(async () => ({ _id: 'proj-1' })),
       isUserDeleting: jest.fn(async () => false),
@@ -1515,7 +1521,10 @@ describe('scheduled resume capacity', () => {
             maxPerUser: 10,
             minIntervalMinutes: 60,
             autoDisableAfterFailures: 5,
+            admissionConcurrency: 20,
             fireConcurrency: 1,
+            mcpPreflightConcurrency: 3,
+            mcpPreflightTimeoutMs: 300_000,
             ...(over.projectConfig ?? {}),
           },
         },
@@ -1524,6 +1533,7 @@ describe('scheduled resume capacity', () => {
       findBalance: jest.fn(async () => null),
       upsertBalance: jest.fn(async () => null),
       initializeNullBalance: jest.fn(async () => null),
+      preflightMCP: jest.fn().mockResolvedValue([]),
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       getChatProject: jest.fn(async () => ('project' in over ? over.project : { _id: 'proj-1' })),
       isUserDeleting: jest.fn(async () => false),
@@ -1666,10 +1676,18 @@ describe('deployment-wide limits', () => {
   it('resolves a principal-less getLimits from the BASE config only', async () => {
     const getAppConfig = jest.fn(async (options?: { baseOnly?: boolean }) =>
       options?.baseOnly === true
-        ? { interfaceConfig: { schedules: { use: true, fireConcurrency: 1 } } }
+        ? {
+            interfaceConfig: {
+              schedules: { use: true, fireConcurrency: 1, mcpPreflightConcurrency: 3 },
+            },
+          }
         : // The principal/tenant-merged view. A bare getAppConfig() resolves THIS,
           // including whatever tenant the ALS context happens to carry.
-          { interfaceConfig: { schedules: { use: true, fireConcurrency: 5 } } },
+          {
+            interfaceConfig: {
+              schedules: { use: true, fireConcurrency: 5, mcpPreflightConcurrency: 3 },
+            },
+          },
     ) as unknown as SchedulesServiceDeps['getAppConfig'];
     const service = makeService(noRuns(), getAppConfig);
     const limits = await service.getLimits();
