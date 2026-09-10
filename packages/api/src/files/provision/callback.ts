@@ -290,7 +290,7 @@ export function createProvisionFilesCallback({
           const isTargetScope =
             ref != null &&
             ref.kind === (entityId ? 'agent' : 'user') &&
-            ref.id === (entityId ?? req.user.id);
+            ref.id === (entityId ?? req.user?.id);
           let storedName = recovery?.isTargetScope ? recovery.name : undefined;
           if (isTargetScope) storedName = ref?.sandboxFilename;
           // Prefix conflicts are independent recoverable inputs; only equal stored paths
