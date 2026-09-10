@@ -88,7 +88,7 @@ export type ProvisionState = {
   /** Files that need uploading to the code execution environment */
   codeEnvFiles: TFile[];
   /** Names from cleared refs on this state's active route; never reusable storage pointers. */
-  codeEnvRecoveryNames?: Map<string, string>;
+  codeEnvRecoveryNames?: Map<string, { name: string; isTargetScope: boolean }>;
   /** Files that need embedding into the vector DB for file_search */
   vectorDBFiles: TFile[];
   /** Set of file_ids confirmed alive in code env (from staleness check) */
@@ -516,7 +516,7 @@ const computeProvisionState = async ({
 
   const scopedIds = agentScopedFileIds ?? new Set<string>();
   const codeEnvFiles: TFile[] = [];
-  const codeEnvRecoveryNames = new Map<string, string>();
+  const codeEnvRecoveryNames: NonNullable<ProvisionState['codeEnvRecoveryNames']> = new Map();
   const vectorDBFiles: TFile[] = [];
 
   for (const file of provisionable) {
@@ -559,7 +559,10 @@ const computeProvisionState = async ({
        *  keeps resolving the dead session over the re-provisioned one. */
       if (isStale) {
         if (routeRef?.sandboxFilename) {
-          codeEnvRecoveryNames.set(file.file_id, routeRef.sandboxFilename);
+          codeEnvRecoveryNames.set(file.file_id, {
+            name: routeRef.sandboxFilename,
+            isTargetScope: hasCodeRefForRoute(file, activeCodeRouteKey, codeScope),
+          });
         }
         logger.info(
           `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,

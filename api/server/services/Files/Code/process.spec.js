@@ -4159,7 +4159,7 @@ describe('Code Process', () => {
       }));
       mockAxios.mockImplementation(async ({ url }) =>
         url.includes('sess-newer')
-          ? { data: { lastModified: new Date().toISOString() } }
+          ? { data: { lastModified: new Date().toISOString(), originalFilename: 'image.png' } }
           : { data: { originalFilename: 'image.png' } },
       );
       getFiles.mockResolvedValue([

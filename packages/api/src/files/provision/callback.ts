@@ -264,21 +264,41 @@ export function createProvisionFilesCallback({
         (ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>)[
           EToolResources.execute_code
         ]?.files ?? [];
-      const confirmedDestinations = createCodeDestinationSet();
+      const routePrivateFileIds = new Set<string>();
+      for (const candidate of agentToolContexts.values()) {
+        const route =
+          candidate.codeExecutionContext?.executionRouteKey ??
+          candidate.codeExecutionContext?.executionProfile ??
+          'default';
+        if (route !== codeRouteKey) continue;
+        for (const id of candidate.provisionState?.agentScopedFileIds ?? [])
+          routePrivateFileIds.add(id);
+      }
+      const confirmedDestinations = new Set<string>();
       const queuedCodeFiles = sortCodeFilesByDestinationPriority(
         [
           ...provisionState.codeEnvFiles,
           ...liveFiles.filter((file) => !queuedFileIds.has(file.file_id)),
         ],
-        provisionState.agentScopedFileIds,
+        routePrivateFileIds,
       )
         .filter((file): file is TFile => {
           if (!file) return false;
-          const storedName =
-            getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
-            provisionState.codeEnvRecoveryNames?.get(file.file_id);
-          // A confirmed collision is superseded content, not an independent upload.
-          return storedName == null || reserveCodeDestination(confirmedDestinations, storedName);
+          const ref = getCodeEnvRefForProfile(file.metadata, codeRouteKey);
+          const recovery = provisionState.codeEnvRecoveryNames?.get(file.file_id);
+          const entityId = entityIdForFile(file);
+          const isTargetScope =
+            ref != null &&
+            ref.kind === (entityId ? 'agent' : 'user') &&
+            ref.id === (entityId ?? req.user.id);
+          let storedName = recovery?.isTargetScope ? recovery.name : undefined;
+          if (isTargetScope) storedName = ref?.sandboxFilename;
+          // Prefix conflicts are independent recoverable inputs; only equal stored paths
+          // identify superseded content. Foreign-scope refs are claimable hints too.
+          if (storedName == null) return true;
+          if (confirmedDestinations.has(storedName)) return false;
+          confirmedDestinations.add(storedName);
+          return true;
         })
         .filter((file) => queuedFileIds.has(file.file_id));
       /** Every file in this tool-load batch shares one wait allowance. This
@@ -319,7 +339,7 @@ export function createProvisionFilesCallback({
             getCodeEnvUploadFilename(
               resolveSandboxFilename(
                 getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
-                  provisionState.codeEnvRecoveryNames?.get(file.file_id) ??
+                  provisionState.codeEnvRecoveryNames?.get(file.file_id)?.name ??
                   file.filename,
                 file.type,
               ),

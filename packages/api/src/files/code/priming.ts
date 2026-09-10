@@ -147,8 +147,7 @@ export async function selectCodeFiles({
       const destination = recovering
         ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
         : sandboxName;
-      const assignRecoveryName =
-        !ref || (recovering && (!storedName || destination !== storedName));
+      const assignRecoveryName = !ref || recovering;
       return {
         file,
         ref,
@@ -157,19 +156,22 @@ export async function selectCodeFiles({
         sandboxName: destination,
         storedName: ref ? storedName : undefined,
         assignRecoveryName,
-        selectionPriority: (privateFileIds?.has(file.file_id) ? 2 : 0) + Number(assignRecoveryName),
+        selectionPriority:
+          (privateFileIds?.has(file.file_id) ? 2 : 0) +
+          Number(!ref || (recovering && (!storedName || destination !== storedName))),
         getUploadTime: async () => info?.lastModified,
       };
     }),
   );
   /** Collapse confirmed source-path collisions before renaming recovery files.
    * Distinct old paths that normalize alike are independent inputs, not superseded copies. */
-  const storedDestinations = createCodeDestinationSet();
+  const storedDestinations = new Set<string>();
   const surviving = resolved.filter((candidate) => {
-    if (candidate.storedName && !reserveCodeDestination(storedDestinations, candidate.storedName)) {
+    if (candidate.storedName && storedDestinations.has(candidate.storedName)) {
       skippedSuperseded++;
       return false;
     }
+    if (candidate.storedName) storedDestinations.add(candidate.storedName);
     return true;
   });
   /** Keep shared files independent of each agent's private set. Within each

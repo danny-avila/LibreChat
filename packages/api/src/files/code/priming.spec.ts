@@ -91,6 +91,19 @@ describe('selectCodeFiles', () => {
     expect(result.selected.map((f) => f.file.file_id)).toEqual(['shared']);
   });
 
+  it('recovers distinct expired paths with a directory-prefix conflict', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        file('parent', 'reports', { sandboxFilename: 'reports' }),
+        file('child', 'reports/data.csv', { sandboxFilename: 'reports/data.csv' }),
+      ],
+      routeKey: 'default',
+      getFileInfo: async () => null,
+    });
+    expect(result.selected).toHaveLength(2);
+    expect(new Set(result.selected.map((f) => f.sandboxName)).size).toBe(2);
+  });
+
   it('recovers every expired legacy input under a distinct persisted destination', async () => {
     const originals = [file('older', 'rows.csv'), file('newer', 'rows.csv', {}, 2)];
     const recovered = await selectCodeFiles({

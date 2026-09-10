@@ -172,7 +172,9 @@ describe('createProvisionFilesCallback', () => {
 
   it('recovers a cleared reference under its saved route name', async () => {
     const pending = state([makeFile()], []);
-    pending.codeEnvRecoveryNames = new Map([['file-1', 'saved-alias.csv']]);
+    pending.codeEnvRecoveryNames = new Map([
+      ['file-1', { name: 'saved-alias.csv', isTargetScope: true }],
+    ]);
     const { provisionFiles, provisionToCodeEnv } = buildHarness({
       contexts: [['agent-a', { provisionState: pending }]],
     });
@@ -229,8 +231,8 @@ describe('createProvisionFilesCallback', () => {
     const newer = makeFile({ file_id: 'newer', createdAt: '2026-02-01' });
     const pending = state([older, newer], []);
     pending.codeEnvRecoveryNames = new Map([
-      ['older', 'data.csv'],
-      ['newer', 'data.csv'],
+      ['older', { name: 'data.csv', isTargetScope: true }],
+      ['newer', { name: 'data.csv', isTargetScope: true }],
     ]);
     const { provisionFiles, provisionToCodeEnv } = buildHarness({
       contexts: [['agent-a', { provisionState: pending }]],
@@ -260,7 +262,7 @@ describe('createProvisionFilesCallback', () => {
       },
     });
     const pending = state([older], []);
-    pending.codeEnvRecoveryNames = new Map([['older', 'data.csv']]);
+    pending.codeEnvRecoveryNames = new Map([['older', { name: 'data.csv', isTargetScope: true }]]);
     const { provisionFiles, provisionToCodeEnv } = buildHarness({
       contexts: [
         [
@@ -272,6 +274,78 @@ describe('createProvisionFilesCallback', () => {
     await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
     expect(provisionToCodeEnv).not.toHaveBeenCalled();
     expect(pending.codeEnvFiles).toHaveLength(0);
+  });
+
+  it('keeps recoverable prefix conflicts as separate inputs', async () => {
+    const pending = state([makeFile({ file_id: 'parent' }), makeFile({ file_id: 'child' })], []);
+    pending.codeEnvRecoveryNames = new Map([
+      ['parent', { name: 'reports', isTargetScope: true }],
+      ['child', { name: 'reports/data.csv', isTargetScope: true }],
+    ]);
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [['agent-a', { provisionState: pending }]],
+    });
+    const result = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    expect(provisionToCodeEnv).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(2);
+    expect(new Set(result.map((f) => f.name)).size).toBe(2);
+  });
+
+  it.each([false, true])(
+    'aliases foreign-scope names instead of suppressing inputs (cleared=%s)',
+    async (cleared) => {
+      const foreign = makeFile({
+        file_id: 'foreign',
+        metadata: {
+          codeEnvRef: {
+            kind: 'agent',
+            id: 'another-agent',
+            storage_session_id: 'foreign-session',
+            file_id: 'foreign-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      });
+      const own = makeFile({ file_id: 'own' });
+      const pending = state([foreign, own], []);
+      pending.codeEnvRecoveryNames = new Map([['own', { name: 'data.csv', isTargetScope: true }]]);
+      if (cleared) {
+        foreign.metadata = {};
+        pending.codeEnvRecoveryNames.set('foreign', { name: 'data.csv', isTargetScope: false });
+      }
+      const { provisionFiles, provisionToCodeEnv } = buildHarness({
+        contexts: [['agent-a', { provisionState: pending }]],
+      });
+      const result = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+      expect(provisionToCodeEnv).toHaveBeenCalledTimes(2);
+      expect(new Set(result.map((f) => f.name)).size).toBe(2);
+    },
+  );
+
+  it('uses route-wide ownership priority for confirmed recovery duplicates', async () => {
+    const privateFile = makeFile({ file_id: 'private', createdAt: '2026-02-01' });
+    const shared = makeFile({ file_id: 'shared', createdAt: '2026-01-01' });
+    const a = state([{ ...privateFile }, { ...shared }], [], ['private']);
+    const b = state([{ ...privateFile }, { ...shared }], []);
+    for (const pending of [a, b])
+      pending.codeEnvRecoveryNames = new Map([
+        ['private', { name: 'data.csv', isTargetScope: true }],
+        ['shared', { name: 'data.csv', isTargetScope: true }],
+      ]);
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: a }],
+        ['agent-b', { provisionState: b }],
+      ],
+    });
+    await Promise.all([
+      provisionFiles([Constants.EXECUTE_CODE], 'agent-a'),
+      provisionFiles([Constants.EXECUTE_CODE], 'agent-b'),
+    ]);
+    expect(provisionToCodeEnv).toHaveBeenCalledTimes(1);
+    expect(provisionToCodeEnv).toHaveBeenCalledWith(
+      expect.objectContaining({ file: expect.objectContaining({ file_id: 'shared' }) }),
+    );
   });
 
   it('returns the provisioned refs so the batch can inject them', async () => {
