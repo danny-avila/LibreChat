@@ -43,6 +43,7 @@ const {
   resolveAgentWorkspaceRestoreConfiguration,
   shouldValidateAgentWorkspaceDefaultBinding,
   validateAgentWorkspaceDefaultBinding,
+  marketplaceMineFilter,
   resolveMarketplaceListQuery,
 } = require('@librechat/api');
 const {
@@ -1712,8 +1713,9 @@ const deleteAgentHandler = async (req, res) => {
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
  * @param {string} [req.query.user] - The user ID of the agent's author.
- * @param {string} [req.query.sort] - One of 'newest' | 'oldest' | 'popular' | 'author';
- *   invalid or missing values fall back to 'newest'.
+ * @param {string} [req.query.sort] - One of 'newest' | 'oldest' | 'popular' | 'author'.
+ *   Invalid, repeated and missing values leave the order unset, so the endpoint keeps
+ *   serving its most-recently-edited order; the marketplace asks for 'newest' explicitly.
  * @param {string} [req.query.mine] - '1' to restrict results to agents authored by the
  *   caller; any other value is ignored.
  * @returns {Promise<AgentListResponse>} 200 - success response - application/json
@@ -1722,7 +1724,8 @@ const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
     const { category, search, limit = 100, cursor, promoted } = req.query;
-    const { sort: sortMode, mineOnly } = resolveMarketplaceListQuery(req.query);
+    const listQuery = resolveMarketplaceListQuery(req.query);
+    const sortMode = listQuery.sort;
     let requiredPermission = req.query.requiredPermission;
     if (typeof requiredPermission === 'string') {
       requiredPermission = parseInt(requiredPermission, 10);
@@ -1754,12 +1757,9 @@ const getListAgentsHandler = async (req, res) => {
       filter.is_promoted = { $ne: true };
     }
 
-    // "Only my agents" filter - narrows to agents authored by the caller, on top of
-    // (not instead of) the ACL-resolved `accessibleIds` below. No tenant/role logic
-    // here: it's a plain author match, same as any other `filter` field.
-    if (mineOnly) {
-      filter.author = userId;
-    }
+    // "Only my agents": the contribution comes from `marketplaceMineFilter`, which owns
+    // what the filter says; this merges it on top of the ACL-resolved `accessibleIds`.
+    Object.assign(filter, marketplaceMineFilter(listQuery, userId));
 
     // Handle search filter (escape regex and cap length)
     if (search && search.trim() !== '') {

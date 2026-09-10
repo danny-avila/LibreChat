@@ -38,6 +38,7 @@ export * from './reads';
 export * from './updates';
 export * from './mcpIdentity';
 export * from './orphans';
+export * from './ownerContact';
 export * from './migration';
 export * from './parameters';
 export * from './plan';
