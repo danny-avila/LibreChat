@@ -3955,13 +3955,11 @@ describe('Code Process', () => {
     });
 
     it('normalizes a recovered nested path and advertises the upload receipt name', async () => {
-      const upload = jest
-        .fn()
-        .mockResolvedValue({
-          storage_session_id: 'recovered',
-          file_id: 'receipt-id',
-          filename: 'accepted.csv',
-        });
+      const upload = jest.fn().mockResolvedValue({
+        storage_session_id: 'recovered',
+        file_id: 'receipt-id',
+        filename: 'accepted.csv',
+      });
       getStrategyFunctions.mockImplementation(() => ({
         getDownloadStream: jest.fn().mockResolvedValue('stream'),
         handleFileUpload: upload,
