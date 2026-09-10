@@ -31,9 +31,7 @@ export function isEnabled(value?: string | boolean | null | undefined): boolean 
  * Like {@link isEnabled}, but missing or blank values stay unset so the caller
  * can apply its own default instead of forcing `false`.
  */
-export function optionalEnabled(
-  value?: string | boolean | null | undefined,
-): boolean | undefined {
+export function optionalEnabled(value?: string | boolean | null | undefined): boolean | undefined {
   if (typeof value === 'boolean') {
     return value;
   }
