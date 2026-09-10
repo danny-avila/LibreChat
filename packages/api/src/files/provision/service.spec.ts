@@ -23,6 +23,7 @@ jest.mock('@librechat/agents', () => ({
 
 import { createCodeApiUploadRegistry } from '~/utils';
 import { createProvisionService } from './service';
+import { selectCodeFiles } from '../code/priming';
 
 const req = {
   user: { id: 'u1' },
@@ -132,6 +133,43 @@ describe('createProvisionService', () => {
         expect.objectContaining({ filename: 'photo.webp' }),
       );
       expect(result.referenceSet.codeEnvRefs?.default?.file_id).toBe('remote-1');
+      expect(result.refUpdate.ref.sandboxFilename).toBe('photo.webp');
+      expect(result.referenceSet.codeEnvRef?.sandboxFilename).toBe('photo.webp');
+    });
+
+    it('persists an assigned alias and preserves it through the next priming pass', async () => {
+      const { service } = buildService();
+      const original = makeFile();
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: original,
+        sandboxFilename: 'data-alias.csv',
+      });
+      const { selected } = await selectCodeFiles({
+        files: [{ ...original, metadata: { ...original.metadata, ...result.referenceSet } }],
+        routeKey: 'default',
+        getFileInfo: async () => null,
+      });
+      expect(result.refUpdate.ref.sandboxFilename).toBe('data-alias.csv');
+      expect(selected[0].sandboxName).toBe('data-alias.csv');
+    });
+
+    it('persists the adapter receipt after normalizing a nested upload name', async () => {
+      const { service, uploadCodeEnvFile } = buildService();
+      uploadCodeEnvFile.mockResolvedValue({
+        storage_session_id: 's1',
+        file_id: 'remote-1',
+        filename: 'file.csv',
+      });
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: makeFile({ filename: 'my dir/file.csv' }),
+      });
+      expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'file.csv' }),
+      );
+      expect(result.refUpdate.ref.sandboxFilename).toBe('file.csv');
+      expect(result.sandboxFilename).toBe('file.csv');
     });
 
     it('refuses a source whose download contract differs', async () => {
