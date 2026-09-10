@@ -336,6 +336,26 @@ describe('EditMessage', () => {
     expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
   });
 
+  /** The rerun-discards-changes warning describes an action this editor does not
+   *  offer, so a save-only editor reports unsaved changes instead. */
+  it('reports unsaved changes rather than a discarded rerun when no rerun is offered', async () => {
+    const user = userEvent.setup();
+    const chainedAnswer = {
+      messageId: 'assistant-2',
+      parentMessageId: assistantMessage.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'A second answer with no user turn behind it',
+    } as TMessage;
+    mockGetMessages.mockReturnValue([message, assistantMessage, chainedAnswer]);
+    renderEditor({ editedMessage: chainedAnswer });
+
+    await user.type(screen.getByTestId('message-text-editor'), ' edited');
+
+    expect(screen.getByText('com_ui_unsaved_changes')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_rerun_discards_changes')).toBeNull();
+  });
+
   /** A response cancelled before its first token is exactly what needs rerunning, and
    *  the form marks text required so Save cannot blank a message. Routing the rerun
    *  through that validation left the enabled button inert. */

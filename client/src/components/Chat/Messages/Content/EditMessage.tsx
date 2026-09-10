@@ -252,8 +252,14 @@ const EditMessage = ({
             className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
             aria-live="polite"
           >
+            {/* An answer's draft is discarded by the rerun, which is worth saying only
+                while a rerun is on offer; a save-only editor reports unsaved changes. */}
             {isDirty
-              ? localize(isUserTurn ? 'com_ui_unsaved_changes' : 'com_ui_rerun_discards_changes')
+              ? localize(
+                  isUserTurn || !canRerun
+                    ? 'com_ui_unsaved_changes'
+                    : 'com_ui_rerun_discards_changes',
+                )
               : ''}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">

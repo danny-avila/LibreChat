@@ -99,7 +99,6 @@ export default function EditContentParts({
     [changedParts, drafts],
   );
   const editedMessage = findMessageById(getMessages(), messageId);
-  const rerunRequiresSave = editedMessage?.isCreatedByUser !== true && changedParts.length > 1;
   const isBusy = isSubmitting || isSaving;
   /** A rerun replays the parent as the turn's user message, so a model turn chained
    *  onto another model turn — an imported or restored thread — has none. The action
@@ -108,6 +107,11 @@ export default function EditContentParts({
   const canRerun =
     editedMessage?.isCreatedByUser === true ||
     findMessageById(getMessages(), editedMessage?.parentMessageId)?.isCreatedByUser !== false;
+  /** Only meaningful while a rerun is on offer: it explains why this one is held
+   *  back until the edits are saved. A save-only editor reports unsaved changes
+   *  instead of an unavailable action's precondition. */
+  const rerunRequiresSave =
+    canRerun && editedMessage?.isCreatedByUser !== true && changedParts.length > 1;
 
   useEffect(() => {
     const editor = firstEditorRef.current;
