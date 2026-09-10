@@ -336,10 +336,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   const ScheduleRun = () => mongoose.models.ScheduleRun as Model<IScheduleRunDocument>;
 
   /**
-   * Explicitly builds the Schedule/ScheduleRun indexes. Required because the
-   * standard production setting `MONGO_AUTO_INDEX=` (empty) disables Mongoose's
-   * automatic index creation — without this the unique idempotency index and the
-   * TTL retention index would never exist. Called once before the engine starts.
+   * Explicitly builds the Schedule/ScheduleRun indexes. Required because
+   * `MONGO_AUTO_INDEX=false` disables Mongoose's automatic index creation —
+   * without this the unique idempotency index and the TTL retention index would
+   * never exist. Called once before the engine starts.
    */
   async function ensureScheduleIndexes(): Promise<void> {
     await createIndexesWithRetry(Schedule());
