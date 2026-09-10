@@ -18,6 +18,15 @@ export class OAuthReconnectionManager {
   protected readonly flowManager: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods: TokenMethods;
   private readonly mcpManager: MCPManager | null;
+  private readonly onOAuthCredentialsChanged?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<void>;
+
+  private readonly onOAuthCredentialsChanging?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<() => Promise<void>>;
 
   private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
@@ -32,12 +41,23 @@ export class OAuthReconnectionManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
+    onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
+    onOAuthCredentialsChanging?: (scope: {
+      userId: string;
+      serverName: string;
+    }) => Promise<() => Promise<void>>,
   ): Promise<OAuthReconnectionManager> {
     if (OAuthReconnectionManager.instance != null) {
       throw new Error('OAuthReconnectionManager already initialized');
     }
 
-    const manager = new OAuthReconnectionManager(flowManager, tokenMethods, reconnections);
+    const manager = new OAuthReconnectionManager(
+      flowManager,
+      tokenMethods,
+      reconnections,
+      onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging,
+    );
     OAuthReconnectionManager.instance = manager;
 
     return manager;
@@ -47,10 +67,17 @@ export class OAuthReconnectionManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
+    onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
+    onOAuthCredentialsChanging?: (scope: {
+      userId: string;
+      serverName: string;
+    }) => Promise<() => Promise<void>>,
   ) {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;
     this.reconnectionsTracker = reconnections ?? new OAuthReconnectionTracker();
+    this.onOAuthCredentialsChanged = onOAuthCredentialsChanged;
+    this.onOAuthCredentialsChanging = onOAuthCredentialsChanging;
 
     try {
       this.mcpManager = MCPManager.getInstance();
@@ -196,6 +223,12 @@ export class OAuthReconnectionManager {
         serverConfig: config,
         flowManager: this.flowManager,
         tokenMethods: this.tokenMethods,
+        ...(this.onOAuthCredentialsChanged && {
+          onOAuthCredentialsChanged: this.onOAuthCredentialsChanged,
+        }),
+        ...(this.onOAuthCredentialsChanging && {
+          onOAuthCredentialsChanging: this.onOAuthCredentialsChanging,
+        }),
         // don't force new connection, let it reuse existing or create new as needed
         forceNew: false,
         // set a reasonable timeout for reconnection attempts

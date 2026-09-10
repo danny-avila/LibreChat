@@ -27,6 +27,7 @@ import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } fro
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
+import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
@@ -72,12 +73,26 @@ type OAuthReconnectResult =
 const OAUTH_RECOVERY_RECONNECT_ATTEMPTS = 3;
 const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
 
+function getDiscoveryAuthenticationKind(
+  serverConfig: t.ParsedServerConfig,
+  observedOAuthRequired = false,
+): 'oauth' | 'obo' | 'server' {
+  if (serverConfig.obo != null) {
+    return 'obo';
+  }
+  return isOAuthServer(serverConfig) ||
+    (observedOAuthRequired && serverConfig.requiresOAuth !== false)
+    ? 'oauth'
+    : 'server';
+}
+
 /**
  * Centralized manager for MCP server connections and tool execution.
  * Extends UserConnectionManager to handle both app-level and user-specific connections.
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly catalogRecoveryTracker: MCPServerCatalogRecoveryTracker;
   private readonly recoveryCancellation = new WeakMap<
     Promise<void>,
     { controller: AbortController; waiters: number; connection: MCPConnection }
@@ -95,10 +110,20 @@ export class MCPManager extends UserConnectionManager {
     }
   >();
 
+  constructor(catalogRecoveryMaxStateEntries?: number) {
+    super();
+    this.catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker(
+      catalogRecoveryMaxStateEntries,
+    );
+  }
+
   /** Creates and initializes the singleton MCPManager instance */
-  public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
+  public static async createInstance(
+    configs: t.MCPServers,
+    options?: { catalogRecoveryMaxStateEntries?: number },
+  ): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
-    MCPManager.instance = new MCPManager();
+    MCPManager.instance = new MCPManager(options?.catalogRecoveryMaxStateEntries);
     await MCPManager.instance.initialize(configs);
     return MCPManager.instance;
   }
@@ -113,6 +138,25 @@ export class MCPManager extends UserConnectionManager {
   public async initialize(configs: t.MCPServers): Promise<void> {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
+  }
+
+  public getCatalogRecoveryTracker(): MCPServerCatalogRecoveryTracker {
+    return this.catalogRecoveryTracker;
+  }
+
+  public clearCatalogRecoveryState(userId: string, serverName?: string): void {
+    this.catalogRecoveryTracker.clear(userId, serverName);
+  }
+
+  public override async disconnectUserConnection(
+    userId: string,
+    serverName: string,
+    options?: Parameters<UserConnectionManager['disconnectUserConnection']>[2],
+  ): Promise<void> {
+    if ((options?.reason ?? 'mutation') === 'mutation') {
+      this.clearCatalogRecoveryState(userId, serverName);
+    }
+    await super.disconnectUserConnection(userId, serverName, options);
   }
 
   public override async getUserConnection(
@@ -433,6 +477,9 @@ export class MCPManager extends UserConnectionManager {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
+        ...(result.oauthRequired && {
+          authenticationKind: getDiscoveryAuthenticationKind(serverConfig, true),
+        }),
       };
     };
 
@@ -452,7 +499,12 @@ export class MCPManager extends UserConnectionManager {
 
     if (!user || !args.flowManager) {
       logger.warn('[MCP][Discovery] OAuth server requires a user and flow manager');
-      return { tools: null, oauthRequired: true, oauthUrl: null };
+      return {
+        tools: null,
+        oauthRequired: true,
+        oauthUrl: null,
+        authenticationKind: getDiscoveryAuthenticationKind(serverConfig),
+      };
     }
 
     const result = await MCPConnectionFactory.discoverTools(basic, {
@@ -467,6 +519,8 @@ export class MCPManager extends UserConnectionManager {
       graphTokenResolver: args.graphTokenResolver,
       connectionTimeout: args.connectionTimeout,
       deadlineMs: args.deadlineMs,
+      onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,
@@ -777,6 +831,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     upstreamTokenProvider,
     oboIdentityContext,
+    onOAuthCredentialsChanged,
+    onOAuthCredentialsChanging,
     signal,
     directBearerRecoveryState = { attempted: true },
   }: {
@@ -794,6 +850,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
+    onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
+    onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
     signal?: AbortSignal;
     directBearerRecoveryState?: t.DirectBearerRecoveryState;
   }): Promise<void> {
@@ -851,6 +909,8 @@ Please follow these instructions when using tools from the respective MCP server
           graphTokenResolver,
           upstreamTokenProvider,
           oboIdentityContext,
+          onOAuthCredentialsChanged,
+          onOAuthCredentialsChanging,
           directBearerRecoveryState,
           directBearerResolvedConfig: refreshedConfig,
           signal: recoverySignal,
@@ -1023,6 +1083,8 @@ Please follow these instructions when using tools from the respective MCP server
     oboTrustChecker,
     upstreamTokenProvider,
     oboIdentityContext,
+    onOAuthCredentialsChanged,
+    onOAuthCredentialsChanging,
   }: {
     user?: IUser;
     serverName: string;
@@ -1044,6 +1106,8 @@ Please follow these instructions when using tools from the respective MCP server
     oboTrustChecker?: OboTrustChecker;
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
+    onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
+    onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -1106,6 +1170,8 @@ Please follow these instructions when using tools from the respective MCP server
             oboTrustChecker,
             upstreamTokenProvider,
             oboIdentityContext,
+            onOAuthCredentialsChanged,
+            onOAuthCredentialsChanging,
             graphTokenResolver,
             signal: options?.signal,
             customUserVars,
@@ -1298,6 +1364,8 @@ Please follow these instructions when using tools from the respective MCP server
                 oauthEnd: relay.end,
                 customUserVars,
                 requestBody,
+                onOAuthCredentialsChanged,
+                onOAuthCredentialsChanging,
               },
               connection!,
             );
@@ -1347,6 +1415,8 @@ Please follow these instructions when using tools from the respective MCP server
             graphTokenResolver,
             upstreamTokenProvider,
             oboIdentityContext,
+            onOAuthCredentialsChanged,
+            onOAuthCredentialsChanging,
             signal: options?.signal,
             directBearerRecoveryState,
           });
@@ -1435,6 +1505,8 @@ Please follow these instructions when using tools from the respective MCP server
               graphTokenResolver,
               upstreamTokenProvider,
               oboIdentityContext,
+              onOAuthCredentialsChanged,
+              onOAuthCredentialsChanging,
               signal: options?.signal,
               directBearerRecoveryState,
             });

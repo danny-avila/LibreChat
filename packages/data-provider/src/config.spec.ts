@@ -917,6 +917,58 @@ describe('allowedAddressesSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('defaults and validates MCP catalog recovery controls', () => {
+      const defaults = configSchema.parse({ version: '1.0', mcpSettings: {} });
+      expect(defaults.mcpSettings?.catalogRecovery).toEqual({
+        discoveryBackoffMs: [300_000, 600_000, 1_200_000, 1_800_000],
+        discoveryTimeoutMs: 3_000,
+        reauthRetryMs: 1_800_000,
+        maxStateEntries: 10_000,
+        generationReadTimeoutMs: 500,
+        authorizationFenceRetryMs: [0, 50, 200],
+        authorizationFenceTimeoutMs: 1_000,
+        authorizationFenceRetryIntervalMs: 30_000,
+        authorizationFenceRetryBatchSize: 100,
+      });
+
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { discoveryBackoffMs: [] } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { discoveryTimeoutMs: 0 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryMs: [-1] } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceTimeoutMs: 0 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryIntervalMs: 0 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryBatchSize: 0 } },
+        }).success,
+      ).toBe(false);
+    });
+
     it('accepts the field on actions', () => {
       const result = configSchema.safeParse({
         version: '1.0',

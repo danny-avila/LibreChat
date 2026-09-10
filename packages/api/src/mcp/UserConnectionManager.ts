@@ -584,6 +584,8 @@ export abstract class UserConnectionManager {
       oboTrustChecker,
       upstreamTokenProvider,
       oboIdentityContext,
+      onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging,
       signal,
       returnOnOAuth = false,
       connectionTimeout,
@@ -823,6 +825,8 @@ export abstract class UserConnectionManager {
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
+          onOAuthCredentialsChanged,
+          onOAuthCredentialsChanging,
         };
       } else {
         connectionOptions = {

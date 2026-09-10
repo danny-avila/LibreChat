@@ -7,7 +7,12 @@
 
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
-import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import {
+  MCPTokenStorage,
+  MCPTokenRefreshUnavailableError,
+  MCPTokenStorageUnavailableError,
+  ReauthenticationRequiredError,
+} from '~/mcp/oauth';
 import { InMemoryTokenStore } from './helpers/oauthTestServer';
 
 const credentialSetId = 'credential-set-a';
@@ -275,6 +280,23 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('storeTokens', () => {
+    it('persists fence intent before writing the first token row', async () => {
+      const onStorePreparing = jest.fn().mockResolvedValue(undefined);
+      const createToken = jest.fn(store.createToken);
+
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: { access_token: 'at1', token_type: 'Bearer' },
+        createToken,
+        onStorePreparing,
+      });
+
+      expect(onStorePreparing.mock.invocationCallOrder[0]).toBeLessThan(
+        createToken.mock.invocationCallOrder[0],
+      );
+    });
+
     it('keeps the trusted flow generation when provider metadata supplies a conflicting ID', async () => {
       const result = await MCPTokenStorage.storeTokens({
         userId: 'u1',
@@ -975,6 +997,21 @@ describe('MCPTokenStorage', () => {
       expect(result!.token_type).toBe('Bearer');
     });
 
+    it('reports token-store outages separately from reauthentication', async () => {
+      const storageError = new Error('database unavailable');
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: jest.fn().mockRejectedValue(storageError),
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenStorageUnavailableError',
+        cause: storageError,
+      } satisfies Partial<MCPTokenStorageUnavailableError>);
+    });
+
     it('rejects an access token read before a concurrent client generation replacement', async () => {
       await createBoundToken(store, {
         userId: 'u1',
@@ -1133,7 +1170,7 @@ describe('MCPTokenStorage', () => {
       );
     });
 
-    it('should return null when refresh fails', async () => {
+    it('reports transient refresh failures separately from reauthentication', async () => {
       await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
@@ -1151,16 +1188,18 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('refresh failed'));
 
-      const result = await MCPTokenStorage.getTokens({
-        userId: 'u1',
-        serverName: 'srv1',
-        findToken: store.findToken,
-        createToken: store.createToken,
-        updateToken: store.updateToken,
-        refreshTokens,
-      });
-
-      expect(result).toBeNull();
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          updateToken: store.updateToken,
+          refreshTokens,
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      } satisfies Partial<MCPTokenRefreshUnavailableError>);
     });
 
     it('should return null when no refreshTokens callback provided', async () => {
@@ -1893,7 +1932,7 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).not.toHaveBeenCalled();
     });
 
-    it('should return null when refresh callback throws non-client-rejection error', async () => {
+    it('should throw a retryable error when refresh callback fails transiently', async () => {
       await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
@@ -1904,15 +1943,17 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('network blew up'));
 
-      const result = await MCPTokenStorage.forceRefreshTokens({
-        userId: 'u1',
-        serverName: 'srv1',
-        findToken: store.findToken,
-        createToken: store.createToken,
-        refreshTokens,
-      });
-
-      expect(result).toBeNull();
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          refreshTokens,
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      } satisfies Partial<MCPTokenRefreshUnavailableError>);
     });
 
     it('should throw ReauthenticationRequiredError when refresh fails with invalid_client', async () => {
@@ -2440,8 +2481,8 @@ describe('MCPTokenStorage', () => {
       await waitFor(() => refreshTokens.mock.calls.length === 1);
       rejectRefresh(new Error('network blew up'));
 
-      await expect(first).resolves.toBeNull();
-      await expect(second).resolves.toBeNull();
+      await expect(first).rejects.toThrow(MCPTokenRefreshUnavailableError);
+      await expect(second).rejects.toThrow(MCPTokenRefreshUnavailableError);
 
       refreshTokens.mockResolvedValueOnce(rotatedTokens(2));
       const third = await MCPTokenStorage.forceRefreshTokens(params);
@@ -2472,7 +2513,7 @@ describe('MCPTokenStorage', () => {
 
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
         /** The stale abort settles the stalled execution, which frees the slot. */
-        await expect(stalled).resolves.toBeNull();
+        await expect(stalled).rejects.toThrow(MCPTokenRefreshUnavailableError);
 
         const fresh = await MCPTokenStorage.forceRefreshTokens(params);
         expect(fresh!.access_token).toBe('at-2');
@@ -2510,7 +2551,7 @@ describe('MCPTokenStorage', () => {
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
         releaseRead();
 
-        await expect(stalled).resolves.toBeNull();
+        await expect(stalled).rejects.toThrow(MCPTokenRefreshUnavailableError);
         expect(refreshTokens).not.toHaveBeenCalled();
       } finally {
         jest.useRealTimers();
@@ -2559,6 +2600,65 @@ describe('MCPTokenStorage', () => {
           : storedAccess!.metadata?.credential_set_id;
       expect(callbackTokens.credential_set_id).toBe(storedCredentialSetId);
       expect(callbackTokens.credential_set_id).not.toBe(credentialSetId);
+    });
+
+    it('prepares a durable fence before persisting refreshed token rows', async () => {
+      await seedRefreshableTokens('prepared-srv');
+      const events: string[] = [];
+      const updateToken: TokenMethods['updateToken'] = async (...args) => {
+        events.push('write');
+        return store.updateToken(...args);
+      };
+      const onRefreshPreparing = jest.fn(async () => {
+        events.push('prepare');
+        return async () => {
+          events.push('publish');
+        };
+      });
+
+      await MCPTokenStorage.forceRefreshTokens({
+        ...refreshParams(jest.fn().mockResolvedValue(rotatedTokens(2)), 'prepared-srv'),
+        updateToken,
+        onRefreshPreparing,
+      });
+
+      expect(events[0]).toBe('prepare');
+      expect(events[events.length - 1]).toBe('publish');
+      expect(events).toContain('write');
+      expect(onRefreshPreparing).toHaveBeenCalledTimes(1);
+    });
+
+    it('removes refreshed credentials when their authorization fence cannot be published', async () => {
+      await seedRefreshableTokens('unfenced-srv');
+      const onRefreshSuccess = jest.fn().mockRejectedValue(new Error('generation unavailable'));
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(jest.fn().mockResolvedValue(rotatedTokens(2)), 'unfenced-srv'),
+          onRefreshSuccess,
+        }),
+      ).rejects.toThrow(MCPTokenRefreshUnavailableError);
+
+      expect(onRefreshSuccess).toHaveBeenCalledTimes(1);
+      const rejectedCredentialSetId = onRefreshSuccess.mock.calls[0][0].credential_set_id;
+      expect(
+        store.getAll().some((token) => {
+          const storedId =
+            token.metadata instanceof Map
+              ? token.metadata.get('credential_set_id')
+              : token.metadata?.credential_set_id;
+          return storedId === rejectedCredentialSetId;
+        }),
+      ).toBe(false);
+      expect(
+        store.getAll().some((token) => {
+          const storedId =
+            token.metadata instanceof Map
+              ? token.metadata.get('credential_set_id')
+              : token.metadata?.credential_set_id;
+          return token.type === 'mcp_oauth' && storedId === credentialSetId;
+        }),
+      ).toBe(true);
     });
 
     it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {
