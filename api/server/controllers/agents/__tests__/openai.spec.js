@@ -1310,11 +1310,21 @@ describe('OpenAIChatCompletionController', () => {
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
       expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
-      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
+      expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
+      expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
+      const effectiveSignal = new AbortController().signal;
+      await toolExecuteOptions.loadTools(
+        ['file_search'],
+        'agent-123',
+        undefined,
+        undefined,
+        effectiveSignal,
+      );
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
         expect.objectContaining({
           agentResourceType: ResourceType.REMOTE_AGENT,
           requestBody: initializeParams.requestBody,
+          signal: effectiveSignal,
         }),
       );
     });
