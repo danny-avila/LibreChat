@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { dataService } from 'librechat-data-provider';
+import { dataService, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type t from 'librechat-data-provider';
@@ -213,5 +213,66 @@ describe('AgentGrid pagination', () => {
     });
     expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('retries the cursor page that failed rather than refreshing the pages it already has', async () => {
+    // Refreshing the loaded prefix succeeds without ever fetching the missing page, which
+    // would clear the held failure and let the grid ask for the same cursor again with a
+    // fresh backoff — an unbounded cycle while that page keeps failing.
+    const pending = Promise.withResolvers<t.AgentListResponse>();
+    marketplace
+      .mockResolvedValueOnce(page(makeAgents(32), 'next-page'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'))
+      .mockReturnValueOnce(pending.promise);
+    renderGrid();
+    await screen.findByRole('button', { name: 'Agent 0' });
+    const frame = screen.getByTestId('viewport');
+    act(() => {
+      frame.scrollTop = frame.scrollHeight - frame.clientHeight;
+      fireEvent.scroll(frame);
+    });
+
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(
+      'Cursor page unavailable',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(marketplace).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'next-page' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    await act(async () => {
+      pending.resolve(page(makeAgents(32, 32)));
+      await pending.promise;
+    });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    // The grid returns to the top of the recovered list, so assert its length rather than
+    // a card the virtualizer has scrolled past.
+    expect(screen.getAllByRole('listitem')[0]).toHaveAttribute('aria-setsize', '64');
+  });
+
+  it('clears a failed refresh of the cached pages once a refresh succeeds', async () => {
+    // A refresh failure leaves the page count unchanged, so recovery cannot be read from
+    // the list getting longer: that rule belongs to a failed cursor page alone.
+    marketplace
+      .mockResolvedValueOnce(page(makeAgents(4)))
+      .mockRejectedValueOnce(new Error('Refresh unavailable'))
+      .mockRejectedValueOnce(new Error('Refresh unavailable'))
+      .mockRejectedValueOnce(new Error('Refresh unavailable'))
+      .mockResolvedValueOnce(page(makeAgents(4)));
+    renderGrid();
+    await screen.findByRole('button', { name: 'Agent 0' });
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: [QueryKeys.marketplaceAgents] });
+    });
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(
+      'Refresh unavailable',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 });

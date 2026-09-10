@@ -29,7 +29,7 @@ jest.mock('../AgentDetailContent', () => {
   };
 });
 
-function Harness({ agents }: { agents: t.Agent[] }) {
+function Harness({ agents, placeholder }: { agents: t.Agent[]; placeholder?: React.ReactNode }) {
   const scrollElementRef = useRef<HTMLDivElement>(null);
   return (
     <div ref={scrollElementRef} data-testid="viewport">
@@ -40,6 +40,7 @@ function Harness({ agents }: { agents: t.Agent[] }) {
         hasNextPage={false}
         isFetching={false}
         onLoadMore={jest.fn()}
+        placeholder={placeholder}
       />
     </div>
   );
@@ -113,6 +114,26 @@ describe('VirtualizedAgentGrid', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 0' })).toHaveFocus());
     expect(screen.getAllByRole('listitem').length).toBeLessThan(50);
+  });
+
+  it('keeps an open dialog and a focus target when a refresh empties the grid', async () => {
+    // Access can be revoked, the agent deleted, or a reorder can push it out of the
+    // cached pages while its dialog is open. Tearing the dialog down mid-flight would
+    // leave focus on a card being detached in the same commit.
+    const user = userEvent.setup();
+    const placeholder = <p>{'No agents found'}</p>;
+    const view = render(<Harness agents={makeAgents(3)} />);
+    await user.click(await screen.findByRole('button', { name: 'Agent 0' }));
+    expect(await screen.findByRole('dialog', { name: 'Agent 0' })).toBeInTheDocument();
+
+    view.rerender(<Harness agents={[]} placeholder={placeholder} />);
+
+    expect(screen.getByRole('dialog', { name: 'Agent 0' })).toBeInTheDocument();
+    expect(screen.getByText('No agents found')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close preview' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(document.body.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   it('tabs to the next logical agent even when its row is not currently mounted', async () => {

@@ -42,18 +42,28 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     refetchOnReconnect: false,
     refetchOnMount: false,
   });
-  const defaultCategory = categoriesQuery.data?.some((item) => item.value === 'promoted')
-    ? 'promoted'
-    : 'all';
+  const hasPromotedCategory = categoriesQuery.data?.some((item) => item.value === 'promoted');
+  /* Turning the filter on from Top Picks navigates to `/agents/all`, because an authored
+     agent is rarely promoted. A restored or shared `/agents?mine=1` carries no path
+     category, so defaulting it to `promoted` would answer the same intent with the empty
+     promoted-and-mine intersection instead of the caller's agents. */
+  const defaultCategory = hasPromotedCategory && mine !== 1 ? 'promoted' : 'all';
   const activeCategory = category || defaultCategory;
 
   const handleTabChange = (value: string) => {
     if (value === activeCategory) {
       return;
     }
+    const params = new URLSearchParams(searchParams);
+    /* Top Picks is a curated set, so the filter that sent the user to `/agents/all` when
+       they turned it on is released when they choose Top Picks again. Carrying it here
+       would resolve straight back to All below and make the tab unselectable. */
+    if (value === 'promoted') {
+      params.delete('mine');
+    }
     navigate({
       pathname: value === 'promoted' ? '/agents' : `/agents/${encodeURIComponent(value)}`,
-      search: searchParams.toString(),
+      search: params.toString(),
     });
   };
 
@@ -88,6 +98,13 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       navigate({ pathname: '/agents/all', search: params.toString() });
       return;
     }
+    /* Dropping the filter on a path that carries no category would hand the view back to
+       Top Picks, which is not what turning a filter off means. Name the category the user
+       was already looking at instead. */
+    if (!checked && category == null && activeCategory === 'all') {
+      navigate({ pathname: '/agents/all', search: params.toString() });
+      return;
+    }
     setSearchParams(params);
   };
 
@@ -112,8 +129,14 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       <SidePanelGroup>
         <main
           className="flex h-full min-w-0 flex-col overflow-hidden"
-          aria-label={localize('com_agents_marketplace')}
+          aria-labelledby="marketplace-heading"
         >
+          {/* The compact header has no room for a visible title, but a landmark label is
+              not reachable by heading navigation: without this the document's outline
+              would start at an agent card. */}
+          <h1 id="marketplace-heading" className="sr-only">
+            {localize('com_agents_marketplace')}
+          </h1>
           <div className="shrink-0 border-b border-border-light">
             <div className="flex items-center gap-2 p-3">
               {isSmallScreen && <OpenSidebar className="size-9 shrink-0 rounded-lg" />}

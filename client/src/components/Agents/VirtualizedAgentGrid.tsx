@@ -23,6 +23,14 @@ interface VirtualizedAgentGridProps {
   isFetching: boolean;
   onLoadMore: () => void;
   onSelectAgent?: (agent: t.Agent) => void;
+  /**
+   * Rendered in place of the list whenever the marketplace has something else to say —
+   * no results, or a failure it is recovering from. It lives here rather than beside this
+   * component because this grid owns the detail dialog and the focus it has to hand back:
+   * a parent that swapped the grid out for those states would tear an open dialog down
+   * mid-flight and strand keyboard focus.
+   */
+  placeholder?: React.ReactNode;
 }
 
 const OVERSCAN_ROWS = 2;
@@ -42,8 +50,10 @@ export default function VirtualizedAgentGrid({
   isFetching,
   onLoadMore,
   onSelectAgent,
+  placeholder,
 }: VirtualizedAgentGridProps) {
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
+  const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
   const [layout, setLayout] = useState({ columns: 1, width: 0, gap: 20, margin: 0, estimate: 300 });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -80,6 +90,15 @@ export default function VirtualizedAgentGrid({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Where focus goes when the dialog closes. Normally the card it expanded from, but that
+   * card can be gone before the dialog is — a refresh that revoked access, deleted the
+   * agent, or reordered it out of the cached pages — and the dialog deliberately stays
+   * open on its stored selection. Restoring to a detached button drops keyboard focus out
+   * of the page entirely, so the grid host is the fallback; it outlives both the card and
+   * the list, which the empty state replaces.
+   */
+  const focusReturnRef = useRef<HTMLButtonElement | HTMLDivElement | null>(null);
   const resizeAnchorRef = useRef<number | null>(null);
   const pendingFocusRef = useRef<{ id: string; backwards: boolean } | null>(null);
   const rowCount = Math.ceil(agents.length / layout.columns);
@@ -101,6 +120,17 @@ export default function VirtualizedAgentGrid({
   const liftedRow = liftedIndex == null ? undefined : Math.floor(liftedIndex / layout.columns);
   /** No source card in the list, or reduced motion: the dialog just fades. */
   const morphing = reducedMotion !== true && selection != null && selectedIndex != null;
+  /**
+   * The open dialog reads the row the list holds now, not the one it was opened from: a
+   * background refresh can land a newer description, avatar, support contact or
+   * conversation starter while the dialog is up, and a starter must not launch a chat
+   * with text its owner has already replaced. The snapshot is the fallback for the one
+   * case the list cannot answer — the agent is no longer in it.
+   */
+  let selectedAgent: t.Agent | null = null;
+  if (selection != null) {
+    selectedAgent = selectedIndex != null ? agents[selectedIndex] : selection.agent;
+  }
 
   const getScrollElement = useCallback(() => scrollElementRef.current, [scrollElementRef]);
   const estimateSize = useCallback(() => layout.estimate, [layout.estimate]);
@@ -295,6 +325,12 @@ export default function VirtualizedAgentGrid({
     }
   }, [focusedAgentId, indexById, listElement, virtualRows]);
 
+  /* Runs after every commit so the ref is current when `OGDialog` reads it on close: the
+     card's own trigger while it is mounted, the grid once it is not. */
+  useLayoutEffect(() => {
+    focusReturnRef.current = selectedTriggerRef.current ?? hostElement;
+  });
+
   const rows = windowed
     ? virtualRows
     : Array.from({ length: rowCount }, (_, index) => ({ index, key: getItemKey(index), start: 0 }));
@@ -304,67 +340,79 @@ export default function VirtualizedAgentGrid({
     <OGDialog
       open={selection?.phase === 'open'}
       onOpenChange={handleOpenChange}
-      triggerRef={selectedTriggerRef}
+      triggerRef={focusReturnRef}
     >
-      <div
-        role="list"
-        ref={setListElement}
-        className="relative grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,max(20rem,calc((100%_-_3.75rem)/4))),1fr))] gap-5"
-        style={windowed ? { height: virtualizer.getTotalSize() } : undefined}
-        aria-label={label}
-        onFocusCapture={handleFocus}
-        onKeyDownCapture={handleKeyDown}
-      >
-        {rows.map((row) => {
-          const cards: React.ReactNode[] = [];
-          const end = Math.min((row.index + 1) * layout.columns, agents.length);
-          for (let index = row.index * layout.columns; index < end; index++) {
-            const agent = agents[index];
-            const selected = selection?.agent.id === agent.id;
-            cards.push(
-              <div
-                key={agent.id}
-                role="listitem"
-                aria-posinset={index + 1}
-                aria-setsize={agents.length}
-                data-agent-index={index}
-                className={
-                  agent.id === liftedAgentId ? 'relative h-full min-w-0' : 'h-full min-w-0'
-                }
-                style={agent.id === liftedAgentId ? { zIndex: LIFTED_ROW_Z_INDEX } : undefined}
-              >
-                <AgentCard
-                  agent={agent}
-                  onSelect={handleSelect}
-                  expanded={selected}
-                  morphing={agent.id === liftedAgentId}
-                  surfaceRadius={surfaceRadius}
-                  ref={selected ? selectedTriggerRef : undefined}
-                />
-              </div>,
-            );
-          }
-          return (
-            <div
-              key={row.key}
-              role="presentation"
-              data-index={row.index}
-              ref={virtualizer.measureElement}
-              className={
-                windowed
-                  ? 'absolute left-0 top-0 grid w-full items-stretch gap-5'
-                  : 'relative col-span-full grid items-stretch gap-5'
+      {/* Stays mounted in both states so the dialog always has somewhere to hand focus
+          back to, even when the refresh that removed the selected agent also emptied the
+          marketplace. */}
+      <div ref={setHostElement} tabIndex={-1} className="min-w-0 focus-visible:outline-none">
+        {placeholder != null || agents.length === 0 ? (
+          placeholder
+        ) : (
+          <div
+            role="list"
+            tabIndex={-1}
+            ref={setListElement}
+            className="relative grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,max(20rem,calc((100%_-_3.75rem)/4))),1fr))] gap-5"
+            style={windowed ? { height: virtualizer.getTotalSize() } : undefined}
+            aria-label={label}
+            onFocusCapture={handleFocus}
+            onKeyDownCapture={handleKeyDown}
+          >
+            {rows.map((row) => {
+              const cards: React.ReactNode[] = [];
+              const end = Math.min((row.index + 1) * layout.columns, agents.length);
+              for (let index = row.index * layout.columns; index < end; index++) {
+                const agent = agents[index];
+                const selected = selection?.agent.id === agent.id;
+                cards.push(
+                  <div
+                    key={agent.id}
+                    role="listitem"
+                    aria-posinset={index + 1}
+                    aria-setsize={agents.length}
+                    data-agent-index={index}
+                    className={
+                      agent.id === liftedAgentId ? 'relative h-full min-w-0' : 'h-full min-w-0'
+                    }
+                    style={agent.id === liftedAgentId ? { zIndex: LIFTED_ROW_Z_INDEX } : undefined}
+                  >
+                    <AgentCard
+                      agent={agent}
+                      onSelect={handleSelect}
+                      expanded={selected}
+                      morphing={agent.id === liftedAgentId}
+                      surfaceRadius={surfaceRadius}
+                      ref={selected ? selectedTriggerRef : undefined}
+                    />
+                  </div>,
+                );
               }
-              style={{
-                gridTemplateColumns: columns,
-                ...(windowed ? { transform: `translateY(${row.start - layout.margin}px)` } : {}),
-                ...(row.index === liftedRow ? { zIndex: LIFTED_ROW_Z_INDEX } : {}),
-              }}
-            >
-              {cards}
-            </div>
-          );
-        })}
+              return (
+                <div
+                  key={row.key}
+                  role="presentation"
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  className={
+                    windowed
+                      ? 'absolute left-0 top-0 grid w-full items-stretch gap-5'
+                      : 'relative col-span-full grid items-stretch gap-5'
+                  }
+                  style={{
+                    gridTemplateColumns: columns,
+                    ...(windowed
+                      ? { transform: `translateY(${row.start - layout.margin}px)` }
+                      : {}),
+                    ...(row.index === liftedRow ? { zIndex: LIFTED_ROW_Z_INDEX } : {}),
+                  }}
+                >
+                  {cards}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       {createPortal(
         <AnimatePresence onExitComplete={() => setLiftedAgentId(null)}>
@@ -382,9 +430,9 @@ export default function VirtualizedAgentGrid({
         </AnimatePresence>,
         document.body,
       )}
-      {selection != null && (
+      {selection != null && selectedAgent != null && (
         <AgentDetailContent
-          agent={selection.agent}
+          agent={selectedAgent}
           /* Without a mounted source card — the filters or the search moved on
              — there is nothing to morph from, so the dialog just fades. */
           morph={morphing ? selection.phase : undefined}
