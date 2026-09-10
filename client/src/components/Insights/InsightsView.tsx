@@ -814,7 +814,7 @@ export default function InsightsView() {
                         <Minus className="size-3.5" strokeWidth={2} />
                       )}
                     </span>
-                    <span>{localize('com_ui_agents')}</span>
+                    <span>{localize('com_insights_all_agents_label')}</span>
                     {displayedAgentIds.length > 0 &&
                       displayedAgentIds.length < agentItems.length && (
                         <span className="text-text-secondary">({displayedAgentIds.length})</span>

@@ -183,7 +183,6 @@ export default function MultiSelect<T extends string>({
           )}
         >
           <div className="shrink-0">
-            {popoverHeader}
             {searchPlaceholder && (
               <div className="flex items-center gap-2 border-b border-border-light px-4 py-2">
                 <Search aria-hidden="true" className="size-4 shrink-0 text-text-secondary" />
@@ -196,6 +195,7 @@ export default function MultiSelect<T extends string>({
                 />
               </div>
             )}
+            {popoverHeader}
           </div>
           <SelectList className="min-h-0 overflow-y-auto overscroll-contain">
             {visibleItems.map((item) => {
