@@ -75,6 +75,43 @@ async function openAgentMenu(user: ReturnType<typeof userEvent.setup>) {
 describe('InsightsView agent selection', () => {
   beforeEach(() => {
     mockUseInsightsQuery.mockClear();
+    mockUseInsightsQuery.mockImplementation((params) => ({
+      data: insightsData,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      params,
+    }));
+  });
+
+  it('filters names without changing selection and clears search on close', async () => {
+    mockUseInsightsQuery.mockImplementation((params) => ({
+      data: {
+        ...insightsData,
+        agents: Array.from({ length: 12 }, (_, i) => ({ id: `agent-${i}`, name: `Agent ${i}` })),
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      params,
+    }));
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByText('com_insights_all_agents:12'));
+    const search = screen.getByRole('textbox', { name: 'com_insights_search_agents' });
+    await user.type(search, 'AGENT 11');
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(lastQueryParams().agentIds).toBeUndefined();
+    await user.click(screen.getByRole('button', { name: 'com_ui_clear_all' }));
+    await user.click(screen.getByRole('button', { name: 'com_insights_select_all_agents' }));
+    expect(screen.getByText('com_insights_all_agents:12')).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, 'no match');
+    expect(screen.getByRole('status')).toHaveTextContent('com_insights_no_agents_found');
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByText('com_insights_all_agents:12'));
+    expect(screen.getByRole('textbox', { name: 'com_insights_search_agents' })).toHaveValue('');
+    expect(screen.getAllByRole('option')).toHaveLength(12);
   });
 
   it('clears every agent without committing the empty selection', async () => {
@@ -100,16 +137,6 @@ describe('InsightsView agent selection', () => {
     await user.click(screen.getByRole('option', { name: 'Beta' }));
 
     await waitFor(() => expect(lastQueryParams().agentIds).toEqual(['agent-2']));
-  });
-
-  it('selects one agent with the row shortcut', async () => {
-    const user = userEvent.setup();
-    renderView();
-    await openAgentMenu(user);
-
-    await user.click(screen.getByRole('button', { name: 'com_insights_select_only_agent:Alpha' }));
-
-    await waitFor(() => expect(lastQueryParams().agentIds).toEqual(['agent-1']));
   });
 
   it('restores the committed selection when the menu closes while empty', async () => {

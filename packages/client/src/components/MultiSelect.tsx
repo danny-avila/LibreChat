@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Search } from 'lucide-react';
 import {
   Select,
   SelectArrow,
   SelectItem,
   SelectItemCheck,
   SelectLabel,
+  SelectList,
   SelectPopover,
   SelectProvider,
 } from '@ariakit/react';
@@ -48,6 +49,8 @@ interface MultiSelectProps<T extends string> {
     isSelected: boolean,
   ) => React.ReactNode;
   popoverHeader?: React.ReactNode;
+  searchPlaceholder?: string;
+  searchEmptyText?: string;
   disabled?: boolean;
   showSelectedValues?: boolean;
   showItemCheckboxes?: boolean;
@@ -92,6 +95,8 @@ export default function MultiSelect<T extends string>({
   setSelectedValues,
   renderItemContent,
   popoverHeader,
+  searchPlaceholder,
+  searchEmptyText,
   disabled = false,
   showSelectedValues = false,
   showItemCheckboxes = false,
@@ -99,6 +104,10 @@ export default function MultiSelect<T extends string>({
 }: MultiSelectProps<T>): JSX.Element {
   const selectRef = useRef<HTMLButtonElement>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const visibleItems = items.filter((item) =>
+    getItemLabel(item).toLowerCase().includes(search.trim().toLowerCase()),
+  );
 
   const handleValueChange = (values: T[]) => {
     setSelectedValues(values);
@@ -109,6 +118,9 @@ export default function MultiSelect<T extends string>({
 
   const handleOpenChange = (open: boolean) => {
     setIsPopoverOpen(open);
+    if (!open) {
+      setSearch('');
+    }
     if (onOpenChange) {
       onOpenChange(open);
     }
@@ -154,6 +166,8 @@ export default function MultiSelect<T extends string>({
           />
         </Select>
         <SelectPopover
+          role="dialog"
+          aria-label={label || placeholder}
           gutter={4}
           sameWidth
           modal
@@ -161,60 +175,81 @@ export default function MultiSelect<T extends string>({
           finalFocus={selectRef}
           className={cn(
             'animate-popover z-40 flex max-h-[300px]',
-            'flex-col overflow-auto overscroll-contain rounded-xl',
+            'flex-col overflow-hidden rounded-xl',
             'bg-surface-secondary px-1.5 py-1 text-text-primary shadow-lg',
             'border border-border-light',
             'outline-none',
             popoverClassName,
           )}
         >
-          {popoverHeader}
-          {items.map((item) => {
-            const value = getItemValue(item);
-            const label = getItemLabel(item);
-            const isCurrentItemSelected = selectedValues.includes(value);
-            const defaultContent = (
-              <>
-                {showItemCheckboxes ? (
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-sm border border-border-xheavy',
-                      isCurrentItemSelected && 'bg-surface-inverted text-text-inverted',
-                    )}
-                  >
-                    {isCurrentItemSelected && <Check className="size-3.5" strokeWidth={2} />}
-                  </span>
-                ) : (
-                  <SelectItemCheck className="mr-0.5 text-text-primary" />
-                )}
-                <span className="truncate">{label}</span>
-              </>
-            );
-            return (
-              <SelectItem
-                key={value}
-                value={value}
-                aria-label={label}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
-                  'scroll-m-1 outline-none transition-colors',
-                  'hover:bg-surface-hover',
-                  'data-[active-item]:bg-surface-active',
-                  'w-full min-w-0 text-sm',
-                  itemClassName,
-                )}
-              >
-                {renderItemContent
-                  ? (renderItemContent(
-                      value,
-                      defaultContent,
-                      isCurrentItemSelected,
-                    ) as React.JSX.Element)
-                  : (defaultContent as React.JSX.Element)}
-              </SelectItem>
-            );
-          })}
+          <div className="shrink-0">
+            {popoverHeader}
+            {searchPlaceholder && (
+              <div className="flex items-center gap-2 border-b border-border-light px-4 py-2">
+                <Search aria-hidden="true" className="size-4 shrink-0 text-text-secondary" />
+                <input
+                  aria-label={searchPlaceholder}
+                  placeholder={searchPlaceholder}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                />
+              </div>
+            )}
+          </div>
+          <SelectList className="min-h-0 overflow-y-auto overscroll-contain">
+            {visibleItems.map((item) => {
+              const value = getItemValue(item);
+              const label = getItemLabel(item);
+              const isCurrentItemSelected = selectedValues.includes(value);
+              const defaultContent = (
+                <>
+                  {showItemCheckboxes ? (
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'flex size-4 shrink-0 items-center justify-center rounded-sm border border-border-xheavy',
+                        isCurrentItemSelected && 'bg-surface-inverted text-text-inverted',
+                      )}
+                    >
+                      {isCurrentItemSelected && <Check className="size-3.5" strokeWidth={2} />}
+                    </span>
+                  ) : (
+                    <SelectItemCheck className="mr-0.5 text-text-primary" />
+                  )}
+                  <span className="truncate">{label}</span>
+                </>
+              );
+              return (
+                <SelectItem
+                  key={value}
+                  value={value}
+                  aria-label={label}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
+                    'scroll-m-1 outline-none transition-colors',
+                    'hover:bg-surface-hover',
+                    'data-[active-item]:bg-surface-active',
+                    'w-full min-w-0 text-sm',
+                    itemClassName,
+                  )}
+                >
+                  {renderItemContent
+                    ? (renderItemContent(
+                        value,
+                        defaultContent,
+                        isCurrentItemSelected,
+                      ) as React.JSX.Element)
+                    : (defaultContent as React.JSX.Element)}
+                </SelectItem>
+              );
+            })}
+          </SelectList>
+          {visibleItems.length === 0 && searchEmptyText && (
+            <div role="status" className="px-4 py-3 text-sm text-text-secondary">
+              {searchEmptyText}
+            </div>
+          )}
         </SelectPopover>
       </SelectProvider>
     </div>

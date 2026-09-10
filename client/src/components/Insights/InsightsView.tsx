@@ -724,7 +724,8 @@ export default function InsightsView() {
     setUrlSearchParams(nextParams, { replace: true });
     setPage(1);
   };
-  const allAgentsDisplayed = displayedAgentIds.length === agentItems.length;
+  const allAgentsDisplayed =
+    agentItems.length > 0 && displayedAgentIds.length === agentItems.length;
   const someAgentsDisplayed = displayedAgentIds.length > 0;
 
   if (
@@ -751,6 +752,7 @@ export default function InsightsView() {
         <div className="flex max-w-full flex-wrap items-center gap-2 md:flex-nowrap">
           {data && (
             <MultiSelect
+              placeholder={localize('com_ui_agents')}
               items={agentItems}
               selectedValues={displayedAgentIds}
               setSelectedValues={handleAgentSelection}
@@ -759,38 +761,17 @@ export default function InsightsView() {
                   setPendingAgentIds(null);
                 }
               }}
-              disabled={agentItems.length === 1}
+              disabled={agentItems.length <= 1}
               showSelectedValues
               showItemCheckboxes
-              className="w-full min-w-0 sm:w-56"
+              searchPlaceholder={
+                agentItems.length > 10 ? localize('com_insights_search_agents') : undefined
+              }
+              searchEmptyText={localize('com_insights_no_agents_found')}
+              className="w-full min-w-0 sm:w-72"
               selectClassName="h-8 w-full rounded border border-border-medium bg-surface-tertiary px-3 py-1 shadow-none hover:border-border-heavy data-[state=open]:border-border-heavy dark:hover:bg-chart-widget-stroke dark:data-[state=open]:bg-chart-widget-stroke"
-              itemClassName="group rounded-none px-4 py-1.5"
+              itemClassName="rounded-none px-4 py-1.5"
               popoverClassName="max-h-80 rounded border-border-medium bg-surface-primary px-0 py-2 dark:bg-chart-widget-surface"
-              renderItemContent={(value, defaultContent) => {
-                const agentLabel =
-                  agentItems.find((agent) => agent.value === value)?.label ?? value;
-                return (
-                  <>
-                    <span className="flex min-w-0 flex-1 items-center gap-2">{defaultContent}</span>
-                    <button
-                      type="button"
-                      aria-label={localize('com_insights_select_only_agent', {
-                        name: agentLabel,
-                      })}
-                      className="invisible ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-medium uppercase text-text-secondary hover:text-text-primary focus:visible focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:visible group-hover:visible group-data-[active-item]:visible"
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleAgentSelection([value]);
-                      }}
-                    >
-                      {localize('com_insights_only')}
-                    </button>
-                  </>
-                );
-              }}
               renderSelectedValues={(values) => {
                 if (values.length === 0) {
                   return localize('com_insights_no_agents_selected');
