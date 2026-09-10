@@ -144,27 +144,40 @@ export async function selectCodeFiles({
       const recovering = !ref || !checkCodeFileActive(info?.lastModified);
       const storedName = sourceRef.sandboxFilename ?? info?.originalFilename;
       const sandboxName = storedName ?? resolveSandboxFilename(file.filename, file.type);
-      const assignRecoveryName = !ref || (recovering && !storedName);
+      const destination = recovering
+        ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
+        : sandboxName;
+      const assignRecoveryName =
+        !ref || (recovering && (!storedName || destination !== storedName));
       return {
         file,
         ref,
         sourceRef,
         isActive: !recovering,
-        sandboxName: recovering
-          ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
-          : sandboxName,
+        sandboxName: destination,
+        storedName: ref ? storedName : undefined,
         assignRecoveryName,
         selectionPriority: (privateFileIds?.has(file.file_id) ? 2 : 0) + Number(assignRecoveryName),
         getUploadTime: async () => info?.lastModified,
       };
     }),
   );
+  /** Collapse confirmed source-path collisions before renaming recovery files.
+   * Distinct old paths that normalize alike are independent inputs, not superseded copies. */
+  const storedDestinations = createCodeDestinationSet();
+  const surviving = resolved.filter((candidate) => {
+    if (candidate.storedName && !reserveCodeDestination(storedDestinations, candidate.storedName)) {
+      skippedSuperseded++;
+      return false;
+    }
+    return true;
+  });
   /** Keep shared files independent of each agent's private set. Within each
    * scope, guessed recovery names cannot displace a confirmed stored path. */
-  resolved.sort((a, b) => a.selectionPriority - b.selectionPriority);
+  surviving.sort((a, b) => a.selectionPriority - b.selectionPriority);
   const destinations = createCodeDestinationSet();
   const selected: PrimedCodeFile[] = [];
-  for (const candidate of resolved) {
+  for (const candidate of surviving) {
     if (candidate.assignRecoveryName) {
       selected.push({
         ...candidate,

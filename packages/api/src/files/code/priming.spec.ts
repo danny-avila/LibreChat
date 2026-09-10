@@ -157,7 +157,11 @@ describe('selectCodeFiles', () => {
           ? fresh
           : { originalFilename: 'plot.png', lastModified: '2020-01-01' },
     });
-    expect(result.selected.map((f) => f.file.file_id)).toEqual(['live']);
+    expect(result.selected).toHaveLength(2);
+    expect(result.selected.find((f) => f.file.file_id === 'live')?.sandboxName).toBe('plot.webp');
+    expect(result.selected.find((f) => f.file.file_id === 'image')?.sandboxName).toMatch(
+      /^plot-.+\.webp$/,
+    );
   });
 
   it('keeps a missing shared input independent of each agents private files', async () => {
@@ -237,7 +241,24 @@ describe('selectCodeFiles', () => {
           ? fresh
           : { originalFilename: 'my dir/file.csv', lastModified: '2020-01-01' },
     });
+    expect(result.selected).toHaveLength(2);
+    expect(result.selected.find((f) => f.file.file_id === 'newer')?.sandboxName).toBe('file.csv');
+    expect(result.selected.find((f) => f.file.file_id === 'older')?.sandboxName).toMatch(
+      /^file-.+\.csv$/,
+    );
+  });
+
+  it('collapses confirmed old-path duplicates before allocating converted recovery names', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        { ...file('older', 'plot.png'), type: 'image/webp' },
+        { ...file('newer', 'plot.png', {}, 2), type: 'image/webp' },
+      ],
+      routeKey: 'default',
+      getFileInfo: async () => ({ originalFilename: 'plot.png', lastModified: '2020-01-01' }),
+    });
     expect(result.selected.map((f) => f.file.file_id)).toEqual(['newer']);
+    expect(result.selected[0].sandboxName).toBe('plot.webp');
   });
 
   it('propagates cancellation during legacy recovery', async () => {
