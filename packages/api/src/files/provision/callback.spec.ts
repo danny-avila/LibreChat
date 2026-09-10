@@ -269,6 +269,20 @@ describe('createProvisionFilesCallback', () => {
     );
   });
 
+  it('arbitrates upload names after multipart path normalization', async () => {
+    const first = makeFile({ file_id: 'first', filename: 'my dir/data.csv' });
+    const second = makeFile({ file_id: 'second', filename: 'data.csv' });
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([first, second], []) }]],
+    });
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    const names = provisionToCodeEnv.mock.calls.map(
+      ([args]) => (args as { sandboxFilename: string }).sandboxFilename,
+    );
+    expect(names[0]).toBe('data.csv');
+    expect(names[1]).not.toBe('data.csv');
+  });
+
   it('returns the refs to every agent sharing one upload', async () => {
     const shared = makeFile();
     const { provisionFiles } = buildHarness({

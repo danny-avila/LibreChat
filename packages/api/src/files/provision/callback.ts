@@ -12,6 +12,7 @@ import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
 import { claimCodeDestination, createCodeDestinationSet } from '~/files/code/destinations';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
+import { getCodeEnvUploadFilename } from '../code/form';
 import { isCodeFileToolName } from '~/agents/tools';
 
 /** Deferred database write produced by a successful provisioning call. */
@@ -282,8 +283,13 @@ export function createProvisionFilesCallback({
         queuedCodeFiles.map(async (file) => {
           const sandboxFilename = claimCodeDestination(
             destinations,
-            getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
-              resolveSandboxFilename(file.filename, file.type),
+            getCodeEnvUploadFilename(
+              resolveSandboxFilename(
+                getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
+                  file.filename,
+                file.type,
+              ),
+            ),
             file.file_id,
           );
           const provisioned = await shareProvisioning(

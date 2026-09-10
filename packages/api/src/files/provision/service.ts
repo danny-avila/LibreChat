@@ -25,6 +25,7 @@ import {
   getCodeApiUploadOptions,
   withCodeApiUploadRecovery,
 } from '~/utils';
+import { getCodeEnvUploadFilename, getUploadedCodeEnvFilename } from '../code/form';
 import { buildCodeEnvIdentityParams } from '~/files/code/identity';
 import { getCodeApiAuthHeaders } from '~/auth/codeapi';
 import { resolveDownloadPath } from '~/storage/path';
@@ -40,6 +41,7 @@ export interface ProvisionDeps {
     handleFileUpload?: (params: Record<string, unknown>) => Promise<{
       storage_session_id: string;
       file_id: string;
+      filename?: string;
     }>;
   };
   uploadVectors: (params: {
@@ -265,8 +267,9 @@ export function createProvisionService({
      * be re-uploaded by priming, and a deployment whose only healthy Code API is the
      * configured stateful one could not provision at all. */
     const executionProfile = route?.executionProfile ?? 'default';
-    const sandboxFilename =
-      requestedSandboxFilename ?? resolveSandboxFilename(file.filename, file.type);
+    const sandboxFilename = getCodeEnvUploadFilename(
+      resolveSandboxFilename(requestedSandboxFilename ?? file.filename, file.type),
+    );
     const uploadOptions = getCodeApiUploadOptions(
       req,
       route?.executionRouteKey ?? route?.baseUrl ?? executionProfile,
@@ -309,6 +312,7 @@ export function createProvisionService({
     /* Merge rather than overwrite: the eager upload path persists the same shape via
      * mergeCodeEnvRef, so both the legacy pointer and the route-keyed map stay in sync
      * and pointers for other Code API routes survive re-provisioning. */
+    const storedSandboxFilename = getUploadedCodeEnvFilename(uploaded, sandboxFilename);
     const ref: CodeEnvRef = {
       kind,
       id,
@@ -317,7 +321,7 @@ export function createProvisionService({
       executionProfile,
       ...(route?.executionRouteKey ? { executionRouteKey: route.executionRouteKey } : {}),
       provisionedAt: Date.now(),
-      sandboxFilename,
+      sandboxFilename: storedSandboxFilename,
     };
     const referenceSet = mergeCodeEnvRef(file.metadata, ref);
     const routeKey = route?.executionRouteKey ?? executionProfile;
@@ -328,7 +332,7 @@ export function createProvisionService({
 
     return {
       referenceSet,
-      sandboxFilename,
+      sandboxFilename: storedSandboxFilename,
       refUpdate: {
         file_id: file.file_id,
         routeKey,

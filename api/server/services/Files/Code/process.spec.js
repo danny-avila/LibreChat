@@ -184,6 +184,7 @@ jest.mock('@librechat/api', () => {
     codeServerHttpsAgent: jest.requireActual('@librechat/api').codeServerHttpsAgent,
     selectCodeFiles: jest.requireActual('@librechat/api').selectCodeFiles,
     getCodeFileInfo: jest.requireActual('@librechat/api').getCodeFileInfo,
+    getUploadedCodeEnvFilename: jest.requireActual('@librechat/api').getUploadedCodeEnvFilename,
     checkCodeFileActive: jest.requireActual('@librechat/api').checkCodeFileActive,
   };
 });
@@ -3951,6 +3952,37 @@ describe('Code Process', () => {
       } finally {
         clock.mockRestore();
       }
+    });
+
+    it('normalizes a recovered nested path and advertises the upload receipt name', async () => {
+      const upload = jest
+        .fn()
+        .mockResolvedValue({
+          storage_session_id: 'recovered',
+          file_id: 'receipt-id',
+          filename: 'accepted.csv',
+        });
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn().mockResolvedValue('stream'),
+        handleFileUpload: upload,
+      }));
+      mockAxios.mockResolvedValue({
+        data: { originalFilename: 'my dir/file.csv', lastModified: '2020-01-01' },
+      });
+      getFiles.mockResolvedValue([
+        codeFile({ file_id: 'older', filename: 'my dir/file.csv', storage_session_id: 'old' }),
+      ]);
+      const result = await prime();
+      expect(upload).toHaveBeenCalledWith(expect.objectContaining({ filename: 'file.csv' }));
+      expect(result.files).toContainEqual(
+        expect.objectContaining({ name: 'accepted.csv', id: 'receipt-id' }),
+      );
+      expect(result.toolContext).toContain('/mnt/data/accepted.csv');
+      expect(mockUpdateFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'metadata.codeEnvRef': expect.objectContaining({ sandboxFilename: 'accepted.csv' }),
+        }),
+      );
     });
 
     it('keeps only the newest of two uploads sharing a filename', async () => {

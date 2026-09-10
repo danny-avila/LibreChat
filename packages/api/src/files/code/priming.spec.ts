@@ -48,9 +48,9 @@ describe('selectCodeFiles', () => {
       routeKey: 'stateful',
       getFileInfo,
     });
-    expect(result.selected.map((f) => f.sandboxName)).toEqual(['rows.csv', 'rows-stateful.csv']);
+    expect(result.selected.map((f) => f.sandboxName)).toEqual(['rows-stateful.csv', 'rows.csv']);
     expect(getFileInfo).toHaveBeenCalledTimes(1);
-    expect(await result.selected[1].getUploadTime()).toBeUndefined();
+    expect(await result.selected[0].getUploadTime()).toBeUndefined();
   });
 
   it('reserves a failed newest winner without reviving the superseded copy', async () => {
@@ -190,6 +190,54 @@ describe('selectCodeFiles', () => {
     clock.mockReturnValue(now + 2_000);
     expect(result.selected[0]).toMatchObject({ isActive: true, sandboxName: 'plot.png' });
     clock.mockRestore();
+  });
+
+  it('claims alternate-route names around destinations already present in the target route', async () => {
+    const missing = file('missing', 'rows.csv', { sandboxFilename: 'rows.csv' }, 2);
+    const live = file('live', 'rows.csv', {
+      sandboxFilename: 'rows.csv',
+      executionProfile: 'stateful',
+    });
+    const result = await selectCodeFiles({
+      files: [missing, live],
+      routeKey: 'stateful',
+      getFileInfo: async () => fresh,
+    });
+    expect(result.selected).toHaveLength(2);
+    expect(result.selected.find((f) => f.file.file_id === 'live')?.sandboxName).toBe('rows.csv');
+    expect(result.selected.find((f) => f.file.file_id === 'missing')?.sandboxName).not.toBe(
+      'rows.csv',
+    );
+  });
+
+  it.each([false, true])(
+    'uses the multipart fallback only during recovery (expired=%s)',
+    async (expired) => {
+      const result = await selectCodeFiles({
+        files: [file('nested', 'my dir/file.csv')],
+        routeKey: 'default',
+        getFileInfo: async () => ({
+          originalFilename: 'my dir/file.csv',
+          lastModified: expired ? '2020-01-01' : fresh.lastModified,
+        }),
+      });
+      expect(result.selected[0].sandboxName).toBe(expired ? 'file.csv' : 'my dir/file.csv');
+    },
+  );
+
+  it('arbitrates recovery names after the multipart adapter flattens paths', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        file('older', 'my dir/file.csv'),
+        file('newer', 'file.csv', { sandboxFilename: 'file.csv' }, 2),
+      ],
+      routeKey: 'default',
+      getFileInfo: async (ref) =>
+        ref.file_id === 'newer'
+          ? fresh
+          : { originalFilename: 'my dir/file.csv', lastModified: '2020-01-01' },
+    });
+    expect(result.selected.map((f) => f.file.file_id)).toEqual(['newer']);
   });
 
   it('propagates cancellation during legacy recovery', async () => {

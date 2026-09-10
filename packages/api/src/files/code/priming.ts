@@ -21,6 +21,7 @@ import {
 } from '~/utils/code';
 import { codeExecutionHeaders } from '~/agents/execution';
 import { buildCodeEnvDownloadQuery } from './identity';
+import { getCodeEnvUploadFilename } from './form';
 import { isAbortError } from '~/utils/errors';
 
 export interface CodeFileInfo {
@@ -143,13 +144,15 @@ export async function selectCodeFiles({
       const recovering = !ref || !checkCodeFileActive(info?.lastModified);
       const storedName = sourceRef.sandboxFilename ?? info?.originalFilename;
       const sandboxName = storedName ?? resolveSandboxFilename(file.filename, file.type);
-      const assignRecoveryName = recovering && !storedName;
+      const assignRecoveryName = !ref || (recovering && !storedName);
       return {
         file,
         ref,
         sourceRef,
         isActive: !recovering,
-        sandboxName: recovering ? resolveSandboxFilename(sandboxName, file.type) : sandboxName,
+        sandboxName: recovering
+          ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
+          : sandboxName,
         assignRecoveryName,
         selectionPriority: (privateFileIds?.has(file.file_id) ? 2 : 0) + Number(assignRecoveryName),
         getUploadTime: async () => info?.lastModified,

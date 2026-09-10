@@ -33,6 +33,7 @@ const {
   executeWorkspaceTool,
   selectCodeFiles,
   getCodeFileInfo,
+  getUploadedCodeEnvFilename,
   checkCodeFileActive: checkIfActive,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
@@ -1337,12 +1338,12 @@ const primeFiles = async (options) => {
      * codeapi can resolve sessionKey per-file (kind switch +
      * tenant prefix from auth context).
      */
-    const pushFile = (overrideSessionId, overrideId) => {
+    const pushFile = (overrideSessionId, overrideId, destination = sandboxName) => {
       /* The sandbox holds the converted name, not the record's, so the mount path has
        * to follow the same rule provisioning uploaded under. */
       toolContext = appendVisibleCodeFileContext(
         toolContext,
-        getVisibleCodeFileContextLine(file, agentResourceIds, sandboxName),
+        getVisibleCodeFileContextLine(file, agentResourceIds, destination),
       );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
@@ -1354,7 +1355,7 @@ const primeFiles = async (options) => {
         id: overrideId ?? id,
         resource_id: sourceRef.id,
         storage_session_id: overrideSessionId ?? session_id,
-        name: sandboxName,
+        name: destination,
         kind: sourceRef.kind,
         ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
       });
@@ -1420,7 +1421,7 @@ const primeFiles = async (options) => {
           id: sourceRef.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
-          sandboxFilename: sandboxName,
+          sandboxFilename: getUploadedCodeEnvFilename(uploaded, sandboxName),
           executionProfile,
           ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1433,7 +1434,7 @@ const primeFiles = async (options) => {
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
           [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
-        pushFile(newRef.storage_session_id, newRef.file_id);
+        pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
             `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,

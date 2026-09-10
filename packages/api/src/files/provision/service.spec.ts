@@ -154,6 +154,24 @@ describe('createProvisionService', () => {
       expect(selected[0].sandboxName).toBe('data-alias.csv');
     });
 
+    it('persists the adapter receipt after normalizing a nested upload name', async () => {
+      const { service, uploadCodeEnvFile } = buildService();
+      uploadCodeEnvFile.mockResolvedValue({
+        storage_session_id: 's1',
+        file_id: 'remote-1',
+        filename: 'file.csv',
+      });
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: makeFile({ filename: 'my dir/file.csv' }),
+      });
+      expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'file.csv' }),
+      );
+      expect(result.refUpdate.ref.sandboxFilename).toBe('file.csv');
+      expect(result.sandboxFilename).toBe('file.csv');
+    });
+
     it('refuses a source whose download contract differs', async () => {
       const { service, uploadCodeEnvFile } = buildService();
 
