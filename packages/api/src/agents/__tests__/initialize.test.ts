@@ -1290,6 +1290,89 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
     );
   });
 
+  /** An endpoint's `customParams.paramDefinitions` can default `web_search` to
+   *  `true`, and the provider builders apply that default exactly when the field
+   *  is `undefined`. Leaving an absent parameter alone for a denied role is
+   *  therefore what lets the endpoint switch search back on. */
+  it('pins web_search false for a denied user when the agent sets no value', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    db.getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } }));
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: false }),
+    );
+  });
+
+  it('leaves web_search unset for a permitted user when the agent sets no value', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    db.getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).not.toHaveProperty('web_search');
+  });
+
+  it('skips the role read when the agent explicitly disabled web search', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: false },
+    });
+    db.getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(db.getRoleByName).not.toHaveBeenCalled();
+  });
+
   /** `/v1/chat/completions` and `/v1/responses` pass `runtime` and no `req`, so a
    *  gate that read the user out of `req` would deny every user on those routes. */
   it('keeps model_parameters.web_search for a permitted user when the caller passes runtime and no req', async () => {
@@ -1319,7 +1402,10 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
       db,
     );
 
-    expect(db.getRoleByName).toHaveBeenCalledWith('USER');
+    expect(db.getRoleByName).toHaveBeenCalledWith('USER', undefined);
+    /** One read, not one per grant: without a `req` there is no per-request cache
+     *  to dedupe the three permission checks. */
+    expect(db.getRoleByName).toHaveBeenCalledTimes(1);
     expect(lastModelParametersSentToProvider()).toEqual(
       expect.objectContaining({ web_search: true }),
     );

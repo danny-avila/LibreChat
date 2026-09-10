@@ -1121,9 +1121,15 @@ export async function initializeAgent(
 
   /** `model_parameters.web_search` turns on provider-native web search, bypassing
    *  `agent.tools` entirely, so it needs its own role check here rather than
-   *  relying on the tool-loader gate. Short-circuits before the role read so a
-   *  request that never asked for web search pays nothing. */
-  if (modelOptions.web_search === true) {
+   *  relying on the tool-loader gate.
+   *
+   *  An absent value has to be resolved too, not just an explicit `true`: an
+   *  endpoint's `customParams.paramDefinitions` can default `web_search` to
+   *  `true`, and every provider builder applies that default precisely when the
+   *  field is `undefined`. Leaving it unset for a denied role is therefore the
+   *  state that lets the endpoint switch search on. An explicit `false` is
+   *  already off and no default can revive it, so that case skips the read. */
+  if (modelOptions.web_search !== false) {
     const denied =
       params.webSearchAvailable === false ||
       (db.getRoleByName != null &&
@@ -1138,14 +1144,19 @@ export async function initializeAgent(
           })
         ).webSearch);
     if (denied) {
-      /** Explicit `false`, not `delete`: every provider builder applies its
-       *  `defaultParams.web_search` only when the field is `undefined`, so
-       *  removing the key is the one state that lets an endpoint default switch
-       *  search back on after the denial. */
+      const wasRequested = modelOptions.web_search === true;
+      /** Explicit `false`, never `delete` and never merely left absent: the
+       *  builders read `undefined` as "no opinion" and fall through to the
+       *  endpoint default. */
       modelOptions.web_search = false;
-      logger.warn(
-        `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; removed model_parameters.web_search`,
-      );
+      /** Only when the agent actually asked. Pinning `false` for an agent that
+       *  never set the parameter denies nothing the user tried to use, and
+       *  warning on it would log every denied role's every request. */
+      if (wasRequested) {
+        logger.warn(
+          `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; disabled model_parameters.web_search`,
+        );
+      }
     }
   }
 

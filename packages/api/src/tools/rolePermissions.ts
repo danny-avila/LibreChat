@@ -293,6 +293,23 @@ export function resolveToolRoleGrants({
   context = 'toolRoleGrants',
 }: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
   const subject = (user ?? req?.user) as CheckAccessParams['user'];
+  /** The three checks below read the same role. A request-backed call dedupes
+   *  them in `checkAccess`'s per-request cache, but a caller with no `req` — the
+   *  OpenAI-compatible and Responses routes, which carry the user on `runtime` —
+   *  has no such cache and would issue three identical reads. Sharing one
+   *  in-flight promise per role name makes it one read either way. */
+  const roleReads = new Map<string, ReturnType<typeof getRoleByName>>();
+  const getRoleOnce: typeof getRoleByName = (roleName, fieldsToSelect) => {
+    let pending = roleReads.get(roleName);
+    if (!pending) {
+      pending = Promise.resolve(getRoleByName(roleName, fieldsToSelect)).catch((error) => {
+        roleReads.delete(roleName);
+        throw error;
+      });
+      roleReads.set(roleName, pending);
+    }
+    return pending;
+  };
   /** Keyed on the request alone, so it assumes one subject per request — true of
    *  every caller, since a request authorizes the user who made it. Pass no `req`
    *  to resolve a different subject without reading another's cached grants. */
@@ -309,21 +326,21 @@ export function resolveToolRoleGrants({
       req,
       user: subject,
       permissionType: PermissionTypes.RUN_CODE,
-      getRoleByName,
+      getRoleByName: getRoleOnce,
       context,
     }),
     checkToolRolePermission({
       req,
       user: subject,
       permissionType: PermissionTypes.FILE_SEARCH,
-      getRoleByName,
+      getRoleByName: getRoleOnce,
       context,
     }),
     checkToolRolePermission({
       req,
       user: subject,
       permissionType: PermissionTypes.WEB_SEARCH,
-      getRoleByName,
+      getRoleByName: getRoleOnce,
       context,
     }),
   ]).then(([runCode, fileSearch, webSearch]) => ({ runCode, fileSearch, webSearch }));
