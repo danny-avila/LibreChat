@@ -33,6 +33,7 @@ const {
   executeWorkspaceTool,
   selectCodeFiles,
   getCodeFileInfo,
+  checkCodeFileActive: checkIfActive,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   normalizeArtifactDeliveryFailure,
@@ -1119,14 +1120,6 @@ const processCodeOutput = async ({
   }
 };
 
-function checkIfActive(dateString) {
-  const givenDate = new Date(dateString);
-  const currentDate = new Date();
-  const timeDifference = currentDate - givenDate;
-  const hoursPassed = timeDifference / (1000 * 60 * 60);
-  return hoursPassed < 23;
-}
-
 function getSessionFileInfo(ref, req, route = {}, signal) {
   return getCodeFileInfo({
     ref,
@@ -1306,7 +1299,6 @@ const primeFiles = async (options) => {
   }
 
   const files = [];
-  const sessions = new Map();
   const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
@@ -1412,8 +1404,8 @@ const primeFiles = async (options) => {
 
         /**
          * Use the FRESH `(storage_session_id, file_id)` from the
-         * reupload response and route it through the dedupe Map, the
-         * persisted record, and the in-memory `files` list. The
+         * reupload response and route it through the persisted record
+         * and the in-memory `files` list. The
          * original ref captured at the top of this iteration refers
          * to the old, expired/missing sandbox object — using it here
          * would silently re-introduce the bug `Graph.sessions`
@@ -1441,7 +1433,6 @@ const primeFiles = async (options) => {
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
           [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
-        sessions.set(newRef.storage_session_id, true);
         pushFile(newRef.storage_session_id, newRef.file_id);
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
@@ -1470,13 +1461,6 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (sessions.has(session_id)) {
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
-      );
-      pushFile();
-      continue;
-    }
     const uploadTime = await getUploadTime();
     signal?.throwIfAborted();
     if (!uploadTime) {
@@ -1495,7 +1479,6 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    sessions.set(session_id, true);
     logger.debug(
       `[primeCodeFiles] file=${file.file_id} path=fresh-active storage_session_id=${session_id}`,
     );

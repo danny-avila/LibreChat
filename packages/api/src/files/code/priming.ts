@@ -8,16 +8,17 @@ import type { AxiosInstance } from 'axios';
 import type { CodeExecutionRoute } from '../provision/service';
 import type { ServerRequest } from '~/types';
 import {
+  claimCodeDestination,
+  createCodeDestinationSet,
+  reserveCodeDestination,
+  sortCodeFilesByDestinationPriority,
+} from './destinations';
+import {
   codeServerHttpAgent,
   codeServerHttpsAgent,
   createCodeApiUploadRegistry,
   withCodeApiUploadSlot,
 } from '~/utils/code';
-import {
-  createCodeDestinationSet,
-  reserveCodeDestination,
-  sortCodeFilesByDestinationPriority,
-} from './destinations';
 import { codeExecutionHeaders } from '~/agents/execution';
 import { buildCodeEnvDownloadQuery } from './identity';
 import { isAbortError } from '~/utils/errors';
@@ -79,6 +80,11 @@ export async function getCodeFileInfo({
   }
 }
 
+/** Matches the existing 23-hour code-storage freshness window. */
+export function checkCodeFileActive(dateString: string | undefined): boolean {
+  return dateString != null && (Date.now() - new Date(dateString).getTime()) / 3_600_000 < 23;
+}
+
 interface PrimedCodeFile {
   file: TFile;
   ref: CodeEnvRef | undefined;
@@ -128,25 +134,43 @@ export async function selectCodeFiles({
       }));
     candidates.push({ file, ref, sourceRef, getInfo });
   }
-  // Legacy references lack the upload destination. Probe concurrently and reuse the result for freshness.
   const resolved = await Promise.all(
     candidates.map(async (candidate) => {
       const { file, ref, sourceRef, getInfo } = candidate;
-      const info = ref && !sourceRef.sandboxFilename ? await getInfo() : undefined;
+      const info = ref ? await getInfo() : null;
       signal?.throwIfAborted();
+      const recovering = !ref || !checkCodeFileActive(info?.lastModified);
+      const storedName = sourceRef.sandboxFilename ?? info?.originalFilename;
+      const sandboxName = storedName ?? resolveSandboxFilename(file.filename, file.type);
+      const assignRecoveryName = recovering && !storedName;
       return {
-        ...candidate,
-        sandboxName:
-          sourceRef.sandboxFilename ??
-          info?.originalFilename ??
-          resolveSandboxFilename(file.filename, file.type),
-        getUploadTime: async () => (await getInfo())?.lastModified,
+        file,
+        ref,
+        sourceRef,
+        sandboxName: recovering ? resolveSandboxFilename(sandboxName, file.type) : sandboxName,
+        assignRecoveryName,
+        selectionPriority: (privateFileIds?.has(file.file_id) ? 2 : 0) + Number(assignRecoveryName),
+        getUploadTime: async () => info?.lastModified,
       };
     }),
   );
+  /** Keep shared files independent of each agent's private set. Within each
+   * scope, guessed recovery names cannot displace a confirmed stored path. */
+  resolved.sort((a, b) => a.selectionPriority - b.selectionPriority);
   const destinations = createCodeDestinationSet();
-  const selected = [];
+  const selected: PrimedCodeFile[] = [];
   for (const candidate of resolved) {
+    if (candidate.assignRecoveryName) {
+      selected.push({
+        ...candidate,
+        sandboxName: claimCodeDestination(
+          destinations,
+          candidate.sandboxName,
+          candidate.file.file_id,
+        ),
+      });
+      continue;
+    }
     if (!reserveCodeDestination(destinations, candidate.sandboxName)) {
       skippedSuperseded++;
       continue;

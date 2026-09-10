@@ -49,11 +49,11 @@ describe('selectCodeFiles', () => {
       getFileInfo,
     });
     expect(result.selected.map((f) => f.sandboxName)).toEqual(['rows.csv', 'rows-stateful.csv']);
-    expect(getFileInfo).not.toHaveBeenCalled();
+    expect(getFileInfo).toHaveBeenCalledTimes(1);
     expect(await result.selected[1].getUploadTime()).toBeUndefined();
   });
 
-  it('reserves a failed newest winner without probing or reviving the superseded copy', async () => {
+  it('reserves a failed newest winner without reviving the superseded copy', async () => {
     const getFileInfo = jest.fn(async () => null);
     const result = await selectCodeFiles({
       files: [
@@ -66,7 +66,7 @@ describe('selectCodeFiles', () => {
     expect(result.selected.map((f) => f.file.file_id)).toEqual(['newer']);
     expect(result.skippedSuperseded).toBe(1);
     await result.selected[0].getUploadTime();
-    expect(getFileInfo).toHaveBeenCalledTimes(1);
+    expect(getFileInfo).toHaveBeenCalledTimes(2);
   });
 
   it('lets an output supersede an aliased upload at its actual destination', async () => {
@@ -89,6 +89,91 @@ describe('selectCodeFiles', () => {
       getFileInfo: async () => fresh,
     });
     expect(result.selected.map((f) => f.file.file_id)).toEqual(['shared']);
+  });
+
+  it('recovers every expired legacy input under a distinct persisted destination', async () => {
+    const originals = [file('older', 'rows.csv'), file('newer', 'rows.csv', {}, 2)];
+    const recovered = await selectCodeFiles({
+      files: originals,
+      routeKey: 'default',
+      getFileInfo: async () => null,
+    });
+    expect(recovered.selected).toHaveLength(2);
+    expect(new Set(recovered.selected.map((f) => f.sandboxName)).size).toBe(2);
+    const restored = recovered.selected.map(({ file: original, sandboxName, sourceRef }) => ({
+      ...original,
+      metadata: { codeEnvRef: { ...sourceRef, sandboxFilename: sandboxName } },
+    }));
+    const next = await selectCodeFiles({
+      files: restored,
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    });
+    expect(next.selected.map((f) => f.sandboxName)).toEqual(
+      recovered.selected.map((f) => f.sandboxName),
+    );
+  });
+
+  it('allocates missing legacy inputs around confirmed live aliases', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        file('missing', 'rows.csv', {}, 3),
+        file('live', 'rows.csv', { sandboxFilename: 'rows.csv' }),
+      ],
+      routeKey: 'default',
+      getFileInfo: async (ref) => (ref.file_id === 'live' ? fresh : null),
+    });
+    expect(result.selected.find((f) => f.file.file_id === 'live')?.sandboxName).toBe('rows.csv');
+    expect(result.selected.find((f) => f.file.file_id === 'missing')?.sandboxName).not.toBe(
+      'rows.csv',
+    );
+  });
+
+  it.each([false, true])(
+    'matches recovered image bytes while retaining a live remote name (expired=%s)',
+    async (expired) => {
+      const image = { ...file('image', 'plot.png'), type: 'image/webp' };
+      const result = await selectCodeFiles({
+        files: [image],
+        routeKey: 'default',
+        getFileInfo: async () => ({
+          originalFilename: 'plot-alias.png',
+          lastModified: expired ? '2020-01-01' : fresh.lastModified,
+        }),
+      });
+      expect(result.selected[0].sandboxName).toBe(expired ? 'plot-alias.webp' : 'plot-alias.png');
+    },
+  );
+
+  it('arbitrates collisions introduced by durable image conversion before uploading', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        { ...file('image', 'plot.png', {}, 1), type: 'image/webp' },
+        file('live', 'plot.webp', { sandboxFilename: 'plot.webp' }, 2),
+      ],
+      routeKey: 'default',
+      getFileInfo: async (ref) =>
+        ref.file_id === 'live'
+          ? fresh
+          : { originalFilename: 'plot.png', lastModified: '2020-01-01' },
+    });
+    expect(result.selected.map((f) => f.file.file_id)).toEqual(['live']);
+  });
+
+  it('keeps a missing shared input independent of each agents private files', async () => {
+    const shared = file('shared', 'rows.csv');
+    const privateFile = file('private', 'rows.csv', { sandboxFilename: 'rows.csv' }, 2);
+    const getFileInfo = async (ref: CodeEnvRef) => (ref.file_id === 'private' ? fresh : null);
+    const first = await selectCodeFiles({ files: [shared], routeKey: 'default', getFileInfo });
+    const second = await selectCodeFiles({
+      files: [shared, privateFile],
+      privateFileIds: new Set(['private']),
+      routeKey: 'default',
+      getFileInfo,
+    });
+    expect(second.selected.find((f) => f.file.file_id === 'shared')?.sandboxName).toBe(
+      first.selected[0].sandboxName,
+    );
   });
 
   it('propagates cancellation during legacy recovery', async () => {

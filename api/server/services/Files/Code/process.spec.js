@@ -184,6 +184,7 @@ jest.mock('@librechat/api', () => {
     codeServerHttpsAgent: jest.requireActual('@librechat/api').codeServerHttpsAgent,
     selectCodeFiles: jest.requireActual('@librechat/api').selectCodeFiles,
     getCodeFileInfo: jest.requireActual('@librechat/api').getCodeFileInfo,
+    checkCodeFileActive: jest.requireActual('@librechat/api').checkCodeFileActive,
   };
 });
 
@@ -3862,6 +3863,49 @@ describe('Code Process', () => {
       }
     });
 
+    it('recovers a converted stale image even when its storage session has a fresh sibling', async () => {
+      const upload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'recovered', file_id: 'recovered-image' });
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn().mockResolvedValue('webp-stream'),
+        handleFileUpload: upload,
+      }));
+      mockAxios.mockImplementation(async ({ url }) => ({
+        data: url.includes('newer-sandbox')
+          ? { lastModified: new Date().toISOString(), originalFilename: 'ready.txt' }
+          : { lastModified: '2020-01-01', originalFilename: 'plot-alias.png' },
+      }));
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'newer',
+          filename: 'ready.txt',
+          storage_session_id: 'shared-session',
+          createdAt: new Date('2026-01-02'),
+        }),
+        {
+          ...codeFile({
+            file_id: 'older',
+            filename: 'plot.png',
+            storage_session_id: 'shared-session',
+            createdAt: new Date('2026-01-01'),
+          }),
+          type: 'image/webp',
+        },
+      ]);
+      const result = await prime();
+      expect(upload).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'plot-alias.webp', stream: 'webp-stream' }),
+      );
+      expect(result.files).toContainEqual(
+        expect.objectContaining({
+          name: 'plot-alias.webp',
+          id: 'recovered-image',
+          storage_session_id: 'recovered',
+        }),
+      );
+    });
+
     it('keeps only the newest of two uploads sharing a filename', async () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([
@@ -4039,7 +4083,7 @@ describe('Code Process', () => {
       mockAxios.mockImplementation(async ({ url }) =>
         url.includes('sess-newer')
           ? { data: { lastModified: new Date().toISOString() } }
-          : { data: {} },
+          : { data: { originalFilename: 'image.png' } },
       );
       getFiles.mockResolvedValue([
         codeFile({
