@@ -156,7 +156,7 @@ describe('useCodeWorkspace', () => {
     expect(result.current.selections).toBeUndefined();
   });
 
-  it('requires an explicit choice when several workspaces are advertised', () => {
+  it('requires a workspace in full access mode and enables submission after explicit selection', () => {
     mockStatus.mockReturnValue([
       {
         data: {
@@ -170,12 +170,25 @@ describe('useCodeWorkspace', () => {
       },
     ]);
 
-    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+    const initialConversation: TConversation = {
+      ...conversation(),
+      codeApprovalMode: 'fullAccess',
+    };
+    const { result, rerender } = renderHook(({ current }) => useCodeWorkspace(current), {
+      initialProps: { current: initialConversation },
+    });
 
     expect(result.current.state).toBe('choose');
     expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
     expect(result.current.resolveSubmission()).toBeUndefined();
+
+    const selection = { environmentId: 'personal-vm', workspaceId: 'canary-a' };
+    rerender({ current: { ...initialConversation, codeWorkspaces: [selection] } });
+
+    expect(result.current.state).toBe('ready');
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission([selection])).toEqual({ codeWorkspaces: [selection] });
   });
 
   it('submits an explicit selection from several advertised workspaces', () => {
