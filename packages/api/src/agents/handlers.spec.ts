@@ -3,6 +3,9 @@ jest.mock('./prewarm', () => ({
 }));
 
 import { Readable } from 'stream';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type {
@@ -20,6 +23,7 @@ import {
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { WorkspaceToolHttpError } from '../code/workspace';
+import { createAttachedWorkspaceBashTool } from '../code/command';
 import { createCodeApiUploadRegistry } from '~/utils';
 
 function createMockTool(
@@ -462,6 +466,58 @@ describe('createToolExecuteHandler', () => {
       expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('error');
+    });
+
+    it('closes the real command HTTP connection on foreground host cancellation', async () => {
+      let markStarted!: () => void;
+      let markDisconnected!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const disconnected = new Promise<void>((resolve) => {
+        markDisconnected = resolve;
+      });
+      const server = createServer(async (req, res) => {
+        for await (const _chunk of req) {
+          /* Wait for the full command request. */
+        }
+        res.once('close', () => {
+          if (!res.writableEnded) markDisconnected();
+        });
+        markStarted();
+      });
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const { port } = server.address() as AddressInfo;
+      const tool = createAttachedWorkspaceBashTool({
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+        authHeaders: () => ({}),
+        workspaceId: 'project-a',
+      });
+      const controller = new AbortController();
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        runSignal: controller.signal,
+        foregroundRunId: 'foreground-run',
+      });
+      try {
+        const result = new Promise<ToolExecuteResult[]>((resolve, reject) => {
+          handler.handle('on_tool_execute', {
+            toolCalls: [{ id: 'call-http', name: tool.name, args: { command: 'sleep 30' } }],
+            metadata: { run_id: 'foreground-run' },
+            resolve,
+            reject,
+          } as ToolExecuteBatchRequest);
+        });
+        await started;
+        controller.abort();
+        expect((await result)[0].status).toBe('error');
+        await disconnected;
+      } finally {
+        server.closeAllConnections();
+        server.close();
+        await once(server, 'close');
+      }
     });
 
     it('composes host cancellation with an SDK event circuit-breaker signal', async () => {
