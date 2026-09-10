@@ -185,26 +185,30 @@ jest.mock('@librechat/api', () => {
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
     /* Sandbox destination assignment, mirrored the same way the identity
-     * helpers above are. The real policy — directory-prefix conflicts, the
-     * byte cap, flattening, the hashed suffix — lives in
-     * `packages/api/src/files/code/destinations.ts` under its own
-     * `destinations.spec.ts`; these stubs carry just enough of its shape
-     * (an identity-derived suffix, shared-then-newest ordering) for the
-     * `primeFiles` tests to assert that it is wired to `name` and to the tool
-     * context at all. The suffix here is the raw identity rather than a
-     * digest so the expectations below read as names. */
-    createCodeDestinationSet: () => new Set(),
-    claimCodeDestination: (set, name, identity) => {
-      const dot = name.lastIndexOf('.');
-      const stem = dot > 0 ? name.slice(0, dot) : name;
-      const extension = dot > 0 ? name.slice(dot) : '';
-      let destination = name;
-      for (let counter = 1; set.has(destination); counter++) {
-        const tail = counter === 1 ? '' : `-${counter}`;
-        destination = `${stem}-${identity}${tail}${extension}`;
+     * helpers above are. The real policy — directory-prefix conflicts and the
+     * byte cap — lives in `packages/api/src/files/code/destinations.ts` under
+     * its own `destinations.spec.ts`; these stubs carry just enough of its
+     * shape (one file per name, shared-then-newest ordering) for the
+     * `primeFiles` tests to assert that it decides which file reaches the
+     * sandbox and the tool context at all. `reserveCodeDestination` mirrors
+     * the real `isTaken` rule — an exact match, or either destination being a
+     * directory prefix of the other — because codeapi rejects both shapes. */
+    createCodeDestinationSet: () => ({ names: new Set(), ancestors: new Set() }),
+    reserveCodeDestination: (set, name) => {
+      const segments = name.split('/');
+      const ancestors = segments.slice(1).map((_, i) => segments.slice(0, i + 1).join('/'));
+      const taken =
+        set.names.has(name) ||
+        set.ancestors.has(name) ||
+        ancestors.some((ancestor) => set.names.has(ancestor));
+      if (taken) {
+        return false;
       }
-      set.add(destination);
-      return destination;
+      set.names.add(name);
+      for (const ancestor of ancestors) {
+        set.ancestors.add(ancestor);
+      }
+      return true;
     },
     sortCodeFilesByDestinationPriority: (files, privateFileIds) => {
       const isPrivate = (file) => (privateFileIds?.has(file?.file_id) ? 1 : 0);
@@ -3791,14 +3795,18 @@ describe('Code Process', () => {
     });
   });
 
-  describe('primeFiles resolves sandbox destination collisions (#15443)', () => {
+  describe('primeFiles keeps one file per sandbox destination (#15443 follow-up)', () => {
     /**
-     * Codeapi mounts each input at a destination derived from its `name` and
-     * rejects the whole `/exec` request when two entries land on one — and a
-     * rejected request never reaches the sandbox, so nothing comes back to
-     * collapse the pair. Every later turn re-primes both files and fails the
-     * same way, which is why one duplicate filename kills code execution for
-     * the rest of the conversation.
+     * Codeapi mounts a by-ref input at the filename recorded on the stored
+     * object — the file server's Content-Disposition — and only falls back to
+     * the `name` sent in `/exec` when that header is absent. A suffixed alias
+     * for a same-name duplicate therefore lands on the bare name anyway, and
+     * the sandbox rejects the whole request as conflicting destinations; the
+     * rejection recurs on every later turn because nothing comes back to
+     * collapse the pair. The only assignment codeapi can honour is one file
+     * per filename, so `primeFiles` keeps the file holding the newest content
+     * and drops the rest — the same collapse `ToolNode.updateCodeSession`
+     * applies once results come back.
      *
      * Only code-generated outputs are covered by the `(filename,
      * conversationId, context, tenantId)` partial unique index; uploads carry
@@ -3853,7 +3861,7 @@ describe('Code Process', () => {
     const bySession = (result) =>
       Object.fromEntries(result.files.map((f) => [f.storage_session_id, f.name]));
 
-    it('gives two uploads sharing a filename distinct destinations', async () => {
+    it('keeps only the newest of two uploads sharing a filename', async () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([
         codeFile({
@@ -3872,28 +3880,17 @@ describe('Code Process', () => {
 
       const { files, toolContext } = await prime();
 
-      expect(files).toHaveLength(2);
-      expect(new Set(files.map((f) => f.name)).size).toBe(2);
-      /* The newest record keeps the bare path: when an execution rewrote an
-       * uploaded file in place, the model's next read of that path has to
-       * find its own edit rather than the superseded original. */
-      expect(bySession({ files })).toEqual({
-        'sess-newer': 'image.png',
-        'sess-older': 'image-older.png',
-      });
+      expect(bySession({ files })).toEqual({ 'sess-newer': 'image.png' });
       expect(toolContext).toContain('/mnt/data/image.png');
-      /* The displaced file is advertised at the path it actually mounts on,
-       * alongside the name the user knows it by. */
-      expect(toolContext).toContain('/mnt/data/image-older.png');
-      expect(toolContext).toContain('(uploaded as image.png)');
+      expect(toolContext).not.toContain('uploaded as');
     });
 
-    it('assigns the same destinations regardless of the order getFiles returns', async () => {
+    it('keeps the same file regardless of the order getFiles returns', async () => {
       /**
        * `getFiles` sorts by `updatedAt` desc by default, and usage accounting
-       * and re-upload both bump `updatedAt` — so claim order cannot come from
-       * the query. If it did, a path a previous turn told the model about
-       * would silently point at the other file.
+       * and re-upload both bump `updatedAt` — so the survivor cannot depend on
+       * the query order, or a path the model has been reading would silently
+       * flip to the other file between turns.
        */
       const older = codeFile({
         file_id: 'older',
@@ -3911,19 +3908,15 @@ describe('Code Process', () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([older, newer]);
       const ascending = await prime();
-
       setupActiveSessions();
       getFiles.mockResolvedValue([newer, older]);
       const descending = await prime();
 
       expect(bySession(ascending)).toEqual(bySession(descending));
-      expect(bySession(ascending)).toEqual({
-        'sess-newer': 'image.png',
-        'sess-older': 'image-older.png',
-      });
+      expect(bySession(ascending)).toEqual({ 'sess-newer': 'image.png' });
     });
 
-    it('separates a code output from the upload whose name it reused', async () => {
+    it('lets a code output supersede the upload whose name it reused', async () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([
         codeFile({
@@ -3943,22 +3936,13 @@ describe('Code Process', () => {
 
       const { files, toolContext } = await prime();
 
-      expect(bySession({ files })).toEqual({
-        'sess-output': 'data.csv',
-        'sess-upload': 'data-older.csv',
-      });
+      expect(bySession({ files })).toEqual({ 'sess-output': 'data.csv' });
       /* The output keeps the path it wrote, so it stays out of the context
-       * exactly as an undisplaced generated file does. */
-      expect(toolContext).toContain('/mnt/data/data-older.csv');
+       * exactly as any other generated file does. */
       expect(toolContext).not.toContain('/mnt/data/data.csv');
     });
 
-    it('advertises a generated output that a newer upload displaced', async () => {
-      /**
-       * The model only knows it wrote `/mnt/data/report.png`. Once a newer
-       * upload takes that path, silence would leave it reading the upload or
-       * failing to find its own artifact.
-       */
+    it('lets a newer upload supersede the generated output at the same path', async () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([
         codeFile({
@@ -3976,9 +3960,11 @@ describe('Code Process', () => {
         }),
       ]);
 
-      const { toolContext } = await prime();
+      const { files, toolContext } = await prime();
 
-      expect(toolContext).toContain('/mnt/data/report-older.png (written earlier as report.png)');
+      expect(bySession({ files })).toEqual({ 'sess-upload': 'report.png' });
+      expect(toolContext).toContain('/mnt/data/report.png');
+      expect(toolContext).not.toContain('written earlier as');
     });
 
     it('ranks a rewritten output above an upload created after it', async () => {
@@ -4002,18 +3988,15 @@ describe('Code Process', () => {
 
       const { files } = await prime();
 
-      expect(bySession({ files })).toEqual({
-        'sess-output': 'data.csv',
-        'sess-upload': 'data-newer.csv',
-      });
+      expect(bySession({ files })).toEqual({ 'sess-output': 'data.csv' });
     });
 
     it("lets a conversation file outrank the agent's own file of the same name", async () => {
       /**
        * Every agent in a run primes the conversation's files plus its own, so
-       * a private file taking the bare path in one agent and not in another
-       * would leave two agents advertising different paths for the same
-       * shared file into one mount namespace.
+       * a private file surviving in one agent and not in another would leave
+       * two agents reading different files at the same path in one mount
+       * namespace.
        */
       setupActiveSessions();
       getFiles.mockResolvedValue([
@@ -4038,10 +4021,72 @@ describe('Code Process', () => {
         },
       });
 
-      expect(bySession({ files })).toEqual({
-        'sess-shared': 'data.csv',
-        'sess-agent': 'data-agent-own.csv',
-      });
+      expect(bySession({ files })).toEqual({ 'sess-shared': 'data.csv' });
+    });
+
+    it('does not re-upload a file it drops', async () => {
+      /**
+       * The destination decision has to come before the freshness probe: a
+       * dropped file never reaches the sandbox, so re-uploading it would only
+       * spend a round trip and, on failure, count against the run.
+       */
+      const handleFileUpload = jest.fn();
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn(),
+        handleFileUpload,
+      }));
+      mockAxios.mockImplementation(async ({ url }) =>
+        url.includes('sess-newer')
+          ? { data: { lastModified: new Date().toISOString() } }
+          : { data: {} },
+      );
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'older',
+          filename: 'image.png',
+          storage_session_id: 'sess-older',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        }),
+        codeFile({
+          file_id: 'newer',
+          filename: 'image.png',
+          storage_session_id: 'sess-newer',
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        }),
+      ]);
+
+      const { files } = await prime();
+
+      expect(bySession({ files })).toEqual({ 'sess-newer': 'image.png' });
+      expect(handleFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('drops a file whose path sits under a claimed name', async () => {
+      /**
+       * Codeapi's conflict rule also rejects a destination that is a directory
+       * prefix of another, so `data` and `data/rows.csv` cannot both mount;
+       * the ancestor check has to run at this layer or the pair still reaches
+       * the sandbox and fails the request.
+       */
+      setupActiveSessions();
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'older',
+          filename: 'data/rows.csv',
+          storage_session_id: 'sess-older',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        }),
+        codeFile({
+          file_id: 'newer',
+          filename: 'data',
+          storage_session_id: 'sess-newer',
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        }),
+      ]);
+
+      const { files } = await prime();
+
+      expect(bySession({ files })).toEqual({ 'sess-newer': 'data' });
     });
 
     it('leaves a single file on its own filename', async () => {

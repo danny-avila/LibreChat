@@ -32,10 +32,10 @@ const {
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
   executeWorkspaceTool,
-  claimCodeDestination,
   createCodeDestinationSet,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
+  reserveCodeDestination,
   sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
   resolveDownloadPath,
@@ -1378,6 +1378,7 @@ const primeFiles = async (options) => {
    * grep on `[primeCodeFiles]` shows the input volume, the per-file
    * paths taken, and the final dispatch summary in one trace. */
   let skippedNoRef = 0;
+  let skippedSuperseded = 0;
   let reuploadFailures = 0;
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
@@ -1393,6 +1394,28 @@ const primeFiles = async (options) => {
     if (!sourceRef) {
       skippedNoRef += 1;
       logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
+      continue;
+    }
+    const sandboxName = resolveSandboxFilename(file.filename, file.type);
+    /**
+     * Codeapi mounts a by-ref input at the filename recorded on the stored
+     * object (the file server's Content-Disposition) and only falls back to
+     * the `name` sent here when that header is absent, so two files sharing a
+     * filename can never coexist in one sandbox: a suffixed alias lands on the
+     * bare name anyway and the whole `/exec` is rejected as conflicting
+     * destinations. Keep the file holding the newest content — `orderedFiles`
+     * puts it first — and drop the rest, the same collapse
+     * `ToolNode.updateCodeSession` applies once results come back. Reserved
+     * before the freshness probe so a dropped file is never re-uploaded; a
+     * winner whose re-upload fails therefore keeps the name and surfaces as a
+     * recovery failure rather than handing the path to a superseded copy.
+     */
+    if (!reserveCodeDestination(destinations, sandboxName)) {
+      skippedSuperseded += 1;
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=skip reason=destination-taken ` +
+          `filename=${file.filename}`,
+      );
       continue;
     }
     requiredCodeFiles += 1;
@@ -1415,29 +1438,12 @@ const primeFiles = async (options) => {
      * codeapi can resolve sessionKey per-file (kind switch +
      * tenant prefix from auth context).
      */
-    const sandboxName = resolveSandboxFilename(file.filename, file.type);
-    let claimedDestination;
-    const getDestination = () => {
-      claimedDestination ??= claimCodeDestination(destinations, sandboxName, file.file_id);
-      return claimedDestination;
-    };
-
     const pushFile = (overrideSessionId, overrideId) => {
-      /* Claimed here rather than up front so files that never reach the
-       * sandbox — no code-env ref, or a failed re-upload — do not reserve a
-       * name and push a file that does reach it onto a counter. */
       /* The sandbox holds the converted name, not the record's, so the mount path has
        * to follow the same rule provisioning uploaded under. */
-      const destination = getDestination();
-      if (destination !== file.filename) {
-        logger.debug(
-          `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
-            `reason=name-collision filename=${file.filename}`,
-        );
-      }
       toolContext = appendVisibleCodeFileContext(
         toolContext,
-        getVisibleCodeFileContextLine(file, agentResourceIds, destination),
+        getVisibleCodeFileContextLine(file, agentResourceIds, sandboxName),
       );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
@@ -1449,7 +1455,7 @@ const primeFiles = async (options) => {
         id: overrideId ?? id,
         resource_id: sourceRef.id,
         storage_session_id: overrideSessionId ?? session_id,
-        name: destination,
+        name: sandboxName,
         kind: sourceRef.kind,
         ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
       });
@@ -1486,7 +1492,7 @@ const primeFiles = async (options) => {
             uploadCodeEnvFile({
               req: options.req,
               stream,
-              filename: getDestination(),
+              filename: sandboxName,
               kind: sourceRef.kind,
               id: sourceRef.id,
               ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1597,7 +1603,8 @@ const primeFiles = async (options) => {
   const { requestId, runId } = getPrimingCorrelation(req);
   logger.debug(
     `[primeCodeFiles] out: returned=${files.length} ` +
-      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
+      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} ` +
+      `skippedSuperseded=${skippedSuperseded} reuploadFailures=${reuploadFailures}`,
   );
 
   if (allRequiredResourcesFailed) {
