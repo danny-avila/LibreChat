@@ -407,6 +407,8 @@ export interface SubagentAncestryEntry {
   readonly parentToolCallId?: string;
 }
 
+export type SubagentIdentity = Pick<SubagentAncestryEntry, 'subagentKind' | 'subagentAgentId'>;
+
 /** Single streamed subagent update forwarded by the SDK's SubagentExecutor. */
 export interface SubagentUpdateEvent {
   runId: string;

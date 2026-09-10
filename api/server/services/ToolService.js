@@ -1184,6 +1184,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1213,6 +1214,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1363,6 +1365,7 @@ async function loadToolDefinitionsWrapper({
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
           oboIdentityContext,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
 
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {

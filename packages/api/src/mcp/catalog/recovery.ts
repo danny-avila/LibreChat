@@ -4,6 +4,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
+import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
 
@@ -18,7 +19,17 @@ let activeCatalogWork = 0;
  * long regardless of where the server stalls. Recovery targets a server that is reachable and
  * authorized but whose catalog cache expired, and such a server answers well inside this window.
  */
-const RECOVERY_BUDGET_MS = 3000;
+const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
+  discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
+  discoveryTimeoutMs: 3_000,
+  reauthRetryMs: 30 * 60_000,
+  maxStateEntries: 10_000,
+  generationReadTimeoutMs: 500,
+  authorizationFenceRetryMs: [0, 50, 200],
+  authorizationFenceTimeoutMs: 1_000,
+  authorizationFenceRetryIntervalMs: 30_000,
+  authorizationFenceRetryBatchSize: 100,
+};
 
 export interface MCPServerCatalogRecoveryInput {
   serverName: string;
@@ -30,8 +41,101 @@ export interface MCPServerCatalogRecoveryDeps {
     userId: string,
     serverNames: readonly string[],
   ) => Promise<Record<string, Record<string, string>>>;
-  discoverServerTools: (options: ToolDiscoveryOptions) => Promise<{ tools: Tool[] | null }>;
+  discoverServerTools: (options: ToolDiscoveryOptions) => Promise<{
+    tools: Tool[] | null;
+    oauthRequired?: boolean;
+    authenticationKind?: 'oauth' | 'obo' | 'server';
+  }>;
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
+  recoveryTracker?: MCPServerCatalogRecoveryTracker;
+  getRecoveryGeneration?: MCPRecoveryGenerationReader;
+}
+
+export interface MCPRecoveryGenerationScope {
+  userId: string;
+  serverName: string;
+}
+
+export type MCPRecoveryGenerationReader = (
+  scope: MCPRecoveryGenerationScope,
+) => Promise<string | undefined>;
+
+const AUTHORIZATION_FENCE_RETRY_DELAYS_MS = [0, 50, 200] as const;
+
+export async function publishMCPAuthorizationMutation(
+  scope: MCPRecoveryGenerationScope,
+  deps: {
+    invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
+    clearLocalRecovery?: (userId: string, serverName: string) => void;
+    persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
+    clearPublicationRetry?: (
+      scope: MCPRecoveryGenerationScope,
+      publicationRetryVersion: string,
+    ) => Promise<void>;
+    retryDelaysMs?: readonly number[];
+    attemptTimeoutMs?: number;
+  },
+): Promise<void> {
+  /** Persist retry intent before touching the shared cache. A credential writer can keep this
+   * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
+   * durable path to fence other replicas. */
+  const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
+  let lastError: unknown;
+  for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      const attemptTimeoutMs =
+        deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          deps.invalidateRecoveryGeneration(scope),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('MCP authorization generation publication timed out')),
+              attemptTimeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutId != null) clearTimeout(timeoutId);
+      }
+      try {
+        if (publicationRetryVersion != null) {
+          await deps.clearPublicationRetry?.(scope, publicationRetryVersion);
+        }
+      } catch (error) {
+        /** A leftover retry only advances the opaque generation again and is therefore safe. */
+        logger.warn(
+          `[MCP authorization] Published generation for ${scope.serverName} but could not clear its retry intent`,
+          error,
+        );
+      }
+      deps.clearLocalRecovery?.(scope.userId, scope.serverName);
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(
+        `[MCP authorization] Failed to publish credential generation for ${scope.serverName}; retrying`,
+        error,
+      );
+    }
+  }
+  throw lastError;
+}
+
+export interface MCPServerCatalogRecoveryPolicy {
+  discoveryBackoffMs: readonly number[];
+  discoveryTimeoutMs: number;
+  reauthRetryMs: number;
+  maxStateEntries: number;
+  generationReadTimeoutMs: number;
+  authorizationFenceRetryMs: readonly number[];
+  authorizationFenceTimeoutMs: number;
+  authorizationFenceRetryIntervalMs: number;
+  authorizationFenceRetryBatchSize: number;
 }
 
 export interface MCPServerCatalogSnapshot {
@@ -65,6 +169,14 @@ export interface MCPServerCatalogLoaderDeps extends MCPServerCatalogRecoveryDeps
 export interface MCPServerCatalogLoaderResult {
   serverTools: Map<string, LCAvailableTools>;
   serversWithoutTools: string[];
+  reauthRequiredServers: Set<string>;
+  reauthRequiredGenerations: Map<string, string | undefined>;
+}
+
+interface MCPServerCatalogRecoveryResult {
+  serverTools: Map<string, LCAvailableTools>;
+  reauthRequiredServers: Set<string>;
+  reauthRequiredGenerations: Map<string, string | undefined>;
 }
 
 interface MCPServerCatalogEntry extends MCPServerCatalogSnapshot {
@@ -75,6 +187,23 @@ interface MCPServerCatalogEntry extends MCPServerCatalogSnapshot {
 
 interface RecoveryCandidate extends MCPServerCatalogRecoveryInput {
   customUserVars?: Record<string, string>;
+}
+
+type RecoveryOutcome = {
+  serverName: string;
+  tools: LCAvailableTools | null;
+  state?: 'reauth_required' | 'backoff';
+  recoveryGeneration?: string;
+};
+
+interface RecoveryStateEntry {
+  configFingerprint: string;
+  recoveryGeneration?: string;
+  failureCount: number;
+  nextRetryAt: number;
+  lastTouchedAt: number;
+  outcome?: RecoveryOutcome;
+  inFlight?: Promise<RecoveryOutcome>;
 }
 
 interface CatalogWorkLane {
@@ -95,35 +224,231 @@ export class MCPCatalogCapacityError extends Error {
   }
 }
 
-/** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
-function resolveBudget(serverConfig: ParsedServerConfig): number {
+/** Reads the cross-replica credential fence without making status or recovery depend on shared
+ * cache availability. The application supplies the cache implementation at its wiring boundary. */
+export async function readMCPRecoveryGeneration(
+  scope: MCPRecoveryGenerationScope,
+  reader?: MCPRecoveryGenerationReader,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<string | undefined> {
+  if (reader == null || options?.signal?.aborted) {
+    return undefined;
+  }
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_RECOVERY_POLICY.generationReadTimeoutMs;
+  let timeoutId: number | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      reader(scope),
+      new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(resolve, timeoutMs);
+        if (options?.signal != null) {
+          onAbort = () => resolve(undefined);
+          options.signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }),
+    ]);
+  } catch (error) {
+    logger.debug(
+      `[MCP catalog recovery] Could not read shared generation for ${scope.serverName}; using process-local state`,
+      error,
+    );
+    return undefined;
+  } finally {
+    if (timeoutId != null) {
+      clearTimeout(timeoutId);
+    }
+    if (onAbort != null) {
+      options?.signal?.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
+export async function readMCPRecoveryGenerationAround<T>(
+  scope: MCPRecoveryGenerationScope,
+  reader: MCPRecoveryGenerationReader | undefined,
+  operation: () => Promise<T>,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<{ value: T; generation?: string }> {
+  const before = await readMCPRecoveryGeneration(scope, reader, options);
+  const value = await operation();
+  const after = await readMCPRecoveryGeneration(scope, reader, options);
+  return {
+    value,
+    ...(before != null && before === after && { generation: before }),
+  };
+}
+
+/** Bounds one server's discovery, honouring the shorter configured limit. */
+function resolveBudget(
+  serverConfig: ParsedServerConfig,
+  policy: MCPServerCatalogRecoveryPolicy,
+): number {
   const { initTimeout } = serverConfig;
   if (typeof initTimeout === 'number') {
-    return Math.min(initTimeout, RECOVERY_BUDGET_MS);
+    return Math.min(initTimeout, policy.discoveryTimeoutMs);
   }
-  return RECOVERY_BUDGET_MS;
+  return policy.discoveryTimeoutMs;
+}
+
+function getRecoveryKey(userId: string, serverName: string): string {
+  return `${userId}\u0000${serverName}`;
+}
+
+function getRecoveryFingerprint(
+  serverConfig: ParsedServerConfig,
+  policy: MCPServerCatalogRecoveryPolicy,
+): string {
+  return JSON.stringify([serverConfig, policy]);
+}
+
+export class MCPServerCatalogRecoveryTracker {
+  private readonly states = new Map<string, RecoveryStateEntry>();
+
+  constructor(private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries) {}
+
+  private touch(key: string, entry: RecoveryStateEntry): void {
+    if (this.states.get(key) !== entry) {
+      return;
+    }
+    this.states.delete(key);
+    this.states.set(key, entry);
+  }
+
+  /** Clears suppression after a credential/config mutation commits. */
+  public clear(userId: string, serverName?: string): void {
+    if (serverName != null) {
+      this.states.delete(getRecoveryKey(userId, serverName));
+      return;
+    }
+    const prefix = `${userId}\u0000`;
+    for (const key of this.states.keys()) {
+      if (key.startsWith(prefix)) {
+        this.states.delete(key);
+      }
+    }
+  }
+
+  public run(
+    user: IUser,
+    candidate: RecoveryCandidate,
+    policy: MCPServerCatalogRecoveryPolicy,
+    recoveryGeneration: string | undefined,
+    discover: () => Promise<RecoveryOutcome>,
+  ): Promise<RecoveryOutcome> {
+    const key = getRecoveryKey(user.id, candidate.serverName);
+    const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
+    const now = Date.now();
+    const existing = this.states.get(key);
+    const sameObservedState =
+      existing?.configFingerprint === configFingerprint &&
+      (recoveryGeneration == null || existing.recoveryGeneration === recoveryGeneration);
+    if (sameObservedState) {
+      existing.lastTouchedAt = now;
+      this.touch(key, existing);
+      if (existing.inFlight != null) {
+        return existing.inFlight;
+      }
+      if (existing.outcome != null && existing.nextRetryAt > now) {
+        return Promise.resolve(existing.outcome);
+      }
+    }
+
+    const entry: RecoveryStateEntry = {
+      configFingerprint,
+      recoveryGeneration:
+        recoveryGeneration ?? (sameObservedState ? existing?.recoveryGeneration : undefined),
+      failureCount: sameObservedState ? existing.failureCount : 0,
+      nextRetryAt: 0,
+      lastTouchedAt: now,
+    };
+    const flight = discover()
+      .then((outcome) => {
+        if (this.states.get(key) !== entry) {
+          return { serverName: candidate.serverName, tools: null };
+        }
+        entry.lastTouchedAt = Date.now();
+        this.touch(key, entry);
+        outcome.recoveryGeneration = entry.recoveryGeneration;
+        if (outcome.state === 'reauth_required') {
+          entry.failureCount = 0;
+          entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
+          /** Keep the authorization decision, but never promote an unfenced discovery catalog
+           * into a cross-request cache. The configured server still appears with no tools. */
+          entry.outcome = { ...outcome, tools: null };
+        } else if (outcome.state === 'backoff') {
+          const delay =
+            policy.discoveryBackoffMs[
+              Math.min(entry.failureCount, policy.discoveryBackoffMs.length - 1)
+            ];
+          entry.failureCount += 1;
+          entry.nextRetryAt = entry.lastTouchedAt + delay;
+          entry.outcome = outcome;
+        } else {
+          this.states.delete(key);
+        }
+        return outcome;
+      })
+      .finally(() => {
+        if (this.states.get(key) === entry) {
+          entry.inFlight = undefined;
+          this.trim();
+        }
+      });
+    entry.inFlight = flight;
+    this.states.set(key, entry);
+    this.trim();
+    return flight;
+  }
+
+  private trim(): void {
+    while (this.states.size > this.maxStateEntries) {
+      let removed = false;
+      for (const [key, entry] of this.states) {
+        if (entry.inFlight != null) {
+          continue;
+        }
+        this.states.delete(key);
+        removed = true;
+        break;
+      }
+      if (!removed) return;
+    }
+  }
 }
 
 async function discoverCandidate(
   user: IUser,
   { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
+  policy: MCPServerCatalogRecoveryPolicy,
   signal?: AbortSignal,
-): Promise<[string, LCAvailableTools | null]> {
+): Promise<RecoveryOutcome> {
   try {
     const result = await deps.discoverServerTools({
       user,
       serverName,
       configServers: { [serverName]: serverConfig },
       customUserVars,
-      deadlineMs: Date.now() + resolveBudget(serverConfig),
+      deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
       signal,
     });
-    return [
+    const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
+    if (signal?.aborted) {
+      return { serverName, tools: null };
+    }
+    if (result.oauthRequired === true && result.authenticationKind === 'oauth') {
+      return { serverName, tools, state: 'reauth_required' };
+    }
+    return {
       serverName,
-      result.tools == null ? null : deps.formatServerTools(serverName, result.tools),
-    ];
+      tools,
+      ...(tools == null && { state: 'backoff' as const }),
+    };
   } catch (error) {
+    if (signal?.aborted) {
+      return { serverName, tools: null };
+    }
     /** Discovery raises `InvalidRequest` precisely when configuration makes the attempt
      *  impossible — domain policy, unresolved placeholders, missing runtime fields. That
      *  failure recurs on every request until an admin changes configuration, so it is
@@ -132,10 +457,10 @@ async function discoverCandidate(
       logger.debug(
         `[MCP catalog recovery] ${serverName} is not recoverable under current configuration: ${error.message}`,
       );
-      return [serverName, null];
+      return { serverName, tools: null, state: 'backoff' };
     }
     logger.error(`[MCP catalog recovery] Failed to discover tools for ${serverName}:`, error);
-    return [serverName, null];
+    return { serverName, tools: null, state: 'backoff' };
   }
 }
 
@@ -218,21 +543,26 @@ function runCatalogWork(
 /**
  * Passively discovers cold MCP catalogs for one request.
  *
- * A recovered catalog cannot be retained: a discovery connection owns no publication generation
- * and is disposed, and the tool cache refuses unfenced writes, so the result is served only to
- * the requesting user. Recovery therefore stays stateless and individually cheap rather than
- * scheduling around a result it is not allowed to keep — it skips only what configuration alone
- * proves pointless, and bounds everything else by a per-server budget.
+ * A recovered catalog cannot enter the authoritative tool cache: a discovery connection owns no
+ * publication generation and is disposed. Process-local recovery state therefore retains only
+ * enough information to coalesce concurrent requests and suppress repeated failed/OAuth attempts;
+ * successful ordinary catalogs remain request-local.
  */
-export async function recoverMCPServerCatalogs(
+async function recoverMCPServerCatalogsWithState(
   params: {
     user: IUser;
     servers: readonly MCPServerCatalogRecoveryInput[];
     signal?: AbortSignal;
+    recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>;
   },
   deps: MCPServerCatalogRecoveryDeps,
-): Promise<Map<string, LCAvailableTools>> {
+): Promise<MCPServerCatalogRecoveryResult> {
   const { user, servers, signal } = params;
+  const policy = { ...DEFAULT_RECOVERY_POLICY, ...params.recoveryPolicy };
+  if (policy.discoveryBackoffMs.length === 0) {
+    policy.discoveryBackoffMs = DEFAULT_RECOVERY_POLICY.discoveryBackoffMs;
+  }
+  const tracker = deps.recoveryTracker ?? new MCPServerCatalogRecoveryTracker();
   /** Only the config tier retries a failed stub on its own clock. A `yaml`- or `user`-sourced
    *  stub has no such timer, so skipping it unconditionally would hide the server for good —
    *  exactly the state this recovery exists to escape. */
@@ -244,8 +574,29 @@ export async function recoverMCPServerCatalogs(
     return false;
   });
   if (recoverable.length === 0) {
-    return new Map();
+    return {
+      serverTools: new Map(),
+      reauthRequiredServers: new Set(),
+      reauthRequiredGenerations: new Map(),
+    };
   }
+
+  const generationSnapshots = new Map<string, string | undefined>();
+  await Promise.all(
+    recoverable.map(async ({ serverName, serverConfig }) => {
+      if (serverConfig.obo != null || usesDirectOpenIDBearerRecovery(serverConfig)) {
+        return;
+      }
+      generationSnapshots.set(
+        serverName,
+        await readMCPRecoveryGeneration(
+          { userId: user.id, serverName },
+          deps.getRecoveryGeneration,
+          { timeoutMs: policy.generationReadTimeoutMs, signal },
+        ),
+      );
+    }),
+  );
 
   /** Only credential-bearing servers can consume the auth map, so a list without any avoids
    *  the plugin-auth round trip entirely. */
@@ -274,13 +625,62 @@ export async function recoverMCPServerCatalogs(
     authorized.push({ ...candidate, customUserVars });
   }
   if (authorized.length === 0) {
-    return new Map();
+    return {
+      serverTools: new Map(),
+      reauthRequiredServers: new Set(),
+      reauthRequiredGenerations: new Map(),
+    };
   }
 
-  const results: Array<[string, LCAvailableTools | null] | undefined> = [];
+  const results: Array<RecoveryOutcome | undefined> = [];
   const admitted = await runCatalogWork(
     authorized.map((candidate, index) => async () => {
-      results[index] = await discoverCandidate(user, candidate, deps, signal);
+      /** OBO and direct OpenID bearer discovery consume a request's live upstream-token closure,
+       * so they must never join another request's flight or outlive that request's cancellation. */
+      const usesRequestCredential =
+        candidate.serverConfig.obo != null ||
+        usesDirectOpenIDBearerRecovery(candidate.serverConfig);
+      if (usesRequestCredential) {
+        results[index] = await discoverCandidate(user, candidate, deps, policy, signal);
+        return;
+      }
+      const observedGeneration = await readMCPRecoveryGeneration(
+        { userId: user.id, serverName: candidate.serverName },
+        deps.getRecoveryGeneration,
+        { timeoutMs: policy.generationReadTimeoutMs, signal },
+      );
+      const snapshotGeneration = generationSnapshots.get(candidate.serverName);
+      const requiresCredentialSnapshotFence = hasCustomUserVars(candidate.serverConfig);
+      if (
+        requiresCredentialSnapshotFence &&
+        (snapshotGeneration == null ||
+          observedGeneration == null ||
+          snapshotGeneration !== observedGeneration)
+      ) {
+        tracker.clear(user.id, candidate.serverName);
+        results[index] = { serverName: candidate.serverName, tools: null };
+        return;
+      }
+      const recoveryGeneration = observedGeneration ?? snapshotGeneration;
+      const outcome = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
+        discoverCandidate(user, candidate, deps, policy),
+      );
+      const finalGeneration = await readMCPRecoveryGeneration(
+        { userId: user.id, serverName: candidate.serverName },
+        deps.getRecoveryGeneration,
+        { timeoutMs: policy.generationReadTimeoutMs, signal },
+      );
+      const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
+      if (
+        outcomeGeneration != null &&
+        finalGeneration != null &&
+        outcomeGeneration !== finalGeneration
+      ) {
+        tracker.clear(user.id, candidate.serverName);
+        results[index] = { serverName: candidate.serverName, tools: null };
+        return;
+      }
+      results[index] = outcome;
     }),
     signal,
   );
@@ -288,11 +688,32 @@ export async function recoverMCPServerCatalogs(
     throw new MCPCatalogCapacityError();
   }
 
-  return new Map(
-    results.filter(
-      (entry): entry is [string, LCAvailableTools] => entry != null && entry[1] != null,
-    ),
-  );
+  const serverTools = new Map<string, LCAvailableTools>();
+  const reauthRequiredServers = new Set<string>();
+  const reauthRequiredGenerations = new Map<string, string | undefined>();
+  for (const result of results) {
+    if (result?.tools != null) {
+      serverTools.set(result.serverName, result.tools);
+    }
+    if (result?.state === 'reauth_required') {
+      reauthRequiredServers.add(result.serverName);
+      reauthRequiredGenerations.set(result.serverName, result.recoveryGeneration);
+    }
+  }
+  return { serverTools, reauthRequiredServers, reauthRequiredGenerations };
+}
+
+/** Preserves the public recovery helper's Map contract for existing package consumers. */
+export async function recoverMCPServerCatalogs(
+  params: {
+    user: IUser;
+    servers: readonly MCPServerCatalogRecoveryInput[];
+    signal?: AbortSignal;
+    recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>;
+  },
+  deps: MCPServerCatalogRecoveryDeps,
+): Promise<Map<string, LCAvailableTools>> {
+  return (await recoverMCPServerCatalogsWithState(params, deps)).serverTools;
 }
 
 /** Loads cached, connected, then passive MCP catalogs for a marketplace-style list request. */
@@ -301,6 +722,7 @@ export async function loadMCPServerCatalogs(
     user: IUser;
     servers: readonly MCPServerCatalogRecoveryInput[];
     signal?: AbortSignal;
+    recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>;
   },
   deps: MCPServerCatalogLoaderDeps,
 ): Promise<MCPServerCatalogLoaderResult> {
@@ -351,10 +773,17 @@ export async function loadMCPServerCatalogs(
   const coldServers = snapshots
     .filter(({ tools }) => tools == null)
     .map(({ serverName, serverConfig }) => ({ serverName, serverConfig }));
-  let recovered = new Map<string, LCAvailableTools>();
+  let recovered: MCPServerCatalogRecoveryResult = {
+    serverTools: new Map(),
+    reauthRequiredServers: new Set(),
+    reauthRequiredGenerations: new Map(),
+  };
   if (coldServers.length > 0) {
     try {
-      recovered = await recoverMCPServerCatalogs({ user, servers: coldServers, signal }, deps);
+      recovered = await recoverMCPServerCatalogsWithState(
+        { user, servers: coldServers, signal, recoveryPolicy: params.recoveryPolicy },
+        deps,
+      );
     } catch (error) {
       if (error instanceof MCPCatalogCapacityError) {
         throw error;
@@ -366,12 +795,15 @@ export async function loadMCPServerCatalogs(
   const serverTools = new Map<string, LCAvailableTools>();
   const serversWithoutTools: string[] = [];
   for (const snapshot of snapshots) {
-    const tools = snapshot.tools ?? recovered.get(snapshot.serverName);
+    const tools = snapshot.tools ?? recovered.serverTools.get(snapshot.serverName);
     if (tools == null) {
       serversWithoutTools.push(snapshot.serverName);
       continue;
     }
     serverTools.set(snapshot.serverName, tools);
+    if (snapshot.tools != null) {
+      deps.recoveryTracker?.clear(user.id, snapshot.serverName);
+    }
 
     if (snapshot.source !== 'snapshot' || snapshot.tools == null) {
       continue;
@@ -393,5 +825,10 @@ export async function loadMCPServerCatalogs(
       );
   }
 
-  return { serverTools, serversWithoutTools };
+  return {
+    serverTools,
+    serversWithoutTools,
+    reauthRequiredServers: recovered.reauthRequiredServers,
+    reauthRequiredGenerations: recovered.reauthRequiredGenerations,
+  };
 }

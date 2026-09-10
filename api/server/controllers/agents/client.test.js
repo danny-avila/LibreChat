@@ -8016,6 +8016,29 @@ describe('AgentClient - finalizeSubagentContent', () => {
     return map;
   };
 
+  it.each(['agent', 'graph'])(
+    'persists %s identity even when the child has no content',
+    async (subagentKind) => {
+      const identity = {
+        subagentKind,
+        subagentAgentId: subagentKind === 'graph' ? 'graph:agent-1' : 'agent-1',
+      };
+      const buffer = await runSubagentEvents([
+        { ...event('start', undefined), ...identity, subagentType: 'agent-1' },
+        { ...event('error', undefined), ...identity, subagentType: 'agent-1' },
+      ]);
+      const client = makeClient(buffer);
+      client.contentParts = [
+        { type: 'tool_call', tool_call: { id: 'unrelated', name: Constants.SUBAGENT } },
+        { type: 'tool_call', tool_call: { id: 'call_sub', name: Constants.SUBAGENT } },
+      ];
+      client.finalizeSubagentContent();
+      expect(client.contentParts[0].tool_call.subagentIdentity).toBeUndefined();
+      expect(client.contentParts[1].tool_call.subagentIdentity).toEqual(identity);
+      expect(buffer.size).toBe(0);
+    },
+  );
+
   it('attaches aggregated subagent_content to the matching subagent tool_call part', async () => {
     const buffer = await runSubagentEvents([
       event('run_step', {

@@ -818,6 +818,9 @@ class AgentClient extends BaseClient {
       const aggregator = buffer.get(toolCall.id);
       if (!aggregator) continue;
       try {
+        if (aggregator.subagentIdentity != null) {
+          toolCall.subagentIdentity = aggregator.subagentIdentity;
+        }
         /** `createContentAggregator` returns a sparse array (undefined
          *  slots for indices that never received content). Strip those
          *  so the persisted shape is a clean `TMessageContentParts[]`. */

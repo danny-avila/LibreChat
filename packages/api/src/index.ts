@@ -29,6 +29,8 @@ export * from './mcp/cache';
 export * from './mcp/tools';
 export * from './mcp/catalog/store';
 export * from './mcp/catalog/recovery';
+export * from './mcp/authorization';
+export * from './mcp/authorizationRetry';
 export * from './mcp/assistants';
 export * from './mcp/request';
 export * from './mcp/icons';

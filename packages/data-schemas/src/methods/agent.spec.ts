@@ -94,12 +94,16 @@ beforeAll(async () => {
   };
 
   const aclEntryMethods = createAclEntryMethods(mongoose);
-  const { getSoleOwnedResourceIds } = aclEntryMethods;
+  const { getSoleOwnedResourceIds, findAccessibleResources } = aclEntryMethods;
 
   methods = createAgentMethods(mongoose, {
     removeAllPermissions,
     getActions,
     getSoleOwnedResourceIds,
+    getUserPrincipals: async ({ userId }) => [
+      { principalType: 'user', principalId: new mongoose.Types.ObjectId(userId) },
+    ],
+    findAccessibleResources,
     isExternalSkillId: (id) => externalSkillIds.has(id),
   });
   createAgent = methods.createAgent;
@@ -558,6 +562,44 @@ describe('Agent Methods', () => {
       });
 
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('loads ACL-visible graph nodes by logical ID without exposing storage IDs', async () => {
+      const { agentId, authorId } = createTestIds();
+      const visible = await createAgent({
+        id: agentId,
+        name: 'Visible graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [`search${Constants.mcp_delimiter}docs`],
+      });
+      const privateAgent = await createAgent({
+        id: `private-${agentId}`,
+        name: 'Private graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: visible._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: authorId,
+      });
+
+      const access = await methods.resolveAgentGraphAccess({
+        userId: authorId.toString(),
+      });
+      const nodes = await methods.getAgentGraphNodes([visible.id, privateAgent.id], access);
+
+      expect(nodes).toEqual([
+        expect.objectContaining({ id: visible.id, mcpServerNames: ['docs'] }),
+      ]);
+      expect(nodes[0]).not.toHaveProperty('_id');
     });
 
     describe('MCP server name candidate lookups', () => {

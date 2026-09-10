@@ -104,4 +104,44 @@ describe('MCP OAuth flow state across Redis-backed instances', () => {
       expect.objectContaining({ status: 'FAILED', error: 'cancelled' }),
     );
   });
+
+  it('settles a fresher result over a completion from the same attempt across pods', async () => {
+    const flowId = createFlowId();
+    await podA.initFlow(flowId, FLOW_TYPE, { state: 'observed-state' });
+    const flow = await podB.getFlowState(flowId, FLOW_TYPE);
+
+    await podA.completeFlow(flowId, FLOW_TYPE, 'stale-result');
+    await expect(
+      podB.settleFlowIfCurrent(
+        flowId,
+        FLOW_TYPE,
+        flow!.createdAt,
+        'observed-state',
+        'fresh-result',
+      ),
+    ).resolves.toBe('updated');
+    await expect(podA.getFlowState(flowId, FLOW_TYPE)).resolves.toEqual(
+      expect.objectContaining({ status: 'COMPLETED', result: 'fresh-result' }),
+    );
+  });
+
+  it('settles a fresher result over a failure from the same attempt across pods', async () => {
+    const flowId = createFlowId();
+    await podA.initFlow(flowId, FLOW_TYPE, { state: 'observed-state' });
+    const flow = await podB.getFlowState(flowId, FLOW_TYPE);
+
+    await podA.failFlow(flowId, FLOW_TYPE, new Error('stale failure'));
+    await expect(
+      podB.settleFlowIfCurrent(
+        flowId,
+        FLOW_TYPE,
+        flow!.createdAt,
+        'observed-state',
+        'fresh-result',
+      ),
+    ).resolves.toBe('updated');
+    await expect(podA.getFlowState(flowId, FLOW_TYPE)).resolves.toEqual(
+      expect.objectContaining({ status: 'COMPLETED', result: 'fresh-result' }),
+    );
+  });
 });

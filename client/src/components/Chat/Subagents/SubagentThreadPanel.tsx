@@ -51,6 +51,7 @@ import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
+import { resolveSubagentAgentId } from './identity';
 import { useAgentsMapContext } from '~/Providers';
 import { isLiveSubagentStatus } from './status';
 import { renderAgentAvatar } from '~/utils';
@@ -144,10 +145,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       selection.partIndex,
     ),
   );
+  const foregroundAgentId = resolveSubagentAgentId(progress, selection.subagentIdentity);
+  const foregroundAgent = foregroundAgentId == null ? undefined : agentsMap?.[foregroundAgentId];
   const foregroundTitle =
     selection.subagentType === 'self'
       ? localize('com_ui_subagent_dialog_title_self')
-      : localize('com_ui_subagent_dialog_title', { 0: selection.subagentType });
+      : localize('com_ui_subagent_dialog_title', {
+          0: foregroundAgent?.name || selection.subagentType,
+        });
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const controlIdentity = subagentControlStateKey(selection.parentConversationId, threadId, taskId);
@@ -838,7 +843,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [agentsMap, eventSiblings, selection.event, threadId]);
   const selectedActorLabel =
     actorOptions.find((option) => option.value === threadId)?.label ?? panelTitle;
-  const selectedActorAgentId = selectedEventActor?.agentId ?? threadView?.agentId;
+  const selectedActorAgentId =
+    selectedEventActor?.agentId ?? threadView?.agentId ?? foregroundAgentId;
   const selectedActorIcon = renderAgentAvatar(
     selectedActorAgentId == null ? undefined : agentsMap?.[selectedActorAgentId],
     { size: 'icon', showBorder: false },
