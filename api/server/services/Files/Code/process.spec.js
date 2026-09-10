@@ -63,8 +63,6 @@ const mockParseSandboxImageChunk = jest.fn((response) => response);
  * in promise.spec.ts and the finalizePreview unit tests below). */
 const passthroughWithTimeout = async (promise) => promise;
 jest.mock('@librechat/api', () => {
-  const http = require('http');
-  const https = require('https');
   return {
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
