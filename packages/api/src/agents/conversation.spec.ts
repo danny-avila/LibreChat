@@ -14,14 +14,11 @@ describe('resolveRunCodeWorkspaces', () => {
   it.each([
     { requestedSelections: [] },
     { requestedSelections: [{ environmentId: 'machine', workspaceId: 'chosen-project' }] },
-  ])(
-    'preserves an explicit choice, including clearing selections',
-    ({ requestedSelections }) => {
-      expect(
-        resolveRunCodeWorkspaces({ conversationId: 'target', conversation, requestedSelections }),
-      ).toBe(requestedSelections);
-    },
-  );
+  ])('preserves an explicit choice, including clearing selections', ({ requestedSelections }) => {
+    expect(
+      resolveRunCodeWorkspaces({ conversationId: 'target', conversation, requestedSelections }),
+    ).toBe(requestedSelections);
+  });
 });
 
 describe('resolveRunConversation', () => {
