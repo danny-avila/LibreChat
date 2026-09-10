@@ -466,6 +466,9 @@ export type TPinConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
   langfuseSessionUrl?: string;
+  /** Whether the link was published with a configured sender label; withholds the
+   * model on hover. */
+  hasConfiguredSender?: boolean;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;

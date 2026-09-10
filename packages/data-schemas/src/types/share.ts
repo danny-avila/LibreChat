@@ -114,6 +114,9 @@ export interface SharedMessagesResult {
   messages: Array<SharedMessage>;
   shareId: string;
   title?: string;
+  /** Whether the shared messages show a configured sender label, so the share view can
+   * withhold the model on hover as the chat view does. */
+  hasConfiguredSender?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
