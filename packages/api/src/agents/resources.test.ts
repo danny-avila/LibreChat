@@ -2076,6 +2076,7 @@ describe('primeResources', () => {
             storage_session_id: 'sess',
             file_id: 'remote',
             executionProfile: 'default',
+            sandboxFilename: 'default-alias.csv',
           },
           codeEnvRefs: {
             default: {
@@ -2084,6 +2085,7 @@ describe('primeResources', () => {
               storage_session_id: 'sess',
               file_id: 'remote',
               executionProfile: 'default',
+              sandboxFilename: 'default-alias.csv',
             },
             'stateful:env1': {
               kind: 'user',
@@ -2091,6 +2093,7 @@ describe('primeResources', () => {
               storage_session_id: 'sess-2',
               file_id: 'remote-2',
               executionProfile: 'stateful',
+              sandboxFilename: 'stateful-alias.csv',
             },
           },
         },
@@ -2110,6 +2113,9 @@ describe('primeResources', () => {
       });
 
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('stale-file');
+      expect(result.provisionState?.codeEnvRecoveryNames?.get('stale-file')).toBe(
+        'default-alias.csv',
+      );
       expect(staleFile.metadata?.codeEnvRef).toBeUndefined();
       expect(staleFile.metadata?.codeEnvRefs?.default).toBeUndefined();
       expect(staleFile.metadata?.codeEnvRefs?.['stateful:env1']).toBeDefined();
@@ -2131,6 +2137,7 @@ describe('primeResources', () => {
               storage_session_id: 'sess-default',
               file_id: 'remote-default',
               executionProfile: 'default',
+              sandboxFilename: 'default-alias.csv',
             },
             'stateful:env1': {
               kind: 'user',
@@ -2138,6 +2145,7 @@ describe('primeResources', () => {
               storage_session_id: 'sess-2',
               file_id: 'remote-2',
               executionProfile: 'stateful',
+              sandboxFilename: 'stateful-alias.csv',
               executionRouteKey: 'stateful:env1',
             },
           },
@@ -2166,6 +2174,9 @@ describe('primeResources', () => {
         }),
       );
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('stateful-stale');
+      expect(result.provisionState?.codeEnvRecoveryNames?.get('stateful-stale')).toBe(
+        'stateful-alias.csv',
+      );
       expect(statefulFile.metadata?.codeEnvRefs?.['stateful:env1']).toBeUndefined();
       /* Another deployment's ref is untouched: this probe never asked about it. */
       expect(statefulFile.metadata?.codeEnvRefs?.default).toBeDefined();

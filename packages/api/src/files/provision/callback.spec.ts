@@ -149,6 +149,42 @@ describe('createProvisionFilesCallback', () => {
     }
   });
 
+  it('gives shared files consistent names across agents with private collisions', async () => {
+    const shared = makeFile({ file_id: 'shared' });
+    const own = makeFile({ file_id: 'own' });
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([own, { ...shared }], [], ['own']) }],
+        ['agent-b', { provisionState: state([{ ...shared }], []) }],
+      ],
+    });
+
+    await Promise.all([
+      provisionFiles([Constants.EXECUTE_CODE], 'agent-a'),
+      provisionFiles([Constants.EXECUTE_CODE], 'agent-b'),
+    ]);
+
+    const calls = provisionToCodeEnv.mock.calls.map(([args]) => args);
+    expect(calls.filter(({ file }) => file.file_id === 'shared')).toHaveLength(1);
+    expect(calls.find(({ file }) => file.file_id === 'shared').sandboxFilename).toBe('data.csv');
+    expect(calls.find(({ file }) => file.file_id === 'own').sandboxFilename).not.toBe('data.csv');
+  });
+
+  it('recovers a cleared reference under its saved route name', async () => {
+    const pending = state([makeFile()], []);
+    pending.codeEnvRecoveryNames = new Map([['file-1', 'saved-alias.csv']]);
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [['agent-a', { provisionState: pending }]],
+    });
+
+    const files = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+
+    expect(provisionToCodeEnv).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxFilename: 'saved-alias.csv' }),
+    );
+    expect(files?.[0].name).toBe('saved-alias.csv');
+  });
+
   it('returns the provisioned refs so the batch can inject them', async () => {
     const { provisionFiles } = buildHarness({
       contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],

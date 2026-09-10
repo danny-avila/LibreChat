@@ -10,7 +10,11 @@ import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
-import { claimCodeDestination, createCodeDestinationSet } from '~/files/code/destinations';
+import {
+  claimCodeDestination,
+  createCodeDestinationSet,
+  sortCodeFilesByDestinationPriority,
+} from '~/files/code/destinations';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { getCodeEnvUploadFilename } from '../code/form';
 import { isCodeFileToolName } from '~/agents/tools';
@@ -254,7 +258,10 @@ export function createProvisionFilesCallback({
       ? [...(ctx.pendingProvisionedCodeFiles ?? [])]
       : [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
-      const queuedCodeFiles = provisionState.codeEnvFiles;
+      const queuedCodeFiles = sortCodeFilesByDestinationPriority(
+        provisionState.codeEnvFiles,
+        provisionState.agentScopedFileIds,
+      ).filter((file): file is TFile => file != null);
       /** Every file in this tool-load batch shares one wait allowance. This
        *  prevents a large recovery set from multiplying the live-turn delay. */
       const codeApiRateLimitBudget = createCodeApiRateLimitBudget(
@@ -286,6 +293,7 @@ export function createProvisionFilesCallback({
             getCodeEnvUploadFilename(
               resolveSandboxFilename(
                 getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
+                  provisionState.codeEnvRecoveryNames?.get(file.file_id) ??
                   file.filename,
                 file.type,
               ),
