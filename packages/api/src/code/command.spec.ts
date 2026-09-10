@@ -66,6 +66,50 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
+  test('disconnects the actual HTTP request when an invoked command is cancelled', async () => {
+    let markStarted!: () => void;
+    let markDisconnected!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const disconnected = new Promise<void>((resolve) => {
+      markDisconnected = resolve;
+    });
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) {
+        /* Consume the complete request before cancellation. */
+      }
+      res.once('close', () => {
+        if (!res.writableEnded) markDisconnected();
+      });
+      markStarted();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+    });
+    const controller = new AbortController();
+    try {
+      const invocation = bashTool.invoke({ command: 'sleep 30' }, { signal: controller.signal });
+      const settled = invocation.then(
+        () => ({ rejected: false }),
+        () => ({ rejected: true }),
+      );
+      await started;
+      controller.abort();
+      expect((await settled).rejected).toBe(true);
+      await disconnected;
+    } finally {
+      server.closeAllConnections();
+      server.close();
+      await once(server, 'close');
+    }
+  });
+
   test('executes in the selected workspace and relative working directory', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const authHeaders = jest.fn().mockResolvedValue({

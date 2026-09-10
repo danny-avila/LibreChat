@@ -1,4 +1,5 @@
 import { tool } from '@librechat/agents/langchain/tools';
+import { logger } from '@librechat/data-schemas';
 import {
   BashExecutionToolDefinition,
   BashToolOutputReferencesGuide,
@@ -212,25 +213,45 @@ export function createAttachedWorkspaceBashTool({
       );
       const timeoutMs =
         rawInput.timeoutMs ?? Math.min(WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS, effectiveMaxTimeoutMs);
-      const result = await executeWorkspaceTool({
-        baseURL: baseUrl,
-        authHeaders: await authHeaders(),
-        request: {
-          protocolVersion: 1,
-          operation: 'execute_command',
-          workspaceId,
-          command,
-          ...(rawInput.cwd ? { cwd: rawInput.cwd } : {}),
-          timeoutMs,
-          maxOutputBytes: DEFAULT_OUTPUT_BYTES,
-        },
-        signal: config?.signal,
-        fetchImpl,
-      });
-      if (result.operation !== 'execute_command') {
-        throw new Error('Attached workspace returned an unexpected command result.');
+      const signal = config?.signal;
+      const trace = {
+        runId: config?.metadata?.run_id,
+        workspaceId,
+        signalPresent: signal != null,
+      };
+      const onAbort = (): void => {
+        logger.debug('[BYOMCommand] invocation signal aborted', trace);
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      logger.debug('[BYOMCommand] dispatch', { ...trace, aborted: signal?.aborted === true });
+      try {
+        const result = await executeWorkspaceTool({
+          baseURL: baseUrl,
+          authHeaders: await authHeaders(),
+          request: {
+            protocolVersion: 1,
+            operation: 'execute_command',
+            workspaceId,
+            command,
+            ...(rawInput.cwd ? { cwd: rawInput.cwd } : {}),
+            timeoutMs,
+            maxOutputBytes: DEFAULT_OUTPUT_BYTES,
+          },
+          signal,
+          fetchImpl,
+        });
+        if (result.operation !== 'execute_command') {
+          throw new Error('Attached workspace returned an unexpected command result.');
+        }
+        logger.debug('[BYOMCommand] transport completed', trace);
+        return [formatCommandResult(result), {}];
+      } finally {
+        signal?.removeEventListener('abort', onAbort);
+        logger.debug('[BYOMCommand] transport settled', {
+          ...trace,
+          aborted: signal?.aborted === true,
+        });
       }
-      return [formatCommandResult(result), {}];
     },
     {
       name: BashExecutionToolDefinition.name,
