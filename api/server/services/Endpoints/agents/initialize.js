@@ -1039,7 +1039,7 @@ const initializeClient = async ({
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,
           requestedSelections: runtimeRequestBody?.codeWorkspaces,
-          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          persistedSelections: requestConversation?.codeWorkspaces,
           environments: configuredCodeEnvironments,
           getAppConfig,
         })

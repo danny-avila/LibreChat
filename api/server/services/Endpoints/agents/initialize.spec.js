@@ -1476,9 +1476,16 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
-  it.each([true, false])(
-    'validates the lazy subagent workspace before exposure: registered=%s',
-    async (registered) => {
+  it.each([
+    [true, 'request'],
+    [false, 'request'],
+    [true, 'fallback'],
+    [true, 'resolved'],
+    [false, 'resolved-null'],
+    [false, 'other-owner'],
+  ])(
+    'validates the lazy subagent workspace before exposure: registered=%s source=%s',
+    async (registered, source) => {
       const subAgent = await createAgent({
         id: SUBAGENT_ID,
         name: 'Attached Stateful Subagent',
@@ -1513,7 +1520,20 @@ describe('initializeClient — subagent loading', () => {
         ],
       };
       req.body.codeWorkspaces = [{ environmentId: 'attached-vm', workspaceId: 'project-b' }];
-      if (!registered) req.body.codeWorkspaces[0].workspaceId = 'removed-project';
+      if (source === 'request' && !registered) {
+        req.body.codeWorkspaces[0].workspaceId = 'removed-project';
+      }
+      if (source !== 'request') {
+        const conversation = await mongoose.model('Conversation').create({
+          conversationId: req.body.conversationId,
+          endpoint: 'agents',
+          user: source === 'other-owner' ? new mongoose.Types.ObjectId().toString() : req.user.id,
+          codeWorkspaces: req.body.codeWorkspaces,
+        });
+        delete req.body.codeWorkspaces;
+        if (source === 'resolved') req.resolvedConversation = conversation.toObject();
+        else if (source !== 'resolved-null') delete req.resolvedConversation;
+      }
       mockGetAppConfig.mockResolvedValue(req.config);
       process.env.TEST_LAZY_WORKSPACE_TOKEN = 'test-token';
       const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
