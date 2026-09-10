@@ -31,9 +31,14 @@ export function resolveAgentParameterSettings({
   model,
   provider,
   startupConfig,
+  webSearchAllowed,
 }: AgentParameterConfig & {
   model: string;
   provider: string;
+  /** `WEB_SEARCH.USE`. `web_search` is a default model parameter for the OpenAI,
+   *  Anthropic and Google column sets, so without this the builder offers a
+   *  switch the server will refuse. */
+  webSearchAllowed: boolean;
 }): ResolvedAgentParameterSettings {
   const resolvedEndpointsConfig = endpointsConfig ?? {};
   const endpointType = getEndpointField(resolvedEndpointsConfig, provider, 'type');
@@ -55,7 +60,12 @@ export function resolveAgentParameterSettings({
   const overriddenParams = customParams?.paramDefinitions;
   const overriddenParamsMap = keyBy(overriddenParams ?? [], 'key');
   const modelAwareParams = applyModelAwareDefaults(
-    (defaultParams ?? []).filter((param) => param != null && !dropParamsSet.has(param.key)),
+    (defaultParams ?? []).filter(
+      (param) =>
+        param != null &&
+        !dropParamsSet.has(param.key) &&
+        (param.key !== 'web_search' || webSearchAllowed),
+    ),
     overriddenEndpointKey,
     model,
   );

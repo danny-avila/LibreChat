@@ -117,8 +117,17 @@ export function composeAgentUpdatePayload(
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  /** Pruning decides which parameters survive a save, so it must not depend on the
+   *  editor's role: a user without `WEB_SEARCH` opening someone else's agent would
+   *  otherwise strip that agent's `web_search` on an unrelated edit. The role gates
+   *  what the builder *offers* (see `ModelPanel`); the server gates what runs. */
   const modelParameterSettings = parameterConfig
-    ? resolveAgentParameterSettings({ ...parameterConfig, model, provider })
+    ? resolveAgentParameterSettings({
+        ...parameterConfig,
+        model,
+        provider,
+        webSearchAllowed: true,
+      })
     : undefined;
   const model_parameters = modelParameterSettings
     ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)
