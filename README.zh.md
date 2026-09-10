@@ -53,6 +53,30 @@
   </a>
 </p>
 
+## 🚀 v0.8.8-rc2 新增内容
+
+- **智能体运行控制 (Agent run control)**：可在智能体输出可见回答文本前中断运行，借助文件与引用片段引导运行过程，将后续追问持久化排队，并通过 **Keep going（继续）** 或 **Answer now（立即回答）** 恢复已保存的部分结果。
+- **智能体活动 (Agent activity)**：可选的自动生成标签会将推理过程与工具调用分组，已完成的分组会折叠为实时阶段卡片，生成的文件保持可见，多步骤阶段会被汇总，并展示当前的推理方向。
+- **人工介入智能体 (Human-in-the-loop Agents)**：流式推送最多四个相关问题，可暂停等待用户输入或工具审批，并能持久恢复。
+- **统一智能体构建器 (Unified Agent Builder)**：在同一个工具市场中配置 Skills、MCP、代码解释器、编排（orchestration）、程序化工具调用（Programmatic Tool Calling）、模型规格控制，以及各工具的后台与意图设置；Skills 可启用为独立运行时编写，而无需暴露现有目录。
+- **持久化智能体自动化 (Durable Agent automation)**：经过认证的 Agent Events 支持绑定的子执行单元、预期操作回执、按执行单元划分的邮箱、事件批处理、持久化的人工暂停，以及跨内置流存储的自动分离 Actions。
+- **更深入的子智能体历史 (Deeper Subagent history)**：浏览可感知分支的子轮次，具备有界推理与稳定的实时事件视图，可加载更早的活动、查看事件详情、继续已完成的子对话，并在分离任务结束时自动唤醒已保存的父智能体。
+- **后台工具 (Background tools)**：符合条件的代码解释器、MCP、插件与 Action 工具可在智能体持续工作时于后台运行，支持的完成结果会自动投递，并在需要时提供轮询控制。
+- **代码解释器工作流 (Code Interpreter workflows)**：沙箱镜像以可查看的制品形式返回；高度实验性的有状态会话新增了限定作用域的托管、挂载或个人环境，支持按消息下载文件，以及受保护的文件写入与命令权限。
+- **智能体可扩展性 (Agent extensibility)**：实验性的 Agent Plugins 可将部署 Skills、MCP 服务器与可选启用的命令钩子打包；保存的智能体团队以隔离子智能体图的形式运行。
+- **定时对话 (Scheduled Chats，实验性)**：使用预设或自定义 cron 运行已保存的智能体，支持可选时区、跨多天的每周周期，以及可选的对话项目（Chat Project）目标位置。
+- **记忆与上下文 (Memory and context)**：智能体可使用可选的隔离记忆，在多轮之间保留自适应上下文衰减，并分类展示当前窗口用量、token 与可选的费用。
+- **可编辑的长文本粘贴 (Editable long pastes)**：长文本粘贴会转为可编辑的附件，并可移回输入框；同时支持仅含附件的轮次，以及更可靠的「以文本上传」下载。
+- **项目、设置与导航 (Projects, settings, and navigation)**：搜索对话标题与消息内容，管理项目对话，使用可搜索的设置与快捷键，置顶对话，选择时钟/周起始惯例，并在移动端更快地导航。
+- **共享与制品 (Sharing and artifacts)**：稳定的共享链接支持个人副本；全屏预览、Mermaid 导出、PowerPoint 模板、shell 脚本与原始 Office 文件下载拓展了文件工作流。
+- **网页搜索 (Web search)**：Keenable 提供无需密钥的搜索与页面抓取，SearXNG 与 Tavily 增加了更丰富的控制选项，且所有网页工具的出站请求均采用更强的 SSRF 防护。
+- **安全与认证 (Security and authentication)**：默认 HTTP 安全响应头、可选启用的 nonce CSP、需认证的本地图片、按用户签发的代码解释器 JWT、稳定的 SAML 身份绑定、会话期间的 OpenID token 刷新，以及拒绝已退役的 JWT 密钥，共同加固部署安全。
+- **模型与推理 (Models and reasoning)**：新增 GPT-5.6（含 Responses 推理控制）、Claude Fable 5.1、Opus 5 与 Sonnet 5，以及 Gemini 3.8/3.7/3.6 Flash 和 Gemini 3.5 Flash-Lite。
+- **Langfuse 可观测性 (Langfuse observability)**：可配置加密的应用内连接、租户扇出、需认证的网关、导出决策遥测，以及对话与共享视图中经过授权的会话链接。
+- **管理 (Administration)**：可感知来源的内容过滤器能够审计或阻断绑定到模型的数据；租户 Insights、委派式配置、加密密钥与会自动过期的违规评分则改善了运维。
+- **流式传输与可靠性 (Streaming and reliability)**：自适应平滑、Redis 增量批处理与故障转移恢复、自动生成协议 v2、实时 MCP 目录刷新、智能体熔断器，以及 DocumentDB 支持，共同改善长时间运行与规模化部署。
+
+阅读[完整的 v0.8.8-rc2 更新日志](https://www.librechat.ai/changelog/v0.8.8-rc2)。
 
 # ✨ 功能
 
