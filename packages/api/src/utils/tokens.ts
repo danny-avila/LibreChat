@@ -410,6 +410,9 @@ const amazonModels = {
 const openAIBedrockModels = {
   'openai.gpt-oss-20b': 128000,
   'openai.gpt-oss-120b': 128000,
+  /** bedrock-mantle models: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-55.html */
+  'openai.gpt-5': 272000,
+  'openai.gpt-5.5': 272000,
 };
 
 const bedrockModels = {
