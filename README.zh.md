@@ -62,13 +62,14 @@
   - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (包含 Azure)
   - [自定义端点 (Custom Endpoints)](https://www.librechat.ai/docs/quick_start/custom_endpoints)：LibreChat 支持任何兼容 OpenAI 规范的 API，无需代理。
   - 兼容[本地与远程 AI 服务商](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints)：
-    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - Ollama, [AMD Lemonade](https://lemonade-server.ai/), groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
     - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen 等。
 
 - 🔧 **[代码解释器 (Code Interpreter) API](https://www.librechat.ai/docs/features/code_interpreter)**： 
   - 安全的沙箱执行环境，支持 Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust 和 Fortran。
   - 无缝文件处理：直接上传、处理并下载文件。
   - 隐私无忧：完全隔离且安全的执行环境。
+  - 开源且可自托管：由 [ClickHouse/code-interpreter](https://github.com/ClickHouse/code-interpreter) 提供支持。
 
 - 🔦 **智能体与工具集成**：  
   - **[LibreChat 智能体 (Agents)](https://www.librechat.ai/docs/features/agents)**：
@@ -77,6 +78,7 @@
     - 协作共享：与特定用户和群组共享智能体。
     - 灵活且可扩展：支持 MCP 服务器、工具、文件搜索、代码执行等。
     - [Skills](https://www.librechat.ai/docs/features/skills)：创建可复用的 `SKILL.md` 指令包，用于手动、自动或始终启用的智能体工作流。
+    - [Agent Plugins](https://www.librechat.ai/docs/features/agent_plugins)：实验性功能，可将部署 Skills 与 MCP 服务器打包为启动即加载的插件包。
     - [Subagents](https://www.librechat.ai/docs/features/subagents)：将专门任务委派给拥有独立上下文窗口的隔离子智能体运行。
     - 兼容自定义端点、OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API 等。
     - [支持模型上下文协议 (MCP)](https://modelcontextprotocol.io/clients#librechat) 用于工具调用。
@@ -138,6 +140,11 @@
 - 👥 **多用户与安全访问**：
   - 支持 OAuth2, LDAP 和电子邮件登录的多用户安全认证。
   - 内置审核系统和 Token 消耗管理工具。
+
+- 🎛️ **[管理面板 (Admin Panel)](https://www.librechat.ai/docs/features/admin_panel)**：
+  - 基于浏览器的界面，用于管理用户、群组、角色与配置覆盖。
+  - 实时编辑设置与按角色/群组的权限，无需重新部署。
+  - 内置于 Docker Compose 堆栈，一条命令即可完成部署。
 
 - ⚙️ **配置与部署**：  
   - 支持代理、反向代理、Docker 及多种部署选项。  
