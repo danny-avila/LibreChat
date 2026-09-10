@@ -13,6 +13,7 @@ import type { ServerRequest } from '~/types';
 import {
   claimCodeDestination,
   createCodeDestinationSet,
+  reserveCodeDestination,
   sortCodeFilesByDestinationPriority,
 } from '~/files/code/destinations';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
@@ -258,30 +259,55 @@ export function createProvisionFilesCallback({
       ? [...(ctx.pendingProvisionedCodeFiles ?? [])]
       : [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
+      const queuedFileIds = new Set(provisionState.codeEnvFiles.map((file) => file.file_id));
+      const liveFiles =
+        (ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>)[
+          EToolResources.execute_code
+        ]?.files ?? [];
+      const confirmedDestinations = createCodeDestinationSet();
       const queuedCodeFiles = sortCodeFilesByDestinationPriority(
-        provisionState.codeEnvFiles,
+        [
+          ...provisionState.codeEnvFiles,
+          ...liveFiles.filter((file) => !queuedFileIds.has(file.file_id)),
+        ],
         provisionState.agentScopedFileIds,
-      ).filter((file): file is TFile => file != null);
+      )
+        .filter((file): file is TFile => {
+          if (!file) return false;
+          const storedName =
+            getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
+            provisionState.codeEnvRecoveryNames?.get(file.file_id);
+          // A confirmed collision is superseded content, not an independent upload.
+          return storedName == null || reserveCodeDestination(confirmedDestinations, storedName);
+        })
+        .filter((file) => queuedFileIds.has(file.file_id));
       /** Every file in this tool-load batch shares one wait allowance. This
        *  prevents a large recovery set from multiplying the live-turn delay. */
       const codeApiRateLimitBudget = createCodeApiRateLimitBudget(
         req.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
       );
       const destinations = createCodeDestinationSet();
-      const existingCodeFiles = (
-        ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>
-      )[EToolResources.execute_code]?.files;
-      const queuedFileIds = new Set(queuedCodeFiles.map((file) => file.file_id));
-      for (const existing of existingCodeFiles ?? []) {
-        if (queuedFileIds.has(existing.file_id)) {
-          continue;
+      // Live storage paths are immutable. Reserve the same route-wide set for every
+      // agent so private live resources cannot give a shared recovery divergent names.
+      for (const candidateContext of agentToolContexts.values()) {
+        const candidateRoute =
+          candidateContext.codeExecutionContext?.executionRouteKey ??
+          candidateContext.codeExecutionContext?.executionProfile ??
+          'default';
+        if (candidateRoute !== codeRouteKey) continue;
+        const existingCodeFiles = (
+          candidateContext.tool_resources as
+            | Record<string, { files?: TFile[] } | undefined>
+            | undefined
+        )?.[EToolResources.execute_code]?.files;
+        for (const existing of existingCodeFiles ?? []) {
+          if (queuedFileIds.has(existing.file_id)) continue;
+          reserveCodeDestination(
+            destinations,
+            getCodeEnvRefForProfile(existing.metadata, codeRouteKey)?.sandboxFilename ??
+              resolveSandboxFilename(existing.filename, existing.type),
+          );
         }
-        claimCodeDestination(
-          destinations,
-          getCodeEnvRefForProfile(existing.metadata, codeRouteKey)?.sandboxFilename ??
-            resolveSandboxFilename(existing.filename, existing.type),
-          existing.file_id,
-        );
       }
       for (const existing of provisionedCodeFiles) {
         claimCodeDestination(destinations, existing.name, existing.id);

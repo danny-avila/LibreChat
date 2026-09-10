@@ -185,6 +185,95 @@ describe('createProvisionFilesCallback', () => {
     expect(files?.[0].name).toBe('saved-alias.csv');
   });
 
+  it.each(['agent-a', 'agent-b'])(
+    'shares recovery around live private paths when %s runs first',
+    async (first) => {
+      const shared = makeFile({ file_id: 'shared' });
+      const own = makeFile({
+        file_id: 'own',
+        metadata: {
+          codeEnvRef: {
+            kind: 'agent',
+            id: 'agent-a',
+            storage_session_id: 'live',
+            file_id: 'own-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      });
+      const { provisionFiles, provisionToCodeEnv } = buildHarness({
+        contexts: [
+          [
+            'agent-a',
+            {
+              provisionState: state([{ ...shared }], [], ['own']),
+              tool_resources: { execute_code: { files: [own] } },
+            },
+          ],
+          ['agent-b', { provisionState: state([{ ...shared }], []) }],
+        ],
+      });
+      const a = await provisionFiles([Constants.EXECUTE_CODE], first);
+      const b = await provisionFiles(
+        [Constants.EXECUTE_CODE],
+        first === 'agent-a' ? 'agent-b' : 'agent-a',
+      );
+      expect(provisionToCodeEnv).toHaveBeenCalledTimes(1);
+      expect(a[0].name).toBe(b[0].name);
+      expect(a[0].name).not.toBe('data.csv');
+    },
+  );
+
+  it('drops superseded saved paths before assigning recovery aliases', async () => {
+    const older = makeFile({ file_id: 'older', createdAt: '2026-01-01' });
+    const newer = makeFile({ file_id: 'newer', createdAt: '2026-02-01' });
+    const pending = state([older, newer], []);
+    pending.codeEnvRecoveryNames = new Map([
+      ['older', 'data.csv'],
+      ['newer', 'data.csv'],
+    ]);
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [['agent-a', { provisionState: pending }]],
+    });
+    const files = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    expect(provisionToCodeEnv).toHaveBeenCalledTimes(1);
+    expect(provisionToCodeEnv).toHaveBeenCalledWith(
+      expect.objectContaining({ file: newer, sandboxFilename: 'data.csv' }),
+    );
+    expect(files).toHaveLength(1);
+    expect(pending.codeEnvFiles).toHaveLength(0);
+  });
+
+  it('does not recover old content already superseded by a live saved path', async () => {
+    const older = makeFile({ file_id: 'older', createdAt: '2026-01-01' });
+    const newer = makeFile({
+      file_id: 'newer',
+      createdAt: '2026-02-01',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'live',
+          file_id: 'new-remote',
+          sandboxFilename: 'data.csv',
+        },
+      },
+    });
+    const pending = state([older], []);
+    pending.codeEnvRecoveryNames = new Map([['older', 'data.csv']]);
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [
+        [
+          'agent-a',
+          { provisionState: pending, tool_resources: { execute_code: { files: [newer] } } },
+        ],
+      ],
+    });
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    expect(provisionToCodeEnv).not.toHaveBeenCalled();
+    expect(pending.codeEnvFiles).toHaveLength(0);
+  });
+
   it('returns the provisioned refs so the batch can inject them', async () => {
     const { provisionFiles } = buildHarness({
       contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],
