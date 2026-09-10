@@ -1,4 +1,6 @@
 /** v0.8.8-rc2 */
+const { maxWorkers } = require('../config/jest.workers.cjs');
+
 module.exports = {
   roots: ['<rootDir>/src'],
   testEnvironment: 'jsdom',
@@ -34,7 +36,7 @@ module.exports = {
     '^librechat-data-provider/react-query$':
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
-  maxWorkers: '50%',
+  maxWorkers,
   /** Coverage maps accumulate for the life of a worker, so a long run can push
    * a worker past a gigabyte and get it killed by the OS, which fails whatever
    * suite it was holding. Recycling bloated workers also avoids swap thrash. */
