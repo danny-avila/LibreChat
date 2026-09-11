@@ -87,6 +87,8 @@ export type TLoadCodeApiKey = (userId: string) => Promise<string>;
 export type ProvisionState = {
   /** Files that need uploading to the code execution environment */
   codeEnvFiles: TFile[];
+  /** Names from cleared refs on this state's active route; never reusable storage pointers. */
+  codeEnvRecoveryNames?: Map<string, { name: string; isTargetScope: boolean }>;
   /** Files that need embedding into the vector DB for file_search */
   vectorDBFiles: TFile[];
   /** Set of file_ids confirmed alive in code env (from staleness check) */
@@ -514,6 +516,7 @@ const computeProvisionState = async ({
 
   const scopedIds = agentScopedFileIds ?? new Set<string>();
   const codeEnvFiles: TFile[] = [];
+  const codeEnvRecoveryNames: NonNullable<ProvisionState['codeEnvRecoveryNames']> = new Map();
   const vectorDBFiles: TFile[] = [];
 
   for (const file of provisionable) {
@@ -545,18 +548,22 @@ const computeProvisionState = async ({
       canToolResourceConsume(EToolResources.execute_code, file.type ?? '')
     ) {
       const legacyRef = file.metadata?.codeEnvRef;
+      const routeRef = codeEnvRefForRoute(file, activeCodeRouteKey);
       /* Liveness answers only for the route it was probed on, so a ref belonging to
        * another deployment is never cleared on the strength of this turn's answer. */
-      const isStale =
-        codeEnvRefForRoute(file, activeCodeRouteKey) != null &&
-        aliveFileIds != null &&
-        !aliveFileIds.has(file.file_id);
+      const isStale = routeRef != null && aliveFileIds != null && !aliveFileIds.has(file.file_id);
 
       /** Staleness must be repaired even for files that pre-categorization already
        *  added to execute_code resources, so the check runs before the processed
        *  guard. Clear both the legacy ref and its route entry, else getCodeEnvRefs
        *  keeps resolving the dead session over the re-provisioned one. */
       if (isStale) {
+        if (routeRef?.sandboxFilename) {
+          codeEnvRecoveryNames.set(file.file_id, {
+            name: routeRef.sandboxFilename,
+            isTargetScope: hasCodeRefForRoute(file, activeCodeRouteKey, codeScope),
+          });
+        }
         logger.info(
           `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
         );
@@ -611,6 +618,7 @@ const computeProvisionState = async ({
   }
   return {
     codeEnvFiles,
+    codeEnvRecoveryNames,
     vectorDBFiles,
     aliveFileIds: aliveFileIds ?? new Set(),
     agentScopedFileIds: new Set(scopedIds),

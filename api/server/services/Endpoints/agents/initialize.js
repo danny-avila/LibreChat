@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   resolveSender,
+  resolveRunConversation,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
@@ -191,14 +192,13 @@ const initializeClient = async ({
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
-  const conversationId = req.body?.conversationId;
   const runtimeRequestBody = requestBody ?? req.body;
-  let requestConversationPromise = Promise.resolve(null);
-  if (Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
-    requestConversationPromise = Promise.resolve(req.resolvedConversation);
-  } else if (typeof conversationId === 'string' && conversationId !== '') {
-    requestConversationPromise = db.getConvo(req.user.id, conversationId);
-  }
+  const conversationId = runtimeRequestBody?.conversationId;
+  const requestConversationPromise = resolveRunConversation({
+    request: req,
+    conversationId,
+    loadConversation: (conversationId) => db.getConvo(req.user.id, conversationId),
+  });
   const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
@@ -556,6 +556,8 @@ const initializeClient = async ({
     requestConversationPromise,
     toolRoleGrantsPromise,
   ]);
+  /** Preserve the owner-scoped fallback for loaders that share this request. */
+  req.resolvedConversation = requestConversation;
   delete endpointOption.agent;
 
   /** The deployment switch AND the role grant. `initializeAgent` rebuilds
@@ -1041,7 +1043,7 @@ const initializeClient = async ({
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,
           requestedSelections: runtimeRequestBody?.codeWorkspaces,
-          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          persistedSelections: requestConversation?.codeWorkspaces,
           environments: configuredCodeEnvironments,
           getAppConfig,
         })
