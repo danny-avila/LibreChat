@@ -89,26 +89,6 @@ const mockGetSafeErrorMetadata = jest.fn((error) => {
     ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
   };
 });
-const mockCreateModelErrorTracker = jest.fn(() => {
-  const tracked = new WeakSet();
-  return {
-    callback: {
-      name: 'librechat-upstream-model-error-tracker',
-      awaitHandlers: true,
-      handleLLMError: (error) => {
-        if (error != null && typeof error === 'object') tracked.add(error);
-      },
-    },
-    getUpstreamModelError: (error) => {
-      let current = error;
-      for (let depth = 0; depth < 8 && current != null && typeof current === 'object'; depth++) {
-        if (tracked.has(current)) return current;
-        current = current.cause;
-      }
-      return null;
-    },
-  };
-});
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -207,6 +187,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   Callback: { TOOL_ERROR: 'TOOL_ERROR' },
   ToolEndHandler: jest.fn(),
   formatAgentMessages: jest.fn().mockReturnValue({
@@ -248,8 +229,8 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
-  createModelErrorTracker: (...args) => mockCreateModelErrorTracker(...args),
-  traceIdForMessage: (messageId) => `trace:${messageId}`,
+  createTerminalRunErrorObserver: (...args) =>
+    jest.requireActual('@librechat/api').createTerminalRunErrorObserver(...args),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
@@ -1677,7 +1658,6 @@ describe('createResponse controller', () => {
 
       await createResponse(req, res);
 
-      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
       const errorLog = logger.error.mock.calls.find(
         ([message]) => message === '[Responses API] Error:',
       );
@@ -1728,7 +1708,7 @@ describe('createResponse controller', () => {
             errorCode: 'UPSTREAM_MODEL_ERROR',
             errorOrigin: 'model_provider',
             errorType: '503',
-            traceId: 'trace:resp_mock-123',
+            traceId: 'da34f2d846b1b1b770afe89e670770d5',
           },
         ]);
         expect(JSON.stringify(errorLog)).not.toContain(rawValue);

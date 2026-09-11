@@ -48,7 +48,7 @@ import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
-import type { ModelErrorTrackerCallback } from '~/agents/modelErrorTracker';
+import type { ModelErrorTrackerCallback } from '~/agents/failures/tracker';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { TerminalSteerHook } from '~/agents/steering/runtime';

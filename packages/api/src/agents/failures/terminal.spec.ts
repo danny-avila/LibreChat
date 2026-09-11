@@ -1,11 +1,8 @@
-const { logger } = require('@librechat/data-schemas');
-const {
-  createTerminalRunErrorObserver,
-  getUpstreamModelErrorMetadata,
-} = require('../terminalRunError');
+import { createTerminalRunErrorObserver, getUpstreamModelErrorMetadata } from './terminal';
 
 describe('terminal agent-run error logging', () => {
   it('logs stable upstream metadata and deterministic trace correlation', () => {
+    const logger = { error: jest.fn() };
     const privateValue = 'PRIVATE-PROVIDER-CONTENT';
     const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
       name: 'InternalServerException',
@@ -17,6 +14,7 @@ describe('terminal agent-run error logging', () => {
       },
     });
     const observer = createTerminalRunErrorObserver({
+      logger,
       responseMessageId: '78847296-b174-4127-a342-78efa427d4a5',
       source: '[Agent API]',
     });
@@ -37,7 +35,9 @@ describe('terminal agent-run error logging', () => {
   });
 
   it('keeps unrelated terminal failures on the generic safe path', () => {
+    const logger = { error: jest.fn() };
     const observer = createTerminalRunErrorObserver({
+      logger,
       responseMessageId: 'response-123',
       source: '[Agent API]',
     });

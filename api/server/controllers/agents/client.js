@@ -168,8 +168,8 @@ const {
   createContextMetaPublisher,
   selectRunContextMetaToPublish,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
 } = require('@librechat/api');
-const { createTerminalRunErrorObserver } = require('./terminalRunError');
 const {
   Run,
   Callback,
@@ -4365,6 +4365,7 @@ class AgentClient extends BaseClient {
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
     const terminalRunError = createTerminalRunErrorObserver({
+      logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #sendCompletion]',
       genericMessage: '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
@@ -5229,6 +5230,7 @@ class AgentClient extends BaseClient {
     /** @type {ReturnType<createRun>} */
     let run;
     const terminalRunError = createTerminalRunErrorObserver({
+      logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #resumeCompletion]',
       genericMessage: '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',

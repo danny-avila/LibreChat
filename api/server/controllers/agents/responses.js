@@ -83,8 +83,8 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
 } = require('@librechat/api');
-const { createTerminalRunErrorObserver } = require('./terminalRunError');
 const {
   createResponsesToolEndCallback,
   buildSummarizationHandlers,
@@ -622,6 +622,7 @@ const executeResponse = async (envelope, { req, res }) => {
   // Generate IDs
   const responseId = generateResponseId();
   const terminalRunError = createTerminalRunErrorObserver({
+    logger,
     responseMessageId: responseId,
     source: '[Responses API]',
   });

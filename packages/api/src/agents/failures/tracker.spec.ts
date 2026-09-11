@@ -1,4 +1,4 @@
-import { createModelErrorTracker } from './modelErrorTracker';
+import { createModelErrorTracker } from './tracker';
 
 describe('createModelErrorTracker', () => {
   it('returns the exact model error that terminates the graph', () => {

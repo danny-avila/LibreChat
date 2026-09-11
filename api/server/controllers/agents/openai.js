@@ -66,8 +66,8 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
 } = require('@librechat/api');
-const { createTerminalRunErrorObserver } = require('./terminalRunError');
 const {
   buildSummarizationHandlers,
   contextualizeModelUsage,
@@ -378,6 +378,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
   const responseId = `chatcmpl-${nanoid()}`;
   const terminalRunError = createTerminalRunErrorObserver({
+    logger,
     responseMessageId: responseId,
     source: '[OpenAI API]',
   });
