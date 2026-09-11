@@ -5,9 +5,9 @@ import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import type { CodeWorkspaceSelection, TConversation } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { CodeWorkspaceResult, TranslationKeys } from '~/hooks';
+import { useWorkspacePreferences } from '~/hooks/Agents/workspacePreferences';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import { useWorkspacePreferences } from '~/hooks/Agents/workspacePreferences';
 
 const stateLabels: Partial<Record<CodeWorkspaceResult['state'], TranslationKeys>> = {
   loading: 'com_ui_code_workspace_loading',

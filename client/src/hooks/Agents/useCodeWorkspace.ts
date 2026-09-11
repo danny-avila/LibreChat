@@ -16,11 +16,11 @@ import type {
 } from 'librechat-data-provider';
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
 import { useCodeEnvironmentStatusQueries } from '~/data-provider';
+import { useWorkspacePreferences } from './workspacePreferences';
 import useAgentToolPermissions from './useAgentToolPermissions';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useGetAgentsConfig from './useGetAgentsConfig';
 import { useAgentsMapContext } from '~/Providers';
-import { useWorkspacePreferences } from './workspacePreferences';
 
 export type CodeWorkspaceState =
   | 'not_required'

@@ -24,8 +24,8 @@ import {
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useAuthContext, useGetAgentsConfig, useLocalize } from '~/hooks';
-import { ESide } from '~/common';
 import { useCodeEnvironmentStatusQueries } from '~/data-provider';
+import { ESide } from '~/common';
 
 const ENVIRONMENT_LABELS = {
   user: 'com_ui_stateful_code_environment_user',
