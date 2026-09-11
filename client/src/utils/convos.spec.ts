@@ -7,7 +7,7 @@ import {
   updateInfiniteConvoPage,
   findConversationInInfinite,
   removeConvoFromInfinitePages,
-  groupConversationsByDate,
+  groupConversations,
   updateConvoFieldsInfinite,
   addConvoToAllQueries,
   collectPinnedConversations,
@@ -27,7 +27,7 @@ jest.mock('date-fns', () => {
 });
 
 describe('Conversation Utilities', () => {
-  describe('groupConversationsByDate', () => {
+  describe('groupConversations', () => {
     it('groups conversations by date correctly', () => {
       const conversations = [
         { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
@@ -36,7 +36,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '4', updatedAt: new Date(Date.now() - 86400000 * 2).toISOString() },
         { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() },
       ];
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
       expect(grouped[0][0]).toBe(dateKeys.today);
       expect(grouped[0][1]).toHaveLength(1);
       expect(grouped[1][0]).toBe(dateKeys.yesterday);
@@ -57,7 +57,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '3', updatedAt: '2022-12-01T12:00:00Z' },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       expect(grouped).toEqual(
         expect.arrayContaining([
@@ -81,7 +81,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '5', updatedAt: '2022-12-01T12:00:00Z' },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       // Now expect grouping by year for 2023 and 2022
       const expectedGroups = [' 2023', ' 2022'];
@@ -108,7 +108,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '5', updatedAt: '2021-12-01T12:00:00Z' },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       expect(grouped.map(([key]) => key)).toEqual([' 2023', ' 2022', ' 2021']);
       expect(grouped[0][1].map((c) => new Date(c.updatedAt).getFullYear())).toEqual([2023, 2023]);
@@ -123,7 +123,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '3', updatedAt: '2023-06-30T12:00:00Z' },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       expect(grouped.length).toBe(1);
       expect(grouped[0][0]).toBe(' 2023');
@@ -137,7 +137,7 @@ describe('Conversation Utilities', () => {
         { conversationId: '3', updatedAt: undefined },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       expect(grouped.length).toBe(2);
       expect(grouped[0][0]).toBe(dateKeys.today);
@@ -154,13 +154,103 @@ describe('Conversation Utilities', () => {
         { conversationId: '4', updatedAt: '2023-06-01T12:00:00Z' },
       ];
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       const allGroupedIds = grouped.flatMap(([, convs]) => convs.map((c) => c.conversationId));
       expect(allGroupedIds).not.toContain('1');
       expect(allGroupedIds).not.toContain('3');
       expect(allGroupedIds).toContain('2');
       expect(allGroupedIds).toContain('4');
+    });
+    it('keeps pinned conversations when requested', () => {
+      const timestamp = '2023-06-01T12:00:00Z';
+      const conversations = [
+        { conversationId: 'pinned', updatedAt: timestamp, pinned: true },
+        { conversationId: 'regular', updatedAt: timestamp },
+      ];
+
+      const defaultIds = groupConversations(conversations as TConversation[])
+        .flatMap(([, convos]) => convos)
+        .map((conversation) => conversation.conversationId);
+      const includedIds = groupConversations(conversations as TConversation[], {
+        includePinned: true,
+      })
+        .flatMap(([, convos]) => convos)
+        .map((conversation) => conversation.conversationId);
+
+      expect(defaultIds).toEqual(['regular']);
+      expect(includedIds).toEqual(['pinned', 'regular']);
+    });
+
+    it('inverts date group and conversation order when ascending', () => {
+      const conversations = [
+        { conversationId: 'today', title: 'Today', updatedAt: new Date().toISOString() },
+        {
+          conversationId: 'month-new',
+          title: 'Month new',
+          updatedAt: '2023-06-30T12:00:00Z',
+        },
+        {
+          conversationId: 'month-old',
+          title: 'Month old',
+          updatedAt: '2023-06-01T12:00:00Z',
+        },
+        {
+          conversationId: 'year',
+          title: 'Year',
+          updatedAt: '2022-06-01T12:00:00Z',
+        },
+      ];
+
+      const grouped = groupConversations(conversations as TConversation[], { direction: 'asc' });
+
+      expect(grouped.map(([key]) => key)).toEqual([' 2022', ' 2023', dateKeys.today]);
+      expect(grouped[1][1].map((conversation) => conversation.conversationId)).toEqual([
+        'month-old',
+        'month-new',
+      ]);
+    });
+
+    it('groups titles alphabetically with a shared non-letter bucket', () => {
+      const conversations = [
+        { conversationId: 'apple', title: 'apple' },
+        { conversationId: 'avocado', title: 'Avocado' },
+        { conversationId: 'number', title: '42 things' },
+        { conversationId: 'empty', title: '' },
+      ];
+
+      const grouped = groupConversations(conversations as TConversation[], {
+        field: 'title',
+        direction: 'asc',
+      });
+
+      expect(grouped.map(([key]) => key)).toEqual(['A', '#']);
+      expect(grouped[0][1].map((conversation) => conversation.conversationId)).toEqual([
+        'apple',
+        'avocado',
+      ]);
+      expect(grouped[1][1].map((conversation) => conversation.conversationId)).toEqual([
+        'empty',
+        'number',
+      ]);
+    });
+
+    it('falls back to createdAt when archivedAt is missing', () => {
+      const conversations = [
+        {
+          conversationId: 'archived',
+          archivedAt: null,
+          createdAt: '2023-06-01T12:00:00Z',
+          updatedAt: null,
+        },
+      ];
+
+      const grouped = groupConversations(conversations as unknown as TConversation[], {
+        field: 'archivedAt',
+      });
+
+      expect(grouped).toHaveLength(1);
+      expect(grouped[0][0]).toBe(' 2023');
     });
 
     it('correctly groups and sorts conversations for every month of the year', () => {
@@ -191,7 +281,7 @@ describe('Conversation Utilities', () => {
         },
       ]);
 
-      const grouped = groupConversationsByDate(conversations as TConversation[]);
+      const grouped = groupConversations(conversations as TConversation[]);
 
       // All 2023 conversations should be in a single group
       const group2023 = grouped.find(([key]) => key === ' 2023');

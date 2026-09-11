@@ -3,11 +3,19 @@ import { useDrop } from 'react-dnd';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { Spinner, useMediaQuery, buttonVariants } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
+import {
+  chatFilterCountAtom,
+  chatFilterTagsAtom,
+  chatSortAtom,
+  isArchivedChatViewAtom,
+  resetChatFiltersAtom,
+} from './chatFilters';
 import {
   CONVERSATION_DRAG_TYPE,
   markExternalHover,
@@ -15,7 +23,7 @@ import {
   useEffectiveProjectId,
 } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
-import { groupConversationsByDate, cn } from '~/utils';
+import { groupConversations, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
 import store from '~/store';
@@ -42,6 +50,8 @@ interface ConversationsProps {
   setIsChatsExpanded: (expanded: boolean) => void;
   /** Actions for the Chats header, alongside the Projects header's own. */
   chatsHeaderTrailing?: ReactNode;
+  /** Whether another page exists, so an empty list can be told apart from an unpaged one. */
+  hasNextPage?: boolean;
 }
 
 interface MeasuredRowProps {
@@ -164,9 +174,15 @@ const Conversations: FC<ConversationsProps> = ({
   isChatsExpanded,
   setIsChatsExpanded,
   chatsHeaderTrailing,
+  hasNextPage = false,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const sort = useAtomValue(chatSortAtom);
+  const isArchivedView = useAtomValue(isArchivedChatViewAtom);
+  const activeFilterCount = useAtomValue(chatFilterCountAtom);
+  const filterTags = useAtomValue(chatFilterTagsAtom);
+  const resetFilters = useSetAtom(resetChatFiltersAtom);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   /* Dropping a project conversation on the Chats section files it back out of
    * its project. Root-list chats already live here, so they are rejected. */
@@ -206,9 +222,17 @@ const Conversations: FC<ConversationsProps> = ({
     [rawConversations],
   );
 
+  /** The pinned section above carries pins, so they stay out of these groups — except in
+   *  the archive, which that section does not cover: an archived pin would otherwise be
+   *  absent from the sidebar entirely rather than merely further down it. */
   const groupedConversations = useMemo(
-    () => groupConversationsByDate(filteredConversations),
-    [filteredConversations],
+    () =>
+      groupConversations(filteredConversations, {
+        field: sort.field,
+        direction: sort.direction,
+        includePinned: isArchivedView,
+      }),
+    [filteredConversations, isArchivedView, sort.direction, sort.field],
   );
 
   /* Pins are stripped from the date groups. An all-pin page leaves the
@@ -391,6 +415,73 @@ const Conversations: FC<ConversationsProps> = ({
     [flattenedItems.length, throttledLoadMore],
   );
 
+  /** A list that came back empty is a dead end the user has to be able to leave: say why
+   *  it is empty and offer the way back. Pagination can legitimately yield an empty first
+   *  page (an all-pinned page), so only a drained cursor counts as empty. */
+  const isEmpty =
+    isChatsExpanded &&
+    !isLoading &&
+    !isSearchLoading &&
+    !hasNextPage &&
+    groupedConversations.length === 0;
+
+  let emptyLabel: TranslationKeys = 'com_ui_no_chats';
+  if (search.query) {
+    emptyLabel = 'com_ui_no_search_results';
+  } else if (filterTags.length > 0) {
+    emptyLabel = 'com_ui_no_chats_match_filters';
+  } else if (isArchivedView) {
+    emptyLabel = 'com_ui_no_archived_chats';
+  }
+
+  let body: ReactNode = (
+    <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+      <List
+        ref={containerRef}
+        width={listWidth}
+        height={listHeight}
+        deferredMeasurementCache={cache}
+        rowCount={flattenedItems.length}
+        rowHeight={getRowHeight}
+        rowRenderer={rowRenderer}
+        overscanRowCount={10}
+        aria-readonly={false}
+        className="outline-none"
+        aria-label="Conversations"
+        onRowsRendered={handleRowsRendered}
+        tabIndex={-1}
+        style={{ outline: 'none' }}
+        containerRole="rowgroup"
+      />
+    </div>
+  );
+  if (isSearchLoading) {
+    body = (
+      <div className="flex flex-1 items-center justify-center">
+        <Spinner className="text-text-primary" />
+        <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
+      </div>
+    );
+  } else if (isEmpty) {
+    body = (
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+        data-testid="convo-list-empty"
+      >
+        <span className="text-sm text-text-secondary">{localize(emptyLabel)}</span>
+        {activeFilterCount > 0 && (
+          <button
+            type="button"
+            onClick={() => resetFilters()}
+            className="rounded-lg px-2 py-1 text-sm text-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          >
+            {localize('com_ui_clear_filters')}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={chatsRegionRef}
@@ -404,32 +495,7 @@ const Conversations: FC<ConversationsProps> = ({
           highlight={isDropOver && canDrop}
         />
       </div>
-      {isSearchLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Spinner className="text-text-primary" />
-          <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
-        </div>
-      ) : (
-        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
-          <List
-            ref={containerRef}
-            width={listWidth}
-            height={listHeight}
-            deferredMeasurementCache={cache}
-            rowCount={flattenedItems.length}
-            rowHeight={getRowHeight}
-            rowRenderer={rowRenderer}
-            overscanRowCount={10}
-            aria-readonly={false}
-            className="outline-none"
-            aria-label="Conversations"
-            onRowsRendered={handleRowsRendered}
-            tabIndex={-1}
-            style={{ outline: 'none' }}
-            containerRole="rowgroup"
-          />
-        </div>
-      )}
+      {body}
     </div>
   );
 };

@@ -79,7 +79,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/utils', () => ({
-  groupConversationsByDate: () => [],
+  groupConversations: () => [],
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 

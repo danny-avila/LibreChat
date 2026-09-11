@@ -403,6 +403,13 @@ convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
  * carries the legacy group, whose rows all share a missing `archivedAt`. */
 convoSchema.index({ user: 1, isArchived: 1, archivedAt: -1, createdAt: -1, _id: -1 });
 
+/** Sidebar list indexes for the active/archive filters: updatedAt and createdAt sorts
+ * page by their primary field, while title also carries updatedAt as its secondary
+ * key so MongoDB does not fall back to a blocking in-memory sort. */
+convoSchema.index({ user: 1, isArchived: 1, updatedAt: -1, _id: -1 });
+convoSchema.index({ user: 1, isArchived: 1, createdAt: -1, _id: -1 });
+convoSchema.index({ user: 1, isArchived: 1, title: 1, updatedAt: 1, _id: 1 });
+
 /** The sidebar's pinned section filters on user + pinned and pages by `updatedAt`. */
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });
 

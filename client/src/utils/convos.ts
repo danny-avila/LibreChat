@@ -77,72 +77,121 @@ const dateGroupsSet = new Set([
   dateKeys.previous30Days,
 ]);
 
-export const groupConversationsByDate = (
+type ConversationDateField = 'updatedAt' | 'createdAt' | 'archivedAt';
+
+export type ConversationGroupOptions = {
+  field?: ConversationDateField | 'title';
+  direction?: 'asc' | 'desc';
+  includePinned?: boolean;
+};
+
+const getConversationDate = (
+  conversation: TConversation,
+  field: ConversationDateField,
+  fallbackDate: Date,
+) => {
+  const dateValue = conversation[field] ?? conversation.updatedAt ?? conversation.createdAt;
+  return dateValue ? parseISO(dateValue) : fallbackDate;
+};
+
+const getTitle = (conversation: TConversation) =>
+  typeof conversation.title === 'string' ? conversation.title.trim() : '';
+
+export const groupConversations = (
   conversations: Array<TConversation | null>,
-  dateField: 'updatedAt' | 'createdAt' = 'updatedAt',
+  { field = 'updatedAt', direction = 'desc', includePinned = false }: ConversationGroupOptions = {},
 ): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
   }
-  const seenConversationIds = new Set();
-  const groups = new Map();
+
+  const seenConversationIds = new Set<string | null>();
+  const groups = new Map<string, TConversation[]>();
   const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
-    if (
-      !conversation ||
-      seenConversationIds.has(conversation.conversationId) ||
-      conversation.pinned
-    ) {
+    if (!conversation || (!includePinned && conversation.pinned)) {
+      return;
+    }
+    if (seenConversationIds.has(conversation.conversationId)) {
       return;
     }
     seenConversationIds.add(conversation.conversationId);
 
-    let date: Date;
-    const dateValue = conversation[dateField] ?? conversation.updatedAt ?? conversation.createdAt;
-    if (dateValue) {
-      date = parseISO(dateValue);
+    let groupName: string;
+    if (field === 'title') {
+      const title = getTitle(conversation);
+      /* Any script's letter heads its own group — restricting this to A–Z would sweep
+         every Japanese or Greek title into the same `#` bucket as the punctuation. */
+      groupName = /^\p{L}/u.test(title) ? title.charAt(0).toUpperCase() : '#';
     } else {
-      date = now;
+      groupName = getGroupName(getConversationDate(conversation, field, now));
     }
-    const groupName = getGroupName(date);
-    if (!groups.has(groupName)) {
-      groups.set(groupName, []);
+    const group = groups.get(groupName);
+    if (group) {
+      group.push(conversation);
+    } else {
+      groups.set(groupName, [conversation]);
     }
-    groups.get(groupName).push(conversation);
   });
 
-  const sortedGroups = new Map();
-  dateGroupsSet.forEach((group) => {
-    if (groups.has(group)) {
-      sortedGroups.set(group, groups.get(group));
-    }
-  });
+  if (field === 'title') {
+    const sortedGroups = Array.from(groups.keys()).sort((a, b) => {
+      // Alphabetical groups read A–Z with # last when ascending; descending reverses that order.
+      if (a === '#' && b === '#') {
+        return 0;
+      }
+      if (a === '#') {
+        return direction === 'asc' ? 1 : -1;
+      }
+      if (b === '#') {
+        return direction === 'asc' ? -1 : 1;
+      }
+      const comparison = a.localeCompare(b, undefined, { sensitivity: 'base' });
+      return direction === 'asc' ? comparison : -comparison;
+    });
+
+    return sortedGroups.map((groupName) => {
+      const group = groups.get(groupName)!;
+      group.sort((a, b) => {
+        const comparison = getTitle(a).localeCompare(getTitle(b), undefined, {
+          sensitivity: 'base',
+        });
+        return direction === 'asc' ? comparison : -comparison;
+      });
+      return [groupName, group];
+    });
+  }
 
   const yearMonthGroups = Array.from(groups.keys())
     .filter((group) => !dateGroupsSet.has(group))
     .sort((a, b) => {
-      const [yearA, yearB] = [parseInt(a.trim()), parseInt(b.trim())];
-      if (yearA !== yearB) {
-        return yearB - yearA;
-      }
-      const [monthA, monthB] = [dateKeysReverse[a], dateKeysReverse[b]];
-      const bOrder = monthOrderMap.get(monthB) ?? -1,
-        aOrder = monthOrderMap.get(monthA) ?? -1;
-      return bOrder - aOrder;
+      const getOrder = (group: string) => {
+        const month = dateKeysReverse[group];
+        if (month) {
+          return now.getFullYear() * 12 + (monthOrderMap.get(month) ?? 0);
+        }
+        return parseInt(group.trim(), 10) * 12;
+      };
+      const orderA = getOrder(a);
+      const orderB = getOrder(b);
+      return direction === 'asc' ? orderA - orderB : orderB - orderA;
     });
-  yearMonthGroups.forEach((group) => {
-    sortedGroups.set(group, groups.get(group));
+  const recentGroups = Array.from(dateGroupsSet).filter((group) => groups.has(group));
+  const orderedGroupNames =
+    direction === 'asc'
+      ? [...yearMonthGroups, ...recentGroups.reverse()]
+      : [...recentGroups, ...yearMonthGroups];
+
+  orderedGroupNames.forEach((groupName) => {
+    groups.get(groupName)!.sort((a, b) => {
+      const comparison =
+        getConversationDate(b, field, now).getTime() - getConversationDate(a, field, now).getTime();
+      return direction === 'asc' ? -comparison : comparison;
+    });
   });
 
-  sortedGroups.forEach((conversations) => {
-    conversations.sort(
-      (a: TConversation, b: TConversation) =>
-        new Date(b[dateField] ?? b.updatedAt ?? 0).getTime() -
-        new Date(a[dateField] ?? a.updatedAt ?? 0).getTime(),
-    );
-  });
-  return Array.from(sortedGroups, ([key, value]) => [key, value]);
+  return orderedGroupNames.map((groupName) => [groupName, groups.get(groupName)!]);
 };
 
 export type ConversationCursorData = {

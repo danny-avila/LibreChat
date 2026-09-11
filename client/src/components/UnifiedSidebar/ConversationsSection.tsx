@@ -1,31 +1,29 @@
-import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import { useCallback, useEffect, useState, useMemo, memo, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
+import {
+  chatFilterTagsAtom,
+  chatSortAtom,
+  isArchivedChatViewAtom,
+} from '~/components/Conversations/chatFilters';
 import {
   useConversationsInfiniteQuery,
   usePinnedConversationsQuery,
   useTitleGeneration,
 } from '~/data-provider';
-import {
-  useLocalize,
-  useHasAccess,
-  useAuthContext,
-  useLocalStorage,
-  useNavScrolling,
-} from '~/hooks';
+import { useLocalize, useAuthContext, useLocalStorage, useNavScrolling } from '~/hooks';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
+import ChatFilterMenu from '~/components/Conversations/ChatFilterMenu';
 import PinnedSection from '~/components/Conversations/PinnedSection';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
 import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
-
-const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
 
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
@@ -35,17 +33,21 @@ const ConversationsSection = memo(() => {
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
-  const [tags, setTags] = useState<string[]>([]);
-  const hasAccessToBookmarks = useHasAccess({
-    permissionType: PermissionTypes.BOOKMARKS,
-    permission: Permissions.USE,
-  });
+
+  const tags = useAtomValue(chatFilterTagsAtom);
+  const sort = useAtomValue(chatSortAtom);
+  const isArchivedView = useAtomValue(isArchivedChatViewAtom);
 
   const search = useRecoilValue(store.search);
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, isPreviousData } =
     useConversationsInfiniteQuery(
       {
+        /** Omitted rather than `false`: the parameter's absence is what the server reads
+         *  as "not archived", and a stray `isArchived=false` would key a third cache. */
+        isArchived: isArchivedView ? true : undefined,
+        sortBy: sort.field,
+        sortDirection: sort.direction,
         tags: tags.length === 0 ? undefined : tags,
         search: search.debouncedQuery || undefined,
       },
@@ -82,24 +84,23 @@ const ConversationsSection = memo(() => {
 
   /** Pins are fetched on their own so one older than the first page of the chats list
    * still shows on first paint, instead of appearing only once that list scrolls to it.
-   * The bookmark filter still applies, matching the chats list beside it. */
+   * The Chats filters are deliberately not passed: they narrow that list alone. */
   const {
     data: pinnedData,
     isSuccess: isPinnedFetched,
     isFetching: isPinnedFetching,
     dataUpdatedAt: pinnedUpdatedAt,
-  } = usePinnedConversationsQuery(
-    { tags: tags.length === 0 ? undefined : tags },
-    { enabled: isAuthenticated },
-  );
+  } = usePinnedConversationsQuery({ enabled: isAuthenticated });
   const isPinnedComplete = isPinnedFetched && !isPinnedFetching;
 
-  /* `groupConversationsByDate` strips pins from the chats groups. A failed
+  /* `groupConversations` strips pins from the chats groups. A failed
      refetch keeps the previous dedicated result, so merge in pins from the
-     live chats cache rather than hiding a newly pinned row. */
+     live chats cache rather than hiding a newly pinned row — but only while that
+     cache holds the same unarchived chats this section shows. */
   const pinnedConversations = useMemo(
-    () => collectPinnedConversations(pinnedData?.conversations, conversations),
-    [pinnedData?.conversations, conversations],
+    () =>
+      collectPinnedConversations(pinnedData?.conversations, isArchivedView ? [] : conversations),
+    [pinnedData?.conversations, conversations, isArchivedView],
   );
 
   /**
@@ -148,17 +149,12 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      {/* On mobile the search field lives in the drawer's bottom bar, within thumb reach,
-          which would leave the bookmark filter alone on a row of its own — so it moves
-          beside the Chats heading, where the Projects heading already keeps its actions. */}
-      {!isSmallScreen && (
-        <div className="flex items-center gap-0.5 px-3">
-          {hasAccessToBookmarks && (
-            <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={setTags} matchSearchBar />
-            </Suspense>
-          )}
-          {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
+      {/* The search field owns this row alone; filtering and ordering moved beside the
+          Chats heading, where the list they act on is labelled. On mobile the field
+          itself lives in the drawer's bottom bar, within thumb reach. */}
+      {!isSmallScreen && search.enabled && (
+        <div className="flex items-center px-3">
+          <SearchBar isSmallScreen={isSmallScreen} />
         </div>
       )}
       {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
@@ -168,8 +164,9 @@ const ConversationsSection = memo(() => {
           toggleNav={toggleNav}
           isSmallScreen={isSmallScreen}
           /* Only a successful drain proves the list is whole: a failed later
-             page still publishes partial data and stops fetching. */
-          membershipComplete={tags.length === 0 && isPinnedComplete}
+             page still publishes partial data and stops fetching. The Chats filters
+             never reach this query, so nothing else can truncate it. */
+          membershipComplete={isPinnedComplete}
           /* When that drain last ran, which decides whether it is current
              enough to prune the stored order against. */
           membershipUpdatedAt={pinnedUpdatedAt}
@@ -186,13 +183,8 @@ const ConversationsSection = memo(() => {
           isSearchLoading={isSearchLoading || isPreviousData}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
-          chatsHeaderTrailing={
-            isSmallScreen && hasAccessToBookmarks ? (
-              <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={setTags} />
-              </Suspense>
-            ) : undefined
-          }
+          hasNextPage={computedHasNextPage}
+          chatsHeaderTrailing={<ChatFilterMenu />}
         />
       </div>
     </div>
