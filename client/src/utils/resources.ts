@@ -81,6 +81,17 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getManageMessage: (name?: string) => `Manage access for ${name || 'shared link'}`,
     getCopyUrlMessage: () => 'Share link copied',
   },
+  [ResourceType.ARTIFACT_APP]: {
+    resourceType: ResourceType.ARTIFACT_APP,
+    defaultViewerRoleId: AccessRoleIds.ARTIFACT_APP_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.ARTIFACT_APP_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
+    getResourceUrl: (artifactId: string) => `${window.location.origin}/apps/${artifactId}`,
+    getResourceName: (name?: string) => name || 'artifact',
+    getShareMessage: (name?: string) => name || 'artifact',
+    getManageMessage: (name?: string) => `Manage access for ${name || 'artifact'}`,
+    getCopyUrlMessage: () => 'Artifact link copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

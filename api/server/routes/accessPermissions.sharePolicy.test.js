@@ -66,6 +66,17 @@ describe('Access permissions share policy', () => {
       },
     },
     {
+      label: 'artifact',
+      resourceType: ResourceType.ARTIFACT_APP,
+      permissionType: PermissionTypes.ARTIFACTS,
+      accessRoleId: AccessRoleIds.ARTIFACT_APP_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.ARTIFACT_APP,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      },
+    },
+    {
       label: 'prompt group',
       resourceType: ResourceType.PROMPTGROUP,
       permissionType: PermissionTypes.PROMPTS,

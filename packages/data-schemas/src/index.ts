@@ -29,6 +29,9 @@ export {
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   runAfterTransaction,
+  createArtifactAppMethods,
+  computeSourceHash,
+  ARTIFACT_SCHEMA_VERSION,
   AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
@@ -100,6 +103,7 @@ export type { TenantContext } from './config/tenantContext';
 export {
   MCPServerNameMigrationError,
   createMCPAuthorityLookupIndexes,
+  ensureArtifactAppIndexes,
   dropSupersededTenantIndexes,
   migrateTenantIndexes,
   dropSupersededPromptGroupIndexes,

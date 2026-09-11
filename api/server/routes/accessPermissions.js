@@ -99,6 +99,12 @@ const checkResourcePermissionAccess = (requiredPermission) =>
           requiredPermission,
           resourceIdParam: 'resourceId',
         });
+      } else if (resourceType === ResourceType.ARTIFACT_APP) {
+        middleware = canAccessResource({
+          resourceType: ResourceType.ARTIFACT_APP,
+          requiredPermission,
+          resourceIdParam: 'resourceId',
+        });
       } else if (resourceType === ResourceType.SHARED_LINK) {
         middleware = canAccessResource({
           resourceType: ResourceType.SHARED_LINK,

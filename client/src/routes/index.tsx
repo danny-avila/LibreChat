@@ -9,6 +9,8 @@ import {
   RequestPasswordReset,
 } from '~/components/Auth';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
+import StandaloneAppView from '~/components/ArtifactApps/StandaloneAppView';
+import ArtifactAppsList from '~/components/ArtifactApps/ArtifactAppsList';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -187,6 +189,18 @@ export const router = createBrowserRouter(
                   <AgentMarketplace />
                 </MarketplaceProvider>
               ),
+            },
+            {
+              path: 'apps',
+              element: <ArtifactAppsList />,
+            },
+            {
+              path: 'apps/:artifactAppId',
+              element: <StandaloneAppView />,
+            },
+            {
+              path: 'apps/:artifactAppId/version/:versionId',
+              element: <StandaloneAppView />,
             },
             {
               path: 'agents/:category',

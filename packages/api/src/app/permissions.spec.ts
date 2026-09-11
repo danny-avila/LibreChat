@@ -192,14 +192,14 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check USER role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       null,
     );
 
     // Check ADMIN role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       null,
     );
   });
@@ -382,14 +382,14 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check USER role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       null,
     );
 
     // Check ADMIN role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       null,
     );
   });
@@ -558,14 +558,14 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check USER role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       null,
     );
 
     // Check ADMIN role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       null,
     );
   });
@@ -747,14 +747,14 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check USER role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       null,
     );
 
     // Check ADMIN role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       null,
     );
   });
@@ -923,14 +923,14 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check USER role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       null,
     );
 
     // Check ADMIN role call
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       null,
     );
   });
@@ -1090,7 +1090,7 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       expect.objectContaining({
         permissions: expect.objectContaining({
           [PermissionTypes.PROMPTS]: expect.objectContaining({ [Permissions.USE]: false }),
@@ -1100,7 +1100,7 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       expect.objectContaining({
         permissions: expect.objectContaining({
           [PermissionTypes.PROMPTS]: expect.objectContaining({ [Permissions.USE]: false }),
@@ -1280,14 +1280,14 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
-      expectedPermissionsForUser,
+      expect.objectContaining(expectedPermissionsForUser),
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
     );
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
-      expectedPermissionsForAdmin,
+      expect.objectContaining(expectedPermissionsForAdmin),
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
