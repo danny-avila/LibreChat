@@ -92,6 +92,8 @@ const {
   resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
+const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
+const { checkSessionsAlive, loadCodeApiKey } = require('~/server/services/Files/provision');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -438,9 +440,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             'invalid_request_error',
           );
         }
-        if (!(await db.getConvo(principal.userId, request.conversation_id))) {
+        const conversation = await db.getConvo(principal.userId, request.conversation_id);
+        if (!conversation) {
           return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
         }
+        req.resolvedConversation = conversation;
       }
 
       const parentMessageId = request.parent_message_id ?? null;
@@ -456,11 +460,14 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
+        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: mcpParentMessageId,
       });
 
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const allowedProviders = new Set(agentsEConfig?.allowedProviders);
+      const ordinaryToolCancellationEnabled =
+        agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
 
       // Create tool loader
       const loadTools = createToolLoader({ req, res, signal: execution.signal });
@@ -482,6 +489,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
+        getDeferredProvisionFiles: db.getDeferredProvisionFiles,
+        checkSessionsAlive,
+        loadCodeApiKey,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
@@ -793,7 +803,21 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
       const toolExecuteOptions = {
-        loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
+        runSignal: execution.signal,
+        foregroundRunId: responseId,
+        ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+        provisionFiles: createProvisionFilesCallback({
+          req,
+          agentToolContexts,
+          resolvePrimaryAgentId: () => primaryConfig.id,
+        }),
+        loadTools: async (
+          toolNames,
+          agentId,
+          _configurable,
+          callerCapabilityProjection,
+          runSignal,
+        ) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
           const result = await loadToolsForExecution({
@@ -804,7 +828,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             toolNames,
             agent: ctx.agent ?? agent,
-            signal: execution.signal,
+            signal: runSignal,
             toolRegistry: ctx.toolRegistry,
             callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,

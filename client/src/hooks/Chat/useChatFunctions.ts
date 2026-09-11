@@ -40,6 +40,7 @@ import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedRespons
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
+import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
@@ -232,6 +233,7 @@ export default function useChatFunctions({
     immutableConversation,
     addedConversation,
   );
+  const codeWorkspaceState = useCodeWorkspace(immutableConversation, addedConversation);
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -329,6 +331,13 @@ export default function useChatFunctions({
       latestCodeApprovalMode != null && codeApprovalModes.includes(latestCodeApprovalMode)
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
+    const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
+    const workspaceSubmission = codeWorkspaceState.resolveSubmission(latestCodeWorkspaces);
+    if (workspaceSubmission == null) {
+      logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
+      return false;
+    }
+    const { codeWorkspaces } = workspaceSubmission;
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
@@ -518,7 +527,11 @@ export default function useChatFunctions({
         endpoint,
         endpointType,
         overrideConvoId,
-        overrideUserMessageId,
+        overrideUserMessageId:
+          overrideUserMessageId ??
+          (endpoint === EModelEndpoint.agents && !regenerateShaped && !isContinued
+            ? `${intermediateId}${Constants.COMMON_DIVIDER}0`
+            : undefined),
       },
       convo,
       chatProjectId ? { chatProjectId } : {},
@@ -634,6 +647,7 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      clientQueueParentMessageId: regenerateShaped ? (messageId ?? undefined) : intermediateId,
       /**
        * Seed the assistant placeholder with the turn's manually-invoked
        * skill names so `ContentParts` can render interim `SkillCall` cards
@@ -743,6 +757,7 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       codeApprovalMode,
+      codeWorkspaces,
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,

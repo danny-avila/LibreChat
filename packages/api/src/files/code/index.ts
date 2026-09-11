@@ -7,3 +7,4 @@ export * from './form';
 export * from './identity';
 export * from './image';
 export * from './preflight';
+export * from './priming';

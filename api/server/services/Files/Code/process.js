@@ -11,7 +11,9 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
+  getCodeApiUploadOptions,
   withCodeApiRateLimit,
+  withCodeApiUploadRecovery,
   classifyCodeArtifact,
   isMissingSandboxPathError,
   parseSandboxImageChunk,
@@ -29,11 +31,12 @@ const {
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
   executeWorkspaceTool,
-  claimCodeDestination,
-  createCodeDestinationSet,
+  selectCodeFiles,
+  getCodeFileInfo,
+  getUploadedCodeEnvFilename,
+  checkCodeFileActive: checkIfActive,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
-  sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
   resolveDownloadPath,
 } = require('@librechat/api');
@@ -49,9 +52,7 @@ const {
   EModelEndpoint,
   ErrorTypes,
   mergeFileConfig,
-  getCodeEnvRefs,
   mergeCodeEnvRef,
-  getCodeEnvRefForProfile,
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -712,6 +713,7 @@ const processCodeOutput = async ({
         }),
       };
     }
+    const retentionExpiryPromise = getRetentionExpiry(req);
     const buffer =
       preparedBuffer ??
       (await downloadCodeOutputBuffer({
@@ -905,7 +907,7 @@ const processCodeOutput = async ({
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: codeEnvMetadata,
-        ...(await getRetentionExpiry(req)),
+        ...(await retentionExpiryPromise),
       };
       if (!(await commitCodeFile(file))) {
         return null;
@@ -1013,7 +1015,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
     };
 
     if (expectsPreview) {
@@ -1119,66 +1121,20 @@ const processCodeOutput = async ({
   }
 };
 
-function checkIfActive(dateString) {
-  const givenDate = new Date(dateString);
-  const currentDate = new Date();
-  const timeDifference = currentDate - givenDate;
-  const hoursPassed = timeDifference / (1000 * 60 * 60);
-  return hoursPassed < 23;
+function getSessionFileInfo(ref, req, route = {}, signal) {
+  return getCodeFileInfo({
+    ref,
+    req,
+    route,
+    signal,
+    request: axios,
+    getBaseURL: getCodeBaseURL,
+    getAuthHeaders: getCodeApiAuthHeaders,
+  });
 }
 
-/**
- * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
- *
- * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
- *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
- *   codeapi resolves the sessionKey from the request's auth context.
- * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
- *   Trusted host-selected Code API route.
- *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
- *          error in initialization or fetching the info.
- */
-async function getSessionInfo(ref, req, route = {}) {
-  try {
-    const baseURL = route.baseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
-    /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
-     * middleware (post-Phase C). The middleware reconstructs the
-     * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
-     * requester's auth context, then matches it against the cached
-     * sessionKey on the storage bucket. We have the full `codeEnvRef`
-     * here, so pass kind+id (+version when skill) directly. */
-    const query = buildCodeEnvDownloadQuery({
-      kind: ref.kind,
-      id: ref.id,
-      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
-    });
-    const response = await axios({
-      method: 'get',
-      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        ...authHeaders,
-        ...(route.executionProfile
-          ? codeExecutionHeaders({
-              executionProfile: route.executionProfile,
-              bridgeWorkerId: route.bridgeWorkerId,
-            })
-          : {}),
-      },
-      httpAgent: codeServerHttpAgent,
-      httpsAgent: codeServerHttpsAgent,
-      timeout: 5000,
-    });
-
-    return response.data?.lastModified;
-  } catch (_error) {
-    logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
-    return null;
-  }
+async function getSessionInfo(ref, req, route = {}, signal) {
+  return (await getSessionFileInfo(ref, req, route, signal))?.lastModified ?? null;
 }
 
 const getPreviewContextSuffix = (file) => {
@@ -1273,6 +1229,9 @@ const getReuploadFailureCategory = (error) => {
   ) {
     return 'resource_access_denied';
   }
+  if (status === 429 || code === 'CODE_API_RATE_LIMITED') {
+    return 'rate_limited';
+  }
   return 'reupload_failed';
 };
 
@@ -1283,6 +1242,7 @@ const getReuploadFailureCategory = (error) => {
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
  * @param {string} [options.agentResourceType] - Permission resource type for the authorized agent route
+ * @param {AbortSignal} [options.signal] - Effective run cancellation signal
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
@@ -1298,6 +1258,7 @@ const primeFiles = async (options) => {
     executionProfile = 'default',
     executionRouteKey = executionProfile,
     bridgeWorkerId,
+    signal,
   } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile, bridgeWorkerId };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
@@ -1339,41 +1300,24 @@ const primeFiles = async (options) => {
   }
 
   const files = [];
-  const sessions = new Map();
+  const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
+  /** All stale-file reuploads in this prime share one live-turn wait cap. */
+  const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
 
-  /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
-   * when several share a filename, so it is fixed here rather than inherited
-   * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
-   * bump `updatedAt`, which would repoint paths between turns. `file_ids` are
-   * this agent's own resources; every other candidate came from the
-   * conversation and is therefore seen by every agent in the run, so shared
-   * files rank first and land on the same destination whichever agent primes
-   * them. */
-  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles, agentResourceIds);
-  const destinations = createCodeDestinationSet();
-
-  /* Per-file path counters — emitted at the bottom so a single
-   * grep on `[primeCodeFiles]` shows the input volume, the per-file
-   * paths taken, and the final dispatch summary in one trace. */
-  let skippedNoRef = 0;
+  const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
+    files: dbFiles,
+    privateFileIds: agentResourceIds,
+    routeKey: executionRouteKey,
+    getFileInfo: (ref) => getSessionFileInfo(ref, req, codeApiRoute, signal),
+    concurrency: uploadOptions.concurrency,
+    signal,
+  });
   let reuploadFailures = 0;
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < orderedFiles.length; i++) {
-    const file = orderedFiles[i];
-    if (!file) {
-      continue;
-    }
-
-    const ref = getCodeEnvRefForProfile(file.metadata, executionRouteKey);
-    const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
-    if (!sourceRef) {
-      skippedNoRef += 1;
-      logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
-      continue;
-    }
+  for (const { file, ref, sourceRef, sandboxName, isActive, getUploadTime } of selected) {
     requiredCodeFiles += 1;
     const session_id = sourceRef.storage_session_id;
     const id = sourceRef.file_id;
@@ -1394,17 +1338,9 @@ const primeFiles = async (options) => {
      * codeapi can resolve sessionKey per-file (kind switch +
      * tenant prefix from auth context).
      */
-    const pushFile = (overrideSessionId, overrideId) => {
-      /* Claimed here rather than up front so files that never reach the
-       * sandbox — no code-env ref, or a failed re-upload — do not reserve a
-       * name and push a file that does reach it onto a counter. */
-      const destination = claimCodeDestination(destinations, file.filename, file.file_id);
-      if (destination !== file.filename) {
-        logger.debug(
-          `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
-            `reason=name-collision filename=${file.filename}`,
-        );
-      }
+    const pushFile = (overrideSessionId, overrideId, destination = sandboxName) => {
+      /* The sandbox holds the converted name, not the record's, so the mount path has
+       * to follow the same rule provisioning uploaded under. */
       toolContext = appendVisibleCodeFileContext(
         toolContext,
         getVisibleCodeFileContextLine(file, agentResourceIds, destination),
@@ -1431,28 +1367,46 @@ const primeFiles = async (options) => {
         const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
           FileSources.execute_code,
         );
-        const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
         /* Reupload preserves the resource identity from the existing
          * ref so codeapi re-buckets under the same sessionKey shape
          * (skill stays skill, user stays user). Without this, a
          * skill-cache-miss reupload would land in the user bucket
          * and never re-shareable cross-user. */
-        const uploaded = await uploadCodeEnvFile({
-          req: options.req,
-          stream,
-          filename: file.filename,
-          kind: sourceRef.kind,
-          id: sourceRef.id,
-          ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
-          codeApiBaseUrl,
-          executionProfile,
-          bridgeWorkerId,
+        const uploaded = await withCodeApiUploadRecovery({
+          registry: req.app?.locals?.codeApiUploadRegistry,
+          scope: uploadOptions.scope,
+          concurrency: uploadOptions.concurrency,
+          label: `re-uploading file ${file.file_id} to the code environment`,
+          budget: uploadRateLimitBudget,
+          signal,
+          onWait: (waitMs) =>
+            logger.warn(
+              `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
+                `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
+            ),
+          openSource: async () => {
+            signal?.throwIfAborted();
+            return getDownloadStream(options.req, resolveDownloadPath(file), { signal });
+          },
+          upload: (stream) =>
+            uploadCodeEnvFile({
+              req: options.req,
+              stream,
+              filename: sandboxName,
+              kind: sourceRef.kind,
+              id: sourceRef.id,
+              ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
+              codeApiBaseUrl,
+              executionProfile,
+              bridgeWorkerId,
+              signal,
+            }),
         });
 
         /**
          * Use the FRESH `(storage_session_id, file_id)` from the
-         * reupload response and route it through the dedupe Map, the
-         * persisted record, and the in-memory `files` list. The
+         * reupload response and route it through the persisted record
+         * and the in-memory `files` list. The
          * original ref captured at the top of this iteration refers
          * to the old, expired/missing sandbox object — using it here
          * would silently re-introduce the bug `Graph.sessions`
@@ -1467,6 +1421,7 @@ const primeFiles = async (options) => {
           id: sourceRef.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
+          sandboxFilename: getUploadedCodeEnvFilename(uploaded, sandboxName),
           executionProfile,
           ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1479,13 +1434,16 @@ const primeFiles = async (options) => {
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
           [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
-        sessions.set(newRef.storage_session_id, true);
-        pushFile(newRef.storage_session_id, newRef.file_id);
+        pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
             `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
         );
       } catch (error) {
+        /* Cancellation is an operation outcome, not a recoverable per-file
+         * miss. Swallowing it here would keep walking and could dispatch more
+         * uploads after the foreground run has ended. */
+        signal?.throwIfAborted();
         reuploadFailures += 1;
         const failureCategory = getReuploadFailureCategory(error);
         reuploadFailureCategories.add(failureCategory);
@@ -1504,14 +1462,8 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (sessions.has(session_id)) {
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
-      );
-      pushFile();
-      continue;
-    }
-    const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
+    const uploadTime = await getUploadTime();
+    signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +
@@ -1520,7 +1472,7 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (!checkIfActive(uploadTime)) {
+    if (!isActive) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=stale ` +
           `uploadTime=${uploadTime} storage_session_id=${session_id}`,
@@ -1528,7 +1480,6 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    sessions.set(session_id, true);
     logger.debug(
       `[primeCodeFiles] file=${file.file_id} path=fresh-active storage_session_id=${session_id}`,
     );
@@ -1544,7 +1495,8 @@ const primeFiles = async (options) => {
   const { requestId, runId } = getPrimingCorrelation(req);
   logger.debug(
     `[primeCodeFiles] out: returned=${files.length} ` +
-      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
+      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} ` +
+      `skippedSuperseded=${skippedSuperseded} reuploadFailures=${reuploadFailures}`,
   );
 
   if (allRequiredResourcesFailed) {
@@ -1916,6 +1868,7 @@ async function previewWorkspaceEdit({
  * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
  * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @param {AbortSignal} [params.signal] - Foreground run cancellation.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @returns {Promise<{base64: string, bytes: number}
@@ -1933,6 +1886,7 @@ async function readSandboxImage({
   executionRouteKey,
   maxBytes,
   req,
+  signal,
 }) {
   const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
   const preparedBuffer = getPreparedCodeOutputBuffer({
@@ -1959,7 +1913,9 @@ async function readSandboxImage({
   /** Every window is one `/exec` call against the Code API's per-user
    *  execution limiter, so the read shares one wait budget: a window that
    *  resets mid-read is worth pausing for, an exhausted budget is not. */
-  const rateLimit = createCodeApiRateLimitBudget();
+  const rateLimit = createCodeApiRateLimitBudget(
+    req?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+  );
   return readWindowedSandboxImage({
     filePath: file_path,
     baseUrl: baseURL,
@@ -1976,6 +1932,7 @@ async function readSandboxImage({
         files,
         req,
         rateLimit,
+        signal,
       }),
   });
 }
@@ -1998,6 +1955,7 @@ async function execSandboxImageChunk({
   files,
   req,
   rateLimit,
+  signal,
 }) {
   /** @type {Record<string, unknown>} */
   const postData = { lang: 'bash', code };
@@ -2015,6 +1973,7 @@ async function execSandboxImageChunk({
     const response = await withCodeApiRateLimit({
       label: `reading "${file_path}" from the sandbox`,
       budget: rateLimit,
+      signal,
       onWait: (waitMs) =>
         logger.warn(
           `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
@@ -2034,6 +1993,7 @@ async function execSandboxImageChunk({
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
           timeout: 15000,
+          signal,
         });
       },
     });

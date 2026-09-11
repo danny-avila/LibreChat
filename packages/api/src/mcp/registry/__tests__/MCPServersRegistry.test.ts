@@ -1,7 +1,10 @@
 import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import {
+  MCPServersRegistry,
+  MCPConfigInitializationCanceledError,
+} from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { processMCPEnv } from '~/utils/env';
 
@@ -133,6 +136,26 @@ describe('MCPServersRegistry', () => {
         async () => await registry.getAllServerConfigs('user-1'),
       );
       expect(Object.keys(inAAgain)).toEqual(['tenant_a_server']);
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+    });
+
+    it('partitions role-filtered server maps when a user role changes', async () => {
+      const dbGetAll = jest.spyOn(registry['dbConfigsRepo'], 'getAll');
+      dbGetAll.mockResolvedValueOnce({ admin_server: testParsedConfig });
+      dbGetAll.mockResolvedValueOnce({ user_server: testParsedConfig });
+
+      await expect(registry.getAllServerConfigs('user-1', {}, 'ADMIN')).resolves.toEqual({
+        admin_server: testParsedConfig,
+      });
+      await expect(registry.getAllServerConfigs('user-1', {}, 'USER')).resolves.toEqual({
+        user_server: testParsedConfig,
+      });
+      await expect(registry.getAllServerConfigs('user-1', {}, 'USER')).resolves.toEqual({
+        user_server: testParsedConfig,
+      });
+
+      expect(dbGetAll).toHaveBeenNthCalledWith(1, 'user-1', 'ADMIN');
+      expect(dbGetAll).toHaveBeenNthCalledWith(2, 'user-1', 'USER');
       expect(dbGetAll).toHaveBeenCalledTimes(2);
     });
 
@@ -925,6 +948,73 @@ describe('MCPServersRegistry', () => {
         'https://example.com/config-only-icon.svg',
       );
       expect(result['config-only-server'].source).toBe('config');
+    });
+
+    it('lets duplicate cold initializations share one pending owner slot', async () => {
+      let releaseInspection!: () => void;
+      const inspectionGate = new Promise<void>((resolve) => {
+        releaseInspection = resolve;
+      });
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+      inspectSpy.mockImplementationOnce(async (_serverName, rawConfig) => {
+        await inspectionGate;
+        return { ...testParsedConfig, ...rawConfig } as t.ParsedServerConfig;
+      });
+      const limitCalls = jest.fn();
+      const limit = <T>(task: () => Promise<T>): Promise<T> => {
+        limitCalls();
+        return task();
+      };
+      const config = {
+        shared: {
+          type: 'streamable-http' as const,
+          url: 'https://shared.example.com/mcp',
+        },
+      };
+
+      const first = registry.ensureConfigServers(config, limit);
+      const second = registry.ensureConfigServers(config, limit);
+      await Promise.resolve();
+      await Promise.resolve();
+      releaseInspection();
+
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(limitCalls).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a healthy joiner replace a canceled pending initialization', async () => {
+      let rejectOwner!: (error: Error) => void;
+      const ownerGate = new Promise<never>((_resolve, reject) => {
+        rejectOwner = reject;
+      });
+      const config = {
+        shared: {
+          type: 'streamable-http' as const,
+          url: 'https://shared.example.com/mcp',
+        },
+      };
+      const canceledLimitCalls = jest.fn();
+      const canceledLimit = <T>(_task: () => Promise<T>): Promise<T> => {
+        canceledLimitCalls();
+        return ownerGate;
+      };
+      const healthyLimitCalls = jest.fn();
+      const healthyLimit = <T>(task: () => Promise<T>): Promise<T> => {
+        healthyLimitCalls();
+        return task();
+      };
+
+      const canceled = registry.ensureConfigServers(config, canceledLimit);
+      const healthy = registry.ensureConfigServers(config, healthyLimit);
+      await Promise.resolve();
+      rejectOwner(new MCPConfigInitializationCanceledError());
+
+      await expect(canceled).resolves.toEqual({});
+      await expect(healthy).resolves.toHaveProperty('shared');
+      expect(canceledLimitCalls).toHaveBeenCalledTimes(1);
+      expect(healthyLimitCalls).toHaveBeenCalledTimes(1);
     });
 
     it('preserves YAML base entry when config-tier override reports inspectionFailed', async () => {

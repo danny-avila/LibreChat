@@ -28,6 +28,23 @@ export class ReauthenticationRequiredError extends Error {
   }
 }
 
+/** Durable credentials could not be read or decrypted. This is retryable infrastructure state,
+ * never evidence that the user must authorize the server again. */
+export class MCPTokenStorageUnavailableError extends Error {
+  constructor(serverName: string, cause: unknown) {
+    super(`OAuth token storage is unavailable for "${serverName}"`, { cause });
+    this.name = 'MCPTokenStorageUnavailableError';
+  }
+}
+
+/** The refresh credential may still be usable, but its provider could not complete this attempt. */
+export class MCPTokenRefreshUnavailableError extends Error {
+  constructor(serverName: string, cause: unknown) {
+    super(`OAuth token refresh is temporarily unavailable for "${serverName}"`, { cause });
+    this.name = 'MCPTokenRefreshUnavailableError';
+  }
+}
+
 interface StoreTokensParams {
   userId: string;
   serverName: string;
@@ -48,6 +65,10 @@ interface StoreTokensParams {
     refreshToken?: IToken | null;
     clientInfoToken?: IToken | null;
   };
+  /** Runs after all token rows are written but while the rollback journal is still available. */
+  onStoreCommitted?: (tokens: MCPOAuthTokens) => Promise<void>;
+  /** Runs after preflight reads and encryption, immediately before the first token-row write. */
+  onStorePreparing?: () => Promise<void>;
 }
 
 interface GetTokensParams {
@@ -81,6 +102,8 @@ interface GetTokensParams {
    * cache invalidation tied to the fresh tokens cannot be skipped by a timeout.
    */
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
+  /** Creates the exact post-write callback after durable fence intent is safely stored. */
+  onRefreshPreparing?: () => Promise<(tokens?: MCPOAuthTokens) => Promise<void>>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
@@ -373,6 +396,8 @@ export class MCPTokenStorage {
     metadata,
     expectedCredentialSetId,
     signal,
+    onStoreCommitted,
+    onStorePreparing,
   }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const rollbackWrites: Array<() => Promise<void>> = [];
@@ -710,6 +735,8 @@ export class MCPTokenStorage {
             ]
           : plannedWrites;
 
+      await onStorePreparing?.();
+
       for (const write of orderedWrites) {
         if (signal?.aborted) {
           throw new Error('Token storage aborted by OAuth teardown');
@@ -730,6 +757,15 @@ export class MCPTokenStorage {
         }
       }
 
+      const storedTokens: MCPOAuthTokens = {
+        ...tokens,
+        credential_set_id: credentialSetId,
+        obtained_at:
+          'obtained_at' in tokens && typeof tokens.obtained_at === 'number'
+            ? tokens.obtained_at
+            : Date.now(),
+        expires_at: accessTokenExpiry.getTime(),
+      };
       /**
        * An interactive response without a refresh token must never bind an older refresh
        * secret to the new client. Remove that stale record after the committed writes. This
@@ -761,20 +797,14 @@ export class MCPTokenStorage {
         }
       }
 
+      await onStoreCommitted?.(storedTokens);
+
       logger.debug(`${logPrefix} Stored OAuth tokens`, {
         client_id: clientInfo?.client_id,
         has_refresh_token: !!tokens.refresh_token,
         expires_at: 'expires_at' in tokens ? tokens.expires_at : 'N/A',
       });
-      return {
-        ...tokens,
-        credential_set_id: credentialSetId,
-        obtained_at:
-          'obtained_at' in tokens && typeof tokens.obtained_at === 'number'
-            ? tokens.obtained_at
-            : Date.now(),
-        expires_at: accessTokenExpiry.getTime(),
-      };
+      return storedTokens;
     } catch (error) {
       for (const rollback of rollbackWrites.reverse()) {
         try {
@@ -972,6 +1002,7 @@ export class MCPTokenStorage {
     refreshTokens,
     existingAccessToken,
     onRefreshSuccess,
+    onRefreshPreparing,
     signal,
     flowManager,
     leaseId,
@@ -1110,6 +1141,7 @@ export class MCPTokenStorage {
       // Pass existing token state to avoid duplicate DB calls
       let storedTokens: MCPOAuthTokens;
       try {
+        let preparedRefreshCommit: ((tokens?: MCPOAuthTokens) => Promise<void>) | undefined;
         storedTokens = await this.storeTokens({
           userId,
           serverName,
@@ -1127,6 +1159,19 @@ export class MCPTokenStorage {
           metadata: storedClientMetadata,
           expectedCredentialSetId: refreshCredentialSetId,
           signal,
+          onStorePreparing:
+            onRefreshPreparing == null
+              ? undefined
+              : async () => {
+                  preparedRefreshCommit = await onRefreshPreparing();
+                },
+          onStoreCommitted: async (tokens) => {
+            if (preparedRefreshCommit != null) {
+              await preparedRefreshCommit(tokens);
+            } else {
+              await onRefreshSuccess?.(tokens);
+            }
+          },
         });
       } finally {
         try {
@@ -1138,14 +1183,6 @@ export class MCPTokenStorage {
         }
       }
 
-      if (onRefreshSuccess) {
-        try {
-          await onRefreshSuccess(storedTokens);
-        } catch (hookError) {
-          logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
-        }
-      }
-
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
       return storedTokens;
     } catch (refreshError) {
@@ -1153,18 +1190,32 @@ export class MCPTokenStorage {
       if (refreshError instanceof ReauthenticationRequiredError) {
         throw refreshError;
       }
+      if (
+        signal.aborted &&
+        this.refreshTeardownCounts.has(this.getRefreshOwnerKey(userId, serverName))
+      ) {
+        return null;
+      }
       // Check if it's an unauthorized_client error (refresh not supported)
       const errorMessage =
         refreshError instanceof Error ? refreshError.message : String(refreshError);
-      if (errorMessage.toLowerCase().includes('unauthorized_client')) {
+      const normalizedErrorMessage = errorMessage.toLowerCase();
+      if (normalizedErrorMessage.includes('unauthorized_client')) {
         logger.info(
           `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
         );
-      } else if (isInvalidClientMessage(errorMessage)) {
+        return null;
+      }
+      if (normalizedErrorMessage.includes('invalid_grant')) {
+        logger.info(`${logPrefix} Refresh grant is no longer valid. New authentication required.`);
+        return null;
+      }
+      if (isInvalidClientMessage(errorMessage)) {
         if (deleteTokens) {
           logger.info(
             `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
           );
+          const publishPreparedCleanup = await onRefreshPreparing?.();
           const results = await Promise.allSettled([
             MCPTokenStorage.deleteClientRegistration({
               userId,
@@ -1186,13 +1237,15 @@ export class MCPTokenStorage {
               logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
             }
           }
+          await publishPreparedCleanup?.();
           throw new ReauthenticationRequiredError(serverName, 'invalid_client');
         }
         logger.warn(
           `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
         );
+        return null;
       }
-      return null;
+      throw new MCPTokenRefreshUnavailableError(serverName, refreshError);
     }
   }
 
@@ -1209,6 +1262,8 @@ export class MCPTokenStorage {
     refreshTokens,
     singleFlightScope,
     flowManager,
+    onRefreshSuccess,
+    onRefreshPreparing,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1258,6 +1313,8 @@ export class MCPTokenStorage {
           refreshTokens,
           singleFlightScope,
           flowManager,
+          onRefreshSuccess,
+          onRefreshPreparing,
           existingAccessToken: accessTokenData,
         });
       }
@@ -1309,11 +1366,14 @@ export class MCPTokenStorage {
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
       return tokens;
     } catch (error) {
-      if (error instanceof ReauthenticationRequiredError) {
+      if (
+        error instanceof ReauthenticationRequiredError ||
+        error instanceof MCPTokenRefreshUnavailableError
+      ) {
         throw error;
       }
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);
-      return null;
+      throw new MCPTokenStorageUnavailableError(serverName, error);
     }
   }
 

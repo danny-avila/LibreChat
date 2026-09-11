@@ -68,6 +68,18 @@ describe('isAbortError', () => {
     expect(isAbortError(wrapped)).toBe(true);
   });
 
+  it('recognizes an Axios cancellation through an upload wrapper cause', () => {
+    const axiosCancellation = Object.assign(new Error('canceled'), {
+      name: 'CanceledError',
+      code: 'ERR_CANCELED',
+    });
+    const wrapped = new Error('Error uploading code environment file', {
+      cause: axiosCancellation,
+    });
+
+    expect(isAbortError(wrapped)).toBe(true);
+  });
+
   it('recognizes the SDK message shape that only stringifies the reason', () => {
     expect(
       isAbortError(new Error('MCP error -32001: AbortError: This operation was aborted')),

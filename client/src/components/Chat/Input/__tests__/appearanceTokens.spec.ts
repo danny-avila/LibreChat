@@ -21,6 +21,10 @@ const themedControls = [
   ['Files/AttachFile.tsx', ['size-theme-control', 'rounded-theme-control-round']],
   ['Files/AttachFileMenu.tsx', ['size-theme-control', 'rounded-theme-control-round']],
   ['ToolsDropdown.tsx', ['size-theme-control', 'rounded-theme-control-round']],
+  /** Floats over the thread rather than sitting in the composer, but stacks
+   *  over Send on the same rail, so it takes the row's geometry from the shared
+   *  `Button` recipe; the tokens behind those variants are asserted in `Button.spec`. */
+  ['../../Messages/ScrollToBottom.tsx', ['size="icon-theme"', 'shape="round"']],
 ] as const;
 
 describe('Composer appearance tokens', () => {

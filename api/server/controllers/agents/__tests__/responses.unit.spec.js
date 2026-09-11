@@ -196,6 +196,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /* Provisioning moved into this package; the controllers build the callback from it. */
+  createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   /** Grants both by default; the capability set is what these specs vary. */
   resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
@@ -231,9 +233,16 @@ jest.mock('@librechat/api', () => ({
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+  getCodeWorkspaceSelections: jest.fn(),
+  createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
+    parentMessageId,
+    codeWorkspaces,
+  }) => ({
+    messageId,
+    conversationId,
+    ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
     }),
@@ -569,6 +578,35 @@ describe('createResponse controller', () => {
       off: jest.fn(),
     };
   });
+
+  it.each([false, true])(
+    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s',
+    async (continuation) => {
+      const api = require('@librechat/api');
+      const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+      const request = {
+        model: 'agent-123',
+        input: 'Hello',
+        stream: false,
+        ...(continuation ? { previous_response_id: 'previous' } : { code_workspaces: selections }),
+      };
+      api.validateResponseRequest.mockReturnValueOnce({ request });
+      if (continuation)
+        require('~/models').getConvo.mockResolvedValueOnce({
+          conversationId: 'previous',
+          codeWorkspaces: selections,
+        });
+      await createResponse(req, res);
+      expect(api.initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({ codeWorkspaces: selections }),
+        }),
+        expect.anything(),
+      );
+      if (continuation)
+        expect(require('~/models').getConvo).toHaveBeenCalledWith('user-123', 'previous');
+    },
+  );
 
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await createResponse(req, res);
@@ -1829,46 +1867,73 @@ describe('createResponse controller', () => {
   });
 
   describe('remote-agent file authorization', () => {
-    it('threads the remote-agent permission boundary through initialization and tool loading', async () => {
-      const { initializeAgent, createToolExecuteHandler } = require('@librechat/api');
-      const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+    it.each([false, true])(
+      'threads the remote-agent permission boundary through initialization and tool loading (stream=%s)',
+      async (stream) => {
+        const { initializeAgent, createToolExecuteHandler } = require('@librechat/api');
+        const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+        const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
-      await createResponse(req, res);
+        req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
+        req.body.stream = stream;
+        await createResponse(req, res);
 
-      const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
-      const filterParams = {
-        files: [{ file_id: 'owner-file', user: 'agent-owner' }],
-        userId: 'user-123',
-        role: 'USER',
-        agentId: 'agent-123',
-      };
-      await dbMethods.filterFilesByAgentAccess(filterParams);
-      expect(filterFilesByAgentAccess).toHaveBeenLastCalledWith({
-        ...filterParams,
-        resourceType: ResourceType.REMOTE_AGENT,
-      });
+        const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
+        const filterParams = {
+          files: [{ file_id: 'owner-file', user: 'agent-owner' }],
+          userId: 'user-123',
+          role: 'USER',
+          agentId: 'agent-123',
+        };
+        await dbMethods.filterFilesByAgentAccess(filterParams);
+        expect(filterFilesByAgentAccess).toHaveBeenLastCalledWith({
+          ...filterParams,
+          resourceType: ResourceType.REMOTE_AGENT,
+        });
 
-      await initializeParams.loadTools({
-        agentId: 'agent-123',
-        tools: ['file_search'],
-        provider: 'anthropic',
-        model: 'claude-3',
-        tool_resources: { file_search: { file_ids: ['owner-file'] } },
-      });
-      expect(loadAgentTools).toHaveBeenLastCalledWith(
-        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
-      );
+        await initializeParams.loadTools({
+          agentId: 'agent-123',
+          tools: ['file_search'],
+          provider: 'anthropic',
+          model: 'claude-3',
+          tool_resources: { file_search: { file_ids: ['owner-file'] } },
+        });
+        expect(loadAgentTools).toHaveBeenLastCalledWith(
+          expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+        );
 
-      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
-      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
-      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          agentResourceType: ResourceType.REMOTE_AGENT,
-          requestBody: initializeParams.requestBody,
-        }),
-      );
-    });
+        const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+        expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
+        expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
+        expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
+        const effectiveSignal = new AbortController().signal;
+        await toolExecuteOptions.loadTools(
+          ['file_search'],
+          'agent-123',
+          undefined,
+          undefined,
+          effectiveSignal,
+        );
+        expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            agentResourceType: ResourceType.REMOTE_AGENT,
+            requestBody: initializeParams.requestBody,
+            signal: effectiveSignal,
+          }),
+        );
+        mockExecution.abort();
+        await toolExecuteOptions.loadTools(
+          ['file_search'],
+          'agent-123',
+          undefined,
+          undefined,
+          undefined,
+        );
+        expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+          expect.objectContaining({ signal: undefined }),
+        );
+      },
+    );
   });
 
   describe('token usage recording - non-streaming', () => {

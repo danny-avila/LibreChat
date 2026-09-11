@@ -1,6 +1,10 @@
 import { Tools, EToolResources } from 'librechat-data-provider';
 import type { IConversation } from '@librechat/data-schemas';
-import { readResolvedConversationFiles, resolveResendToolResources } from './initialize';
+import {
+  partitionCommittedFiles,
+  readResolvedConversationFiles,
+  resolveResendToolResources,
+} from './initialize';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 
 describe('readResolvedConversationFiles', () => {
@@ -58,6 +62,36 @@ describe('readResolvedConversationFiles', () => {
   });
 });
 
+describe('partitionCommittedFiles', () => {
+  it('separates files this request already screened from the rest', () => {
+    const shared = { file_id: 'shared', bytes: 2 };
+    const persistent = { file_id: 'persistent', bytes: 7 };
+
+    const { committed, pending } = partitionCommittedFiles(
+      [shared, persistent],
+      [{ file_id: 'shared' }, { file_id: 'attachment' }],
+    );
+
+    expect(committed).toEqual([shared]);
+    expect(pending).toEqual([persistent]);
+  });
+
+  it('treats a file with no id as still to screen', () => {
+    const anonymous: { file_id?: string; bytes: number } = { bytes: 1 };
+
+    expect(partitionCommittedFiles([anonymous], [{ file_id: 'shared' }])).toEqual({
+      committed: [],
+      pending: [anonymous],
+    });
+  });
+
+  it('keeps every file when nothing was committed', () => {
+    const files = [{ file_id: 'a' }, { file_id: 'b' }];
+
+    expect(partitionCommittedFiles(files, [])).toEqual({ committed: [], pending: files });
+  });
+});
+
 describe('resolveResendToolResources', () => {
   const resolve = (tools: string[], flags: { code: boolean; fileSearch?: boolean }) =>
     resolveResendToolResources({
@@ -79,6 +113,13 @@ describe('resolveResendToolResources', () => {
     expect([
       ...resolve([Tools.execute_code, Tools.file_search], { code: true, fileSearch: false }),
     ]).toEqual([EToolResources.execute_code]);
+  });
+
+  it('maps sandbox file tools to execute_code and applies the same code grant', () => {
+    expect([...resolve([Tools.bash_tool, Tools.read_file], { code: true })]).toEqual([
+      EToolResources.execute_code,
+    ]);
+    expect([...resolve([Tools.bash_tool, Tools.read_file], { code: false })]).toEqual([]);
   });
 
   it('primes neither when the role carries neither grant', () => {

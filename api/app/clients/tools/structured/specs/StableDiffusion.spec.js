@@ -29,7 +29,7 @@ jest.mock('@librechat/api', () => ({
 }));
 jest.mock('~/config/paths', () => ({}), { virtual: true });
 
-const StableDiffusionAPI = require('./StableDiffusion');
+const StableDiffusionAPI = require('../StableDiffusion');
 
 describe('StableDiffusionAPI', () => {
   beforeEach(() => {

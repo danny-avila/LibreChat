@@ -223,7 +223,13 @@ interface:
   #   maxPerUser: 10
   #   minIntervalMinutes: 60
   #   autoDisableAfterFailures: 5
+  #   # Maximum occurrences concurrently passing readiness admission per replica (1-100).
+  #   admissionConcurrency: 20
   #   fireConcurrency: 5
+  #   # Maximum MCP readiness connections opened at once by one schedule admission (1-10).
+  #   mcpPreflightConcurrency: 3
+  #   # Maximum wall-clock time for one MCP readiness admission (1000-600000 ms).
+  #   mcpPreflightTimeoutMs: 300000
   #   # Require every schedule to be filed under a chat project. Enforced on
   #   # create/update AND at each fire, so turning it on stops (auto-disables)
   #   # schedules that predate it rather than letting their runs land loose.
@@ -266,6 +272,9 @@ interface:
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
+  #   # Poll only while MCP controls are visible, in milliseconds (0 disables polling).
+  #   toolsRefreshInterval: 300000
+  #   statusRefreshInterval: 30000
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers
   # - create: Allow users to create and manage new MCP servers
@@ -286,6 +295,10 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Regular chat retention in hours under retentionMode: "all" (min: 1, max: 8760).
+  # Defaults to the temporary chat retention policy when omitted.
+  # generalChatRetention: 2160 # 90 days, independently of temporary chats
+  # Existing stored deadlines are not migrated when these settings change.
   # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
   # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
   # that should stop expiring:
@@ -576,6 +589,10 @@ endpoints:
   #   # (optional) Maximum explicit subagents per agent, for both the flat list and
   #   # graph definitions. Defaults to 10; hard cap 50.
   #   maxSubagents: 20
+  #   # (optional) Maximum concurrent Code API uploads per route and user. Defaults to 3.
+  #   codeApiUploadConcurrency: 3
+  #   # (optional) Maximum total time spent waiting on Code API rate limits. Defaults to 20000 ms.
+  #   codeApiMaxRetryWaitMs: 20000
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
@@ -623,6 +640,10 @@ endpoints:
   #         owner: deployment
   #         # Optionally expose only these bounded preferences to environment owners.
   #         configSchema:
+  #           limits:
+  #             # Maximum Bash execution budget the model may request per call.
+  #             # Omit to preserve the historical 30-second limit. Hard cap: 300000.
+  #             maxCommandTimeoutMs: 120000
   #           permissions:
   #             fileWrite:
   #               allowed: [allow, ask, deny]
@@ -645,6 +666,8 @@ endpoints:
   #   # Enabled by default; set false to keep background tools and subagents poll-only.
   #   backgroundTasks:
   #     completionWakeups: true
+  #     # Allow owners to cooperatively cancel ordinary background tools, including BYOM Bash.
+  #     ordinaryToolCancellation: false
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.

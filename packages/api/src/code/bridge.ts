@@ -1,4 +1,10 @@
 import { createHash } from 'node:crypto';
+import {
+  CODE_WORKSPACE_ID_PATTERN,
+  CODE_WORKSPACE_MAX_COUNT,
+  CODE_WORKSPACE_OPERATIONS,
+} from 'librechat-data-provider';
+import type { CodeWorkspaceDescriptor, CodeWorkspaceOperation } from 'librechat-data-provider';
 
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
 const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 64 * 1024;
@@ -23,9 +29,11 @@ export type CodeBridgePairing = {
 export type CodeBridgeWorkerStatus = {
   status: 'offline' | 'starting' | 'ready';
   leaseExpiresInMs?: number;
+  statefulWorkspace?: boolean;
   sandboxProfile?: string;
   runtimes?: string[];
-  operations?: string[];
+  operations?: CodeWorkspaceOperation[];
+  workspaces?: CodeWorkspaceDescriptor[];
 };
 
 export type CodeBridgeFetch = (
@@ -140,6 +148,77 @@ function validStatusStringArray(value: unknown): value is string[] {
   );
 }
 
+function validWorkspaceOperations(value: unknown): value is CodeWorkspaceOperation[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= CODE_WORKSPACE_OPERATIONS.length &&
+    value.every((operation) =>
+      CODE_WORKSPACE_OPERATIONS.includes(operation as CodeWorkspaceOperation),
+    ) &&
+    new Set(value).size === value.length
+  );
+}
+
+function validWorkspaceCapabilities(value: unknown): value is {
+  protocolVersion: 1;
+  operations: CodeWorkspaceOperation[];
+  workspaces: CodeWorkspaceDescriptor[];
+} {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const capabilities = value as Record<string, unknown>;
+  if (
+    capabilities.protocolVersion !== 1 ||
+    !validWorkspaceOperations(capabilities.operations) ||
+    !Array.isArray(capabilities.workspaces) ||
+    capabilities.workspaces.length < 1 ||
+    capabilities.workspaces.length > CODE_WORKSPACE_MAX_COUNT
+  ) {
+    return false;
+  }
+  const operations = capabilities.operations;
+  const ids = new Set<string>();
+  return capabilities.workspaces.every((value) => {
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const workspace = value as Record<string, unknown>;
+    if (
+      Object.keys(workspace).some(
+        (key) => key !== 'id' && key !== 'name' && key !== 'operations',
+      ) ||
+      typeof workspace.id !== 'string' ||
+      !CODE_WORKSPACE_ID_PATTERN.test(workspace.id) ||
+      ids.has(workspace.id) ||
+      (workspace.name !== undefined &&
+        (typeof workspace.name !== 'string' ||
+          workspace.name.trim().length === 0 ||
+          workspace.name.length > 128)) ||
+      (workspace.operations !== undefined &&
+        (!validWorkspaceOperations(workspace.operations) ||
+          workspace.operations.length > operations.length ||
+          workspace.operations.some((operation) => !operations.includes(operation))))
+    ) {
+      return false;
+    }
+    ids.add(workspace.id);
+    return true;
+  });
+}
+
+/** Keep the status endpoint readable during worker-first rolling upgrades.
+ * Legacy capabilities remain non-selectable and are surfaced as an explicit
+ * update-required state; they never regain an implicit `primary` binding. */
+function validLegacyWorkspaceCapabilities(value: unknown): value is {
+  operations: CodeWorkspaceOperation[];
+} {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const capabilities = value as Record<string, unknown>;
+  return (
+    capabilities.protocolVersion === undefined &&
+    capabilities.workspaces === undefined &&
+    validWorkspaceOperations(capabilities.operations)
+  );
+}
+
 async function readBoundedStatusJson(response: Response): Promise<unknown> {
   const reader = response.body?.getReader();
   if (reader == null) throw new CodeBridgeStatusError('invalid');
@@ -199,9 +278,10 @@ export async function getCodeBridgeWorkerStatus({
       ready?: unknown;
       leaseExpiresInMs?: unknown;
       capabilities?: {
+        statefulWorkspace?: unknown;
         sandboxProfile?: unknown;
         runtimes?: unknown;
-        workspaceTools?: { operations?: unknown };
+        workspaceTools?: unknown;
       };
     };
     const capabilities = status.capabilities;
@@ -214,9 +294,10 @@ export async function getCodeBridgeWorkerStatus({
     const validCapabilities =
       capabilities == null || validStatusString(capabilities.sandboxProfile);
     const validRuntimes = capabilities == null || validStatusStringArray(capabilities.runtimes);
-    const validOperations =
-      capabilities?.workspaceTools?.operations == null ||
-      validStatusStringArray(capabilities.workspaceTools.operations);
+    const validWorkspaceTools =
+      capabilities?.workspaceTools == null ||
+      validWorkspaceCapabilities(capabilities.workspaceTools) ||
+      validLegacyWorkspaceCapabilities(capabilities.workspaceTools);
     if (
       status.protocolVersion !== 1 ||
       status.workerId !== workerId ||
@@ -228,7 +309,9 @@ export async function getCodeBridgeWorkerStatus({
       !validLease ||
       !validCapabilities ||
       !validRuntimes ||
-      !validOperations
+      !validWorkspaceTools ||
+      (capabilities?.statefulWorkspace != null &&
+        typeof capabilities.statefulWorkspace !== 'boolean')
     ) {
       throw new CodeBridgeStatusError('invalid');
     }
@@ -236,8 +319,23 @@ export async function getCodeBridgeWorkerStatus({
     if (status.online) {
       workerStatus = status.ready ? 'ready' : 'starting';
     }
+    let workspaceStatus: Pick<CodeBridgeWorkerStatus, 'operations' | 'workspaces'> = {};
+    if (validWorkspaceCapabilities(capabilities?.workspaceTools)) {
+      workspaceStatus = {
+        operations: [...capabilities.workspaceTools.operations],
+        workspaces: capabilities.workspaceTools.workspaces.map((workspace) => ({
+          ...workspace,
+          ...(workspace.operations ? { operations: [...workspace.operations] } : {}),
+        })),
+      };
+    } else if (validLegacyWorkspaceCapabilities(capabilities?.workspaceTools)) {
+      workspaceStatus = { operations: [...capabilities.workspaceTools.operations] };
+    }
     return {
       status: workerStatus,
+      ...(typeof capabilities?.statefulWorkspace === 'boolean'
+        ? { statefulWorkspace: capabilities.statefulWorkspace }
+        : {}),
       ...(typeof status.leaseExpiresInMs !== 'number'
         ? {}
         : { leaseExpiresInMs: status.leaseExpiresInMs }),
@@ -247,9 +345,7 @@ export async function getCodeBridgeWorkerStatus({
       ...(validStatusStringArray(capabilities?.runtimes)
         ? { runtimes: capabilities.runtimes }
         : {}),
-      ...(validStatusStringArray(capabilities?.workspaceTools?.operations)
-        ? { operations: capabilities.workspaceTools.operations }
-        : {}),
+      ...workspaceStatus,
     };
   } catch (error) {
     if (error instanceof CodeBridgeStatusError) throw error;

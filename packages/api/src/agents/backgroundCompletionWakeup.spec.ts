@@ -220,6 +220,72 @@ describe('background tool completion wakeups', () => {
     });
   });
 
+  it('keeps a manual result claim while its owning generation is active', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest.fn(async () => true);
+    const getGenerationJob = jest.fn(async () => ({
+      status: 'running',
+      metadata: { responseMessageId: 'response-manual-owner' },
+    }));
+    const fenceGenerationClaim = jest.fn(async () => 'fenced' as const);
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      getGenerationJob,
+      fenceGenerationClaim,
+    );
+
+    await expect(
+      recover({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        messageId: 'response-result',
+        claimId: 'manual-poll',
+        kind: 'manual',
+        generationId: 'response-manual-owner',
+      }),
+    ).resolves.toBe(false);
+
+    expect(getGenerationJob).toHaveBeenCalledWith('conversation-1');
+    expect(release).not.toHaveBeenCalled();
+    expect(retire).not.toHaveBeenCalled();
+    expect(fenceGenerationClaim).not.toHaveBeenCalled();
+  });
+
+  it('releases a manual result claim after its owning generation is gone', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest.fn(async () => true);
+    const getGenerationJob = jest.fn(async () => null);
+    const fenceGenerationClaim = jest.fn(async () => 'fenced' as const);
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      getGenerationJob,
+      fenceGenerationClaim,
+    );
+
+    await expect(
+      recover({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        messageId: 'response-result',
+        claimId: 'manual-poll',
+        kind: 'manual',
+        generationId: 'response-manual-owner',
+      }),
+    ).resolves.toBe(true);
+
+    expect(release).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageId: 'response-result',
+      kind: 'manual',
+      claimId: 'manual-poll',
+    });
+    expect(retire).not.toHaveBeenCalled();
+    expect(fenceGenerationClaim).not.toHaveBeenCalled();
+  });
+
   it('does not recover a dead delivery while its admitted generation is still active', async () => {
     const retire = jest.fn(async () => true);
     const release = jest.fn(async () => true);

@@ -173,6 +173,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /* Provisioning moved into this package; the controllers build the callback from it. */
+  createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   /** Grants both by default; the capability set is what these specs vary. */
   resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
@@ -212,9 +214,15 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+  createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
+    parentMessageId,
+    codeWorkspaces,
+  }) => ({
+    messageId,
+    conversationId,
+    ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
     }),
@@ -1168,6 +1176,35 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('conversation ownership validation', () => {
+    it.each([false, true])(
+      'propagates explicit or owned persisted workspaces: continuation=%s',
+      async (continuation) => {
+        const api = require('@librechat/api');
+        const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+        api.validateRequest.mockReturnValueOnce({
+          request: {
+            model: 'agent-123',
+            messages: [],
+            stream: false,
+            ...(continuation ? { conversation_id: 'convo-abc' } : { code_workspaces: selections }),
+          },
+        });
+        if (continuation)
+          require('~/models').getConvo.mockResolvedValueOnce({
+            conversationId: 'convo-abc',
+            codeWorkspaces: selections,
+          });
+        await OpenAIChatCompletionController(req, res);
+        expect(api.initializeAgent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({ codeWorkspaces: selections }),
+          }),
+          expect.anything(),
+        );
+        if (continuation)
+          expect(require('~/models').getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      },
+    );
     it('should skip ownership check when conversation_id is not provided', async () => {
       const { getConvo } = require('~/models');
       await OpenAIChatCompletionController(req, res);
@@ -1244,6 +1281,7 @@ describe('OpenAIChatCompletionController', () => {
       const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
       const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
+      req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
       await OpenAIChatCompletionController(req, res);
 
       const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
@@ -1271,12 +1309,34 @@ describe('OpenAIChatCompletionController', () => {
       );
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
-      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
+      expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
+      expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
+      expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
+      const effectiveSignal = new AbortController().signal;
+      await toolExecuteOptions.loadTools(
+        ['file_search'],
+        'agent-123',
+        undefined,
+        undefined,
+        effectiveSignal,
+      );
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
         expect.objectContaining({
           agentResourceType: ResourceType.REMOTE_AGENT,
           requestBody: initializeParams.requestBody,
+          signal: effectiveSignal,
         }),
+      );
+      mockExecution.abort();
+      await toolExecuteOptions.loadTools(
+        ['file_search'],
+        'agent-123',
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({ signal: undefined }),
       );
     });
 

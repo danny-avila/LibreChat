@@ -134,6 +134,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
                   permissions: {
                     commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
                   },
+                  limits: {
+                    maxCommandTimeoutMs: 120_000,
+                  },
                 },
               },
             ],
@@ -171,6 +174,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
       configSchema: {
         permissions: {
           commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+        },
+        limits: {
+          maxCommandTimeoutMs: 120_000,
         },
       },
       settings: { permissions: { commandExecution: 'deny' } },
@@ -401,6 +407,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
       });
 
       const environments = result.endpoints?.agents?.statefulCodeSessions?.environments;
+      expect(environments?.find((environment) => environment.id === 'personal-vm')).toEqual(
+        expect.objectContaining({ controlPlaneId: 'self-service', baseURL: pairingOnly.baseURL }),
+      );
       expect(environments?.find((environment) => environment.id === 'self-service')?.default).toBe(
         false,
       );

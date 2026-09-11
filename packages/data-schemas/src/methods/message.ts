@@ -4,8 +4,8 @@ import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
+import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
-import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -272,14 +272,27 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
  */
 function buildMessageSaveUpdate(
   update: Record<string, unknown>,
-  options: { stampModelOutputOnInsert: boolean; unsetContextMeta: boolean },
+  options: {
+    stampModelOutputOnInsert: boolean;
+    unsetContextMeta: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ): UpdateQuery<IMessage> {
-  if (!options.stampModelOutputOnInsert && !options.unsetContextMeta) {
+  if (
+    !options.stampModelOutputOnInsert &&
+    !options.unsetContextMeta &&
+    options.retentionOnInsert == null
+  ) {
     return update;
   }
   return {
     $set: update,
-    ...(options.stampModelOutputOnInsert && { $setOnInsert: { isUserSubmitted: false } }),
+    ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
+      $setOnInsert: {
+        ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
+        ...options.retentionOnInsert,
+      },
+    }),
     ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
   };
 }
@@ -290,7 +303,12 @@ async function findOneAndMergeMessageProvenance(
   update: Record<string, unknown>,
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
-  options: { upsert: boolean; stampModelOutputOnInsert?: boolean; unsetContextMeta?: boolean },
+  options: {
+    upsert: boolean;
+    stampModelOutputOnInsert?: boolean;
+    unsetContextMeta?: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ) {
   const safeUpdate = { ...update };
   delete safeUpdate._id;
@@ -332,6 +350,8 @@ async function findOneAndMergeMessageProvenance(
         filter,
         {
           $set: { ...safeUpdate, ...provenance },
+          ...(current == null &&
+            options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
         },
         { upsert: options.upsert && current == null, new: true },
@@ -439,15 +459,20 @@ export interface BackgroundToolResultRecord {
   taskId: string;
   toolCallId: string;
   toolName: string;
-  status: 'completed' | 'error';
+  status: 'completed' | 'error' | 'cancelled';
   output: string;
   agentId?: string;
 }
 
 export type BackgroundToolResultClaim =
   | { status: 'not_found' | 'not_ready' }
-  | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
-  | { status: 'acquired'; results: BackgroundToolResultRecord[] };
+  | { status: 'outcome_unknown'; toolName: string }
+  | {
+      status: 'claimed';
+      claim?: { kind: 'manual' | 'wakeup'; claimId: string; generationId?: string };
+      messageId?: string;
+    }
+  | { status: 'acquired'; results: BackgroundToolResultRecord[]; messageId?: string };
 
 export type SubagentThreadViewMessageRecord = Pick<
   IMessage,
@@ -622,23 +647,30 @@ export interface MessageMethods {
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
         claimedAt: Date;
+        generationId?: string;
       };
     };
   }): Promise<{ matched: boolean; unfinished: boolean }>;
   claimBackgroundToolResults(params: {
     userId: string;
     conversationId: string;
-    messageId: string;
+    /** Optional on recovery polls after the process-local task registry was lost. */
+    messageId?: string;
     taskId: string;
     agentId?: string;
     kind: 'manual' | 'wakeup';
     claimId: string;
+    /** Response generation that owns this manual result delivery. */
+    generationId?: string;
+    /** Manual owner-process takeover after automatic delivery was retired. */
+    allowUnfinished?: boolean;
     limit?: number;
   }): Promise<BackgroundToolResultClaim>;
   releaseBackgroundToolResultClaims(params: {
@@ -768,6 +800,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.isTemporary;
+      delete update.expiredAt;
+      let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
 
       if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
         if (typeof isTemporary === 'boolean') {
@@ -778,12 +813,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
-        try {
-          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
-        } catch (err) {
-          logger.error('Error creating temporary chat expiration date:', err);
-          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-          update.expiredAt = createFallbackRetentionDate();
+        if (
+          typeof isTemporary === 'boolean' ||
+          interfaceConfig.generalChatRetention === undefined
+        ) {
+          try {
+            update.expiredAt = createChatExpirationDate(interfaceConfig, isTemporary);
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+            update.expiredAt = createFallbackRetentionDate();
+          }
+        } else {
+          try {
+            retentionOnInsert = {
+              expiredAt: createChatExpirationDate(interfaceConfig, false),
+              isTemporary: false,
+            };
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+            retentionOnInsert = {
+              expiredAt: createFallbackRetentionDate(),
+              isTemporary: false,
+            };
+          }
         }
       } else if (isTemporary === true) {
         update.isTemporary = true;
@@ -834,16 +888,42 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             update,
             userSubmittedPaths,
             userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta },
+            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
           )
         : await Message.findOneAndUpdate(
             { messageId: params.messageId, user: userId },
-            buildMessageSaveUpdate(update, { stampModelOutputOnInsert, unsetContextMeta }),
+            buildMessageSaveUpdate(update, {
+              stampModelOutputOnInsert,
+              unsetContextMeta,
+              retentionOnInsert,
+            }),
             { upsert: true, new: true },
           );
 
       if (message == null) {
         return message;
+      }
+
+      /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        interfaceConfig.generalChatRetention !== undefined &&
+        typeof isTemporary !== 'boolean' &&
+        message.expiredAt == null
+      ) {
+        const deadline = createChatExpirationDate(interfaceConfig, message.isTemporary === true);
+        const result = await Message.updateOne(
+          {
+            _id: message._id,
+            expiredAt: null,
+            isTemporary: message.isTemporary === true ? true : { $ne: true },
+          },
+          { $set: { expiredAt: deadline } },
+          { timestamps: false },
+        );
+        if (result.modifiedCount > 0) {
+          message.expiredAt = deadline;
+        }
       }
 
       if (
@@ -1065,12 +1145,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
         claimedAt: Date;
+        generationId?: string;
       };
     };
   }): Promise<{ matched: boolean; unfinished: boolean }> {
@@ -1113,6 +1195,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         partPatch['content.$[part].tool_call.backgroundTask.taskId'] = backgroundTask.taskId;
         partPatch['content.$[part].tool_call.backgroundTask.toolName'] = backgroundTask.toolName;
         partPatch['content.$[part].tool_call.backgroundTask.status'] = backgroundTask.status;
+        partPatch['content.$[part].tool_call.backgroundTask.cancelled'] =
+          backgroundTask.cancelled === true;
         partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
         if (backgroundTask.completionWakeup === true) {
           partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
@@ -1266,7 +1350,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   function readBackgroundToolResultClaim(
     row: Pick<IMessage, 'content'>,
     taskId: string,
-  ): { kind: 'manual' | 'wakeup'; claimId: string } | undefined {
+  ): { kind: 'manual' | 'wakeup'; claimId: string; generationId?: string } | undefined {
     for (const part of row.content ?? []) {
       if (part == null || typeof part !== 'object' || Array.isArray(part)) {
         continue;
@@ -1276,7 +1360,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           tool_call?: {
             backgroundTask?: {
               taskId?: unknown;
-              resultClaim?: { kind?: unknown; claimId?: unknown };
+              resultClaim?: { kind?: unknown; claimId?: unknown; generationId?: unknown };
             };
           };
         }
@@ -1290,7 +1374,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         typeof claim.claimId === 'string' &&
         claim.claimId.length > 0
       ) {
-        return { kind: claim.kind, claimId: claim.claimId };
+        return {
+          kind: claim.kind,
+          claimId: claim.claimId,
+          ...(typeof claim.generationId === 'string' && claim.generationId.length > 0
+            ? { generationId: claim.generationId }
+            : {}),
+        };
       }
       return;
     }
@@ -1315,6 +1405,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             taskId?: unknown;
             toolName?: unknown;
             status?: unknown;
+            cancelled?: unknown;
             resultClaim?: { kind?: unknown; claimId?: unknown };
           };
         };
@@ -1341,12 +1432,57 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         taskId: task.taskId,
         toolCallId: toolCall.id,
         toolName: task.toolName,
-        status: task.status,
+        status: task.cancelled === true ? 'cancelled' : task.status,
         output: typeof toolCall.output === 'string' ? toolCall.output : '',
         ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
       });
     }
     return results;
+  }
+
+  function readBackgroundToolHandle(
+    message: IMessage,
+    taskId: string,
+    agentId?: string,
+  ): string | undefined {
+    for (const part of message.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const record = part as {
+        agentId?: unknown;
+        tool_call?: { agentId?: unknown; output?: unknown };
+      };
+      const partAgentId = record.agentId ?? record.tool_call?.agentId;
+      const sameAgent =
+        agentId == null ||
+        partAgentId == null ||
+        (typeof partAgentId === 'string' && partAgentId === agentId);
+      const output = record.tool_call?.output;
+      if (!sameAgent || typeof output !== 'string' || !output.includes(taskId)) {
+        continue;
+      }
+      try {
+        const handle = JSON.parse(output) as {
+          background_task_id?: unknown;
+          subagent_type?: unknown;
+          tool?: unknown;
+          status?: unknown;
+        };
+        if (
+          handle.background_task_id === taskId &&
+          handle.status === 'running' &&
+          typeof handle.subagent_type !== 'string' &&
+          typeof handle.tool === 'string' &&
+          handle.tool.length > 0
+        ) {
+          return handle.tool;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return;
   }
 
   /** Atomically elects manual polling or one automatic continuation. Wakeups
@@ -1360,39 +1496,91 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     agentId,
     kind,
     claimId,
+    generationId,
+    allowUnfinished = false,
     limit = kind === 'wakeup' ? MAX_BACKGROUND_TOOL_RESULT_BATCH : 1,
   }: {
     userId: string;
     conversationId: string;
-    messageId: string;
+    messageId?: string;
     taskId: string;
     agentId?: string;
     kind: 'manual' | 'wakeup';
     claimId: string;
+    generationId?: string;
+    allowUnfinished?: boolean;
     limit?: number;
   }): Promise<BackgroundToolResultClaim> {
+    const requestedMessageId = messageId?.trim();
+    const requestedGenerationId = generationId?.trim();
     if (
-      messageId.length === 0 ||
-      messageId.length > 256 ||
+      (requestedMessageId != null &&
+        (requestedMessageId.length === 0 || requestedMessageId.length > 256)) ||
       taskId.length === 0 ||
       taskId.length > 256 ||
       claimId.length === 0 ||
       claimId.length > 128 ||
+      (requestedGenerationId != null &&
+        (requestedGenerationId.length === 0 || requestedGenerationId.length > 256)) ||
+      (requestedGenerationId != null && kind !== 'manual') ||
+      (allowUnfinished && kind !== 'manual') ||
       (kind !== 'manual' && kind !== 'wakeup')
     ) {
       throw new TypeError('Invalid background tool result claim');
     }
     const boundedLimit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, limit));
     const Message = mongoose.models.Message as Model<IMessage>;
-    const row = await Message.findOne({ user: userId, conversationId, messageId })
-      .select({ content: 1, unfinished: 1 })
+    const row = await Message.findOne({
+      user: userId,
+      conversationId,
+      ...(requestedMessageId != null
+        ? { messageId: requestedMessageId }
+        : {
+            content: {
+              $elemMatch: { 'tool_call.backgroundTask.taskId': taskId },
+            },
+          }),
+    })
+      .select({ content: 1, unfinished: 1, messageId: 1 })
+      .sort({ createdAt: -1, _id: -1 })
       .lean<IMessage | null>();
     if (row == null) {
+      if (requestedMessageId == null) {
+        const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const handleRow = await Message.findOne({
+          user: userId,
+          conversationId,
+          content: {
+            $elemMatch: {
+              type: 'tool_call',
+              'tool_call.output': new RegExp(`"background_task_id"\\s*:\\s*"${escapedTaskId}"`),
+              ...(agentId == null ? {} : agentOwnershipFilter('', agentId)),
+            },
+          },
+        })
+          .select({ content: 1 })
+          .sort({ createdAt: -1, _id: -1 })
+          .lean<IMessage | null>();
+        const toolName =
+          handleRow == null ? undefined : readBackgroundToolHandle(handleRow, taskId, agentId);
+        if (toolName != null) {
+          return { status: 'outcome_unknown', toolName };
+        }
+      }
       return { status: 'not_found' };
     }
-    if (row.unfinished === true) {
+    /** Only an owner-process manual poll that already retired automatic
+     * delivery may consume a terminal receipt on an unfinished response.
+     * Every other claimant waits for finalization, preventing a poll from
+     * racing the automatic continuation while the parent generation runs. */
+    if (row.unfinished === true && !(kind === 'manual' && allowUnfinished)) {
       return { status: 'not_ready' };
     }
+    const resolvedMessageId = row.messageId;
+    if (typeof resolvedMessageId !== 'string' || resolvedMessageId.length === 0) {
+      return { status: 'not_found' };
+    }
+    const recoveredSource = requestedMessageId == null ? { messageId: resolvedMessageId } : {};
     const requestedClaim = readBackgroundToolResultClaim(row, taskId);
     const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
     const candidates: string[] = [];
@@ -1444,6 +1632,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return {
         status: 'claimed',
         ...(requestedClaim == null ? {} : { claim: requestedClaim }),
+        ...recoveredSource,
       };
     }
     if (!candidates.includes(taskId)) {
@@ -1451,13 +1640,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       candidates.splice(boundedLimit);
     }
     const claimedAt = new Date();
-    const claimStamp = { kind, claimId, claimedAt };
+    const claimStamp = {
+      kind,
+      claimId,
+      claimedAt,
+      ...(kind === 'manual' && requestedGenerationId != null
+        ? { generationId: requestedGenerationId }
+        : {}),
+    };
     const updated = await Message.findOneAndUpdate(
       {
         user: userId,
         conversationId,
-        messageId,
-        unfinished: { $ne: true },
+        messageId: resolvedMessageId,
+        ...(kind === 'manual' && allowUnfinished ? {} : { unfinished: { $ne: true } }),
         content: {
           $elemMatch: {
             type: 'tool_call',
@@ -1549,10 +1745,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const results = parseBackgroundToolResults(updated, { kind, claimId });
     const competingClaim = readBackgroundToolResultClaim(updated, taskId);
     return results.some((result) => result.taskId === taskId)
-      ? { status: 'acquired', results }
+      ? { status: 'acquired', results, ...recoveredSource }
       : {
           status: 'claimed',
           ...(competingClaim == null ? {} : { claim: competingClaim }),
+          ...recoveredSource,
         };
   }
 

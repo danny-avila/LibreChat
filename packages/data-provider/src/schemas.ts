@@ -3,6 +3,7 @@ import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './t
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
 import { userSubmittedMessageFieldPathSchema } from './filters';
+import { CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
 import { Tools } from './types/assistants';
@@ -109,7 +110,41 @@ export const inputTokensIncludesCache = (provider?: string | null): boolean => {
 };
 
 export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
-  return documentSupportedProviders.has(provider ?? '');
+  const normalized = provider?.toLowerCase() ?? '';
+  return Array.from(documentSupportedProviders).some(
+    (candidate) => candidate.toLowerCase() === normalized,
+  );
+};
+
+/**
+ * Endpoints whose encoders actually build native audio/video payloads. Narrower than
+ * `documentSupportedProviders`: a provider can accept PDFs and still emit nothing for
+ * media, in which case the upload has to fall back to text/STT.
+ */
+export const mediaSupportedProviders = new Set<string>([
+  EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.OPENROUTER,
+]);
+
+export const isMediaSupportedProvider = (provider?: string | null): boolean => {
+  return mediaSupportedProviders.has(provider?.toLowerCase() ?? '');
+};
+
+/**
+ * Built-in endpoint and provider identifiers. A name outside this set is a custom
+ * endpoint whose real provider is resolved at request time, so its capabilities
+ * cannot be judged from the name alone.
+ */
+const knownProviderIdentifiers = new Set<string>([
+  ...Object.values(EModelEndpoint),
+  ...Object.values(Providers),
+  ...Object.values(EModelEndpoint).map((provider) => provider.toLowerCase()),
+  ...Object.values(Providers).map((provider) => provider.toLowerCase()),
+]);
+
+export const isKnownProviderIdentifier = (provider?: string | null): boolean => {
+  return knownProviderIdentifiers.has(provider?.toLowerCase() ?? '');
 };
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
@@ -1029,6 +1064,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  /** Client-only durable branch anchor while this message is an optimistic response. */
+  clientQueueParentMessageId?: string;
   feedback?: TFeedback;
 };
 
@@ -1082,6 +1119,16 @@ export const tConversationSchema = z.object({
   /** Server-derived: an active shared link exists for this conversation. Not persisted. */
   isShared: z.boolean().optional(),
   codeApprovalMode: z.enum(CODE_APPROVAL_MODES).optional(),
+  codeWorkspaces: z
+    .array(
+      z
+        .object({
+          environmentId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+          workspaceId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+        })
+        .strict(),
+    )
+    .optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   messages: z.array(z.string()).optional(),

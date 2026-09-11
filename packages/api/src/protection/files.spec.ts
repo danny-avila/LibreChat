@@ -9,6 +9,7 @@ import {
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   getBlockedUninspectableSkillFileField,
+  getCanonicalFileInspectionCoverage,
   getUploadExtractedTextPlan,
   hasActiveFileFieldPolicy,
   hasActiveFilePolicy,
@@ -65,6 +66,10 @@ describe('file content inspection policy', () => {
       }),
     ).toBe(false);
 
+    /* An explicitly narrowed text list names types the built-in parser does not handle.
+     * Processing sends those to RAG with native fallback off and passes the result
+     * through extractInspectableFileText, so the extraction step exists and fail-closing
+     * here would reject an upload that does get inspected. */
     const configuredNonDocumentText = mergeFileConfig({
       ocr: { supportedMimeTypes: [] },
       text: { supportedMimeTypes: ['application/x-rag-document'] },
@@ -75,6 +80,15 @@ describe('file content inspection policy', () => {
         mimeType: 'application/x-rag-document',
         fileConfig: configuredNonDocumentText,
         ragConfigured: true,
+      }),
+    ).toBe(true);
+    /* Only when RAG is actually configured: without it nothing extracts the type. */
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-rag-document',
+        fileConfig: configuredNonDocumentText,
+        ragConfigured: false,
       }),
     ).toBe(false);
 
@@ -178,6 +192,38 @@ describe('file content inspection policy', () => {
         sttSupported: true,
       }),
     ).toBe(false);
+  });
+
+  it('treats a text-delivery audio file as carrying its own transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      llmDeliveryPath: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
+    expect(coverage.textProvidesTranscript).toBe(true);
+  });
+
+  it('still requires provenance before treating audio text as a transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBeUndefined();
+  });
+
+  it('keeps recognizing the legacy text source as provenance', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
   });
 
   it('rejects applicable audio when no downstream transcript inspection is available', () => {

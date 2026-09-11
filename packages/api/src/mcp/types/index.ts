@@ -28,7 +28,7 @@ import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
 export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
-  Pick<RequestBody, 'parentMessageId'>;
+  Pick<RequestBody, 'parentMessageId' | 'codeWorkspaces'>;
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -261,6 +261,13 @@ export interface UserConnectionContext {
    *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
    *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
   deadlineMs?: number;
+  /** Advances application authorization state after OAuth token persistence succeeds. */
+  onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  /** Persists authorization-fence intent before OAuth token rows change and returns its publisher. */
+  onOAuthCredentialsChanging?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<() => Promise<void>>;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -324,6 +331,8 @@ export interface ToolDiscoveryOptions {
   connectionTimeout?: number;
   /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
   deadlineMs?: number;
+  onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
@@ -336,4 +345,5 @@ export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  authenticationKind?: 'oauth' | 'obo' | 'server';
 }

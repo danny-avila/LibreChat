@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { promisify } = require('util');
+const express = require('express');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -225,6 +227,7 @@ describe('Server Configuration', () => {
 
   let mongoServer;
   let app;
+  let server;
 
   /** Mocked fs.readFileSync for index.html */
   const originalReadFileSync = fs.readFileSync;
@@ -262,13 +265,18 @@ describe('Server Configuration', () => {
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
+    /* index.js listens at module scope and exports only the app, so capture the server to close it. */
+    const listenSpy = jest.spyOn(express.application, 'listen');
     app = require('~/server');
 
     // Wait for the app to be healthy
     await healthCheckPoll(app);
+    server = listenSpy.mock.results[0].value;
+    listenSpy.mockRestore();
   });
 
   afterAll(async () => {
+    await promisify(server.close).call(server);
     await mongoServer.stop();
     await mongoose.disconnect();
   });

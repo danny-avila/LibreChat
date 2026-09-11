@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import {
   Constants,
   EToolResources,
+  PermissionBits,
   ResourceType,
   SkillsScope,
   actionDelimiter,
@@ -162,9 +163,44 @@ export interface AgentDeps {
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
+  /** Resolves ACL principals. Kept inside data-schemas so callers pass plain identity. */
+  getUserPrincipals: (params: {
+    userId: string | Types.ObjectId;
+    role?: string | null;
+    idOnTheSource?: string | null;
+  }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Resolves ACL-visible resources. Kept inside data-schemas so callers use logical IDs. */
+  findAccessibleResources: (
+    principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    requiredPermissions: number,
+    resourceIds?: Types.ObjectId[],
+  ) => Promise<Types.ObjectId[]>;
   /** Recognizes skill IDs supplied by an external, non-database registry. */
   isExternalSkillId?: (id: string) => boolean;
 }
+
+/** Plain projection used to discover runnable agent graphs without exposing Mongoose. */
+export interface AgentGraphNode {
+  id: string;
+  provider: string;
+  model: string;
+  tools?: string[];
+  mcpServerNames?: string[];
+  agent_ids?: string[];
+  edges?: IAgent['edges'];
+  subagents?: IAgent['subagents'];
+}
+
+export interface AgentGraphAccess {
+  userId: string;
+  role?: string | null;
+  idOnTheSource?: string | null;
+}
+
+declare const agentGraphAccessContext: unique symbol;
+/** Opaque resolved ACL context. Only data-schemas creates or consumes its contents. */
+export type AgentGraphAccessContext = { readonly [agentGraphAccessContext]: true };
 
 /**
  * Extracts unique MCP server names from tools array.
@@ -527,6 +563,11 @@ export function createAgentMethods(
     searchParameter: FilterQuery<IAgent>,
     select?: string | Record<string, number>,
   ) => Promise<IAgent[]>;
+  resolveAgentGraphAccess: (access: AgentGraphAccess) => Promise<AgentGraphAccessContext>;
+  getAgentGraphNodes: (
+    ids: string[],
+    access?: AgentGraphAccessContext,
+  ) => Promise<AgentGraphNode[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
   getAgentIdsByMCPServerName: (serverName: string) => Promise<Types.ObjectId[]>;
   getAgentsWithMCPServerNames: () => Promise<Array<Pick<IAgent, '_id' | 'mcpServerNames'>>>;
@@ -741,6 +782,82 @@ export function createAgentMethods(
   ): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.find(searchParameter, select).lean<IAgent[]>();
+  }
+
+  /**
+   * Loads a bounded graph frontier by logical agent ID and optionally applies VIEW ACLs.
+   * Storage IDs are used only inside this method and never cross the package boundary.
+   */
+  async function resolveAgentGraphAccess(
+    access: AgentGraphAccess,
+  ): Promise<AgentGraphAccessContext> {
+    return (await deps.getUserPrincipals(access)) as unknown as AgentGraphAccessContext;
+  }
+
+  async function getAgentGraphNodes(
+    ids: string[],
+    access?: AgentGraphAccessContext,
+  ): Promise<AgentGraphNode[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agents = await Agent.find(
+      { id: { $in: ids } },
+      {
+        _id: 1,
+        id: 1,
+        provider: 1,
+        model: 1,
+        tools: 1,
+        mcpServerNames: 1,
+        agent_ids: 1,
+        edges: 1,
+        subagents: 1,
+      },
+    ).lean<
+      Array<
+        Pick<
+          IAgent,
+          | '_id'
+          | 'id'
+          | 'provider'
+          | 'model'
+          | 'tools'
+          | 'mcpServerNames'
+          | 'agent_ids'
+          | 'edges'
+          | 'subagents'
+        >
+      >
+    >();
+    let visible = agents;
+    if (access != null) {
+      const principals = access as unknown as Array<{
+        principalType: string;
+        principalId?: string | Types.ObjectId;
+      }>;
+      const resourceIds = await deps.findAccessibleResources(
+        principals,
+        ResourceType.AGENT,
+        PermissionBits.VIEW,
+        agents.map((agent) => agent._id),
+      );
+      const allowed = new Set(resourceIds.map(String));
+      visible = agents.filter((agent) => allowed.has(String(agent._id)));
+    }
+    return visible.map(
+      ({ id, provider, model, tools, mcpServerNames, agent_ids, edges, subagents }) => ({
+        id,
+        provider,
+        model,
+        tools,
+        mcpServerNames,
+        agent_ids,
+        edges,
+        subagents,
+      }),
+    );
   }
 
   /** Returns the ids of every agent referencing `serverName`, the candidate set
@@ -1539,6 +1656,8 @@ export function createAgentMethods(
     getAgentVersions,
     getAgentWithVersionCount,
     getAgents,
+    resolveAgentGraphAccess,
+    getAgentGraphNodes,
     createAgent,
     getAgentIdsByMCPServerName,
     getAgentsWithMCPServerNames,

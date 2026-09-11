@@ -255,7 +255,18 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       'agent_test',
       expect.objectContaining({ requestBody: runArgs.requestBody }),
       undefined,
+      processStream.mock.calls[0][1].signal,
     );
+    expect(loadTools.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
+    await runArgs.customHandlers[GraphEvents.ON_TOOL_EXECUTE].handle(GraphEvents.ON_TOOL_EXECUTE, {
+      toolCalls: [{ id: 'child-call', name: 'deferred_mcp_tool', args: {} }],
+      agentId: 'agent_test',
+      configurable: streamConfig.configurable,
+      metadata: { run_id: 'detached-child' },
+      resolve,
+      reject,
+    });
+    expect(loadTools.mock.calls[1][4]).toBeUndefined();
   });
 
   it('uses the root parent sentinel when chat completions omit a parent id', async () => {

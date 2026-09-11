@@ -661,6 +661,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
 
     let configuration: AccessibleCodeEnvironmentConfiguration | undefined;
     let controlPlane: ConfiguredCodeEnvironment | undefined;
+    let workerId: string | undefined;
     try {
       const principals = await deps.registry.resolvePrincipals?.(principal);
       const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
@@ -684,14 +685,26 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         effectiveControlPlane == null || controlPlaneId == null
           ? undefined
           : configuredAttachedControlPlane(deploymentConfig, controlPlaneId);
+      workerId = configuration?.workerId;
+      if (configuration == null) {
+        const effectiveEnvironment = configuredControlPlane(effectiveConfig, environmentId);
+        const deploymentEnvironment = configuredControlPlane(deploymentConfig, environmentId);
+        if (
+          effectiveEnvironment != null &&
+          deploymentEnvironment != null &&
+          effectiveEnvironment.pairing?.workerId === deploymentEnvironment.pairing?.workerId
+        ) {
+          controlPlane = deploymentEnvironment;
+          workerId = deploymentEnvironment.pairing?.workerId;
+        }
+      }
     } catch (error) {
       logger.error('[codeEnvironments] status policy resolution failed:', error);
       return res.status(503).json({ error: 'Code environment policy is unavailable' });
     }
-    if (configuration?.workerId == null || controlPlane == null) {
+    if (workerId == null || controlPlane == null) {
       return res.status(404).json({ error: 'Code environment was not found' });
     }
-    const workerId = configuration.workerId;
     const tokenEnv = controlPlane.pairing?.tokenEnv;
     const token = tokenEnv == null ? undefined : readSecret(tokenEnv)?.trim();
     if (!token) {

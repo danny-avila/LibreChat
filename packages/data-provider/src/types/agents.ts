@@ -93,11 +93,15 @@ export namespace Agents {
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      /** Additive rolling-deploy-compatible cancellation discriminator. */
+      cancelled?: true;
       settledAt: Date;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
         claimedAt: Date;
+        /** Response generation that owns a manual delivery claim. */
+        generationId?: string;
       };
     };
     /** The tool call was rejected before execution because its input failed schema validation. */

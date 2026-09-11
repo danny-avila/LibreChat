@@ -15,14 +15,17 @@ export function createMCPRuntimeRequestBody({
   messageId,
   conversationId,
   parentMessageId,
+  codeWorkspaces,
 }: {
   messageId: string;
   conversationId: string;
   parentMessageId?: string | null;
+  codeWorkspaces?: MCPRuntimeRequestBody['codeWorkspaces'];
 }): MCPRuntimeRequestBody {
   return {
     messageId,
     conversationId,
+    ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? Constants.NO_PARENT,
     }),

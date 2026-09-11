@@ -675,6 +675,120 @@ describe('selection policy at injection time', () => {
 });
 
 describe('BackgroundTaskRegistryClass', () => {
+  it('requests cancellation idempotently without settling or releasing running capacity', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const requestCancellation = jest.fn();
+    const created = registry.create({
+      userId: 'cancel-owner',
+      conversationId: 'cancel-conversation',
+      toolCallId: 'cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('other-owner', 'cancel-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'other-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('requested');
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('already_requested');
+    expect(requestCancellation).toHaveBeenCalledTimes(1);
+    expect(created.task).toMatchObject({
+      status: 'running',
+      cancellationRequestedAt: expect.any(Number),
+    });
+
+    for (let index = 0; index < 9; index += 1) {
+      const admitted = registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: `other-call-${index}`,
+        toolName: 'background-tool',
+      });
+      expect('atCapacity' in admitted).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'blocked-until-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'conversation_running' });
+
+    registry.cancel(
+      'cancel-owner',
+      'cancel-conversation',
+      created.task.id,
+      'Background task cancellation requested',
+    );
+    expect(created.task.status).toBe('cancelled');
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'admitted-after-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toMatchObject({ isNew: true });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('settled');
+  });
+
+  it('lets actual completion win when an abort-resistant invocation settles successfully', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'race-owner',
+      conversationId: 'race-conversation',
+      toolCallId: 'race-call',
+      toolName: 'mutation',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    registry.requestCancellation('race-owner', 'race-conversation', created.task.id);
+    registry.complete('race-owner', 'race-conversation', created.task.id, {
+      content: 'completed despite cancellation request',
+    });
+    registry.cancel('race-owner', 'race-conversation', created.task.id, 'cancelled too late');
+
+    expect(created.task).toMatchObject({
+      status: 'completed',
+      result: 'completed despite cancellation request',
+    });
+  });
+
+  it('does not record a manual cancellation when another abort source already won', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'timeout-owner',
+      conversationId: 'timeout-conversation',
+      toolCallId: 'timeout-call',
+      toolName: 'mutation',
+      requestCancellation: () => false,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('timeout-owner', 'timeout-conversation', created.task.id),
+    ).toMatchObject({ status: 'unavailable' });
+    expect(created.task.cancellationRequestedAt).toBeUndefined();
+  });
+
   it('creates, completes, and reads a task', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -1970,6 +2084,10 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
         messageId: 'dispatch-msg',
         result: 'stdout',
         attachments: [{ file_id: 'f1' }],
+        backgroundTask: expect.objectContaining({
+          taskId: created.task.id,
+          status: 'completed',
+        }),
       }),
     );
     /** Not one-shot: a later poll can still re-emit / re-anchor. */
@@ -2015,6 +2133,84 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.parse(content)).toEqual(
       expect.objectContaining({ status: 'not_found', background_task_id: 'nope' }),
     );
+  });
+
+  it('keeps ordinary cancellation disabled unless the deployment opts in', async () => {
+    const requestCancellation = jest.fn();
+    const created = backgroundTaskRegistry.create({
+      userId: 'disabled-cancel-user',
+      conversationId: 'disabled-cancel-conversation',
+      toolCallId: 'disabled-cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'disabled-cancel-user',
+        conversationId: 'disabled-cancel-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+      }),
+    );
+    expect(result).toMatchObject({ status: 'invalid', background_task_id: created.task.id });
+    expect(requestCancellation).not.toHaveBeenCalled();
+    backgroundTaskRegistry.fail(
+      'disabled-cancel-user',
+      'disabled-cancel-conversation',
+      created.task.id,
+      'test cleanup',
+    );
+  });
+
+  it('uses normal durable claim arbitration when cancellation loses the settlement race', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'cancel-race-user',
+      conversationId: 'cancel-race-conversation',
+      toolCallId: 'cancel-race-call',
+      toolName: 'bash_tool',
+      messageId: 'cancel-race-message',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.markCompletionWakeup(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      {
+        renew: jest.fn(async () => true),
+        retire: jest.fn(async () => true),
+      },
+    );
+    backgroundTaskRegistry.complete(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      { content: 'settled result' },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'claimed' as const,
+      claim: { kind: 'wakeup' as const, claimId: 'automatic-delivery' },
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'cancel-race-user',
+        conversationId: 'cancel-race-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+        ordinaryToolCancellation: true,
+        claimBackgroundToolResult,
+      }),
+    );
+    expect(result).toMatchObject({
+      status: 'delivery_scheduled',
+      background_task_id: created.task.id,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an oversized task id before local or cross-replica lookup', async () => {
@@ -2096,7 +2292,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('returns a same-generation result through a local claim that persistence can preserve', async () => {
+  it('lets a later poll collect a receipt without inheriting an abandoned local claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -2119,25 +2315,33 @@ describe('runCheckBackgroundTask (singleton)', () => {
       .fn()
       .mockResolvedValueOnce({ status: 'not_ready' })
       .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'not_ready' })
       .mockResolvedValueOnce({ status: 'acquired', results: [] });
     const request = {
       userId: 'claim_user',
       conversationId: 'claim_convo',
       args: { background_task_id: created.task.id },
-      toolCallId: 'poll-call',
       agentId: 'agent_parent_1',
       runId: 'poll-run',
+      generationId: 'response-claim',
       claimBackgroundToolResult,
     };
 
-    const persisting = JSON.parse(await runCheckBackgroundTask(request));
+    const persisting = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-1' }),
+    );
     expect(persisting).toMatchObject({ status: 'result_persisting' });
     expect(JSON.stringify(persisting)).not.toContain('CLAIMED RESULT');
-    const replay = JSON.parse(await runCheckBackgroundTask(request));
-    expect(replay).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
-    ).toMatchObject({ kind: 'manual' });
+    ).toBeUndefined();
+    const laterPoll = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-2' }),
+    );
+    expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    expect(
+      backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
+    ).toMatchObject({ kind: 'manual', generationId: 'response-claim' });
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
@@ -2147,8 +2351,66 @@ describe('runCheckBackgroundTask (singleton)', () => {
         messageId: 'response-claim',
         taskId: created.task.id,
         kind: 'manual',
+        generationId: 'response-claim',
+        allowUnfinished: true,
       }),
     );
+  });
+
+  it('reclaims a dead manual delivery after its owning generation is gone', async () => {
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        messageId: 'response-recovered',
+        claim: {
+          kind: 'manual',
+          claimId: 'abandoned-poll',
+          generationId: 'response-abandoned',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'acquired',
+        messageId: 'response-recovered',
+        results: [
+          {
+            taskId: 'task-recovered-manual',
+            toolCallId: 'call-recovered-manual',
+            toolName: 'mutating_tool',
+            status: 'completed',
+            output: 'mutation already completed',
+          },
+        ],
+      });
+    const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered-manual' },
+        toolCallId: 'replacement-poll',
+        runId: 'replacement-run',
+        generationId: 'response-replacement',
+        claimBackgroundToolResult,
+        recoverDeadBackgroundToolClaim,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'task-recovered-manual',
+      result: 'mutation already completed',
+    });
+    expect(recoverDeadBackgroundToolClaim).toHaveBeenCalledWith({
+      userId: 'recovered_user',
+      conversationId: 'recovered_convo',
+      messageId: 'response-recovered',
+      claimId: 'abandoned-poll',
+      kind: 'manual',
+      generationId: 'response-abandoned',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
   });
 
   it('delivers a mandatory live-artifact poll without waiting for its dispatch row', async () => {
@@ -2231,6 +2493,68 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
   });
 
+  it.each([
+    { status: 'completed' as const, field: 'result', output: 'RECOVERED RESULT' },
+    { status: 'error' as const, field: 'error', output: 'RECOVERED FAILURE' },
+  ])('recovers a durable $status receipt after process-local state is lost', async (terminal) => {
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      messageId: 'response-recovered',
+      results: [
+        {
+          taskId: 'task-recovered',
+          toolCallId: 'call-recovered',
+          toolName: 'slow_tool',
+          status: terminal.status,
+          output: terminal.output,
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered' },
+        toolCallId: 'recovery-poll',
+        runId: 'recovery-run',
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: terminal.status,
+      background_task_id: 'task-recovered',
+      [terminal.field]: terminal.output,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledWith(
+      expect.not.objectContaining({ messageId: expect.anything() }),
+    );
+  });
+
+  it('reports a lost executor without implying that a mutating task is safe to retry', async () => {
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'unknown_user',
+        conversationId: 'unknown_convo',
+        args: { background_task_id: 'task-unknown' },
+        toolCallId: 'unknown-poll',
+        runId: 'unknown-run',
+        claimBackgroundToolResult: async () => ({
+          status: 'outcome_unknown',
+          toolName: 'mutating_tool',
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'outcome_unknown',
+      background_task_id: 'task-unknown',
+      tool: 'mutating_tool',
+    });
+    expect(result.message).toContain('Do not repeat a mutating operation automatically');
+  });
+
   it('recovers a result through its dead batch-owner claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'dead_claim_user',
@@ -2256,7 +2580,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
         status: 'claimed',
         claim: { kind: 'wakeup', claimId: 'sibling-batch-root' },
       })
-      .mockResolvedValueOnce({ status: 'acquired' });
+      .mockResolvedValueOnce({ status: 'acquired', results: [] });
     const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
 
     const result = JSON.parse(
@@ -2472,6 +2796,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
   it('polls and one-shot claims a detached subagent result', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    const claimBackgroundToolResult = jest.fn(async () => {
+      throw new Error('message recovery unavailable');
+    });
     const started = store.start({
       scopeId: subagentTasks.scopeId,
       idempotencyKey: 'parent-run:parent-agent:call-1',
@@ -2494,6 +2821,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(first).toEqual(
@@ -2512,10 +2840,69 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
+    expect(claimBackgroundToolResult).not.toHaveBeenCalled();
+  });
+
+  it('falls through cleanly when neither background store recognizes a poll id', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_found' as const }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'unknown-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toEqual({
+      status: 'not_found',
+      background_task_id: 'unknown-task',
+      message: 'No background task with that id exists in this thread.',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers an ordinary durable result even when the subagent store is unavailable', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      results: [
+        {
+          taskId: 'ordinary-task',
+          toolCallId: 'ordinary-call',
+          toolName: 'mutating_tool',
+          status: 'completed' as const,
+          output: 'ordinary result',
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'ordinary-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'ordinary-task',
+      result: 'ordinary result',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {

@@ -1,4 +1,8 @@
-import type { CodeApprovalMode, TSubagentThreadLineage } from 'librechat-data-provider';
+import type {
+  CodeApprovalMode,
+  CodeWorkspaceSelection,
+  TSubagentThreadLineage,
+} from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 import type { ICompactionSemanticIndexProjection } from './compaction';
 
@@ -266,6 +270,7 @@ export interface IConversation extends Document {
   imageDetail?: string;
   agent_id?: string;
   codeApprovalMode?: CodeApprovalMode;
+  codeWorkspaces?: CodeWorkspaceSelection[];
   /** Immutable primary persisted-agent attribution for Insights. */
   initial_agent_id?: string | null;
   subagentThread?: TSubagentThreadLineage;

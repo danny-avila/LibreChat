@@ -877,7 +877,11 @@ export async function uploadFileToS3({
   }
 }
 
-export async function getS3FileStream(_req: ServerRequest, filePath: string): Promise<Readable> {
+export async function getS3FileStream(
+  _req: ServerRequest,
+  filePath: string,
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<Readable> {
   try {
     const Key = extractKeyFromS3Url(filePath);
     const params = { Bucket: bucketName, Key };
@@ -887,7 +891,7 @@ export async function getS3FileStream(_req: ServerRequest, filePath: string): Pr
       throw new Error('[getS3FileStream] S3 not initialized');
     }
 
-    const data = await s3.send(new GetObjectCommand(params));
+    const data = await s3.send(new GetObjectCommand(params), { abortSignal: signal });
     if (!data.Body) {
       throw new Error(`[getS3FileStream] S3 response body is empty for key: ${Key}`);
     }

@@ -57,6 +57,8 @@ const {
   createScheduleWriteGate,
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
+  warnOnUnreachableDeliveryPaths,
+  createCodeApiUploadRegistry,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -100,6 +102,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+app.locals.codeApiUploadRegistry = createCodeApiUploadRegistry();
 let serverReady = false;
 /** @type {import('@librechat/api').ScheduleEngineState} */
 let scheduleEngineState = 'starting';
@@ -228,6 +231,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
+  warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;

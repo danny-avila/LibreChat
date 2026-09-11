@@ -441,6 +441,21 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('defaults and bounds Code API upload recovery controls', () => {
+    expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
+    expect(
+      agentsEndpointSchema.parse({ codeApiUploadConcurrency: 8 }).codeApiUploadConcurrency,
+    ).toBe(8);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 101 }).success).toBe(false);
+    expect(agentsEndpointSchema.parse({}).codeApiMaxRetryWaitMs).toBe(20_000);
+    expect(
+      agentsEndpointSchema.parse({ codeApiMaxRetryWaitMs: 60_000 }).codeApiMaxRetryWaitMs,
+    ).toBe(60_000);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: -1 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: 300_001 }).success).toBe(false);
+  });
+
   it('accepts a non-empty stateful code environment allowlist', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
@@ -1398,6 +1413,27 @@ describe('configSchema skillSync', () => {
 });
 
 describe('interfaceSchema', () => {
+  it('accepts independent retention periods', () => {
+    expect(
+      interfaceSchema.parse({
+        retentionMode: RetentionMode.ALL,
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+      }),
+    ).toMatchObject({
+      temporaryChatRetention: 1,
+      generalChatRetention: 2160,
+    });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('generalChatRetention');
+  });
+
+  it.each([0, 8761, '2160', null])(
+    'rejects invalid general retention: %s',
+    (generalChatRetention) => {
+      expect(interfaceSchema.safeParse({ generalChatRetention }).success).toBe(false);
+    },
+  );
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,

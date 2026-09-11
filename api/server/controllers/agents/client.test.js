@@ -37,13 +37,37 @@ const { resolveConfigServers } = require('~/server/services/MCP');
 describe('AgentClient code approval persistence', () => {
   it('persists a validated mode in agent conversation options', () => {
     const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map([
+      [
+        'secondary',
+        {
+          codeExecutionContext: {
+            environmentId: 'team-vm',
+            environmentType: 'attached',
+            codeWorkspace: {
+              environmentId: 'team-vm',
+              workspaceId: 'project-b',
+              operations: ['read_file'],
+            },
+          },
+        },
+      ],
+    ]);
+    const secondary = client.agentConfigs.get('secondary');
     client.agentConfigs = new Map();
     client.options = {
       endpoint: EModelEndpoint.agents,
       agent: {
         id: 'attached-agent',
+        subagentAgentConfigs: [secondary],
         codeExecutionContext: {
+          environmentId: 'attached-vm',
           environmentType: 'attached',
+          codeWorkspace: {
+            environmentId: 'attached-vm',
+            workspaceId: 'project-a',
+            operations: ['read_file', 'execute_command'],
+          },
           codeEnvironmentConfigSchema: {
             permissions: {
               fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
@@ -58,7 +82,13 @@ describe('AgentClient code approval persistence', () => {
       },
     };
 
-    expect(client.getSaveOptions()).toMatchObject({ codeApprovalMode: 'acceptEdits' });
+    expect(client.getSaveOptions()).toMatchObject({
+      codeApprovalMode: 'acceptEdits',
+      codeWorkspaces: [
+        { environmentId: 'attached-vm', workspaceId: 'project-a' },
+        { environmentId: 'team-vm', workspaceId: 'project-b' },
+      ],
+    });
   });
 });
 
@@ -7985,6 +8015,29 @@ describe('AgentClient - finalizeSubagentContent', () => {
     }
     return map;
   };
+
+  it.each(['agent', 'graph'])(
+    'persists %s identity even when the child has no content',
+    async (subagentKind) => {
+      const identity = {
+        subagentKind,
+        subagentAgentId: subagentKind === 'graph' ? 'graph:agent-1' : 'agent-1',
+      };
+      const buffer = await runSubagentEvents([
+        { ...event('start', undefined), ...identity, subagentType: 'agent-1' },
+        { ...event('error', undefined), ...identity, subagentType: 'agent-1' },
+      ]);
+      const client = makeClient(buffer);
+      client.contentParts = [
+        { type: 'tool_call', tool_call: { id: 'unrelated', name: Constants.SUBAGENT } },
+        { type: 'tool_call', tool_call: { id: 'call_sub', name: Constants.SUBAGENT } },
+      ];
+      client.finalizeSubagentContent();
+      expect(client.contentParts[0].tool_call.subagentIdentity).toBeUndefined();
+      expect(client.contentParts[1].tool_call.subagentIdentity).toEqual(identity);
+      expect(buffer.size).toBe(0);
+    },
+  );
 
   it('attaches aggregated subagent_content to the matching subagent tool_call part', async () => {
     const buffer = await runSubagentEvents([
