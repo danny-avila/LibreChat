@@ -57,14 +57,18 @@ function rememberedFooter(): boolean {
  * over. Both decisions read this one answer so they cannot disagree.
  */
 export function useConfiguredFooter(): ConfiguredFooter {
-  const { data: config, isFetched } = useGetStartupConfig();
+  /** Success, not completion: a config request that exhausted its retries has
+   *  answered nothing, and treating that as "no footer configured" would both
+   *  drop the clearance a remembered deployment needs and overwrite the memory
+   *  with a guess that moves the composer again on the next good load. */
+  const { data: config, isSuccess } = useGetStartupConfig();
   const configured =
     typeof config?.customFooter === 'string' ||
     config?.interface?.privacyPolicy?.externalUrl != null ||
     config?.interface?.termsOfService?.externalUrl != null;
 
   useEffect(() => {
-    if (!isFetched) {
+    if (!isSuccess) {
       return;
     }
     try {
@@ -72,9 +76,9 @@ export function useConfiguredFooter(): ConfiguredFooter {
     } catch {
       /** Nothing to do: the next load falls back to the default. */
     }
-  }, [configured, isFetched]);
+  }, [configured, isSuccess]);
 
-  return { present: isFetched ? configured : rememberedFooter(), resolved: isFetched };
+  return { present: isSuccess ? configured : rememberedFooter(), resolved: isSuccess };
 }
 
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {
