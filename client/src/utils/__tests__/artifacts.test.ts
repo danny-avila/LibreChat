@@ -2,6 +2,7 @@ import { FileSources } from 'librechat-data-provider';
 import type { ToolArtifactType } from '../artifacts';
 import {
   buildSandpackOptions,
+  getArtifactDownloadFilename,
   detectArtifactTypeFromFile,
   fileToArtifact,
   isCodeOnlyArtifact,
@@ -973,4 +974,68 @@ describe('isCodeOnlyArtifact', () => {
       expect(isCodeOnlyArtifact(type)).toBe(false);
     },
   );
+});
+
+describe('getArtifactDownloadFilename', () => {
+  it.each([
+    ['# Migration Plan', 'Migration Plan.md'],
+    ['# migrate_users.py', 'migrate_users.py.md'],
+    ['# The **Q3** [report](https://example.com)', 'The Q3 report.md'],
+    ['# Hello &amp; goodbye', 'Hello & goodbye.md'],
+    ['```bash\n# comment\n```\n# Actual heading', 'Actual heading.md'],
+    ['````\n```bash\n# Still code\n```\n````\n# Actual heading', 'Actual heading.md'],
+    ['~~~\n```\n# Still code\n~~~\n# Actual heading', 'Actual heading.md'],
+    ['---\n# Metadata comment\n---\n# Actual heading', 'Actual heading.md'],
+    ['<div>\n# Hidden heading\n</div>\n\n# Actual heading', 'Actual heading.md'],
+    ['A real setext heading\n===', 'A real setext heading.md'],
+    ['No heading', 'content.md'],
+  ])('derives a Markdown filename from %s', (content, expected) => {
+    expect(
+      getArtifactDownloadFilename(
+        { id: 'a', lastUpdateTime: 0, type: 'text/markdown', content },
+        'content.md',
+      ),
+    ).toBe(expected);
+  });
+
+  it.each(['odt', 'docx', 'pptx'])('names extracted %s bytes as text after file routing', (ext) => {
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: `report.${ext}`,
+      text: 'Extracted text',
+    });
+    expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`report.${ext}.txt`);
+  });
+
+  it('does not read source comments as document headings', () => {
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: TOOL_ARTIFACT_TYPES.CODE,
+          language: 'python',
+          content: '# Copyright',
+        },
+        'content.md',
+      ),
+    ).toBe('code.py');
+  });
+
+  it('preserves a long file-backed source extension during sanitization', () => {
+    const filename = `${'a'.repeat(200)}.py`;
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: TOOL_ARTIFACT_TYPES.CODE,
+          title: filename,
+          download: { file_id: 'file' },
+        },
+        'content.md',
+      ),
+    ).toBe(`${'a'.repeat(97)}.py`);
+  });
 });

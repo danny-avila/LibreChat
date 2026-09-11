@@ -132,7 +132,14 @@ describe('DownloadArtifact', () => {
     ['text/md', 'Second Report', 'content.md', undefined, 'Second Report.md'],
     ['text/markdown', 'Report.MD', 'content.md', undefined, 'Report.MD'],
     ['text/plain', 'Meeting Notes', 'content.md', undefined, 'Meeting Notes.txt'],
+    ['text/plain', 'notes.odt', 'content.md', undefined, 'notes.odt.txt'],
+    ['text/plain', 'report.docx', 'content.md', undefined, 'report.docx.txt'],
+    ['text/plain', 'notes.TXT', 'content.md', undefined, 'notes.TXT'],
+    ['text/markdown', 'Release Notes v1.0', 'content.md', undefined, 'Release Notes v1.0.md'],
+    ['text/html', 'example.com', 'index.html', undefined, 'example.com.html'],
     [TOOL_ARTIFACT_TYPES.CODE, 'script.py', 'content.md', 'python', 'script.py'],
+    [TOOL_ARTIFACT_TYPES.CODE, 'script.py', 'content.md', undefined, 'script.py'],
+    [TOOL_ARTIFACT_TYPES.CODE, 'example.com', 'content.md', 'python', 'example.com.py'],
     [TOOL_ARTIFACT_TYPES.CODE, 'Analysis', 'content.md', 'python', 'Analysis.py'],
     [TOOL_ARTIFACT_TYPES.CODE, '', 'content.md', 'typescript', 'code.ts'],
     ['text/html', 'Landing Page', 'index.html', undefined, 'Landing Page.html'],
@@ -159,6 +166,25 @@ describe('DownloadArtifact', () => {
     expect(content).toBe('edited content');
     expect(mockFileDownload).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, 'untitled', 'Generated artifact'])(
+    'names untitled Markdown from the edited heading (%s)',
+    async (title) => {
+      mockFileKey = 'content.md';
+      mockCurrentCode = '# New **migration** [plan](https://example.com) for `migrate_users.py`';
+      render(
+        <DownloadArtifact
+          artifact={{ ...htmlArtifact, type: 'text/markdown', title, content: '# Old heading' }}
+        />,
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+      expect(anchorClick.mock.instances[0].download).toBe(
+        'New migration plan for migrate_users.py.md',
+      );
+    },
+  );
 
   it('preserves extensionless source filenames', async () => {
     render(

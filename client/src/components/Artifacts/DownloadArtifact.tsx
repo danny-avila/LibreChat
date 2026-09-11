@@ -60,7 +60,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = getArtifactDownloadFilename(artifact, fileName);
+    link.download = getArtifactDownloadFilename({ ...artifact, content }, fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

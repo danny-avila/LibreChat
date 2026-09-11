@@ -1,11 +1,13 @@
 import dedent from 'dedent';
 import filenamify from 'filenamify';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
+import type { PhrasingContent } from 'mdast';
 import type { Artifact } from '~/common';
 import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
 import { getCodeBlockFilename } from './downloadFile';
@@ -76,29 +78,58 @@ export function getArtifactFilename(type: string, language?: string): string {
   return artifactFilename[key] ?? artifactFilename.default;
 }
 
-/** Names the downloaded content independently of the Sandpack preview file. */
+/** Extract visible heading text without removing literal Markdown punctuation. */
+function headingText(nodes: PhrasingContent[]): string {
+  return nodes
+    .map((node) => {
+      if ('children' in node) {
+        return headingText(node.children);
+      }
+      if (node.type === 'text' || node.type === 'inlineCode') {
+        return node.value;
+      }
+      if (node.type === 'image' || node.type === 'imageReference') {
+        return node.alt ?? '';
+      }
+      return '';
+    })
+    .join('');
+}
+
+/** Names the downloaded bytes independently of the Sandpack preview file. */
 export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string): string {
+  const isCode = artifact.type === TOOL_ARTIFACT_TYPES.CODE;
+  const isMarkdown = artifact.type === TOOL_ARTIFACT_TYPES.MARKDOWN || artifact.type === 'text/md';
   let fallback = fileKey;
-  if (artifact.type === TOOL_ARTIFACT_TYPES.CODE) {
-    fallback = getCodeBlockFilename(artifact.language);
-  } else if (artifact.type === 'text/plain') {
+  if (isCode) {
+    fallback = getCodeBlockFilename(
+      artifact.language || lookupOwn(CODE_EXTENSION_TO_LANGUAGE, extensionOf(artifact.title)),
+    );
+  } else if (artifact.type === TOOL_ARTIFACT_TYPES.PLAIN_TEXT) {
     fallback = 'content.txt';
   }
-  const title = filenamify(artifact.title?.trim() ?? '', { replacement: '_' });
+  let title = artifact.title?.trim() ?? '';
+  if (title === 'Generated artifact' || title === 'untitled') {
+    title = '';
+  }
+  const hasSourceFilename = isCode && artifact.download != null && title !== '';
+  if (!title && isMarkdown) {
+    const content = (artifact.content ?? '').replace(
+      /^\uFEFF?---[^\S\r\n]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[^\S\r\n]*(?:\r?\n|$)/,
+      '',
+    );
+    const heading = fromMarkdown(content).children.find((node) => node.type === 'heading');
+    if (heading?.type === 'heading') {
+      title = headingText(heading.children).trim();
+    }
+  }
   if (!title) {
     return fallback;
   }
   const extension = fallback.slice(fallback.lastIndexOf('.'));
-  if (isPreviewOnlyArtifact(artifact.type)) {
-    return title.toLowerCase().endsWith(extension) ? title : `${title}${extension}`;
-  }
-  if (
-    /\.[^.\s]+$/.test(title) ||
-    (artifact.download && artifact.type === TOOL_ARTIFACT_TYPES.CODE)
-  ) {
-    return title;
-  }
-  return `${title}${extension}`;
+  const hasMatchingExtension = title.toLowerCase().endsWith(extension);
+  const filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
+  return filenamify(filename, { replacement: '_' });
 }
 
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
