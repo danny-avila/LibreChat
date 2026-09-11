@@ -32,6 +32,7 @@ jest.mock('~/hooks', () => ({
   useResumeOnLoad: jest.fn(),
   useAdaptiveSSE: jest.fn(),
   useQueueDrain: jest.fn(),
+  useScrollbarGutterSeed: jest.fn(),
   useLocalize: () => (key: string) => key,
   useChatHelpers: () => ({
     conversation: mockConversation,

@@ -8,6 +8,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
+  useScrollbarGutterSeed,
   useAddedResponse,
   useResumeOnLoad,
   useAdaptiveSSE,
@@ -50,6 +51,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const pendingAction = useAtomValue(
     pendingApprovalActionFamily(conversationId ?? Constants.NEW_CONVO),
   );
+
+  /** The welcome screen reserves the message column's scrollbar band before any
+   *  column exists to measure it (see the column's class list below). */
+  useScrollbarGutterSeed();
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
