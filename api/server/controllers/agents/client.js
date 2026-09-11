@@ -5106,8 +5106,7 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]:
             videoError ??
-            terminalRunError.getUserFacingError(
-              err,
+            terminalRunError.getUserFacingError(err, () =>
               getUserFacingRequestError(
                 'An error occurred while processing the request',
                 err,
@@ -5779,8 +5778,7 @@ class AgentClient extends BaseClient {
         terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: terminalRunError.getUserFacingError(
-            err,
+          [ContentTypes.ERROR]: terminalRunError.getUserFacingError(err, () =>
             getUserFacingRequestError(
               'An error occurred while resuming the request',
               err,
