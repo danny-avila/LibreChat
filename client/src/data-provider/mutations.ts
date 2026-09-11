@@ -1363,3 +1363,56 @@ export const useAcceptTermsMutation = (
     onMutate: options?.onMutate,
   });
 };
+
+export const useDismissQuestionnaireMutation = (
+  options?: t.DismissQuestionnaireMutationOptions,
+): UseMutationResult<
+  t.TDismissQuestionnaireResponse,
+  unknown,
+  t.TDismissQuestionnaireRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TDismissQuestionnaireRequest) => dataService.dismissQuestionnaire(payload),
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.setQueryData<t.TQuestionnaireResponse>([QueryKeys.questionnaire], (previous) =>
+          previous
+            ? { ...previous, dismissedAt: data.dismissedAt }
+            : { questionnaire: null, completed: false, dismissedAt: data.dismissedAt },
+        );
+        options?.onSuccess?.(data, variables, context);
+      },
+      onError: options?.onError,
+      onMutate: options?.onMutate,
+    },
+  );
+};
+
+export const useSubmitQuestionnaireResponseMutation = (
+  options?: t.SubmitQuestionnaireResponseMutationOptions,
+): UseMutationResult<
+  t.TSubmitQuestionnaireResponseResponse,
+  unknown,
+  t.TSubmitQuestionnaireResponseRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TSubmitQuestionnaireResponseRequest) =>
+      dataService.submitQuestionnaireResponse(payload),
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.setQueryData<t.TQuestionnaireResponse>([QueryKeys.questionnaire], (previous) =>
+          previous
+            ? { ...previous, completed: true }
+            : { questionnaire: null, completed: true, dismissedAt: null },
+        );
+        options?.onSuccess?.(data, variables, context);
+      },
+      onError: options?.onError,
+      onMutate: options?.onMutate,
+    },
+  );
+};

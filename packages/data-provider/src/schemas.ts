@@ -1724,6 +1724,36 @@ export const tBannerSchema = z.object({
 });
 export type TBanner = z.infer<typeof tBannerSchema>;
 
+export const tQuestionnaireQuestionSchema = z.object({
+  id: z.string(),
+  type: z.enum(['text', 'scale', 'numeric', 'single_choice', 'multiple_choice']),
+  title: z.string(),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  section: z.string().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  minLabel: z.string().optional(),
+  maxLabel: z.string().optional(),
+  options: z.array(z.string()).optional(),
+  maxSelections: z.number().optional(),
+});
+export type TQuestionnaireQuestion = z.infer<typeof tQuestionnaireQuestionSchema>;
+
+export const tQuestionnaireSchema = z.object({
+  questionnaireId: z.string(),
+  title: z.string(),
+  intro: z.string().optional(),
+  thankYouMessage: z.string().optional(),
+  questions: z.array(tQuestionnaireQuestionSchema),
+  displayFrom: z.string(),
+  displayTo: z.string().nullable().optional(),
+  dismissible: z.boolean().default(true),
+  repromptIntervalHours: z.number().nullable(),
+  showConfetti: z.boolean().default(true),
+});
+export type TQuestionnaire = z.infer<typeof tQuestionnaireSchema>;
+
 export const compactAgentsBaseSchema = tConversationSchema.pick({
   chatProjectId: true,
   spec: true,

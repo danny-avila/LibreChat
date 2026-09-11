@@ -12,6 +12,7 @@ const adminRoles = require('./admin/roles');
 const adminSkills = require('./admin/skills');
 const adminUsers = require('./admin/users');
 const adminAuditLog = require('./admin/audit');
+const adminQuestionnaires = require('./admin/questionnaires');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
@@ -25,6 +26,7 @@ const balance = require('./balance');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
 const banner = require('./banner');
+const questionnaire = require('./questionnaire');
 const search = require('./search');
 const models = require('./models');
 const convos = require('./convos');
@@ -58,6 +60,7 @@ module.exports = {
   adminSkills,
   adminUsers,
   adminAuditLog,
+  adminQuestionnaires,
   keys,
   apiKeys,
   user,
@@ -67,6 +70,7 @@ module.exports = {
   files,
   share,
   banner,
+  questionnaire,
   agents,
   convos,
   search,
