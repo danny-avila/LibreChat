@@ -4,7 +4,6 @@ import { createModels, createArtifactAppMethods } from '@librechat/data-schemas'
 import { ResourceType, AccessRoleIds, PermissionBits } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
 import { createArtifactAppHandlers } from '../handlers';
 
@@ -21,7 +20,7 @@ interface GrantRecord {
 
 let grants: GrantRecord[];
 let auditActions: string[];
-let accessibleIds: Types.ObjectId[];
+let accessibleIds: string[];
 let permissionBatchSizes: number[];
 
 function makeRes(): Response & { statusCode: number; body: unknown } {
@@ -81,6 +80,17 @@ const samplePublish = {
   },
 };
 
+const syncBody = {
+  title: 'Revenue chart',
+  artifact: samplePublish.artifact,
+  source: {
+    conversationId: 'conversation-1',
+    messageId: 'message-1',
+    originalArtifactId: 'render-1',
+    sourceKey: 'identifier:revenue-chart',
+  },
+};
+
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
@@ -90,11 +100,9 @@ beforeAll(async () => {
     ...methods,
     getResourcePermissionsMap: async ({ resourceIds }) => {
       permissionBatchSizes.push(resourceIds.length);
-      const accessibleSet = new Set(accessibleIds.map((id) => id.toString()));
+      const accessibleSet = new Set(accessibleIds);
       return new Map(
-        resourceIds
-          .filter((id) => accessibleSet.has(id.toString()))
-          .map((id) => [id.toString(), PermissionBits.VIEW]),
+        resourceIds.filter((id) => accessibleSet.has(id)).map((id) => [id, PermissionBits.VIEW]),
       );
     },
     grantPermission: async (params) => {
@@ -104,11 +112,9 @@ beforeAll(async () => {
         resourceId: String(params.resourceId),
         accessRoleId: params.accessRoleId,
       });
-      return {};
     },
     recordAuditEntry: async (input) => {
       auditActions.push(input.action);
-      return null;
     },
   });
 });
@@ -191,18 +197,58 @@ describe('publish', () => {
   });
 });
 
-describe('automatic catalog sync', () => {
-  const syncBody = {
-    title: 'Revenue chart',
-    artifact: samplePublish.artifact,
-    source: {
-      conversationId: 'conversation-1',
-      messageId: 'message-1',
-      originalArtifactId: 'render-1',
-      sourceKey: 'identifier:revenue-chart:application/vnd.react',
-    },
-  };
+describe('artifact app configuration injection', () => {
+  test('passes configured synchronization limits to the storage method', async () => {
+    const syncArtifactAppWithVersion = jest.fn(methods.syncArtifactAppWithVersion);
+    const configuredHandlers = createArtifactAppHandlers({
+      ...methods,
+      syncArtifactAppWithVersion,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      recordAuditEntry: async () => undefined,
+      getConfig: () => ({
+        syncLockLeaseMs: 12_000,
+        syncLockRetryDelayMs: 125,
+        syncLockRetryAttempts: 8,
+        syncWriteRetryAttempts: 4,
+      }),
+    });
 
+    await configuredHandlers.sync(makeReq({ body: syncBody }), makeRes());
+
+    expect(syncArtifactAppWithVersion).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        syncLockLeaseMs: 12_000,
+        syncLockRetryDelayMs: 125,
+        syncLockRetryAttempts: 8,
+        syncWriteRetryAttempts: 4,
+      }),
+    );
+  });
+
+  test('uses the configured scan batch size', async () => {
+    const listArtifactApps = jest.fn().mockResolvedValue({
+      entries: [],
+      hasMore: false,
+      after: null,
+    });
+    const configuredHandlers = createArtifactAppHandlers({
+      ...methods,
+      listArtifactApps,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      recordAuditEntry: async () => undefined,
+      getConfig: () => ({ scanBatchSize: 37 }),
+    });
+
+    await configuredHandlers.list(makeReq({}), makeRes());
+
+    expect(listArtifactApps).toHaveBeenCalledWith(expect.objectContaining({ limit: 37 }));
+  });
+});
+
+describe('automatic catalog sync', () => {
   test('creates once, then reuses the catalog record for identical content', async () => {
     const first = makeRes();
     await handlers.sync(makeReq({ body: syncBody }), first);
@@ -240,12 +286,12 @@ describe('automatic catalog sync', () => {
     );
 
     expect(res.statusCode).toBe(200);
-    expect((res.body as { app: { id: string } }).app.id).toMatch(/^[a-f0-9]{24}$/);
+    expect((res.body as { id: string }).id).toMatch(/^[a-f0-9]{24}$/);
   });
 });
 
 describe('get / list', () => {
-  test('get returns app with its active version', async () => {
+  test('get returns app metadata without embedding its active version snapshot', async () => {
     const created = makeRes();
     await handlers.publish(makeReq({ body: samplePublish }), created);
     const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
@@ -253,12 +299,9 @@ describe('get / list', () => {
     const res = makeRes();
     await handlers.get(makeReq({ params: { id: appId } as never }), res);
     expect(res.statusCode).toBe(200);
-    const body = res.body as {
-      app: { artifactAppId: string };
-      version: { versionNumber: number } | null;
-    };
-    expect(body.app.artifactAppId).toBe(appId);
-    expect(body.version?.versionNumber).toBe(1);
+    const body = res.body as { artifactAppId: string; version?: unknown };
+    expect(body.artifactAppId).toBe(appId);
+    expect(body.version).toBeUndefined();
   });
 
   test('list returns only ACL-accessible apps', async () => {
@@ -270,7 +313,7 @@ describe('get / list', () => {
     const resolvedA = await methods.resolveArtifactAppId({
       artifactAppId: (a.body as { app: { artifactAppId: string } }).app.artifactAppId,
     });
-    accessibleIds = [resolvedA!._id];
+    accessibleIds = [resolvedA as string];
 
     const res = makeRes();
     await handlers.list(makeReq({}), res);
@@ -296,7 +339,7 @@ describe('get / list', () => {
     const sharedApp = await methods.resolveArtifactAppId({
       artifactAppId: (shared.body as { app: { artifactAppId: string } }).app.artifactAppId,
     });
-    accessibleIds = [personalApp!._id, sharedApp!._id];
+    accessibleIds = [personalApp as string, sharedApp as string];
 
     const personalResult = makeRes();
     await handlers.list(makeReq({ query: { scope: 'personal' } }), personalResult);
@@ -315,7 +358,7 @@ describe('get / list', () => {
   });
 
   test('list returns stable cursor pages and bounds ACL permission batches', async () => {
-    const createdIds: Types.ObjectId[] = [];
+    const createdIds: string[] = [];
     for (let index = 0; index < 25; index++) {
       const { app } = await methods.createArtifactAppWithVersion({
         createdBy: 'user-1',
@@ -327,7 +370,7 @@ describe('get / list', () => {
           createdBy: 'user-1',
         },
       });
-      createdIds.push(app._id);
+      createdIds.push(app.id);
     }
     accessibleIds = createdIds;
 
@@ -370,26 +413,18 @@ describe('get / list', () => {
 });
 
 describe('version lifecycle', () => {
-  async function publishApp(): Promise<string> {
+  async function publishApp(): Promise<{ appId: string; versionId: string }> {
     const res = makeRes();
     await handlers.publish(makeReq({ body: samplePublish }), res);
-    return (res.body as { app: { artifactAppId: string } }).app.artifactAppId;
+    const body = res.body as {
+      app: { artifactAppId: string };
+      version: { artifactVersionId: string };
+    };
+    return { appId: body.app.artifactAppId, versionId: body.version.artifactVersionId };
   }
 
-  test('create → release → activate updates the active version', async () => {
-    const appId = await publishApp();
-
-    const createRes = makeRes();
-    await handlers.createVersion(
-      makeReq({
-        params: { id: appId } as never,
-        body: { artifact: samplePublish.artifact, changelog: 'v2' },
-      }),
-      createRes,
-    );
-    expect(createRes.statusCode).toBe(201);
-    const versionId = (createRes.body as { artifactVersionId: string }).artifactVersionId;
-
+  test('release → activate updates the active version', async () => {
+    const { appId, versionId } = await publishApp();
     const releaseRes = makeRes();
     await handlers.releaseVersion(
       makeReq({ params: { id: appId, versionId } as never }),
@@ -409,13 +444,7 @@ describe('version lifecycle', () => {
   });
 
   test('activating an unreleased version returns 409', async () => {
-    const appId = await publishApp();
-    const createRes = makeRes();
-    await handlers.createVersion(
-      makeReq({ params: { id: appId } as never, body: { artifact: samplePublish.artifact } }),
-      createRes,
-    );
-    const versionId = (createRes.body as { artifactVersionId: string }).artifactVersionId;
+    const { appId, versionId } = await publishApp();
 
     const res = makeRes();
     await handlers.activateVersion(makeReq({ params: { id: appId, versionId } as never }), res);
@@ -423,13 +452,7 @@ describe('version lifecycle', () => {
   });
 
   test('released version content is immutable across a re-release', async () => {
-    const appId = await publishApp();
-    const createRes = makeRes();
-    await handlers.createVersion(
-      makeReq({ params: { id: appId } as never, body: { artifact: samplePublish.artifact } }),
-      createRes,
-    );
-    const versionId = (createRes.body as { artifactVersionId: string }).artifactVersionId;
+    const { appId, versionId } = await publishApp();
 
     const firstRelease = makeRes();
     await handlers.releaseVersion(
@@ -457,14 +480,49 @@ async function publishAppId(): Promise<string> {
   return (res.body as { app: { artifactAppId: string } }).app.artifactAppId;
 }
 
-/** Create a second (draft) version and return its id. */
-async function addVersion(appId: string): Promise<string> {
-  const res = makeRes();
-  await handlers.createVersion(
-    makeReq({ params: { id: appId } as never, body: { artifact: samplePublish.artifact } }),
-    res,
-  );
-  return (res.body as { artifactVersionId: string }).artifactVersionId;
+async function getActiveVersionId(appId: string): Promise<string> {
+  const app = await methods.getArtifactAppByAppId({ artifactAppId: appId });
+  if (!app?.activeVersionId) {
+    throw new Error('Expected an active artifact version');
+  }
+  return app.activeVersionId;
+}
+
+let sourceSequence = 0;
+
+async function createSyncedVersions(
+  count: number,
+): Promise<{ appId: string; versionIds: string[] }> {
+  const sourceKey = `identifier:handler-test-${sourceSequence++}`;
+  const versionIds: string[] = [];
+  let appId = '';
+  for (let index = 0; index < count; index++) {
+    const res = makeRes();
+    await handlers.sync(
+      makeReq({
+        body: {
+          title: 'Synced artifact',
+          artifact: {
+            ...samplePublish.artifact,
+            content: `${samplePublish.artifact.content}-${index}`,
+          },
+          source: {
+            conversationId: `conversation-${sourceSequence}`,
+            messageId: `message-${index}`,
+            sourceKey,
+          },
+        },
+      }),
+      res,
+    );
+    const body = res.body as {
+      app: { artifactAppId: string };
+      version: { artifactVersionId: string };
+    };
+    appId = body.app.artifactAppId;
+    versionIds.push(body.version.artifactVersionId);
+  }
+  return { appId, versionIds };
 }
 
 describe('update', () => {
@@ -530,8 +588,7 @@ describe('update', () => {
 
 describe('remove', () => {
   test('deletes the app with its versions and audits', async () => {
-    const appId = await publishAppId();
-    await addVersion(appId);
+    const { appId } = await createSyncedVersions(2);
     auditActions = [];
 
     const res = makeRes();
@@ -540,7 +597,8 @@ describe('remove', () => {
     expect(res.statusCode).toBe(200);
     expect(auditActions).toContain('artifact_app.archived');
     expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
-    expect(await methods.listArtifactVersions({ artifactAppId: appId })).toHaveLength(0);
+    const versions = await methods.listArtifactVersions({ artifactAppId: appId, limit: 20 });
+    expect(versions.versions).toHaveLength(0);
   });
 
   test('returns 404 for an unknown app', async () => {
@@ -551,16 +609,37 @@ describe('remove', () => {
 });
 
 describe('version reads', () => {
-  test('listVersions returns every version of the app', async () => {
-    const appId = await publishAppId();
-    await addVersion(appId);
+  test('listVersions returns paginated metadata without snapshots', async () => {
+    const { appId } = await createSyncedVersions(3);
 
     const res = makeRes();
-    await handlers.listVersions(makeReq({ params: { id: appId } as never }), res);
+    await handlers.listVersions(
+      makeReq({ params: { id: appId } as never, query: { limit: '2' } }),
+      res,
+    );
 
     expect(res.statusCode).toBe(200);
-    const body = res.body as { versions: { versionNumber: number }[] };
-    expect(body.versions.map((v) => v.versionNumber).sort()).toEqual([1, 2]);
+    const body = res.body as {
+      versions: Array<{ versionNumber: number; sourceSnapshot?: string }>;
+      has_more: boolean;
+      after: string | null;
+    };
+    expect(body.versions.map((v) => v.versionNumber)).toEqual([3, 2]);
+    expect(body.versions.every((version) => version.sourceSnapshot == null)).toBe(true);
+    expect(body.has_more).toBe(true);
+    expect(body.after).toEqual(expect.any(String));
+    if (!body.after) {
+      throw new Error('Expected a cursor for the second version page');
+    }
+
+    const next = makeRes();
+    await handlers.listVersions(
+      makeReq({ params: { id: appId } as never, query: { limit: '2', cursor: body.after } }),
+      next,
+    );
+    expect((next.body as { versions: Array<{ versionNumber: number }> }).versions).toEqual([
+      expect.objectContaining({ versionNumber: 1 }),
+    ]);
   });
 
   test('listVersions returns an empty list for an unknown app', async () => {
@@ -572,7 +651,7 @@ describe('version reads', () => {
 
   test('getVersion returns the requested version', async () => {
     const appId = await publishAppId();
-    const versionId = await addVersion(appId);
+    const versionId = await getActiveVersionId(appId);
 
     const res = makeRes();
     await handlers.getVersion(makeReq({ params: { id: appId, versionId } as never }), res);
@@ -595,7 +674,7 @@ describe('version reads', () => {
    * app A's version must miss, not leak A's snapshot. */
   test('getVersion does not resolve a version belonging to another app', async () => {
     const appA = await publishAppId();
-    const versionA = await addVersion(appA);
+    const versionA = await getActiveVersionId(appA);
     const appB = await publishAppId();
 
     const res = makeRes();
@@ -607,7 +686,7 @@ describe('version reads', () => {
 describe('withdrawVersion', () => {
   test('withdraws a released version and audits', async () => {
     const appId = await publishAppId();
-    const versionId = await addVersion(appId);
+    const versionId = await getActiveVersionId(appId);
     await handlers.releaseVersion(
       makeReq({ params: { id: appId, versionId } as never }),
       makeRes(),

@@ -527,11 +527,11 @@ export default function Artifacts() {
                   <Spinner size={16} />
                 </span>
               )}
-              {!isSharedConvo && canShareArtifacts && artifactEntry?.app && (
+              {!isSharedConvo && canShareArtifacts && artifactEntry && (
                 <GenericGrantAccessDialog
-                  resourceDbId={artifactEntry.app.id}
-                  resourceId={artifactEntry.app.artifactAppId}
-                  resourceName={artifactEntry.app.title}
+                  resourceDbId={artifactEntry.id}
+                  resourceId={artifactEntry.artifactAppId}
+                  resourceName={artifactEntry.title}
                   resourceType={ResourceType.ARTIFACT_APP}
                   buttonClassName="border-0 bg-transparent hover:bg-surface-hover"
                 />

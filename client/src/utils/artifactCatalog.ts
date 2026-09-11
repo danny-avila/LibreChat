@@ -8,6 +8,7 @@ const runtimeByMime: Record<string, ArtifactRuntimeType> = {
   'application/vnd.ant.react': 'react',
   'text/html': 'html',
   'application/vnd.code-html': 'html',
+  'image/svg+xml': 'svg',
   'application/vnd.mermaid': 'mermaid',
   'text/markdown': 'markdown',
   'text/md': 'markdown',
@@ -41,7 +42,7 @@ export function getArtifactSourceKey(artifact: Artifact | null | undefined): str
     return `file:${artifact.id}`;
   }
   if (artifact.identifier && artifact.identifier !== INLINE_DEFAULT_IDENTIFIER) {
-    return `identifier:${artifact.identifier}:${artifact.type}`.slice(0, 500);
+    return `identifier:${artifact.identifier}`.slice(0, 500);
   }
   if (!artifact.messageId) {
     return null;

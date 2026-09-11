@@ -8,6 +8,7 @@ const mockSetQueryData = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockUseRecoilValue = jest.fn();
 const mockUseArtifactsContext = jest.fn();
+let mockStartupConfig: { artifactApps?: Record<string, number> } | undefined;
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -33,6 +34,10 @@ jest.mock('recoil', () => ({
 
 jest.mock('~/Providers', () => ({
   useArtifactsContext: () => mockUseArtifactsContext(),
+}));
+
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: () => ({ data: mockStartupConfig }),
 }));
 
 jest.mock('~/hooks/Roles/useHasAccess', () => ({
@@ -71,6 +76,7 @@ describe('ArtifactCatalogRegistrar', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    mockStartupConfig = undefined;
     artifacts = { 'artifact-1': makeArtifact() };
     context = {
       conversationId: 'conversation-1',
@@ -224,6 +230,40 @@ describe('ArtifactCatalogRegistrar', () => {
 
     await act(async () => {
       jest.advanceTimersByTime(2000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(syncArtifactApp).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses retry and settle timings supplied by startup configuration', async () => {
+    mockStartupConfig = {
+      artifactApps: {
+        clientSyncSettleDelayMs: 25,
+        clientSyncRetryBaseDelayMs: 100,
+        clientSyncRetryMaxDelayMs: 100,
+      },
+    };
+    artifacts = {};
+    syncArtifactApp.mockRejectedValueOnce(new Error('temporary failure'));
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, isSubmitting: true };
+    rerender(<ArtifactCatalogRegistrar />);
+    artifacts = { 'artifact-new': makeArtifact({ id: 'artifact-new' }) };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+
+    await act(async () => {
+      jest.advanceTimersByTime(25);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(100);
       await Promise.resolve();
       await Promise.resolve();
     });

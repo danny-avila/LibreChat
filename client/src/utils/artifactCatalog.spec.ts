@@ -26,6 +26,14 @@ describe('artifact catalog identity', () => {
     expect(getArtifactSourceKey(first)).toBe(getArtifactSourceKey(revision));
   });
 
+  it('keeps an identified artifact stable when its MIME type changes', () => {
+    const html = artifact({ type: 'text/html' });
+    const react = artifact({ type: 'application/vnd.react' });
+
+    expect(getArtifactSourceKey(html)).toBe('identifier:revenue-chart');
+    expect(getArtifactSourceKey(react)).toBe(getArtifactSourceKey(html));
+  });
+
   it('keeps tool artifacts stable by file id', () => {
     expect(
       getArtifactSourceKey(
@@ -36,6 +44,7 @@ describe('artifact catalog identity', () => {
 
   it('maps every renderable office and text family to a stored runtime', () => {
     expect(getArtifactRuntimeType('text/markdown')).toBe('markdown');
+    expect(getArtifactRuntimeType('image/svg+xml')).toBe('svg');
     expect(getArtifactRuntimeType('application/vnd.code')).toBe('code');
     expect(getArtifactRuntimeType('application/vnd.librechat.presentation-preview')).toBe(
       'presentation',
@@ -47,7 +56,7 @@ describe('artifact catalog identity', () => {
       title: 'Revenue chart',
       source: {
         conversationId: 'conversation-1',
-        sourceKey: 'identifier:revenue-chart:application/vnd.react',
+        sourceKey: 'identifier:revenue-chart',
       },
       artifact: { type: 'react' },
     });

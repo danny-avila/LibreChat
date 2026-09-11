@@ -1,4 +1,3 @@
-import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import {
   ResourceType,
@@ -8,32 +7,40 @@ import {
   publishArtifactAppSchema,
   syncArtifactAppSchema,
   artifactAppListRequestSchema,
+  artifactVersionListRequestSchema,
+  artifactAppsConfigSchema,
   updateArtifactAppSchema,
-  createArtifactVersionSchema,
 } from 'librechat-data-provider';
 import type {
-  IArtifactApp,
-  IArtifactVersion,
+  ArtifactAppRecord,
+  ArtifactVersionRecord,
+  ArtifactVersionSummaryRecord,
   ArtifactAppQuery,
   ArtifactVersionQuery,
   ArtifactAppWithVersion,
-  ArtifactAppIdResolution,
   ArtifactAppSourceQuery,
   SyncArtifactAppResult,
   CreateArtifactAppInput,
   CreateArtifactVersionInput,
   RecordAuditEntryInput,
-  IAuditLog,
-  ArtifactAppListCursor,
   ArtifactAppListOptions,
+  ArtifactAppListPage,
+  ArtifactAppListEntry,
+  ArtifactVersionListOptions,
+  ArtifactVersionListPage,
+  ArtifactAppUpdate,
+  ArtifactAppSyncOptions,
 } from '@librechat/data-schemas';
-import type { TArtifactApp, TArtifactVersion, ArtifactRuntimeType } from 'librechat-data-provider';
-import type { FilterQuery } from 'mongoose';
+import type {
+  TArtifactApp,
+  TArtifactVersion,
+  TArtifactVersionSummary,
+  ArtifactRuntimeType,
+  ArtifactRuntimeConfig,
+  ArtifactAppsConfig,
+} from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-
-const ARTIFACT_APP_SCAN_BATCH_SIZE = 100;
-const ARTIFACT_APP_MAX_SCAN_BATCHES = 10;
 
 /**
  * All dependencies required to serve Artifact App HTTP requests. Every dep is
@@ -42,78 +49,45 @@ const ARTIFACT_APP_MAX_SCAN_BATCHES = 10;
  */
 export interface ArtifactAppHandlersDeps {
   createArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<ArtifactAppWithVersion>;
-  syncArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<SyncArtifactAppResult>;
-  getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<IArtifactApp | null>;
-  getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<IArtifactApp | null>;
-  resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppIdResolution | null>;
-  listArtifactApps: (
-    filter: FilterQuery<IArtifactApp>,
-    options?: ArtifactAppListOptions,
-  ) => Promise<IArtifactApp[]>;
+  syncArtifactAppWithVersion: (
+    input: CreateArtifactAppInput,
+    options?: Partial<ArtifactAppSyncOptions>,
+  ) => Promise<SyncArtifactAppResult>;
+  getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
+  getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
+  listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
   updateArtifactApp: (
     query: ArtifactAppQuery,
-    update: Partial<IArtifactApp>,
-  ) => Promise<IArtifactApp | null>;
+    update: ArtifactAppUpdate,
+  ) => Promise<ArtifactAppRecord | null>;
   deleteArtifactApp: (
     query: ArtifactAppQuery,
   ) => Promise<{ deletedApp: boolean; deletedVersions: number }>;
-  getArtifactVersion: (query: ArtifactVersionQuery) => Promise<IArtifactVersion | null>;
-  listArtifactVersions: (query: ArtifactAppQuery) => Promise<IArtifactVersion[]>;
-  createArtifactVersion: (
-    query: ArtifactAppQuery,
-    input: CreateArtifactVersionInput,
-  ) => Promise<IArtifactVersion>;
+  getArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
+  listArtifactVersions: (options: ArtifactVersionListOptions) => Promise<ArtifactVersionListPage>;
   releaseArtifactVersion: (
     query: ArtifactVersionQuery,
     releasedBy: string,
-  ) => Promise<IArtifactVersion | null>;
+  ) => Promise<ArtifactVersionRecord | null>;
   activateArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactAppWithVersion | null>;
-  withdrawArtifactVersion: (query: ArtifactVersionQuery) => Promise<IArtifactVersion | null>;
+  withdrawArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
 
   getResourcePermissionsMap: (params: {
     userId: string;
     role?: string | null;
     resourceType: string;
-    resourceIds: Types.ObjectId[];
+    resourceIds: string[];
   }) => Promise<Map<string, number>>;
   grantPermission: (params: {
     principalType: string;
-    principalId: string | Types.ObjectId;
+    principalId: string;
     resourceType: string;
-    resourceId: string | Types.ObjectId;
+    resourceId: string;
     accessRoleId: string;
-    grantedBy: string | Types.ObjectId;
-  }) => Promise<unknown>;
-  recordAuditEntry: (input: RecordAuditEntryInput) => Promise<IAuditLog | null>;
-}
-
-function encodeListCursor(app: Pick<IArtifactApp, '_id' | 'updatedAt'>): string {
-  return Buffer.from(
-    JSON.stringify({
-      updatedAt: app.updatedAt.toISOString(),
-      _id: app._id.toString(),
-    }),
-  ).toString('base64');
-}
-
-function decodeListCursor(cursor: string | undefined): ArtifactAppListCursor | undefined {
-  if (!cursor) {
-    return undefined;
-  }
-  const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')) as {
-    updatedAt?: string;
-    _id?: string;
-  };
-  const updatedAt = decoded.updatedAt ? new Date(decoded.updatedAt) : null;
-  if (
-    !updatedAt ||
-    Number.isNaN(updatedAt.getTime()) ||
-    !decoded._id ||
-    !Types.ObjectId.isValid(decoded._id)
-  ) {
-    throw new Error('Invalid artifact cursor');
-  }
-  return { updatedAt, _id: new Types.ObjectId(decoded._id) };
+    grantedBy: string;
+  }) => Promise<void>;
+  recordAuditEntry: (input: RecordAuditEntryInput) => Promise<void>;
+  getConfig?: (req: ServerRequest) => Partial<ArtifactAppsConfig> | undefined;
 }
 
 function toIso(value: Date | undefined): string {
@@ -124,9 +98,9 @@ function toIsoOptional(value: Date | undefined): string | undefined {
   return value ? value.toISOString() : undefined;
 }
 
-function serializeApp(app: IArtifactApp): TArtifactApp {
+function serializeApp(app: ArtifactAppRecord): TArtifactApp {
   return {
-    id: app._id.toString(),
+    id: app.id,
     artifactAppId: app.artifactAppId,
     tenantId: app.tenantId,
     title: app.title,
@@ -179,7 +153,7 @@ function serializeApp(app: IArtifactApp): TArtifactApp {
   };
 }
 
-function serializeVersion(version: IArtifactVersion): TArtifactVersion {
+function serializeVersion(version: ArtifactVersionRecord): TArtifactVersion {
   const runtimeConfig = version.runtimeConfig ?? {};
   return {
     artifactVersionId: version.artifactVersionId,
@@ -199,6 +173,25 @@ function serializeVersion(version: IArtifactVersion): TArtifactVersion {
       sourceHash: version.integrity.sourceHash,
       schemaVersion: version.integrity.schemaVersion,
     },
+    createdBy: version.createdBy,
+    createdAt: toIso(version.createdAt),
+    publication: {
+      state: version.publication.state,
+      releasedBy: version.publication.releasedBy,
+      releasedAt: toIsoOptional(version.publication.releasedAt),
+    },
+  };
+}
+
+function serializeVersionSummary(version: ArtifactVersionSummaryRecord): TArtifactVersionSummary {
+  return {
+    artifactVersionId: version.artifactVersionId,
+    artifactAppId: version.artifactAppId,
+    tenantId: version.tenantId,
+    versionNumber: version.versionNumber,
+    versionLabel: version.versionLabel,
+    changelog: version.changelog,
+    artifactType: version.artifactType,
     createdBy: version.createdBy,
     createdAt: toIso(version.createdAt),
     publication: {
@@ -234,7 +227,6 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   remove: (req: ServerRequest, res: Response) => Promise<Response>;
   listVersions: (req: ServerRequest, res: Response) => Promise<Response>;
   getVersion: (req: ServerRequest, res: Response) => Promise<Response>;
-  createVersion: (req: ServerRequest, res: Response) => Promise<Response>;
   releaseVersion: (req: ServerRequest, res: Response) => Promise<Response>;
   activateVersion: (req: ServerRequest, res: Response) => Promise<Response>;
   withdrawVersion: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -249,13 +241,13 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     deleteArtifactApp,
     getArtifactVersion,
     listArtifactVersions,
-    createArtifactVersion,
     releaseArtifactVersion,
     activateArtifactVersion,
     withdrawArtifactVersion,
     getResourcePermissionsMap,
     grantPermission,
     recordAuditEntry,
+    getConfig,
   } = deps;
 
   function audit(input: RecordAuditEntryInput): void {
@@ -265,7 +257,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   }
 
   function toVersionInput(
-    artifact: { type: ArtifactRuntimeType; content: string; runtimeConfig?: unknown },
+    artifact: { type: ArtifactRuntimeType; content: string; runtimeConfig?: ArtifactRuntimeConfig },
     label: string | undefined,
     changelog: string | undefined,
     createdBy: string,
@@ -273,7 +265,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     return {
       artifactType: artifact.type,
       sourceSnapshot: artifact.content,
-      runtimeConfig: artifact.runtimeConfig as CreateArtifactVersionInput['runtimeConfig'],
+      runtimeConfig: artifact.runtimeConfig,
       versionLabel: label,
       changelog,
       createdBy,
@@ -319,7 +311,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           principalType: PrincipalType.USER,
           principalId: userId,
           resourceType: ResourceType.ARTIFACT_APP,
-          resourceId: app._id as Types.ObjectId,
+          resourceId: app.id,
           accessRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
           grantedBy: userId,
         });
@@ -367,22 +359,26 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
 
       const userId = user.id as string;
       const data = parsed.data;
-      const result = await syncArtifactAppWithVersion({
-        tenantId: user.tenantId,
-        createdBy: userId,
-        title: data.title,
-        visibility: 'private',
-        marketplace: { listed: true },
-        sourceMetadata: data.source,
-        version: toVersionInput(data.artifact, undefined, undefined, userId),
-      });
+      const config = artifactAppsConfigSchema.parse(getConfig?.(req));
+      const result = await syncArtifactAppWithVersion(
+        {
+          tenantId: user.tenantId,
+          createdBy: userId,
+          title: data.title,
+          visibility: 'private',
+          marketplace: { listed: true },
+          sourceMetadata: data.source,
+          version: toVersionInput(data.artifact, undefined, undefined, userId),
+        },
+        config,
+      );
 
       try {
         await grantPermission({
           principalType: PrincipalType.USER,
           principalId: userId,
           resourceType: ResourceType.ARTIFACT_APP,
-          resourceId: result.app._id as Types.ObjectId,
+          resourceId: result.app.id,
           accessRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
           grantedBy: userId,
         });
@@ -426,36 +422,44 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!user) {
         return res as Response;
       }
-      const parsed = artifactAppListRequestSchema.safeParse(req.query);
+      const config = artifactAppsConfigSchema.parse(getConfig?.(req));
+      const parsed = artifactAppListRequestSchema.safeParse({
+        ...req.query,
+        limit: req.query.limit ?? config.catalogPageSize,
+      });
       if (!parsed.success) {
         return res.status(400).json({ error: 'Invalid artifact list request' });
       }
-      let scanCursor: ArtifactAppListCursor | undefined;
-      try {
-        scanCursor = decodeListCursor(parsed.data.cursor);
-      } catch {
-        return res.status(400).json({ error: 'Invalid artifact cursor' });
-      }
+      let scanCursor = parsed.data.cursor;
       const userId = user.id as string;
-      let ownershipFilter: FilterQuery<IArtifactApp> = {};
+      const ownership: Pick<ArtifactAppListOptions, 'createdBy' | 'excludeCreatedBy'> = {};
       if (parsed.data.scope === 'personal') {
-        ownershipFilter = { createdBy: userId };
+        ownership.createdBy = userId;
       } else if (parsed.data.scope === 'shared') {
-        ownershipFilter = { createdBy: { $ne: userId } };
+        ownership.excludeCreatedBy = userId;
       }
-      const accessibleApps: IArtifactApp[] = [];
+      const accessibleEntries: ArtifactAppListEntry[] = [];
       let exhausted = false;
 
       for (
         let batch = 0;
-        batch < ARTIFACT_APP_MAX_SCAN_BATCHES && accessibleApps.length <= parsed.data.limit;
+        batch < config.maxScanBatches && accessibleEntries.length <= parsed.data.limit;
         batch++
       ) {
-        const candidates = await listArtifactApps(ownershipFilter, {
-          cursor: scanCursor,
-          limit: ARTIFACT_APP_SCAN_BATCH_SIZE,
-        });
-        if (candidates.length === 0) {
+        let candidatePage: ArtifactAppListPage;
+        try {
+          candidatePage = await listArtifactApps({
+            ...ownership,
+            cursor: scanCursor,
+            limit: config.scanBatchSize,
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Invalid artifact app cursor') {
+            return res.status(400).json({ error: 'Invalid artifact cursor' });
+          }
+          throw error;
+        }
+        if (candidatePage.entries.length === 0) {
           exhausted = true;
           break;
         }
@@ -464,36 +468,36 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           userId,
           role: user.role,
           resourceType: ResourceType.ARTIFACT_APP,
-          resourceIds: candidates.map((app) => app._id),
+          resourceIds: candidatePage.entries.map(({ app }) => app.id),
         });
-        for (const app of candidates) {
-          const permissionBits = permissions.get(app._id.toString()) ?? 0;
+        for (const entry of candidatePage.entries) {
+          const permissionBits = permissions.get(entry.app.id) ?? 0;
           if ((permissionBits & PermissionBits.VIEW) === PermissionBits.VIEW) {
-            accessibleApps.push(app);
-            if (accessibleApps.length > parsed.data.limit) {
+            accessibleEntries.push(entry);
+            if (accessibleEntries.length > parsed.data.limit) {
               break;
             }
           }
         }
 
-        const lastCandidate = candidates[candidates.length - 1];
-        if (lastCandidate) {
-          scanCursor = { updatedAt: lastCandidate.updatedAt, _id: lastCandidate._id };
-        }
-        if (candidates.length < ARTIFACT_APP_SCAN_BATCH_SIZE) {
+        scanCursor = candidatePage.after ?? undefined;
+        if (!candidatePage.hasMore) {
           exhausted = true;
           break;
         }
       }
 
-      const apps = accessibleApps.slice(0, parsed.data.limit);
-      const hasMore = accessibleApps.length > parsed.data.limit || !exhausted;
-      const cursorApp =
-        accessibleApps.length > parsed.data.limit ? apps[apps.length - 1] : undefined;
-      const cursorSource = cursorApp ?? scanCursor;
-      const after = hasMore && cursorSource ? encodeListCursor(cursorSource) : null;
+      const entries = accessibleEntries.slice(0, parsed.data.limit);
+      const hasMore = accessibleEntries.length > parsed.data.limit || !exhausted;
+      let after: string | null = null;
+      if (hasMore) {
+        after =
+          accessibleEntries.length > parsed.data.limit
+            ? (entries[entries.length - 1]?.cursor ?? null)
+            : (scanCursor ?? null);
+      }
       return res.status(200).json({
-        apps: apps.map(serializeApp),
+        apps: entries.map(({ app }) => serializeApp(app)),
         has_more: hasMore,
         after,
       });
@@ -524,16 +528,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!app) {
         return res.status(404).json({ error: 'Artifact not found' });
       }
-      const version = app.activeVersionId
-        ? await getArtifactVersion({
-            artifactAppId: app.artifactAppId,
-            artifactVersionId: app.activeVersionId,
-          })
-        : null;
-      return res.status(200).json({
-        app: serializeApp(app),
-        version: version ? serializeVersion(version) : null,
-      });
+      return res.status(200).json(serializeApp(app));
     } catch (error) {
       logger.error('[GET /artifact-apps/source] Error fetching artifact', error);
       return res.status(500).json({ error: 'Error fetching artifact' });
@@ -547,16 +542,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!app) {
         return res.status(404).json({ error: 'Artifact app not found' });
       }
-      const version = app.activeVersionId
-        ? await getArtifactVersion({
-            artifactAppId: app.artifactAppId,
-            artifactVersionId: app.activeVersionId,
-          })
-        : null;
-      return res.status(200).json({
-        app: serializeApp(app),
-        version: version ? serializeVersion(version) : null,
-      });
+      return res.status(200).json(serializeApp(app));
     } catch (error) {
       logger.error('[GET /artifact-apps/:id] Error fetching artifact app', error);
       return res.status(500).json({ error: 'Error fetching artifact app' });
@@ -578,10 +564,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         return res.status(400).json({ error: 'At least one field must be provided for update' });
       }
 
-      const updated = await updateArtifactApp(
-        { artifactAppId: id },
-        parsed.data as Partial<IArtifactApp>,
-      );
+      const updated = await updateArtifactApp({ artifactAppId: id }, parsed.data);
       if (!updated) {
         return res.status(404).json({ error: 'Artifact app not found' });
       }
@@ -626,8 +609,28 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   async function listVersions(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as { id: string };
-      const versions = await listArtifactVersions({ artifactAppId: id });
-      return res.status(200).json({ versions: versions.map(serializeVersion) });
+      const config = artifactAppsConfigSchema.parse(getConfig?.(req));
+      const parsed = artifactVersionListRequestSchema.safeParse({
+        ...req.query,
+        limit: req.query.limit ?? config.versionPageSize,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid artifact version list request' });
+      }
+      let page: ArtifactVersionListPage;
+      try {
+        page = await listArtifactVersions({ artifactAppId: id, ...parsed.data });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Invalid artifact version cursor') {
+          return res.status(400).json({ error: 'Invalid artifact version cursor' });
+        }
+        throw error;
+      }
+      return res.status(200).json({
+        versions: page.versions.map(serializeVersionSummary),
+        has_more: page.hasMore,
+        after: page.after,
+      });
     } catch (error) {
       logger.error('[GET /artifact-apps/:id/versions] Error listing versions', error);
       return res.status(500).json({ error: 'Error listing artifact app versions' });
@@ -648,44 +651,6 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     } catch (error) {
       logger.error('[GET /artifact-apps/:id/versions/:versionId] Error fetching version', error);
       return res.status(500).json({ error: 'Error fetching artifact app version' });
-    }
-  }
-
-  async function createVersion(req: ServerRequest, res: Response) {
-    try {
-      const user = requireUser(req, res);
-      if (!user) {
-        return res as Response;
-      }
-      const { id } = req.params as { id: string };
-      const parsed = createArtifactVersionSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: 'Validation failed', issues: parsed.error.issues });
-      }
-      const data = parsed.data;
-      let version: IArtifactVersion;
-      try {
-        version = await createArtifactVersion(
-          { artifactAppId: id },
-          toVersionInput(data.artifact, data.versionLabel, data.changelog, user.id as string),
-        );
-      } catch (error) {
-        if ((error as Error).message?.includes('not found')) {
-          return res.status(404).json({ error: 'Artifact app not found' });
-        }
-        throw error;
-      }
-      audit({
-        tenantId: user.tenantId,
-        action: 'artifact_version.created',
-        actor: { type: 'user', id: user.id as string, name: user.name ?? user.username ?? '' },
-        target: { type: ResourceType.ARTIFACT_APP, id, name: version.artifactVersionId },
-        metadata: { versionNumber: version.versionNumber },
-      });
-      return res.status(201).json(serializeVersion(version));
-    } catch (error) {
-      logger.error('[POST /artifact-apps/:id/versions] Error creating version', error);
-      return res.status(500).json({ error: 'Error creating artifact app version' });
     }
   }
 
@@ -791,7 +756,6 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     remove,
     listVersions,
     getVersion,
-    createVersion,
     releaseVersion,
     activateVersion,
     withdrawVersion,

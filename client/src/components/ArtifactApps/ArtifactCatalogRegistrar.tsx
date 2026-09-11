@@ -7,17 +7,15 @@ import {
   PermissionTypes,
   QueryKeys,
   dataService,
+  DEFAULT_ARTIFACT_APPS_CONFIG,
 } from 'librechat-data-provider';
 import type { TSyncArtifactAppRequest } from 'librechat-data-provider';
 import { toLatestArtifactSyncRequests } from '~/utils/artifactCatalog';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import { useGetStartupConfig } from '~/data-provider';
 import { useArtifactsContext } from '~/Providers';
 import { logger } from '~/utils';
 import store from '~/store';
-
-const SYNC_SETTLE_DELAY_MS = 500;
-const SYNC_RETRY_BASE_DELAY_MS = 1000;
-const SYNC_RETRY_MAX_DELAY_MS = 30_000;
 
 interface PendingSync {
   request: TSyncArtifactAppRequest;
@@ -47,6 +45,16 @@ export default function ArtifactCatalogRegistrar() {
   const artifacts = useRecoilValue(store.artifactsState);
   const { conversationId, isSubmitting, latestMessageId } = useArtifactsContext();
   const queryClient = useQueryClient();
+  const { data: startupConfig } = useGetStartupConfig();
+  const syncSettleDelayMs =
+    startupConfig?.artifactApps?.clientSyncSettleDelayMs ??
+    DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs;
+  const syncRetryBaseDelayMs =
+    startupConfig?.artifactApps?.clientSyncRetryBaseDelayMs ??
+    DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryBaseDelayMs;
+  const syncRetryMaxDelayMs =
+    startupConfig?.artifactApps?.clientSyncRetryMaxDelayMs ??
+    DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryMaxDelayMs;
   const canCreate = useHasAccess({
     permissionType: PermissionTypes.ARTIFACTS,
     permission: Permissions.CREATE,
@@ -91,7 +99,7 @@ export default function ArtifactCatalogRegistrar() {
             pending.request.source.conversationId,
             pending.request.source.sourceKey,
           ],
-          result,
+          result.app,
         );
         successfulHashesRef.current.set(syncKey, pending.signature);
         if (pendingSyncsRef.current.get(syncKey)?.signature === pending.signature) {
@@ -126,10 +134,10 @@ export default function ArtifactCatalogRegistrar() {
         ...Array.from(pendingSyncsRef.current.values(), ({ failures }) => failures),
       );
       scheduleSync(
-        Math.min(SYNC_RETRY_BASE_DELAY_MS * 2 ** Math.min(failures, 5), SYNC_RETRY_MAX_DELAY_MS),
+        Math.min(syncRetryBaseDelayMs * 2 ** Math.min(failures, 5), syncRetryMaxDelayMs),
       );
     }
-  }, [canCreate, queryClient, scheduleSync]);
+  }, [canCreate, queryClient, scheduleSync, syncRetryBaseDelayMs, syncRetryMaxDelayMs]);
 
   useEffect(() => {
     flushPendingRef.current = flushPending;
@@ -198,9 +206,17 @@ export default function ArtifactCatalogRegistrar() {
       queued = true;
     }
     if (queued || pendingSyncsRef.current.size > 0) {
-      scheduleSync(SYNC_SETTLE_DELAY_MS);
+      scheduleSync(syncSettleDelayMs);
     }
-  }, [artifacts, canCreate, conversationId, isSubmitting, latestMessageId, scheduleSync]);
+  }, [
+    artifacts,
+    canCreate,
+    conversationId,
+    isSubmitting,
+    latestMessageId,
+    scheduleSync,
+    syncSettleDelayMs,
+  ]);
 
   return null;
 }

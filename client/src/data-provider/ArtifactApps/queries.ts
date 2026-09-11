@@ -1,10 +1,10 @@
-import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { QueryKeys, dataService, DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
 import type {
   TArtifactAppList,
+  TArtifactApp,
   TArtifactVersion,
   TArtifactVersionList,
-  TArtifactAppWithVersion,
   ArtifactAppListScope,
 } from 'librechat-data-provider';
 import type {
@@ -12,19 +12,21 @@ import type {
   UseQueryOptions,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
-
-const ARTIFACT_APP_PAGE_SIZE = 20;
+import { useGetStartupConfig } from '../Endpoints';
 
 export const useListArtifactAppsQuery = (
   scope: ArtifactAppListScope = 'personal',
   config?: UseInfiniteQueryOptions<TArtifactAppList, Error>,
 ) => {
+  const { data: startupConfig } = useGetStartupConfig();
+  const pageSize =
+    startupConfig?.artifactApps?.catalogPageSize ?? DEFAULT_ARTIFACT_APPS_CONFIG.catalogPageSize;
   return useInfiniteQuery<TArtifactAppList, Error>(
-    [QueryKeys.artifactApps, scope],
+    [QueryKeys.artifactApps, scope, pageSize],
     ({ pageParam }) =>
       dataService.listArtifactApps({
         scope,
-        limit: ARTIFACT_APP_PAGE_SIZE,
+        limit: pageSize,
         cursor: typeof pageParam === 'string' ? pageParam : undefined,
       }),
     {
@@ -41,10 +43,10 @@ export const useListArtifactAppsQuery = (
 export const useGetArtifactAppBySourceQuery = (
   conversationId: string | null | undefined,
   sourceKey: string | null | undefined,
-  config?: UseQueryOptions<TArtifactAppWithVersion>,
-): QueryObserverResult<TArtifactAppWithVersion> => {
+  config?: UseQueryOptions<TArtifactApp>,
+): QueryObserverResult<TArtifactApp> => {
   const enabled = !!conversationId && !!sourceKey;
-  return useQuery<TArtifactAppWithVersion>(
+  return useQuery<TArtifactApp>(
     [QueryKeys.artifactApp, 'source', conversationId, sourceKey],
     () => dataService.getArtifactAppBySource(conversationId as string, sourceKey as string),
     {
@@ -59,10 +61,10 @@ export const useGetArtifactAppBySourceQuery = (
 
 export const useGetArtifactAppQuery = (
   artifactAppId: string | null | undefined,
-  config?: UseQueryOptions<TArtifactAppWithVersion>,
-): QueryObserverResult<TArtifactAppWithVersion> => {
+  config?: UseQueryOptions<TArtifactApp>,
+): QueryObserverResult<TArtifactApp> => {
   const enabled = !!artifactAppId;
-  return useQuery<TArtifactAppWithVersion>(
+  return useQuery<TArtifactApp>(
     [QueryKeys.artifactApp, artifactAppId],
     () => dataService.getArtifactApp(artifactAppId as string),
     {
@@ -78,13 +80,22 @@ export const useGetArtifactAppQuery = (
 
 export const useListArtifactAppVersionsQuery = (
   artifactAppId: string | null | undefined,
-  config?: UseQueryOptions<TArtifactVersionList>,
-): QueryObserverResult<TArtifactVersionList> => {
+  config?: UseInfiniteQueryOptions<TArtifactVersionList, Error>,
+) => {
   const enabled = !!artifactAppId;
-  return useQuery<TArtifactVersionList>(
-    [QueryKeys.artifactAppVersions, artifactAppId],
-    () => dataService.listArtifactAppVersions(artifactAppId as string),
+  const { data: startupConfig } = useGetStartupConfig();
+  const pageSize =
+    startupConfig?.artifactApps?.versionPageSize ?? DEFAULT_ARTIFACT_APPS_CONFIG.versionPageSize;
+  return useInfiniteQuery<TArtifactVersionList, Error>(
+    [QueryKeys.artifactAppVersions, artifactAppId, pageSize],
+    ({ pageParam }) =>
+      dataService.listArtifactAppVersions(artifactAppId as string, {
+        limit: pageSize,
+        cursor: typeof pageParam === 'string' ? pageParam : undefined,
+      }),
     {
+      getNextPageParam: (lastPage) =>
+        lastPage.has_more && lastPage.after ? lastPage.after : undefined,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

@@ -6,13 +6,11 @@ const {
   syncArtifactAppWithVersion,
   getArtifactAppByAppId,
   getArtifactAppBySource,
-  resolveArtifactAppId,
   listArtifactApps,
   updateArtifactApp,
   deleteArtifactApp,
   getArtifactVersion,
   listArtifactVersions,
-  createArtifactVersion,
   releaseArtifactVersion,
   activateArtifactVersion,
   withdrawArtifactVersion,
@@ -47,19 +45,18 @@ const handlers = createArtifactAppHandlers({
   syncArtifactAppWithVersion,
   getArtifactAppByAppId,
   getArtifactAppBySource,
-  resolveArtifactAppId,
   listArtifactApps,
   updateArtifactApp,
   deleteArtifactApp,
   getArtifactVersion,
   listArtifactVersions,
-  createArtifactVersion,
   releaseArtifactVersion,
   activateArtifactVersion,
   withdrawArtifactVersion,
   getResourcePermissionsMap,
   grantPermission,
   recordAuditEntry,
+  getConfig: (req) => req.config?.artifactApps,
 });
 
 // Collection
@@ -94,12 +91,6 @@ router.get(
   checkArtifactAccess,
   canAccessArtifactAppResource({ requiredPermission: PermissionBits.VIEW }),
   handlers.listVersions,
-);
-router.post(
-  '/:id/versions',
-  checkArtifactAccess,
-  canAccessArtifactAppResource({ requiredPermission: PermissionBits.EDIT }),
-  handlers.createVersion,
 );
 router.get(
   '/:id/versions/:versionId',

@@ -115,7 +115,7 @@ describe('syncArtifactAppWithVersion', () => {
     conversationId: 'conversation-1',
     messageId: 'message-1',
     originalArtifactId: 'render-id-1',
-    sourceKey: 'identifier:revenue-chart:application/vnd.react',
+    sourceKey: 'identifier:revenue-chart',
   };
 
   test('is idempotent when the source snapshot has not changed', async () => {
@@ -289,8 +289,8 @@ describe('CRUD', () => {
     const fetched = await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId });
     expect(fetched?.title).toBe('My Chart');
 
-    const listed = await methods.listArtifactApps({ createdBy: 'user-1' });
-    expect(listed).toHaveLength(1);
+    const listed = await methods.listArtifactApps({ createdBy: 'user-1', limit: 20 });
+    expect(listed.entries).toHaveLength(1);
 
     const updated = await methods.updateArtifactApp(
       { artifactAppId: app.artifactAppId },
@@ -304,44 +304,95 @@ describe('CRUD', () => {
     expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toBeNull();
   });
 
-  test('resolveArtifactAppId returns _id and artifactAppId for ACL checks', async () => {
+  test('resolveArtifactAppId returns a plain string id for ACL checks', async () => {
     const { app } = await methods.createArtifactAppWithVersion(baseInput());
     const resolved = await methods.resolveArtifactAppId({ artifactAppId: app.artifactAppId });
-    expect(resolved?.artifactAppId).toBe(app.artifactAppId);
-    expect(resolved?._id).toBeDefined();
+    expect(resolved).toMatch(/^[a-f0-9]{24}$/);
+  });
+
+  test('paginates app records with opaque storage-owned cursors', async () => {
+    await Promise.all(
+      ['First', 'Second', 'Third'].map((title) =>
+        methods.createArtifactAppWithVersion(baseInput({ title })),
+      ),
+    );
+
+    const firstPage = await methods.listArtifactApps({ createdBy: 'user-1', limit: 2 });
+    const secondPage = await methods.listArtifactApps({
+      createdBy: 'user-1',
+      limit: 2,
+      cursor: firstPage.after ?? undefined,
+    });
+
+    expect(firstPage.entries).toHaveLength(2);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.after).toEqual(expect.any(String));
+    expect(secondPage.entries).toHaveLength(1);
+    expect(secondPage.hasMore).toBe(false);
+    const appIds = new Set(
+      [...firstPage.entries, ...secondPage.entries].map(({ app }) => app.artifactAppId),
+    );
+    expect(appIds.size).toBe(3);
+    await expect(
+      methods.listArtifactApps({ createdBy: 'user-1', limit: 2, cursor: 'not-json' }),
+    ).rejects.toThrow('Invalid artifact app cursor');
   });
 });
 
 describe('version lifecycle', () => {
-  test('createArtifactVersion increments latestVersionNumber and starts as draft', async () => {
-    const { app } = await methods.createArtifactAppWithVersion(baseInput());
-    const v2 = await methods.createArtifactVersion(
-      { artifactAppId: app.artifactAppId },
-      { artifactType: 'react', sourceSnapshot: 'v2', createdBy: 'user-1' },
-    );
-    expect(v2.versionNumber).toBe(2);
-    expect(v2.publication.state).toBe('draft');
+  test('paginates version metadata without returning stored snapshots', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-pagination',
+      messageId: 'message-1',
+      sourceKey: 'identifier:pagination',
+    };
+    const input = baseInput({ sourceMetadata });
+    const first = await methods.syncArtifactAppWithVersion(input);
+    await methods.syncArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'version two' },
+    });
+    await methods.syncArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'version three' },
+    });
 
-    const reread = await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId });
-    expect(reread?.latestVersionNumber).toBe(2);
+    const firstPage = await methods.listArtifactVersions({
+      artifactAppId: first.app.artifactAppId,
+      limit: 2,
+    });
+    const secondPage = await methods.listArtifactVersions({
+      artifactAppId: first.app.artifactAppId,
+      limit: 2,
+      cursor: firstPage.after ?? undefined,
+    });
+
+    expect(firstPage.versions.map(({ versionNumber }) => versionNumber)).toEqual([3, 2]);
+    expect(firstPage.versions.every((version) => !('sourceSnapshot' in version))).toBe(true);
+    expect(firstPage.hasMore).toBe(true);
+    expect(secondPage.versions.map(({ versionNumber }) => versionNumber)).toEqual([1]);
+    expect(secondPage.hasMore).toBe(false);
+    await expect(
+      methods.listArtifactVersions({
+        artifactAppId: first.app.artifactAppId,
+        limit: 2,
+        cursor: 'not-json',
+      }),
+    ).rejects.toThrow('Invalid artifact version cursor');
   });
 
   test('release then activate; activate rejects unreleased versions', async () => {
-    const { app } = await methods.createArtifactAppWithVersion(baseInput());
-    const v2 = await methods.createArtifactVersion(
-      { artifactAppId: app.artifactAppId },
-      { artifactType: 'react', sourceSnapshot: 'v2', createdBy: 'user-1' },
-    );
+    const { app, version } = await methods.createArtifactAppWithVersion(baseInput());
 
     await expect(
       methods.activateArtifactVersion({
         artifactAppId: app.artifactAppId,
-        versionNumber: 2,
+        versionNumber: 1,
       }),
     ).rejects.toThrow(/released/);
 
     const released = await methods.releaseArtifactVersion(
-      { artifactAppId: app.artifactAppId, versionNumber: 2 },
+      { artifactAppId: app.artifactAppId, versionNumber: 1 },
       'user-1',
     );
     expect(released?.publication.state).toBe('released');
@@ -349,21 +400,31 @@ describe('version lifecycle', () => {
 
     const activated = await methods.activateArtifactVersion({
       artifactAppId: app.artifactAppId,
-      versionNumber: 2,
+      versionNumber: 1,
     });
-    expect(activated?.app.activeVersionId).toBe(v2.artifactVersionId);
+    expect(activated?.app.activeVersionId).toBe(version.artifactVersionId);
   });
 
   test('rollback: activate an older released version', async () => {
-    const { app, version: v1 } = await methods.createArtifactAppWithVersion(baseInput());
+    const sourceMetadata = {
+      conversationId: 'conversation-rollback',
+      messageId: 'message-1',
+      originalArtifactId: 'artifact-rollback',
+      sourceKey: 'identifier:rollback',
+    };
+    const first = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    const { app, version: v1 } = first;
     await methods.releaseArtifactVersion(
       { artifactAppId: app.artifactAppId, versionNumber: 1 },
       'user-1',
     );
-    const v2 = await methods.createArtifactVersion(
-      { artifactAppId: app.artifactAppId },
-      { artifactType: 'react', sourceSnapshot: 'v2', createdBy: 'user-1' },
+    const second = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, messageId: 'message-2' },
+        version: { ...baseInput().version, sourceSnapshot: 'v2' },
+      }),
     );
+    const v2 = second.version;
     await methods.releaseArtifactVersion(
       { artifactAppId: app.artifactAppId, versionNumber: 2 },
       'user-1',
@@ -417,9 +478,9 @@ describe('tenant isolation', () => {
     expect(fromA?.artifactAppId).toBe(appA.app.artifactAppId);
 
     const listB = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
-      methods.listArtifactApps({}),
+      methods.listArtifactApps({ limit: 20 }),
     );
-    expect(listB).toHaveLength(1);
-    expect(listB[0].tenantId).toBe('tenant-b');
+    expect(listB.entries).toHaveLength(1);
+    expect(listB.entries[0]?.app.tenantId).toBe('tenant-b');
   });
 });

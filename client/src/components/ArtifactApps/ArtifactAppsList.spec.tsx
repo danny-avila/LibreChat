@@ -100,7 +100,7 @@ const apps = [
       conversationId: 'conversation-1',
       messageId: 'message-2',
       originalArtifactId: 'artifact-revision-2',
-      sourceKey: 'identifier:quarterly-report:application/vnd.react',
+      sourceKey: 'identifier:quarterly-report',
     },
   },
   {
@@ -215,14 +215,14 @@ describe('ArtifactAppsList', () => {
 
     expect(window.location.pathname).toBe('/c/conversation-1');
     expect(new URLSearchParams(window.location.search).get('artifact')).toBe(
-      'identifier:quarterly-report:application/vnd.react',
+      'identifier:quarterly-report',
     );
     expect(new URLSearchParams(window.location.search).get('artifactId')).toBe(
       'artifact-revision-2',
     );
     expect(mockSetArtifactNavigationRequest).toHaveBeenCalledWith({
       conversationId: 'conversation-1',
-      sourceKey: 'identifier:quarterly-report:application/vnd.react',
+      sourceKey: 'identifier:quarterly-report',
       originalArtifactId: 'artifact-revision-2',
       messageId: 'message-2',
     });
