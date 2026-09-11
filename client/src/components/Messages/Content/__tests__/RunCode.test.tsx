@@ -18,6 +18,9 @@ jest.mock('~/Providers', () => jest.requireActual('~/Providers/MessageContext'))
 jest.mock('~/data-provider', () => jest.requireActual('~/data-provider/Tools/mutations'));
 
 describe('RunCode animation lifecycle', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
   it.each(['success', 'error'] as const)(
     'only animates during execution, including %s and retry',
     async (outcome) => {
@@ -51,7 +54,10 @@ describe('RunCode animation lifecycle', () => {
       );
       const button = screen.getByRole('button', { name: 'com_ui_run_code' });
       expect(container.querySelector('.spinner')).not.toBeInTheDocument();
-      fireEvent.click(button);
+      await act(async () => {
+        fireEvent.click(button);
+        await jest.advanceTimersByTimeAsync(0);
+      });
       await waitFor(() => expect(callTool).toHaveBeenCalledTimes(1));
       await waitFor(() => expect(button).toBeDisabled());
       expect(container.querySelector('.spinner')).toBeInTheDocument();
@@ -62,9 +68,12 @@ describe('RunCode animation lifecycle', () => {
       await waitFor(() => expect(button).toBeEnabled());
       expect(container.querySelector('.spinner')).not.toBeInTheDocument();
       await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1100));
+        jest.advanceTimersByTime(1100);
       });
-      fireEvent.click(button);
+      await act(async () => {
+        fireEvent.click(button);
+        await jest.advanceTimersByTimeAsync(0);
+      });
       await waitFor(() => expect(callTool).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(button).toBeDisabled());
       expect(container.querySelector('.spinner')).toBeInTheDocument();
