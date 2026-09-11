@@ -41,6 +41,7 @@ export interface IArtifactAppSyncLock {
 export interface IArtifactAppDeletion {
   requestedBy: string;
   requestedAt: Date;
+  finalizedAt?: Date;
 }
 
 export interface ArtifactAppListOptions {

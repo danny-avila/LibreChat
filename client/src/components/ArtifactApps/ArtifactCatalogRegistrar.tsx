@@ -33,9 +33,6 @@ export default function ArtifactCatalogRegistrar() {
   const syncSettleDelayMs =
     startupConfig?.artifactApps?.clientSyncSettleDelayMs ??
     DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs;
-  const generationObservationMs =
-    startupConfig?.artifactApps?.clientGenerationObservationMs ??
-    DEFAULT_ARTIFACT_APPS_CONFIG.clientGenerationObservationMs;
   const canCreate = useHasAccess({
     permissionType: PermissionTypes.ARTIFACTS,
     permission: Permissions.CREATE,
@@ -44,7 +41,13 @@ export default function ArtifactCatalogRegistrar() {
   const conversationRef = useRef<string | null>(null);
   const activeGenerationConversationRef = useRef<string | null>(null);
   const activeGenerationMessageRef = useRef<string | null>(null);
-  const completedGenerationMessagesRef = useRef(new Map<string, number>());
+  /**
+   * Completed message ids stay eligible for the lifetime of the active
+   * conversation. Deferred office previews expose no reliable client-side ETA,
+   * so a wall-clock expiry would silently lose slow but valid conversions.
+   * Conversation navigation clears the set and keeps history reads inert.
+   */
+  const completedGenerationMessagesRef = useRef(new Set<string>());
   const observedSignaturesRef = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -87,20 +90,10 @@ export default function ArtifactCatalogRegistrar() {
     ) {
       const completedMessageId = latestMessageId ?? activeGenerationMessageRef.current;
       if (completedMessageId) {
-        completedGenerationMessagesRef.current.set(
-          completedMessageId,
-          Date.now() + generationObservationMs,
-        );
+        completedGenerationMessagesRef.current.add(completedMessageId);
       }
       activeGenerationConversationRef.current = null;
       activeGenerationMessageRef.current = null;
-    }
-
-    const now = Date.now();
-    for (const [messageId, expiresAt] of completedGenerationMessagesRef.current) {
-      if (expiresAt <= now) {
-        completedGenerationMessagesRef.current.delete(messageId);
-      }
     }
 
     if (!canCreate || !user?.id || !validConversation) {
@@ -129,7 +122,6 @@ export default function ArtifactCatalogRegistrar() {
     artifacts,
     canCreate,
     conversationId,
-    generationObservationMs,
     isSubmitting,
     latestMessageId,
     syncSettleDelayMs,

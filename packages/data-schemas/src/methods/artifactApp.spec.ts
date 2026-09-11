@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IArtifactApp, IArtifactVersion, CreateArtifactAppInput } from '~/types';
 import {
+  ArtifactAppDeletedError,
   createArtifactAppMethods,
   computeSourceHash,
   type ArtifactAppMethods,
@@ -115,7 +116,7 @@ describe('syncArtifactAppWithVersion', () => {
     conversationId: 'conversation-1',
     messageId: 'message-1',
     originalArtifactId: 'render-id-1',
-    sourceKey: 'identifier:revenue-chart',
+    sourceKey: 'artifact:v1:identifier:revenue-chart',
   };
 
   test('is idempotent when the source snapshot has not changed', async () => {
@@ -155,12 +156,40 @@ describe('syncArtifactAppWithVersion', () => {
     expect(synced.app.artifactAppId).toBe(legacy.app.artifactAppId);
     expect(synced.created).toBe(false);
     expect(await ArtifactApp.countDocuments({})).toBe(1);
-    expect(persisted?.sourceMetadata?.sourceKey).toBe('identifier:revenue-chart');
+    expect(persisted?.sourceMetadata?.sourceKey).toBe('artifact:v1:identifier:revenue-chart');
   });
 
-  test('canonicalizes source keys still sent by an older browser bundle', async () => {
+  test('consolidates every legacy MIME identity around one deterministic survivor', async () => {
+    const legacyKeys = [
+      'identifier:revenue-chart',
+      'identifier:revenue-chart:text/html',
+      'identifier:revenue-chart:application/vnd.react',
+    ];
+    const legacyApps = [];
+    for (const [index, sourceKey] of legacyKeys.entries()) {
+      const created = await methods.createArtifactAppWithVersion(
+        baseInput({
+          title: `Legacy ${index}`,
+          sourceMetadata: { ...sourceMetadata, sourceKey },
+        }),
+      );
+      legacyApps.push(created.app);
+    }
+
+    const synced = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    const active = await ArtifactApp.find({ status: { $ne: 'archived' } }).lean();
+    const archived = await ArtifactApp.find({ status: 'archived' }).lean();
+
+    expect(synced.app.artifactAppId).toBe(legacyApps[2].artifactAppId);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.sourceMetadata?.sourceKey).toBe(sourceMetadata.sourceKey);
+    expect(archived).toHaveLength(2);
+    expect(await ArtifactVersion.countDocuments({})).toBe(3);
+  });
+
+  test('does not collapse an ambiguous legacy key, then archives it on versioned sync', async () => {
     const first = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
-    const second = await methods.syncArtifactAppWithVersion(
+    const legacy = await methods.syncArtifactAppWithVersion(
       baseInput({
         sourceMetadata: {
           ...sourceMetadata,
@@ -168,9 +197,33 @@ describe('syncArtifactAppWithVersion', () => {
         },
       }),
     );
+    const consolidated = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
 
-    expect(second.app.artifactAppId).toBe(first.app.artifactAppId);
-    expect(await ArtifactApp.countDocuments({})).toBe(1);
+    expect(legacy.app.artifactAppId).not.toBe(first.app.artifactAppId);
+    expect(consolidated.app.artifactAppId).toBe(first.app.artifactAppId);
+    expect(await ArtifactApp.countDocuments({ status: { $ne: 'archived' } })).toBe(1);
+    expect(
+      await ArtifactApp.findOne({ artifactAppId: legacy.app.artifactAppId }).lean(),
+    ).toMatchObject({ status: 'archived', marketplace: { listed: false } });
+  });
+
+  test('keeps versioned identifiers with MIME-looking suffixes distinct', async () => {
+    const report = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, sourceKey: 'artifact:v1:identifier:report' },
+      }),
+    );
+    const htmlReport = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: {
+          ...sourceMetadata,
+          sourceKey: 'artifact:v1:identifier:report:text/html',
+        },
+      }),
+    );
+
+    expect(htmlReport.app.artifactAppId).not.toBe(report.app.artifactAppId);
+    expect(await ArtifactApp.countDocuments({ status: { $ne: 'archived' } })).toBe(2);
   });
 
   test('creates and activates the next version when content changes', async () => {
@@ -423,7 +476,39 @@ describe('CRUD', () => {
     expect(
       await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
     ).toBe(true);
-    expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toBeNull();
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toMatchObject(
+      {
+        status: 'archived',
+        deletion: { requestedBy: 'user-1', finalizedAt: expect.any(Date) },
+      },
+    );
+  });
+
+  test('keeps a durable source fence before and after deletion finalization', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-deleted',
+      sourceKey: 'artifact:v1:identifier:deleted-report',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await expect(methods.syncArtifactAppWithVersion(input)).rejects.toBeInstanceOf(
+      ArtifactAppDeletedError,
+    );
+    await expect(
+      Promise.all([
+        methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+        methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+      ]),
+    ).resolves.toEqual([true, true]);
+    await expect(methods.syncArtifactAppWithVersion(input)).rejects.toBeInstanceOf(
+      ArtifactAppDeletedError,
+    );
+    expect(await methods.listArtifactApps({ createdBy: 'user-1', limit: 20 })).toMatchObject({
+      entries: [],
+    });
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(0);
   });
 });
 

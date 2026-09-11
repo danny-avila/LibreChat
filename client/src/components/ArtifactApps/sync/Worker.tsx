@@ -22,9 +22,9 @@ interface SyncHttpError {
   response?: { status?: number };
 }
 
-function isRetryableSyncError(error: unknown): boolean {
+function shouldDiscardSyncError(error: unknown): boolean {
   const status = (error as SyncHttpError | null)?.response?.status;
-  return status == null || status === 408 || status === 429 || status >= 500;
+  return status === 400 || status === 410 || status === 413 || status === 422;
 }
 
 /** Flushes the persistent registration queue for the signed-in user across route changes. */
@@ -44,6 +44,10 @@ export default function ArtifactSyncWorker() {
     permission: Permissions.CREATE,
   });
   const flushingRef = useRef(false);
+  const activeOwnerRef = useRef(ownerId);
+  const canCreateRef = useRef(canCreate);
+  activeOwnerRef.current = ownerId;
+  canCreateRef.current = canCreate;
 
   const flush = useCallback(async () => {
     if (!ownerId || !canCreate) {
@@ -54,16 +58,24 @@ export default function ArtifactSyncWorker() {
     }
     flushingRef.current = true;
     let catalogChanged = false;
+    const sessionIsActive = () =>
+      activeOwnerRef.current === ownerId && canCreateRef.current === true;
     try {
       const entries = (await listArtifactSyncQueue(ownerId)).sort(
         (left, right) => left.nextAttemptAt - right.nextAttemptAt,
       );
       for (const entry of entries) {
+        if (!sessionIsActive()) {
+          return null;
+        }
         if (entry.nextAttemptAt > Date.now()) {
           continue;
         }
         try {
           const result = await dataService.syncArtifactApp(entry.request);
+          if (!sessionIsActive()) {
+            return null;
+          }
           queryClient.setQueryData(
             [
               QueryKeys.artifactApp,
@@ -76,7 +88,10 @@ export default function ArtifactSyncWorker() {
           await completeArtifactSync(entry.id, entry.signature);
           catalogChanged = true;
         } catch (error) {
-          if (isRetryableSyncError(error)) {
+          if (!sessionIsActive()) {
+            return null;
+          }
+          if (!shouldDiscardSyncError(error)) {
             const delay = Math.min(
               retryBaseDelayMs * 2 ** Math.min(entry.failures, 5),
               retryMaxDelayMs,
@@ -88,11 +103,18 @@ export default function ArtifactSyncWorker() {
           logger.error('artifacts', 'Failed to sync artifact with catalog', error);
         }
       }
-      if (catalogChanged) {
+      if (catalogChanged && sessionIsActive()) {
         await queryClient.invalidateQueries({
           queryKey: [QueryKeys.artifactApps],
           refetchType: 'all',
         });
+        if (!sessionIsActive()) {
+          queryClient.removeQueries({ queryKey: [QueryKeys.artifactApps] });
+          return null;
+        }
+      }
+      if (!sessionIsActive()) {
+        return null;
       }
       const remaining = await listArtifactSyncQueue(ownerId);
       return remaining.length > 0

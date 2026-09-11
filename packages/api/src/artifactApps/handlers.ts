@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { ArtifactAppDeletedError, logger } from '@librechat/data-schemas';
 import {
   ResourceType,
   AccessRoleIds,
@@ -92,6 +92,7 @@ export interface ArtifactAppHandlersDeps {
     grantedBy: string;
   }) => Promise<void>;
   removeAllPermissions: (params: { resourceType: string; resourceId: string }) => Promise<unknown>;
+  hasResourceManagementCapability?: (user: NonNullable<ServerRequest['user']>) => Promise<boolean>;
   recordAuditEntry: (input: RecordAuditEntryInput) => Promise<void>;
   getConfig?: (req: ServerRequest) => Partial<ArtifactAppsConfig> | undefined;
 }
@@ -256,6 +257,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     getResourcePermissionsMap,
     grantPermission,
     removeAllPermissions,
+    hasResourceManagementCapability,
     recordAuditEntry,
     getConfig,
   } = deps;
@@ -436,6 +438,9 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         versionCreated: result.versionCreated,
       });
     } catch (error) {
+      if (error instanceof ArtifactAppDeletedError) {
+        return res.status(410).json({ error: 'Artifact was deleted and will not be synchronized' });
+      }
       logger.error('[POST /artifact-apps/sync] Error syncing artifact', error);
       return res.status(500).json({ error: 'Error syncing artifact' });
     }
@@ -630,7 +635,22 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!app) {
         return res.status(200).json({ success: true });
       }
+      let hasManagementCapability = false;
       if (app.createdBy !== userId && app.deletion?.requestedBy !== userId) {
+        try {
+          hasManagementCapability = (await hasResourceManagementCapability?.(user)) === true;
+        } catch (error) {
+          logger.warn(
+            `[DELETE /artifact-apps/:id] Capability check failed for ${userId}; falling back to ACL`,
+            error,
+          );
+        }
+      }
+      if (
+        app.createdBy !== userId &&
+        app.deletion?.requestedBy !== userId &&
+        !hasManagementCapability
+      ) {
         const permissions = await getResourcePermissionsMap({
           userId,
           role: user.role,
@@ -641,6 +661,9 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         if ((permissionBits & PermissionBits.DELETE) !== PermissionBits.DELETE) {
           return res.status(403).json({ error: 'Forbidden' });
         }
+      }
+      if (app.deletion?.finalizedAt) {
+        return res.status(200).json({ success: true });
       }
       const prepared = await prepareArtifactAppDeletion({ artifactAppId: id }, userId);
       if (!prepared.found) {

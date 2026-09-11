@@ -30,7 +30,7 @@ describe('artifact catalog identity', () => {
     const html = artifact({ type: 'text/html' });
     const react = artifact({ type: 'application/vnd.react' });
 
-    expect(getArtifactSourceKey(html)).toBe('identifier:revenue-chart');
+    expect(getArtifactSourceKey(html)).toBe('artifact:v1:identifier:revenue-chart');
     expect(getArtifactSourceKey(react)).toBe(getArtifactSourceKey(html));
   });
 
@@ -39,7 +39,7 @@ describe('artifact catalog identity', () => {
       getArtifactSourceKey(
         artifact({ id: 'tool-artifact-file-123', identifier: undefined, messageId: 'message-2' }),
       ),
-    ).toBe('file:tool-artifact-file-123');
+    ).toBe('artifact:v1:file:tool-artifact-file-123');
   });
 
   it('maps every renderable office and text family to a stored runtime', () => {
@@ -56,7 +56,7 @@ describe('artifact catalog identity', () => {
       title: 'Revenue chart',
       source: {
         conversationId: 'conversation-1',
-        sourceKey: 'identifier:revenue-chart',
+        sourceKey: 'artifact:v1:identifier:revenue-chart',
       },
       artifact: { type: 'react' },
     });
