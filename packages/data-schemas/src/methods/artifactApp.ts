@@ -1,8 +1,14 @@
 import { nanoid } from 'nanoid';
 import crypto from 'node:crypto';
-import { ARTIFACT_SOURCE_KEY_PREFIX, DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
+import {
+  ARTIFACT_SOURCE_KEY_PREFIX,
+  DEFAULT_ARTIFACT_APPS_CONFIG,
+  PrincipalType,
+  ResourceType,
+} from 'librechat-data-provider';
 import type { ClientSession, FilterQuery, Model, Types } from 'mongoose';
 import type {
+  IAclEntry,
   IArtifactApp,
   IArtifactVersion,
   ArtifactAppQuery,
@@ -37,6 +43,7 @@ interface MongoWriteError {
 
 interface ArtifactAppIdentityRecord {
   _id: Types.ObjectId;
+  artifactAppId: string;
   status?: string;
   deletion?: { requestedBy: string };
   updatedAt?: Date;
@@ -50,6 +57,17 @@ export class ArtifactAppDeletedError extends Error {
     super('Artifact app source has been deleted');
     this.name = 'ArtifactAppDeletedError';
   }
+}
+
+const LEGACY_IDENTIFIER_SOURCE_SUFFIX = /^(identifier:.+):(application|text|image)\/[^:]+$/;
+
+/** Maps rollout-era client keys into the stable v1 namespace. */
+export function canonicalizeArtifactSourceKey(sourceKey: string): string {
+  if (sourceKey.startsWith(ARTIFACT_SOURCE_KEY_PREFIX)) {
+    return sourceKey;
+  }
+  const legacyIdentity = sourceKey.match(LEGACY_IDENTIFIER_SOURCE_SUFFIX)?.[1] ?? sourceKey;
+  return `${ARTIFACT_SOURCE_KEY_PREFIX}${legacyIdentity}`.slice(0, 500);
 }
 
 function getLegacySourceKey(sourceKey: string): string | null {
@@ -159,6 +177,180 @@ function buildVersionFilter(query: ArtifactVersionQuery): Record<string, unknown
 export function createArtifactAppMethods(mongoose: typeof import('mongoose')): ArtifactAppMethods {
   const getApp = () => mongoose.models.ArtifactApp as Model<IArtifactApp>;
   const getVersion = () => mongoose.models.ArtifactVersion as Model<IArtifactVersion>;
+  const getAclEntry = () => mongoose.models.AclEntry as Model<IAclEntry>;
+
+  async function consolidateArtifactAppData(
+    survivor: ArtifactAppIdentityRecord,
+    duplicates: ArtifactAppIdentityRecord[],
+  ): Promise<void> {
+    if (duplicates.length === 0) {
+      return;
+    }
+
+    const ArtifactVersion = getVersion();
+    const duplicateAppIds = duplicates.map(({ artifactAppId }) => artifactAppId);
+    const duplicateVersions = await ArtifactVersion.find({
+      artifactAppId: { $in: duplicateAppIds },
+    })
+      .sort({ createdAt: 1, versionNumber: 1, _id: 1 })
+      .exec();
+
+    // Append duplicate histories to the survivor. Each move is atomic and can
+    // be resumed safely if a standalone deployment stops partway through.
+    for (const version of duplicateVersions) {
+      let moved = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const current = await ArtifactVersion.findById(version._id)
+          .select({ artifactAppId: 1 })
+          .lean<Pick<IArtifactVersion, '_id' | 'artifactAppId'>>()
+          .exec();
+        if (!current || current.artifactAppId === survivor.artifactAppId) {
+          moved = true;
+          break;
+        }
+        const latest = await ArtifactVersion.findOne({ artifactAppId: survivor.artifactAppId })
+          .sort({ versionNumber: -1 })
+          .select({ versionNumber: 1 })
+          .lean<Pick<IArtifactVersion, 'versionNumber'>>()
+          .exec();
+        try {
+          const result = await ArtifactVersion.updateOne(
+            { _id: version._id, artifactAppId: current.artifactAppId },
+            {
+              $set: {
+                artifactAppId: survivor.artifactAppId,
+                versionNumber: (latest?.versionNumber ?? 0) + 1,
+              },
+            },
+          ).exec();
+          moved = result.matchedCount === 1;
+          if (moved) {
+            break;
+          }
+        } catch (error) {
+          if (!isRetryableWriteError(error)) {
+            throw error;
+          }
+        }
+      }
+      if (!moved) {
+        throw new Error('[syncArtifactAppWithVersion] Failed to consolidate artifact history');
+      }
+    }
+
+    const latestVersion = await ArtifactVersion.findOne({ artifactAppId: survivor.artifactAppId })
+      .sort({ versionNumber: -1 })
+      .select({ versionNumber: 1 })
+      .lean<Pick<IArtifactVersion, 'versionNumber'>>()
+      .exec();
+    if (latestVersion) {
+      await getApp()
+        .updateOne(
+          { _id: survivor._id, deletion: { $exists: false } },
+          { $max: { latestVersionNumber: latestVersion.versionNumber } },
+        )
+        .exec();
+    }
+
+    const AclEntry = getAclEntry();
+    const resourceIds = [survivor._id, ...duplicates.map(({ _id }) => _id)];
+    const aclEntries = await AclEntry.find({
+      resourceType: ResourceType.ARTIFACT_APP,
+      resourceId: { $in: resourceIds },
+    })
+      .lean<IAclEntry[]>()
+      .exec();
+    const entriesByPrincipal = new Map<string, IAclEntry[]>();
+    for (const entry of aclEntries) {
+      const principalKey = [
+        entry.tenantId ?? '',
+        entry.principalType,
+        entry.principalId?.toString() ?? '',
+      ].join(':');
+      const group = entriesByPrincipal.get(principalKey) ?? [];
+      group.push(entry);
+      entriesByPrincipal.set(principalKey, group);
+    }
+
+    for (const entries of entriesByPrincipal.values()) {
+      const representative = [...entries].sort((left, right) => right.permBits - left.permBits)[0];
+      if (!representative) {
+        continue;
+      }
+      const mergedBits = entries.reduce((bits, entry) => bits | entry.permBits, 0);
+      const roleSource = [...entries]
+        .filter((entry) => entry.roleId != null)
+        .sort((left, right) => right.permBits - left.permBits)[0];
+      const directGrant = entries.some((entry) => entry.inheritedFrom == null);
+      const neverExpires = entries.some((entry) => entry.expiredAt == null);
+      const latestExpiration = neverExpires
+        ? undefined
+        : entries.reduce<Date | undefined>((latest, entry) => {
+            if (!entry.expiredAt || (latest && latest >= entry.expiredAt)) {
+              return latest;
+            }
+            return entry.expiredAt;
+          }, undefined);
+      const earliestGrant = entries.reduce<Date | undefined>((earliest, entry) => {
+        if (!entry.grantedAt || (earliest && earliest <= entry.grantedAt)) {
+          return earliest;
+        }
+        return entry.grantedAt;
+      }, undefined);
+      const targetEntry = entries.find(
+        (entry) => entry.resourceId.toString() === survivor._id.toString(),
+      );
+      const identityFilter = {
+        principalType: representative.principalType,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: survivor._id,
+        ...(representative.principalType === PrincipalType.PUBLIC
+          ? { $or: [{ principalId: { $exists: false } }, { principalId: null }] }
+          : { principalId: representative.principalId }),
+      };
+      const setFields = {
+        principalType: representative.principalType,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: survivor._id,
+        permBits: mergedBits,
+        ...(representative.principalId != null ? { principalId: representative.principalId } : {}),
+        ...(representative.principalModel != null
+          ? { principalModel: representative.principalModel }
+          : {}),
+        ...(representative.grantedBy != null ? { grantedBy: representative.grantedBy } : {}),
+        ...(earliestGrant ? { grantedAt: earliestGrant } : {}),
+        ...(roleSource?.roleId != null ? { roleId: roleSource.roleId } : {}),
+        ...(!directGrant && representative.inheritedFrom != null
+          ? { inheritedFrom: representative.inheritedFrom }
+          : {}),
+        ...(latestExpiration ? { expiredAt: latestExpiration } : {}),
+      };
+      const unsetFields = {
+        ...(!roleSource ? { roleId: 1 } : {}),
+        ...(directGrant ? { inheritedFrom: 1 } : {}),
+        ...(neverExpires ? { expiredAt: 1 } : {}),
+      };
+      const update = {
+        $set: setFields,
+        ...(Object.keys(unsetFields).length > 0 ? { $unset: unsetFields } : {}),
+      };
+      const target = targetEntry
+        ? await AclEntry.findOneAndUpdate({ _id: targetEntry._id }, update, { new: true }).exec()
+        : await AclEntry.findOneAndUpdate(identityFilter, update, {
+            new: true,
+            upsert: true,
+          }).exec();
+      if (!target) {
+        throw new Error('[syncArtifactAppWithVersion] Failed to consolidate artifact access');
+      }
+      const obsoleteEntryIds = entries
+        .filter((entry) => entry._id.toString() !== target._id.toString())
+        .map(({ _id }) => _id);
+      if (obsoleteEntryIds.length > 0) {
+        await AclEntry.deleteMany({ _id: { $in: obsoleteEntryIds } }).exec();
+      }
+    }
+  }
 
   function toAppRecord(app: IArtifactApp): ArtifactAppRecord {
     return {
@@ -399,13 +591,15 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   async function getArtifactAppBySource(
     query: ArtifactAppSourceQuery,
   ): Promise<ArtifactAppRecord | null> {
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(query.sourceKey);
+    const canonicalQuery = { ...query, sourceKey: canonicalSourceKey };
     const currentFilter = {
-      ...buildSourceFilter(query),
+      ...buildSourceFilter(canonicalQuery),
       deletion: { $exists: false },
       status: { $ne: 'archived' },
     };
     let app = await getApp().findOne(currentFilter).lean<IArtifactApp>().exec();
-    const legacySourceKey = getLegacySourceKey(query.sourceKey);
+    const legacySourceKey = getLegacySourceKey(canonicalSourceKey);
     if (!app && legacySourceKey) {
       const legacyPattern = legacyTypedSourceKeyPattern(legacySourceKey);
       const sourceKeyFilter = legacyPattern
@@ -418,7 +612,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         : { 'sourceMetadata.sourceKey': legacySourceKey };
       app = await getApp()
         .findOne({
-          ...buildSourceOwnerFilter(query),
+          ...buildSourceOwnerFilter(canonicalQuery),
           ...sourceKeyFilter,
           deletion: { $exists: false },
           status: { $ne: 'archived' },
@@ -453,7 +647,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       throw new Error('[syncArtifactAppWithVersion] Stable source metadata is required');
     }
 
-    const canonicalSourceKey = source.sourceKey;
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(source.sourceKey);
     const canonicalSource = { ...source, sourceKey: canonicalSourceKey };
     const sourceQuery: ArtifactAppSourceQuery = {
       tenantId: input.tenantId,
@@ -464,10 +658,10 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     let filter = buildSourceFilter(sourceQuery);
     let existing = await getApp()
       .findOne(filter)
-      .select({ _id: 1, deletion: 1 })
+      .select({ _id: 1, artifactAppId: 1, status: 1, deletion: 1 })
       .lean<ArtifactAppIdentityRecord>()
       .exec();
-    if (existing?.deletion) {
+    if (existing?.deletion || existing?.status === 'archived') {
       throw new ArtifactAppDeletedError();
     }
 
@@ -492,6 +686,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         })
         .select({
           _id: 1,
+          artifactAppId: 1,
           status: 1,
           deletion: 1,
           updatedAt: 1,
@@ -505,7 +700,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         throw new ArtifactAppDeletedError();
       }
 
-      const activeLegacyApps = legacyApps.filter(
+      const migratableLegacyApps = legacyApps.filter((app) => app.deletion == null);
+      const activeLegacyApps = migratableLegacyApps.filter(
         (app) => app.deletion == null && app.status !== 'archived',
       );
       let survivor = existing ?? activeLegacyApps[0];
@@ -521,14 +717,14 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
               { $set: { 'sourceMetadata.sourceKey': canonicalSourceKey } },
               { new: true },
             )
-            .select({ _id: 1, deletion: 1 })
+            .select({ _id: 1, artifactAppId: 1, status: 1, deletion: 1 })
             .lean<ArtifactAppIdentityRecord>()
             .exec();
           existing =
             migrated ??
             (await getApp()
               .findOne(filter)
-              .select({ _id: 1 })
+              .select({ _id: 1, artifactAppId: 1, status: 1 })
               .lean<ArtifactAppIdentityRecord>()
               .exec());
         } catch (error) {
@@ -537,7 +733,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           }
           existing = await getApp()
             .findOne(filter)
-            .select({ _id: 1 })
+            .select({ _id: 1, artifactAppId: 1, status: 1 })
             .lean<ArtifactAppIdentityRecord>()
             .exec();
         }
@@ -545,9 +741,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       }
 
       if (survivor) {
-        const duplicateIds = activeLegacyApps
-          .filter((candidate) => candidate._id.toString() !== survivor._id.toString())
-          .map((candidate) => candidate._id);
+        const duplicateApps = migratableLegacyApps.filter(
+          (candidate) => candidate._id.toString() !== survivor._id.toString(),
+        );
+        await consolidateArtifactAppData(survivor, duplicateApps);
+        const duplicateIds = duplicateApps.map((candidate) => candidate._id);
         if (duplicateIds.length > 0) {
           await getApp()
             .updateMany(
@@ -582,7 +780,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       };
       existing = await getApp()
         .findOne(legacyFilter)
-        .select({ _id: 1 })
+        .select({ _id: 1, artifactAppId: 1, status: 1 })
         .lean<ArtifactAppIdentityRecord>()
         .exec();
       if (existing) {
@@ -1013,22 +1211,25 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     requestedBy: string,
   ): Promise<ArtifactAppDeletionResult> {
     const prepare = async (session?: ClientSession): Promise<ArtifactAppDeletionResult> => {
-      const appQuery = getApp().findOneAndUpdate(
+      const claimQuery = getApp().findOneAndUpdate(
         {
           artifactAppId: query.artifactAppId,
-          $or: [{ deletion: { $exists: false } }, { 'deletion.requestedBy': requestedBy }],
+          deletion: { $exists: false },
         },
         { $set: { deletion: { requestedBy, requestedAt: new Date() } } },
         { new: true, ...(session ? { session } : {}) },
       );
-      const app = await appQuery.exec();
+      let app = await claimQuery.exec();
       if (!app) {
-        const existingQuery = getApp().exists({ artifactAppId: query.artifactAppId });
-        if (session) existingQuery.session(session);
-        if (await existingQuery) {
-          throw new Error('[prepareArtifactAppDeletion] Deletion is already in progress');
+        const resumableQuery = getApp().findOne({
+          artifactAppId: query.artifactAppId,
+          deletion: { $exists: true },
+        });
+        if (session) resumableQuery.session(session);
+        app = await resumableQuery.exec();
+        if (!app) {
+          return { found: false, deletedVersions: 0 };
         }
-        return { found: false, deletedVersions: 0 };
       }
       const versionResult = await getVersion().deleteMany(
         { artifactAppId: query.artifactAppId },
@@ -1058,13 +1259,13 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
 
   async function finalizeArtifactAppDeletion(
     query: ArtifactAppQuery,
-    requestedBy: string,
+    _requestedBy: string,
   ): Promise<boolean> {
     const result = await getApp()
       .updateOne(
         {
           artifactAppId: query.artifactAppId,
-          'deletion.requestedBy': requestedBy,
+          deletion: { $exists: true },
         },
         {
           $set: {

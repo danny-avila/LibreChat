@@ -198,8 +198,8 @@ export const syncArtifactAppSchema = z.object({
     /**
      * `artifact:v1:` keys are the unambiguous current format. The three
      * unversioned prefixes remain accepted while older browser bundles drain
-     * during rolling deployments, but the server treats them as exact legacy
-     * identities and never strips a MIME-looking suffix from them.
+     * during rolling deployments. The server maps them into the v1 namespace
+     * and removes the MIME suffix used by the original identifier format.
      */
     sourceKey: z
       .string()
