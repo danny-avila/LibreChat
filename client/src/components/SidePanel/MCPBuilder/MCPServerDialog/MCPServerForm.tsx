@@ -1,13 +1,16 @@
 import { FormProvider, useWatch } from 'react-hook-form';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { useMCPServerForm, MCPServerFormData } from './hooks/useMCPServerForm';
+import { AuthTypeEnum } from './hooks/useMCPServerForm';
+import CustomUserVarsDefinitionSection from './sections/CustomUserVarsDefinitionSection';
 import ConnectionSection from './sections/ConnectionSection';
 import BasicInfoSection from './sections/BasicInfoSection';
 import TransportSection from './sections/TransportSection';
-import { AuthTypeEnum } from './hooks/useMCPServerForm';
+import AdvancedSection from './sections/AdvancedSection';
+import HeadersSection from './sections/HeadersSection';
 import TrustSection from './sections/TrustSection';
 import AuthSection from './sections/AuthSection';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 
 interface MCPServerFormProps {
   formHook: ReturnType<typeof useMCPServerForm>;
@@ -15,6 +18,7 @@ interface MCPServerFormProps {
 
 export default function MCPServerForm({ formHook }: MCPServerFormProps) {
   const { methods, isEditMode, server } = formHook;
+  const localize = useLocalize();
 
   const canConfigureObo = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
@@ -49,6 +53,17 @@ export default function MCPServerForm({ formHook }: MCPServerFormProps) {
           <TransportSection />
 
           <AuthSection isEditMode={isEditMode} serverName={server?.serverName} />
+
+          <HeadersSection isEditMode={isEditMode} />
+
+          <CustomUserVarsDefinitionSection isEditMode={isEditMode} />
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">{localize('com_ui_mcp_advanced')}</p>
+            <div className="rounded-lg border border-border-light p-3">
+              <AdvancedSection />
+            </div>
+          </div>
 
           <TrustSection />
         </fieldset>

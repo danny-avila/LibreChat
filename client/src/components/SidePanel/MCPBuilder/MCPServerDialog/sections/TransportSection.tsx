@@ -6,20 +6,22 @@ import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function TransportSection() {
   const localize = useLocalize();
-  const { setValue } = useFormContext<MCPServerFormData>();
+  const { control, setValue } = useFormContext<MCPServerFormData>();
 
   const transportType = useWatch<MCPServerFormData, 'type'>({
+    control,
     name: 'type',
   });
 
   const handleTransportChange = (value: string) => {
-    setValue('type', value as 'streamable-http' | 'sse');
+    setValue('type', value as 'streamable-http' | 'sse' | 'websocket');
   };
 
   const transportOptions = useMemo(
     () => [
       { value: 'streamable-http', label: localize('com_ui_mcp_type_streamable_http') },
       { value: 'sse', label: localize('com_ui_mcp_type_sse') },
+      { value: 'websocket', label: localize('com_ui_mcp_type_websocket') },
     ],
     [localize],
   );
