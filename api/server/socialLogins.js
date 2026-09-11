@@ -1,7 +1,12 @@
 const passport = require('passport');
 const session = require('express-session');
 const { CacheKeys } = require('librechat-data-provider');
-const { math, isEnabled, shouldUseSecureCookie } = require('@librechat/api');
+const {
+  math,
+  isEnabled,
+  shouldUseSecureCookie,
+  registerOpenIdWithRetry,
+} = require('@librechat/api');
 const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   openIdJwtLogin,
@@ -21,7 +26,6 @@ const {
 const { getLogStores } = require('~/cache');
 
 const DEFAULT_OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
-
 const getSessionExpiry = () => math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
 
 const getOpenIdSessionExpiry = () => {
@@ -36,6 +40,20 @@ const getOpenIdSessionExpiry = () => {
   );
   return Math.max(sessionExpiry, reuseMaxSessionAge);
 };
+
+async function registerOpenIdStrategies() {
+  const config = await setupOpenId();
+  if (!config) {
+    return false;
+  }
+
+  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    logger.info('OpenID token reuse is enabled.');
+    passport.use('openidJwt', openIdJwtLogin(config));
+  }
+  logger.info('OpenID Connect configured successfully.');
+  return true;
+}
 
 /**
  * Configures OpenID Connect for the application.
@@ -58,17 +76,11 @@ async function configureOpenId(app) {
   app.use(session(sessionOptions));
   app.use(passport.session());
 
-  const config = await setupOpenId();
-  if (!config) {
-    logger.error('OpenID Connect configuration failed - strategy not registered.');
-    return;
-  }
-
-  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    logger.info('OpenID token reuse is enabled.');
-    passport.use('openidJwt', openIdJwtLogin(config));
-  }
-  logger.info('OpenID Connect configured successfully.');
+  await registerOpenIdWithRetry({
+    register: registerOpenIdStrategies,
+    startupAttempts: process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
+    retryDelayMs: process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+  });
 }
 
 /**

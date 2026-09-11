@@ -9,6 +9,7 @@ const mockSetupOpenId = jest.fn();
 const mockSetupSaml = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockShouldUseSecureCookie = jest.fn(() => true);
+const mockRegisterOpenIdWithRetry = jest.fn(async ({ register }) => register());
 const mockMath = jest.fn((value, fallback) => {
   if (value == null || value === '') {
     return fallback;
@@ -42,10 +43,11 @@ jest.mock('@librechat/api', () => ({
   math: (...args) => mockMath(...args),
   isEnabled: (...args) => mockIsEnabled(...args),
   shouldUseSecureCookie: (...args) => mockShouldUseSecureCookie(...args),
+  registerOpenIdWithRetry: (...args) => mockRegisterOpenIdWithRetry(...args),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   DEFAULT_SESSION_EXPIRY: 900000,
-  logger: { error: jest.fn(), info: jest.fn() },
+  logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
 }));
 jest.mock('~/cache', () => ({ getLogStores: (...args) => mockGetLogStores(...args) }));
 jest.mock('~/strategies', () => ({
@@ -88,6 +90,10 @@ describe('configureSocialLogins OpenID session expiry', () => {
 
   afterAll(() => {
     process.env = ORIGINAL_ENV;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('extends the OpenID session cookie to the reuse window when token reuse is enabled', async () => {
@@ -139,5 +145,20 @@ describe('configureSocialLogins OpenID session expiry', () => {
       }),
     );
     expect(mockPassportUse).not.toHaveBeenCalled();
+  });
+
+  it('delegates OpenID registration and retry configuration to the API package', async () => {
+    process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS = '2';
+    process.env.OPENID_DISCOVERY_RETRY_DELAY_MS = '1000';
+    const app = { use: jest.fn() };
+
+    await configureSocialLogins(app);
+
+    expect(mockRegisterOpenIdWithRetry).toHaveBeenCalledWith({
+      register: expect.any(Function),
+      startupAttempts: '2',
+      retryDelayMs: '1000',
+    });
+    expect(mockSetupOpenId).toHaveBeenCalledTimes(1);
   });
 });
