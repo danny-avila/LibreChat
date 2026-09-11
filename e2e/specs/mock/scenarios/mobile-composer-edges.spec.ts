@@ -9,13 +9,18 @@ import type { Page } from '@playwright/test';
  */
 
 const COMPOSER = '[data-testid="composer-surface"]';
+/** The spec declares the viewport it describes rather than depending on a
+ *  runner's project matrix: the repository's own mock config has a single
+ *  Desktop Chrome project, where a width-gated mobile assertion would skip and
+ *  report nothing. */
+test.use({ viewport: { width: 390, height: 844 } });
 
 test.describe('mobile composer', () => {
   test('the composer reaches the screen edges @scenario:mobile-composer-reaches-screen-edges', async ({
     page,
   }) => {
     const width = page.viewportSize()?.width ?? 0;
-    test.skip(width >= 640, 'the composer is a centred card from the sm breakpoint up');
+    expect(width).toBeLessThan(640);
 
     await page.goto('/c/new', { timeout: 10000 });
     await expect(page.locator(COMPOSER)).toBeVisible();

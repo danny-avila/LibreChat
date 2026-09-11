@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 
 export const SCROLLBAR_GUTTER_PROPERTY = '--message-scrollbar-gutter';
 
@@ -51,9 +51,14 @@ export default function useScrollbarGutter(
  *  `scrollbar-gutter: stable` — answers the same question the column does, and
  *  answers it for the platform in front of the user. A mounted column measures
  *  itself and is authoritative, so this only fills the gap before the first one
- *  exists and never overwrites a published measurement. */
+ *  exists and never overwrites a published measurement.
+ *
+ *  It measures in a layout effect, before the browser paints: a passive effect
+ *  would let the first frame reserve the token's 8px and then recentre the
+ *  welcome screen by 4px once the real band is known, which is the same visible
+ *  shift this reservation exists to remove. */
 export function useScrollbarGutterSeed(): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     if (root.style.getPropertyValue(SCROLLBAR_GUTTER_PROPERTY) !== '') {
       return;

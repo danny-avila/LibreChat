@@ -9,13 +9,20 @@ import { useLocalize } from '~/hooks';
 type FooterProps = {
   className?: string;
   startupConfig?: FooterStartupConfig | null;
+  /** A started conversation keeps only what the deployment configured. The
+   *  generic model disclaimer belongs to the welcome screen, where it is first
+   *  read, but a custom footer, a privacy policy and terms of service are the
+   *  operator's own content: scoping the disclaimer out must not take their
+   *  configuration off the screen that used to carry it. With nothing
+   *  configured, this renders nothing at all. */
+  configuredOnly?: boolean;
 };
 
 type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'customFooter'> & {
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
-function Footer({ className, startupConfig }: FooterProps) {
+function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {
   const shouldFetchConfig = startupConfig === undefined;
   const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });
   const config = shouldFetchConfig ? fetchedConfig : startupConfig;
@@ -36,14 +43,16 @@ function Footer({ className, startupConfig }: FooterProps) {
     </a>
   );
 
-  const mainContentParts = (
-    typeof config?.customFooter === 'string'
-      ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
-  ).split('|');
+  const configuredFooter = typeof config?.customFooter === 'string' ? config.customFooter : null;
+  /** The generic disclaimer is the part a conversation drops; operator content is not. */
+  const genericFooter = configuredOnly
+    ? ''
+    : '[LibreChat ' +
+      Constants.VERSION +
+      '](https://librechat.ai) - ' +
+      localize('com_ui_latest_footer');
+  const mainContent = configuredFooter ?? genericFooter;
+  const mainContentParts = mainContent === '' ? [] : mainContent.split('|');
 
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
@@ -83,6 +92,12 @@ function Footer({ className, startupConfig }: FooterProps) {
   const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
     Boolean,
   );
+
+  /** A conversation with no configured footer has nothing to place, so it does
+   *  not place an empty bar over the bottom of the thread. */
+  if (footerElements.length === 0) {
+    return null;
+  }
 
   return (
     <div className="relative w-full">
