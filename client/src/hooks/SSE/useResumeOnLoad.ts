@@ -30,12 +30,9 @@ import {
   extendActiveJobsGrace,
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
-import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { getGenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
@@ -292,11 +289,10 @@ export default function useResumeOnLoad(
    */
   const [externalRunArm, setExternalRunArm] = useState(0);
   /** `generationHandoff` lives in the React Query snapshot until a later
-   * status refetch. Remember the exact epoch already consumed so clearing the
-   * replacement submission on FINAL cannot re-install that stale snapshot and
-   * enter a resume→404→resume loop. A genuinely newer handoff has a different
-   * createdAt key and remains eligible. */
-  const consumedHandoffGenerationRef = useRef<string | null>(null);
+   * status refetch. Remember the exact handoff already consumed so clearing
+   * the replacement submission on FINAL cannot re-install it. Protocol v2 has
+   * a stable epoch key; protocol v1 falls back to snapshot identity. */
+  const consumedHandoffRef = useRef<string | StreamStatusResponse | null>(null);
   const restoreResumeBranch = useCallback(
     (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
       const targetMessageId = getResumeBranchTargetMessageId(resumeState, messages);
@@ -434,15 +430,17 @@ export default function useResumeOnLoad(
 
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
+  const hasCurrentSubmission =
+    currentSubmission != null && Object.keys(currentSubmission).length > 0;
   const loadedMessages = messagesLoaded ? getMessages() : undefined;
   const hasExplicitSubmissionMatch = !!conversationId && submissionConvoId === conversationId;
   const hasHydratedMessageMatch =
     submissionConvoId == null &&
     hasSubmissionUserMessage(currentSubmission, loadedMessages, conversationId);
   const hasActiveSubmissionForThisConvo =
-    !!currentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
+    hasCurrentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
   const hasStaleSubmissionForDifferentConvo =
-    !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
+    hasCurrentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
   /**
    * A submission only stands in for an attachment while one is actually live.
    * The FINAL path never clears the atom, so a pane that just finished a run
@@ -797,7 +795,7 @@ export default function useResumeOnLoad(
       resumableEnabled,
       conversationId,
       messagesLoaded,
-      hasCurrentSubmission: !!currentSubmission,
+      hasCurrentSubmission,
       currentSubmissionConvoId: currentSubmission?.conversation?.conversationId,
       isSuccess,
       isFetching,
@@ -857,17 +855,15 @@ export default function useResumeOnLoad(
      * cached the replacement snapshot; allow the same conversation to be
      * processed again so this epoch becomes the active resume submission. */
     const generationProtocolVersion = getGenerationProtocolVersion(streamStatus);
-    const isGenerationProtocolV2 = supportsGenerationProtocolV2(streamStatus);
-    const handoffGenerationKey =
-      isGenerationProtocolV2 &&
-      streamStatus.generationHandoff === true &&
-      streamStatus.createdAt != null
+    const handoffIdentity =
+      generationProtocolVersion === 2 && streamStatus.createdAt != null
         ? `${conversationId}:${streamStatus.createdAt}`
-        : null;
+        : streamStatus;
+    const isUnconsumedHandoff =
+      streamStatus.generationHandoff === true && consumedHandoffRef.current !== handoffIdentity;
     if (
-      currentSubmission == null &&
-      handoffGenerationKey != null &&
-      consumedHandoffGenerationRef.current !== handoffGenerationKey &&
+      !hasCurrentSubmission &&
+      isUnconsumedHandoff &&
       streamStatus.active &&
       processedConvoRef.current === conversationId
     ) {
@@ -922,8 +918,8 @@ export default function useResumeOnLoad(
     }
 
     processedConvoRef.current = conversationId;
-    if (handoffGenerationKey != null) {
-      consumedHandoffGenerationRef.current = handoffGenerationKey;
+    if (isUnconsumedHandoff) {
+      consumedHandoffRef.current = handoffIdentity;
     }
     if (streamStatus.createdAt != null) {
       setActiveGenerationCreatedAt(
@@ -1019,6 +1015,7 @@ export default function useResumeOnLoad(
     conversationId,
     resumableEnabled,
     messagesLoaded,
+    hasCurrentSubmission,
     hasActiveSubmissionForThisConvo,
     submissionConvoId,
     hasStaleSubmissionForDifferentConvo,
@@ -1048,7 +1045,7 @@ export default function useResumeOnLoad(
         new: conversationId,
       });
       processedConvoRef.current = null;
-      consumedHandoffGenerationRef.current = null;
+      consumedHandoffRef.current = null;
       answeredActiveJobRef.current = null;
     }
   }, [conversationId]);

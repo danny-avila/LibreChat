@@ -1,4 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
+import type { NavigateFunction } from 'react-router-dom';
+import { navigateToNewConversation } from '../useNewConvo.utils';
 
 const mockDeleteFiles = jest.fn();
 const mockSetFiles = jest.fn();
@@ -179,5 +181,23 @@ describe('useNewConvo reset cleanup', () => {
 
     expect(mockStorePendingDiscardIds).toHaveBeenCalledWith(0, ['inflight-paste']);
     expect(mockPendingDiscardIds).toEqual(new Set(['inflight-paste']));
+  });
+});
+
+describe('navigateToNewConversation', () => {
+  it('pushes a new history entry by default', () => {
+    const navigate = jest.fn() as jest.MockedFunction<NavigateFunction>;
+
+    navigateToNewConversation(navigate, '/c/new');
+
+    expect(navigate).toHaveBeenCalledWith('/c/new');
+  });
+
+  it('replaces the current history entry when requested', () => {
+    const navigate = jest.fn() as jest.MockedFunction<NavigateFunction>;
+
+    navigateToNewConversation(navigate, '/c/new', true);
+
+    expect(navigate).toHaveBeenCalledWith('/c/new', { replace: true });
   });
 });
