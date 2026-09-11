@@ -7,7 +7,6 @@ import type { Mongoose } from 'mongoose';
 import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
 import type { LocatorTraversalFailure } from '../protection/diagnostics';
 import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
-import { locatorTraversalFailures } from '../protection/diagnostics';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
   [/^\/api\/agents\/chat\/stream\/[^/]+(?=\/|$)/, '/api/agents/chat/stream/#id'],
@@ -283,10 +282,16 @@ let redisOperationMetrics: RedisOperationMetrics = {
   recordOperation: () => undefined,
 };
 
-let unsubscribeLocatorTraversalMetrics = (): void => undefined;
+let observeLocatorTraversal: (failure: LocatorTraversalFailure) => void = () => undefined;
+
+/** Application sink supplied explicitly to content inspection callers. */
+export function reportLocatorTraversalFailure(failure: LocatorTraversalFailure): void {
+  logger.warn(`[content-filter] Locator traversal incomplete ${JSON.stringify(failure)}`, failure);
+  observeLocatorTraversal(failure);
+}
 
 const resetMetricRecorders = (): void => {
-  unsubscribeLocatorTraversalMetrics();
+  observeLocatorTraversal = () => undefined;
   openIDUserLookupMetrics = {
     recordLookup: () => undefined,
   };
@@ -535,7 +540,7 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
   const registry = new Registry();
   collectDefaultMetrics({ register: registry });
 
-  unsubscribeLocatorTraversalMetrics();
+  observeLocatorTraversal = () => undefined;
   const locatorTraversalFailuresTotal = new Counter({
     name: 'content_filter_locator_traversal_failures_total',
     help: 'Incomplete resolved file locator traversals',
@@ -549,8 +554,7 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
     buckets: [0, 1, 8, 24, 64, 256, 1024, 4096, 16384],
     registers: [registry],
   });
-  const observeLocatorTraversal = (message: unknown): void => {
-    const failure = message as LocatorTraversalFailure;
+  observeLocatorTraversal = (failure: LocatorTraversalFailure): void => {
     const labels = { operation: failure.operation, reason: failure.reason };
     locatorTraversalFailuresTotal.inc(labels);
     for (const dimension of [
@@ -562,9 +566,6 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
       locatorTraversalSize.observe({ ...labels, dimension }, failure[dimension]);
     }
   };
-  locatorTraversalFailures.subscribe(observeLocatorTraversal);
-  unsubscribeLocatorTraversalMetrics = () =>
-    locatorTraversalFailures.unsubscribe(observeLocatorTraversal);
 
   const httpRequests = new Counter({
     name: 'http_requests_total',

@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { FileConfig, FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import type { ContentTraversalLimitReason } from './adapters/nested';
+import type { LocatorTraversalReporter } from './diagnostics';
 import {
   ContentTraversalLimitError,
   escapeJsonPointer,
@@ -16,7 +17,6 @@ import {
   isDataUri,
   isLikelyEncodedPayload,
 } from './adapters/nested';
-import { recordLocatorTraversalFailure } from './diagnostics';
 
 type UninspectablePolicy = 'allow' | 'block';
 
@@ -1139,7 +1139,10 @@ function omitResolvedFileLocators(
 export function omitResolvedCanonicalFileLocators<T>(
   input: T,
   resolvedFilesById: ReadonlyMap<string, CanonicalFileInspectionFile>,
-  context: { readonly messageCount?: number } = {},
+  context: {
+    readonly messageCount?: number;
+    readonly onTraversalFailure?: LocatorTraversalReporter;
+  } = {},
 ): T {
   if (resolvedFilesById.size === 0) {
     return input;
@@ -1148,7 +1151,7 @@ export function omitResolvedCanonicalFileLocators<T>(
     return omitResolvedFileLocators(input, resolvedFilesById) as T;
   } catch (error) {
     if (error instanceof ContentTraversalLimitError && error.diagnostics != null) {
-      recordLocatorTraversalFailure({
+      context.onTraversalFailure?.({
         ...error.diagnostics,
         messageCount: context.messageCount ?? 0,
         resolvedFileCount: resolvedFilesById.size,

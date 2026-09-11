@@ -1134,6 +1134,7 @@ describe('assertModelBoundContent', () => {
   });
 
   it('inspects long stored history per message and still filters hydrated file content', () => {
+    const onTraversalFailure = jest.fn();
     const storedMessages = Array.from({ length: 58 }, (_, index) => ({
       isCreatedByUser: true,
       role: 'user',
@@ -1153,6 +1154,7 @@ describe('assertModelBoundContent', () => {
         },
       } as FiltersConfig,
       storedMessages,
+      onTraversalFailure,
       resolvedFiles: [{ file_id: 'file-owned', text: 'safe canonical content' }],
     };
 
@@ -1171,6 +1173,15 @@ describe('assertModelBoundContent', () => {
         ],
       }),
     ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(onTraversalFailure).toHaveBeenCalledTimes(1);
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        messageCount: 1,
+        resolvedFileCount: 1,
+      }),
+    );
   });
 
   it('inspects owner-resolved file content before authorizing its stored locator', () => {

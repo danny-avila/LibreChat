@@ -50,6 +50,7 @@ const {
   isContentTraversalLimitError,
   prependContentTraversalFragments,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   hasModelBoundContentProtection,
   isContentFilterError,
   getSafeErrorMetadata,
@@ -710,6 +711,7 @@ const executeResponse = async (envelope, { req, res }) => {
         : [];
       if (request.previous_response_id) {
         assertModelBoundContent({
+          onTraversalFailure: reportLocatorTraversalFailure,
           filters: appConfig?.filters,
           legacyPii: appConfig?.messageFilter?.pii,
           storedMessages: previousMessages,
@@ -1000,6 +1002,7 @@ const executeResponse = async (envelope, { req, res }) => {
       const modelBoundAgents = [...modelBoundAgentsById.values()];
       const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
         agents: modelBoundAgents,
@@ -1094,6 +1097,7 @@ const executeResponse = async (envelope, { req, res }) => {
       }
 
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
         submittedMessages: inputMessages,

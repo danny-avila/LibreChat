@@ -7,6 +7,7 @@ import { recordAgentEventActorReceiptMetric } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import {
   createMetrics,
+  reportLocatorTraversalFailure,
   instrumentMongooseQueryMetrics,
   normalizePath,
   recordAgentStartupMilestone,
@@ -147,7 +148,7 @@ describe('createMetrics', () => {
       omitResolvedCanonicalFileLocators(
         { file_id: 'PRIVATE-FILE', payload: new Array(4096) },
         new Map([['PRIVATE-FILE', { file_id: 'PRIVATE-FILE' }]]),
-        { messageCount: 58 },
+        { messageCount: 58, onTraversalFailure: reportLocatorTraversalFailure },
       ),
     ).toThrow();
     const response = await request(app).get('/metrics').set('Authorization', 'Bearer test-secret');

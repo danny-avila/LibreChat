@@ -26,6 +26,7 @@ import type {
 } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
+import type { LocatorTraversalReporter } from '../protection/diagnostics';
 import type { ConfiguredContentInspector } from '../protection/runtime';
 import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
@@ -230,6 +231,7 @@ class FatalModelBoundPolicyError extends StreamLimitExceededError {
 }
 
 export interface ModelBoundProviderContentInput {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly filters?: FiltersConfig;
   readonly legacyPii?: MessageFilterPiiConfig;
   readonly providerMessages: readonly ModelBoundProviderMessage[];
@@ -689,6 +691,7 @@ export interface InitialModelBoundAdmission {
 }
 
 export interface ModelBoundContentInput {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly filters?: FiltersConfig;
   readonly legacyPii?: MessageFilterPiiConfig;
   /** Fresh API input: every role is caller-submitted. */
@@ -3067,6 +3070,7 @@ function assertIndexedModelBoundProviderContent(
   const resolvedWorkBudgets = workBudgets ?? createProviderProjectionWorkBudgets(index);
   const projection = projectModelBoundProviderContent(input, index, resolvedWorkBudgets);
   assertModelBoundContent({
+    onTraversalFailure: input.onTraversalFailure,
     filters: input.filters,
     legacyPii: input.legacyPii,
     storedMessages: projection.storedMessages,
@@ -3162,6 +3166,7 @@ export function createModelBoundChatModelCallback(
   const resolvedFileSnapshot = snapshotBoundedProviderArray(input.resolvedFiles);
   const sourceFileIdSnapshot = snapshotBoundedSourceFileIds(input.fileIdsBySourceMessageId);
   const stableInput = {
+    onTraversalFailure: input.onTraversalFailure,
     filters: input.filters,
     legacyPii: input.legacyPii,
     storedMessages: storedMessageSnapshot.values,
@@ -3625,6 +3630,7 @@ function inspectModelBoundContent(
           input.filters,
           omitResolvedCanonicalFileLocators(projectedMessage, resolvedFilesById, {
             messageCount: input.storedMessages?.length ?? 0,
+            onTraversalFailure: input.onTraversalFailure,
           }),
         );
       }
@@ -3724,6 +3730,7 @@ function inspectModelBoundContent(
       input.filters,
       omitResolvedCanonicalFileLocators(message, resolvedFilesById, {
         messageCount: input.storedMessages?.length ?? 0,
+        onTraversalFailure: input.onTraversalFailure,
       }),
     );
     inspectFragments(messageFragments);
@@ -3750,7 +3757,10 @@ function inspectModelBoundContent(
     }
     assertInspectableFileInput(
       input.filters,
-      omitResolvedCanonicalFileLocators(agent, agentFilesById),
+      omitResolvedCanonicalFileLocators(agent, agentFilesById, {
+        onTraversalFailure: input.onTraversalFailure,
+        messageCount: input.storedMessages?.length ?? 0,
+      }),
     );
     appendExtractedContent(() => extractAgentContent(agent));
   }

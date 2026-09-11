@@ -1,4 +1,3 @@
-import { logger } from '@librechat/data-schemas';
 import { EToolResources, mergeFileConfig } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
 import {
@@ -1425,10 +1424,11 @@ describe('file content inspection policy', () => {
       },
     ],
   ] as const)('reports safe %s diagnostics for locator sanitization', (reason, makeInput) => {
-    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const report = jest.fn();
     let failure: ContentTraversalLimitError | undefined;
     try {
       omitResolvedCanonicalFileLocators(makeInput(), new Map([['owned', { file_id: 'owned' }]]), {
+        onTraversalFailure: report,
         messageCount: 58,
       });
     } catch (error) {
@@ -1443,13 +1443,13 @@ describe('file content inspection policy', () => {
       depth: expect.any(Number),
     });
     expect(failure?.body).not.toHaveProperty('diagnostics');
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith({
       ...failure?.diagnostics,
       messageCount: 58,
       resolvedFileCount: 1,
     });
-    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE-CONTENT');
+    expect(JSON.stringify(report.mock.calls)).not.toContain('PRIVATE-CONTENT');
   });
 
   it('preserves own __proto__ opaque payloads in a null-prototype inspection copy', () => {
