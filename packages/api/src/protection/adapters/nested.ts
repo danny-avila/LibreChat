@@ -131,11 +131,12 @@ export class ContentTraversalLimitError extends Error {
   public readonly code = 'content_filter_uninspectable';
   public readonly statusCode = 400;
   public readonly body: UninspectableNestedContentResponse;
+  public readonly diagnostics?: ContentTraversalDiagnostics;
 
   constructor(
     fragments: readonly TextContentFragment[] = [],
     scopes: readonly ContentTraversalScope[] = [],
-    public readonly diagnostics?: ContentTraversalDiagnostics,
+    diagnostics?: ContentTraversalDiagnostics,
   ) {
     const primaryScope = scopes.find(({ fields }) => fields.length > 0);
     const body: UninspectableNestedContentResponse = {
@@ -147,6 +148,7 @@ export class ContentTraversalLimitError extends Error {
     super(body.message);
     this.name = 'ContentTraversalLimitError';
     this.body = body;
+    this.diagnostics = diagnostics;
     CONTENT_TRAVERSAL_FRAGMENTS.set(this, fragments);
     CONTENT_TRAVERSAL_SCOPES.set(this, scopes);
     Object.setPrototypeOf(this, ContentTraversalLimitError.prototype);
