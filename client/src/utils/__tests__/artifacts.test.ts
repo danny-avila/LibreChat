@@ -716,6 +716,7 @@ describe('fileToArtifact', () => {
     expect(artifact).not.toBeNull();
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
     expect(artifact!.download).toEqual({
+      filename: 'deck.pptx',
       filepath: '/api/files/code/output/deck.pptx',
       file_id: 'fid-1',
       source: FileSources.execute_code,
@@ -1018,6 +1019,56 @@ describe('getArtifactDownloadFilename', () => {
     expect(artifact).not.toBeNull();
     expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(filename);
   });
+
+  it.each(['untitled', 'Generated artifact'])(
+    'preserves the real attachment filename %s',
+    (filename) => {
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename,
+        type: 'text/markdown',
+        text: '# Heading',
+      });
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(filename);
+    },
+  );
+
+  it('uses the heading when an attachment supplied no filename', () => {
+    const artifact = fileToArtifact({ file_id: 'file', type: 'text/markdown', text: '# Heading' });
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('Heading.md');
+  });
+
+  it('preserves sentinel filenames in older artifact metadata', () => {
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: 'text/markdown',
+          title: 'untitled',
+          content: '# Heading',
+          download: { file_id: 'file' },
+        },
+        'content.md',
+      ),
+    ).toBe('untitled');
+  });
+
+  it.each(['script.py', 'notes.txt', 'README.md', 'Dockerfile'])(
+    'distinguishes truncated preview exports of %s',
+    (filename) => {
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename,
+        text: 'Prefix\n\n…[truncated]',
+      });
+      const expected = filename.includes('.')
+        ? filename.replace(/(\.[^.]+)$/, '.preview$1')
+        : `${filename}.preview`;
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(expected);
+      expect(getArtifactDownloadFilename(artifact!, 'content.md', 'Edited prefix')).toBe(expected);
+    },
+  );
 
   it.each(['odt', 'docx', 'pptx'])('names extracted %s bytes as text after file routing', (ext) => {
     const artifact = fileToArtifact({

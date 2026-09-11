@@ -99,7 +99,11 @@ function headingText(nodes: PhrasingContent[]): string {
 }
 
 /** Names the downloaded bytes independently of the Sandpack preview file. */
-export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string): string {
+export function getArtifactDownloadFilename(
+  artifact: Artifact,
+  fileKey: string,
+  content = artifact.content,
+): string {
   const isCode = artifact.type === TOOL_ARTIFACT_TYPES.CODE;
   const isMarkdown = artifact.type === TOOL_ARTIFACT_TYPES.MARKDOWN || artifact.type === 'text/md';
   let fallback = fileKey;
@@ -110,21 +114,22 @@ export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string)
   } else if (artifact.type === TOOL_ARTIFACT_TYPES.PLAIN_TEXT) {
     fallback = 'content.txt';
   }
-  let title = artifact.title?.trim() ?? '';
-  if (title === 'Generated artifact' || title === 'untitled') {
+  let title = (artifact.download?.filename ?? artifact.title)?.trim() ?? '';
+  const hasOriginalName = artifact.download != null && artifact.download.filename !== null;
+  if (!hasOriginalName && (title === 'Generated artifact' || title === 'untitled')) {
     title = '';
   }
   const hasSourceFilename =
-    artifact.download != null &&
+    hasOriginalName &&
     title !== '' &&
     artifact.type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
     !isPreviewOnlyArtifact(artifact.type);
   if (!title && isMarkdown) {
-    const content = (artifact.content ?? '').replace(
+    const markdown = (content ?? '').replace(
       /^\uFEFF?---[^\S\r\n]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[^\S\r\n]*(?:\r?\n|$)/,
       '',
     );
-    const heading = fromMarkdown(content, {
+    const heading = fromMarkdown(markdown, {
       extensions: [gfm()],
       mdastExtensions: [gfmFromMarkdown()],
     }).children.find((node) => node.type === 'heading');
@@ -132,12 +137,18 @@ export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string)
       title = headingText(heading.children).trim();
     }
   }
-  if (!title) {
-    return fallback;
-  }
   const extension = fallback.slice(fallback.lastIndexOf('.'));
   const hasMatchingExtension = title.toLowerCase().endsWith(extension);
-  const filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
+  let filename = fallback;
+  if (title) {
+    filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
+  }
+  /* The cached extraction is a prefix, even if edits removed its marker. */
+  if (artifact.download && artifact.content?.endsWith('\n\n…[truncated]')) {
+    const dot = filename.lastIndexOf('.');
+    filename =
+      dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
+  }
   return filenamify(filename, { replacement: '_' });
 }
 
@@ -974,6 +985,7 @@ export function fileToArtifact(
      * binary — serializing `content` would hand the user the preview
      * instead of the .pptx/.xlsx/.docx. */
     download: {
+      filename: attachment.filename ?? null,
       filepath: attachment.filepath,
       file_id: attachment.file_id,
       source: attachment.source,

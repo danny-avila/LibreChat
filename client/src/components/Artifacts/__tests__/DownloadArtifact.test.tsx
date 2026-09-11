@@ -204,6 +204,81 @@ describe('DownloadArtifact', () => {
     expect(mockFileDownload).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, 'Prefix\n\n…[truncated]'])(
+    'fetches the complete original for unedited cached content (%s)',
+    async (currentCode) => {
+      mockCurrentCode = currentCode;
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename: 'large.py',
+        text: 'Prefix\n\n…[truncated]',
+        filepath: '/api/files/code/output/large.py',
+      });
+      render(<DownloadArtifact artifact={artifact!} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+      expect(mockFileDownload).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['Edited prefix', ''])(
+    'exports edits to a truncated preview with a distinct name (%s)',
+    async (edit) => {
+      mockCurrentCode = edit;
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename: 'large.py',
+        text: 'Prefix\n\n…[truncated]',
+        filepath: '/api/files/code/output/large.py',
+      });
+      render(<DownloadArtifact artifact={artifact!} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+      expect(mockFileDownload).not.toHaveBeenCalled();
+      expect(anchorClick.mock.instances[0].download).toBe('large.preview.py');
+      const blob = createObjectURL.mock.calls[0][0] as Blob;
+      expect(blob.size).toBe(edit.length);
+    },
+  );
+
+  it('names a truncated preview distinctly when the original route is unavailable', async () => {
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: 'large.txt',
+      text: 'Prefix\n\n…[truncated]',
+    });
+    render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(mockFileDownload).not.toHaveBeenCalled();
+    expect(anchorClick.mock.instances[0].download).toBe('large.preview.txt');
+  });
+
+  it('does not silently substitute a preview after an original download fails, and can retry', async () => {
+    mockFileDownload.mockResolvedValueOnce(false);
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: 'large.py',
+      text: 'Prefix\n\n…[truncated]',
+      filepath: '/api/files/code/output/large.py',
+    });
+    const { container } = render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-icon="circle-check-big"]')).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(mockFileDownload).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-icon="circle-check-big"]')).not.toBeNull();
+  });
+
   it('preserves extensionless source filenames', async () => {
     render(
       <DownloadArtifact
