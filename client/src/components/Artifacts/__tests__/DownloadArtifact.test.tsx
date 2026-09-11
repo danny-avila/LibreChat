@@ -5,6 +5,7 @@ import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import DownloadArtifact from '../DownloadArtifact';
 
 const mockFileDownload = jest.fn();
+const mockAttachmentOptions = jest.fn();
 let mockFileKey = 'index.html';
 let mockCurrentCode: string | undefined;
 
@@ -39,7 +40,10 @@ jest.mock('@librechat/client', () => {
 });
 
 jest.mock('~/components/Chat/Messages/Content/Parts/LogLink', () => ({
-  useAttachmentLink: () => ({ handleDownload: mockFileDownload }),
+  useAttachmentLink: (options: { filename: string }) => {
+    mockAttachmentOptions(options);
+    return { handleDownload: mockFileDownload };
+  },
   isLocallyStoredSource: (source?: string) =>
     ['local', 'firebase', 's3', 'cloudfront', 'azure_blob'].includes(source ?? ''),
 }));
@@ -200,9 +204,32 @@ describe('DownloadArtifact', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button'));
     });
-    expect(anchorClick.mock.instances[0].download).toBe(filename);
+    const dot = filename.lastIndexOf('.');
+    expect(anchorClick.mock.instances[0].download).toBe(
+      `${filename.slice(0, dot)}.preview${filename.slice(dot)}`,
+    );
     expect(mockFileDownload).not.toHaveBeenCalled();
   });
+
+  it.each(['untitled', 'Generated artifact', 'Component.jsx', 'notes.txt'])(
+    'keeps the exact original filename when fetching %s',
+    async (filename) => {
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename,
+        type: 'text/markdown',
+        text: 'Complete file\n\n…[truncated]',
+        filepath: '/api/files/code/output/file',
+      });
+      render(<DownloadArtifact artifact={artifact!} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+      expect(mockFileDownload).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(mockAttachmentOptions).toHaveBeenLastCalledWith(expect.objectContaining({ filename }));
+    },
+  );
 
   it.each([undefined, 'Prefix\n\n…[truncated]'])(
     'fetches the complete original for unedited cached content (%s)',
@@ -293,7 +320,7 @@ describe('DownloadArtifact', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button'));
     });
-    expect(anchorClick.mock.instances[0].download).toBe('Dockerfile');
+    expect(anchorClick.mock.instances[0].download).toBe('Dockerfile.preview');
   });
 
   it('downloads the original file (not the preview) for an office artifact and shows success', async () => {

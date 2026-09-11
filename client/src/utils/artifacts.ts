@@ -143,13 +143,14 @@ export function getArtifactDownloadFilename(
   if (title) {
     filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
   }
-  /* The cached extraction is a prefix, even if edits removed its marker. */
-  if (artifact.download && artifact.content?.endsWith('\n\n…[truncated]')) {
+  filename = filenamify(filename, { replacement: '_' });
+  /* File-backed blobs export cached preview content, not the original file. */
+  if (artifact.download) {
     const dot = filename.lastIndexOf('.');
     filename =
       dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
   }
-  return filenamify(filename, { replacement: '_' });
+  return filename;
 }
 
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {

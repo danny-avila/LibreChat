@@ -1014,10 +1014,13 @@ describe('getArtifactDownloadFilename', () => {
     ['Dockerfile', 'content.md'],
     ['Makefile', 'content.md'],
     ['notes.TXT', 'content.md'],
-  ])('preserves raw file names through routing: %s', (filename, fileKey) => {
+  ])('preserves raw file extensions in preview exports: %s', (filename, fileKey) => {
     const artifact = fileToArtifact({ file_id: 'file', filename, text: 'Raw content' });
     expect(artifact).not.toBeNull();
-    expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(filename);
+    const dot = filename.lastIndexOf('.');
+    const expected =
+      dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
+    expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(expected);
   });
 
   it.each(['untitled', 'Generated artifact'])(
@@ -1029,13 +1032,13 @@ describe('getArtifactDownloadFilename', () => {
         type: 'text/markdown',
         text: '# Heading',
       });
-      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(filename);
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`${filename}.preview`);
     },
   );
 
   it('uses the heading when an attachment supplied no filename', () => {
     const artifact = fileToArtifact({ file_id: 'file', type: 'text/markdown', text: '# Heading' });
-    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('Heading.md');
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('Heading.preview.md');
   });
 
   it('preserves sentinel filenames in older artifact metadata', () => {
@@ -1051,11 +1054,11 @@ describe('getArtifactDownloadFilename', () => {
         },
         'content.md',
       ),
-    ).toBe('untitled');
+    ).toBe('untitled.preview');
   });
 
   it.each(['script.py', 'notes.txt', 'README.md', 'Dockerfile'])(
-    'distinguishes truncated preview exports of %s',
+    'distinguishes cached preview exports of %s',
     (filename) => {
       const artifact = fileToArtifact({
         file_id: 'file',
@@ -1077,8 +1080,16 @@ describe('getArtifactDownloadFilename', () => {
       text: 'Extracted text',
     });
     expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
-    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`report.${ext}.txt`);
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`report.${ext}.preview.txt`);
   });
+
+  it.each(['Complete file', 'Complete file\n\n…[truncated]'])(
+    'does not infer truncation from cached file text: %s',
+    (content) => {
+      const artifact = fileToArtifact({ file_id: 'file', filename: 'notes.txt', text: content });
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('notes.preview.txt');
+    },
+  );
 
   it('does not read source comments as document headings', () => {
     expect(
@@ -1108,6 +1119,6 @@ describe('getArtifactDownloadFilename', () => {
         },
         'content.md',
       ),
-    ).toBe(`${'a'.repeat(97)}.py`);
+    ).toBe(`${'a'.repeat(97)}.preview.py`);
   });
 });
