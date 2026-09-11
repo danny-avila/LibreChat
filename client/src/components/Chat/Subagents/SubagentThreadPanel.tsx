@@ -48,13 +48,14 @@ import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActiv
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
+import { useConfiguredFooter } from '~/components/Chat/Footer';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { resolveSubagentAgentId } from './identity';
 import { useAgentsMapContext } from '~/Providers';
 import { isLiveSubagentStatus } from './status';
-import { renderAgentAvatar } from '~/utils';
+import { cn, renderAgentAvatar } from '~/utils';
 import { useChatSurface } from './surface';
 
 const EVENT_TASK_PAGE_SIZE = 3;
@@ -109,6 +110,7 @@ const failedControlLocaleKey = (reason?: string) => {
 };
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
+  const hasConfiguredFooter = useConfiguredFooter();
   const localize = useLocalize();
   const panelStore = useStore();
   const { showToast } = useToastContext();
@@ -1460,11 +1462,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         {activityPanel}
       </ApprovalProvider>
       {(showControlFooter || composerMode != null) && (
-        /* The main chat form's own bottom rhythm: a started conversation carries
-           no disclaimer, so its composer keeps only enough clearance to show its
-           shadow, and this one keeps the same, so the two surfaces end on one
-           line when the panel is open beside the thread. */
-        <div className="shrink-0 px-3 pb-4 pt-2">
+        /* The main chat form's own bottom rhythm, read from the same answer it
+           reads (`useConfiguredFooter`): a conversation clears the footer bar
+           when the deployment configured one and otherwise keeps only enough to
+           show the composer's shadow, and this surface keeps the same, so the
+           two end on one line when the panel is open beside the thread. */
+        <div className={cn('shrink-0 px-3 pt-2', hasConfiguredFooter ? 'pb-10' : 'pb-4')}>
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">
