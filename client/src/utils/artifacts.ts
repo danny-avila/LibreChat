@@ -3,7 +3,11 @@ import filenamify from 'filenamify';
 import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
+import {
+  excelMimeTypes,
+  shadcnComponents,
+  getDocumentFileExtension,
+} from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
@@ -96,6 +100,28 @@ function headingText(nodes: PhrasingContent[]): string {
       return '';
     })
     .join('');
+}
+
+/** Name for bytes fetched from the original attachment, rather than its cached preview. */
+export function getOriginalArtifactFilename(artifact: Artifact, fileKey: string): string {
+  if (artifact.download?.filename) {
+    return artifact.download.filename;
+  }
+  if (artifact.download?.filename === undefined) {
+    return artifact.title || fileKey;
+  }
+  const extension = getDocumentFileExtension(artifact.download.mimeType);
+  if (extension) {
+    return `content${extension}`;
+  }
+  if (isPreviewOnlyArtifact(artifact.type) || artifact.type === TOOL_ARTIFACT_TYPES.PLAIN_TEXT) {
+    return 'content.bin';
+  }
+  return getArtifactDownloadFilename(
+    { ...artifact, title: undefined, download: undefined },
+    fileKey,
+    '',
+  );
 }
 
 /** Names the downloaded bytes independently of the Sandpack preview file. */
@@ -986,7 +1012,8 @@ export function fileToArtifact(
      * binary — serializing `content` would hand the user the preview
      * instead of the .pptx/.xlsx/.docx. */
     download: {
-      filename: attachment.filename ?? null,
+      filename: attachment.filename || null,
+      mimeType: attachment.type,
       filepath: attachment.filepath,
       file_id: attachment.file_id,
       source: attachment.source,

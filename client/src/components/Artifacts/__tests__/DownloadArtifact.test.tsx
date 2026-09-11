@@ -231,6 +231,59 @@ describe('DownloadArtifact', () => {
     },
   );
 
+  it.each([
+    ['text/markdown', 'content.md', 'content.md'],
+    ['text/x-python', 'content.md', 'code.py'],
+    ['text/html', 'index.html', 'content.html'],
+    ['application/vnd.react', 'App.tsx', 'App.tsx'],
+    ['application/vnd.oasis.opendocument.text', 'content.md', 'content.odt'],
+    [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'index.html',
+      'content.docx',
+    ],
+    ['text/csv', 'index.html', 'content.csv'],
+  ])(
+    'uses an original-format fallback when %s has no filename',
+    async (type, fileKey, expected) => {
+      mockFileKey = fileKey;
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        type,
+        text: 'Preview',
+        filepath: '/api/files/code/output/file',
+      });
+      expect(artifact?.download?.filename).toBeNull();
+      render(<DownloadArtifact artifact={artifact!} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+      expect(mockFileDownload).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(mockAttachmentOptions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ filename: expected }),
+      );
+    },
+  );
+
+  it('uses a fallback for an empty attachment filename', async () => {
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: '',
+      type: 'text/markdown',
+      text: '# Heading',
+      filepath: '/api/files/code/output/file',
+    });
+    render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(mockFileDownload).toHaveBeenCalledTimes(1);
+    expect(mockAttachmentOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: 'content.md' }),
+    );
+  });
+
   it.each([undefined, 'Prefix\n\n…[truncated]'])(
     'fetches the complete original for unedited cached content (%s)',
     async (currentCode) => {

@@ -16,6 +16,7 @@ export const MERMAID_ARTIFACT_TYPE = 'application/vnd.mermaid' as const;
 export interface ArtifactDownload {
   /** Original attachment name; null means the attachment supplied no filename. */
   filename?: string | null;
+  mimeType?: string;
   filepath?: string;
   file_id?: string;
   source?: string;

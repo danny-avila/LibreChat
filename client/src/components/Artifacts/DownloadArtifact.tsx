@@ -3,10 +3,14 @@ import { Download, CircleCheckBig } from 'lucide';
 import { Button, MorphIcon } from '@librechat/client';
 import type { Artifact } from '~/common';
 import {
+  getArtifactDownloadFilename,
+  getOriginalArtifactFilename,
+  isPreviewOnlyArtifact,
+} from '~/utils/artifacts';
+import {
   useAttachmentLink,
   isLocallyStoredSource,
 } from '~/components/Chat/Messages/Content/Parts/LogLink';
-import { getArtifactDownloadFilename, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
@@ -38,7 +42,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     hasUsableRoute && (isPreviewOnlyArtifact(artifact.type) || !hasEdits);
   const { handleDownload: downloadAttachment } = useAttachmentLink({
     href: download?.filepath ?? '',
-    filename: download?.filename ?? artifact.title ?? fileName,
+    filename: getOriginalArtifactFilename(artifact, fileName),
     file_id: download?.file_id,
     user: download?.user,
     source: download?.source,

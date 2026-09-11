@@ -5,6 +5,7 @@ import {
   fileConfigSchema,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
+  getDocumentFileExtension,
   bedrockDocumentMimeTypes,
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
@@ -1993,5 +1994,19 @@ describe('agent attachment context limits', () => {
   it('validates and merges an aggregate extracted-text character limit', () => {
     expect(fileConfigSchema.safeParse({ fileContextCharLimit: 250_000 }).success).toBe(true);
     expect(mergeFileConfig({ fileContextCharLimit: 250_000 }).fileContextCharLimit).toBe(250_000);
+  });
+});
+
+describe('getDocumentFileExtension', () => {
+  it.each([
+    ['text/markdown', '.md'],
+    [' TEXT/PLAIN; charset=UTF-8', '.txt'],
+    ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+    ['application/vnd.oasis.opendocument.text', '.odt'],
+    ['text/csv', '.csv'],
+    ['application/unknown', undefined],
+    [undefined, undefined],
+  ])('resolves %s', (mimeType, expected) => {
+    expect(getDocumentFileExtension(mimeType)).toBe(expected);
   });
 });

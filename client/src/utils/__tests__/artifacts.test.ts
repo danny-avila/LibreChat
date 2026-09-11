@@ -717,6 +717,7 @@ describe('fileToArtifact', () => {
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
     expect(artifact!.download).toEqual({
       filename: 'deck.pptx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       filepath: '/api/files/code/output/deck.pptx',
       file_id: 'fid-1',
       source: FileSources.execute_code,
