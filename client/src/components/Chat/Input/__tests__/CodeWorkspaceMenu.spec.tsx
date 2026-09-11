@@ -76,6 +76,10 @@ describe('CodeWorkspaceMenu', () => {
       ...conversation,
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
+    const navigated = { ...conversation, agent_id: 'different-agent' };
+    expect(update(navigated)).toBe(navigated);
+    const differentChat = { ...conversation, conversationId: 'different-chat' };
+    expect(update(differentChat)).toBe(differentChat);
     expect(screen.getByTestId('code-workspace')).toHaveTextContent('Project A');
   });
 

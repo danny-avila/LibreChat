@@ -2440,6 +2440,22 @@ describe('Agent Methods', () => {
       expect(updated!.versions![1].code_environment_id).toBeUndefined();
     });
 
+    test('persists and restores the workspace default without retaining a later preference', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { code_workspace_id: 'project-a' });
+      expect((await getAgent({ id: agentId }))?.code_workspace_id).toBe('project-a');
+      await updateAgent({ id: agentId }, { code_workspace_id: '' });
+      expect((await getAgent({ id: agentId }))?.code_workspace_id).toBe('');
+      expect((await revertAgentVersion({ id: agentId }, 1))?.code_workspace_id).toBe('project-a');
+      expect((await revertAgentVersion({ id: agentId }, 0))?.code_workspace_id).toBeUndefined();
+    });
+
     test('should handle parameter objects correctly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

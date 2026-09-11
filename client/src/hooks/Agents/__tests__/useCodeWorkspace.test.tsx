@@ -400,6 +400,38 @@ describe('useCodeWorkspace', () => {
     expect(result.current.resolveSubmission()).toEqual({});
   });
 
+  it('requires an explicit choice when reachable agents disagree on one machine', () => {
+    const primary = {
+      ...mockAgentPermissions().agent,
+      code_workspace_id: 'project-a',
+      subagents: { enabled: true, agent_ids: ['child'] },
+    };
+    mockAgentPermissions.mockImplementation((id?: string) => ({
+      agent: id === 'agent_primary' ? primary : undefined,
+    }));
+    mockAgentsMap.mockReturnValue({
+      child: {
+        id: 'child',
+        stateful_code_sessions: true,
+        code_environment_id: 'personal-vm',
+        code_workspace_id: 'project-b',
+        tools: [Tools.execute_code],
+      },
+    });
+    const { result } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), conversationId: 'new' }),
+    );
+    expect(result.current.state).toBe('choose');
+    expect(result.current.canSubmit).toBe(false);
+    expect(
+      result.current.resolveSubmission([
+        { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      ]),
+    ).toEqual({
+      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+    });
+  });
+
   it.each(['subagent', 'handoff'])('collects every attached environment through %s', (kind) => {
     const primary = {
       id: 'agent_primary',

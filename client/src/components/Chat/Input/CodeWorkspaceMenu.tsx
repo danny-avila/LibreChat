@@ -33,17 +33,24 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
 
-  /** A single advertised root per reachable environment is an unambiguous
-   * initial choice. Once a conversation owns any binding, even a partial or
-   * stale set, only explicit user actions may replace or complete it. */
+  /** Pin resolved defaults to this chat; later preference changes cannot move it. */
   useEffect(() => {
     if (conversation?.codeWorkspaces != null || workspace.selections == null) return;
     setConversation((current) =>
-      current == null || current.codeWorkspaces != null
+      current == null ||
+      current.codeWorkspaces != null ||
+      current.conversationId !== conversation?.conversationId ||
+      current.agent_id !== conversation?.agent_id
         ? current
         : { ...current, codeWorkspaces: workspace.selections },
     );
-  }, [conversation?.codeWorkspaces, setConversation, workspace.selections]);
+  }, [
+    conversation?.codeWorkspaces,
+    conversation?.conversationId,
+    conversation?.agent_id,
+    setConversation,
+    workspace.selections,
+  ]);
 
   if (!workspace.required) return null;
 
