@@ -8,6 +8,7 @@ const DEFAULT_API_VERSION = 'preview';
 const DEFAULT_DEPLOYMENT = 'sora';
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 const ALLOWED_SIZES = ['1280x720', '720x1280'];
 const ALLOWED_SECONDS = ['4', '8', '12'];
@@ -162,8 +163,16 @@ class AzureSoraTool extends Tool {
       headers: { 'api-key': this.apiKey },
       responseType: 'arraybuffer',
       timeout: 120000,
+      maxContentLength: MAX_VIDEO_BYTES,
+      maxBodyLength: MAX_VIDEO_BYTES,
     });
-    return Buffer.from(response.data);
+    const videoBuffer = Buffer.from(response.data);
+    if (videoBuffer.length > MAX_VIDEO_BYTES) {
+      throw new Error(
+        `Azure Sora video exceeds the ${MAX_VIDEO_BYTES} byte download limit.`,
+      );
+    }
+    return videoBuffer;
   }
 
   async _call({ prompt, size = '1280x720', seconds = '4' }) {
