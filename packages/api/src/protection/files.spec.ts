@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { EToolResources, mergeFileConfig } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
 import {
@@ -18,6 +19,7 @@ import {
   UPLOAD_EXTRACTED_TEXT_PLANS,
   UninspectableFileError,
 } from './files';
+import { ContentTraversalLimitError } from './adapters/nested';
 
 describe('file content inspection policy', () => {
   it('defers extracted-text fail-close only to supported agent context extraction paths', () => {
@@ -1378,6 +1380,89 @@ describe('file content inspection policy', () => {
     ).resolves.toMatchObject({
       hydratedFiles: [liveFile],
     });
+  });
+
+  it.each([
+    [
+      'max_depth',
+      () => {
+        let value: object = {};
+        for (let i = 0; i < 26; i++) value = { child: value };
+        return value;
+      },
+    ],
+    ['max_nodes', () => [...Array.from({ length: 2047 }, () => ({ child: {} })), {}, {}]],
+    ['array_length', () => new Array(4096)],
+    [
+      'object_entries',
+      () => Object.fromEntries(Array.from({ length: 4096 }, (_, i) => [i, 'safe'])),
+    ],
+    [
+      'reflection_error',
+      () =>
+        Object.defineProperty({}, 'payload', {
+          enumerable: true,
+          get() {
+            throw new Error('PRIVATE-CONTENT');
+          },
+        }),
+    ],
+    [
+      'reflection_error',
+      () =>
+        Object.defineProperty([], '0', {
+          get() {
+            throw new Error('PRIVATE-CONTENT');
+          },
+        }),
+    ],
+    [
+      'reflection_error',
+      () => {
+        const { proxy, revoke } = Proxy.revocable({}, {});
+        revoke();
+        return proxy;
+      },
+    ],
+  ] as const)('reports safe %s diagnostics for locator sanitization', (reason, makeInput) => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    let failure: ContentTraversalLimitError | undefined;
+    try {
+      omitResolvedCanonicalFileLocators(makeInput(), new Map([['owned', { file_id: 'owned' }]]), {
+        messageCount: 58,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContentTraversalLimitError);
+      failure = error as ContentTraversalLimitError;
+    }
+    expect(failure).toBeDefined();
+    expect(failure?.diagnostics).toEqual({
+      operation: 'omit_resolved_file_locators',
+      reason,
+      visitedNodes: expect.any(Number),
+      depth: expect.any(Number),
+    });
+    expect(failure?.body).not.toHaveProperty('diagnostics');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      ...failure?.diagnostics,
+      messageCount: 58,
+      resolvedFileCount: 1,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE-CONTENT');
+  });
+
+  it('preserves own __proto__ opaque payloads in a null-prototype inspection copy', () => {
+    const input = JSON.parse('{"file_id":"owned","__proto__":{"file_id":"unresolved"}}');
+    const sanitized = omitResolvedCanonicalFileLocators(
+      input,
+      new Map([['owned', { file_id: 'owned' }]]),
+    );
+    expect(Object.getPrototypeOf(sanitized)).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(sanitized, '__proto__')).toBe(true);
+    expect(
+      getBlockedOpaqueFileField({ files: { pii: { uninspectable: 'block' } } }, sanitized),
+    ).not.toBeNull();
   });
 
   it('omits only locators that exactly match the resolved canonical row', () => {

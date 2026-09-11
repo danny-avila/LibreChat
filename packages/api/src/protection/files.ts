@@ -8,6 +8,7 @@ import {
   isPermissiveMimeConfig,
 } from 'librechat-data-provider';
 import type { FileConfig, FileFilterField, FiltersConfig } from 'librechat-data-provider';
+import type { ContentTraversalLimitReason } from './adapters/nested';
 import {
   ContentTraversalLimitError,
   escapeJsonPointer,
@@ -15,6 +16,7 @@ import {
   isDataUri,
   isLikelyEncodedPayload,
 } from './adapters/nested';
+import { recordLocatorTraversalFailure } from './diagnostics';
 
 type UninspectablePolicy = 'allow' | 'block';
 
@@ -1031,114 +1033,129 @@ function omitResolvedFileLocators(
   if (value == null || typeof value !== 'object') {
     return value;
   }
-  if (depth > MAX_OPAQUE_DEPTH) {
-    throw new ContentTraversalLimitError();
-  }
-
   const traversal = state ?? { seen: new WeakMap<object, unknown>(), visited: 0 };
-  if (traversal.visited >= MAX_OPAQUE_NODES) {
-    throw new ContentTraversalLimitError();
-  }
-  const seenValue = traversal.seen.get(value);
-  if (seenValue !== undefined) {
-    return seenValue;
-  }
-  traversal.visited++;
-
-  let valueIsArray: boolean;
+  const fail = (reason: ContentTraversalLimitReason): ContentTraversalLimitError =>
+    new ContentTraversalLimitError([], [], {
+      operation: 'omit_resolved_file_locators',
+      reason,
+      visitedNodes: traversal.visited,
+      depth,
+    });
   try {
-    valueIsArray = Array.isArray(value);
-  } catch {
-    throw new ContentTraversalLimitError();
-  }
-  if (valueIsArray) {
-    const arrayValue = value as readonly unknown[];
-    const arrayLength = captureOpaqueArrayLength(arrayValue);
-    const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
-    if (arrayLength > remainingNodes) {
-      throw new ContentTraversalLimitError();
+    if (depth > MAX_OPAQUE_DEPTH) {
+      throw fail('max_depth');
     }
-    const cloned: unknown[] = [];
+    if (traversal.visited >= MAX_OPAQUE_NODES) {
+      throw fail('max_nodes');
+    }
+    const seenValue = traversal.seen.get(value);
+    if (seenValue !== undefined) {
+      return seenValue;
+    }
+    traversal.visited++;
+
+    const valueIsArray = Array.isArray(value);
+    if (valueIsArray) {
+      const arrayValue = value as readonly unknown[];
+      const arrayLength = captureOpaqueArrayLength(arrayValue);
+      const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
+      if (arrayLength > remainingNodes) {
+        throw fail('array_length');
+      }
+      const cloned: unknown[] = [];
+      traversal.seen.set(value, cloned);
+      for (let index = 0; index < arrayLength; index++) {
+        cloned.push(
+          omitResolvedFileLocators(arrayValue[index], resolvedFilesById, depth + 1, traversal),
+        );
+      }
+      return cloned;
+    }
+
+    const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
+    const boundedEntries = getBoundedOwnEnumerableEntries(value, remainingNodes);
+    if (!boundedEntries.complete) {
+      throw fail(boundedEntries.reason ?? 'object_entries');
+    }
+    const entries = boundedEntries.entries;
+
+    const cloned = Object.create(null) as MutableUnknownDictionary;
     traversal.seen.set(value, cloned);
-    for (let index = 0; index < arrayLength; index++) {
-      cloned.push(
-        omitResolvedFileLocators(arrayValue[index], resolvedFilesById, depth + 1, traversal),
+    const fileId = entries.find(([key]) => key === 'file_id')?.[1];
+    const resolvedFile = typeof fileId === 'string' ? resolvedFilesById.get(fileId) : undefined;
+    const matchesResolvedLocator = (locator: unknown): boolean => {
+      if (typeof locator !== 'string' || resolvedFile == null) {
+        return false;
+      }
+      return (
+        resolvedFile.filepath === locator ||
+        resolvedFile.uri === locator ||
+        resolvedFile.url === locator ||
+        resolvedFile.preview === locator
       );
+    };
+
+    for (const [key, child] of entries) {
+      if (resolvedFile != null && key === 'file_id') {
+        continue;
+      }
+      if (
+        resolvedFile != null &&
+        (key === 'uri' || key === 'url' || key === 'filepath' || key === 'preview') &&
+        matchesResolvedLocator(child)
+      ) {
+        continue;
+      }
+      const childIsArray = Array.isArray(child);
+      if (key === 'file_ids' && childIsArray) {
+        const childFileIds = child as readonly unknown[];
+        const childFileIdCount = captureOpaqueArrayLength(childFileIds);
+        if (childFileIdCount > MAX_OPAQUE_NODES - traversal.visited) {
+          throw fail('array_length');
+        }
+        const unresolvedFileIds: unknown[] = [];
+        for (let index = 0; index < childFileIdCount; index++) {
+          const childFileId = childFileIds[index];
+          if (typeof childFileId !== 'string' || !resolvedFilesById.has(childFileId)) {
+            unresolvedFileIds.push(childFileId);
+          }
+        }
+        if (unresolvedFileIds.length > 0) {
+          cloned[key] = unresolvedFileIds;
+        }
+        continue;
+      }
+      cloned[key] = omitResolvedFileLocators(child, resolvedFilesById, depth + 1, traversal);
     }
     return cloned;
+  } catch (error) {
+    if (error instanceof ContentTraversalLimitError && error.diagnostics != null) {
+      throw error;
+    }
+    throw fail(error instanceof ContentTraversalLimitError ? 'array_length' : 'reflection_error');
   }
-
-  const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
-  const boundedEntries = getBoundedOwnEnumerableEntries(value, remainingNodes);
-  if (!boundedEntries.complete) {
-    throw new ContentTraversalLimitError();
-  }
-  const entries = boundedEntries.entries;
-
-  const cloned = Object.create(null) as MutableUnknownDictionary;
-  traversal.seen.set(value, cloned);
-  const fileId = entries.find(([key]) => key === 'file_id')?.[1];
-  const resolvedFile = typeof fileId === 'string' ? resolvedFilesById.get(fileId) : undefined;
-  const matchesResolvedLocator = (locator: unknown): boolean => {
-    if (typeof locator !== 'string' || resolvedFile == null) {
-      return false;
-    }
-    return (
-      resolvedFile.filepath === locator ||
-      resolvedFile.uri === locator ||
-      resolvedFile.url === locator ||
-      resolvedFile.preview === locator
-    );
-  };
-
-  for (const [key, child] of entries) {
-    if (resolvedFile != null && key === 'file_id') {
-      continue;
-    }
-    if (
-      resolvedFile != null &&
-      (key === 'uri' || key === 'url' || key === 'filepath' || key === 'preview') &&
-      matchesResolvedLocator(child)
-    ) {
-      continue;
-    }
-    let childIsArray: boolean;
-    try {
-      childIsArray = Array.isArray(child);
-    } catch {
-      throw new ContentTraversalLimitError();
-    }
-    if (key === 'file_ids' && childIsArray) {
-      const childFileIds = child as readonly unknown[];
-      const childFileIdCount = captureOpaqueArrayLength(childFileIds);
-      if (childFileIdCount > MAX_OPAQUE_NODES - traversal.visited) {
-        throw new ContentTraversalLimitError();
-      }
-      const unresolvedFileIds: unknown[] = [];
-      for (let index = 0; index < childFileIdCount; index++) {
-        const childFileId = childFileIds[index];
-        if (typeof childFileId !== 'string' || !resolvedFilesById.has(childFileId)) {
-          unresolvedFileIds.push(childFileId);
-        }
-      }
-      if (unresolvedFileIds.length > 0) {
-        cloned[key] = unresolvedFileIds;
-      }
-      continue;
-    }
-    cloned[key] = omitResolvedFileLocators(child, resolvedFilesById, depth + 1, traversal);
-  }
-  return cloned;
 }
 
 export function omitResolvedCanonicalFileLocators<T>(
   input: T,
   resolvedFilesById: ReadonlyMap<string, CanonicalFileInspectionFile>,
+  context: { readonly messageCount?: number } = {},
 ): T {
   if (resolvedFilesById.size === 0) {
     return input;
   }
-  return omitResolvedFileLocators(input, resolvedFilesById) as T;
+  try {
+    return omitResolvedFileLocators(input, resolvedFilesById) as T;
+  } catch (error) {
+    if (error instanceof ContentTraversalLimitError && error.diagnostics != null) {
+      recordLocatorTraversalFailure({
+        ...error.diagnostics,
+        messageCount: context.messageCount ?? 0,
+        resolvedFileCount: resolvedFilesById.size,
+      });
+    }
+    throw error;
+  }
 }
 
 export function allowHydratedFileReferences(
