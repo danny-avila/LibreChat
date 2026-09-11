@@ -794,7 +794,8 @@ const documentMimeExtensions: ReadonlyArray<readonly [string, readonly string[]]
 /** Preferred extension for a known document MIME type, including its leading dot. */
 export function getDocumentFileExtension(mimeType?: string): string | undefined {
   const normalized = mimeType?.split(';', 1)[0].trim().toLowerCase();
-  return documentMimeExtensions.find(([type]) => type === normalized)?.[1][0];
+  const canonical = normalized === 'text/comma-separated-values' ? 'text/csv' : normalized;
+  return documentMimeExtensions.find(([type]) => type === canonical)?.[1][0];
 }
 
 const documentMimeSet = new Set(documentMimeExtensions.map(([mimeType]) => mimeType));

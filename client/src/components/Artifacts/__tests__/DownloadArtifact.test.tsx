@@ -243,6 +243,9 @@ describe('DownloadArtifact', () => {
       'content.docx',
     ],
     ['text/csv', 'index.html', 'content.csv'],
+    ['text/comma-separated-values', 'index.html', 'content.csv'],
+    ['text/comma-separated-values; charset=utf-8', 'index.html', 'content.csv'],
+    ['application/x-dos_ms_excel', 'index.html', 'content.xls'],
   ])(
     'uses an original-format fallback when %s has no filename',
     async (type, fileKey, expected) => {
