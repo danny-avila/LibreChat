@@ -358,6 +358,28 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+/**
+ * Whether a provider-built tool is that provider's own web search.
+ *
+ * Each provider spells it differently — OpenAI `{ type: 'web_search' }`, Anthropic
+ * `{ type: 'web_search_20250305', name: 'web_search' }`, Google `{ googleSearch: {} }` —
+ * and the tool is already built by the time it reaches here, so the shape is what
+ * identifies it rather than the parameter that asked for it.
+ */
+function isProviderWebSearchTool(tool: unknown): boolean {
+  if (tool == null || typeof tool !== 'object') {
+    return false;
+  }
+  if (hasGoogleSearchTool(tool)) {
+    return true;
+  }
+  if (getToolName(tool) === Tools.web_search) {
+    return true;
+  }
+  const { type } = tool as { type?: unknown };
+  return typeof type === 'string' && type.startsWith(Tools.web_search);
+}
+
 function normalizeGoogleModelName(model: string): string {
   const normalized = model.trim().toLowerCase();
   return normalized.split('/').pop() ?? normalized;
@@ -429,20 +451,31 @@ function resolveProviderToolConflicts({
   provider,
   tools,
   toolDefinitions,
+  webSearchDenied = false,
 }: {
   provider?: string;
   tools?: unknown[];
   toolDefinitions?: LCTool[];
+  /**
+   * Whether the role denies `WEB_SEARCH.USE`. Pinning `model_parameters.web_search`
+   * to `false` is not sufficient on its own: an endpoint's `addParams` is applied
+   * after the model options and turns the provider's native search back on. The
+   * tool is stripped here instead, which holds however it was enabled.
+   */
+  webSearchDenied?: boolean;
 }): unknown[] | undefined {
   if (!tools?.length) {
     return tools;
   }
 
-  if (!hasToolDefinition(toolDefinitions, Tools.web_search)) {
+  if (!webSearchDenied && !hasToolDefinition(toolDefinitions, Tools.web_search)) {
     return tools;
   }
 
   const shouldRemoveTool = (tool: unknown): boolean => {
+    if (webSearchDenied) {
+      return isProviderWebSearchTool(tool);
+    }
     if (provider === Providers.ANTHROPIC) {
       return getToolName(tool) === Tools.web_search;
     }
@@ -463,7 +496,9 @@ function resolveProviderToolConflicts({
 
   if (removed > 0) {
     logger.debug(
-      `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
+      webSearchDenied
+        ? `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); role denies WEB_SEARCH.`
+        : `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
     );
   }
 
@@ -1129,20 +1164,27 @@ export async function initializeAgent(
    *  field is `undefined`. Leaving it unset for a denied role is therefore the
    *  state that lets the endpoint switch search on. An explicit `false` is
    *  already off and no default can revive it, so that case skips the read. */
+  let webSearchDenied = false;
   if (modelOptions.web_search !== false) {
+    /** A caller that already resolved the grant against its request passes it as
+     *  `webSearchAvailable`; trusting it is what keeps the OpenAI-compatible and
+     *  Responses routes to one role read, since they reach here with `runtime`
+     *  and no `req` to share a cache with. */
     const denied =
-      params.webSearchAvailable === false ||
-      (db.getRoleByName != null &&
-        !(
-          await resolveToolRoleGrants({
-            /** Only the memoization handle; `user` below is what is authorized,
-             *  because `runtime` is the user source and two routes pass no `req`. */
-            req: params.req as Request | undefined,
-            user,
-            getRoleByName: db.getRoleByName,
-            context: 'initializeAgent',
-          })
-        ).webSearch);
+      params.webSearchAvailable != null
+        ? params.webSearchAvailable === false
+        : db.getRoleByName != null &&
+          !(
+            await resolveToolRoleGrants({
+              /** Only the memoization handle; `user` below is what is authorized,
+               *  because `runtime` is the user source and two routes pass no `req`. */
+              req: params.req as Request | undefined,
+              user,
+              getRoleByName: db.getRoleByName,
+              context: 'initializeAgent',
+            })
+          ).webSearch;
+    webSearchDenied = denied;
     if (denied) {
       const wasRequested = modelOptions.web_search === true;
       /** Explicit `false`, never `delete` and never merely left absent: the
@@ -2002,6 +2044,7 @@ export async function initializeAgent(
     provider: agent.provider,
     tools: options.tools,
     toolDefinitions,
+    webSearchDenied,
   });
   const hasProviderTools = (providerTools?.length ?? 0) > 0;
 

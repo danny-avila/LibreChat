@@ -3987,3 +3987,92 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
 });
+
+/**
+ * Pinning `model_parameters.web_search` to `false` is not sufficient on its own:
+ * an endpoint's `addParams` is applied after the model options and turns the
+ * provider's native search back on, so the built tool is stripped as well.
+ */
+describe('initializeAgent — provider-native web search under a denied role', () => {
+  const denyRole = () =>
+    jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: { [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } },
+    });
+
+  const grantRole = () =>
+    jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: { [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true } },
+    });
+
+  const run = async (provider: Providers, nativeTool: unknown, getRoleByName: jest.Mock) => {
+    const { agent, res, loadTools, db } = createMocks({ provider, providerTools: [nativeTool] });
+    return initializeAgent(
+      {
+        req: {
+          user: { id: 'user-1', role: 'USER' },
+          config: {},
+        } as unknown as ServerRequest,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([provider]),
+        isInitialAgent: true,
+      },
+      { ...db, getRoleByName } as unknown as InitializeAgentDbMethods,
+    );
+  };
+
+  it.each([
+    ['OpenAI', Providers.OPENAI, { type: 'web_search' }],
+    ['Anthropic', Providers.ANTHROPIC, { type: 'web_search_20250305', name: 'web_search' }],
+    ['Google', Providers.GOOGLE, { googleSearch: {} }],
+  ])(
+    'strips the %s native search tool when the role denies WEB_SEARCH',
+    async (_label, provider, nativeTool) => {
+      const result = await run(provider as Providers, nativeTool, denyRole());
+      expect(result.tools).not.toContainEqual(nativeTool);
+    },
+  );
+
+  it.each([
+    ['OpenAI', Providers.OPENAI, { type: 'web_search' }],
+    ['Anthropic', Providers.ANTHROPIC, { type: 'web_search_20250305', name: 'web_search' }],
+    ['Google', Providers.GOOGLE, { googleSearch: {} }],
+  ])(
+    'keeps the %s native search tool when the role grants WEB_SEARCH',
+    async (_label, provider, nativeTool) => {
+      const result = await run(provider as Providers, nativeTool, grantRole());
+      expect(result.tools).toContainEqual(nativeTool);
+    },
+  );
+
+  /** The caller-supplied grant is authoritative, so a route that already resolved
+   *  it against its request does not trigger a second role read. */
+  it('honors webSearchAvailable false without reading the role again', async () => {
+    const { agent, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+      providerTools: [{ type: 'web_search' }],
+    });
+    const getRoleByName = grantRole();
+
+    const result = await initializeAgent(
+      {
+        req: { user: { id: 'user-1', role: 'USER' }, config: {} } as unknown as ServerRequest,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        webSearchAvailable: false,
+      },
+      { ...db, getRoleByName } as unknown as InitializeAgentDbMethods,
+    );
+
+    expect(result.tools).not.toContainEqual({ type: 'web_search' });
+    expect(getRoleByName).not.toHaveBeenCalled();
+  });
+});
