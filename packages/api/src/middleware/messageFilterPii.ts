@@ -174,6 +174,7 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
     if (options.getFiles != null && hasActiveFilePolicy(filters)) {
       try {
         const fileInspection = await resolveCanonicalFileReferences({
+          messageCount: 1,
           onTraversalFailure: options.onTraversalFailure,
           filters,
           input: req.body,

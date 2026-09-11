@@ -343,6 +343,7 @@ export async function preflightAssistantRunContent({
   let resolvedFiles: CanonicalFileInspectionFile[] = [];
   if (hasActiveFilePolicy(filters)) {
     const fileInspection = await resolveCanonicalFileReferences({
+      messageCount: storedMessages.length,
       onTraversalFailure,
       filters,
       input: content,
@@ -393,6 +394,7 @@ export async function preflightAssistantUserMessageContent({
           file_ids: [...new Set([...(message.file_ids ?? []), ...fileIds])],
         };
   const fileInspection = await resolveCanonicalFileReferences({
+    messageCount: 1,
     onTraversalFailure,
     filters,
     input: inspectionMessage,

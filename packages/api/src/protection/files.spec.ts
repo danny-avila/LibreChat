@@ -1017,6 +1017,7 @@ describe('file content inspection policy', () => {
         user: { id: 'user-1' },
         getFiles,
         onTraversalFailure,
+        messageCount: input.messages.length,
       }),
     ).resolves.toMatchObject({
       sanitizedInput: input,
@@ -1026,6 +1027,7 @@ describe('file content inspection policy', () => {
       expect.objectContaining({
         operation: 'omit_resolved_file_locators',
         reason: 'array_length',
+        messageCount: 4200,
         resolvedFileCount: 1,
       }),
     );

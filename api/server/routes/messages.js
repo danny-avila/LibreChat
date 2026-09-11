@@ -41,6 +41,8 @@ const db = require('~/models');
 
 const router = express.Router();
 const filterStoredMessageContent = createContentFilter({
+  messageCount: 1,
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   getMessageRoles: (req) => [req.body?.role],
   getOpaqueFileInput: (req) => req.body,
@@ -48,6 +50,7 @@ const filterStoredMessageContent = createContentFilter({
   extract: (req) => extractStoredMessageContent(req.body),
 });
 const filterFeedbackContent = createContentFilter({
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   extract: (req) => extractFeedbackContent(req.body),
 });

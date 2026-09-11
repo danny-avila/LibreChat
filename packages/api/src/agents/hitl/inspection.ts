@@ -376,6 +376,7 @@ async function getResumeFileInspection(
     fileReferenceInputs: input.fileReferenceInputs ?? [],
   };
   const fileInspection = await resolveCanonicalFileReferences({
+    messageCount: storedMessages.length + input.submittedMessages.length,
     onTraversalFailure: input.onTraversalFailure,
     filters,
     input: originalInput,

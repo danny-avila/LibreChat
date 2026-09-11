@@ -99,6 +99,7 @@ export function isContentFilterError(
 }
 
 export interface CreateContentFilterOptions {
+  readonly messageCount?: number;
   readonly onTraversalFailure?: LocatorTraversalReporter;
   getFilters: (req: ServerRequest) => FiltersConfig | undefined;
   getLegacyPii?: (req: ServerRequest) => MessageFilterPiiConfig | undefined;
@@ -127,6 +128,7 @@ export function createContentFilter(options: CreateContentFilterOptions): Reques
     if (opaqueFileInput != null && options.getFiles != null && hasActiveFilePolicy(filters)) {
       try {
         const fileInspection = await resolveCanonicalFileReferences({
+          messageCount: options.messageCount,
           onTraversalFailure: options.onTraversalFailure,
           filters,
           input: opaqueFileInput,

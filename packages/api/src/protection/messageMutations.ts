@@ -68,6 +68,7 @@ export async function assertStoredMessageBranchAllowed(
   let resolvedFiles: NonNullable<ModelBoundContentInput['resolvedFiles']> = [];
   if (hasActiveFilePolicy(input.filters)) {
     const inspection = await resolveCanonicalFileReferences({
+      messageCount: 1,
       onTraversalFailure: dependencies.onTraversalFailure,
       filters: input.filters,
       input: input.message,

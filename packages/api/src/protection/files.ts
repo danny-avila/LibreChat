@@ -93,6 +93,7 @@ export type GetCanonicalFilesForInspection = (
 ) => Promise<CanonicalFileInspectionFile[] | null | undefined>;
 
 export interface CanonicalFileReferenceInspectionInput<T> {
+  readonly messageCount?: number;
   readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly filters?: FiltersConfig;
   readonly input: T;
@@ -1276,6 +1277,7 @@ export async function resolveCanonicalFileReferences<T>(
   if (currentById.size > 0) {
     try {
       sanitizedInput = omitResolvedCanonicalFileLocators(input.input, currentById, {
+        messageCount: input.messageCount,
         onTraversalFailure: input.onTraversalFailure,
       });
     } catch (error) {

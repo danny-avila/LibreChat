@@ -56,6 +56,7 @@ describe('conversation import protection', () => {
       expect.objectContaining({
         operation: 'omit_resolved_file_locators',
         reason: 'array_length',
+        messageCount: 1,
         resolvedFileCount: 1,
       }),
     );

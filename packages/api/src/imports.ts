@@ -133,6 +133,7 @@ async function inspectConversationImportContent(
   let resolvedFiles: CanonicalFileInspectionFile[] = [];
   if (hasActiveFilePolicy(activeFilters)) {
     const fileInspection = await resolveCanonicalFileReferences({
+      messageCount: snapshot.messages.length,
       onTraversalFailure: context.onTraversalFailure,
       filters: activeFilters,
       input: snapshot.messages,
