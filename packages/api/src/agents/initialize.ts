@@ -380,6 +380,33 @@ function isProviderWebSearchTool(tool: unknown): boolean {
   return typeof type === 'string' && type.startsWith(Tools.web_search);
 }
 
+/**
+ * Removes OpenRouter's web-search plugin from a built LLM config.
+ *
+ * OpenRouter does not receive web search as a tool — `getOpenAIConfig` encodes it
+ * as `modelKwargs.plugins: [{ id: 'web' }]` and pushes no tool at all — so the
+ * provider-tool filter has nothing to strip on that path and the plugin would
+ * still reach the provider for a role that was denied.
+ */
+function stripWebSearchPlugin(llmConfig: Record<string, unknown>): number {
+  const modelKwargs = llmConfig.modelKwargs as { plugins?: unknown } | undefined;
+  if (modelKwargs == null || !Array.isArray(modelKwargs.plugins)) {
+    return 0;
+  }
+  const plugins = modelKwargs.plugins as Array<{ id?: unknown }>;
+  const remaining = plugins.filter((plugin) => plugin?.id !== 'web');
+  const removed = plugins.length - remaining.length;
+  if (removed === 0) {
+    return 0;
+  }
+  if (remaining.length > 0) {
+    modelKwargs.plugins = remaining;
+  } else {
+    delete modelKwargs.plugins;
+  }
+  return removed;
+}
+
 function normalizeGoogleModelName(model: string): string {
   const normalized = model.trim().toLowerCase();
   return normalized.split('/').pop() ?? normalized;
@@ -2040,6 +2067,11 @@ export async function initializeAgent(
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
+    logger.debug(
+      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
+    );
+  }
   const providerTools = resolveProviderToolConflicts({
     provider: agent.provider,
     tools: options.tools,

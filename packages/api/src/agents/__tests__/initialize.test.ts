@@ -4049,6 +4049,44 @@ describe('initializeAgent — provider-native web search under a denied role', (
     },
   );
 
+  /** OpenRouter receives web search as `modelKwargs.plugins`, not as a tool, so the
+   *  provider-tool filter has nothing to strip on that path. */
+  it('strips the OpenRouter web search plugin when the role denies WEB_SEARCH', async () => {
+    const { agent, res, loadTools, db } = createMocks({ provider: Providers.OPENAI });
+    const lastGetOptions = () => {
+      const results = mockGetProviderConfig.mock.results;
+      return results[results.length - 1].value as { getOptions: jest.Mock };
+    };
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: {
+          model: agent.model,
+          modelKwargs: { plugins: [{ id: 'web' }, { id: 'file-parser' }] },
+        },
+      }),
+      overrideProvider: Providers.OPENAI,
+    });
+
+    await initializeAgent(
+      {
+        req: { user: { id: 'user-1', role: 'USER' }, config: {} } as unknown as ServerRequest,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        webSearchAvailable: false,
+      },
+      db,
+    );
+
+    const { llmConfig } = (await lastGetOptions().getOptions.mock.results[0].value) as {
+      llmConfig: { modelKwargs?: { plugins?: Array<{ id?: string }> } };
+    };
+    expect(llmConfig.modelKwargs?.plugins).toEqual([{ id: 'file-parser' }]);
+  });
+
   /** The caller-supplied grant is authoritative, so a route that already resolved
    *  it against its request does not trigger a second role read. */
   it('honors webSearchAvailable false without reading the role again', async () => {

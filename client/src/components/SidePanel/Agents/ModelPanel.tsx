@@ -85,7 +85,9 @@ export default function ModelPanel({
       }),
     [endpointsConfig, model, provider, startupConfig, webSearchAllowed],
   );
-  const { parameters } = parameterSettings;
+  /** The rendered set omits role-gated controls; `parameterSettings.parameters`
+   *  stays complete so the pruning effect below still recognises them. */
+  const { visibleParameters: parameters } = parameterSettings;
 
   /**
    * Prunes `model_parameters` entries that no longer have a visible control (e.g. a
