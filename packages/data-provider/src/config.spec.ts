@@ -1,6 +1,7 @@
 import type { TEndpointsConfig } from './types';
 import {
   allowedAddressesSchema,
+  agentsEndpointSchema,
   bedrockModels,
   configSchema,
   excludedKeys,
@@ -9,6 +10,7 @@ import {
 } from './config';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
+import { modelSpecSubagentsSchema } from './models';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -19,6 +21,70 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('run-scoped subagent file sharing config', () => {
+  it('preserves the opt-in default for existing configurations', () => {
+    expect(agentsEndpointSchema.parse({}).fileSharing).toBeUndefined();
+    expect(agentsEndpointSchema.parse({ fileSharing: {} }).fileSharing).toEqual({
+      enabled: false,
+      allowSiblingSharing: false,
+      maxFiles: 100,
+      maxPrivateBytes: 268_435_456,
+      ttlMs: 3_600_000,
+    });
+    expect(modelSpecSubagentsSchema.parse({ enabled: true })).not.toHaveProperty('shareFiles');
+  });
+
+  it('retains explicit deployment and model-spec opt-ins through config parsing', () => {
+    const result = configSchema.parse({
+      version: '1.2.1',
+      endpoints: {
+        agents: {
+          fileSharing: {
+            enabled: true,
+            allowSiblingSharing: true,
+            maxFiles: 50,
+            maxPrivateBytes: 16_777_216,
+            ttlMs: 120_000,
+          },
+        },
+      },
+      modelSpecs: {
+        list: [
+          {
+            name: 'file-team',
+            label: 'File team',
+            preset: { endpoint: EModelEndpoint.agents },
+            subagents: { enabled: true, shareFiles: true },
+          },
+        ],
+      },
+    });
+    expect(result.endpoints?.agents?.fileSharing).toEqual({
+      enabled: true,
+      allowSiblingSharing: true,
+      maxFiles: 50,
+      maxPrivateBytes: 16_777_216,
+      ttlMs: 120_000,
+    });
+    expect(result.modelSpecs?.list[0].subagents?.shareFiles).toBe(true);
+    expect(modelSpecSubagentsSchema.parse({ shareFiles: false }).shareFiles).toBe(false);
+  });
+
+  it.each([
+    { maxFiles: 0 },
+    { maxFiles: 1_001 },
+    { maxFiles: 1.5 },
+    { maxPrivateBytes: 0 },
+    { maxPrivateBytes: 10_737_418_241 },
+    { maxPrivateBytes: 1.5 },
+    { ttlMs: 0 },
+    { ttlMs: 86_400_001 },
+    { ttlMs: 1.5 },
+  ])('rejects invalid manifest limits: %j', (fileSharing) => {
+    expect(agentsEndpointSchema.safeParse({ fileSharing }).success).toBe(false);
+  });
+});
 
 describe('scheduled MCP preflight config', () => {
   it('bounds the separate readiness admission pool', () => {

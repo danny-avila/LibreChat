@@ -24,6 +24,7 @@ const {
   extractCodeArtifactText,
   extractCodeArtifactRawText,
   extractCodeArtifactInspectionText,
+  prepareCodeOutputBufferForInspection,
   getBoundedCodeOutputByteLimit,
   getExtractedTextFormat,
   getStorageMetadata,
@@ -38,6 +39,7 @@ const {
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   normalizeArtifactDeliveryFailure,
+  createCodeOutputPersistence,
   resolveDownloadPath,
 } = require('@librechat/api');
 const {
@@ -315,66 +317,16 @@ const prepareCodeOutputForInspection = async ({
     executionProfile,
     executionRouteKey,
   });
-  const safeName = sanitizeArtifactPath(name);
-  const fallbackType = inferMimeType(name, '') || 'application/octet-stream';
-  if (!inspectContent) {
-    return {
-      buffer,
-      file: {
-        name,
-        filename: safeName,
-        type: fallbackType,
-      },
-    };
-  }
-  if (buffer.length > fileSizeLimit) {
-    return {
-      buffer,
-      extractedTextComplete: false,
-      file: {
-        name,
-        filename: safeName,
-        type: fallbackType,
-      },
-    };
-  }
-
-  const detectedType = await determineFileType(buffer, true);
-  const detectedMimeType = detectedType?.mime?.toLowerCase();
-  if (detectedMimeType?.startsWith('image/')) {
-    return {
-      buffer,
-      extractedTextComplete: false,
-      file: {
-        name,
-        filename: safeName,
-        type: detectedMimeType,
-      },
-    };
-  }
-
-  const leafName = path.basename(safeName);
-  const unknownText = detectedType == null ? extractCodeArtifactRawText(buffer, 'utf8-text') : null;
-  const mimeType = unknownText != null ? 'text/plain' : (detectedMimeType ?? fallbackType);
-  const category = unknownText != null ? 'utf8-text' : classifyCodeArtifact(leafName, mimeType);
-  const content = unknownText ?? extractCodeArtifactRawText(buffer, category);
-  const extractedText = await extractCodeArtifactInspectionText(
+  return prepareCodeOutputBufferForInspection({
     buffer,
-    leafName,
-    mimeType,
-    category,
-  );
-  return {
-    buffer,
-    extractedTextComplete: extractedText.complete,
-    file: {
-      name,
-      filename: safeName,
-      type: mimeType,
-      content: content ?? undefined,
-      extractedText: extractedText.text ?? undefined,
-    },
-  };
+    name,
+    fileSizeLimit,
+    inspectContent,
+    determineFileType,
+    classify: classifyCodeArtifact,
+    extractRawText: extractCodeArtifactRawText,
+    extractInspectionText: extractCodeArtifactInspectionText,
+  });
 };
 
 /**
@@ -687,6 +639,7 @@ const processCodeOutput = async ({
   bridgeWorkerId,
   preparedBuffer,
   downloadFallback,
+  publication,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
@@ -792,8 +745,13 @@ const processCodeOutput = async ({
      */
     const sourceDispatchedAt = freshClaimAfter ?? Date.now();
 
+    const outputPersistence = createCodeOutputPersistence({
+      publication,
+      claim: claimCodeFile,
+      commit: commitCodeFile,
+    });
     const newFileId = v4();
-    const claimed = await claimCodeFile({
+    const claimed = await outputPersistence.claim({
       filename: safeName,
       conversationId,
       file_id: newFileId,
@@ -841,7 +799,7 @@ const processCodeOutput = async ({
      * key are a narrow residual that per-file locking would be needed to
      * close. Foreground writes keep the unconditional `createFile` path.
      */
-    const commitCodeFile = async (fileData) => {
+    async function commitCodeFile(fileData) {
       if (freshClaimAfter == null) {
         await createFile(fileData, true);
         return true;
@@ -859,7 +817,7 @@ const processCodeOutput = async ({
         return false;
       }
       return true;
-    };
+    }
 
     /**
      * Preserve the original `messageId` on update. Each `processCodeOutput`
@@ -889,6 +847,18 @@ const processCodeOutput = async ({
         storageKey: _file.storageKey,
         storageRegion: _file.storageRegion,
       });
+      outputPersistence.trackStored({
+        ..._file,
+        ...storageMetadata,
+        file_id,
+        filepath: _file.filepath,
+        filename: safeName,
+        type: `image/${appConfig.imageOutputType}`,
+        user: req.user.id,
+        tenantId: req.user.tenantId,
+        conversationId,
+        source: appConfig.fileStrategy,
+      });
       const file = {
         ..._file,
         filepath,
@@ -905,11 +875,11 @@ const processCodeOutput = async ({
         createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
-        context: FileContext.execute_code,
+        context: outputPersistence.context,
         metadata: codeEnvMetadata,
         ...(await retentionExpiryPromise),
       };
-      if (!(await commitCodeFile(file))) {
+      if (!(await outputPersistence.commit(file))) {
         return null;
       }
       return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
@@ -974,6 +944,18 @@ const processCodeOutput = async ({
       filepath,
       source: appConfig.fileStrategy,
     });
+    outputPersistence.trackStored({
+      file_id,
+      filepath,
+      ...storageMetadata,
+      filename: safeName,
+      type: mimeType,
+      bytes: buffer.length,
+      user: req.user.id,
+      tenantId: req.user.tenantId,
+      conversationId,
+      source: appConfig.fileStrategy,
+    });
 
     /* `classifyCodeArtifact` and `extractCodeArtifactText` make
      * extension/bare-name decisions on the input string. With the
@@ -1012,7 +994,7 @@ const processCodeOutput = async ({
       updatedAt: formattedDate,
       metadata: codeEnvMetadata,
       source: appConfig.fileStrategy,
-      context: FileContext.execute_code,
+      context: outputPersistence.context,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
       ...(await retentionExpiryPromise),
@@ -1040,14 +1022,22 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      if (!(await commitCodeFile(file))) {
+      if (!(await outputPersistence.commit(file))) {
         return null;
       }
       return {
         file: Object.assign(file, { messageId, toolCallId, agentId }),
-        finalize: () =>
-          finalizePreview({ buffer, leafName, mimeType, category, file_id, previewRevision }),
-        previewRevision,
+        finalize: outputPersistence.finalize(file, () =>
+          finalizePreview({
+            buffer,
+            leafName,
+            mimeType,
+            category,
+            file_id: file.file_id,
+            previewRevision: file.previewRevision,
+          }),
+        ),
+        previewRevision: file.previewRevision,
       };
     }
 
@@ -1080,7 +1070,7 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    if (!(await commitCodeFile(file))) {
+    if (!(await outputPersistence.commit(file))) {
       return null;
     }
     return { file: Object.assign(file, { messageId, toolCallId, agentId }) };

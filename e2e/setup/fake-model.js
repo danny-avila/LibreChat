@@ -59,6 +59,11 @@ const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
 const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
 const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
+const RUN_FILES_MARKER = 'E2E_RUN_FILES:';
+const RUN_FILES_CHILD_MARKER = 'E2E_RUN_FILES_CHILD:';
+const RUN_FILES_FOLLOWUP_MARKER = 'E2E_RUN_FILES_FOLLOWUP:';
+const RUN_FILE_VERSIONS_MARKER = 'E2E_RUN_FILE_VERSIONS:';
+const RUN_FILE_VERSIONS_CHILD_MARKER = 'E2E_RUN_FILE_VERSIONS_CHILD:';
 const SUBAGENT_MODEL_OVERRIDE_ERROR =
   '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
   'StandardGraph.setSubagentModelOverride';
@@ -1410,6 +1415,288 @@ function subagentResultResponses(text) {
   };
 }
 
+function findRunFile(value, filename) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  if ((value.filename ?? value.name) === filename) {
+    const id = value.artifact_id ?? value.file_id ?? value.id;
+    if (typeof id === 'string' && id.length > 0) {
+      return { ...value, id };
+    }
+  }
+  for (const child of Object.values(value)) {
+    const match = findRunFile(child, filename);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function parseRunFileResult(message) {
+  try {
+    return JSON.parse(getContentText(message?.content));
+  } catch {
+    return null;
+  }
+}
+
+function runFilesResponses(text) {
+  const followup = getMarkerValue(text, RUN_FILES_FOLLOWUP_MARKER);
+  if (followup) {
+    const [label, fileId] = followup.split(':');
+    const callId = `call_e2e_run_files_followup_${label}`;
+    return {
+      responses: [''],
+      resolveInvocation: (messages) => {
+        const result = findLastToolMessage(messages, callId);
+        if (!result) {
+          return {
+            response: '',
+            toolCalls: [{ id: callId, name: 'list_run_files', args: {}, type: 'tool_call' }],
+          };
+        }
+        const file = findRunFile(parseRunFileResult(result), `e2e-run-files-${label}.csv`);
+        return {
+          response:
+            file?.id === fileId
+              ? `E2E run file followup ${fileId}`
+              : `E2E run files failed: followup missing ${fileId}: ${getContentText(result.content)}`,
+        };
+      },
+    };
+  }
+
+  const marker = getMarkerValue(text, RUN_FILES_MARKER);
+  if (!marker) {
+    return null;
+  }
+  const [childId, label] = marker.split(':');
+  if (!childId || !/^[A-Za-z0-9-]+$/.test(label ?? '')) {
+    return { responses: ['E2E run files failed: malformed scenario marker'] };
+  }
+  const childPrompt = `${RUN_FILES_CHILD_MARKER}${label}`;
+  const inputName = `e2e-run-files-${label}.pdf`;
+  const outputName = `e2e-run-files-${label}.csv`;
+  const call = (phase, name, args = {}) => ({
+    response: '',
+    toolCalls: [{ id: `call_e2e_run_files_${label}_${phase}`, name, args, type: 'tool_call' }],
+  });
+  const resultFor = (messages, phase) =>
+    findLastToolMessage(messages, `call_e2e_run_files_${label}_${phase}`);
+  const failure = (reason, message) => ({
+    response: `E2E run files failed: ${reason}: ${getContentText(message?.content)}`,
+  });
+
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const isChild = messages.some(
+        (message) =>
+          ['human', 'user'].includes(messageType(message)) &&
+          getContentText(message.content).includes(childPrompt),
+      );
+      if (isChild) {
+        const inputs = resultFor(messages, 'inputs');
+        if (!inputs) return call('inputs', 'list_run_files');
+        if (!findRunFile(parseRunFileResult(inputs), inputName)) {
+          return failure('child cannot see current PDF', inputs);
+        }
+        const search = resultFor(messages, 'search');
+        if (!search) return call('search', 'file_search', { query: `e2e ${label}` });
+        const code = resultFor(messages, 'code');
+        if (!code) {
+          return call('code', 'bash_tool', {
+            command: `printf 'source,count\\npdf,1\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_ARTIFACT:${label}`,
+          });
+        }
+        const catalog = resultFor(messages, 'artifacts');
+        if (!catalog) return call('artifacts', 'list_run_files');
+        const artifact = findRunFile(parseRunFileResult(catalog), outputName);
+        if (!artifact) return failure('child output was not staged', catalog);
+        const publication = resultFor(messages, 'publish');
+        if (!publication) return call('publish', 'publish_artifact', { artifact_id: artifact.id });
+        const published = findRunFile(parseRunFileResult(publication), outputName);
+        if (!published) return failure('publication returned no durable file', publication);
+        return { response: `E2E run file published ${published.id}` };
+      }
+
+      const child = resultFor(messages, 'delegate');
+      if (!child) {
+        return call('delegate', 'subagent', {
+          description: childPrompt,
+          subagent_type: childId,
+        });
+      }
+      const fileId = getContentText(child.content).match(/E2E run file published ([\w.:-]+)/)?.[1];
+      if (!fileId) return failure('child returned no published reference', child);
+      const catalog = resultFor(messages, 'parent');
+      if (!catalog) return call('parent', 'list_run_files');
+      const file = findRunFile(parseRunFileResult(catalog), outputName);
+      if (file?.id !== fileId) return failure('parent cannot see the published reference', catalog);
+      return { response: `E2E run files complete ${label} file=${fileId}` };
+    },
+  };
+}
+
+function runFileVersionsResponses(text) {
+  const marker = getMarkerValue(text, RUN_FILE_VERSIONS_MARKER);
+  if (!marker) return null;
+  const [childId, label] = marker.split(':');
+  if (!childId || !/^[A-Za-z0-9-]+$/.test(label ?? '')) {
+    return { responses: ['E2E run file versions failed: malformed scenario marker'] };
+  }
+  const childPrompt = `${RUN_FILE_VERSIONS_CHILD_MARKER}${label}`;
+  const outputName = 'analysis.csv';
+  const call = (phase, name, args = {}) => ({
+    response: '',
+    toolCalls: [
+      { id: `call_e2e_run_file_versions_${label}_${phase}`, name, args, type: 'tool_call' },
+    ],
+  });
+  const resultFor = (messages, phase) =>
+    findLastToolMessage(messages, `call_e2e_run_file_versions_${label}_${phase}`);
+  const artifactsFor = (message) =>
+    (parseRunFileResult(message)?.artifacts ?? []).filter(
+      (artifact) => artifact.filename === outputName && typeof artifact.artifact_id === 'string',
+    );
+  const failure = (reason, message) => ({
+    response: `E2E run file versions failed: ${reason}: ${getContentText(message?.content)}`,
+  });
+
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const isChild = messages.some(
+        (message) =>
+          ['human', 'user'].includes(messageType(message)) &&
+          getContentText(message.content).includes(childPrompt),
+      );
+      if (isChild) {
+        const inputs = resultFor(messages, 'inputs');
+        if (!inputs) return call('inputs', 'list_run_files');
+        const inputCatalog = parseRunFileResult(inputs);
+        if (
+          !findRunFile(inputCatalog?.files, `e2e-run-file-versions-${label}.pdf`) ||
+          !findRunFile(inputCatalog?.files, `e2e-run-file-versions-${label}.csv`)
+        ) {
+          return failure('child cannot see both current inputs', inputs);
+        }
+        const search = resultFor(messages, 'search');
+        if (!search) return call('search', 'file_search', { query: `e2e ${label}` });
+        const firstWrite = resultFor(messages, 'write_v1');
+        if (!firstWrite) {
+          return call('write_v1', 'bash_tool', {
+            command: `printf 'version,total\\n1,30\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:write-v1`,
+          });
+        }
+        const firstCatalog = resultFor(messages, 'after_v1');
+        if (!firstCatalog) return call('after_v1', 'list_run_files');
+        const initialIds = new Set(artifactsFor(inputs).map((artifact) => artifact.artifact_id));
+        const firstArtifact = artifactsFor(firstCatalog).find(
+          (artifact) => !initialIds.has(artifact.artifact_id),
+        );
+        if (!firstArtifact) return failure('first write has no private artifact', firstCatalog);
+        const inspection = resultFor(messages, 'inspect');
+        if (!inspection) {
+          return call('inspect', 'bash_tool', {
+            command: `cat /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:inspect`,
+          });
+        }
+        if (!getContentText(inspection.content).includes('version,total\n1,30')) {
+          return failure('later Bash call cannot read version one', inspection);
+        }
+        const inspectionCatalog = resultFor(messages, 'after_inspect');
+        if (!inspectionCatalog) return call('after_inspect', 'list_run_files');
+        const inspectedIds = new Set(
+          artifactsFor(inspectionCatalog).map((artifact) => artifact.artifact_id),
+        );
+        if (!inspectedIds.has(firstArtifact.artifact_id)) {
+          return failure('inspection retired the original artifact ID', inspectionCatalog);
+        }
+        const secondWrite = resultFor(messages, 'write_v2');
+        if (!secondWrite) {
+          return call('write_v2', 'bash_tool', {
+            command: `printf 'version,total\\n2,35\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:write-v2`,
+          });
+        }
+        const secondCatalog = resultFor(messages, 'after_v2');
+        if (!secondCatalog) return call('after_v2', 'list_run_files');
+        const secondArtifacts = artifactsFor(secondCatalog);
+        if (
+          !secondArtifacts.some((artifact) => artifact.artifact_id === firstArtifact.artifact_id)
+        ) {
+          return failure('overwrite retired the original artifact ID', secondCatalog);
+        }
+        const secondArtifact = secondArtifacts.find(
+          (artifact) => !inspectedIds.has(artifact.artifact_id),
+        );
+        if (!secondArtifact) return failure('changed write has no new artifact ID', secondCatalog);
+        const firstPublication = resultFor(messages, 'publish_v1');
+        if (!firstPublication) {
+          return call('publish_v1', 'publish_artifact', { artifact_id: firstArtifact.artifact_id });
+        }
+        const firstPublished = findRunFile(parseRunFileResult(firstPublication), outputName);
+        if (!firstPublished) return failure('version one publication failed', firstPublication);
+        const remainingCatalog = resultFor(messages, 'after_publish_v1');
+        if (!remainingCatalog) return call('after_publish_v1', 'list_run_files');
+        if (
+          !artifactsFor(remainingCatalog).some(
+            (artifact) => artifact.artifact_id === secondArtifact.artifact_id,
+          )
+        ) {
+          return failure('publishing version one retired version two', remainingCatalog);
+        }
+        const secondPublication = resultFor(messages, 'publish_v2');
+        if (!secondPublication) {
+          return call('publish_v2', 'publish_artifact', {
+            artifact_id: secondArtifact.artifact_id,
+          });
+        }
+        const secondPublished = findRunFile(parseRunFileResult(secondPublication), outputName);
+        if (!secondPublished || secondPublished.id === firstPublished.id) {
+          return failure('version two has no distinct durable file', secondPublication);
+        }
+        return {
+          response:
+            `E2E run file versions published v1=${firstPublished.id} v2=${secondPublished.id} ` +
+            `artifact_v1=${firstArtifact.artifact_id} artifact_v2=${secondArtifact.artifact_id}`,
+        };
+      }
+
+      const child = resultFor(messages, 'delegate');
+      if (!child) {
+        return call('delegate', 'subagent', {
+          description: childPrompt,
+          subagent_type: childId,
+        });
+      }
+      const proof = getContentText(child.content).match(
+        /E2E run file versions published v1=([\w.:-]+) v2=([\w.:-]+) artifact_v1=([\w.:-]+) artifact_v2=([\w.:-]+)/,
+      );
+      if (!proof) return failure('child returned no version publications', child);
+      const catalog = resultFor(messages, 'parent');
+      if (!catalog) return call('parent', 'list_run_files');
+      const parentFiles = parseRunFileResult(catalog)?.files ?? [];
+      if (
+        ![proof[1], proof[2]].every((fileId) =>
+          parentFiles.some((file) => file.file_id === fileId && file.filename === outputName),
+        )
+      ) {
+        return failure('parent cannot see both published versions', catalog);
+      }
+      return {
+        response:
+          `E2E run file versions complete ${label} v1=${proof[1]} v2=${proof[2]} ` +
+          `artifact_v1=${proof[3]} artifact_v2=${proof[4]}`,
+      };
+    },
+  };
+}
+
 function parseSubagentActivityMarker(text) {
   const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
   const separator = value.indexOf(':');
@@ -2417,6 +2704,16 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const backgroundCompletion = backgroundCompletionResponses(text);
   if (backgroundCompletion) {
     return backgroundCompletion;
+  }
+
+  const runFileVersions = runFileVersionsResponses(text);
+  if (runFileVersions) {
+    return runFileVersions;
+  }
+
+  const runFiles = runFilesResponses(text);
+  if (runFiles) {
+    return runFiles;
   }
 
   const subagentActivity = subagentActivityResponses(text);

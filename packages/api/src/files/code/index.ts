@@ -6,5 +6,8 @@ export * from './extract';
 export * from './form';
 export * from './identity';
 export * from './image';
+export * from './inspection';
 export * from './preflight';
 export * from './priming';
+export * from './publication';
+export * from './runSnapshot';

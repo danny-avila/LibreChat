@@ -1,7 +1,15 @@
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { createHash } from 'crypto';
+import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
+import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
-import type { CodeEnvRef } from 'librechat-data-provider';
-import type { IMongoFile } from '~/types/file';
+import type {
+  IMongoFile,
+  RunArtifactFile,
+  RunArtifactClaim,
+  RunArtifactScope,
+  RunArtifactRunScope,
+  PublishRunArtifactInput,
+} from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
 
@@ -38,8 +46,88 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   return scopedFilter;
 }
 
+type PlainFileDocument = Omit<TFile, 'user' | '_id'> & {
+  user: IMongoFile['user'];
+  _id?: IMongoFile['_id'];
+};
+
+type RunArtifactDocument = Omit<RunArtifactFile, 'user' | '_id'> & PlainFileDocument;
+
+function runArtifactFilter(scope: RunArtifactRunScope): FilterQuery<IMongoFile> {
+  const required = [scope.userId, scope.conversationId, scope.runId];
+  if (required.some((value) => typeof value !== 'string' || value.trim().length === 0)) {
+    throw new Error('A complete run artifact owner scope is required');
+  }
+  if (scope.tenantId != null && scope.tenantId.trim().length === 0) {
+    throw new Error('An empty run artifact tenant is invalid');
+  }
+  return {
+    user: scope.userId,
+    tenantId: scope.tenantId ?? null,
+    conversationId: scope.conversationId,
+    context: FileContext.run_artifact,
+    'metadata.runFile.runId': scope.runId,
+  };
+}
+
+function runArtifactIdentityFilter(scope: RunArtifactScope): FilterQuery<IMongoFile> {
+  const filter = runArtifactFilter(scope);
+  if (
+    [scope.executionId, scope.agentId, scope.sourceFileId].some(
+      (value) => typeof value !== 'string' || value.trim().length === 0,
+    )
+  ) {
+    throw new Error('A complete run artifact execution scope is required');
+  }
+  return {
+    ...filter,
+    'metadata.runFile.executionId': scope.executionId,
+    'metadata.runFile.agentId': scope.agentId,
+    'metadata.runFile.sourceFileId': scope.sourceFileId,
+  };
+}
+
+/** A versioned, scoped UUID reserves no incomplete file document or downloadable bytes. */
+function runArtifactFileId(scope: RunArtifactScope): string {
+  const bytes = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'librechat-run-artifact:v1',
+        scope.userId,
+        scope.tenantId ?? null,
+        scope.conversationId,
+        scope.runId,
+        scope.executionId,
+        scope.agentId,
+        scope.sourceFileId,
+      ]),
+    )
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function serializeRunArtifact(
+  file: RunArtifactDocument,
+  scope?: RunArtifactScope,
+): RunArtifactFile {
+  if (scope != null && file.metadata.runFile.agentId !== scope.agentId) {
+    throw new Error('The run artifact belongs to a different producing agent');
+  }
+  const { _id, user, ...fields } = file;
+  return { ...fields, user: user.toString(), ...(_id == null ? {} : { _id: String(_id) }) };
+}
+
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')): {
+  getRunFileCandidates: (fileIds: readonly string[], tenantId?: string | null) => Promise<TFile[]>;
+  claimRunArtifactFile: (scope: RunArtifactScope) => Promise<RunArtifactClaim>;
+  publishRunArtifactFile: (input: PublishRunArtifactInput) => Promise<RunArtifactFile>;
+  findRunArtifactFile: (scope: RunArtifactScope) => Promise<RunArtifactFile | null>;
+  listRunArtifacts: (scope: RunArtifactRunScope) => Promise<RunArtifactFile[]>;
   findFileById: (file_id: string, options?: Record<string, unknown>) => Promise<IMongoFile | null>;
   getFiles: (
     filter: FilterQuery<IMongoFile>,
@@ -123,6 +211,134 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ) => Promise<number>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
 } {
+  /** Hydrates only host-selected IDs; the caller applies its existing agent-file authorization. */
+  async function getRunFileCandidates(
+    fileIds: readonly string[],
+    tenantId?: string | null,
+  ): Promise<TFile[]> {
+    if (fileIds.length === 0) {
+      return [];
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const files = await File.find({
+      file_id: { $in: fileIds },
+      tenantId: tenantId ?? null,
+    }).lean<PlainFileDocument[]>();
+    return files.map(({ user, _id, ...file }) => ({
+      ...file,
+      user: String(user),
+      embedded: file.embedded === true,
+      ...(_id == null ? {} : { _id: String(_id) }),
+    }));
+  }
+
+  async function findRunArtifactFile(scope: RunArtifactScope): Promise<RunArtifactFile | null> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const file = await File.findOne(runArtifactIdentityFilter(scope)).lean<RunArtifactDocument>();
+    return file == null ? null : serializeRunArtifact(file, scope);
+  }
+
+  async function listRunArtifacts(scope: RunArtifactRunScope): Promise<RunArtifactFile[]> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const files = await File.find(runArtifactFilter(scope))
+      .sort({ createdAt: 1, file_id: 1 })
+      .lean<RunArtifactDocument[]>();
+    return files.map((file) => serializeRunArtifact(file));
+  }
+
+  async function claimRunArtifactFile(scope: RunArtifactScope): Promise<RunArtifactClaim> {
+    const file = await findRunArtifactFile(scope);
+    return file == null ? { file_id: runArtifactFileId(scope) } : { file_id: file.file_id, file };
+  }
+
+  /** Publishes one complete storage result. Retried writers cannot replace its bytes or grants. */
+  async function publishRunArtifactFile({
+    scope,
+    file,
+    provenance,
+  }: PublishRunArtifactInput): Promise<RunArtifactFile> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const filter = runArtifactIdentityFilter(scope);
+    if (
+      provenance.runId !== scope.runId ||
+      provenance.executionId !== scope.executionId ||
+      provenance.agentId !== scope.agentId ||
+      provenance.sourceFileId !== scope.sourceFileId ||
+      !Number.isFinite(Date.parse(provenance.publishedAt))
+    ) {
+      throw new Error('Run artifact provenance does not match its publication scope');
+    }
+    if (
+      !file.filepath ||
+      !file.filename ||
+      !file.type ||
+      file.source === FileSources.execute_code ||
+      !Number.isSafeInteger(file.bytes) ||
+      file.bytes < 0
+    ) {
+      throw new Error('A durable stored file is required to publish a run artifact');
+    }
+    const now = new Date();
+    const insert = {
+      filename: file.filename,
+      filepath: file.filepath,
+      bytes: file.bytes,
+      type: file.type,
+      storageKey: file.storageKey,
+      storageRegion: file.storageRegion,
+      text: file.text,
+      textFormat: file.textFormat,
+      status: file.status,
+      previewError: file.previewError,
+      previewRevision: file.previewRevision,
+      width: file.width,
+      height: file.height,
+      messageId: file.messageId,
+      expiredAt: file.expiredAt,
+      file_id: runArtifactFileId(scope),
+      user: scope.userId,
+      tenantId: scope.tenantId ?? undefined,
+      conversationId: scope.conversationId,
+      context: FileContext.run_artifact,
+      object: 'file',
+      source: file.source ?? FileSources.local,
+      embedded: false,
+      usage: 1,
+      llmDeliveryPath: file.llmDeliveryPath ?? 'none',
+      metadata: {
+        ...file.metadata,
+        // The source is a private execution object. Consumers must provision the
+        // immutable durable copy, never reuse that potentially mutable source.
+        codeEnvRef: undefined,
+        codeEnvRefs: undefined,
+        embeddedEntities: undefined,
+        destinationChosen: false,
+        runFile: provenance,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      const published = await File.findOneAndUpdate(
+        filter,
+        { $setOnInsert: insert },
+        { upsert: true, new: true, runValidators: true, timestamps: false },
+      ).lean<RunArtifactDocument>();
+      if (published == null) {
+        throw new Error('Run artifact publication did not produce a file');
+      }
+      return serializeRunArtifact(published, scope);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 11000) {
+        const existing = await findRunArtifactFile(scope);
+        if (existing != null) {
+          return existing;
+        }
+      }
+      throw error;
+    }
+  }
+
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -964,6 +1180,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   return {
+    getRunFileCandidates,
+    claimRunArtifactFile,
+    publishRunArtifactFile,
+    findRunArtifactFile,
+    listRunArtifacts,
     findFileById,
     getFiles,
     getExpiredFiles,

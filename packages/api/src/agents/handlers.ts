@@ -13,6 +13,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  SubagentExecutionContext,
   CallerCapabilityProjectionSnapshot,
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
@@ -39,6 +40,7 @@ import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
+import type { RunFileSession } from './files/session';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -76,6 +78,7 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
+  isCodeFileToolName,
   isCodeSessionToolName,
 } from './tools';
 import {
@@ -182,6 +185,8 @@ export interface EventActorDetachedActionLifecycle {
 }
 
 export interface ToolEndCallbackMetadata {
+  /** SDK-authored lineage for artifacts generated inside a child execution. */
+  executionContext?: SubagentExecutionContext;
   run_id?: string;
   thread_id?: string;
   [key: string]: unknown;
@@ -240,6 +245,8 @@ export interface ToolExecuteOptions {
     callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
     /** Effective cancellation signal for this tool-execute batch. */
     signal?: AbortSignal,
+    /** SDK-authored lineage; never derive child identity from saved agent IDs. */
+    executionContext?: SubagentExecutionContext,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -247,6 +254,8 @@ export interface ToolExecuteOptions {
   }>;
   /** Trusted detached-subagent task scope for polling and parent controls. */
   subagentTasks?: SubagentTaskConfig;
+  /** Shared-file grants and tool contexts scoped to the executing run instance. */
+  runFiles?: Pick<RunFileSession, 'isActive' | 'prepareTools' | 'withCodeExecution'>;
   /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
   ordinaryToolCancellation?: boolean;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
@@ -260,6 +269,7 @@ export interface ToolExecuteOptions {
     toolNames: string[],
     agentId?: string,
     signal?: AbortSignal,
+    executionContext?: SubagentExecutionContext,
   ) => Promise<CodeEnvFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
@@ -5242,6 +5252,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    runFiles,
     ordinaryToolCancellation = false,
     provisionFiles,
   } = options;
@@ -5251,12 +5262,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       const {
         toolCalls,
         agentId,
-        configurable,
-        metadata,
+        configurable: incomingConfigurable,
+        metadata: incomingMetadata,
         signal: eventRunSignal,
         resolve,
         reject,
       } = data;
+      const executionContext = (
+        data as ToolExecuteBatchRequest & { executionContext?: SubagentExecutionContext }
+      ).executionContext;
+      // Only the SDK-owned batch field may establish a child execution. Runtime
+      // configurable and callback metadata can otherwise carry inherited values.
+      const configurable: Record<string, unknown> | undefined =
+        incomingConfigurable == null ? undefined : { ...incomingConfigurable, executionContext };
+      const metadata: Record<string, unknown> | undefined =
+        incomingMetadata == null && executionContext == null
+          ? undefined
+          : { ...incomingMetadata, executionContext };
       let eventRunId: string | undefined;
       if (typeof metadata?.run_id === 'string') {
         eventRunId = metadata.run_id;
@@ -5325,8 +5347,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
 
+            const runFileSharingActive = runFiles?.isActive() === true;
+            if (runFileSharingActive) {
+              if (!agentId) throw new Error('Shared-file tools require an executing agent.');
+              await runFiles!.prepareTools(
+                agentId,
+                executionContext,
+                runSignal ?? new AbortController().signal,
+              );
+            }
             const provisionedCodeFiles = provisionFiles
-              ? await provisionFiles(toolNames, agentId, runSignal)
+              ? await provisionFiles(toolNames, agentId, runSignal, executionContext)
               : undefined;
 
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
@@ -5335,6 +5366,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               callerCapabilityProjection,
               runSignal,
+              executionContext,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -5342,6 +5374,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            if (mergedConfigurable != null) mergedConfigurable.executionContext = executionContext;
             /* The graph populated each call's code-session context from the sessions that
              * existed at run start, before this batch provisioned anything, and nothing
              * downstream refreshes it. buildToolCallConfig reads `_injected_files` from
@@ -5349,7 +5382,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
              * a sandbox that cannot see the file. */
             if (provisionedCodeFiles && provisionedCodeFiles.length > 0) {
               for (const tc of allowedToolCalls) {
-                if (!isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !(runFileSharingActive && isCodeFileToolName(tc.name))
+                ) {
                   continue;
                 }
                 const merged = mergeCodeFilesIntoContext(
@@ -5364,6 +5400,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            if (runFileSharingActive && executionContext != null) {
+              for (const tc of allowedToolCalls) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !isCodeFileToolName(tc.name)
+                )
+                  continue;
+                if (!runtimeSessionHint || codeExecutionContext?.environmentType === 'attached') {
+                  throw new Error('This child execution has no isolated file workspace.');
+                }
+                // SDK tool configs may still carry a parent's runtime hint. The
+                // host prepared this partition using the authorized child identity.
+                tc.runtimeSessionHint = runtimeSessionHint;
+              }
+            }
             const executionRouteKey =
               codeExecutionContext?.executionRouteKey ?? codeExecutionContext?.executionProfile;
             const sandboxConversationId =
@@ -6465,6 +6516,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   });
                 }
 
+                const usesCodeFiles =
+                  isCodeFileToolName(tc.name) ||
+                  isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+                if (runFileSharingActive && usesCodeFiles && isBackgroundRequested(tc.args)) {
+                  return reportResult(
+                    errorResult(tc, 'Shared-file code tools require foreground execution.'),
+                  );
+                }
+
                 if (
                   backgroundToolSet.has(tc.name) &&
                   isBackgroundRequested(tc.args) &&
@@ -7015,9 +7075,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
 
+                const executeWithFileScope = (sandboxContext?: SandboxSessionContext) =>
+                  runFileSharingActive && usesCodeFiles && runFiles != null && agentId != null
+                    ? runFiles.withCodeExecution(
+                        agentId,
+                        executionContext,
+                        runSignal ?? new AbortController().signal,
+                        () => execute(sandboxContext),
+                      )
+                    : execute(sandboxContext);
                 const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
-                  return reportResult(await execute());
+                  return reportResult(await executeWithFileScope());
                 }
                 let sandboxContext: SandboxSessionContext | undefined;
                 if (queueKey.startsWith('sandbox:')) {
@@ -7028,8 +7097,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 }
                 const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
                 const resultPromise = previous.then(
-                  () => execute(sandboxContext),
-                  () => execute(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
                 );
                 authoringQueues.set(
                   queueKey,

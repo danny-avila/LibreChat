@@ -589,6 +589,15 @@ endpoints:
   #   # (optional) Maximum explicit subagents per agent, for both the flat list and
   #   # graph definitions. Defaults to 10; hard cap 50.
   #   maxSubagents: 20
+  #   # (optional) Shared files during an active agent run. Each delegating agent must
+  #   # also opt in with subagents.shareFiles. Inputs are read-only; outputs stay
+  #   # private until explicitly published. Published files remain downloadable.
+  #   fileSharing:
+  #     enabled: false
+  #     allowSiblingSharing: false # permit explicitly named sibling/descendant recipients
+  #     maxFiles: 100 # manifest capacity, 1–1000
+  #     maxPrivateBytes: 268435456 # aggregate private output snapshots, 256 MiB
+  #     ttlMs: 3600000 # active manifest lifetime, at most 24 hours
   #   # (optional) Maximum concurrent Code API uploads per route and user. Defaults to 3.
   #   codeApiUploadConcurrency: 3
   #   # (optional) Maximum total time spent waiting on Code API rate limits. Defaults to 20000 ms.

@@ -1,5 +1,60 @@
 import { Document, Types } from 'mongoose';
-import type { CodeEnvRef, CodeEnvRefMap } from 'librechat-data-provider';
+import type { CodeEnvRef, CodeEnvRefMap, RunFileProvenance, TFile } from 'librechat-data-provider';
+
+export type RunArtifactRunScope = {
+  userId: string;
+  tenantId?: string | null;
+  conversationId: string;
+  runId: string;
+};
+
+export type RunArtifactScope = RunArtifactRunScope & {
+  executionId: string;
+  agentId: string;
+  sourceFileId: string;
+};
+
+export type RunArtifactFile = TFile & {
+  conversationId: string;
+  messageId?: string;
+  expiredAt?: Date | null;
+  previewRevision?: string;
+  metadata: NonNullable<TFile['metadata']> & { runFile: RunFileProvenance };
+};
+
+export type RunArtifactContent = Pick<
+  TFile,
+  | 'filename'
+  | 'filepath'
+  | 'bytes'
+  | 'type'
+  | 'source'
+  | 'storageKey'
+  | 'storageRegion'
+  | 'text'
+  | 'textFormat'
+  | 'width'
+  | 'height'
+  | 'status'
+  | 'previewError'
+  | 'llmDeliveryPath'
+> & {
+  messageId?: string;
+  expiredAt?: Date | null;
+  previewRevision?: string;
+  metadata?: Omit<NonNullable<TFile['metadata']>, 'runFile'>;
+};
+
+export type PublishRunArtifactInput = {
+  scope: RunArtifactScope;
+  file: RunArtifactContent;
+  provenance: RunFileProvenance;
+};
+
+export type RunArtifactClaim = {
+  file_id: string;
+  file?: RunArtifactFile;
+};
 
 export interface IMongoFile extends Omit<Document, 'model'> {
   user: Types.ObjectId;
@@ -63,6 +118,7 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   width?: number;
   height?: number;
   metadata?: {
+    runFile?: RunFileProvenance;
     /**
      * Code-environment cache pointer for files re-uploadable to
      * codeapi (chat attachments, agent tool resources, code-output

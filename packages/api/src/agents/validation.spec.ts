@@ -261,6 +261,17 @@ describe('agentCreateSchema with subagents', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each([true, false])('preserves the explicit file sharing choice %s', (shareFiles) => {
+    const result = agentCreateSchema.parse({
+      ...base,
+      subagents: { enabled: true, shareFiles },
+    });
+    expect(result.subagents?.shareFiles).toBe(shareFiles);
+    expect(agentUpdateSchema.parse({ subagents: { shareFiles } }).subagents?.shareFiles).toBe(
+      shareFiles,
+    );
+  });
+
   it('accepts the current-agent placeholder in a graph subagent', () => {
     const result = agentCreateSchema.safeParse({
       ...base,

@@ -1,0 +1,206 @@
+import { formatMessage } from '@librechat/agents';
+import { HumanMessage } from '@librechat/agents/langchain';
+import {
+  FileSources,
+  EModelEndpoint,
+  mergeFileConfig,
+  getEndpointFileConfig,
+  isBedrockDocumentType,
+  resolveUseResponsesApi,
+  isSpeechProviderConfigured,
+  resolveUploadLLMDeliveryPath,
+} from 'librechat-data-provider';
+import type { TFile, ImageDetail } from 'librechat-data-provider';
+import type { BaseMessage } from '@librechat/agents/langchain';
+import type { ServerRequest, StrategyFunctions } from '~/types';
+import type { TokenCountFn } from '~/utils/text';
+import { assertAgentAttachmentLimits, AgentAttachmentPolicyError } from '../attachments';
+import { assertModelBoundContent } from '~/middleware/modelBoundContent';
+import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
+import { countTokens } from '~/utils/tokenizer';
+
+type ContentBlock = Exclude<BaseMessage['content'], string>[number];
+
+/** The already loaded child configuration; storage documents never cross this boundary. */
+export interface RunFileEncodingAgent {
+  provider: string;
+  endpoint?: string | null;
+  model?: string | null;
+  model_parameters?: { model?: string; useResponsesApi?: boolean };
+  imageDetail?: ImageDetail;
+  agentContextAttachments?: readonly TFile[];
+}
+
+export interface RunFileEncodingParams {
+  provider: string;
+  endpoint: string;
+  model?: string;
+  useResponsesApi?: boolean;
+  imageDetail?: ImageDetail;
+}
+
+type MediaEncoder<T> = (
+  req: ServerRequest,
+  files: TFile[],
+  params: RunFileEncodingParams,
+  getStrategyFunctions: (source: string) => StrategyFunctions,
+) => Promise<T>;
+
+/** Adapters bind the existing attachment encoders to the host's storage strategies. */
+export interface RunFileMessageEncoderDeps {
+  req: ServerRequest;
+  getAgent: (agentId: string) => RunFileEncodingAgent | undefined;
+  encodeImages: MediaEncoder<{ image_urls: ContentBlock[] }>;
+  encodeDocuments: MediaEncoder<{ documents: ContentBlock[] }>;
+  encodeAudios: MediaEncoder<{ audios: ContentBlock[] }>;
+  encodeVideos: MediaEncoder<{ videos: ContentBlock[] }>;
+  getStrategyFunctions: (source: string) => StrategyFunctions;
+  extractText: (params: {
+    attachments: TFile[];
+    req: ServerRequest;
+    tokenCountFn: TokenCountFn;
+  }) => Promise<string | undefined>;
+}
+
+/** Encodes authorized run files for the receiving child, without provisioning new resources. */
+export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
+  return async (files: TFile[], agentId: string): Promise<BaseMessage[]> => {
+    if (files.length === 0) {
+      return [];
+    }
+    const agent = deps.getAgent(agentId);
+    if (!agent) {
+      throw new Error('The target agent is not available for shared file delivery.');
+    }
+    const endpoint = agent.endpoint ?? agent.provider;
+    const fileConfig = mergeFileConfig(deps.req.config?.fileConfig);
+    const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+    const useResponsesApi = resolveUseResponsesApi(agent.model_parameters?.useResponsesApi);
+    const params: RunFileEncodingParams = {
+      provider: agent.provider,
+      endpoint,
+      model: agent.model_parameters?.model ?? agent.model ?? undefined,
+      useResponsesApi,
+      imageDetail: agent.imageDetail,
+    };
+
+    const resolveDelivery = (file: TFile): TFile => {
+      if (file.llmDeliveryPath == null || file.metadata?.destinationChosen === true) {
+        return file;
+      }
+      return {
+        ...file,
+        llmDeliveryPath: resolveUploadLLMDeliveryPath({
+          mimeType: file.metadata?.routingMimeType ?? file.type,
+          endpointConfig,
+          fileConfig,
+          endpoint,
+          useResponsesApi,
+          sttConfigured: isSpeechProviderConfigured(deps.req.config?.speech?.stt),
+        }),
+      };
+    };
+    const sharedFiles = files.map(resolveDelivery);
+    const compatibleFiles = filterFilesByEndpointRuntimeConfig(deps.req.config, {
+      files: sharedFiles,
+      endpoint,
+      skipTotalSizeLimit: true,
+      preserveTextSources: true,
+    });
+    if (compatibleFiles.length !== sharedFiles.length) {
+      throw new AgentAttachmentPolicyError();
+    }
+    const budgetFiles = new Map(
+      [...(agent.agentContextAttachments ?? []).map(resolveDelivery), ...sharedFiles].map(
+        (file) => [file.file_id, file] as const,
+      ),
+    );
+    assertAgentAttachmentLimits({ attachments: budgetFiles.values(), req: deps.req, endpoint });
+    assertModelBoundContent({ filters: deps.req.config?.filters, files: sharedFiles });
+
+    const images: TFile[] = [];
+    const documents: TFile[] = [];
+    const audios: TFile[] = [];
+    const videos: TFile[] = [];
+    const textFiles: TFile[] = [];
+    for (const file of sharedFiles) {
+      const deliveryPath = file.llmDeliveryPath;
+      if (deliveryPath === 'none') {
+        continue;
+      }
+      if (deliveryPath === 'text' && !file.text) {
+        throw new Error(
+          `Shared file "${file.filename}" requires extracted text for this agent. Attach a text version or use an agent that supports the original file.`,
+        );
+      }
+      if (deliveryPath == null || deliveryPath === 'text') {
+        textFiles.push(file);
+      }
+      if ((file.source ?? FileSources.local) === FileSources.text || deliveryPath === 'text') {
+        continue;
+      }
+      /* Provisioning may add tool references to native files. Only legacy records use
+       * those references to decide whether their bytes belong in the prompt. */
+      if (
+        deliveryPath !== 'provider' &&
+        (file.embedded === true ||
+          file.metadata?.codeEnvRef != null ||
+          file.metadata?.codeEnvRefs != null ||
+          file.metadata?.fileIdentifier != null)
+      ) {
+        continue;
+      }
+      if (file.type.startsWith('image/')) {
+        images.push(file);
+      } else if (
+        file.type === 'application/pdf' ||
+        (agent.provider === EModelEndpoint.bedrock && isBedrockDocumentType(file.type))
+      ) {
+        documents.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        audios.push(file);
+      } else if (file.type.startsWith('video/')) {
+        videos.push(file);
+      } else if (
+        endpointConfig.supportedMimeTypes &&
+        fileConfig.checkType?.(file.type, endpointConfig.supportedMimeTypes)
+      ) {
+        documents.push(file);
+      }
+    }
+
+    const encode = <T>(encoder: MediaEncoder<T>, inputs: TFile[], empty: T): Promise<T> =>
+      inputs.length > 0
+        ? encoder(deps.req, inputs, params, deps.getStrategyFunctions)
+        : Promise.resolve(empty);
+    const [imageResult, documentResult, audioResult, videoResult, text] = await Promise.all([
+      encode(deps.encodeImages, images, { image_urls: [] }),
+      encode(deps.encodeDocuments, documents, { documents: [] }),
+      encode(deps.encodeAudios, audios, { audios: [] }),
+      encode(deps.encodeVideos, videos, { videos: [] }),
+      textFiles.length > 0
+        ? deps.extractText({ attachments: textFiles, req: deps.req, tokenCountFn: countTokens })
+        : Promise.resolve(undefined),
+    ]);
+    if (
+      !text &&
+      imageResult.image_urls.length === 0 &&
+      documentResult.documents.length === 0 &&
+      audioResult.audios.length === 0 &&
+      videoResult.videos.length === 0
+    ) {
+      return [];
+    }
+    const formatted = formatMessage({
+      message: {
+        role: 'user',
+        content: text ?? 'Read-only files shared for this task.',
+        image_urls: imageResult.image_urls,
+        documents: documentResult.documents,
+        audios: audioResult.audios,
+        videos: videoResult.videos,
+      } as Parameters<typeof formatMessage>[0]['message'],
+    });
+    return [new HumanMessage({ content: formatted.content as BaseMessage['content'] })];
+  };
+}

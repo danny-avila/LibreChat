@@ -95,6 +95,9 @@ endpoints:
   # Default capabilities plus run_in_background (off by default upstream) so the
   # background tool-call e2e can opt an MCP tool into detached dispatch.
   agents:
+    fileSharing:
+      enabled: true
+      allowSiblingSharing: true
     capabilities:
       - deferred_tools
       - execute_code

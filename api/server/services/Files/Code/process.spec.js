@@ -64,6 +64,9 @@ const mockParseSandboxImageChunk = jest.fn((response) => response);
 const passthroughWithTimeout = async (promise) => promise;
 jest.mock('@librechat/api', () => {
   return {
+    createCodeOutputPersistence: jest.requireActual('@librechat/api').createCodeOutputPersistence,
+    prepareCodeOutputBufferForInspection:
+      jest.requireActual('@librechat/api').prepareCodeOutputBufferForInspection,
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     /* Behaviourally identical to the real predicate in
@@ -401,6 +404,149 @@ describe('Code Process', () => {
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
       expect(createFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('published run artifacts', () => {
+    const scope = {
+      userId: 'user-123',
+      conversationId: 'conv-123',
+      runId: 'parent-run',
+      executionId: 'child-run',
+      agentId: 'child-agent',
+      sourceFileId: 'file-id-123',
+    };
+    const provenance = {
+      runId: scope.runId,
+      executionId: scope.executionId,
+      agentId: scope.agentId,
+      sourceFileId: scope.sourceFileId,
+      parentExecutionId: 'parent-execution',
+      publishedAt: '2026-09-11T16:00:00.000Z',
+      inputFileIds: ['input-pdf'],
+    };
+
+    it('stores the existing output pipeline result through the publication boundary', async () => {
+      const publish = jest.fn(async ({ file }) => ({
+        ...file,
+        file_id: 'published-id',
+        user: scope.userId,
+        conversationId: scope.conversationId,
+        context: FileContext.run_artifact,
+        metadata: { ...file.metadata, runFile: provenance },
+      }));
+      const discard = jest.fn();
+      const result = await processCodeOutput({
+        ...baseParams,
+        preparedBuffer: Buffer.from('report data'),
+        publication: { scope, provenance, publish, find: jest.fn(), discard },
+      });
+      expect(result.file).toMatchObject({
+        file_id: 'published-id',
+        filename: baseParams.name,
+        context: FileContext.run_artifact,
+        metadata: { runFile: provenance },
+      });
+      expect(publish).toHaveBeenCalledWith(expect.objectContaining({ scope, provenance }));
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+      expect(discard).not.toHaveBeenCalled();
+    });
+
+    it('finalizes office previews against the canonical published file identity', async () => {
+      mockHasOfficeHtmlPath.mockReturnValueOnce(true);
+      const publish = jest.fn(async ({ file }) => ({
+        ...file,
+        file_id: 'published-office-id',
+        user: scope.userId,
+        conversationId: scope.conversationId,
+        context: FileContext.run_artifact,
+        metadata: { ...file.metadata, runFile: provenance },
+      }));
+      const result = await processCodeOutput({
+        ...baseParams,
+        name: 'report.csv',
+        preparedBuffer: Buffer.from('a,b\n1,2'),
+        publication: { scope, provenance, publish, find: jest.fn(), discard: jest.fn() },
+      });
+      expect(result.file.file_id).toBe('published-office-id');
+      expect(result.file.status).toBe('pending');
+      await result.finalize();
+      expect(require('~/models').updateFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'published-office-id' }),
+        { previewRevision: result.previewRevision },
+      );
+    });
+
+    it('cleans a stored publication attempt when classification fails before metadata commit', async () => {
+      const { createRunArtifactPublisher } = jest.requireActual('@librechat/api');
+      const discard = jest.fn(async () => undefined);
+      const publishRunArtifactFile = jest.fn();
+      mockClassifyCodeArtifact.mockImplementationOnce(() => {
+        throw new Error('Classification failed after storage');
+      });
+      const publish = createRunArtifactPublisher({
+        claimRunArtifactFile: async () => ({ file_id: 'published-id' }),
+        publishRunArtifactFile,
+        findRunArtifactFile: async () => null,
+        processCodeOutput: (input) => processCodeOutput({ ...input, req: mockReq }),
+        prepare: async () => Buffer.from('report data'),
+        discard,
+        finalize: jest.fn(),
+      });
+      await expect(
+        publish({
+          scope,
+          provenance,
+          artifact: { id: baseParams.id, name: baseParams.name, sessionId: baseParams.session_id },
+        }),
+      ).rejects.toThrow('durable storage');
+      expect(publishRunArtifactFile).not.toHaveBeenCalled();
+      expect(discard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'mock-uuid-1234',
+          filepath: '/uploads/mock-file-path.txt',
+          metadata: undefined,
+        }),
+      );
+      expect(discard).toHaveBeenCalledTimes(1);
+    });
+
+    it('cleans a generated image cancelled after conversion without publishing it', async () => {
+      const { createRunArtifactPublisher } = jest.requireActual('@librechat/api');
+      const controller = new AbortController();
+      const discard = jest.fn(async () => undefined);
+      const publishRunArtifactFile = jest.fn();
+      convertImage.mockImplementationOnce(async () => {
+        controller.abort(new Error('Publication generation expired'));
+        return { filepath: '/uploads/generated.webp', bytes: 12, width: 2, height: 2 };
+      });
+      const publish = createRunArtifactPublisher({
+        claimRunArtifactFile: async () => ({ file_id: 'published-id' }),
+        publishRunArtifactFile,
+        findRunArtifactFile: async () => null,
+        processCodeOutput: (input) => processCodeOutput({ ...input, req: mockReq }),
+        prepare: async () => Buffer.from('image data'),
+        discard,
+        finalize: jest.fn(),
+      });
+      await expect(
+        publish({
+          scope,
+          provenance,
+          artifact: { id: baseParams.id, name: 'generated.png', sessionId: baseParams.session_id },
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('generation expired');
+      expect(publishRunArtifactFile).not.toHaveBeenCalled();
+      expect(discard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/generated.webp',
+          file_id: 'mock-uuid-1234',
+          metadata: undefined,
+        }),
+      );
+      expect(discard).toHaveBeenCalledTimes(1);
     });
   });
 

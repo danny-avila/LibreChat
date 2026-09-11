@@ -1,10 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import DataTable from '../PanelTable';
 import { columns } from '../PanelColumns';
+import DataTable from '../PanelTable';
 
 const mockShowToast = jest.fn();
 const mockAddFile = jest.fn();
@@ -153,6 +153,39 @@ describe('PanelTable handleFileClick', () => {
       }),
     );
     expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+  });
+
+  it('reattaches a persisted published file with its durable identity and provenance', () => {
+    const runFile = {
+      runId: 'run-1',
+      executionId: 'child-execution',
+      parentExecutionId: 'parent-execution',
+      agentId: 'child-agent',
+      sourceFileId: 'private-file',
+      publishedAt: '2026-09-11T16:00:00.000Z',
+      inputFileIds: ['input-pdf'],
+    };
+    const file = makeFile({
+      file_id: 'published-report',
+      filename: 'report.pdf',
+      context: FileContext.run_artifact,
+      metadata: { runFile },
+    });
+    mockFileMap = { [file.file_id]: file };
+
+    renderTable([file]);
+    clickFilenameCell();
+
+    expect(mockAddFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'published-report',
+        filename: 'report.pdf',
+        filepath: file.filepath,
+        metadata: { runFile },
+        attached: true,
+        progress: 1,
+      }),
+    );
   });
 
   it('blocks attachment when fileLimit is reached', () => {
