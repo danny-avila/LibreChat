@@ -24,7 +24,7 @@ interface SyncHttpError {
 
 function shouldDiscardSyncError(error: unknown): boolean {
   const status = (error as SyncHttpError | null)?.response?.status;
-  return status === 400 || status === 410 || status === 413 || status === 422;
+  return status === 400 || status === 403 || status === 410 || status === 413 || status === 422;
 }
 
 /** Flushes the persistent registration queue for the signed-in user across route changes. */
@@ -44,6 +44,7 @@ export default function ArtifactSyncWorker() {
     permission: Permissions.CREATE,
   });
   const flushingRef = useRef(false);
+  const lifecycleGenerationRef = useRef(0);
   const activeOwnerRef = useRef(ownerId);
   const canCreateRef = useRef(canCreate);
   activeOwnerRef.current = ownerId;
@@ -57,9 +58,12 @@ export default function ArtifactSyncWorker() {
       return Math.min(retryBaseDelayMs, 100);
     }
     flushingRef.current = true;
+    const generation = lifecycleGenerationRef.current;
     let catalogChanged = false;
     const sessionIsActive = () =>
-      activeOwnerRef.current === ownerId && canCreateRef.current === true;
+      lifecycleGenerationRef.current === generation &&
+      activeOwnerRef.current === ownerId &&
+      canCreateRef.current === true;
     try {
       const entries = (await listArtifactSyncQueue(ownerId)).sort(
         (left, right) => left.nextAttemptAt - right.nextAttemptAt,
@@ -126,6 +130,7 @@ export default function ArtifactSyncWorker() {
   }, [canCreate, ownerId, queryClient, retryBaseDelayMs, retryMaxDelayMs]);
 
   useEffect(() => {
+    const lifecycleGeneration = ++lifecycleGenerationRef.current;
     let disposed = false;
     let timer: number | null = null;
     const schedule = (delay: number) => {
@@ -153,6 +158,9 @@ export default function ArtifactSyncWorker() {
     void run();
     return () => {
       disposed = true;
+      if (lifecycleGenerationRef.current === lifecycleGeneration) {
+        lifecycleGenerationRef.current += 1;
+      }
       unsubscribe();
       if (timer != null) {
         window.clearTimeout(timer);

@@ -122,6 +122,19 @@ describe('ArtifactSyncWorker', () => {
     },
   );
 
+  it('discards forbidden syncs that cannot succeed under the current role policy', async () => {
+    jest.mocked(dataService.syncArtifactApp).mockRejectedValueOnce({ response: { status: 403 } });
+    render(<ArtifactSyncWorker />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(completeArtifactSync).toHaveBeenCalledWith(entry.id, entry.signature);
+    expect(rescheduleArtifactSync).not.toHaveBeenCalled();
+  });
+
   it('discards a queue entry only when the server confirms its source was deleted', async () => {
     jest.mocked(dataService.syncArtifactApp).mockRejectedValueOnce({ response: { status: 410 } });
     render(<ArtifactSyncWorker />);
@@ -165,6 +178,53 @@ describe('ArtifactSyncWorker', () => {
 
     mockUserId = 'user-2';
     rerender(<ArtifactSyncWorker />);
+    resolveFirst({
+      app: { artifactAppId: 'app-1' },
+      version: { artifactVersionId: 'version-1' },
+      created: true,
+      versionCreated: true,
+    } as Awaited<ReturnType<typeof dataService.syncArtifactApp>>);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(dataService.syncArtifactApp).toHaveBeenCalledTimes(1);
+    expect(mockSetQueryData).not.toHaveBeenCalled();
+    expect(completeArtifactSync).not.toHaveBeenCalled();
+  });
+
+  it('cancels an active flush when logout unmounts the worker', async () => {
+    let resolveFirst: (
+      value: Awaited<ReturnType<typeof dataService.syncArtifactApp>>,
+    ) => void = () => undefined;
+    const firstRequest = new Promise<Awaited<ReturnType<typeof dataService.syncArtifactApp>>>(
+      (resolve) => {
+        resolveFirst = resolve;
+      },
+    );
+    const secondEntry = {
+      ...entry,
+      id: 'queue-2',
+      signature: 'signature-2',
+      request: {
+        ...entry.request,
+        source: { ...entry.request.source, sourceKey: 'artifact:v1:identifier:second' },
+      },
+    };
+    jest
+      .mocked(listArtifactSyncQueue)
+      .mockReset()
+      .mockResolvedValueOnce([entry, secondEntry])
+      .mockResolvedValue([]);
+    jest.mocked(dataService.syncArtifactApp).mockReset().mockReturnValueOnce(firstRequest);
+
+    const mounted = render(<ArtifactSyncWorker />);
+    await waitFor(() => expect(dataService.syncArtifactApp).toHaveBeenCalledTimes(1));
+    mounted.unmount();
+
+    mockUserId = 'user-2';
+    render(<ArtifactSyncWorker />);
     resolveFirst({
       app: { artifactAppId: 'app-1' },
       version: { artifactVersionId: 'version-1' },

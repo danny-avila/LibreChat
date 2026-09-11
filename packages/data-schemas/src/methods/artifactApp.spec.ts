@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IArtifactApp, IArtifactVersion, CreateArtifactAppInput } from '~/types';
+import { PrincipalModel, PrincipalType, ResourceType } from 'librechat-data-provider';
+import type { IAclEntry, IArtifactApp, IArtifactVersion, CreateArtifactAppInput } from '~/types';
 import {
   ArtifactAppDeletedError,
   createArtifactAppMethods,
@@ -20,6 +21,7 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let ArtifactApp: mongoose.Model<IArtifactApp>;
 let ArtifactVersion: mongoose.Model<IArtifactVersion>;
+let AclEntry: mongoose.Model<IAclEntry>;
 let modelsToCleanup: string[] = [];
 let methods: ArtifactAppMethods;
 
@@ -43,6 +45,7 @@ beforeAll(async () => {
   modelsToCleanup = Object.keys(models);
   ArtifactApp = mongoose.models.ArtifactApp as mongoose.Model<IArtifactApp>;
   ArtifactVersion = mongoose.models.ArtifactVersion as mongoose.Model<IArtifactVersion>;
+  AclEntry = mongoose.models.AclEntry as mongoose.Model<IAclEntry>;
   methods = createArtifactAppMethods(mongoose);
   await mongoose.connect(mongoServer.getUri());
   await Promise.all([ArtifactApp.syncIndexes(), ArtifactVersion.syncIndexes()]);
@@ -65,6 +68,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await ArtifactApp.deleteMany({});
   await ArtifactVersion.deleteMany({});
+  await AclEntry.deleteMany({});
 });
 
 describe('createArtifactAppWithVersion', () => {
@@ -175,6 +179,29 @@ describe('syncArtifactAppWithVersion', () => {
       );
       legacyApps.push(created.app);
     }
+    const sharedUserId = new mongoose.Types.ObjectId();
+    await AclEntry.create([
+      {
+        principalType: PrincipalType.USER,
+        principalId: sharedUserId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: legacyApps[0].id,
+        permBits: 1,
+      },
+      {
+        principalType: PrincipalType.USER,
+        principalId: sharedUserId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: legacyApps[1].id,
+        permBits: 2,
+      },
+    ]);
+    await ArtifactApp.updateOne(
+      { artifactAppId: legacyApps[0].artifactAppId },
+      { $set: { status: 'archived', 'marketplace.listed': false } },
+    );
 
     const synced = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
     const active = await ArtifactApp.find({ status: { $ne: 'archived' } }).lean();
@@ -185,9 +212,29 @@ describe('syncArtifactAppWithVersion', () => {
     expect(active[0]?.sourceMetadata?.sourceKey).toBe(sourceMetadata.sourceKey);
     expect(archived).toHaveLength(2);
     expect(await ArtifactVersion.countDocuments({})).toBe(3);
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: synced.app.artifactAppId })).toBe(
+      3,
+    );
+    expect(
+      await ArtifactVersion.countDocuments({
+        artifactAppId: { $in: legacyApps.slice(0, 2).map(({ artifactAppId }) => artifactAppId) },
+      }),
+    ).toBe(0);
+    expect(synced.app.latestVersionNumber).toBe(3);
+    expect(
+      await AclEntry.findOne({
+        resourceId: synced.app.id,
+        principalId: sharedUserId,
+      }).lean(),
+    ).toMatchObject({ permBits: 3 });
+    expect(
+      await AclEntry.countDocuments({
+        resourceId: { $in: legacyApps.slice(0, 2).map(({ id }) => id) },
+      }),
+    ).toBe(0);
   });
 
-  test('does not collapse an ambiguous legacy key, then archives it on versioned sync', async () => {
+  test('maps an older client key onto an existing versioned identity', async () => {
     const first = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
     const legacy = await methods.syncArtifactAppWithVersion(
       baseInput({
@@ -199,12 +246,18 @@ describe('syncArtifactAppWithVersion', () => {
     );
     const consolidated = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
 
-    expect(legacy.app.artifactAppId).not.toBe(first.app.artifactAppId);
+    expect(legacy.app.artifactAppId).toBe(first.app.artifactAppId);
     expect(consolidated.app.artifactAppId).toBe(first.app.artifactAppId);
     expect(await ArtifactApp.countDocuments({ status: { $ne: 'archived' } })).toBe(1);
+    expect(await ArtifactApp.countDocuments({})).toBe(1);
+    expect(legacy.app.sourceMetadata?.sourceKey).toBe(sourceMetadata.sourceKey);
     expect(
-      await ArtifactApp.findOne({ artifactAppId: legacy.app.artifactAppId }).lean(),
-    ).toMatchObject({ status: 'archived', marketplace: { listed: false } });
+      await methods.getArtifactAppBySource({
+        createdBy: 'user-1',
+        conversationId: sourceMetadata.conversationId,
+        sourceKey: 'identifier:revenue-chart:application/vnd.react',
+      }),
+    ).toMatchObject({ artifactAppId: first.app.artifactAppId });
   });
 
   test('keeps versioned identifiers with MIME-looking suffixes distinct', async () => {
@@ -470,11 +523,11 @@ describe('CRUD', () => {
 
     const retry = await methods.prepareArtifactAppDeletion(
       { artifactAppId: app.artifactAppId },
-      'user-1',
+      'admin-1',
     );
     expect(retry.deletedVersions).toBe(1);
     expect(
-      await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+      await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'admin-1'),
     ).toBe(true);
     expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toMatchObject(
       {
@@ -482,6 +535,24 @@ describe('CRUD', () => {
         deletion: { requestedBy: 'user-1', finalizedAt: expect.any(Date) },
       },
     );
+  });
+
+  test('allows another authorized actor to join an in-progress deletion', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+
+    const prepared = await Promise.all([
+      methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+      methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'admin-1'),
+    ]);
+
+    expect(prepared.every(({ found }) => found)).toBe(true);
+    expect(prepared.reduce((count, result) => count + result.deletedVersions, 0)).toBe(1);
+    await expect(
+      Promise.all([
+        methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+        methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'admin-1'),
+      ]),
+    ).resolves.toEqual([true, true]);
   });
 
   test('keeps a durable source fence before and after deletion finalization', async () => {
