@@ -606,7 +606,14 @@ const ChatForm = memo(function ChatForm({
         return submitMessage(data);
       })}
       className={cn(
-        'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
+        /* `margin-bottom` is animated as well as `max-width`: it is what carries
+           the composer between the landing clearance and the conversation one,
+           and the landing page keeps the same form node when a conversation
+           opens, so the band travels instead of jumping. The centred landing
+           composer overrides both with its own `transition-all`, and a reader who
+           asked for less motion gets the new position outright — this one is a
+           slide across the page rather than decoration. */
+        'mx-auto flex w-full flex-row gap-3 transition-[max-width,margin-bottom] duration-300 motion-reduce:transition-none sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         bottomClearance,
       )}
