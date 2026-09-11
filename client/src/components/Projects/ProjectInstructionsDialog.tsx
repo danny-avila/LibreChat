@@ -14,7 +14,7 @@ import {
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { RefObject } from 'react';
-import { useUpdateProjectMutation } from '~/data-provider';
+import { useUpdateProjectMutation, useGetStartupConfig } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
@@ -37,6 +37,9 @@ export default function ProjectInstructionsDialog({
 }: ProjectInstructionsDialogProps) {
   const localize = useLocalize();
   const formId = useId();
+  const { data: startupConfig } = useGetStartupConfig();
+  const instructionsLimit =
+    startupConfig?.projects?.maxInstructionsLength ?? MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH;
   const updateProject = useUpdateProjectMutation();
   const { showToast } = useToastContext();
   const dialogSessionRef = useRef(0);
@@ -149,7 +152,7 @@ export default function ProjectInstructionsDialog({
               <Textarea
                 id={`${formId}-instructions`}
                 rows={18}
-                maxLength={MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH}
+                maxLength={instructionsLimit}
                 aria-describedby={`${formId}-instructions-help`}
                 className="h-[clamp(12rem,50dvh,32rem)] bg-transparent text-base leading-relaxed [overflow-wrap:anywhere]"
                 readOnly={isBusy}
@@ -159,7 +162,7 @@ export default function ProjectInstructionsDialog({
                 {localize('com_ui_project_instructions_help')}
               </p>
               <p className="text-right text-xs tabular-nums text-text-tertiary" aria-live="polite">
-                {instructions.length}/{MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH}
+                {instructions.length}/{instructionsLimit}
               </p>
             </div>
           </form>

@@ -69,7 +69,8 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
-  resolveChatProjectContext: jest.requireActual('@librechat/api').resolveChatProjectContext,
+  startAgentProjectContextResolution:
+    jest.requireActual('@librechat/api').startAgentProjectContextResolution,
   assertModelBoundContent: jest.requireActual('@librechat/api').assertModelBoundContent,
   isContentFilterError: jest.requireActual('@librechat/api').isContentFilterError,
   CHAT_PROJECT_CONTEXT_UNAVAILABLE:

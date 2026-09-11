@@ -706,7 +706,11 @@ const executeResponse = async (envelope, { req, res }) => {
               conversationId: request.previous_response_id,
               resolvedConversation,
             },
-            { getConvo: db.getConvo, getChatProject: db.getChatProject, getFiles: db.getFiles },
+            {
+              getConvo: db.getConvo,
+              getChatProject: db.getChatProject,
+              getProjectFiles: db.getProjectFiles,
+            },
           );
         } catch (error) {
           logger.error(
@@ -787,6 +791,7 @@ const executeResponse = async (envelope, { req, res }) => {
       };
 
       const dbMethods = {
+        getProjectFiles: db.getProjectFiles,
         getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         filterFilesByAgentAccess: filterFilesByRemoteAgentAccess,

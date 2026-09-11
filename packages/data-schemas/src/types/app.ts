@@ -4,6 +4,7 @@ import type {
   TFileConfig,
   TAzureConfig,
   TCustomConfig,
+  TChatProjectsConfig,
   TMemoryConfig,
   EModelEndpoint,
   TVertexAIConfig,
@@ -78,6 +79,8 @@ export interface AppConfig {
   fileStrategies?: TCustomConfig['fileStrategies'];
   /** CloudFront CDN configuration */
   cloudfront?: CloudFrontConfig;
+  /** Chat Projects limits resolved from the deployment configuration */
+  projects?: TChatProjectsConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */

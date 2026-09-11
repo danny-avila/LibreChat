@@ -448,7 +448,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
               conversationId: request.conversation_id,
               resolvedConversation,
             },
-            { getConvo: db.getConvo, getChatProject: db.getChatProject, getFiles: db.getFiles },
+            {
+              getConvo: db.getConvo,
+              getChatProject: db.getChatProject,
+              getProjectFiles: db.getProjectFiles,
+            },
           );
         } catch (error) {
           logger.error(
@@ -529,6 +533,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const skillDbMethods = getSkillDbMethods();
 
       const dbMethods = {
+        getProjectFiles: db.getProjectFiles,
         getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         filterFilesByAgentAccess: filterFilesByRemoteAgentAccess,

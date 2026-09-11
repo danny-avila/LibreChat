@@ -1,4 +1,5 @@
 import type { IChatProject, IConversation } from '@librechat/data-schemas';
+import type { TEndpointOption } from 'librechat-data-provider';
 import type { CanonicalProjectResource, GetProjectFiles } from './resources';
 import { PARTIAL_RESOLVED_CONVERSATION } from '../agents/conversationSymbols';
 import { resolveChatProjectResources } from './resources';
@@ -32,14 +33,99 @@ export interface ResolveChatProjectContextInput {
   /** Trusted server-side control for callers that only need project guidance. */
   includeResources?: boolean;
 }
-
 export interface ResolveChatProjectContextDeps {
   getConvo: (userId: string, conversationId: string) => Promise<ConversationSnapshot | null>;
   getChatProject: (userId: string, projectId: string) => Promise<ProjectSnapshot | null>;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
 }
 
 export const CHAT_PROJECT_CONTEXT_UNAVAILABLE = 'Project context unavailable';
+
+export interface AgentProjectContextRequest {
+  user: { id: string; tenantId?: string | null };
+  body?: { chatProjectId?: string | null };
+  chatProjectContext?: ResolvedChatProjectContext | null;
+  chatProjectContextEnabled?: boolean;
+  chatProjectContextPromise?: Promise<ResolvedChatProjectContext | null>;
+  resolvedConversation?: ConversationSnapshot | null;
+  _agentEventBindingParentConversationId?: string | null;
+  _agentEventBindingTenantId?: string | null;
+}
+
+export function startAgentProjectContextResolution({
+  req,
+  endpointOption,
+  conversationId,
+  isNewConvo,
+  conversationAnchorPromise,
+  getConvo,
+  getChatProject,
+  getProjectFiles,
+}: {
+  req: AgentProjectContextRequest;
+  endpointOption?: Partial<TEndpointOption>;
+  conversationId: string;
+  isNewConvo: boolean;
+  conversationAnchorPromise: Promise<{
+    conversation: ConversationSnapshot | null | undefined;
+  }>;
+  getConvo: ResolveChatProjectContextDeps['getConvo'];
+  getChatProject: ResolveChatProjectContextDeps['getChatProject'];
+  getProjectFiles: GetProjectFiles;
+}): Promise<ResolvedChatProjectContext | null> {
+  if (req.chatProjectContext !== undefined) {
+    return Promise.resolve(req.chatProjectContext);
+  }
+  if (req.chatProjectContextPromise !== undefined) {
+    return req.chatProjectContextPromise;
+  }
+
+  const requestedProjectId =
+    endpointOption?.chatProjectId !== undefined
+      ? endpointOption.chatProjectId
+      : req.body?.chatProjectId;
+  const contextPromise = conversationAnchorPromise
+    .then(({ conversation }) => {
+      // An existing chat's undefined anchor is a failed read, not confirmed absence.
+      if (conversation !== undefined || isNewConvo) {
+        req.resolvedConversation = conversation ?? null;
+      }
+      return resolveChatProjectContext(
+        {
+          userId: req.user.id,
+          tenantId:
+            req._agentEventBindingParentConversationId != null
+              ? req._agentEventBindingTenantId
+              : req.user.tenantId || undefined,
+          conversationId,
+          requestedProjectId,
+          resolvedConversation: isNewConvo ? (conversation ?? null) : conversation,
+        },
+        {
+          getConvo: async (...args) => {
+            const loaded = await getConvo(...args);
+            if (!isNewConvo) {
+              req.resolvedConversation = loaded;
+            }
+            return loaded;
+          },
+          getChatProject,
+          getProjectFiles,
+        },
+      );
+    })
+    .then((context) => {
+      req.chatProjectContext = context;
+      req.chatProjectContextEnabled = true;
+      return context;
+    });
+  req.chatProjectContextPromise = contextPromise;
+  // Admission/idempotency may return before this promise is awaited. Attach a
+  // rejection handler to avoid an unhandled rejection while preserving the
+  // original promise for the eventual preflight await.
+  contextPromise.catch(() => {});
+  return contextPromise;
+}
 /**
  * Resolves the project bound to a turn. A full conversation read, including an explicit
  * absence of membership, is authoritative over all request-carried project fields.
@@ -121,7 +207,7 @@ export async function resolveChatProjectContext(
           project: { file_ids },
           userId,
           tenantId: tenantId ?? undefined,
-          getFiles: deps.getFiles,
+          getProjectFiles: deps.getProjectFiles,
         });
   return {
     projectId: projectIdFromRecord,

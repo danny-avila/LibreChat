@@ -3319,6 +3319,7 @@ class AgentClient extends BaseClient {
         useChatProjectContext: false,
       },
       {
+        getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getConvoFiles: db.getConvoFiles,

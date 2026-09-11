@@ -597,7 +597,7 @@ const initializeClientWithProvider = async ({
           {
             getConvo: db.getConvo,
             getChatProject: db.getChatProject,
-            getFiles: db.getFiles,
+            getProjectFiles: db.getProjectFiles,
           },
         ),
       );
@@ -763,6 +763,7 @@ const initializeClientWithProvider = async ({
       signal,
     },
     {
+      getProjectFiles: db.getProjectFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
@@ -855,6 +856,7 @@ const initializeClientWithProvider = async ({
       checkPermission,
       logViolation,
       db: {
+        getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -1340,6 +1342,7 @@ const initializeClientWithProvider = async ({
           signal: context.signal,
         },
         {
+          getProjectFiles: db.getProjectFiles,
           getFiles: db.getFiles,
           getUserKey: db.getUserKey,
           getMessages: db.getMessages,

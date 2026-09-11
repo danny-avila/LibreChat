@@ -21,7 +21,7 @@ const {
   exemptFromConcurrencyLimiter,
   isScheduleFireRequest,
   isUnpersistedPreliminaryParent,
-  resolveChatProjectContext,
+  startAgentProjectContextResolution,
   assertModelBoundContent,
   isContentFilterError,
   CHAT_PROJECT_CONTEXT_UNAVAILABLE,
@@ -65,7 +65,7 @@ const {
   getMessages,
   getConvo,
   getChatProject,
-  getFiles,
+  getProjectFiles,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
   storeAgentEventActorSuspension,
@@ -136,63 +136,6 @@ function getInitializationFailure(error) {
     ...getCodeWorkspaceSelectionErrorDetails(error),
     error: error?.message || 'Failed to start generation',
   };
-}
-
-function startAgentProjectContextResolution({
-  req,
-  endpointOption,
-  conversationId,
-  isNewConvo,
-  conversationAnchorPromise,
-}) {
-  if (req.chatProjectContext !== undefined) {
-    return Promise.resolve(req.chatProjectContext);
-  }
-
-  const requestedProjectId =
-    endpointOption?.chatProjectId !== undefined
-      ? endpointOption.chatProjectId
-      : req.body?.chatProjectId;
-  const contextPromise = conversationAnchorPromise
-    .then(({ conversation }) => {
-      // An existing chat's undefined anchor is a failed read, not confirmed absence.
-      if (conversation !== undefined || isNewConvo) {
-        req.resolvedConversation = conversation ?? null;
-      }
-      return resolveChatProjectContext(
-        {
-          userId: req.user.id,
-          tenantId:
-            req._agentEventBindingParentConversationId != null
-              ? req._agentEventBindingTenantId
-              : req.user.tenantId || undefined,
-          conversationId,
-          requestedProjectId,
-          resolvedConversation: isNewConvo ? (conversation ?? null) : conversation,
-        },
-        {
-          getConvo: async (...args) => {
-            const loaded = await getConvo(...args);
-            if (!isNewConvo) {
-              req.resolvedConversation = loaded;
-            }
-            return loaded;
-          },
-          getChatProject,
-          getFiles,
-        },
-      );
-    })
-    .then((context) => {
-      req.chatProjectContext = context;
-      req.chatProjectContextEnabled = true;
-      return context;
-    });
-  // Admission/idempotency may return before this promise is awaited. Attach a
-  // rejection handler to avoid an unhandled rejection while preserving the
-  // original promise for the eventual preflight await.
-  contextPromise.catch(() => {});
-  return contextPromise;
 }
 
 function resolveConversationCreatedAt({ userId, conversationId, isNewConvo, conversation }) {
@@ -965,6 +908,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     conversationId,
     isNewConvo,
     conversationAnchorPromise,
+    getConvo,
+    getChatProject,
+    getProjectFiles,
   });
 
   /** A newly bound actor conversation has no child messages yet, so its first

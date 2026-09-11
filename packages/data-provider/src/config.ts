@@ -11,6 +11,13 @@ import {
   MAX_PII_PATTERN_LENGTH,
 } from './filters';
 import {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
+  MAX_CHAT_PROJECT_FILES,
+} from './limits';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -2311,6 +2318,7 @@ export type TStartupConfig = {
   adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  projects?: TChatProjectsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
@@ -2865,10 +2873,34 @@ export const openIdDiscoverySchema = z.object({
 });
 
 export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
+export const chatProjectsConfigSchema = z
+  .object({
+    /** Maximum number of reference files attached to one Chat Project. Defaults to 50. */
+    maxFiles: z.number().int().positive().optional().default(MAX_CHAT_PROJECT_FILES),
+    /** Maximum instruction characters stored for one Chat Project. Defaults to 16000. */
+    maxInstructionsLength: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH),
+    /** Maximum description characters stored for one Chat Project. Defaults to 1000. */
+    maxDescriptionLength: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(MAX_CHAT_PROJECT_DESCRIPTION_LENGTH),
+  })
+  .strict()
+  .default({});
+
+export type TChatProjectsConfig = z.infer<typeof chatProjectsConfigSchema>;
 
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  projects: chatProjectsConfigSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
