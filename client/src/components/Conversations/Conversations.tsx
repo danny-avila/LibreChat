@@ -182,10 +182,7 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   // Determine if FavoritesList will render content
-  const shouldShowFavorites =
-    showFavorites &&
-    !search.query &&
-    (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+  const shouldShowFavorites = showFavorites && !search.query;
 
   favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 

@@ -1,6 +1,13 @@
 import { atom, atomFamily, selectorFamily } from 'recoil';
-import { logger } from '~/utils';
 import type { Artifact } from '~/common';
+import { logger } from '~/utils';
+
+export interface ArtifactNavigationRequest {
+  conversationId: string;
+  sourceKey: string;
+  originalArtifactId?: string;
+  messageId?: string;
+}
 
 export const artifactsState = atom<Record<string, Artifact | undefined> | null>({
   key: 'artifactsState',
@@ -45,6 +52,12 @@ export const artifactsVisibility = atom<boolean>({
       });
     },
   ] as const,
+});
+
+/** Durable handoff from the artifact catalog to a hydrating conversation route. */
+export const artifactNavigationRequest = atom<ArtifactNavigationRequest | null>({
+  key: 'artifactNavigationRequest',
+  default: null,
 });
 
 /**

@@ -20,7 +20,12 @@ interface PublicSharingToggleProps {
 const accessDescriptions: Partial<
   Record<
     ResourceType,
-    'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server' | 'com_ui_skill' | 'com_ui_shared_link'
+    | 'com_ui_agent'
+    | 'com_ui_prompt'
+    | 'com_ui_mcp_server'
+    | 'com_ui_skill'
+    | 'com_ui_shared_link'
+    | 'com_ui_artifact_app'
   >
 > = {
   [ResourceType.AGENT]: 'com_ui_agent',
@@ -29,6 +34,7 @@ const accessDescriptions: Partial<
   [ResourceType.REMOTE_AGENT]: 'com_ui_agent',
   [ResourceType.SKILL]: 'com_ui_skill',
   [ResourceType.SHARED_LINK]: 'com_ui_shared_link',
+  [ResourceType.ARTIFACT_APP]: 'com_ui_artifact_app',
 };
 
 export default function PublicSharingToggle({

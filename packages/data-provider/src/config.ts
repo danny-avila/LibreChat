@@ -1885,6 +1885,17 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    artifacts: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     generalChatRetention: z.number().min(1).max(8760).optional(),
@@ -1993,6 +2004,12 @@ export const interfaceSchema = z
       use: true,
       create: true,
       share: false,
+      public: false,
+    },
+    artifacts: {
+      use: true,
+      create: true,
+      share: true,
       public: false,
     },
     temporaryChat: true,

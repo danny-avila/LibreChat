@@ -4,14 +4,18 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
+import { Permissions, PermissionTypes, ResourceType } from 'librechat-data-provider';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import type { ProcessedMermaidSvg } from '~/utils/diagram/export';
+import useClearArtifactNavigationRequest from '~/hooks/Artifacts/useClearArtifactNavigationRequest';
 import { TOOL_ARTIFACT_TYPES, isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
+import useArtifactCatalogSync from '~/hooks/Artifacts/useArtifactCatalogSync';
 import CopyButton from '~/components/Messages/Content/CopyButton';
+import { useFocusTrap, useHasAccess, useLocalize } from '~/hooks';
+import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
-import { useFocusTrap, useLocalize } from '~/hooks';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import MermaidExport from './Mermaid/Export';
@@ -50,6 +54,7 @@ export default function Artifacts() {
   const dragStartHeight = useRef(90);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const clearArtifactNavigationRequest = useClearArtifactNavigationRequest();
 
   const allTabOptions = useMemo(
     () => [
@@ -118,6 +123,13 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+  const { artifactEntry, isSyncing } = useArtifactCatalogSync(
+    isSharedConvo ? null : currentArtifact,
+  );
+  const canShareArtifacts = useHasAccess({
+    permissionType: PermissionTypes.ARTIFACTS,
+    permission: Permissions.SHARE,
+  });
 
   const restoreArtifactTriggerFocus = useCallback(() => {
     const opener = openerRef.current;
@@ -152,6 +164,7 @@ export default function Artifacts() {
   const isMermaidArtifact = currentArtifact?.type === TOOL_ARTIFACT_TYPES.MERMAID;
 
   const closeArtifacts = useCallback(() => {
+    clearArtifactNavigationRequest();
     if (isMobile) {
       setIsClosing(true);
       setIsVisible(false);
@@ -174,6 +187,7 @@ export default function Artifacts() {
     setArtifactsVisible(false);
     restoreArtifactTriggerFocus();
   }, [
+    clearArtifactNavigationRequest,
     isMobile,
     prefersReducedMotion,
     resetCurrentArtifactId,
@@ -489,6 +503,23 @@ export default function Artifacts() {
                 />
               )}
               <DownloadArtifact artifact={currentArtifact} />
+              {isSyncing && (
+                <span
+                  className="flex h-9 w-9 items-center justify-center text-text-secondary"
+                  aria-label={localize('com_ui_artifact_syncing')}
+                >
+                  <Spinner size={16} />
+                </span>
+              )}
+              {!isSharedConvo && canShareArtifacts && artifactEntry?.app && (
+                <GenericGrantAccessDialog
+                  resourceDbId={artifactEntry.app.id}
+                  resourceId={artifactEntry.app.artifactAppId}
+                  resourceName={artifactEntry.app.title}
+                  resourceType={ResourceType.ARTIFACT_APP}
+                  buttonClassName="border-0 bg-transparent hover:bg-surface-hover"
+                />
+              )}
               <Button
                 size="icon"
                 variant="ghost"

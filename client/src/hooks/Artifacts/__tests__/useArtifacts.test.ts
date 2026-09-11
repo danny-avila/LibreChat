@@ -20,6 +20,7 @@ jest.mock('~/store', () => ({
     artifactsState: { key: 'artifactsState' },
     currentArtifactId: { key: 'currentArtifactId' },
     artifactsVisibility: { key: 'artifactsVisibility' },
+    artifactNavigationRequest: { key: 'artifactNavigationRequest' },
   },
 }));
 
@@ -30,12 +31,13 @@ jest.mock('recoil', () => {
     useRecoilValue: jest.fn(),
     useRecoilState: jest.fn(),
     useResetRecoilState: jest.fn(),
+    useSetRecoilState: jest.fn(),
   };
 });
 
 /** Import mocked functions after mocking */
 import { useArtifactsContext } from '~/Providers';
-import { useRecoilValue, useRecoilState, useResetRecoilState } from 'recoil';
+import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { logger } from '~/utils';
 import useArtifacts from '../useArtifacts';
 
@@ -43,6 +45,7 @@ describe('useArtifacts', () => {
   const mockResetArtifacts = jest.fn();
   const mockResetCurrentArtifactId = jest.fn();
   const mockSetCurrentArtifactId = jest.fn();
+  const mockSetArtifactsVisible = jest.fn();
 
   const createArtifact = (partial: Partial<Artifact>): Artifact => ({
     id: 'artifact-1',
@@ -64,10 +67,12 @@ describe('useArtifacts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    window.history.replaceState({}, '', '/');
 
     (useArtifactsContext as jest.Mock).mockReturnValue(defaultContext);
     (useRecoilValue as jest.Mock).mockReturnValue({});
     (useRecoilState as jest.Mock).mockReturnValue([null, mockSetCurrentArtifactId]);
+    (useSetRecoilState as jest.Mock).mockReturnValue(mockSetArtifactsVisible);
     (useResetRecoilState as jest.Mock).mockImplementation((atom) => {
       if (atom?.key === 'artifactsState') {
         return mockResetArtifacts;
@@ -147,6 +152,79 @@ describe('useArtifacts', () => {
 
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-1');
       expect(mockSetCurrentArtifactId).not.toHaveBeenCalledWith('artifact-2');
+    });
+
+    it('selects the newest revision for a stable catalog source key', () => {
+      const artifacts = {
+        'artifact-1': createArtifact({
+          id: 'artifact-1',
+          identifier: 'revenue-chart',
+          lastUpdateTime: 1000,
+        }),
+        'artifact-2': createArtifact({
+          id: 'artifact-2',
+          identifier: 'revenue-chart',
+          messageId: 'msg-2',
+          lastUpdateTime: 2000,
+        }),
+      };
+      window.history.replaceState(
+        {},
+        '',
+        '/c/conv-1?artifact=identifier%3Arevenue-chart%3Aapplication%2Fvnd.react',
+      );
+      (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
+
+      const { rerender } = renderHook(() => useArtifacts());
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
+      expect(mockSetArtifactsVisible).toHaveBeenCalledWith(true);
+      expect(window.location.search).not.toBe('');
+
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-2', mockSetCurrentArtifactId]);
+      rerender();
+      expect(window.location.search).not.toBe('');
+    });
+
+    it('prefers the stored original artifact id from a catalog link', () => {
+      const artifacts = {
+        'artifact-1': createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 }),
+        'artifact-2': createArtifact({ id: 'artifact-2', lastUpdateTime: 2000 }),
+      };
+      window.history.replaceState(
+        {},
+        '',
+        '/c/conv-1?artifact=identifier%3Aother%3Aapplication%2Fvnd.react&artifactId=artifact-2',
+      );
+      (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
+
+      renderHook(() => useArtifacts());
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
+    });
+
+    it('selects a pending catalog request after conversation navigation strips the query', () => {
+      const artifacts = {
+        'artifact-1': createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 }),
+        'artifact-2': createArtifact({
+          id: 'artifact-2',
+          identifier: 'revenue-chart',
+          lastUpdateTime: 2000,
+        }),
+      };
+      (useRecoilValue as jest.Mock).mockImplementation(({ key }: { key: string }) =>
+        key === 'artifactNavigationRequest'
+          ? {
+              conversationId: 'conv-1',
+              sourceKey: 'identifier:revenue-chart:application/vnd.react',
+            }
+          : artifacts,
+      );
+
+      renderHook(() => useArtifacts());
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
+      expect(mockSetArtifactsVisible).toHaveBeenCalledWith(true);
     });
   });
 

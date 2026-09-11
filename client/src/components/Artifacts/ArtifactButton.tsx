@@ -3,6 +3,7 @@ import debounce from 'lodash/debounce';
 import { useLocation } from 'react-router-dom';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
+import useClearArtifactNavigationRequest from '~/hooks/Artifacts/useClearArtifactNavigationRequest';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { cn, getFileType, logger, isArtifactRoute } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -17,6 +18,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const isSelected = artifact?.id === currentArtifactId;
   const [visibleArtifacts, setVisibleArtifacts] = useRecoilState(store.visibleArtifacts);
+  const clearArtifactNavigationRequest = useClearArtifactNavigationRequest();
 
   const debouncedSetVisibleRef = useRef(
     debounce((artifactToSet: Artifact) => {
@@ -57,6 +59,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
     <div className="group relative my-4 rounded-xl text-sm text-text-primary">
       {(() => {
         const handleClick = () => {
+          clearArtifactNavigationRequest();
           if (isSelected) {
             resetCurrentArtifactId();
             setVisible(false);

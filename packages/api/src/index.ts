@@ -83,6 +83,8 @@ export * from './favorites';
 export * from './user';
 /* Agent Plugins */
 export * from './plugins';
+/* Artifact Apps */
+export * from './artifactApps';
 /* Endpoints */
 export * from './endpoints';
 /* Files */
