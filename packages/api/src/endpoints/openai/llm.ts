@@ -148,6 +148,21 @@ function prefersResponsesApi(model?: string): boolean {
   return typeof model === 'string' && responsesApiPreferredPattern.test(model);
 }
 
+function isCanonicalAzureBaseURL(baseURL?: string | null, azure?: false | t.AzureOptions): boolean {
+  if (!azure) {
+    return false;
+  }
+  if (!baseURL) {
+    return true;
+  }
+  try {
+    const url = new URL(constructAzureURL({ baseURL, azureOptions: azure }));
+    return /\.(?:openai|cognitiveservices|services\.ai)\.azure\.(?:com|us|cn)$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function requiresResponsesApiForReasoning({
   model,
   reasoningEffort,
@@ -874,6 +889,10 @@ export function getOpenAILLMConfig({
    */
   const responsesApiExplicitlyOptedOut =
     dropParams != null && dropParams.includes('useResponsesApi');
+  const firstPartyEndpoint =
+    !useOpenRouter &&
+    ((endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) ||
+      (endpoint === EModelEndpoint.azureOpenAI && isCanonicalAzureBaseURL(baseURL, azure)));
   if (
     !useOpenRouter &&
     endpoint === EModelEndpoint.openAI &&
@@ -889,12 +908,10 @@ export function getOpenAILLMConfig({
   /**
    * Route GPT-6 Astra to the Responses API for every turn. Unlike the GPT-5.6
    * rule above this does not depend on reasoning params: Astra serves tool calls
-   * only from Responses, and OpenAI recommends it generally.
+   * only from Responses on both OpenAI and Azure OpenAI.
    */
   if (
-    !useOpenRouter &&
-    endpoint === EModelEndpoint.openAI &&
-    isCanonicalOpenAIBaseURL(baseURL) &&
+    firstPartyEndpoint &&
     llmConfig.useResponsesApi == null &&
     !responsesApiExplicitlyOptedOut &&
     prefersResponsesApi(llmConfig.model)
@@ -908,13 +925,8 @@ export function getOpenAILLMConfig({
    * above uses, so the decision lives in one place: OpenRouter and custom
    * gateways route through endpoints whose contract is not OpenAI's, and only
    * this layer can tell them apart.
-   *
-   * Scoped to the canonical OpenAI endpoint. Astra is not documented as
-   * available on Azure OpenAI, and Azure's first-party hosts do not satisfy the
-   * OpenAI-host check, so declaring it there would claim a surface this cannot
-   * verify.
    */
-  if (!useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) {
+  if (firstPartyEndpoint) {
     llmConfig.firstPartyEndpoint = true;
   }
 
@@ -1020,6 +1032,7 @@ export function getOpenAILLMConfig({
   }
 
   const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
+  const model = llmConfig.model;
   const updatedAzure = { ...azure };
   updatedAzure.azureOpenAIApiDeploymentName = useModelName
     ? sanitizeModelName(llmConfig.model || '')
@@ -1060,6 +1073,15 @@ export function getOpenAILLMConfig({
 
   constructAzureResponsesApi();
 
-  llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
+  /** Keep Astra's identity for SDK constraints; only the wire model is a deployment alias. */
+  if (firstPartyEndpoint && prefersResponsesApi(model)) {
+    llmConfig.model = model;
+    llmConfig.modelKwargs = {
+      ...llmConfig.modelKwargs,
+      model: updatedAzure.azureOpenAIApiDeploymentName,
+    };
+  } else {
+    llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
+  }
   return { llmConfig, tools, azure: updatedAzure };
 }
