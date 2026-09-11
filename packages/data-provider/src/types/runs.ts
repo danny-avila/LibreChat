@@ -287,11 +287,14 @@ export type TContextUsageEvent = {
   cacheRead?: number;
   cacheWrite?: number;
   /** Output tokens of the response's final model call (the call this pre-invoke
-   *  snapshot precedes). Saved in message and resumable job snapshots so a
+   *  snapshot precedes). Saved in message metadata and used by the client so a
    *  reloaded multi-call turn adds the same post-snapshot delta the
    *  live finalizer did — not the full response `tokenCount`, which the snapshot
    *  already includes for earlier steps. */
   completedOutputTokens?: number;
+  /** Completed output in a resumable job. Separate from the saved-message field
+   * so older clients do not add it alongside their trailing-text estimate. */
+  resumedOutputTokens?: number;
 };
 
 /**

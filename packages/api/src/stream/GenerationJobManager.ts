@@ -7713,7 +7713,14 @@ class GenerationJobManagerClass {
           snapshot != null &&
           (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
         ) {
-          update.contextUsage = JSON.stringify(reconcileContextUsageFromEvent(snapshot, usage));
+          const { completedOutputTokens, ...reconciled } = reconcileContextUsageFromEvent(
+            snapshot,
+            usage,
+          );
+          update.contextUsage = JSON.stringify({
+            ...reconciled,
+            resumedOutputTokens: completedOutputTokens,
+          });
         }
       } catch {
         /* leave the stored snapshot as-is on parse failure */

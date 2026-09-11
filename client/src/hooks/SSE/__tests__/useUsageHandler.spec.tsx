@@ -84,7 +84,11 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     const { result } = renderHook(() => useUsageHandler());
     const store = getDefaultStore();
     const usage = primaryUsage();
-    const snapshot = reconcileContextUsageFromEvent(inflatedSnapshot(), usage);
+    const { completedOutputTokens, ...reconciled } = reconcileContextUsageFromEvent(
+      inflatedSnapshot(),
+      usage,
+    );
+    const snapshot = { ...reconciled, resumedOutputTokens: completedOutputTokens };
     result.current.backfillUsage([usage], submission);
     result.current.contextHandler(snapshot, submission);
     result.current.seedLive(12000, submission);

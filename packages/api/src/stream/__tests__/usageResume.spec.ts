@@ -109,12 +109,13 @@ describe('GenerationJobManager usage resume state', () => {
     expect(resumeState?.contextUsage).toMatchObject({
       model: 'primary-model',
       provider: 'anthropic',
-      completedOutputTokens: 300,
+      resumedOutputTokens: 300,
       cacheRead: 800,
       cacheWrite: 100,
       remainingContextTokens: 180000,
       breakdown: { messageTokens: 8500 },
     });
+    expect(resumeState?.contextUsage?.completedOutputTokens).toBeUndefined();
     expect(resumeState?.collectedUsage).toHaveLength(3);
 
     await manager.emitChunk(streamId, { event: 'on_context_usage', data: makeSnapshot(12000) });

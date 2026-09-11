@@ -162,6 +162,7 @@ export default function useUsageHandler(): UsageHandlers {
       const convoKey = getConvoKey(submission);
       jotai.set(contextSnapshotFamily(convoKey), {
         ...data,
+        completedOutputTokens: data.resumedOutputTokens ?? data.completedOutputTokens,
         anchorMessageId: submission.userMessage?.messageId ?? null,
       });
       if (data.calibrationRatio != null && data.calibrationRatio > 0) {
