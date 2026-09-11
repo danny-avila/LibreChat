@@ -40,6 +40,11 @@ async function selectAgent(page: Page, name: string): Promise<void> {
 }
 
 test.describe('subagent context usage totals', () => {
+  /** Selecting a parent agent needs the Agent Builder side panel, which the
+   *  phone layout does not render, so the subagent run cannot be started from a
+   *  touch viewport at all. */
+  test.skip(({ isMobile }) => isMobile === true, 'Agent Builder panel is desktop-only');
+
   test('shows subagent usage across all branches separately from branch totals @scenario:subagents-row-reads-all-branches', async ({
     page,
   }) => {

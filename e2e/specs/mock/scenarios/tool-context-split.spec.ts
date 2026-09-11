@@ -81,6 +81,15 @@ function rowValue(row: Locator) {
 }
 
 test.describe('retained tool context split', () => {
+  /** Every test here needs a real tool boundary, and the only affordance that
+   *  attaches one to an ephemeral conversation is the composer's MCP Servers
+   *  picker, which the phone layout does not render (its narrow composer keeps
+   *  the tool pickers behind a sidebar that overlays the input). The split
+   *  itself is viewport-independent: it is computed by the hook, and the mobile
+   *  project still exercises the same rows through the persisted fixtures in
+   *  `persisted-context-usage.spec.ts`. */
+  test.skip(({ isMobile }) => isMobile === true, 'composer MCP picker is desktop-only');
+
   test('splits retained tool traffic out of the message total @scenario:tool-calls-split-from-messages', async ({
     page,
   }) => {

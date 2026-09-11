@@ -91,7 +91,7 @@ test.describe('series-eight theme resolution', () => {
 
     // A real mock turn supplies the live context snapshot that paints the gauge.
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
-    const response = await sendMessage(page, 'E2E_REPLY:owned-theme-summary-stop');
+    const response = await sendMessage(page, 'hello');
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
     await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
