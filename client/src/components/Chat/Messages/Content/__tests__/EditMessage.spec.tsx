@@ -305,6 +305,57 @@ describe('EditMessage', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  /** A rerun replays the parent as the turn's user message. A model turn chained
+   *  onto another model turn — an imported thread with no user message between two
+   *  replies — has no such parent, and submitting one would mint a user message
+   *  under an existing response's id. The editor withholds the action instead of
+   *  offering one that silently refuses, and Save still applies. */
+  it('offers no rerun when the parent to replay is not a user turn', async () => {
+    const user = userEvent.setup();
+    const chainedAnswer = {
+      messageId: 'assistant-2',
+      parentMessageId: assistantMessage.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'A second answer with no user turn behind it',
+    } as TMessage;
+    mockGetMessages.mockReturnValue([message, assistantMessage, chainedAnswer]);
+    const ask = jest.fn();
+    renderEditor({ ask, editedMessage: chainedAnswer });
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+
+    /** The shortcut cannot reach it either. */
+    const editor = screen.getByTestId('message-text-editor');
+    await user.click(editor);
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
+  });
+
+  /** The rerun-discards-changes warning describes an action this editor does not
+   *  offer, so a save-only editor reports unsaved changes instead. */
+  it('reports unsaved changes rather than a discarded rerun when no rerun is offered', async () => {
+    const user = userEvent.setup();
+    const chainedAnswer = {
+      messageId: 'assistant-2',
+      parentMessageId: assistantMessage.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'A second answer with no user turn behind it',
+    } as TMessage;
+    mockGetMessages.mockReturnValue([message, assistantMessage, chainedAnswer]);
+    renderEditor({ editedMessage: chainedAnswer });
+
+    await user.type(screen.getByTestId('message-text-editor'), ' edited');
+
+    expect(screen.getByText('com_ui_unsaved_changes')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_rerun_discards_changes')).toBeNull();
+  });
+
   /** A response cancelled before its first token is exactly what needs rerunning, and
    *  the form marks text required so Save cannot blank a message. Routing the rerun
    *  through that validation left the enabled button inert. */

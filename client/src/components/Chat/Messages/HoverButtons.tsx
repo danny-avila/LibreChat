@@ -1,6 +1,7 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
+import { findMessageById, isUserInitiatedCompaction } from 'librechat-data-provider';
 import {
   Button,
   EditIcon,
@@ -11,6 +12,8 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useOptionalMessagesOperations } from '~/Providers';
+import { hasEditablePart } from './Content/editableParts';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -135,6 +138,7 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const { getMessages } = useOptionalMessagesOperations();
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -142,6 +146,24 @@ const HoverButtons = ({
     }
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
+
+  /** Which turn a rerun would replay, resolved for a model turn only. The lookup
+   *  goes through the messages array's memoized id index, so a conversation is
+   *  indexed once for all its rows rather than scanned once per row, and the memo
+   *  is keyed on the parent id: `getMessages` is a cache read, not a subscription,
+   *  and a parent's authorship never changes. Outside the messages view (a search
+   *  row) the thread is unavailable and the answer stays unknown. */
+  const parentIsUserMessage = useMemo(() => {
+    if (message.isCreatedByUser === true || message.parentMessageId == null) {
+      return undefined;
+    }
+    const parent = findMessageById(getMessages(), message.parentMessageId);
+    return parent == null ? undefined : parent.isCreatedByUser === true;
+  }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
+
+  /** Resolved only if the row has nothing to replay, because the artifact check
+   *  inside parses markdown. */
+  const getHasEditablePart = useCallback(() => hasEditablePart(message), [message]);
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
@@ -152,6 +174,9 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
+    getHasEditablePart,
+    parentIsUserMessage,
+    isUserInitiatedCompaction: isUserInitiatedCompaction(message),
     latestMessageId: latestMessageId,
   });
 
