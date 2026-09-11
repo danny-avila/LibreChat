@@ -23,34 +23,58 @@ type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'cus
 };
 
 export type ConfiguredFooter = {
-  /** The deployment configured footer content of its own: a custom footer, a
-   *  privacy policy or terms of service. */
+  /** Whether a footer bar belongs under the composer in a conversation: the
+   *  deployment configured a custom footer, a privacy policy or terms of
+   *  service. Before the startup config answers this is the answer the last
+   *  load recorded, which is what keeps a cold load from laying out twice. */
   present: boolean;
-  /** The startup config has answered. Until it does, `present` is only the
-   *  absence of an answer. */
+  /** The startup config has answered on this load. */
   resolved: boolean;
 };
 
+const CONFIGURED_FOOTER_KEY = 'configured-footer';
+
+/** The last answer this deployment gave. A deployment's footer configuration is
+ *  a deployment-lifetime fact, and `/api/config` answers after the composer has
+ *  painted, so the composer needs something better than a guess to lay out
+ *  against: remembering the answer makes every load after the first one exact.
+ *  A first-ever visit falls back to LibreChat's default, no configured footer,
+ *  and settles once when the answer disagrees. */
+function rememberedFooter(): boolean {
+  try {
+    return localStorage.getItem(CONFIGURED_FOOTER_KEY) === 'true';
+  } catch {
+    /** Storage can be denied outright; a guess is still better than a crash. */
+    return false;
+  }
+}
+
 /**
- * What a conversation has to render beneath its composer, and how sure it is.
- * A conversation renders the footer only for configured content, and the
- * composer above it reserves the band that bar needs — the bar is absolutely
- * positioned in a zero-height wrapper, so a composer that did not reserve it
- * would be painted over. Both decisions read this one answer so they cannot
- * disagree, and they read `resolved` differently on purpose: an unanswered
- * config renders nothing, because there is nothing to render yet, but it keeps
- * the clearance, because a cold load that guessed "no footer" would jump the
- * composer down and then back up when the answer arrived.
+ * What a conversation has to render beneath its composer. The conversation
+ * renders the footer only for configured content, and the composer above it
+ * reserves the band that bar needs — the bar is absolutely positioned in a
+ * zero-height wrapper, so a composer that did not reserve it would be painted
+ * over. Both decisions read this one answer so they cannot disagree.
  */
 export function useConfiguredFooter(): ConfiguredFooter {
   const { data: config, isFetched } = useGetStartupConfig();
-  return {
-    present:
-      typeof config?.customFooter === 'string' ||
-      config?.interface?.privacyPolicy?.externalUrl != null ||
-      config?.interface?.termsOfService?.externalUrl != null,
-    resolved: isFetched,
-  };
+  const configured =
+    typeof config?.customFooter === 'string' ||
+    config?.interface?.privacyPolicy?.externalUrl != null ||
+    config?.interface?.termsOfService?.externalUrl != null;
+
+  useEffect(() => {
+    if (!isFetched) {
+      return;
+    }
+    try {
+      localStorage.setItem(CONFIGURED_FOOTER_KEY, String(configured));
+    } catch {
+      /** Nothing to do: the next load falls back to the default. */
+    }
+  }, [configured, isFetched]);
+
+  return { present: isFetched ? configured : rememberedFooter(), resolved: isFetched };
 }
 
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {

@@ -112,11 +112,11 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
 
-  /** A footer bar renders beneath the composer on the welcome screen always,
-   *  and in a conversation when the deployment configured one. Unresolved
-   *  counts as present: a cold load that guessed otherwise would jump the
-   *  composer when the config answered. */
-  const footerBelow = isLandingPage || configuredFooter.present || !configuredFooter.resolved;
+  /** A footer bar renders beneath the composer on the welcome screen always, and
+   *  in a conversation when the deployment configured one. `present` already
+   *  carries the remembered answer while the config is in flight, so this is the
+   *  same value before and after it resolves. */
+  const footerBelow = isLandingPage || configuredFooter.present;
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
 
