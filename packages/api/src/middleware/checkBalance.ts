@@ -1,18 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import { getRefillEligibilityDate, ViolationTypes } from 'librechat-data-provider';
+import { ViolationTypes } from 'librechat-data-provider';
 import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
-import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import type { RefillRecord } from '~/balance/refill';
+import { maybeAutoRefill } from '~/balance/refill';
 
-interface BalanceRecord {
-  tokenCredits: number;
-  autoRefillEnabled?: boolean;
-  refillAmount?: number;
-  lastRefill?: Date;
-  refillIntervalValue?: number;
-  refillIntervalUnit?: RefillIntervalUnit;
-}
+type BalanceRecord = RefillRecord;
 
 interface TxData {
   user: string;
@@ -82,7 +76,6 @@ async function checkBalanceRecord(
           fields.refillIntervalValue = config.refillIntervalValue;
           fields.refillIntervalUnit = config.refillIntervalUnit;
           fields.refillAmount = config.refillAmount;
-          fields.lastRefill = new Date();
         }
         const created = await deps.upsertBalanceFields(user, fields);
         const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
@@ -109,38 +102,12 @@ async function checkBalanceRecord(
     endpointTokenConfig: !!endpointTokenConfig,
   });
 
-  if (
-    balance - tokenCost <= 0 &&
-    record.autoRefillEnabled &&
-    record.refillAmount &&
-    record.refillAmount > 0
-  ) {
-    const lastRefillDate = new Date(record.lastRefill ?? 0);
-    const now = new Date();
-    if (
-      isNaN(lastRefillDate.getTime()) ||
-      now >=
-        getRefillEligibilityDate(
-          lastRefillDate,
-          record.refillIntervalValue ?? 0,
-          record.refillIntervalUnit ?? 'days',
-        )
-    ) {
-      try {
-        const result = await deps.createAutoRefillTransaction({
-          user,
-          tokenType: 'credits',
-          context: 'autoRefill',
-          rawAmount: record.refillAmount,
-        });
-        if (result) {
-          balance = result.balance;
-        }
-      } catch (error) {
-        logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
-      }
-    }
-  }
+  balance = await maybeAutoRefill({
+    user,
+    record,
+    tokenCost,
+    deps: { createAutoRefillTransaction: deps.createAutoRefillTransaction },
+  });
 
   logger.debug('[Balance.check] Token cost', { tokenCost });
   return { canSpend: balance >= tokenCost, balance, tokenCost };

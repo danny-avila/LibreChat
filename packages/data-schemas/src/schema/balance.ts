@@ -30,7 +30,6 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
   },
   lastRefill: {
     type: Date,
-    default: Date.now,
   },
   // amount to add on each refill
   refillAmount: {
