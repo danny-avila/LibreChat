@@ -22,8 +22,10 @@ import type {
   ArtifactVersionListOptions,
   ArtifactVersionListPage,
   ArtifactVersionSummaryRecord,
+  ArtifactAppDeletionResult,
 } from '~/types';
 import { supportsTransactions } from '~/utils/transactions';
+import { escapeRegExp } from '~/utils/string';
 
 /** Snapshot schema version — bump when the canonical snapshot shape changes. */
 export const ARTIFACT_SCHEMA_VERSION = 1;
@@ -34,6 +36,20 @@ interface MongoWriteError {
 }
 
 class ArtifactSyncRetryError extends Error {}
+
+const LEGACY_IDENTIFIER_SOURCE_SUFFIX = /^(identifier:.+):(application|text|image)\/[^:]+$/;
+
+/** Collapses the source key emitted by the first catalog implementation. */
+export function canonicalizeArtifactSourceKey(sourceKey: string): string {
+  return sourceKey.match(LEGACY_IDENTIFIER_SOURCE_SUFFIX)?.[1] ?? sourceKey;
+}
+
+function legacyTypedSourceKeyPattern(sourceKey: string): RegExp | null {
+  if (!sourceKey.startsWith('identifier:')) {
+    return null;
+  }
+  return new RegExp(`^${escapeRegExp(sourceKey)}:(?:application|text|image)/[^:]+$`);
+}
 
 function isRetryableWriteError(error: unknown): boolean {
   const writeError = error as MongoWriteError;
@@ -100,6 +116,11 @@ export interface ArtifactAppMethods {
   deleteArtifactApp: (
     query: ArtifactAppQuery,
   ) => Promise<{ deletedApp: boolean; deletedVersions: number }>;
+  prepareArtifactAppDeletion: (
+    query: ArtifactAppQuery,
+    requestedBy: string,
+  ) => Promise<ArtifactAppDeletionResult>;
+  finalizeArtifactAppDeletion: (query: ArtifactAppQuery, requestedBy: string) => Promise<boolean>;
   getArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
   listArtifactVersions: (options: ArtifactVersionListOptions) => Promise<ArtifactVersionListPage>;
   releaseArtifactVersion: (
@@ -146,6 +167,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       toolPolicy: app.toolPolicy,
       marketplace: app.marketplace,
       sourceMetadata: app.sourceMetadata,
+      deletion: app.deletion,
       review: app.review,
       createdAt: app.createdAt,
       updatedAt: app.updatedAt,
@@ -344,7 +366,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     const filter: FilterQuery<IArtifactApp> = {
       createdBy: query.createdBy,
       'sourceMetadata.conversationId': query.conversationId,
-      'sourceMetadata.sourceKey': query.sourceKey,
+      'sourceMetadata.sourceKey': canonicalizeArtifactSourceKey(query.sourceKey),
     };
     if (query.tenantId != null) {
       filter.tenantId = query.tenantId;
@@ -357,7 +379,21 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   async function getArtifactAppBySource(
     query: ArtifactAppSourceQuery,
   ): Promise<ArtifactAppRecord | null> {
-    const app = await getApp().findOne(buildSourceFilter(query)).lean<IArtifactApp>().exec();
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(query.sourceKey);
+    let app = await getApp()
+      .findOne(buildSourceFilter({ ...query, sourceKey: canonicalSourceKey }))
+      .lean<IArtifactApp>()
+      .exec();
+    const legacyPattern = legacyTypedSourceKeyPattern(canonicalSourceKey);
+    if (!app && legacyPattern) {
+      app = await getApp()
+        .findOne({
+          ...buildSourceFilter({ ...query, sourceKey: canonicalSourceKey }),
+          'sourceMetadata.sourceKey': legacyPattern,
+        })
+        .lean<IArtifactApp>()
+        .exec();
+    }
     return app ? toAppRecord(app) : null;
   }
 
@@ -384,14 +420,57 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       throw new Error('[syncArtifactAppWithVersion] Stable source metadata is required');
     }
 
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(source.sourceKey);
+    const canonicalSource = { ...source, sourceKey: canonicalSourceKey };
     const sourceQuery: ArtifactAppSourceQuery = {
       tenantId: input.tenantId,
       createdBy: input.createdBy,
       conversationId: source.conversationId,
-      sourceKey: source.sourceKey,
+      sourceKey: canonicalSourceKey,
     };
     let filter = buildSourceFilter(sourceQuery);
     let existing = await getApp().findOne(filter).select({ _id: 1 }).lean().exec();
+
+    // Adopt the typed identifier keys emitted by the first automatic-catalog
+    // implementation. Canonicalizing incoming keys also prevents old browser
+    // bundles from recreating the legacy identity during a rolling deployment.
+    const legacyTypedPattern = legacyTypedSourceKeyPattern(canonicalSourceKey);
+    if (!existing && legacyTypedPattern) {
+      const legacyTypedFilter: FilterQuery<IArtifactApp> = {
+        ...filter,
+        'sourceMetadata.sourceKey': legacyTypedPattern,
+      };
+      const legacyTyped = await getApp()
+        .findOne(legacyTypedFilter)
+        .select({ _id: 1, 'sourceMetadata.sourceKey': 1 })
+        .lean<IArtifactApp>()
+        .exec();
+      if (legacyTyped) {
+        try {
+          const migrated = await getApp()
+            .findOneAndUpdate(
+              {
+                _id: legacyTyped._id,
+                'sourceMetadata.sourceKey': legacyTyped.sourceMetadata?.sourceKey,
+              },
+              { $set: { 'sourceMetadata.sourceKey': canonicalSourceKey } },
+              { new: true },
+            )
+            .select({ _id: 1 })
+            .lean()
+            .exec();
+          existing = migrated ?? (await getApp().findOne(filter).select({ _id: 1 }).lean().exec());
+        } catch (error) {
+          if (!isRetryableWriteError(error)) {
+            throw error;
+          }
+          existing = await getApp().findOne(filter).select({ _id: 1 }).lean().exec();
+        }
+        if (existing) {
+          filter = { _id: existing._id };
+        }
+      }
+    }
 
     // Upgrade path for records created by the original manual Publish dialog,
     // which stored an originalArtifactId but had no stable sourceKey.
@@ -415,6 +494,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       try {
         const { app, version } = await createArtifactAppWithVersion({
           ...input,
+          sourceMetadata: canonicalSource,
           visibility: 'private',
           marketplace: { ...input.marketplace, listed: true },
         });
@@ -510,11 +590,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
               versionNumber: -1,
             });
         const activeVersion = await versionQuery.exec();
-        const metadata = {
-          ...source,
-          conversationId: source.conversationId,
-          sourceKey: source.sourceKey,
-        };
+        const metadata = canonicalSource;
 
         if (activeVersion?.integrity.sourceHash === sourceHash) {
           const updatedApp = await ArtifactApp.findOneAndUpdate(
@@ -614,9 +690,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
 
       app.title = input.title;
       app.sourceMetadata = {
-        ...source,
-        conversationId: source.conversationId,
-        sourceKey: source.sourceKey,
+        ...canonicalSource,
       };
       app.set('marketplace.listed', true);
 
@@ -689,11 +763,14 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   }
 
   async function listArtifactApps(options: ArtifactAppListOptions): Promise<ArtifactAppListPage> {
-    let ownershipFilter: FilterQuery<IArtifactApp> = {};
+    let ownershipFilter: FilterQuery<IArtifactApp> = { deletion: { $exists: false } };
     if (options.createdBy) {
-      ownershipFilter = { createdBy: options.createdBy };
+      ownershipFilter = { createdBy: options.createdBy, deletion: { $exists: false } };
     } else if (options.excludeCreatedBy) {
-      ownershipFilter = { createdBy: { $ne: options.excludeCreatedBy } };
+      ownershipFilter = {
+        createdBy: { $ne: options.excludeCreatedBy },
+        deletion: { $exists: false },
+      };
     }
     const cursor = options.cursor ? decodeAppCursor(options.cursor) : null;
     const cursorFilter: FilterQuery<IArtifactApp> | undefined = cursor
@@ -704,8 +781,24 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           ],
         }
       : undefined;
+    const filters: FilterQuery<IArtifactApp>[] = [ownershipFilter];
+    if (cursorFilter) {
+      filters.push(cursorFilter);
+    }
+    const search = options.search?.trim();
+    if (search) {
+      const searchRegex = new RegExp(escapeRegExp(search), 'i');
+      filters.push({
+        $or: [
+          { title: searchRegex },
+          { description: searchRegex },
+          { category: searchRegex },
+          { tags: searchRegex },
+        ],
+      });
+    }
     const apps = await getApp()
-      .find(cursorFilter ? { $and: [ownershipFilter, cursorFilter] } : ownershipFilter)
+      .find(filters.length === 1 ? filters[0] : { $and: filters })
       .sort({ updatedAt: -1, _id: -1 })
       .limit(options.limit + 1)
       .lean<IArtifactApp[]>()
@@ -734,14 +827,101 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   async function deleteArtifactApp(
     query: ArtifactAppQuery,
   ): Promise<{ deletedApp: boolean; deletedVersions: number }> {
-    const app = await getApp().findOneAndDelete({ artifactAppId: query.artifactAppId }).exec();
-    if (!app) {
-      return { deletedApp: false, deletedVersions: 0 };
+    const performDelete = async (session?: ClientSession) => {
+      const appQuery = getApp().findOne({ artifactAppId: query.artifactAppId });
+      if (session) appQuery.session(session);
+      const app = await appQuery.exec();
+      if (!app) {
+        return { deletedApp: false, deletedVersions: 0 };
+      }
+      const versionResult = await getVersion().deleteMany(
+        { artifactAppId: query.artifactAppId },
+        session ? { session } : undefined,
+      );
+      const appResult = await getApp().deleteOne(
+        { _id: app._id },
+        session ? { session } : undefined,
+      );
+      return {
+        deletedApp: appResult.deletedCount === 1,
+        deletedVersions: versionResult.deletedCount ?? 0,
+      };
+    };
+
+    if (!(await supportsTransactions(mongoose))) {
+      return performDelete();
     }
-    const { deletedCount } = await getVersion()
-      .deleteMany({ artifactAppId: query.artifactAppId })
+    const session = await mongoose.startSession();
+    try {
+      let result: { deletedApp: boolean; deletedVersions: number } | undefined;
+      await session.withTransaction(async () => {
+        result = await performDelete(session);
+      });
+      return result ?? { deletedApp: false, deletedVersions: 0 };
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async function prepareArtifactAppDeletion(
+    query: ArtifactAppQuery,
+    requestedBy: string,
+  ): Promise<ArtifactAppDeletionResult> {
+    const prepare = async (session?: ClientSession): Promise<ArtifactAppDeletionResult> => {
+      const appQuery = getApp().findOneAndUpdate(
+        {
+          artifactAppId: query.artifactAppId,
+          $or: [{ deletion: { $exists: false } }, { 'deletion.requestedBy': requestedBy }],
+        },
+        { $set: { deletion: { requestedBy, requestedAt: new Date() } } },
+        { new: true, ...(session ? { session } : {}) },
+      );
+      const app = await appQuery.exec();
+      if (!app) {
+        const existingQuery = getApp().exists({ artifactAppId: query.artifactAppId });
+        if (session) existingQuery.session(session);
+        if (await existingQuery) {
+          throw new Error('[prepareArtifactAppDeletion] Deletion is already in progress');
+        }
+        return { found: false, deletedVersions: 0 };
+      }
+      const versionResult = await getVersion().deleteMany(
+        { artifactAppId: query.artifactAppId },
+        session ? { session } : undefined,
+      );
+      return {
+        found: true,
+        resourceId: app._id.toString(),
+        deletedVersions: versionResult.deletedCount ?? 0,
+      };
+    };
+
+    if (!(await supportsTransactions(mongoose))) {
+      return prepare();
+    }
+    const session = await mongoose.startSession();
+    try {
+      let result: ArtifactAppDeletionResult | undefined;
+      await session.withTransaction(async () => {
+        result = await prepare(session);
+      });
+      return result ?? { found: false, deletedVersions: 0 };
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async function finalizeArtifactAppDeletion(
+    query: ArtifactAppQuery,
+    requestedBy: string,
+  ): Promise<boolean> {
+    const result = await getApp()
+      .deleteOne({
+        artifactAppId: query.artifactAppId,
+        'deletion.requestedBy': requestedBy,
+      })
       .exec();
-    return { deletedApp: true, deletedVersions: deletedCount ?? 0 };
+    return result.deletedCount === 1;
   }
 
   async function getArtifactVersion(
@@ -839,6 +1019,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     listArtifactApps,
     updateArtifactApp,
     deleteArtifactApp,
+    prepareArtifactAppDeletion,
+    finalizeArtifactAppDeletion,
     getArtifactVersion,
     listArtifactVersions,
     releaseArtifactVersion,

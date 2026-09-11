@@ -1,31 +1,20 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
+  DEFAULT_ARTIFACT_APPS_CONFIG,
   Permissions,
   PermissionTypes,
-  QueryKeys,
-  dataService,
-  DEFAULT_ARTIFACT_APPS_CONFIG,
 } from 'librechat-data-provider';
 import type { TSyncArtifactAppRequest } from 'librechat-data-provider';
+import { enqueueArtifactSync } from '~/components/ArtifactApps/sync/queue';
 import { toLatestArtifactSyncRequests } from '~/utils/artifactCatalog';
-import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useGetStartupConfig } from '~/data-provider';
+import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useArtifactsContext } from '~/Providers';
+import { useAuthContext } from '~/hooks';
 import { logger } from '~/utils';
 import store from '~/store';
-
-interface PendingSync {
-  request: TSyncArtifactAppRequest;
-  signature: string;
-  failures: number;
-}
-
-interface SyncHttpError {
-  response?: { status?: number };
-}
 
 function getSyncKey(request: TSyncArtifactAppRequest): string {
   return `${request.source.conversationId}\u0000${request.source.sourceKey}`;
@@ -35,187 +24,116 @@ function getRequestSignature(request: TSyncArtifactAppRequest): string {
   return JSON.stringify(request);
 }
 
-function isRetryableSyncError(error: unknown): boolean {
-  const status = (error as SyncHttpError | null)?.response?.status;
-  return status == null || status === 408 || status === 429 || status >= 500;
-}
-
-/** Persists artifacts created or changed by a completed generation. */
+/** Detects artifacts created by completed generations and persists work for the global worker. */
 export default function ArtifactCatalogRegistrar() {
   const artifacts = useRecoilValue(store.artifactsState);
   const { conversationId, isSubmitting, latestMessageId } = useArtifactsContext();
-  const queryClient = useQueryClient();
+  const { user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const syncSettleDelayMs =
     startupConfig?.artifactApps?.clientSyncSettleDelayMs ??
     DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs;
-  const syncRetryBaseDelayMs =
-    startupConfig?.artifactApps?.clientSyncRetryBaseDelayMs ??
-    DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryBaseDelayMs;
-  const syncRetryMaxDelayMs =
-    startupConfig?.artifactApps?.clientSyncRetryMaxDelayMs ??
-    DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryMaxDelayMs;
+  const generationObservationMs =
+    startupConfig?.artifactApps?.clientGenerationObservationMs ??
+    DEFAULT_ARTIFACT_APPS_CONFIG.clientGenerationObservationMs;
   const canCreate = useHasAccess({
     permissionType: PermissionTypes.ARTIFACTS,
     permission: Permissions.CREATE,
   });
   const previousIsSubmittingRef = useRef(false);
-  const generationConversationRef = useRef<string | null>(null);
-  const generationMessageRef = useRef<string | null>(null);
-  const successfulHashesRef = useRef(new Map<string, string>());
-  const pendingSyncsRef = useRef(new Map<string, PendingSync>());
-  const syncTimerRef = useRef<number | null>(null);
-  const flushPendingRef = useRef<() => Promise<void>>(async () => undefined);
-  const mountedRef = useRef(true);
-  const flushingRef = useRef(false);
-
-  const scheduleSync = useCallback((delay: number) => {
-    if (syncTimerRef.current != null) {
-      window.clearTimeout(syncTimerRef.current);
-    }
-    syncTimerRef.current = window.setTimeout(() => {
-      syncTimerRef.current = null;
-      void flushPendingRef.current();
-    }, delay);
-  }, []);
-
-  const flushPending = useCallback(async () => {
-    if (flushingRef.current || !canCreate || pendingSyncsRef.current.size === 0) {
-      return;
-    }
-    flushingRef.current = true;
-    let completed = false;
-
-    for (const [syncKey, pending] of Array.from(pendingSyncsRef.current.entries())) {
-      if (!mountedRef.current) {
-        break;
-      }
-      try {
-        const result = await dataService.syncArtifactApp(pending.request);
-        queryClient.setQueryData(
-          [
-            QueryKeys.artifactApp,
-            'source',
-            pending.request.source.conversationId,
-            pending.request.source.sourceKey,
-          ],
-          result.app,
-        );
-        successfulHashesRef.current.set(syncKey, pending.signature);
-        if (pendingSyncsRef.current.get(syncKey)?.signature === pending.signature) {
-          pendingSyncsRef.current.delete(syncKey);
-        }
-        completed = true;
-      } catch (error) {
-        const current = pendingSyncsRef.current.get(syncKey);
-        if (current?.signature === pending.signature) {
-          if (isRetryableSyncError(error)) {
-            pendingSyncsRef.current.set(syncKey, { ...current, failures: current.failures + 1 });
-          } else {
-            pendingSyncsRef.current.delete(syncKey);
-          }
-        }
-        logger.error('artifacts', 'Failed to sync artifact with catalog', error);
-      }
-    }
-
-    flushingRef.current = false;
-    if (!mountedRef.current) {
-      return;
-    }
-    if (completed) {
-      await queryClient.invalidateQueries({
-        queryKey: [QueryKeys.artifactApps],
-        refetchType: 'all',
-      });
-    }
-    if (pendingSyncsRef.current.size > 0) {
-      const failures = Math.min(
-        ...Array.from(pendingSyncsRef.current.values(), ({ failures }) => failures),
-      );
-      scheduleSync(
-        Math.min(syncRetryBaseDelayMs * 2 ** Math.min(failures, 5), syncRetryMaxDelayMs),
-      );
-    }
-  }, [canCreate, queryClient, scheduleSync, syncRetryBaseDelayMs, syncRetryMaxDelayMs]);
+  const conversationRef = useRef<string | null>(null);
+  const activeGenerationConversationRef = useRef<string | null>(null);
+  const activeGenerationMessageRef = useRef<string | null>(null);
+  const completedGenerationMessagesRef = useRef(new Map<string, number>());
+  const observedSignaturesRef = useRef(new Map<string, string>());
 
   useEffect(() => {
-    flushPendingRef.current = flushPending;
-  }, [flushPending]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (syncTimerRef.current != null) {
-        window.clearTimeout(syncTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const wasSubmitting = previousIsSubmittingRef.current;
-    previousIsSubmittingRef.current = isSubmitting;
     const validConversation =
       conversationId != null && conversationId !== Constants.NEW_CONVO ? conversationId : null;
+    const requests =
+      validConversation && artifacts
+        ? toLatestArtifactSyncRequests(artifacts, validConversation)
+        : [];
+    const wasSubmitting = previousIsSubmittingRef.current;
+    previousIsSubmittingRef.current = isSubmitting;
 
-    if (isSubmitting) {
-      if (!wasSubmitting && validConversation) {
-        const baselineRequests = artifacts
-          ? toLatestArtifactSyncRequests(artifacts, validConversation)
-          : [];
-        for (const request of baselineRequests) {
-          successfulHashesRef.current.set(getSyncKey(request), getRequestSignature(request));
+    if (conversationRef.current !== validConversation) {
+      conversationRef.current = validConversation;
+      activeGenerationConversationRef.current = null;
+      activeGenerationMessageRef.current = null;
+      completedGenerationMessagesRef.current.clear();
+      observedSignaturesRef.current.clear();
+      if (!isSubmitting) {
+        for (const request of requests) {
+          observedSignaturesRef.current.set(getSyncKey(request), getRequestSignature(request));
         }
+      } else if (validConversation) {
+        activeGenerationConversationRef.current = validConversation;
+        activeGenerationMessageRef.current = latestMessageId;
       }
-      generationConversationRef.current = validConversation;
-      generationMessageRef.current = latestMessageId;
+    }
+
+    if (isSubmitting && !wasSubmitting) {
+      activeGenerationConversationRef.current = validConversation;
+      activeGenerationMessageRef.current = latestMessageId;
+    } else if (isSubmitting && activeGenerationConversationRef.current === validConversation) {
+      activeGenerationMessageRef.current = latestMessageId ?? activeGenerationMessageRef.current;
+    }
+
+    if (
+      !isSubmitting &&
+      wasSubmitting &&
+      activeGenerationConversationRef.current === validConversation
+    ) {
+      const completedMessageId = latestMessageId ?? activeGenerationMessageRef.current;
+      if (completedMessageId) {
+        completedGenerationMessagesRef.current.set(
+          completedMessageId,
+          Date.now() + generationObservationMs,
+        );
+      }
+      activeGenerationConversationRef.current = null;
+      activeGenerationMessageRef.current = null;
+    }
+
+    const now = Date.now();
+    for (const [messageId, expiresAt] of completedGenerationMessagesRef.current) {
+      if (expiresAt <= now) {
+        completedGenerationMessagesRef.current.delete(messageId);
+      }
+    }
+
+    if (!canCreate || !user?.id || !validConversation) {
       return;
     }
 
-    const generationConversation = generationConversationRef.current;
-    if (wasSubmitting && generationConversation) {
-      generationMessageRef.current = latestMessageId;
-    }
-    const observingGeneration =
-      canCreate && generationConversation != null && generationConversation === validConversation;
-    if (!observingGeneration || !artifacts) {
-      return;
-    }
-
-    let queued = false;
-    const requests = toLatestArtifactSyncRequests(artifacts, generationConversation);
     for (const request of requests) {
-      if (
-        generationMessageRef.current == null ||
-        request.source.messageId !== generationMessageRef.current
-      ) {
+      const messageId = request.source.messageId;
+      if (!messageId || !completedGenerationMessagesRef.current.has(messageId)) {
         continue;
       }
       const syncKey = getSyncKey(request);
       const signature = getRequestSignature(request);
-      if (successfulHashesRef.current.get(syncKey) === signature) {
+      if (observedSignaturesRef.current.get(syncKey) === signature) {
         continue;
       }
-      const current = pendingSyncsRef.current.get(syncKey);
-      pendingSyncsRef.current.set(syncKey, {
-        request,
-        signature,
-        failures: current?.signature === signature ? current.failures : 0,
+      observedSignaturesRef.current.set(syncKey, signature);
+      void enqueueArtifactSync(user.id, request, signature, syncSettleDelayMs).catch((error) => {
+        if (observedSignaturesRef.current.get(syncKey) === signature) {
+          observedSignaturesRef.current.delete(syncKey);
+        }
+        logger.error('artifacts', 'Failed to persist artifact catalog registration', error);
       });
-      queued = true;
-    }
-    if (queued || pendingSyncsRef.current.size > 0) {
-      scheduleSync(syncSettleDelayMs);
     }
   }, [
     artifacts,
     canCreate,
     conversationId,
+    generationObservationMs,
     isSubmitting,
     latestMessageId,
-    scheduleSync,
     syncSettleDelayMs,
+    user?.id,
   ]);
 
   return null;

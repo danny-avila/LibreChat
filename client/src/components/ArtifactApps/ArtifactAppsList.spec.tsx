@@ -18,6 +18,7 @@ jest.mock('recoil', () => ({
 
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: { id: 'user-1', role: 'USER' } }),
+  useDebounce: (value: string) => value,
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
       com_ui_artifact_apps: 'Artifacts',
@@ -137,7 +138,7 @@ describe('ArtifactAppsList', () => {
     expect(screen.getAllByTestId('mock-admin-settings')).not.toHaveLength(0);
   });
 
-  it('filters artifacts by their metadata and shows the no-results state', () => {
+  it('sends metadata search to the paginated server query', () => {
     render(
       <BrowserRouter>
         <ArtifactAppsList />
@@ -147,11 +148,7 @@ describe('ArtifactAppsList', () => {
     const search = screen.getByRole('textbox', { name: 'Search artifacts' });
     fireEvent.change(search, { target: { value: 'forecast' } });
 
-    expect(screen.getByText('Quarterly Report')).toBeInTheDocument();
-    expect(screen.queryByText('Team Planner')).not.toBeInTheDocument();
-
-    fireEvent.change(search, { target: { value: 'missing artifact' } });
-    expect(screen.getByText('No artifacts found')).toBeInTheDocument();
+    expect(mockUseListArtifactAppsQuery).toHaveBeenLastCalledWith('personal', 'forecast');
   });
 
   it('requests the selected catalog scope', () => {
@@ -162,7 +159,7 @@ describe('ArtifactAppsList', () => {
     );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Shared' }));
-    expect(mockUseListArtifactAppsQuery).toHaveBeenLastCalledWith('shared');
+    expect(mockUseListArtifactAppsQuery).toHaveBeenLastCalledWith('shared', '');
   });
 
   it('loads the next cursor page on request', () => {

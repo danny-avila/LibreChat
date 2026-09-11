@@ -63,6 +63,11 @@ export interface ArtifactAppHandlersDeps {
   deleteArtifactApp: (
     query: ArtifactAppQuery,
   ) => Promise<{ deletedApp: boolean; deletedVersions: number }>;
+  prepareArtifactAppDeletion: (
+    query: ArtifactAppQuery,
+    requestedBy: string,
+  ) => Promise<{ found: boolean; resourceId?: string; deletedVersions: number }>;
+  finalizeArtifactAppDeletion: (query: ArtifactAppQuery, requestedBy: string) => Promise<boolean>;
   getArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
   listArtifactVersions: (options: ArtifactVersionListOptions) => Promise<ArtifactVersionListPage>;
   releaseArtifactVersion: (
@@ -86,6 +91,7 @@ export interface ArtifactAppHandlersDeps {
     accessRoleId: string;
     grantedBy: string;
   }) => Promise<void>;
+  removeAllPermissions: (params: { resourceType: string; resourceId: string }) => Promise<unknown>;
   recordAuditEntry: (input: RecordAuditEntryInput) => Promise<void>;
   getConfig?: (req: ServerRequest) => Partial<ArtifactAppsConfig> | undefined;
 }
@@ -98,7 +104,7 @@ function toIsoOptional(value: Date | undefined): string | undefined {
   return value ? value.toISOString() : undefined;
 }
 
-function serializeApp(app: ArtifactAppRecord): TArtifactApp {
+function serializeApp(app: ArtifactAppRecord, viewerId: string): TArtifactApp {
   return {
     id: app.id,
     artifactAppId: app.artifactAppId,
@@ -129,14 +135,15 @@ function serializeApp(app: ArtifactAppRecord): TArtifactApp {
       riskClass: app.marketplace.riskClass,
       costClass: app.marketplace.costClass,
     },
-    sourceMetadata: app.sourceMetadata
-      ? {
-          conversationId: app.sourceMetadata.conversationId,
-          messageId: app.sourceMetadata.messageId,
-          originalArtifactId: app.sourceMetadata.originalArtifactId,
-          sourceKey: app.sourceMetadata.sourceKey,
-        }
-      : undefined,
+    sourceMetadata:
+      app.createdBy === viewerId && app.sourceMetadata
+        ? {
+            conversationId: app.sourceMetadata.conversationId,
+            messageId: app.sourceMetadata.messageId,
+            originalArtifactId: app.sourceMetadata.originalArtifactId,
+            sourceKey: app.sourceMetadata.sourceKey,
+          }
+        : undefined,
     review: app.review
       ? {
           submittedAt: toIsoOptional(app.review.submittedAt),
@@ -239,6 +246,8 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     listArtifactApps,
     updateArtifactApp,
     deleteArtifactApp,
+    prepareArtifactAppDeletion,
+    finalizeArtifactAppDeletion,
     getArtifactVersion,
     listArtifactVersions,
     releaseArtifactVersion,
@@ -246,6 +255,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     withdrawArtifactVersion,
     getResourcePermissionsMap,
     grantPermission,
+    removeAllPermissions,
     recordAuditEntry,
     getConfig,
   } = deps;
@@ -254,6 +264,19 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     recordAuditEntry(input).catch((err) =>
       logger.error(`[artifactApps] audit write failed for ${input.action}`, err),
     );
+  }
+
+  async function serializeDetail(app: ArtifactAppRecord, viewerId: string) {
+    const version = app.activeVersionId
+      ? await getArtifactVersion({
+          artifactAppId: app.artifactAppId,
+          artifactVersionId: app.activeVersionId,
+        })
+      : null;
+    return {
+      app: serializeApp(app, viewerId),
+      version: version ? serializeVersion(version) : null,
+    };
   }
 
   function toVersionInput(
@@ -339,7 +362,9 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         metadata: { versionNumber: version.versionNumber },
       });
 
-      return res.status(201).json({ app: serializeApp(app), version: serializeVersion(version) });
+      return res
+        .status(201)
+        .json({ app: serializeApp(app, userId), version: serializeVersion(version) });
     } catch (error) {
       logger.error('[POST /artifact-apps] Error publishing artifact app', error);
       return res.status(500).json({ error: 'Error publishing artifact app' });
@@ -405,7 +430,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       }
 
       return res.status(result.created ? 201 : 200).json({
-        app: serializeApp(result.app),
+        app: serializeApp(result.app, userId),
         version: serializeVersion(result.version),
         created: result.created,
         versionCreated: result.versionCreated,
@@ -452,6 +477,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
             ...ownership,
             cursor: scanCursor,
             limit: config.scanBatchSize,
+            search: parsed.data.search,
           });
         } catch (error) {
           if (error instanceof Error && error.message === 'Invalid artifact app cursor') {
@@ -464,18 +490,25 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           break;
         }
 
-        const permissions = await getResourcePermissionsMap({
-          userId,
-          role: user.role,
-          resourceType: ResourceType.ARTIFACT_APP,
-          resourceIds: candidatePage.entries.map(({ app }) => app.id),
-        });
-        for (const entry of candidatePage.entries) {
-          const permissionBits = permissions.get(entry.app.id) ?? 0;
-          if ((permissionBits & PermissionBits.VIEW) === PermissionBits.VIEW) {
-            accessibleEntries.push(entry);
-            if (accessibleEntries.length > parsed.data.limit) {
-              break;
+        for (
+          let offset = 0;
+          offset < candidatePage.entries.length && accessibleEntries.length <= parsed.data.limit;
+          offset += config.aclBatchSize
+        ) {
+          const aclEntries = candidatePage.entries.slice(offset, offset + config.aclBatchSize);
+          const permissions = await getResourcePermissionsMap({
+            userId,
+            role: user.role,
+            resourceType: ResourceType.ARTIFACT_APP,
+            resourceIds: aclEntries.map(({ app }) => app.id),
+          });
+          for (const entry of aclEntries) {
+            const permissionBits = permissions.get(entry.app.id) ?? 0;
+            if ((permissionBits & PermissionBits.VIEW) === PermissionBits.VIEW) {
+              accessibleEntries.push(entry);
+              if (accessibleEntries.length > parsed.data.limit) {
+                break;
+              }
             }
           }
         }
@@ -497,7 +530,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
             : (scanCursor ?? null);
       }
       return res.status(200).json({
-        apps: entries.map(({ app }) => serializeApp(app)),
+        apps: entries.map(({ app }) => serializeApp(app, userId)),
         has_more: hasMore,
         after,
       });
@@ -528,7 +561,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!app) {
         return res.status(404).json({ error: 'Artifact not found' });
       }
-      return res.status(200).json(serializeApp(app));
+      return res.status(200).json(await serializeDetail(app, user.id as string));
     } catch (error) {
       logger.error('[GET /artifact-apps/source] Error fetching artifact', error);
       return res.status(500).json({ error: 'Error fetching artifact' });
@@ -537,12 +570,16 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
 
   async function get(req: ServerRequest, res: Response) {
     try {
+      const user = requireUser(req, res);
+      if (!user) {
+        return res as Response;
+      }
       const { id } = req.params as { id: string };
       const app = await getArtifactAppByAppId({ artifactAppId: id });
       if (!app) {
         return res.status(404).json({ error: 'Artifact app not found' });
       }
-      return res.status(200).json(serializeApp(app));
+      return res.status(200).json(await serializeDetail(app, user.id as string));
     } catch (error) {
       logger.error('[GET /artifact-apps/:id] Error fetching artifact app', error);
       return res.status(500).json({ error: 'Error fetching artifact app' });
@@ -574,7 +611,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         actor: { type: 'user', id: user.id as string, name: user.name ?? user.username ?? '' },
         target: { type: ResourceType.ARTIFACT_APP, id: updated.artifactAppId, name: updated.title },
       });
-      return res.status(200).json(serializeApp(updated));
+      return res.status(200).json(serializeApp(updated, user.id as string));
     } catch (error) {
       logger.error('[PATCH /artifact-apps/:id] Error updating artifact app', error);
       return res.status(500).json({ error: 'Error updating artifact app' });
@@ -588,16 +625,43 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         return res as Response;
       }
       const { id } = req.params as { id: string };
-      const result = await deleteArtifactApp({ artifactAppId: id });
-      if (!result.deletedApp) {
-        return res.status(404).json({ error: 'Artifact app not found' });
+      const userId = user.id as string;
+      const app = await getArtifactAppByAppId({ artifactAppId: id });
+      if (!app) {
+        return res.status(200).json({ success: true });
+      }
+      if (app.createdBy !== userId && app.deletion?.requestedBy !== userId) {
+        const permissions = await getResourcePermissionsMap({
+          userId,
+          role: user.role,
+          resourceType: ResourceType.ARTIFACT_APP,
+          resourceIds: [app.id],
+        });
+        const permissionBits = permissions.get(app.id) ?? 0;
+        if ((permissionBits & PermissionBits.DELETE) !== PermissionBits.DELETE) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      }
+      const prepared = await prepareArtifactAppDeletion({ artifactAppId: id }, userId);
+      if (!prepared.found) {
+        return res.status(200).json({ success: true });
+      }
+      if (!prepared.resourceId) {
+        throw new Error('Prepared artifact deletion has no resource id');
+      }
+      await removeAllPermissions({
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: prepared.resourceId,
+      });
+      if (!(await finalizeArtifactAppDeletion({ artifactAppId: id }, userId))) {
+        throw new Error('Failed to finalize artifact deletion');
       }
       audit({
         tenantId: user.tenantId,
         action: 'artifact_app.archived',
-        actor: { type: 'user', id: user.id as string, name: user.name ?? user.username ?? '' },
+        actor: { type: 'user', id: userId, name: user.name ?? user.username ?? '' },
         target: { type: ResourceType.ARTIFACT_APP, id },
-        metadata: { deletedVersions: result.deletedVersions },
+        metadata: { deletedVersions: prepared.deletedVersions },
       });
       return res.status(200).json({ success: true });
     } catch (error) {
@@ -711,7 +775,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         target: { type: ResourceType.ARTIFACT_APP, id, name: result.version.artifactVersionId },
         metadata: { versionNumber: result.version.versionNumber },
       });
-      return res.status(200).json(serializeApp(result.app));
+      return res.status(200).json(serializeApp(result.app, user.id as string));
     } catch (error) {
       logger.error('[POST /artifact-apps/:id/versions/:versionId/activate] Error', error);
       return res.status(500).json({ error: 'Error activating artifact app version' });

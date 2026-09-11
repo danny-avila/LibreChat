@@ -5,10 +5,10 @@ import { useMediaQuery } from '@librechat/client';
 import { Shapes, Lock, Users } from 'lucide-react';
 import type { ArtifactAppListScope } from 'librechat-data-provider';
 import ArtifactAppsAdminSettings from './ArtifactAppsAdminSettings';
+import { useAuthContext, useDebounce, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import ArtifactAppsSearchBar from './ArtifactAppsSearchBar';
 import { useListArtifactAppsQuery } from '~/data-provider';
-import { useAuthContext, useLocalize } from '~/hooks';
 import store from '~/store';
 
 const SCOPES: ArtifactAppListScope[] = ['personal', 'shared', 'all'];
@@ -26,23 +26,12 @@ export default function ArtifactAppsList() {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [searchQuery, setSearchQuery] = useState('');
   const [scope, setScope] = useState<ArtifactAppListScope>('personal');
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300);
   const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage } =
-    useListArtifactAppsQuery(scope);
+    useListArtifactAppsQuery(scope, debouncedSearchQuery);
   const apps = useMemo(() => data?.pages.flatMap((page) => page.apps) ?? [], [data]);
-  const filteredApps = useMemo(() => {
-    const query = searchQuery.trim().toLocaleLowerCase();
-    if (!query) {
-      return apps;
-    }
 
-    return apps.filter((app) =>
-      [app.title, app.description, app.category, ...(app.tags ?? [])]
-        .filter(Boolean)
-        .some((value) => value?.toLocaleLowerCase().includes(query)),
-    );
-  }, [apps, searchQuery]);
-
-  const openArtifact = (app: (typeof filteredApps)[number]) => {
+  const openArtifact = (app: (typeof apps)[number]) => {
     const source = app.sourceMetadata;
     if (app.createdBy === user?.id && source?.conversationId) {
       const artifactKey = source.sourceKey ?? source.originalArtifactId ?? source.messageId;
@@ -90,7 +79,7 @@ export default function ArtifactAppsList() {
       );
     }
 
-    if (filteredApps.length === 0 && !hasNextPage) {
+    if (apps.length === 0 && !hasNextPage) {
       const titleKey = searchQuery
         ? 'com_ui_artifact_apps_no_results'
         : 'com_ui_artifact_apps_empty';
@@ -110,7 +99,7 @@ export default function ArtifactAppsList() {
     return (
       <>
         <ul>
-          {filteredApps.map((app) => (
+          {apps.map((app) => (
             <li key={app.artifactAppId}>
               <button
                 className="focus-visible:ring-ring mb-3 flex w-full items-start gap-4 rounded-xl border border-border-light bg-surface-secondary p-4 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2"

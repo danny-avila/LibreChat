@@ -54,7 +54,7 @@ describe('StandaloneAppView', () => {
     jest.clearAllMocks();
     mockVersionId = undefined;
     jest.mocked(useGetArtifactAppQuery).mockReturnValue({
-      data: app,
+      data: { app, version },
       isLoading: false,
       isError: false,
     } as ReturnType<typeof useGetArtifactAppQuery>);
@@ -86,11 +86,11 @@ describe('StandaloneAppView', () => {
     } as unknown as ReturnType<typeof useListArtifactAppVersionsQuery>);
   });
 
-  it('fetches only the active full snapshot and renders it', () => {
+  it('uses the active snapshot included in the backward-compatible detail response', () => {
     render(<StandaloneAppView />);
 
     expect(useGetArtifactAppVersionQuery).toHaveBeenCalledWith('app-1', 'version-2', {
-      enabled: true,
+      enabled: false,
     });
     expect(screen.getByTestId('artifact-renderer')).toHaveTextContent('selected snapshot');
   });

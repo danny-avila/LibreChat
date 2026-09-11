@@ -22,6 +22,7 @@ let grants: GrantRecord[];
 let auditActions: string[];
 let accessibleIds: string[];
 let permissionBatchSizes: number[];
+let removedPermissionIds: string[];
 
 function makeRes(): Response & { statusCode: number; body: unknown } {
   const res = {
@@ -113,6 +114,9 @@ beforeAll(async () => {
         accessRoleId: params.accessRoleId,
       });
     },
+    removeAllPermissions: async ({ resourceId }) => {
+      removedPermissionIds.push(resourceId);
+    },
     recordAuditEntry: async (input) => {
       auditActions.push(input.action);
     },
@@ -130,6 +134,7 @@ beforeEach(async () => {
   auditActions = [];
   accessibleIds = [];
   permissionBatchSizes = [];
+  removedPermissionIds = [];
 });
 
 describe('publish', () => {
@@ -205,6 +210,7 @@ describe('artifact app configuration injection', () => {
       syncArtifactAppWithVersion,
       getResourcePermissionsMap: async () => new Map(),
       grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
       recordAuditEntry: async () => undefined,
       getConfig: () => ({
         syncLockLeaseMs: 12_000,
@@ -238,6 +244,7 @@ describe('artifact app configuration injection', () => {
       listArtifactApps,
       getResourcePermissionsMap: async () => new Map(),
       grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
       recordAuditEntry: async () => undefined,
       getConfig: () => ({ scanBatchSize: 37 }),
     });
@@ -286,12 +293,12 @@ describe('automatic catalog sync', () => {
     );
 
     expect(res.statusCode).toBe(200);
-    expect((res.body as { id: string }).id).toMatch(/^[a-f0-9]{24}$/);
+    expect((res.body as { app: { id: string } }).app.id).toMatch(/^[a-f0-9]{24}$/);
   });
 });
 
 describe('get / list', () => {
-  test('get returns app metadata without embedding its active version snapshot', async () => {
+  test('get retains the app and active-version rollout envelope', async () => {
     const created = makeRes();
     await handlers.publish(makeReq({ body: samplePublish }), created);
     const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
@@ -299,9 +306,12 @@ describe('get / list', () => {
     const res = makeRes();
     await handlers.get(makeReq({ params: { id: appId } as never }), res);
     expect(res.statusCode).toBe(200);
-    const body = res.body as { artifactAppId: string; version?: unknown };
-    expect(body.artifactAppId).toBe(appId);
-    expect(body.version).toBeUndefined();
+    const body = res.body as {
+      app: { artifactAppId: string };
+      version: { artifactAppId: string };
+    };
+    expect(body.app.artifactAppId).toBe(appId);
+    expect(body.version.artifactAppId).toBe(appId);
   });
 
   test('list returns only ACL-accessible apps', async () => {
@@ -359,7 +369,7 @@ describe('get / list', () => {
 
   test('list returns stable cursor pages and bounds ACL permission batches', async () => {
     const createdIds: string[] = [];
-    for (let index = 0; index < 25; index++) {
+    for (let index = 0; index < 125; index++) {
       const { app } = await methods.createArtifactAppWithVersion({
         createdBy: 'user-1',
         title: `Artifact ${index}`,
@@ -374,8 +384,20 @@ describe('get / list', () => {
     }
     accessibleIds = createdIds;
 
+    const paginatedHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async ({ resourceIds }) => {
+        permissionBatchSizes.push(resourceIds.length);
+        return new Map(resourceIds.map((id) => [id, PermissionBits.VIEW]));
+      },
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      recordAuditEntry: async () => undefined,
+      getConfig: () => ({ scanBatchSize: 250, aclBatchSize: 100 }),
+    });
+
     const first = makeRes();
-    await handlers.list(makeReq({ query: { scope: 'personal', limit: '10' } }), first);
+    await paginatedHandlers.list(makeReq({ query: { scope: 'personal', limit: '10' } }), first);
     const firstPage = first.body as {
       apps: Array<{ id: string }>;
       has_more: boolean;
@@ -389,7 +411,7 @@ describe('get / list', () => {
     }
 
     const second = makeRes();
-    await handlers.list(
+    await paginatedHandlers.list(
       makeReq({ query: { scope: 'personal', limit: '10', cursor: firstPage.after } }),
       second,
     );
@@ -397,6 +419,54 @@ describe('get / list', () => {
     expect(secondPage.apps).toHaveLength(10);
     expect(new Set([...firstPage.apps, ...secondPage.apps].map(({ id }) => id)).size).toBe(20);
     expect(Math.max(...permissionBatchSizes)).toBeLessThanOrEqual(100);
+  });
+
+  test('applies search before cursor pagination', async () => {
+    const createdIds: string[] = [];
+    for (let index = 0; index < 25; index++) {
+      const { app } = await methods.createArtifactAppWithVersion({
+        createdBy: 'user-1',
+        title: index === 24 ? 'Needle Artifact' : `Ordinary Artifact ${index}`,
+        visibility: 'private',
+        version: {
+          artifactType: 'react',
+          sourceSnapshot: `${samplePublish.artifact.content}-${index}`,
+          createdBy: 'user-1',
+        },
+      });
+      createdIds.push(app.id);
+    }
+    accessibleIds = createdIds;
+
+    const res = makeRes();
+    await handlers.list(
+      makeReq({ query: { scope: 'personal', limit: '10', search: 'needle' } }),
+      res,
+    );
+
+    expect((res.body as { apps: Array<{ title: string }> }).apps).toEqual([
+      expect.objectContaining({ title: 'Needle Artifact' }),
+    ]);
+  });
+
+  test('redacts source conversation metadata from shared viewers', async () => {
+    const created = makeRes();
+    await handlers.sync(
+      makeReq({
+        user: makeUser({ id: 'user-2', email: 'user-two@example.com' }),
+        body: syncBody,
+      }),
+      created,
+    );
+    const app = (created.body as { app: { id: string } }).app;
+    accessibleIds = [app.id];
+
+    const res = makeRes();
+    await handlers.list(makeReq({ query: { scope: 'shared' } }), res);
+
+    expect(
+      (res.body as { apps: Array<{ sourceMetadata?: unknown }> }).apps[0]?.sourceMetadata,
+    ).toBeUndefined();
   });
 
   test('list rejects malformed cursors', async () => {
@@ -596,15 +666,44 @@ describe('remove', () => {
 
     expect(res.statusCode).toBe(200);
     expect(auditActions).toContain('artifact_app.archived');
+    expect(removedPermissionIds).toHaveLength(1);
     expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
     const versions = await methods.listArtifactVersions({ artifactAppId: appId, limit: 20 });
     expect(versions.versions).toHaveLength(0);
   });
 
-  test('returns 404 for an unknown app', async () => {
+  test('treats deleting an unknown app as an idempotent success', async () => {
     const res = makeRes();
     await handlers.remove(makeReq({ params: { id: 'app_missing' } as never }), res);
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(200);
+  });
+
+  test('keeps deletion resumable when ACL cleanup fails', async () => {
+    const { appId } = await createSyncedVersions(2);
+    const removeAllPermissions = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary ACL failure'))
+      .mockResolvedValue(undefined);
+    const retryableHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      removeAllPermissions,
+      recordAuditEntry: async () => undefined,
+    });
+
+    const first = makeRes();
+    await retryableHandlers.remove(makeReq({ params: { id: appId } as never }), first);
+    expect(first.statusCode).toBe(500);
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toMatchObject({
+      deletion: { requestedBy: 'user-1' },
+    });
+
+    const retry = makeRes();
+    await retryableHandlers.remove(makeReq({ params: { id: appId } as never }), retry);
+    expect(retry.statusCode).toBe(200);
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
+    expect(removeAllPermissions).toHaveBeenCalledTimes(2);
   });
 });
 

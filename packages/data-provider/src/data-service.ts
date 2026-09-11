@@ -1690,18 +1690,27 @@ export function listArtifactApps(
   if (params.cursor) {
     query.set('cursor', params.cursor);
   }
+  if (params.search) {
+    query.set('search', params.search);
+  }
   return request.get(`${endpoints.artifactApps()}?${query.toString()}`);
 }
 
-export function getArtifactAppBySource(
+export async function getArtifactAppBySource(
   conversationId: string,
   sourceKey: string,
-): Promise<aa.TArtifactApp> {
-  return request.get(endpoints.artifactAppBySource(conversationId, sourceKey));
+): Promise<aa.TArtifactAppWithVersion> {
+  const response = await request.get<aa.TArtifactAppDetailResponse>(
+    endpoints.artifactAppBySource(conversationId, sourceKey),
+  );
+  return aa.normalizeArtifactAppDetail(response);
 }
 
-export function getArtifactApp(artifactAppId: string): Promise<aa.TArtifactApp> {
-  return request.get(endpoints.artifactAppById(artifactAppId));
+export async function getArtifactApp(artifactAppId: string): Promise<aa.TArtifactAppWithVersion> {
+  const response = await request.get<aa.TArtifactAppDetailResponse>(
+    endpoints.artifactAppById(artifactAppId),
+  );
+  return aa.normalizeArtifactAppDetail(response);
 }
 
 export function updateArtifactApp(
