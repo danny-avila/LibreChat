@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
+import type { ArtifactAppsConfig } from './artifactApps';
 import {
   filtersConfigSchema,
   MAX_PII_CUSTOM_REGEX_CHARACTERS,
@@ -21,6 +22,7 @@ import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { artifactAppsConfigSchema } from './artifactApps';
 import { isActionTool } from './types/assistants';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
@@ -2109,6 +2111,7 @@ export type EndpointsDropParamsMap = Record<string, string[] | Record<string, st
 
 export type TStartupConfig = {
   appTitle: string;
+  artifactApps?: ArtifactAppsConfig;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
@@ -2692,6 +2695,7 @@ export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  artifactApps: artifactAppsConfigSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),

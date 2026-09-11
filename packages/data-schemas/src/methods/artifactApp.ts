@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import crypto from 'node:crypto';
-import type { ClientSession, FilterQuery, Model } from 'mongoose';
+import { DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
+import type { ClientSession, FilterQuery, Model, Types } from 'mongoose';
 import type {
   IArtifactApp,
   IArtifactVersion,
@@ -9,20 +10,23 @@ import type {
   CreateArtifactAppInput,
   CreateArtifactVersionInput,
   ArtifactAppWithVersion,
-  ArtifactAppIdResolution,
   ArtifactAppSourceQuery,
   SyncArtifactAppResult,
   IArtifactVersionRuntimeConfig,
   ArtifactAppListOptions,
+  ArtifactAppListPage,
+  ArtifactAppRecord,
+  ArtifactAppUpdate,
+  ArtifactAppSyncOptions,
+  ArtifactVersionRecord,
+  ArtifactVersionListOptions,
+  ArtifactVersionListPage,
+  ArtifactVersionSummaryRecord,
 } from '~/types';
 import { supportsTransactions } from '~/utils/transactions';
 
 /** Snapshot schema version — bump when the canonical snapshot shape changes. */
 export const ARTIFACT_SCHEMA_VERSION = 1;
-const SYNC_LOCK_LEASE_MS = 5000;
-const SYNC_LOCK_RETRY_DELAY_MS = 50;
-const SYNC_LOCK_RETRY_ATTEMPTS = 100;
-const SYNC_WRITE_RETRY_ATTEMPTS = 3;
 
 interface MongoWriteError {
   code?: number;
@@ -41,8 +45,8 @@ function isRetryableWriteError(error: unknown): boolean {
   );
 }
 
-function waitForSyncLock(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, SYNC_LOCK_RETRY_DELAY_MS));
+function waitForSyncLock(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 /**
@@ -81,33 +85,29 @@ function canonicalize(value: unknown): unknown {
 
 export interface ArtifactAppMethods {
   createArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<ArtifactAppWithVersion>;
-  syncArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<SyncArtifactAppResult>;
-  getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<IArtifactApp | null>;
-  getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<IArtifactApp | null>;
-  resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppIdResolution | null>;
-  listArtifactApps: (
-    filter: FilterQuery<IArtifactApp>,
-    options?: ArtifactAppListOptions,
-  ) => Promise<IArtifactApp[]>;
+  syncArtifactAppWithVersion: (
+    input: CreateArtifactAppInput,
+    options?: Partial<ArtifactAppSyncOptions>,
+  ) => Promise<SyncArtifactAppResult>;
+  getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
+  getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
+  resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<string | null>;
+  listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
   updateArtifactApp: (
     query: ArtifactAppQuery,
-    update: Partial<IArtifactApp>,
-  ) => Promise<IArtifactApp | null>;
+    update: ArtifactAppUpdate,
+  ) => Promise<ArtifactAppRecord | null>;
   deleteArtifactApp: (
     query: ArtifactAppQuery,
   ) => Promise<{ deletedApp: boolean; deletedVersions: number }>;
-  getArtifactVersion: (query: ArtifactVersionQuery) => Promise<IArtifactVersion | null>;
-  listArtifactVersions: (query: ArtifactAppQuery) => Promise<IArtifactVersion[]>;
-  createArtifactVersion: (
-    query: ArtifactAppQuery,
-    input: CreateArtifactVersionInput,
-  ) => Promise<IArtifactVersion>;
+  getArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
+  listArtifactVersions: (options: ArtifactVersionListOptions) => Promise<ArtifactVersionListPage>;
   releaseArtifactVersion: (
     query: ArtifactVersionQuery,
     releasedBy: string,
-  ) => Promise<IArtifactVersion | null>;
+  ) => Promise<ArtifactVersionRecord | null>;
   activateArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactAppWithVersion | null>;
-  withdrawArtifactVersion: (query: ArtifactVersionQuery) => Promise<IArtifactVersion | null>;
+  withdrawArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
 }
 
 function buildVersionFilter(query: ArtifactVersionQuery): Record<string, unknown> {
@@ -124,6 +124,119 @@ function buildVersionFilter(query: ArtifactVersionQuery): Record<string, unknown
 export function createArtifactAppMethods(mongoose: typeof import('mongoose')): ArtifactAppMethods {
   const getApp = () => mongoose.models.ArtifactApp as Model<IArtifactApp>;
   const getVersion = () => mongoose.models.ArtifactVersion as Model<IArtifactVersion>;
+
+  function toAppRecord(app: IArtifactApp): ArtifactAppRecord {
+    return {
+      id: app._id.toString(),
+      artifactAppId: app.artifactAppId,
+      tenantId: app.tenantId,
+      title: app.title,
+      description: app.description,
+      icon: app.icon,
+      category: app.category,
+      tags: app.tags,
+      createdBy: app.createdBy,
+      activeVersionId: app.activeVersionId,
+      latestVersionNumber: app.latestVersionNumber,
+      status: app.status,
+      visibility: app.visibility,
+      allowEmbed: app.allowEmbed,
+      allowFork: app.allowFork,
+      allowAnonymousView: app.allowAnonymousView,
+      toolPolicy: app.toolPolicy,
+      marketplace: app.marketplace,
+      sourceMetadata: app.sourceMetadata,
+      review: app.review,
+      createdAt: app.createdAt,
+      updatedAt: app.updatedAt,
+      archivedAt: app.archivedAt,
+    };
+  }
+
+  function toVersionRecord(version: IArtifactVersion): ArtifactVersionRecord {
+    return {
+      artifactVersionId: version.artifactVersionId,
+      artifactAppId: version.artifactAppId,
+      tenantId: version.tenantId,
+      versionNumber: version.versionNumber,
+      versionLabel: version.versionLabel,
+      changelog: version.changelog,
+      artifactType: version.artifactType,
+      sourceSnapshot: version.sourceSnapshot,
+      runtimeConfig: version.runtimeConfig,
+      integrity: version.integrity,
+      createdBy: version.createdBy,
+      createdAt: version.createdAt,
+      publication: version.publication,
+    };
+  }
+
+  function toVersionSummary(version: IArtifactVersion): ArtifactVersionSummaryRecord {
+    return {
+      artifactVersionId: version.artifactVersionId,
+      artifactAppId: version.artifactAppId,
+      tenantId: version.tenantId,
+      versionNumber: version.versionNumber,
+      versionLabel: version.versionLabel,
+      changelog: version.changelog,
+      artifactType: version.artifactType,
+      createdBy: version.createdBy,
+      createdAt: version.createdAt,
+      publication: version.publication,
+    };
+  }
+
+  function encodeAppCursor(app: IArtifactApp): string {
+    return Buffer.from(
+      JSON.stringify({ updatedAt: app.updatedAt.toISOString(), id: app._id.toString() }),
+    ).toString('base64');
+  }
+
+  function decodeAppCursor(cursor: string): { updatedAt: Date; id: Types.ObjectId } {
+    let parsed: { updatedAt?: string; id?: string };
+    try {
+      parsed = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')) as {
+        updatedAt?: string;
+        id?: string;
+      };
+    } catch {
+      throw new Error('Invalid artifact app cursor');
+    }
+    const updatedAt = parsed.updatedAt ? new Date(parsed.updatedAt) : null;
+    if (
+      !updatedAt ||
+      Number.isNaN(updatedAt.getTime()) ||
+      !parsed.id ||
+      !mongoose.Types.ObjectId.isValid(parsed.id)
+    ) {
+      throw new Error('Invalid artifact app cursor');
+    }
+    return { updatedAt, id: new mongoose.Types.ObjectId(parsed.id) };
+  }
+
+  function encodeVersionCursor(versionNumber: number): string {
+    return Buffer.from(JSON.stringify({ versionNumber })).toString('base64');
+  }
+
+  function decodeVersionCursor(cursor: string): number {
+    let parsed: { versionNumber?: number };
+    try {
+      parsed = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')) as {
+        versionNumber?: number;
+      };
+    } catch {
+      throw new Error('Invalid artifact version cursor');
+    }
+    const versionNumber = parsed.versionNumber;
+    if (
+      typeof versionNumber !== 'number' ||
+      !Number.isInteger(versionNumber) ||
+      versionNumber < 1
+    ) {
+      throw new Error('Invalid artifact version cursor');
+    }
+    return versionNumber;
+  }
 
   function buildVersionDoc(
     artifactAppId: string,
@@ -195,7 +308,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       const [version] = await ArtifactVersion.create([versionSeed]);
       try {
         const [app] = await ArtifactApp.create([appDoc]);
-        return { app, version };
+        return { app: toAppRecord(app), version: toVersionRecord(version) };
       } catch (error) {
         await ArtifactVersion.deleteOne({ artifactVersionId: version.artifactVersionId }).exec();
         throw error;
@@ -208,7 +321,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       await session.withTransaction(async () => {
         const [app] = await ArtifactApp.create([appDoc], { session });
         const [version] = await ArtifactVersion.create([versionSeed], { session });
-        result = { app, version };
+        result = { app: toAppRecord(app), version: toVersionRecord(version) };
       });
       if (!result) {
         throw new Error('[createArtifactAppWithVersion] Transaction produced no result');
@@ -219,8 +332,12 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     }
   }
 
-  async function getArtifactAppByAppId(query: ArtifactAppQuery): Promise<IArtifactApp | null> {
-    return getApp().findOne({ artifactAppId: query.artifactAppId }).lean<IArtifactApp>().exec();
+  async function getArtifactAppByAppId(query: ArtifactAppQuery): Promise<ArtifactAppRecord | null> {
+    const app = await getApp()
+      .findOne({ artifactAppId: query.artifactAppId })
+      .lean<IArtifactApp>()
+      .exec();
+    return app ? toAppRecord(app) : null;
   }
 
   function buildSourceFilter(query: ArtifactAppSourceQuery): FilterQuery<IArtifactApp> {
@@ -239,8 +356,9 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
 
   async function getArtifactAppBySource(
     query: ArtifactAppSourceQuery,
-  ): Promise<IArtifactApp | null> {
-    return getApp().findOne(buildSourceFilter(query)).lean<IArtifactApp>().exec();
+  ): Promise<ArtifactAppRecord | null> {
+    const app = await getApp().findOne(buildSourceFilter(query)).lean<IArtifactApp>().exec();
+    return app ? toAppRecord(app) : null;
   }
 
   /**
@@ -250,7 +368,17 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
    */
   async function syncArtifactAppWithVersion(
     input: CreateArtifactAppInput,
+    options: Partial<ArtifactAppSyncOptions> = {},
   ): Promise<SyncArtifactAppResult> {
+    const syncOptions: ArtifactAppSyncOptions = {
+      syncLockLeaseMs: options.syncLockLeaseMs ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockLeaseMs,
+      syncLockRetryDelayMs:
+        options.syncLockRetryDelayMs ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryDelayMs,
+      syncLockRetryAttempts:
+        options.syncLockRetryAttempts ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryAttempts,
+      syncWriteRetryAttempts:
+        options.syncWriteRetryAttempts ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncWriteRetryAttempts,
+    };
     const source = input.sourceMetadata;
     if (!source?.conversationId || !source.sourceKey) {
       throw new Error('[syncArtifactAppWithVersion] Stable source metadata is required');
@@ -313,7 +441,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       let app: IArtifactApp | null = null;
       let versionStaged = false;
 
-      for (let attempt = 0; attempt < SYNC_LOCK_RETRY_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < syncOptions.syncLockRetryAttempts; attempt++) {
         const now = new Date();
         app = await ArtifactApp.findOneAndUpdate(
           {
@@ -324,7 +452,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             $set: {
               syncLock: {
                 token: lockToken,
-                expiresAt: new Date(now.getTime() + SYNC_LOCK_LEASE_MS),
+                expiresAt: new Date(now.getTime() + syncOptions.syncLockLeaseMs),
               },
             },
           },
@@ -338,7 +466,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             '[syncArtifactAppWithVersion] Artifact app not found after source lookup',
           );
         }
-        await waitForSyncLock();
+        await waitForSyncLock(syncOptions.syncLockRetryDelayMs);
       }
 
       if (!app) {
@@ -405,8 +533,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
           }
           return {
-            app: updatedApp,
-            version: activeVersion,
+            app: toAppRecord(updatedApp),
+            version: toVersionRecord(activeVersion),
             created: false,
             versionCreated: recoveredVersion,
           };
@@ -448,8 +576,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
         }
         return {
-          app: updatedApp,
-          version,
+          app: toAppRecord(updatedApp),
+          version: toVersionRecord(version),
           created: false,
           versionCreated: true,
         };
@@ -495,8 +623,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       if (activeVersion?.integrity.sourceHash === sourceHash) {
         await app.save(session ? { session } : undefined);
         return {
-          app: app.toObject() as IArtifactApp,
-          version: activeVersion.toObject() as IArtifactVersion,
+          app: toAppRecord(app),
+          version: toVersionRecord(activeVersion),
           created: false,
           versionCreated: false,
         };
@@ -516,19 +644,19 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       app.activeVersionId = version.artifactVersionId;
       await app.save(session ? { session } : undefined);
       return {
-        app: app.toObject() as IArtifactApp,
-        version: version.toObject() as IArtifactVersion,
+        app: toAppRecord(app),
+        version: toVersionRecord(version),
         created: false,
         versionCreated: true,
       };
     };
 
     if (!(await supportsTransactions(mongoose))) {
-      for (let attempt = 0; attempt < SYNC_WRITE_RETRY_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < syncOptions.syncWriteRetryAttempts; attempt++) {
         try {
           return await applyStandaloneSync();
         } catch (error) {
-          if (!isRetryableWriteError(error) || attempt === SYNC_WRITE_RETRY_ATTEMPTS - 1) {
+          if (!isRetryableWriteError(error) || attempt === syncOptions.syncWriteRetryAttempts - 1) {
             throw error;
           }
         }
@@ -551,46 +679,56 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     }
   }
 
-  async function resolveArtifactAppId(
-    query: ArtifactAppQuery,
-  ): Promise<ArtifactAppIdResolution | null> {
+  async function resolveArtifactAppId(query: ArtifactAppQuery): Promise<string | null> {
     const doc = await getApp()
       .findOne({ artifactAppId: query.artifactAppId })
       .select({ _id: 1, artifactAppId: 1 })
-      .lean<ArtifactAppIdResolution>()
+      .lean<{ _id: Types.ObjectId; artifactAppId: string }>()
       .exec();
-    return doc;
+    return doc?._id.toString() ?? null;
   }
 
-  async function listArtifactApps(
-    filter: FilterQuery<IArtifactApp>,
-    options: ArtifactAppListOptions = {},
-  ): Promise<IArtifactApp[]> {
-    const cursorFilter: FilterQuery<IArtifactApp> | undefined = options.cursor
+  async function listArtifactApps(options: ArtifactAppListOptions): Promise<ArtifactAppListPage> {
+    let ownershipFilter: FilterQuery<IArtifactApp> = {};
+    if (options.createdBy) {
+      ownershipFilter = { createdBy: options.createdBy };
+    } else if (options.excludeCreatedBy) {
+      ownershipFilter = { createdBy: { $ne: options.excludeCreatedBy } };
+    }
+    const cursor = options.cursor ? decodeAppCursor(options.cursor) : null;
+    const cursorFilter: FilterQuery<IArtifactApp> | undefined = cursor
       ? {
           $or: [
-            { updatedAt: { $lt: options.cursor.updatedAt } },
-            { updatedAt: options.cursor.updatedAt, _id: { $lt: options.cursor._id } },
+            { updatedAt: { $lt: cursor.updatedAt } },
+            { updatedAt: cursor.updatedAt, _id: { $lt: cursor.id } },
           ],
         }
       : undefined;
-    const query = getApp()
-      .find(cursorFilter ? { $and: [filter, cursorFilter] } : filter)
-      .sort({ updatedAt: -1, _id: -1 });
-    if (options.limit) {
-      query.limit(options.limit);
-    }
-    return query.lean<IArtifactApp[]>().exec();
+    const apps = await getApp()
+      .find(cursorFilter ? { $and: [ownershipFilter, cursorFilter] } : ownershipFilter)
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(options.limit + 1)
+      .lean<IArtifactApp[]>()
+      .exec();
+    const hasMore = apps.length > options.limit;
+    const page = hasMore ? apps.slice(0, options.limit) : apps;
+    const entries = page.map((app) => ({ app: toAppRecord(app), cursor: encodeAppCursor(app) }));
+    return {
+      entries,
+      hasMore,
+      after: hasMore ? (entries[entries.length - 1]?.cursor ?? null) : null,
+    };
   }
 
   async function updateArtifactApp(
     query: ArtifactAppQuery,
-    update: Partial<IArtifactApp>,
-  ): Promise<IArtifactApp | null> {
-    return getApp()
+    update: ArtifactAppUpdate,
+  ): Promise<ArtifactAppRecord | null> {
+    const app = await getApp()
       .findOneAndUpdate({ artifactAppId: query.artifactAppId }, { $set: update }, { new: true })
       .lean<IArtifactApp>()
       .exec();
+    return app ? toAppRecord(app) : null;
   }
 
   async function deleteArtifactApp(
@@ -606,51 +744,51 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     return { deletedApp: true, deletedVersions: deletedCount ?? 0 };
   }
 
-  async function getArtifactVersion(query: ArtifactVersionQuery): Promise<IArtifactVersion | null> {
-    return getVersion().findOne(buildVersionFilter(query)).lean<IArtifactVersion>().exec();
+  async function getArtifactVersion(
+    query: ArtifactVersionQuery,
+  ): Promise<ArtifactVersionRecord | null> {
+    const version = await getVersion()
+      .findOne(buildVersionFilter(query))
+      .lean<IArtifactVersion>()
+      .exec();
+    return version ? toVersionRecord(version) : null;
   }
 
-  async function listArtifactVersions(query: ArtifactAppQuery): Promise<IArtifactVersion[]> {
-    return getVersion()
-      .find({ artifactAppId: query.artifactAppId })
+  async function listArtifactVersions(
+    options: ArtifactVersionListOptions,
+  ): Promise<ArtifactVersionListPage> {
+    const beforeVersion = options.cursor ? decodeVersionCursor(options.cursor) : null;
+    const filter: FilterQuery<IArtifactVersion> = {
+      artifactAppId: options.artifactAppId,
+      ...(beforeVersion != null ? { versionNumber: { $lt: beforeVersion } } : {}),
+    };
+    const versions = await getVersion()
+      .find(filter)
+      .select({ sourceSnapshot: 0, runtimeConfig: 0, integrity: 0 })
       .sort({ versionNumber: -1 })
+      .limit(options.limit + 1)
       .lean<IArtifactVersion[]>()
       .exec();
-  }
-
-  async function createArtifactVersion(
-    query: ArtifactAppQuery,
-    input: CreateArtifactVersionInput,
-  ): Promise<IArtifactVersion> {
-    const ArtifactApp = getApp();
-    const app = await ArtifactApp.findOne({ artifactAppId: query.artifactAppId }).exec();
-    if (!app) {
-      throw new Error('[createArtifactVersion] Artifact app not found');
-    }
-    const nextNumber = app.latestVersionNumber + 1;
-    const versionSeed = buildVersionDoc(
-      app.artifactAppId,
-      app.tenantId,
-      nextNumber,
-      input,
-      'draft',
-    );
-    const [version] = await getVersion().create([versionSeed]);
-    app.latestVersionNumber = nextNumber;
-    await app.save();
-    return version.toObject() as IArtifactVersion;
+    const hasMore = versions.length > options.limit;
+    const page = hasMore ? versions.slice(0, options.limit) : versions;
+    const lastVersion = page[page.length - 1];
+    return {
+      versions: page.map(toVersionSummary),
+      hasMore,
+      after: hasMore && lastVersion ? encodeVersionCursor(lastVersion.versionNumber) : null,
+    };
   }
 
   async function releaseArtifactVersion(
     query: ArtifactVersionQuery,
     releasedBy: string,
-  ): Promise<IArtifactVersion | null> {
+  ): Promise<ArtifactVersionRecord | null> {
     const version = await getVersion().findOne(buildVersionFilter(query)).exec();
     if (!version) {
       return null;
     }
     if (version.publication.state === 'released') {
-      return version.toObject() as IArtifactVersion;
+      return toVersionRecord(version);
     }
     version.publication = {
       state: 'released',
@@ -658,7 +796,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       releasedAt: new Date(),
     };
     await version.save();
-    return version.toObject() as IArtifactVersion;
+    return toVersionRecord(version);
   }
 
   async function activateArtifactVersion(
@@ -677,19 +815,19 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     }
     app.activeVersionId = version.artifactVersionId;
     await app.save();
-    return { app: app.toObject() as IArtifactApp, version: version.toObject() as IArtifactVersion };
+    return { app: toAppRecord(app), version: toVersionRecord(version) };
   }
 
   async function withdrawArtifactVersion(
     query: ArtifactVersionQuery,
-  ): Promise<IArtifactVersion | null> {
+  ): Promise<ArtifactVersionRecord | null> {
     const version = await getVersion().findOne(buildVersionFilter(query)).exec();
     if (!version) {
       return null;
     }
     version.publication = { ...version.publication, state: 'withdrawn' };
     await version.save();
-    return version.toObject() as IArtifactVersion;
+    return toVersionRecord(version);
   }
 
   return {
@@ -703,7 +841,6 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     deleteArtifactApp,
     getArtifactVersion,
     listArtifactVersions,
-    createArtifactVersion,
     releaseArtifactVersion,
     activateArtifactVersion,
     withdrawArtifactVersion,

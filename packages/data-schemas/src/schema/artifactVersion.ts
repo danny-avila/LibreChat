@@ -59,6 +59,7 @@ const artifactVersionSchema: Schema<IArtifactVersion> = new Schema<IArtifactVers
       enum: [
         'react',
         'html',
+        'svg',
         'mermaid',
         'markdown',
         'text',

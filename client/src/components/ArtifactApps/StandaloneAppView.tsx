@@ -32,8 +32,9 @@ export default function StandaloneAppView() {
   }>();
 
   const appQuery = useGetArtifactAppQuery(artifactAppId);
-  const versionQuery = useGetArtifactAppVersionQuery(artifactAppId, versionId, {
-    enabled: !!versionId,
+  const selectedVersionId = versionId ?? appQuery.data?.activeVersionId;
+  const versionQuery = useGetArtifactAppVersionQuery(artifactAppId, selectedVersionId, {
+    enabled: !!selectedVersionId,
   });
   const versionsQuery = useListArtifactAppVersionsQuery(artifactAppId);
 
@@ -49,11 +50,11 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
 
-  if (versionId && versionQuery.isLoading) {
+  if (selectedVersionId && versionQuery.isLoading) {
     return <StateMessage message={localize('com_ui_artifact_app_loading')} />;
   }
 
-  if (versionId && versionQuery.isError) {
+  if (selectedVersionId && versionQuery.isError) {
     const status = errorStatus(versionQuery.error);
     if (status === 403) {
       return <StateMessage message={localize('com_ui_artifact_app_forbidden')} />;
@@ -61,7 +62,7 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
 
-  const app = appQuery.data?.app;
+  const app = appQuery.data;
   if (!app) {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
@@ -73,11 +74,13 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_archived')} />;
   }
 
-  const version: TArtifactVersion | null | undefined = versionId
-    ? versionQuery.data
-    : appQuery.data?.version;
-
-  const versions = versionsQuery.data?.versions ?? [];
+  const version: TArtifactVersion | null | undefined = versionQuery.data;
+  const versions = versionsQuery.data?.pages.flatMap((page) => page.versions) ?? [];
+  const versionOptions =
+    !version ||
+    versions.some((candidate) => candidate.artifactVersionId === version.artifactVersionId)
+      ? versions
+      : [version, ...versions];
 
   return (
     <div className="flex h-screen w-full flex-col bg-surface-primary">
@@ -88,20 +91,35 @@ export default function StandaloneAppView() {
             <p className="truncate text-sm text-text-secondary">{app.description}</p>
           )}
         </div>
-        {versions.length > 0 && (
-          <nav aria-label={localize('com_ui_artifact_app_version')} className="flex-shrink-0">
+        {versionOptions.length > 0 && (
+          <nav
+            aria-label={localize('com_ui_artifact_app_version')}
+            className="flex flex-shrink-0 items-center gap-2"
+          >
             <select
               aria-label={localize('com_ui_artifact_app_version')}
               className="rounded border border-border-medium bg-surface-secondary px-2 py-1 text-sm text-text-primary"
               value={version?.artifactVersionId ?? ''}
               onChange={(e) => navigate(`/apps/${app.artifactAppId}/version/${e.target.value}`)}
             >
-              {versions.map((v) => (
+              {versionOptions.map((v) => (
                 <option key={v.artifactVersionId} value={v.artifactVersionId}>
                   {`v${v.versionNumber}`}
                 </option>
               ))}
             </select>
+            {versionsQuery.hasNextPage && (
+              <button
+                type="button"
+                className="rounded border border-border-medium bg-surface-secondary px-2 py-1 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={versionsQuery.isFetchingNextPage}
+                onClick={() => versionsQuery.fetchNextPage()}
+              >
+                {versionsQuery.isFetchingNextPage
+                  ? localize('com_ui_artifact_app_loading')
+                  : localize('com_ui_load_more')}
+              </button>
+            )}
           </nav>
         )}
       </header>

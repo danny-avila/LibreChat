@@ -4,6 +4,7 @@ describe('getArtifactMimeType', () => {
   it.each([
     ['react', 'application/vnd.react'],
     ['html', 'text/html'],
+    ['svg', 'image/svg+xml'],
     ['mermaid', 'application/vnd.mermaid'],
     ['markdown', 'text/markdown'],
     ['text', 'text/plain'],

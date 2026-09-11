@@ -1642,11 +1642,11 @@ export function listArtifactApps(
 export function getArtifactAppBySource(
   conversationId: string,
   sourceKey: string,
-): Promise<aa.TArtifactAppWithVersion> {
+): Promise<aa.TArtifactApp> {
   return request.get(endpoints.artifactAppBySource(conversationId, sourceKey));
 }
 
-export function getArtifactApp(artifactAppId: string): Promise<aa.TArtifactAppWithVersion> {
+export function getArtifactApp(artifactAppId: string): Promise<aa.TArtifactApp> {
   return request.get(endpoints.artifactAppById(artifactAppId));
 }
 
@@ -1661,8 +1661,17 @@ export function deleteArtifactApp(artifactAppId: string): Promise<{ success: boo
   return request.delete(endpoints.artifactAppById(artifactAppId));
 }
 
-export function listArtifactAppVersions(artifactAppId: string): Promise<aa.TArtifactVersionList> {
-  return request.get(endpoints.artifactAppVersions(artifactAppId));
+export function listArtifactAppVersions(
+  artifactAppId: string,
+  params: Partial<aa.TArtifactVersionListRequest> = {},
+): Promise<aa.TArtifactVersionList> {
+  const query = new URLSearchParams({
+    limit: String(params.limit ?? aa.DEFAULT_ARTIFACT_APPS_CONFIG.versionPageSize),
+  });
+  if (params.cursor) {
+    query.set('cursor', params.cursor);
+  }
+  return request.get(`${endpoints.artifactAppVersions(artifactAppId)}?${query.toString()}`);
 }
 
 export function getArtifactAppVersion(
@@ -1670,13 +1679,6 @@ export function getArtifactAppVersion(
   versionId: string,
 ): Promise<aa.TArtifactVersion> {
   return request.get(endpoints.artifactAppVersionById(artifactAppId, versionId));
-}
-
-export function createArtifactAppVersion(
-  artifactAppId: string,
-  payload: aa.TCreateArtifactVersionRequest,
-): Promise<aa.TArtifactVersion> {
-  return request.post(endpoints.artifactAppVersions(artifactAppId), payload);
 }
 
 export function releaseArtifactAppVersion(

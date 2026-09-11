@@ -72,6 +72,11 @@ export async function ensureArtifactAppIndexes(
   logger.info(
     `[ArtifactAppMigration] Ensured artifact app indexes. Created/confirmed ${result.created.length}.`,
   );
+  if (result.errors.length > 0) {
+    throw new Error(
+      `[ArtifactAppMigration] ${result.errors.length} required index operation(s) failed: ${result.errors.join('; ')}`,
+    );
+  }
   return result;
 }
 

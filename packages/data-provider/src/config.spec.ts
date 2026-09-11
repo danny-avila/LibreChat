@@ -1328,3 +1328,46 @@ describe('MCP UI refresh configuration', () => {
     ).toBe(false);
   });
 });
+
+describe('artifact app operational configuration', () => {
+  it('applies bounded defaults through the root config schema', () => {
+    const result = configSchema.parse({ version: '1.3.5' });
+
+    expect(result.artifactApps).toMatchObject({
+      catalogPageSize: 20,
+      versionPageSize: 20,
+      scanBatchSize: 100,
+      maxScanBatches: 10,
+      syncLockLeaseMs: 5000,
+      clientSyncSettleDelayMs: 500,
+    });
+  });
+
+  it('preserves valid deployment overrides', () => {
+    const result = configSchema.parse({
+      version: '1.3.5',
+      artifactApps: {
+        catalogPageSize: 12,
+        scanBatchSize: 75,
+        syncLockLeaseMs: 10_000,
+        clientSyncRetryMaxDelayMs: 45_000,
+      },
+    });
+
+    expect(result.artifactApps).toMatchObject({
+      catalogPageSize: 12,
+      scanBatchSize: 75,
+      syncLockLeaseMs: 10_000,
+      clientSyncRetryMaxDelayMs: 45_000,
+    });
+  });
+
+  it.each([
+    { catalogPageSize: 51 },
+    { scanBatchSize: 0 },
+    { syncLockLeaseMs: 999 },
+    { clientSyncRetryBaseDelayMs: 60_001 },
+  ])('rejects out-of-range overrides: %o', (artifactApps) => {
+    expect(configSchema.safeParse({ version: '1.3.5', artifactApps }).success).toBe(false);
+  });
+});

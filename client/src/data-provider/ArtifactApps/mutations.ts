@@ -8,7 +8,6 @@ import type {
   TSyncArtifactAppRequest,
   TSyncArtifactAppResponse,
   TUpdateArtifactAppRequest,
-  TCreateArtifactVersionRequest,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
@@ -35,7 +34,7 @@ export const useSyncArtifactAppMutation = (): UseMutationResult<
     onSuccess: (data, payload) => {
       queryClient.setQueryData(
         [QueryKeys.artifactApp, 'source', payload.source.conversationId, payload.source.sourceKey],
-        data,
+        data.app,
       );
       queryClient.invalidateQueries([QueryKeys.artifactApps]);
     },
@@ -70,22 +69,6 @@ export const useDeleteArtifactAppMutation = (): UseMutationResult<
       queryClient.invalidateQueries([QueryKeys.artifactApps]);
     },
   });
-};
-
-export const useCreateArtifactVersionMutation = (): UseMutationResult<
-  TArtifactVersion,
-  Error,
-  { artifactAppId: string; payload: TCreateArtifactVersionRequest }
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(
-    ({ artifactAppId, payload }) => dataService.createArtifactAppVersion(artifactAppId, payload),
-    {
-      onSuccess: (_data, { artifactAppId }) => {
-        queryClient.invalidateQueries([QueryKeys.artifactAppVersions, artifactAppId]);
-      },
-    },
-  );
 };
 
 export const useReleaseArtifactVersionMutation = (): UseMutationResult<

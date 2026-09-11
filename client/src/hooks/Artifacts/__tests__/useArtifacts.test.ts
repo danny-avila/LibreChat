@@ -168,11 +168,7 @@ describe('useArtifacts', () => {
           lastUpdateTime: 2000,
         }),
       };
-      window.history.replaceState(
-        {},
-        '',
-        '/c/conv-1?artifact=identifier%3Arevenue-chart%3Aapplication%2Fvnd.react',
-      );
+      window.history.replaceState({}, '', '/c/conv-1?artifact=identifier%3Arevenue-chart');
       (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
 
       const { rerender } = renderHook(() => useArtifacts());
@@ -194,7 +190,7 @@ describe('useArtifacts', () => {
       window.history.replaceState(
         {},
         '',
-        '/c/conv-1?artifact=identifier%3Aother%3Aapplication%2Fvnd.react&artifactId=artifact-2',
+        '/c/conv-1?artifact=identifier%3Aother&artifactId=artifact-2',
       );
       (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
 
@@ -216,7 +212,7 @@ describe('useArtifacts', () => {
         key === 'artifactNavigationRequest'
           ? {
               conversationId: 'conv-1',
-              sourceKey: 'identifier:revenue-chart:application/vnd.react',
+              sourceKey: 'identifier:revenue-chart',
             }
           : artifacts,
       );

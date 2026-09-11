@@ -5,6 +5,8 @@ import type {
   ArtifactVersionState,
   ArtifactRiskClass,
   ArtifactCostClass,
+  ArtifactAppsConfig,
+  TUpdateArtifactAppRequest,
 } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
@@ -36,14 +38,22 @@ export interface IArtifactAppSyncLock {
   expiresAt: Date;
 }
 
-export interface ArtifactAppListCursor {
-  updatedAt: Date;
-  _id: Types.ObjectId;
+export interface ArtifactAppListOptions {
+  createdBy?: string;
+  excludeCreatedBy?: string;
+  cursor?: string;
+  limit: number;
 }
 
-export interface ArtifactAppListOptions {
-  cursor?: ArtifactAppListCursor;
-  limit?: number;
+export interface ArtifactAppListEntry {
+  app: ArtifactAppRecord;
+  cursor: string;
+}
+
+export interface ArtifactAppListPage {
+  entries: ArtifactAppListEntry[];
+  hasMore: boolean;
+  after: string | null;
 }
 
 export interface IArtifactAppReview {
@@ -55,7 +65,7 @@ export interface IArtifactAppReview {
   comment?: string;
 }
 
-export interface IArtifactApp extends Document {
+interface ArtifactAppFields {
   artifactAppId: string;
   tenantId?: string;
 
@@ -79,12 +89,19 @@ export interface IArtifactApp extends Document {
   toolPolicy: IArtifactAppToolPolicy;
   marketplace: IArtifactAppMarketplace;
   sourceMetadata?: IArtifactAppSourceMetadata;
-  syncLock?: IArtifactAppSyncLock;
   review?: IArtifactAppReview;
 
   createdAt: Date;
   updatedAt: Date;
   archivedAt?: Date;
+}
+
+export interface ArtifactAppRecord extends ArtifactAppFields {
+  id: string;
+}
+
+export interface IArtifactApp extends Document<Types.ObjectId>, ArtifactAppFields {
+  syncLock?: IArtifactAppSyncLock;
 }
 
 export interface IArtifactVersionRuntimeConfig {
@@ -104,7 +121,7 @@ export interface IArtifactVersionPublication {
   releasedAt?: Date;
 }
 
-export interface IArtifactVersion extends Document {
+interface ArtifactVersionFields {
   artifactVersionId: string;
   artifactAppId: string;
   tenantId?: string;
@@ -123,6 +140,26 @@ export interface IArtifactVersion extends Document {
   createdAt: Date;
 
   publication: IArtifactVersionPublication;
+}
+
+export type ArtifactVersionRecord = ArtifactVersionFields;
+
+export interface IArtifactVersion extends Document<Types.ObjectId>, ArtifactVersionFields {}
+
+export type ArtifactVersionSummaryRecord = Omit<
+  ArtifactVersionRecord,
+  'sourceSnapshot' | 'runtimeConfig' | 'integrity'
+>;
+
+export interface ArtifactVersionListOptions extends ArtifactAppQuery {
+  cursor?: string;
+  limit: number;
+}
+
+export interface ArtifactVersionListPage {
+  versions: ArtifactVersionSummaryRecord[];
+  hasMore: boolean;
+  after: string | null;
 }
 
 /** Version-1 create input threaded through the atomic publish transaction. */
@@ -154,8 +191,8 @@ export interface CreateArtifactVersionInput {
 }
 
 export interface ArtifactAppWithVersion {
-  app: IArtifactApp;
-  version: IArtifactVersion;
+  app: ArtifactAppRecord;
+  version: ArtifactVersionRecord;
 }
 
 export interface SyncArtifactAppResult extends ArtifactAppWithVersion {
@@ -182,8 +219,9 @@ export type ArtifactVersionQuery = {
   tenantId?: string;
 };
 
-/** Sole-argument object used to resolve a resource `_id` for ACL checks. */
-export type ArtifactAppIdResolution = {
-  _id: Types.ObjectId;
-  artifactAppId: string;
-};
+export type ArtifactAppUpdate = TUpdateArtifactAppRequest;
+
+export type ArtifactAppSyncOptions = Pick<
+  ArtifactAppsConfig,
+  'syncLockLeaseMs' | 'syncLockRetryDelayMs' | 'syncLockRetryAttempts' | 'syncWriteRetryAttempts'
+>;

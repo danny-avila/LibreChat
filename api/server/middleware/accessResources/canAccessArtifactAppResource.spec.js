@@ -95,7 +95,7 @@ describe('canAccessArtifactAppResource middleware', () => {
   describe('permission checking against real ACL entries', () => {
     test('allows the owner to view their own app', async () => {
       const { app } = await publishApp(testUser._id);
-      await grant({ principalId: testUser._id, resourceId: app._id, permBits: OWNER_BITS });
+      await grant({ principalId: testUser._id, resourceId: app.id, permBits: OWNER_BITS });
       req.params.id = app.artifactAppId;
 
       await canAccessArtifactAppResource({ requiredPermission: VIEW })(req, res, next);
@@ -112,7 +112,7 @@ describe('canAccessArtifactAppResource middleware', () => {
         role: 'test-role',
       });
       const { app } = await publishApp(otherUser._id);
-      await grant({ principalId: otherUser._id, resourceId: app._id, permBits: OWNER_BITS });
+      await grant({ principalId: otherUser._id, resourceId: app.id, permBits: OWNER_BITS });
       req.params.id = app.artifactAppId;
 
       await canAccessArtifactAppResource({ requiredPermission: VIEW })(req, res, next);
@@ -132,7 +132,7 @@ describe('canAccessArtifactAppResource middleware', () => {
       ['delete', DELETE],
     ])('denies %s when the grant is view-only', async (_label, requiredPermission) => {
       const { app } = await publishApp(testUser._id);
-      await grant({ principalId: testUser._id, resourceId: app._id, permBits: VIEW });
+      await grant({ principalId: testUser._id, resourceId: app.id, permBits: VIEW });
       req.params.id = app.artifactAppId;
 
       await canAccessArtifactAppResource({ requiredPermission })(req, res, next);
@@ -143,7 +143,7 @@ describe('canAccessArtifactAppResource middleware', () => {
 
     test('allows edit when the grant carries edit bits', async () => {
       const { app } = await publishApp(testUser._id);
-      await grant({ principalId: testUser._id, resourceId: app._id, permBits: VIEW | EDIT });
+      await grant({ principalId: testUser._id, resourceId: app.id, permBits: VIEW | EDIT });
       req.params.id = app.artifactAppId;
 
       await canAccessArtifactAppResource({ requiredPermission: EDIT })(req, res, next);
@@ -174,7 +174,7 @@ describe('canAccessArtifactAppResource middleware', () => {
         principalId: testUser._id,
         principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
-        resourceId: app._id,
+        resourceId: app.id,
         permBits: OWNER_BITS,
         grantedBy: testUser._id,
       });
@@ -188,7 +188,7 @@ describe('canAccessArtifactAppResource middleware', () => {
 
     test('reads the app id from a custom resourceIdParam', async () => {
       const { app } = await publishApp(testUser._id);
-      await grant({ principalId: testUser._id, resourceId: app._id, permBits: OWNER_BITS });
+      await grant({ principalId: testUser._id, resourceId: app.id, permBits: OWNER_BITS });
       req.params.appId = app.artifactAppId;
 
       await canAccessArtifactAppResource({

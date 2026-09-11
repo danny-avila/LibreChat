@@ -22,6 +22,7 @@ export type ArtifactAppVisibility = z.infer<typeof artifactAppVisibilitySchema>;
 export const artifactRuntimeTypeSchema = z.enum([
   'react',
   'html',
+  'svg',
   'mermaid',
   'markdown',
   'text',
@@ -35,12 +36,77 @@ export type ArtifactRuntimeType = z.infer<typeof artifactRuntimeTypeSchema>;
 export const artifactAppListScopeSchema = z.enum(['personal', 'shared', 'all']);
 export type ArtifactAppListScope = z.infer<typeof artifactAppListScopeSchema>;
 
+export const DEFAULT_ARTIFACT_APPS_CONFIG = {
+  catalogPageSize: 20,
+  versionPageSize: 20,
+  scanBatchSize: 100,
+  maxScanBatches: 10,
+  syncLockLeaseMs: 5_000,
+  syncLockRetryDelayMs: 50,
+  syncLockRetryAttempts: 100,
+  syncWriteRetryAttempts: 3,
+  clientSyncSettleDelayMs: 500,
+  clientSyncRetryBaseDelayMs: 1_000,
+  clientSyncRetryMaxDelayMs: 30_000,
+} as const;
+
+function boundedInteger(min: number, max: number, defaultValue: number) {
+  return z.number().int().min(min).max(max).default(defaultValue);
+}
+
+export const artifactAppsConfigSchema = z
+  .object({
+    catalogPageSize: boundedInteger(1, 50, DEFAULT_ARTIFACT_APPS_CONFIG.catalogPageSize),
+    versionPageSize: boundedInteger(1, 50, DEFAULT_ARTIFACT_APPS_CONFIG.versionPageSize),
+    scanBatchSize: boundedInteger(1, 1_000, DEFAULT_ARTIFACT_APPS_CONFIG.scanBatchSize),
+    maxScanBatches: boundedInteger(1, 100, DEFAULT_ARTIFACT_APPS_CONFIG.maxScanBatches),
+    syncLockLeaseMs: boundedInteger(1_000, 300_000, DEFAULT_ARTIFACT_APPS_CONFIG.syncLockLeaseMs),
+    syncLockRetryDelayMs: boundedInteger(
+      1,
+      5_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryDelayMs,
+    ),
+    syncLockRetryAttempts: boundedInteger(
+      1,
+      1_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryAttempts,
+    ),
+    syncWriteRetryAttempts: boundedInteger(
+      1,
+      20,
+      DEFAULT_ARTIFACT_APPS_CONFIG.syncWriteRetryAttempts,
+    ),
+    clientSyncSettleDelayMs: boundedInteger(
+      0,
+      60_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs,
+    ),
+    clientSyncRetryBaseDelayMs: boundedInteger(
+      100,
+      60_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryBaseDelayMs,
+    ),
+    clientSyncRetryMaxDelayMs: boundedInteger(
+      100,
+      600_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryMaxDelayMs,
+    ),
+  })
+  .default({});
+export type ArtifactAppsConfig = z.infer<typeof artifactAppsConfigSchema>;
+
 export const artifactAppListRequestSchema = z.object({
   scope: artifactAppListScopeSchema.default('personal'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().min(1).optional(),
 });
 export type TArtifactAppListRequest = z.infer<typeof artifactAppListRequestSchema>;
+
+export const artifactVersionListRequestSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().min(1).optional(),
+});
+export type TArtifactVersionListRequest = z.infer<typeof artifactVersionListRequestSchema>;
 
 export const artifactVersionStateSchema = z.enum(['draft', 'released', 'withdrawn']);
 export type ArtifactVersionState = z.infer<typeof artifactVersionStateSchema>;
@@ -146,14 +212,6 @@ export const updateArtifactAppSchema = z
   .partial();
 export type TUpdateArtifactAppRequest = z.infer<typeof updateArtifactAppSchema>;
 
-/** POST /api/artifact-apps/:id/versions */
-export const createArtifactVersionSchema = z.object({
-  artifact: artifactSnapshotInputSchema,
-  changelog: z.string().optional(),
-  versionLabel: z.string().optional(),
-});
-export type TCreateArtifactVersionRequest = z.infer<typeof createArtifactVersionSchema>;
-
 // ===== RESPONSE TYPES (client-facing; dates serialized as ISO strings) =====
 
 export interface TArtifactApp {
@@ -213,6 +271,11 @@ export interface TArtifactVersion {
   };
 }
 
+export type TArtifactVersionSummary = Omit<
+  TArtifactVersion,
+  'sourceSnapshot' | 'runtimeConfig' | 'integrity'
+>;
+
 export interface TArtifactAppWithVersion {
   app: TArtifactApp;
   version: TArtifactVersion | null;
@@ -230,5 +293,7 @@ export interface TArtifactAppList {
 }
 
 export interface TArtifactVersionList {
-  versions: TArtifactVersion[];
+  versions: TArtifactVersionSummary[];
+  has_more: boolean;
+  after: string | null;
 }
