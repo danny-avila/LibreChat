@@ -6,8 +6,8 @@ import {
   useAttachmentLink,
   isLocallyStoredSource,
 } from '~/components/Chat/Messages/Content/Parts/LogLink';
+import { getArtifactDownloadFilename, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
 
@@ -60,7 +60,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = fileName;
+    link.download = getArtifactDownloadFilename(artifact, fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

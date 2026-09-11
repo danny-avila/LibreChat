@@ -1,4 +1,5 @@
 import dedent from 'dedent';
+import filenamify from 'filenamify';
 import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
@@ -7,6 +8,7 @@ import type {
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
+import { getCodeBlockFilename } from './downloadFile';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -72,6 +74,31 @@ export function getKey(type: string, language?: string): string {
 export function getArtifactFilename(type: string, language?: string): string {
   const key = getKey(type, language);
   return artifactFilename[key] ?? artifactFilename.default;
+}
+
+/** Names the downloaded content independently of the Sandpack preview file. */
+export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string): string {
+  let fallback = fileKey;
+  if (artifact.type === TOOL_ARTIFACT_TYPES.CODE) {
+    fallback = getCodeBlockFilename(artifact.language);
+  } else if (artifact.type === 'text/plain') {
+    fallback = 'content.txt';
+  }
+  const title = filenamify(artifact.title?.trim() ?? '', { replacement: '_' });
+  if (!title) {
+    return fallback;
+  }
+  const extension = fallback.slice(fallback.lastIndexOf('.'));
+  if (isPreviewOnlyArtifact(artifact.type)) {
+    return title.toLowerCase().endsWith(extension) ? title : `${title}${extension}`;
+  }
+  if (
+    /\.[^.\s]+$/.test(title) ||
+    (artifact.download && artifact.type === TOOL_ARTIFACT_TYPES.CODE)
+  ) {
+    return title;
+  }
+  return `${title}${extension}`;
 }
 
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {

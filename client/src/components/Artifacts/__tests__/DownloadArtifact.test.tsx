@@ -5,6 +5,8 @@ import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import DownloadArtifact from '../DownloadArtifact';
 
 const mockFileDownload = jest.fn();
+let mockFileKey = 'index.html';
+let mockCurrentCode: string | undefined;
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -15,11 +17,11 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/hooks/Artifacts/useArtifactProps', () => ({
   __esModule: true,
-  default: () => ({ fileKey: 'index.html', files: {}, template: 'static', sharedProps: {} }),
+  default: () => ({ fileKey: mockFileKey, files: {}, template: 'static', sharedProps: {} }),
 }));
 
 jest.mock('~/Providers/EditorContext', () => ({
-  useCodeState: () => ({ currentCode: undefined }),
+  useCodeState: () => ({ currentCode: mockCurrentCode }),
 }));
 
 /* MorphIcon renders a single morphing <svg> with no per-icon class, so map
@@ -101,6 +103,8 @@ describe('DownloadArtifact', () => {
   let anchorClick: jest.SpyInstance;
 
   beforeEach(() => {
+    mockFileKey = 'index.html';
+    mockCurrentCode = undefined;
     mockFileDownload.mockReset();
     // The attachment helper resolves to `true` when a file was delivered.
     mockFileDownload.mockResolvedValue(true);
@@ -121,6 +125,56 @@ describe('DownloadArtifact', () => {
 
   afterEach(() => {
     anchorClick.mockRestore();
+  });
+
+  it.each([
+    ['text/markdown', 'Migration Plan', 'content.md', undefined, 'Migration Plan.md'],
+    ['text/md', 'Second Report', 'content.md', undefined, 'Second Report.md'],
+    ['text/markdown', 'Report.MD', 'content.md', undefined, 'Report.MD'],
+    ['text/plain', 'Meeting Notes', 'content.md', undefined, 'Meeting Notes.txt'],
+    [TOOL_ARTIFACT_TYPES.CODE, 'script.py', 'content.md', 'python', 'script.py'],
+    [TOOL_ARTIFACT_TYPES.CODE, 'Analysis', 'content.md', 'python', 'Analysis.py'],
+    [TOOL_ARTIFACT_TYPES.CODE, '', 'content.md', 'typescript', 'code.ts'],
+    ['text/html', 'Landing Page', 'index.html', undefined, 'Landing Page.html'],
+    ['application/vnd.react', 'Dashboard', 'App.tsx', undefined, 'Dashboard.tsx'],
+    ['application/vnd.mermaid', 'Flow', 'diagram.mmd', undefined, 'Flow.mmd'],
+    ['text/markdown', '  ', 'content.md', undefined, 'content.md'],
+    ['text/plain', undefined, 'content.md', undefined, 'content.txt'],
+    ['text/markdown', 'Plan: Q3/Q4', 'content.md', undefined, 'Plan_ Q3_Q4.md'],
+    [TOOL_ARTIFACT_TYPES.PRESENTATION, 'deck.pptx', 'index.html', undefined, 'deck.pptx.html'],
+  ])('names %s download with title %s', async (type, title, fileKey, language, expected) => {
+    mockFileKey = fileKey;
+    mockCurrentCode = 'edited content';
+    render(<DownloadArtifact artifact={{ ...htmlArtifact, type, title, language }} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(anchorClick.mock.instances[0].download).toBe(expected);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    const content = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    expect(content).toBe('edited content');
+    expect(mockFileDownload).not.toHaveBeenCalled();
+  });
+
+  it('preserves extensionless source filenames', async () => {
+    render(
+      <DownloadArtifact
+        artifact={{
+          ...htmlArtifact,
+          type: TOOL_ARTIFACT_TYPES.CODE,
+          title: 'Dockerfile',
+          download: { file_id: 'source' },
+        }}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(anchorClick.mock.instances[0].download).toBe('Dockerfile');
   });
 
   it('downloads the original file (not the preview) for an office artifact and shows success', async () => {
