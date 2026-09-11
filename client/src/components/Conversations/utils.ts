@@ -1,5 +1,10 @@
 import type { TConversation } from 'librechat-data-provider';
 
+/** Keeps pending or empty conversation records identifiable in the sidebar. */
+export function getConversationDisplayTitle(title: string | null | undefined): string {
+  return title?.trim() || 'New Chat';
+}
+
 export type ConversationRenderProps = {
   conversation: TConversation;
   isGenerating?: boolean;

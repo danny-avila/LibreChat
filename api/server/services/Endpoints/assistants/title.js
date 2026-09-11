@@ -32,7 +32,7 @@ Title:`;
     max_tokens: 20,
   });
 
-  const title = completion.choices[0]?.message?.content?.trim() || 'New conversation';
+  const title = completion.choices[0]?.message?.content?.trim() || 'New Chat';
   return sanitizeTitle(title);
 };
 

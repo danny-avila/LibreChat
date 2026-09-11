@@ -8,7 +8,7 @@ import type { TConversation } from 'librechat-data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { useUpdateConversationMutation } from '~/data-provider';
-import { areConversationRenderPropsEqual } from './utils';
+import { areConversationRenderPropsEqual, getConversationDisplayTitle } from './utils';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
 import RenameForm from './RenameForm';
@@ -39,6 +39,7 @@ function Conversation({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
+  const displayTitle = getConversationDisplayTitle(title);
 
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
@@ -226,7 +227,7 @@ function Conversation({
       role="button"
       tabIndex={renaming ? -1 : 0}
       aria-label={localize('com_ui_conversation_label', {
-        title: title || localize('com_ui_untitled'),
+        title: displayTitle,
       })}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -270,7 +271,6 @@ function Conversation({
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
-          localize={localize}
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
