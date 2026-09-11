@@ -141,8 +141,12 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-syntax-title': '143 26 16', // #8f1a10
 
   /** Categorical series scale. Every slot clears 7:1 on the white canvas and no
-   *  two adjacent slots sit closer than CIE76 dE 50 under normal vision or dE 45
-   *  under simulated deuteranopia. */
+   *  two adjacent chromatic slots sit closer than CIE76 dE 50 under normal
+   *  vision or dE 45 under simulated deuteranopia. Seven saturated hues is all
+   *  this canvas affords at that separation, so slot 8 is the palette's own
+   *  neutral text — the stop `resolveTheme` also derives for a theme that
+   *  paints its own scale — separated by lightness (21:1 on the canvas, dE 22.9
+   *  from its neighbour under deuteranopia) rather than by hue. */
   'rgb-series-1': '11 79 160', // #0b4fa0
   'rgb-series-2': '143 59 0', // #8f3b00
   'rgb-series-3': '0 82 79', // #00524f
@@ -150,6 +154,7 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-series-5': '148 0 92', // #94005c
   'rgb-series-6': '77 26 153', // #4d1a99
   'rgb-series-7': '15 92 15', // #0f5c0f
+  'rgb-series-8': '0 0 0', // #000000 (neutral text stop)
 
   /** Unchecked switch track. The stock 58%/40% greys land at 2.9:1 and 2.2:1
    *  against these canvases. This clears 3:1 three ways at once: 5.74:1 against
@@ -272,9 +277,12 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-syntax-attr': '255 153 194', // #ff99c2
   'rgb-syntax-title': '255 143 143', // #ff8f8f
 
-  /** Categorical series scale. Every slot clears 9.9:1 on the black canvas and no
-   *  two adjacent slots sit closer than CIE76 dE 37 under normal vision or dE 42
-   *  under simulated deuteranopia. */
+  /** Categorical series scale. Every slot clears 9.9:1 on the black canvas and
+   *  no two adjacent chromatic slots sit closer than CIE76 dE 37 under normal
+   *  vision or dE 42 under simulated deuteranopia. As in the light palette,
+   *  slot 8 is the neutral text stop rather than an eighth pastel this canvas
+   *  cannot separate: 21:1 on the canvas and dE 26.8 from the nearest slot
+   *  under deuteranopia, distinguished by lightness rather than hue. */
   'rgb-series-1': '107 184 255', // #6bb8ff
   'rgb-series-2': '255 179 102', // #ffb366
   'rgb-series-3': '92 230 219', // #5ce6db
@@ -282,6 +290,7 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-series-5': '255 153 194', // #ff99c2
   'rgb-series-6': '200 163 255', // #c8a3ff
   'rgb-series-7': '140 230 140', // #8ce68c
+  'rgb-series-8': '255 255 255', // #ffffff (neutral text stop)
 
   /** Unchecked switch track: 5.32:1 against the page and the `surface-primary`
    *  thumb, 3.95:1 against the checked `surface-inverted` track. */

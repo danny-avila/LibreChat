@@ -113,7 +113,11 @@ export const darkTheme: IThemeRGB = {
   'rgb-syntax-title': '242 44 61', // #f22c3d
 
   /** Categorical series scale — the same eight hues stepped for the #212121
-   *  surface: worst adjacent CVD ΔE 13.0, normal-vision ΔE 19.0, all ≥ 3:1. */
+   *  surface: worst adjacent CVD ΔE 13.0, normal-vision ΔE 19.0, all ≥ 3:1.
+   *  Slot 8 is muted rather than the light mode's saturated indigo because a
+   *  slot also fills a badge chip under `text-on-status` white: #8c98e6 carried
+   *  that glyph at only 2.71:1, this reads 3.66:1 and still clears 3.66:1 on
+   *  every series surface. */
   'rgb-series-1': '9 140 238', // #098cee (cerulean)
   'rgb-series-2': '217 87 35', // #d95723 (orange)
   'rgb-series-3': '6 158 152', // #069e98 (aqua)
@@ -121,7 +125,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-series-5': '213 82 130', // #d55282 (magenta)
   'rgb-series-6': '171 104 254', // #ab68fe (violet)
   'rgb-series-7': '80 167 49', // #50a731 (green)
-  'rgb-series-8': '140 152 230', // #8c98e6 (indigo)
+  'rgb-series-8': '120 130 190', // #8082be (indigo)
 
   /** Unchecked switch track. 3.38:1 against the page and the `surface-primary`
    *  thumb, 5.74:1 against the checked `surface-inverted` track. */
