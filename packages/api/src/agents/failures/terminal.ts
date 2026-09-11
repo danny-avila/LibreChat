@@ -33,7 +33,7 @@ export interface TerminalRunErrorLogger {
 export interface TerminalRunErrorObserver {
   readonly modelCallback: ModelErrorTrackerCallback;
   readonly log: (error: unknown, signal?: AbortSignal) => void;
-  readonly getUserFacingError: (error: unknown, fallback: string) => string;
+  readonly getUserFacingError: (error: unknown, fallback: () => string) => string;
 }
 
 /** A run cancellation requires both host-owned abort state and an abort-shaped rejection. */
@@ -73,10 +73,10 @@ export function createTerminalRunErrorObserver({
   const modelErrorTracker = createModelErrorTracker();
   return Object.freeze({
     modelCallback: modelErrorTracker.callback,
-    getUserFacingError(error: unknown, fallback: string) {
+    getUserFacingError(error: unknown, fallback: () => string) {
       const upstreamModelError = modelErrorTracker.getUpstreamModelError(error);
       if (upstreamModelError == null) {
-        return fallback;
+        return fallback();
       }
 
       const classifiedError =

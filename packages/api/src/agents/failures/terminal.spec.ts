@@ -23,7 +23,10 @@ describe('terminal agent-run error logging', () => {
     observer.log(new Error('graph failed', { cause: providerError }));
 
     expect(
-      observer.getUserFacingError(new Error('graph failed', { cause: providerError }), 'fallback'),
+      observer.getUserFacingError(
+        new Error('graph failed', { cause: providerError }),
+        () => 'fallback',
+      ),
     ).toBe(
       'The model provider could not complete this request.\n' +
         JSON.stringify({ type: 'upstream_model_error', status: 500 }),
@@ -52,9 +55,9 @@ describe('terminal agent-run error logging', () => {
 
     observer.log(new Error('checkpoint failed'));
 
-    expect(observer.getUserFacingError(new Error('checkpoint failed'), 'fallback')).toBe(
-      'fallback',
-    );
+    const fallback = jest.fn(() => 'fallback');
+    expect(observer.getUserFacingError(new Error('checkpoint failed'), fallback)).toBe('fallback');
+    expect(fallback).toHaveBeenCalledTimes(1);
 
     expect(logger.error).toHaveBeenCalledWith('[Agent API] Error:', { type: 'Error' });
   });
@@ -113,7 +116,7 @@ describe('terminal agent-run error logging', () => {
     });
     observer.modelCallback.handleLLMError(providerError);
 
-    expect(observer.getUserFacingError(terminalError, 'fallback')).toBe(
+    expect(observer.getUserFacingError(terminalError, () => 'fallback')).toBe(
       JSON.stringify({ type: 'model_rate_limit' }),
     );
   });
@@ -137,10 +140,15 @@ describe('terminal agent-run error logging', () => {
     });
     observer.modelCallback.handleLLMError(providerError);
 
-    expect(observer.getUserFacingError(providerError, 'fallback')).toBe(
+    const fallback = jest.fn(() => {
+      throw new Error('unsafe legacy fallback was evaluated');
+    });
+
+    expect(observer.getUserFacingError(providerError, fallback)).toBe(
       'The model provider could not complete this request.\n' +
         JSON.stringify({ type: 'upstream_model_error' }),
     );
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('uses a bounded fallback type and omits unavailable trace correlation', () => {
