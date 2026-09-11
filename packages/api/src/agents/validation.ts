@@ -500,6 +500,7 @@ export const agentBaseSchema: z.ZodObject<
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodString>;
+    code_workspace_id: z.ZodOptional<z.ZodString>;
     git_identity: typeof agentGitIdentitySchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
@@ -576,6 +577,7 @@ export const agentBaseSchema: z.ZodObject<
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
   code_environment_id: agentCodeEnvironmentIdSchema.optional(),
+  code_workspace_id: z.string().max(128).optional(),
   git_identity: agentGitIdentitySchema,
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
@@ -676,6 +678,7 @@ export const agentCreateSchema: z.ZodObject<
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodString>;
     git_identity: typeof agentGitIdentitySchema;
+    code_workspace_id: z.ZodOptional<z.ZodString>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -810,6 +813,7 @@ export const agentUpdateSchema: z.ZodObject<
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    code_workspace_id: z.ZodOptional<z.ZodString>;
     git_identity: typeof agentGitIdentityUpdateSchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
@@ -895,6 +899,7 @@ export const agentUpdateSchema: z.ZodObject<
 > = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
   code_environment_id: agentCodeEnvironmentIdSchema.nullable().optional(),
+  code_workspace_id: z.string().max(128).optional(),
   git_identity: agentGitIdentityUpdateSchema,
   provider: z.string().optional(),
   model: z.string().nullable().optional(),

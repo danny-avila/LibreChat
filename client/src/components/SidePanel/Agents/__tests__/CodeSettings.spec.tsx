@@ -6,6 +6,17 @@ import { AgentCapabilities } from 'librechat-data-provider';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { AgentForm } from '~/common';
 import CodeSettings from '../Code/Settings';
+jest.mock('~/data-provider', () => ({
+  useCodeEnvironmentStatusQueries: () => [
+    {
+      data: {
+        status: 'ready',
+        environmentId: 'byom',
+        workspaces: [{ id: 'project-a', name: 'Project A' }],
+      },
+    },
+  ],
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -44,9 +55,23 @@ function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identi
         Disable sessions
       </button>
       <output data-testid="identity">{JSON.stringify(methods.watch('git_identity'))}</output>
+      <output data-testid="workspace-default">{methods.watch('code_workspace_id')}</output>
+      <output data-testid="machine-default">{methods.watch('code_environment_id')}</output>
     </FormProvider>
   );
 }
+
+test('saves a workspace default bound to the selected machine and permits clearing it', async () => {
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+  render(<IdentityForm />);
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_code_workspace_default' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Project A' }));
+  expect(screen.getByTestId('workspace-default')).toHaveTextContent('project-a');
+  expect(screen.getByTestId('machine-default')).toHaveTextContent('byom');
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_code_workspace_default' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'com_ui_code_workspace_last_used' }));
+  expect(screen.getByTestId('workspace-default')).toBeEmptyDOMElement();
+});
 
 test.each(['', 'not-an-email'])(
   'restores the saved identity when reopening an invalid draft: %s',

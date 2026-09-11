@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { CodeWorkspaceResult } from '~/hooks';
 import CodeWorkspaceMenu from '../CodeWorkspaceMenu';
+jest.mock('~/hooks/Agents/workspacePreferences', () => ({
+  useWorkspacePreferences: () => ({ remember: jest.fn() }),
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,

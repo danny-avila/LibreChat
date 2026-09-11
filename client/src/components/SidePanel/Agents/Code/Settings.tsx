@@ -25,6 +25,7 @@ import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useAuthContext, useGetAgentsConfig, useLocalize } from '~/hooks';
 import { ESide } from '~/common';
+import { useCodeEnvironmentStatusQueries } from '~/data-provider';
 
 const ENVIRONMENT_LABELS = {
   user: 'com_ui_stateful_code_environment_user',
@@ -52,6 +53,7 @@ export default function CodeSettings() {
   const codeEnabled = watch(AgentCapabilities.execute_code);
   const environment = watch('stateful_code_environment') ?? 'user';
   const codeEnvironmentId = watch('code_environment_id');
+  const workspaceId = watch('code_workspace_id') ?? '';
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
   const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const statefulSessionsAvailable =
@@ -65,6 +67,16 @@ export default function CodeSettings() {
     codeEnabled &&
     enabled &&
     effectiveExecutionEnvironment?.type === 'attached';
+  const workspaceStatuses = useCodeEnvironmentStatusQueries(
+    effectiveExecutionEnvironment?.type === 'attached' ? [effectiveExecutionEnvironment.id] : [],
+    showGitIdentity === true,
+  );
+  const workspaceStatus = workspaceStatuses[0]?.data;
+  const workspaces =
+    workspaceStatus?.status === 'ready' &&
+    workspaceStatus.environmentId === effectiveExecutionEnvironment?.id
+      ? (workspaceStatus.workspaces ?? [])
+      : [];
   const releaseIdentity = useCallback(() => {
     const identity = getValues('git_identity');
     const empty = !identity?.name?.trim() && !identity?.email?.trim();
@@ -151,6 +163,7 @@ export default function CodeSettings() {
               <Select
                 value={codeEnvironmentId ?? DEPLOYMENT_DEFAULT_ENVIRONMENT}
                 onValueChange={(value) => {
+                  setValue('code_workspace_id', '', { shouldDirty: true });
                   setValue(
                     'code_environment_id',
                     value === DEPLOYMENT_DEFAULT_ENVIRONMENT ? null : value,
@@ -215,6 +228,53 @@ export default function CodeSettings() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
+          {showGitIdentity && (
+            <div className="space-y-2">
+              <label
+                htmlFor="code-workspace-default"
+                className="text-xs font-medium text-text-secondary"
+              >
+                {localize('com_ui_code_workspace_default')}
+              </label>
+              <Select
+                value={workspaceId || '__automatic__'}
+                onValueChange={(value) => {
+                  if (value !== '__automatic__' && !workspaces.some(({ id }) => id === value))
+                    return;
+                  setValue('code_workspace_id', value === '__automatic__' ? '' : value, {
+                    shouldDirty: true,
+                  });
+                  if (value !== '__automatic__' && effectiveExecutionEnvironment) {
+                    setValue('code_environment_id', effectiveExecutionEnvironment.id, {
+                      shouldDirty: true,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger id="code-workspace-default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__automatic__">
+                    {localize('com_ui_code_workspace_last_used')}
+                  </SelectItem>
+                  {workspaceId && !workspaces.some(({ id }) => id === workspaceId) && (
+                    <SelectItem value={workspaceId} disabled>
+                      {workspaceId} — {localize('com_ui_code_workspace_missing')}
+                    </SelectItem>
+                  )}
+                  {workspaces.map(({ id, name }) => (
+                    <SelectItem key={id} value={id}>
+                      {name ?? id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-text-tertiary">
+                {localize('com_ui_code_workspace_default_description')}
+              </p>
+            </div>
+          )}
           {showGitIdentity && (
             <div className="space-y-2 border-t border-border-light pt-3">
               <div className="text-xs font-medium text-text-secondary">

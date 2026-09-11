@@ -1578,6 +1578,7 @@ export function createAgentMethods(
     const unsetOnRestore: Record<string, 1> = {};
     for (const field of [
       'code_environment_id',
+      'code_workspace_id',
       'git_identity',
       'skills_scope',
       'skill_authoring_enabled',

@@ -8,6 +8,10 @@ const mockAgentsConfig = jest.fn();
 const mockStatus = jest.fn();
 const mockAgentsMap = jest.fn();
 const mockAccess = jest.fn();
+const mockPreference = jest.fn();
+jest.mock('../workspacePreferences', () => ({
+  useWorkspacePreferences: () => ({ get: mockPreference }),
+}));
 jest.mock('~/hooks/Roles/useHasAccess', () => () => mockAccess());
 
 jest.mock(
@@ -32,6 +36,7 @@ const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConver
 
 describe('useCodeWorkspace', () => {
   beforeEach(() => {
+    mockPreference.mockReset();
     mockAccess.mockReturnValue(true);
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
@@ -98,6 +103,50 @@ describe('useCodeWorkspace', () => {
       { environmentId: 'personal-vm', workspaceId: 'project-a' },
     ]);
     expect(mockStatus).toHaveBeenCalledWith(['personal-vm'], true);
+  });
+
+  it('uses an agent default ahead of the last used workspace only for new chats', () => {
+    mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+    mockAgentPermissions().agent.code_workspace_id = 'project-b';
+    mockPreference.mockReturnValue('project-a');
+    const { result, rerender } = renderHook(
+      ({ id }) => useCodeWorkspace({ ...conversation(), conversationId: id }),
+      {
+        initialProps: { id: 'new' },
+      },
+    );
+    expect(result.current.selections?.[0].workspaceId).toBe('project-b');
+    rerender({ id: 'existing' });
+    expect(result.current.canSubmit).toBe(false);
+  });
+
+  it('uses a valid last choice and preserves an explicit conversation binding', () => {
+    mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+    mockPreference.mockReturnValue('project-b');
+    const { result } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), conversationId: 'new' }),
+    );
+    expect(result.current.selections?.[0].workspaceId).toBe('project-b');
+    const saved = [{ environmentId: 'personal-vm', workspaceId: 'project-a' }];
+    const existing = renderHook(() =>
+      useCodeWorkspace({ ...conversation(saved), conversationId: 'new' }),
+    );
+    expect(existing.result.current.selections).toEqual(saved);
+  });
+
+  it('ignores stale remembered choices but never silently replaces a missing agent default', () => {
+    mockPreference.mockReturnValue('gone');
+    const { result, rerender } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), conversationId: 'new' }),
+    );
+    expect(result.current.selections?.[0].workspaceId).toBe('project-a');
+    mockAgentPermissions.mockReturnValue({
+      ...mockAgentPermissions(),
+      agent: { ...mockAgentPermissions().agent, code_workspace_id: 'gone' },
+    });
+    rerender();
+    expect(result.current.state).toBe('missing');
+    expect(result.current.canSubmit).toBe(false);
   });
 
   it.each(['ephemeral', 'openAI__gpt-4o'])('does not block ephemeral agent %s', (agent_id) => {
