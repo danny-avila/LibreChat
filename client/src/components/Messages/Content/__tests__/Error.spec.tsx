@@ -59,6 +59,20 @@ describe('Error — typed provider errors', () => {
     expect(screen.getByText(catalog[key])).toBeInTheDocument();
   });
 
+  it('localizes an upstream model failure without a status', () => {
+    render(<Error text={JSON.stringify({ type: ErrorTypes.UPSTREAM_MODEL_ERROR })} />);
+
+    expect(screen.getByText(catalog.com_error_upstream_model)).toBeInTheDocument();
+  });
+
+  it('localizes an upstream model failure with its safe status', () => {
+    render(<Error text={JSON.stringify({ type: ErrorTypes.UPSTREAM_MODEL_ERROR, status: 529 })} />);
+
+    expect(
+      screen.getByText(catalog.com_error_upstream_model_status.replace('{{0}}', '529')),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     ['required', 'com_error_code_workspace_required'],
     ['invalid', 'com_error_code_workspace_invalid'],

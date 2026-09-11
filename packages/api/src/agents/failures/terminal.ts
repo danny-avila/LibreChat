@@ -1,8 +1,10 @@
+import { ErrorTypes } from 'librechat-data-provider';
 import type { SafeErrorMetadata } from '../../utils/errors';
 import type { ModelErrorTrackerCallback } from './tracker';
 import { getSafeErrorMetadata, isAbortError } from '../../utils/errors';
 import { traceIdForMessage } from '../../langfuse/trace';
 import { createModelErrorTracker } from './tracker';
+import { resolveLangChainError } from '../errors';
 
 const UPSTREAM_MODEL_ERROR_CODE = 'UPSTREAM_MODEL_ERROR';
 const UPSTREAM_MODEL_ERROR_ORIGIN = 'model_provider';
@@ -22,6 +24,7 @@ export interface TerminalRunErrorLogger {
 export interface TerminalRunErrorObserver {
   readonly modelCallback: ModelErrorTrackerCallback;
   readonly log: (error: unknown, signal?: AbortSignal) => void;
+  readonly getUserFacingError: (error: unknown, fallback: string) => string;
 }
 
 /** A run cancellation requires both host-owned abort state and an abort-shaped rejection. */
@@ -61,6 +64,23 @@ export function createTerminalRunErrorObserver({
   const modelErrorTracker = createModelErrorTracker();
   return Object.freeze({
     modelCallback: modelErrorTracker.callback,
+    getUserFacingError(error: unknown, fallback: string) {
+      const upstreamModelError = modelErrorTracker.getUpstreamModelError(error);
+      if (upstreamModelError == null) {
+        return fallback;
+      }
+
+      const classifiedError = resolveLangChainError(upstreamModelError);
+      if (classifiedError != null) {
+        return classifiedError;
+      }
+
+      const { status } = getSafeErrorMetadata(upstreamModelError);
+      return JSON.stringify({
+        type: ErrorTypes.UPSTREAM_MODEL_ERROR,
+        ...(status != null ? { status } : {}),
+      });
+    },
     log(error: unknown, signal?: AbortSignal) {
       if (isAgentRunCancellation(error, signal)) {
         return;
