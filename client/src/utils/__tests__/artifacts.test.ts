@@ -979,6 +979,7 @@ describe('isCodeOnlyArtifact', () => {
 describe('getArtifactDownloadFilename', () => {
   it.each([
     ['# Migration Plan', 'Migration Plan.md'],
+    ['# ~~Deprecated~~ Plan', 'Deprecated Plan.md'],
     ['# migrate_users.py', 'migrate_users.py.md'],
     ['# The **Q3** [report](https://example.com)', 'The Q3 report.md'],
     ['# Hello &amp; goodbye', 'Hello & goodbye.md'],
@@ -996,6 +997,26 @@ describe('getArtifactDownloadFilename', () => {
         'content.md',
       ),
     ).toBe(expected);
+  });
+
+  it.each([
+    ['Component.jsx', 'App.tsx'],
+    ['Component.tsx', 'App.tsx'],
+    ['index.htm', 'index.html'],
+    ['index.html', 'index.html'],
+    ['README.markdown', 'content.md'],
+    ['README.mdx', 'content.md'],
+    ['README.md', 'content.md'],
+    ['flow.mermaid', 'diagram.mmd'],
+    ['flow.mmd', 'diagram.mmd'],
+    ['script.pyi', 'content.md'],
+    ['Dockerfile', 'content.md'],
+    ['Makefile', 'content.md'],
+    ['notes.TXT', 'content.md'],
+  ])('preserves raw file names through routing: %s', (filename, fileKey) => {
+    const artifact = fileToArtifact({ file_id: 'file', filename, text: 'Raw content' });
+    expect(artifact).not.toBeNull();
+    expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(filename);
   });
 
   it.each(['odt', 'docx', 'pptx'])('names extracted %s bytes as text after file routing', (ext) => {

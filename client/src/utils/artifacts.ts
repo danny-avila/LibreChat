@@ -1,5 +1,7 @@
 import dedent from 'dedent';
 import filenamify from 'filenamify';
+import { gfm } from 'micromark-extension-gfm';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
 import type {
@@ -112,13 +114,20 @@ export function getArtifactDownloadFilename(artifact: Artifact, fileKey: string)
   if (title === 'Generated artifact' || title === 'untitled') {
     title = '';
   }
-  const hasSourceFilename = isCode && artifact.download != null && title !== '';
+  const hasSourceFilename =
+    artifact.download != null &&
+    title !== '' &&
+    artifact.type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    !isPreviewOnlyArtifact(artifact.type);
   if (!title && isMarkdown) {
     const content = (artifact.content ?? '').replace(
       /^\uFEFF?---[^\S\r\n]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[^\S\r\n]*(?:\r?\n|$)/,
       '',
     );
-    const heading = fromMarkdown(content).children.find((node) => node.type === 'heading');
+    const heading = fromMarkdown(content, {
+      extensions: [gfm()],
+      mdastExtensions: [gfmFromMarkdown()],
+    }).children.find((node) => node.type === 'heading');
     if (heading?.type === 'heading') {
       title = headingText(heading.children).trim();
     }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { Artifact } from '~/common';
-import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import DownloadArtifact from '../DownloadArtifact';
 
 const mockFileDownload = jest.fn();
@@ -185,6 +185,24 @@ describe('DownloadArtifact', () => {
       );
     },
   );
+
+  it.each([
+    ['Component.jsx', 'App.tsx'],
+    ['page.htm', 'index.html'],
+    ['README.markdown', 'content.md'],
+    ['README.mdx', 'content.md'],
+    ['diagram.mermaid', 'diagram.mmd'],
+  ])('downloads file-backed raw content as %s', async (filename, fileKey) => {
+    mockFileKey = fileKey;
+    const artifact = fileToArtifact({ file_id: 'file', filename, text: 'Raw content' });
+    expect(artifact).not.toBeNull();
+    render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(anchorClick.mock.instances[0].download).toBe(filename);
+    expect(mockFileDownload).not.toHaveBeenCalled();
+  });
 
   it('preserves extensionless source filenames', async () => {
     render(
