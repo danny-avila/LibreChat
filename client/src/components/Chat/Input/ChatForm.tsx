@@ -745,6 +745,11 @@ const ChatForm = memo(function ChatForm({
                       onFocus={handleTextareaFocus}
                       onBlur={handleTextareaBlur}
                       aria-label={localize('com_ui_message_input')}
+                      aria-describedby={
+                        codeWorkspace.state === 'choose' || codeWorkspace.state === 'missing'
+                          ? `code-workspace-hint-${index}`
+                          : undefined
+                      }
                       onClick={handleFocusOrClick}
                       style={{ height: 44, overflowY: 'auto' }}
                       className={cn(
@@ -763,13 +768,22 @@ const ChatForm = memo(function ChatForm({
                   </div>
                 </div>
               )}
+              {(codeWorkspace.state === 'choose' || codeWorkspace.state === 'missing') && (
+                <p
+                  id={`code-workspace-hint-${index}`}
+                  role="status"
+                  className="px-5 pb-2 text-sm text-text-secondary"
+                >
+                  {localize('com_error_code_workspace_required')}
+                </p>
+              )}
               <div
                 className={cn(
-                  '@container items-between flex gap-2 pb-2',
+                  '@container flex flex-wrap items-center gap-2 px-2 pb-2',
                   isRTL ? 'flex-row-reverse' : 'flex-row',
                 )}
               >
-                <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
+                <div className="shrink-0">
                   <AttachFileChat
                     conversation={conversation}
                     disableInputs={disableInputs}
@@ -808,7 +822,7 @@ const ChatForm = memo(function ChatForm({
                 {index === 0 && conversationId != null && (
                   <PendingToolApprovalButton conversationId={conversationId} />
                 )}
-                <div className="mx-auto flex" />
+                <div className="grow" />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (
                   <AudioRecorder
@@ -821,7 +835,7 @@ const ChatForm = memo(function ChatForm({
                 {steering.duringRunActive &&
                   steering.canControlGeneration &&
                   (textValue?.trim() ?? '') !== '' && (
-                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                    <div className="shrink-0">
                       <InterruptSteerButton
                         steering={steering}
                         getText={() => methods.getValues('text')}
@@ -830,7 +844,7 @@ const ChatForm = memo(function ChatForm({
                       />
                     </div>
                   )}
-                <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                <div className={cn('shrink-0', isRTL ? 'mr-auto' : 'ml-auto')}>
                   {isSubmitting &&
                   (showStopButton || steering.duringRunActive) &&
                   !answerMode.composerAnswers

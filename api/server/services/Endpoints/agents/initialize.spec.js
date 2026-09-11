@@ -1509,9 +1509,18 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
-  it.each([true, false])(
-    'validates the lazy subagent workspace before exposure: registered=%s',
-    async (registered) => {
+  it.each([
+    [true, 'request'],
+    [false, 'request'],
+    [true, 'fallback'],
+    [true, 'override'],
+    [true, 'override-resolved'],
+    [true, 'resolved'],
+    [false, 'resolved-null'],
+    [false, 'other-owner'],
+  ])(
+    'validates the lazy subagent workspace before exposure: registered=%s source=%s',
+    async (registered, source) => {
       const subAgent = await createAgent({
         id: SUBAGENT_ID,
         name: 'Attached Stateful Subagent',
@@ -1546,7 +1555,35 @@ describe('initializeClient — subagent loading', () => {
         ],
       };
       req.body.codeWorkspaces = [{ environmentId: 'attached-vm', workspaceId: 'project-b' }];
-      if (!registered) req.body.codeWorkspaces[0].workspaceId = 'removed-project';
+      if (source === 'request' && !registered) {
+        req.body.codeWorkspaces[0].workspaceId = 'removed-project';
+      }
+      let requestBody;
+      if (source !== 'request') {
+        const conversation = await mongoose.model('Conversation').create({
+          conversationId: req.body.conversationId,
+          endpoint: 'agents',
+          user: source === 'other-owner' ? new mongoose.Types.ObjectId().toString() : req.user.id,
+          codeWorkspaces: req.body.codeWorkspaces,
+        });
+        delete req.body.codeWorkspaces;
+        if (source === 'resolved') req.resolvedConversation = conversation.toObject();
+        else if (source !== 'resolved-null') delete req.resolvedConversation;
+        if (source.startsWith('override')) {
+          conversation.codeWorkspaces = [
+            { environmentId: 'attached-vm', workspaceId: 'wrong-source' },
+          ];
+          await conversation.save();
+          if (source === 'override-resolved') req.resolvedConversation = conversation.toObject();
+          requestBody = { ...req.body, conversationId: 'effective-target' };
+          await mongoose.model('Conversation').create({
+            conversationId: requestBody.conversationId,
+            endpoint: 'agents',
+            user: req.user.id,
+            codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'project-b' }],
+          });
+        }
+      }
       mockGetAppConfig.mockResolvedValue(req.config);
       process.env.TEST_LAZY_WORKSPACE_TOKEN = 'test-token';
       const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -1573,6 +1610,7 @@ describe('initializeClient — subagent loading', () => {
       try {
         const initialization = initializeClient({
           req,
+          requestBody,
           res: {},
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
@@ -1585,6 +1623,27 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
+        if (source === 'fallback' || source.startsWith('override')) {
+          mockInitializeAgent.mockImplementationOnce(async (params) => {
+            expect(params.req.resolvedConversation.codeWorkspaces).toEqual([
+              { environmentId: 'attached-vm', workspaceId: 'project-b' },
+            ]);
+            await params.loadTools({ ...subAgent, agentId: SUBAGENT_ID });
+            return makeSubagentConfig(SUBAGENT_ID);
+          });
+          await agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+            signal: new AbortController().signal,
+          });
+          expect(loadAgentTools).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              req: expect.objectContaining({
+                resolvedConversation: expect.objectContaining({
+                  codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'project-b' }],
+                }),
+              }),
+            }),
+          );
+        }
       } finally {
         fetchSpy.mockRestore();
         delete process.env.TEST_LAZY_WORKSPACE_TOKEN;
