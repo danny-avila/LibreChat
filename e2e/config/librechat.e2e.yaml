@@ -80,6 +80,12 @@ mcpServers:
 #   to llmDeliveryPath 'none' (unified-upload.spec.ts).
 fileConfig:
   endpoints:
+    'Mock Run Files':
+      defaultLLMDeliveryPath:
+        overrides:
+          'application/pdf': 'provider'
+          'text/plain': 'text'
+          'text/csv': 'none'
     'Mock Provider A':
       legacyFileUploadUX: true
     'Mock Provider B':
@@ -133,6 +139,15 @@ endpoints:
     # in model-fixture record mode (E2E_MODEL_FIXTURES=record); a comment
     # otherwise, so the credential-free profile never gains a live endpoint.
     # __E2E_MODEL_RECORD_PROVIDER__
+    - name: 'Mock Run Files'
+      apiKey: 'e2e-mock-run-files'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-run-files'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Run Files'
     - name: 'Mock Provider A'
       apiKey: 'e2e-mock-key-a'
       baseURL: 'http://127.0.0.1:8889/v1'

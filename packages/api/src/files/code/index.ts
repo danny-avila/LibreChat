@@ -10,4 +10,4 @@ export * from './inspection';
 export * from './preflight';
 export * from './priming';
 export * from './publication';
-export * from './runSnapshot';
+export * from './snapshot';

@@ -886,7 +886,7 @@
   "com_ui_agent_subagents_max": "Maximum {{0}} subagents reached.",
   "com_ui_agent_subagents_remove": "Remove {{0}} from subagents",
   "com_ui_agent_subagents_share_files": "Share files with subagents",
-  "com_ui_agent_subagents_share_files_info": "Share this message's files with authorized foreground subagents. Generated files stay private while subagents inspect and refine them. Subagents choose which versions to publish.",
+  "com_ui_agent_subagents_share_files_info": "Share this message's files with authorized foreground subagents. Generated sandbox files stay private while subagents inspect and refine them. Subagents choose which versions to publish.",
   "com_ui_agent_subagents_subtitle": "Spin up helper agents to handle subtasks.",
   "com_ui_agent_url_copied": "Agent URL copied to clipboard",
   "com_ui_agent_var": "{{0}} agent",

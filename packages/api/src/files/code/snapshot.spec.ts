@@ -7,7 +7,7 @@ import type { FiltersConfig } from 'librechat-data-provider';
 import type { RunArtifactDescriptor } from './publication';
 import type { ServerRequest } from '~/types';
 import { createRunFileSnapshotStore } from '~/agents/files/snapshots';
-import { createRunArtifactSnapshotAdapter } from './runSnapshot';
+import { createRunArtifactSnapshotAdapter } from './snapshot';
 
 const source: RunArtifactDescriptor = {
   id: 'file ?#',

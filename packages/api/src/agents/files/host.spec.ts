@@ -254,6 +254,84 @@ function harness(options: { inputs?: TFile[]; setup?: TFile[] } = {}) {
 describe('run file execution host', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it.each([
+    ['file_search', { file_search: { citations: ['document'] } }],
+    ['web_search', { web_search: { results: ['page'] } }],
+    ['set_memory', { memory: { key: 'preference', value: 'saved' } }],
+    ['interactive_tool', { ui_resources: { data: ['widget'] } }],
+    [
+      'generate_image',
+      { content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,aQ==' } }] },
+    ],
+  ])('preserves ordinary %s artifact delivery from a shared-file child', async (name, artifact) => {
+    const h = harness();
+    await h.prepare();
+    const callback = jest.fn(async () => undefined);
+    const data = { output: { name, tool_call_id: 'other-output', content: '', artifact } };
+    const metadata = { executingAgentId: 'worker', executionContext: identity() };
+
+    await h.host.deliverToolEnd(callback, data, metadata);
+
+    expect(callback).toHaveBeenCalledWith(data, metadata);
+    expect(h.deps.snapshots.capture).not.toHaveBeenCalled();
+    expect((await h.host.session.list('worker', identity())).artifacts).toEqual([]);
+  });
+
+  it.each(['execute_code', 'bash_tool', 'create_file'])(
+    'keeps %s outputs private until publication',
+    async (name) => {
+      const h = harness();
+      await h.prepare();
+      const callback = jest.fn(async () => undefined);
+      await h.host.deliverToolEnd(
+        callback,
+        {
+          output: {
+            name,
+            tool_call_id: 'private-output',
+            content: '',
+            artifact: {
+              session_id: 'sandbox',
+              files: [{ id: 'chart', name: 'chart.png' }],
+            },
+          },
+        },
+        { executingAgentId: 'worker', executionContext: identity() },
+      );
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(h.emit).not.toHaveBeenCalled();
+      expect((await h.host.session.list('worker', identity())).artifacts).toEqual([
+        { artifact_id: expect.any(String), filename: 'chart.png' },
+      ]);
+      const [artifact] = (await h.host.session.list('worker', identity())).artifacts;
+      await h.host.session.publish('worker', identity(), artifact.artifact_id, [], h.signal);
+      expect(h.emit).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not publish a private sandbox image merely because the child reads it', async () => {
+    const h = harness();
+    await h.prepare();
+    const callback = jest.fn(async () => undefined);
+    const artifact = {
+      content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,aQ==' } }],
+    };
+    const data = {
+      output: { name: 'read_file', tool_call_id: 'inspect-image', content: 'Image', artifact },
+    };
+
+    await h.host.deliverToolEnd(callback, data, {
+      executingAgentId: 'worker',
+      executionContext: identity(),
+    });
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(h.emit).not.toHaveBeenCalled();
+    expect(h.deps.snapshots.capture).not.toHaveBeenCalled();
+    expect(data.output.artifact).toBe(artifact);
+  });
+
   it('reuses the handler authorized batch without a second publication query', async () => {
     const h = harness();
     await expect(

@@ -34,7 +34,7 @@ These tools are available to agents configured to delegate with file sharing ena
 child executions participating in that shared-file run. Enabling the deployment capability alone
 does not add them to other agents.
 
-Generated outputs stay private while a child reads, inspects, and refines them. The child can
+Generated sandbox outputs stay private while a child reads, inspects, and refines them. The child can
 create `analysis.csv`, inspect it in another tool call, and rewrite that filename without losing
 the earlier version. Retained versions have separate artifact IDs, even when their filenames
 match. Reading an unchanged file reuses its latest private version; changing a file and then
@@ -49,6 +49,9 @@ execution, producing agent, and input-file provenance. Retrying a successful pub
 the same file ID; deleting that file does not let a cached retry restore it.
 Publishing an earlier and a later version creates separate durable files. Later sandbox changes
 do not change the bytes of either publication.
+
+Search citations, memory updates, interactive tool resources, and image-generation results retain
+their existing delivery behavior. They are not sandbox files in the publication catalog.
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +111,10 @@ authorization scope. Attached workstation environments, native provider tool obj
 execution definitions, and API entry points without the run-file adapter fail explicitly when
 sharing is requested.
 
-The focused browser scenario is `e2e/specs/mock/run-files.spec.ts`. It covers PDF delegation,
-lazy provisioning, CSV publication, reload, download, and attaching the same durable file to a
-follow-up message. Manifest, session, host, encoder, SDK bridge, publication storage, and config
-tests cover authorization, concurrency, retries, and default compatibility.
+The browser scenarios are `e2e/specs/mock/run-files.spec.ts`, `run-files-delivery.spec.ts`, and
+`run-files-lifecycle.spec.ts`. They cover native PDF and extracted-text delivery, lazy search/code
+provisioning, versioned publication, nested delegation, recipient authorization, concurrent runs,
+cancellation cleanup, checkpoint recovery, reload, download, and follow-up attachment reuse.
+They exercise the real application and SDK with deterministic model, Code API, and RAG fixtures.
+Manifest, session, host, encoder, SDK bridge, publication storage, and config tests also cover
+authorization, retries, individual child restoration, and default compatibility.

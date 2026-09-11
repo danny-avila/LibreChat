@@ -13,6 +13,14 @@ const { FakeChatModel } = require('@librechat/agents');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
 const { AIMessageChunk } = require('@langchain/core/messages');
 const { tryBindReplay } = require('./model-replay');
+const { runFileDeliveryResponses } = require('./run-files-model');
+const { createRunFileLifecycleResponses } = require('./run-files-lifecycle-model');
+
+const runFileLifecycle = createRunFileLifecycleResponses({
+  findLastToolMessage,
+  getContentText,
+  messageType,
+});
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -2701,6 +2709,12 @@ function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames)
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const lifecycle = runFileLifecycle.responsesForText(text);
+  if (lifecycle) return lifecycle;
+
+  const runFileDelivery = runFileDeliveryResponses(text);
+  if (runFileDelivery) return runFileDelivery;
+
   const backgroundCompletion = backgroundCompletionResponses(text);
   if (backgroundCompletion) {
     return backgroundCompletion;
@@ -2944,9 +2958,11 @@ module.exports = function fakeModelHook(run, context) {
     sleep,
     toolCalls,
     thrownError,
-    overrideSubagentModel,
+    overrideSubagentModel:
+      overrideSubagentModel || runFileLifecycle.isFixtureAgents(context?.agents),
     disableHumanInTheLoop,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
+      runFileLifecycle.resolveInvocation(streamMessages) ??
       deferredHitlInvocationResponse({
         graph,
         messages: streamMessages,

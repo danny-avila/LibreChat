@@ -7,7 +7,7 @@ import type { CodeExecutionContext } from '~/agents/execution';
 import type { RunFileMessageEncoderDeps } from './encode';
 import type { ToolEndCallback } from '~/agents/handlers';
 import type { RunFileHost } from './host';
-import { createRunArtifactSnapshotAdapter } from '~/files/code/runSnapshot';
+import { createRunArtifactSnapshotAdapter } from '~/files/code/snapshot';
 import { createRunArtifactPublisher } from '~/files/code/publication';
 import { createRunFileSnapshotStore } from './snapshots';
 import { createRunFileMessageEncoder } from './encode';
@@ -165,13 +165,7 @@ export function createChatRunFileBindings({
     getCodeExecutionContext: (agentId: string, context?: Parameters<typeof host.getContext>[1]) =>
       host.session.isActive() ? host.getContext(agentId, context)?.codeExecutionContext : undefined,
     wrapProvision:
-      (
-        fallback: (
-          names: string[],
-          agentId?: string,
-          signal?: AbortSignal,
-        ) => Promise<import('@librechat/agents').CodeEnvFile[] | void>,
-      ) =>
+      (fallback: ProvisionCallback) =>
       async (
         names: string[],
         agentId?: string,

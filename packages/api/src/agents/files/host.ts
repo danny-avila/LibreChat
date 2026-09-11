@@ -8,6 +8,7 @@ import type { TFilterFilesByAgentAccess } from '~/agents/resources';
 import type { RunFileSession, RunFileSessionDeps } from './session';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { ServerRequest } from '~/types';
+import { isCodeArtifactToolOutput, isCodeFileToolName } from '~/agents/tools';
 import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { addFileToResource, primeResources } from '~/agents/resources';
@@ -479,6 +480,9 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   ): Promise<void> => {
     const executionContext = metadata.executionContext as SubagentExecutionContext | undefined;
     if (!session.isActive() || executionContext == null) return callback(data, metadata);
+    if (!isCodeArtifactToolOutput(data.output) && !isCodeFileToolName(data.output.name)) {
+      return callback(data, metadata);
+    }
     const agentId = metadata.executingAgentId ?? metadata.agentId ?? metadata.agent_id;
     if (typeof agentId !== 'string')
       throw new Error('The shared-file producer has no agent identity.');

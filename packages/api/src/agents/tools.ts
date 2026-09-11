@@ -61,6 +61,18 @@ export function isCodeSessionToolName(
   );
 }
 
+/** File-authoring artifacts opt in explicitly; other tool artifacts keep their normal delivery. */
+export function isCodeArtifactToolOutput(output: { name: string; artifact?: unknown }): boolean {
+  const artifact = output.artifact;
+  return (
+    isCodeSessionToolName(output.name) ||
+    (artifact != null &&
+      typeof artifact === 'object' &&
+      HOST_FILE_AUTHORING_ARTIFACT_KEY in artifact &&
+      artifact[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true)
+  );
+}
+
 interface ToolDefLike {
   name: string;
   [key: string]: unknown;
