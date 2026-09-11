@@ -1,6 +1,7 @@
 import {
   AgentCapabilities,
   EModelEndpoint,
+  chatProjectsConfigSchema,
   filtersConfigSchema,
   hasActiveFiltersConfig,
   getConfigDefaults,
@@ -164,6 +165,7 @@ export const AppService = async (params?: {
   const actions = config.actions;
   const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+  const projects = chatProjectsConfigSchema.parse(config.projects ?? {});
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
   const filters = loadFiltersConfig(config);
@@ -182,6 +184,7 @@ export const AppService = async (params?: {
     webSearch,
     mcpSettings,
     fileStrategy,
+    projects,
     registration,
     transactions,
     filteredTools,

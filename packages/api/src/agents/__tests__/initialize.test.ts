@@ -238,6 +238,7 @@ function createMocks(overrides?: {
   });
 
   const db: InitializeAgentDbMethods = {
+    getProjectFiles: jest.fn().mockResolvedValue([]),
     getFiles: jest.fn().mockResolvedValue([]),
     getConvoFiles: jest.fn().mockResolvedValue([]),
     updateFilesUsage: jest.fn().mockResolvedValue([]),
@@ -444,8 +445,8 @@ describe('initializeAgent: ChatProject context', () => {
     agent.tools = [Tools.file_search];
     req.config = projectRuntime().appConfig;
     req.chatProjectContext = projectContext;
-    const getFiles = jest.fn().mockResolvedValue([canonicalFile]);
-    const projectDb = { ...db, getFiles };
+    const getProjectFiles = jest.fn().mockResolvedValue([canonicalFile]);
+    const projectDb = { ...db, getProjectFiles };
     const primaryConfig = await initializeAgent(
       {
         runtime: projectRuntime(),
@@ -493,8 +494,8 @@ describe('initializeAgent: ChatProject context', () => {
     agent.tools = [Tools.file_search];
     req.config = projectRuntime().appConfig;
     req.chatProjectContext = projectContext;
-    const getFiles = jest.fn().mockResolvedValue([canonicalFile]);
-    const projectDb = { ...db, getFiles };
+    const getProjectFiles = jest.fn().mockResolvedValue([canonicalFile]);
+    const projectDb = { ...db, getProjectFiles };
     const primaryConfig: GraphSubagentHostConfig = await initializeAgent(
       {
         runtime: projectRuntime(),
@@ -653,8 +654,8 @@ describe('initializeAgent: ChatProject context', () => {
   it('shares policy hydration across concurrent graph agents without injecting file text', async () => {
     const { agent, loadTools, db } = createMocks();
     agent.tools = [Tools.file_search];
-    const getFiles = jest.fn().mockResolvedValue([canonicalFile]);
-    const projectDb = { ...db, getFiles };
+    const getProjectFiles = jest.fn().mockResolvedValue([canonicalFile]);
+    const projectDb = { ...db, getProjectFiles };
     const runtime = { ...projectRuntime(), chatProjectFiles: undefined };
     runtime.appConfig.filters = projectFilePolicy;
     const params = {
@@ -680,7 +681,7 @@ describe('initializeAgent: ChatProject context', () => {
         expect.arrayContaining([expect.objectContaining({ file_id: projectFile.file_id })]),
       );
     }
-    expect(getFiles).toHaveBeenCalledTimes(1);
+    expect(getProjectFiles).toHaveBeenCalledTimes(1);
   });
 
   it('rejects prohibited Project content before tool setup or usage mutation', async () => {
@@ -688,7 +689,7 @@ describe('initializeAgent: ChatProject context', () => {
     agent.tools = [Tools.file_search];
     const runtime = projectRuntime();
     runtime.appConfig.filters = projectFilePolicy;
-    const getFiles = jest.fn().mockResolvedValue([{ ...canonicalFile, text: 'BLOCKED' }]);
+    const getProjectFiles = jest.fn().mockResolvedValue([{ ...canonicalFile, text: 'BLOCKED' }]);
     await expect(
       initializeAgent(
         {
@@ -699,7 +700,7 @@ describe('initializeAgent: ChatProject context', () => {
           allowedProviders: new Set([Providers.OPENAI]),
           useChatProjectContext: true,
         },
-        { ...db, getFiles },
+        { ...db, getProjectFiles },
       ),
     ).rejects.toMatchObject({ code: 'content_filter_block' });
     expect(loadTools).not.toHaveBeenCalled();
@@ -727,7 +728,7 @@ describe('initializeAgent: ChatProject context', () => {
             allowedProviders: new Set([Providers.OPENAI]),
             useChatProjectContext: true,
           },
-          { ...db, getFiles: jest.fn().mockResolvedValue([changedFile]) },
+          { ...db, getProjectFiles: jest.fn().mockResolvedValue([changedFile]) },
         ),
       ).rejects.toThrow();
       expect(loadTools).not.toHaveBeenCalled();

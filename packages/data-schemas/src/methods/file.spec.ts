@@ -203,6 +203,54 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getProjectFiles', () => {
+    it('enforces owner scope and only includes content when requested', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      await File.create([
+        {
+          file_id: 'project-owned',
+          user: userId,
+          tenantId: 'tenant-a',
+          embedded: true,
+          context: FileContext.message_attachment,
+          filename: 'owned.txt',
+          filepath: '/uploads/owned.txt',
+          type: 'text/plain',
+          bytes: 1,
+          text: 'private project content',
+        },
+        {
+          file_id: 'project-foreign',
+          user: new mongoose.Types.ObjectId().toString(),
+          tenantId: 'tenant-a',
+          embedded: true,
+          context: FileContext.message_attachment,
+          filename: 'foreign.txt',
+          filepath: '/uploads/foreign.txt',
+          type: 'text/plain',
+          bytes: 1,
+          text: 'must not leak',
+        },
+      ]);
+
+      const metadata = await fileMethods.getProjectFiles({
+        fileIds: ['project-owned', 'project-foreign'],
+        userId,
+        tenantId: 'tenant-a',
+      });
+      expect(metadata.map((file) => file.file_id)).toEqual(['project-owned']);
+      expect(metadata[0]).not.toHaveProperty('text');
+
+      const withContent = await fileMethods.getProjectFiles({
+        fileIds: ['project-owned'],
+        userId,
+        tenantId: 'tenant-a',
+        includeContent: true,
+      });
+      expect(withContent[0]?.text).toBe('private project content');
+    });
+  });
+
   describe('claimCodeFile', () => {
     it('claims code output files independently per tenant', async () => {
       const userId = new mongoose.Types.ObjectId().toString();

@@ -4,6 +4,8 @@ import type {
   AvailableProjectFileRecord,
   AvailableProjectFilesOptions,
   AvailableProjectFilesResult,
+  ProjectFileRecord,
+  ProjectFilesOptions,
 } from './file';
 import type { RoleMethods, RoleDeps } from './role';
 import {
@@ -517,13 +519,15 @@ export type {
   RefreshTokenBridgeMethods,
   OpenIDRefreshFlightMethods,
   RoleMethods,
-  FileMethods,
-  FileOwnerScope,
   KeyMethods,
   MemoryMethods,
+  FileMethods,
+  FileOwnerScope,
   AvailableProjectFileRecord,
   AvailableProjectFilesOptions,
   AvailableProjectFilesResult,
+  ProjectFileRecord,
+  ProjectFilesOptions,
   ToolFavoriteMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,

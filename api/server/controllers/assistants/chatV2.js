@@ -52,6 +52,7 @@ const {
   upsertBalanceFields,
   getChatProject,
   createAutoRefillTransaction,
+  getProjectFiles,
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
@@ -159,16 +160,15 @@ const chatV2 = async (req, res) => {
         resolvedConversation: existingConversation,
         includeResources: false,
       },
-      { getConvo, getChatProject, getFiles },
+      { getConvo, getChatProject, getProjectFiles },
     );
-    const projectInstructions = formatChatProjectInstructions(projectContext);
     req.chatProjectContext = projectContext;
-    if (projectInstructions) {
+    if (projectContext?.instructions.trim()) {
       try {
         assertModelBoundContent({
           filters: req.config?.filters,
           legacyPii: req.config?.messageFilter?.pii,
-          agents: [{ instructions: projectInstructions }],
+          agents: [{ instructions: projectContext.instructions }],
         });
       } catch (error) {
         if (!isContentFilterError(error)) {
@@ -178,6 +178,7 @@ const chatV2 = async (req, res) => {
         return res.status(error.statusCode).json(error.body);
       }
     }
+    const projectInstructions = formatChatProjectInstructions(projectContext);
 
     if (convoId && !_thread_id) {
       completedRun = true;

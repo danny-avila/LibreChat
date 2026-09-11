@@ -87,6 +87,7 @@ const mockGetConvo = jest.fn();
 const mockGetChatProject = jest.fn();
 const mockGetMessages = jest.fn();
 const mockGetFiles = jest.fn();
+const mockGetProjectFiles = jest.fn();
 const mockGetAgent = jest.fn();
 const mockGetActions = jest.fn();
 const mockGetUserMemories = jest.fn();
@@ -154,6 +155,7 @@ jest.mock('~/models', () => ({
   getChatProject: (...args) => mockGetChatProject(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getFiles: (...args) => mockGetFiles(...args),
+  getProjectFiles: (...args) => mockGetProjectFiles(...args),
   getAgent: (...args) => mockGetAgent(...args),
   getActions: (...args) => mockGetActions(...args),
   getUserMemories: (...args) => mockGetUserMemories(...args),
@@ -332,6 +334,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGetChatProject.mockResolvedValue(null);
     mockGetMessages.mockResolvedValue([]);
     mockGetFiles.mockResolvedValue([]);
+    mockGetProjectFiles.mockResolvedValue([]);
     mockGetAgent.mockResolvedValue(null);
     mockGetActions.mockResolvedValue([]);
     mockGetUserMemories.mockResolvedValue([]);
@@ -2270,7 +2273,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
             });
       mockGetConvo.mockResolvedValue(projectConversation);
       mockGetChatProject.mockResolvedValue(projectRecord(contextRevision));
-      mockGetFiles.mockResolvedValue([projectResource]);
+      mockGetProjectFiles.mockResolvedValue([projectResource]);
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({
           metadata: { pendingAction: { projectContextKey: pendingKey } },
@@ -2295,7 +2298,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       ['changed content', [{ ...projectResource, updatedAt: new Date('2030-01-01') }]],
     ])('rejects a %s canonical file without a Project revision change', async (_change, files) => {
       withProject(3, 3);
-      mockGetFiles.mockResolvedValue(files);
+      mockGetProjectFiles.mockResolvedValue(files);
       const res = await post(approveBody());
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
@@ -2309,7 +2312,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     it('ignores usage and temporary-hold bookkeeping when resuming the same content', async () => {
       withProject(3, 3);
-      mockGetFiles.mockResolvedValue([
+      mockGetProjectFiles.mockResolvedValue([
         {
           ...projectResource,
           usage: 9,

@@ -76,6 +76,7 @@ jest.mock('~/data-provider', () => ({
   useUploadFileMutation: () => ({ mutateAsync: mockUploadMutateAsync, isLoading: false }),
   useAddProjectFileMutation: () => ({ mutateAsync: mockAddMutateAsync, isLoading: false }),
   useRemoveProjectFileMutation: () => ({ mutateAsync: mockRemoveMutateAsync, isLoading: false }),
+  useGetStartupConfig: () => ({ data: undefined }),
 }));
 
 jest.mock('~/hooks', () => ({
