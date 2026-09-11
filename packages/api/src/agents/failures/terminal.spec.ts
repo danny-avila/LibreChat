@@ -24,7 +24,10 @@ describe('terminal agent-run error logging', () => {
 
     expect(
       observer.getUserFacingError(new Error('graph failed', { cause: providerError }), 'fallback'),
-    ).toBe(JSON.stringify({ type: 'upstream_model_error', status: 500 }));
+    ).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 500 }),
+    );
 
     expect(logger.error).toHaveBeenCalledWith('[Agent API] Upstream model error', {
       type: 'Error',
@@ -104,13 +107,39 @@ describe('terminal agent-run error logging', () => {
       logger: { error: jest.fn() },
       source: '[Agent API]',
     });
-    const providerError = Object.assign(new Error('rate limited'), {
+    const providerError = new Error('provider failed');
+    const terminalError = Object.assign(new Error('rate limited', { cause: providerError }), {
       lc_error_code: 'MODEL_RATE_LIMIT',
     });
     observer.modelCallback.handleLLMError(providerError);
 
-    expect(observer.getUserFacingError(providerError, 'fallback')).toBe(
+    expect(observer.getUserFacingError(terminalError, 'fallback')).toBe(
       JSON.stringify({ type: 'model_rate_limit' }),
+    );
+  });
+
+  it('contains hostile provider accessors while building the safe fallback', () => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+    });
+    const providerError = Object.create(null, {
+      lc_error_code: {
+        get() {
+          throw new Error('hostile code getter');
+        },
+      },
+      message: {
+        get() {
+          throw new Error('hostile message getter');
+        },
+      },
+    });
+    observer.modelCallback.handleLLMError(providerError);
+
+    expect(observer.getUserFacingError(providerError, 'fallback')).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error' }),
     );
   });
 
