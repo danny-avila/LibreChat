@@ -1,9 +1,10 @@
 import { getDefaultStore } from 'jotai';
-import { Constants } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
+import { Constants, reconcileContextUsageFromEvent } from 'librechat-data-provider';
 import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import {
   contextSnapshotFamily,
+  liveTokensFamily,
   subagentUsageFamily,
   pendingSubagentUsageFamily,
 } from '~/store/usage';
@@ -72,6 +73,37 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
       model: 'primary-model',
       provider: 'anthropic',
     });
+  });
+
+  it('keeps resumed completed output once through text seeding, replay, and finalize', () => {
+    const convo = 'convo-resume-completed';
+    const submission = {
+      userMessage: { messageId: 'u-completed', conversationId: convo },
+      conversation: { conversationId: convo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+    const usage = primaryUsage();
+    const snapshot = reconcileContextUsageFromEvent(inflatedSnapshot(), usage);
+    result.current.backfillUsage([usage], submission);
+    result.current.contextHandler(snapshot, submission);
+    result.current.seedLive(12000, submission);
+    result.current.usageHandler(usage, submission);
+    expect(store.get(liveTokensFamily(convo))).toBe(0);
+    expect(store.get(contextSnapshotFamily(convo))?.completedOutputTokens).toBe(3780);
+    result.current.finalizeUsage(
+      {
+        conversation: { conversationId: convo },
+        responseMessage: { messageId: 'a-completed', conversationId: convo },
+      },
+      submission,
+    );
+    expect(store.get(contextSnapshotFamily(convo))?.completedOutputTokens).toBe(3780);
+
+    result.current.contextHandler(inflatedSnapshot(), submission);
+    result.current.seedLive(400, submission);
+    expect(store.get(contextSnapshotFamily(convo))?.completedOutputTokens).toBeUndefined();
+    expect(store.get(liveTokensFamily(convo))).toBe(500);
   });
 
   it('does not reconcile a replayed (already-folded) primary usage', () => {

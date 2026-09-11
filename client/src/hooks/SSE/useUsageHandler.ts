@@ -259,6 +259,8 @@ export default function useUsageHandler(): UsageHandlers {
       }
       jotai.set(snapshotAtom, {
         ...reconcileContextUsageFromEvent(snapshot, data),
+        /** Live output is held in confirmedRef until finalization. */
+        completedOutputTokens: undefined,
         anchorMessageId: snapshot.anchorMessageId,
       });
     };
@@ -360,10 +362,12 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const seedLive: UsageHandlers['seedLive'] = (chars, submission) => {
-      if (chars <= 0) {
+      const convoKey = getConvoKey(submission);
+      /** A completed resumed call already carries exact output in its snapshot.
+       * Trailing text is the same output, not a new streaming delta. */
+      if (chars <= 0 || jotai.get(contextSnapshotFamily(convoKey))?.completedOutputTokens != null) {
         return;
       }
-      const convoKey = getConvoKey(submission);
       streamCharsRef.current = chars;
       confirmedRef.current = 0;
       setLive(convoKey, estimateTokens(chars, jotai.get(calibrationFamily(convoKey))));

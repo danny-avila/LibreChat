@@ -287,8 +287,8 @@ export type TContextUsageEvent = {
   cacheRead?: number;
   cacheWrite?: number;
   /** Output tokens of the response's final model call (the call this pre-invoke
-   *  snapshot precedes). Populated only on the persisted `metadata.contextUsage`
-   *  blob so a reloaded multi-call turn adds the same post-snapshot delta the
+   *  snapshot precedes). Saved in message and resumable job snapshots so a
+   *  reloaded multi-call turn adds the same post-snapshot delta the
    *  live finalizer did — not the full response `tokenCount`, which the snapshot
    *  already includes for earlier steps. */
   completedOutputTokens?: number;
@@ -502,6 +502,13 @@ export const reconcileContextUsage = (
   return result;
 };
 
+/** Provider output, including reasoning omitted from an under-reported output count. */
+export const outputTokensFromUsage = (event: TTokenUsageEvent): number => {
+  const output = finiteNonNegativeInteger(event.output_tokens) ?? 0;
+  const total = finiteNonNegativeInteger(event.total_tokens) ?? 0;
+  return Math.max(output, total - promptTokensFromUsage(event));
+};
+
 /** Reconcile and retain the primary call details on live, saved, and resumable snapshots. */
 export const reconcileContextUsageFromEvent = (
   snapshot: TContextUsageEvent,
@@ -510,6 +517,7 @@ export const reconcileContextUsageFromEvent = (
   ...reconcileContextUsage(snapshot, promptTokensFromUsage(event)),
   model: event.model,
   provider: event.provider,
+  completedOutputTokens: outputTokensFromUsage(event),
   cacheRead: finiteNonNegativeInteger(event.input_token_details?.cache_read) ?? 0,
   cacheWrite: finiteNonNegativeInteger(event.input_token_details?.cache_creation) ?? 0,
 });

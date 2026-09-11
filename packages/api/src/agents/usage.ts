@@ -404,8 +404,6 @@ export function buildPersistedContextUsage(
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
 ): TContextUsageEvent {
   const finalCall = finalPrimaryCall(usageEvents, snapshot.runId);
-  const finalUnits = finalCall ? normalizeEventUnits(finalCall) : undefined;
-  const completedOutputTokens = finalUnits?.output ?? 0;
   const reconciled = finalCall ? reconcileContextUsageFromEvent(snapshot, finalCall) : snapshot;
   const { breakdown } = reconciled;
   const messageTokens = finiteNonNegativeInteger(breakdown.messageTokens) ?? 0;
@@ -437,7 +435,6 @@ export function buildPersistedContextUsage(
   return {
     ...reconciled,
     breakdown: persistedBreakdown,
-    ...(completedOutputTokens > 0 && { completedOutputTokens }),
   };
 }
 

@@ -53,6 +53,8 @@ export interface TokenEntry {
    *  name/args/output), for the estimate path's "Tool calls" split. Raw — sum
    *  sites clamp it to the entry's actual contribution. */
   estToolTokens: number;
+  /** Tool results are outside a counted response’s model-completion total. */
+  estToolResultTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
@@ -231,11 +233,12 @@ function partTextChars(part: unknown): number {
 /** Char length of a message's tool-call payload — tool_call parts' name, args
  *  and output — the estimate path's split of message body into conversation vs
  *  tool-call usage. Zero for plain-text bodies. */
-function messageToolChars(message: Partial<TMessage>): number {
+function messageToolChars(message: Partial<TMessage>): { chars: number; resultChars: number } {
   if (!Array.isArray(message.content)) {
-    return 0;
+    return { chars: 0, resultChars: 0 };
   }
   let chars = 0;
+  let resultChars = 0;
   for (const part of message.content) {
     if (part == null || typeof part !== 'object') {
       continue;
@@ -260,10 +263,11 @@ function messageToolChars(message: Partial<TMessage>): number {
       }
       if ('output' in call && typeof call.output === 'string') {
         chars += call.output.length;
+        resultChars += call.output.length;
       }
     }
   }
-  return chars;
+  return { chars, resultChars };
 }
 
 /** Char length of a message's rendered text, for estimating count-less messages.
@@ -315,10 +319,12 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   } else if (tokenCount === 0) {
     estTokens = Math.round(messageChars(message) / 4);
   }
+  const toolChars = messageToolChars(message);
   return {
     tokenCount: quoted ? 0 : tokenCount,
     estTokens,
-    estToolTokens: Math.round(messageToolChars(message) / 4),
+    estToolTokens: Math.round(toolChars.chars / 4),
+    estToolResultTokens: Math.round(toolChars.resultChars / 4),
     isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
@@ -697,7 +703,9 @@ export function latestExchangeTokens(
     if (entry == null) {
       return 0;
     }
-    return entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+    /** Completion counts include call arguments, but tool results are separate.
+     * Count-less content already estimates both. */
+    return entry.tokenCount > 0 ? entry.tokenCount + entry.estToolResultTokens : entry.estTokens;
   };
 
   const tailEntry = index.get(tailId);

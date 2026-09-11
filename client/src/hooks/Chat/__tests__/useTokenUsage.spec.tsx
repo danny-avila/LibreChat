@@ -229,6 +229,29 @@ describe('useTokenUsage — post-snapshot output', () => {
     expect(result.current.runwayTurns).toBe(194);
   });
 
+  it('excludes the retained latest tool result from compaction savings', () => {
+    const { result } = renderTokenUsage(undefined, {
+      messages: messages.map((message) =>
+        message.messageId === 'a2'
+          ? ({
+              ...message,
+              content: [
+                {
+                  type: 'tool_call',
+                  tool_call: {
+                    name: 'read_file',
+                    args: 'path',
+                    output: 'r'.repeat(20000),
+                  },
+                },
+              ],
+            } as TMessage)
+          : message,
+      ),
+    });
+    expect(result.current.compactionReclaim).toBe(4500);
+  });
+
   it('leaves a summarizing turn’s summary completion out of the reclaim estimate', () => {
     /** The tail turn compacted: its `tokenCount` carries the 700-token
      *  summarization completion the backend folded in, while the snapshot holds

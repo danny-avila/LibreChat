@@ -1,5 +1,5 @@
 import type { TContextUsageEvent, TTokenUsageEvent } from './runs';
-import { promptTokensFromUsage, reconcileContextUsage } from './runs';
+import { promptTokensFromUsage, outputTokensFromUsage, reconcileContextUsage } from './runs';
 
 describe('promptTokensFromUsage', () => {
   it('adds cache reads/writes for additive providers (Bedrock)', () => {
@@ -82,6 +82,30 @@ describe('promptTokensFromUsage', () => {
       input_token_details: { cache_read: 900, cache_creation: 0 },
     };
     expect(promptTokensFromUsage(event)).toBe(1000);
+  });
+});
+
+describe('outputTokensFromUsage', () => {
+  it('repairs omitted reasoning while excluding additive prompt-cache tokens', () => {
+    expect(
+      outputTokensFromUsage({
+        provider: 'bedrock',
+        input_tokens: 200,
+        output_tokens: 30,
+        total_tokens: 450,
+        input_token_details: { cache_read: 100, cache_creation: 50 },
+      }),
+    ).toBe(100);
+    expect(
+      outputTokensFromUsage({
+        provider: 'bedrock',
+        input_tokens: 200,
+        output_tokens: 30,
+        total_tokens: 380,
+        input_token_details: { cache_read: 100, cache_creation: 50 },
+      }),
+    ).toBe(30);
+    expect(outputTokensFromUsage({ output_tokens: NaN, total_tokens: Infinity })).toBe(0);
   });
 });
 

@@ -109,6 +109,7 @@ describe('GenerationJobManager usage resume state', () => {
     expect(resumeState?.contextUsage).toMatchObject({
       model: 'primary-model',
       provider: 'anthropic',
+      completedOutputTokens: 300,
       cacheRead: 800,
       cacheWrite: 100,
       remainingContextTokens: 180000,

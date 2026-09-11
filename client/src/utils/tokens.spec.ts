@@ -1039,6 +1039,31 @@ describe('per-message usage index (branch + total)', () => {
     expect(latestExchangeTokens(CONVO, 'a2', true)).toBe(9);
   });
 
+  it('keeps tool results outside model completion counts in the latest exchange', () => {
+    const response = {
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      conversationId: CONVO,
+      isCreatedByUser: false,
+      tokenCount: 40,
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            name: 'read_file',
+            args: 'a'.repeat(80),
+            output: 'r'.repeat(2000),
+          },
+        },
+      ],
+    } as TMessage;
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), response]);
+    expect(latestExchangeTokens(CONVO, 'a1', false)).toBe(550);
+    expect(latestExchangeTokens(CONVO, 'a1', true)).toBe(10);
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), { ...response, tokenCount: 0 }]);
+    expect(latestExchangeTokens(CONVO, 'a1', false)).toBe(532);
+  });
+
   it('latestExchangeTokens drops a summarizing turn’s summary completion', () => {
     /** The backend folds the summarization pass into the response's
      *  `tokenCount`, while the snapshot holds those tokens in `summaryTokens`
