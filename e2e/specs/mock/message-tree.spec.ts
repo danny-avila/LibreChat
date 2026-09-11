@@ -1134,8 +1134,8 @@ test.describe('message tree stream operations', () => {
     const baseReply = replyText(`${label}-base`);
     const errorPrompt = `E2E_FORCED_ERROR:${label}`;
     const providerError = `E2E forced stream error ${label}`;
-    const errorPayload = JSON.stringify({ type: 'upstream_model_error' });
     const errorText = 'The model provider could not complete this request.';
+    const errorPayload = `${errorText}\n${JSON.stringify({ type: 'upstream_model_error' })}`;
     const afterErrorPrompt = replyPrompt(`${label}-after-error`);
     const afterErrorReply = replyText(`${label}-after-error`);
 

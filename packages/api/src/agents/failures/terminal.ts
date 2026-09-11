@@ -9,6 +9,15 @@ import { resolveLangChainError } from '../errors';
 const UPSTREAM_MODEL_ERROR_CODE = 'UPSTREAM_MODEL_ERROR';
 const UPSTREAM_MODEL_ERROR_ORIGIN = 'model_provider';
 const UNKNOWN_UPSTREAM_MODEL_ERROR_TYPE = '_OTHER';
+const UPSTREAM_MODEL_ERROR_FALLBACK = 'The model provider could not complete this request.';
+
+function safelyResolveLangChainError(error: unknown): string | undefined {
+  try {
+    return resolveLangChainError(error);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface UpstreamModelErrorMetadata extends SafeErrorMetadata {
   readonly errorCode: typeof UPSTREAM_MODEL_ERROR_CODE;
@@ -70,16 +79,17 @@ export function createTerminalRunErrorObserver({
         return fallback;
       }
 
-      const classifiedError = resolveLangChainError(upstreamModelError);
+      const classifiedError =
+        safelyResolveLangChainError(error) ?? safelyResolveLangChainError(upstreamModelError);
       if (classifiedError != null) {
         return classifiedError;
       }
 
       const { status } = getSafeErrorMetadata(upstreamModelError);
-      return JSON.stringify({
+      return `${UPSTREAM_MODEL_ERROR_FALLBACK}\n${JSON.stringify({
         type: ErrorTypes.UPSTREAM_MODEL_ERROR,
         ...(status != null ? { status } : {}),
-      });
+      })}`;
     },
     log(error: unknown, signal?: AbortSignal) {
       if (isAgentRunCancellation(error, signal)) {
