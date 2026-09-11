@@ -88,7 +88,7 @@ const syncBody = {
     conversationId: 'conversation-1',
     messageId: 'message-1',
     originalArtifactId: 'render-1',
-    sourceKey: 'identifier:revenue-chart',
+    sourceKey: 'artifact:v1:identifier:revenue-chart',
   },
 };
 
@@ -667,9 +667,16 @@ describe('remove', () => {
     expect(res.statusCode).toBe(200);
     expect(auditActions).toContain('artifact_app.archived');
     expect(removedPermissionIds).toHaveLength(1);
-    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toMatchObject({
+      status: 'archived',
+      deletion: { finalizedAt: expect.any(Date) },
+    });
     const versions = await methods.listArtifactVersions({ artifactAppId: appId, limit: 20 });
     expect(versions.versions).toHaveLength(0);
+
+    const repeated = makeRes();
+    await handlers.remove(makeReq({ params: { id: appId } as never }), repeated);
+    expect(repeated.statusCode).toBe(200);
   });
 
   test('treats deleting an unknown app as an idempotent success', async () => {
@@ -702,8 +709,47 @@ describe('remove', () => {
     const retry = makeRes();
     await retryableHandlers.remove(makeReq({ params: { id: appId } as never }), retry);
     expect(retry.statusCode).toBe(200);
-    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toMatchObject({
+      status: 'archived',
+      deletion: { finalizedAt: expect.any(Date) },
+    });
     expect(removeAllPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  test('allows a resource administrator to delete without an artifact ACL', async () => {
+    const { appId } = await createSyncedVersions(1);
+    const administrativeHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      hasResourceManagementCapability: async () => true,
+      recordAuditEntry: async () => undefined,
+    });
+
+    const res = makeRes();
+    await administrativeHandlers.remove(
+      makeReq({
+        params: { id: appId } as never,
+        user: makeUser({ id: 'admin-user', email: 'admin@example.com' }),
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  test('returns 410 when a persistent queue retries a deleted source', async () => {
+    const created = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), created);
+    const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
+    await methods.prepareArtifactAppDeletion({ artifactAppId: appId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: appId }, 'user-1');
+
+    const res = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), res);
+
+    expect(res.statusCode).toBe(410);
   });
 });
 

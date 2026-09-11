@@ -32,6 +32,7 @@ export {
   createArtifactAppMethods,
   computeSourceHash,
   ARTIFACT_SCHEMA_VERSION,
+  ArtifactAppDeletedError,
   AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,

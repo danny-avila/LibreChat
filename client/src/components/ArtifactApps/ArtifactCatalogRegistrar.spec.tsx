@@ -142,6 +142,30 @@ describe('ArtifactCatalogRegistrar', () => {
     expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].artifact.type).toBe('presentation');
   });
 
+  it('does not impose a wall-clock deadline on a completed generation', async () => {
+    artifacts = {};
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, isSubmitting: true };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+
+    artifacts = {
+      'artifact-very-delayed': makeArtifact({
+        id: 'artifact-very-delayed',
+        identifier: 'very-delayed-presentation',
+        type: 'application/vnd.librechat.presentation-preview',
+        content: '<html>eventually ready</html>',
+        lastUpdateTime: 2,
+      }),
+    };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps observing a completed generation while the next generation runs', async () => {
     artifacts = {};
     const { rerender } = render(<ArtifactCatalogRegistrar />);

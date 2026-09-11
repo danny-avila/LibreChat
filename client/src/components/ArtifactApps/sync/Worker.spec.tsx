@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, render } from '@testing-library/react';
 import { dataService } from 'librechat-data-provider';
+import { act, render, waitFor } from '@testing-library/react';
 import {
   completeArtifactSync,
   listArtifactSyncQueue,
@@ -11,6 +11,8 @@ import ArtifactSyncWorker from './Worker';
 
 const mockSetQueryData = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockRemoveQueries = jest.fn();
+let mockUserId: string | null = 'user-1';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -24,6 +26,7 @@ jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     setQueryData: mockSetQueryData,
     invalidateQueries: mockInvalidateQueries,
+    removeQueries: mockRemoveQueries,
   }),
 }));
 
@@ -32,7 +35,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useAuthContext: () => ({ user: { id: 'user-1' } }),
+  useAuthContext: () => ({ user: mockUserId ? { id: mockUserId } : null }),
 }));
 
 jest.mock('~/hooks/Roles/useHasAccess', () => ({
@@ -66,6 +69,7 @@ const entry = {
 describe('ArtifactSyncWorker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUserId = 'user-1';
     jest.mocked(subscribeToArtifactSyncQueue).mockReturnValue(() => undefined);
     jest.mocked(listArtifactSyncQueue).mockResolvedValueOnce([entry]).mockResolvedValue([]);
     jest.mocked(dataService.syncArtifactApp).mockResolvedValue({
@@ -99,6 +103,81 @@ describe('ArtifactSyncWorker', () => {
     });
 
     expect(rescheduleArtifactSync).toHaveBeenCalledWith(entry.id, entry.signature, 1000);
+    expect(completeArtifactSync).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 404])(
+    'keeps HTTP %i failures queued for auth or rollout recovery',
+    async (status) => {
+      jest.mocked(dataService.syncArtifactApp).mockRejectedValueOnce({ response: { status } });
+      render(<ArtifactSyncWorker />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(rescheduleArtifactSync).toHaveBeenCalledWith(entry.id, entry.signature, 1000);
+      expect(completeArtifactSync).not.toHaveBeenCalled();
+    },
+  );
+
+  it('discards a queue entry only when the server confirms its source was deleted', async () => {
+    jest.mocked(dataService.syncArtifactApp).mockRejectedValueOnce({ response: { status: 410 } });
+    render(<ArtifactSyncWorker />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(completeArtifactSync).toHaveBeenCalledWith(entry.id, entry.signature);
+    expect(rescheduleArtifactSync).not.toHaveBeenCalled();
+  });
+
+  it('stops an active flush when the authenticated identity changes', async () => {
+    let resolveFirst: (
+      value: Awaited<ReturnType<typeof dataService.syncArtifactApp>>,
+    ) => void = () => undefined;
+    const firstRequest = new Promise<Awaited<ReturnType<typeof dataService.syncArtifactApp>>>(
+      (resolve) => {
+        resolveFirst = resolve;
+      },
+    );
+    const secondEntry = {
+      ...entry,
+      id: 'queue-2',
+      signature: 'signature-2',
+      request: {
+        ...entry.request,
+        source: { ...entry.request.source, sourceKey: 'artifact:v1:identifier:second' },
+      },
+    };
+    jest
+      .mocked(listArtifactSyncQueue)
+      .mockReset()
+      .mockResolvedValueOnce([entry, secondEntry])
+      .mockResolvedValue([]);
+    jest.mocked(dataService.syncArtifactApp).mockReset().mockReturnValueOnce(firstRequest);
+
+    const { rerender } = render(<ArtifactSyncWorker />);
+    await waitFor(() => expect(dataService.syncArtifactApp).toHaveBeenCalledTimes(1));
+
+    mockUserId = 'user-2';
+    rerender(<ArtifactSyncWorker />);
+    resolveFirst({
+      app: { artifactAppId: 'app-1' },
+      version: { artifactVersionId: 'version-1' },
+      created: true,
+      versionCreated: true,
+    } as Awaited<ReturnType<typeof dataService.syncArtifactApp>>);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(dataService.syncArtifactApp).toHaveBeenCalledTimes(1);
+    expect(mockSetQueryData).not.toHaveBeenCalled();
     expect(completeArtifactSync).not.toHaveBeenCalled();
   });
 });

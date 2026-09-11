@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import crypto from 'node:crypto';
-import { DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
+import { ARTIFACT_SOURCE_KEY_PREFIX, DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
 import type { ClientSession, FilterQuery, Model, Types } from 'mongoose';
 import type {
   IArtifactApp,
@@ -35,13 +35,27 @@ interface MongoWriteError {
   errorLabels?: string[];
 }
 
+interface ArtifactAppIdentityRecord {
+  _id: Types.ObjectId;
+  status?: string;
+  deletion?: { requestedBy: string };
+  updatedAt?: Date;
+  sourceMetadata?: { sourceKey?: string };
+}
+
 class ArtifactSyncRetryError extends Error {}
 
-const LEGACY_IDENTIFIER_SOURCE_SUFFIX = /^(identifier:.+):(application|text|image)\/[^:]+$/;
+export class ArtifactAppDeletedError extends Error {
+  constructor() {
+    super('Artifact app source has been deleted');
+    this.name = 'ArtifactAppDeletedError';
+  }
+}
 
-/** Collapses the source key emitted by the first catalog implementation. */
-export function canonicalizeArtifactSourceKey(sourceKey: string): string {
-  return sourceKey.match(LEGACY_IDENTIFIER_SOURCE_SUFFIX)?.[1] ?? sourceKey;
+function getLegacySourceKey(sourceKey: string): string | null {
+  return sourceKey.startsWith(ARTIFACT_SOURCE_KEY_PREFIX)
+    ? sourceKey.slice(ARTIFACT_SOURCE_KEY_PREFIX.length)
+    : null;
 }
 
 function legacyTypedSourceKeyPattern(sourceKey: string): RegExp | null {
@@ -362,11 +376,10 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     return app ? toAppRecord(app) : null;
   }
 
-  function buildSourceFilter(query: ArtifactAppSourceQuery): FilterQuery<IArtifactApp> {
+  function buildSourceOwnerFilter(query: ArtifactAppSourceQuery): FilterQuery<IArtifactApp> {
     const filter: FilterQuery<IArtifactApp> = {
       createdBy: query.createdBy,
       'sourceMetadata.conversationId': query.conversationId,
-      'sourceMetadata.sourceKey': canonicalizeArtifactSourceKey(query.sourceKey),
     };
     if (query.tenantId != null) {
       filter.tenantId = query.tenantId;
@@ -376,21 +389,41 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     return filter;
   }
 
+  function buildSourceFilter(query: ArtifactAppSourceQuery): FilterQuery<IArtifactApp> {
+    return {
+      ...buildSourceOwnerFilter(query),
+      'sourceMetadata.sourceKey': query.sourceKey,
+    };
+  }
+
   async function getArtifactAppBySource(
     query: ArtifactAppSourceQuery,
   ): Promise<ArtifactAppRecord | null> {
-    const canonicalSourceKey = canonicalizeArtifactSourceKey(query.sourceKey);
-    let app = await getApp()
-      .findOne(buildSourceFilter({ ...query, sourceKey: canonicalSourceKey }))
-      .lean<IArtifactApp>()
-      .exec();
-    const legacyPattern = legacyTypedSourceKeyPattern(canonicalSourceKey);
-    if (!app && legacyPattern) {
+    const currentFilter = {
+      ...buildSourceFilter(query),
+      deletion: { $exists: false },
+      status: { $ne: 'archived' },
+    };
+    let app = await getApp().findOne(currentFilter).lean<IArtifactApp>().exec();
+    const legacySourceKey = getLegacySourceKey(query.sourceKey);
+    if (!app && legacySourceKey) {
+      const legacyPattern = legacyTypedSourceKeyPattern(legacySourceKey);
+      const sourceKeyFilter = legacyPattern
+        ? {
+            $or: [
+              { 'sourceMetadata.sourceKey': legacySourceKey },
+              { 'sourceMetadata.sourceKey': legacyPattern },
+            ],
+          }
+        : { 'sourceMetadata.sourceKey': legacySourceKey };
       app = await getApp()
         .findOne({
-          ...buildSourceFilter({ ...query, sourceKey: canonicalSourceKey }),
-          'sourceMetadata.sourceKey': legacyPattern,
+          ...buildSourceOwnerFilter(query),
+          ...sourceKeyFilter,
+          deletion: { $exists: false },
+          status: { $ne: 'archived' },
         })
+        .sort({ updatedAt: -1, _id: -1 })
         .lean<IArtifactApp>()
         .exec();
     }
@@ -420,7 +453,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       throw new Error('[syncArtifactAppWithVersion] Stable source metadata is required');
     }
 
-    const canonicalSourceKey = canonicalizeArtifactSourceKey(source.sourceKey);
+    const canonicalSourceKey = source.sourceKey;
     const canonicalSource = { ...source, sourceKey: canonicalSourceKey };
     const sourceQuery: ArtifactAppSourceQuery = {
       tenantId: input.tenantId,
@@ -429,46 +462,109 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       sourceKey: canonicalSourceKey,
     };
     let filter = buildSourceFilter(sourceQuery);
-    let existing = await getApp().findOne(filter).select({ _id: 1 }).lean().exec();
+    let existing = await getApp()
+      .findOne(filter)
+      .select({ _id: 1, deletion: 1 })
+      .lean<ArtifactAppIdentityRecord>()
+      .exec();
+    if (existing?.deletion) {
+      throw new ArtifactAppDeletedError();
+    }
 
-    // Adopt the typed identifier keys emitted by the first automatic-catalog
-    // implementation. Canonicalizing incoming keys also prevents old browser
-    // bundles from recreating the legacy identity during a rolling deployment.
-    const legacyTypedPattern = legacyTypedSourceKeyPattern(canonicalSourceKey);
-    if (!existing && legacyTypedPattern) {
-      const legacyTypedFilter: FilterQuery<IArtifactApp> = {
-        ...filter,
-        'sourceMetadata.sourceKey': legacyTypedPattern,
-      };
-      const legacyTyped = await getApp()
-        .findOne(legacyTypedFilter)
-        .select({ _id: 1, 'sourceMetadata.sourceKey': 1 })
-        .lean<IArtifactApp>()
+    // A versioned key makes legacy interpretation explicit. Collect every
+    // matching pre-version record so MIME-changing identifiers converge on a
+    // deterministic survivor instead of leaving duplicate catalog entries.
+    const legacySourceKey = getLegacySourceKey(canonicalSourceKey);
+    if (legacySourceKey) {
+      const legacyTypedPattern = legacyTypedSourceKeyPattern(legacySourceKey);
+      const legacySourceFilter = legacyTypedPattern
+        ? {
+            $or: [
+              { 'sourceMetadata.sourceKey': legacySourceKey },
+              { 'sourceMetadata.sourceKey': legacyTypedPattern },
+            ],
+          }
+        : { 'sourceMetadata.sourceKey': legacySourceKey };
+      const legacyApps = await getApp()
+        .find({
+          ...buildSourceOwnerFilter(sourceQuery),
+          ...legacySourceFilter,
+        })
+        .select({
+          _id: 1,
+          status: 1,
+          deletion: 1,
+          updatedAt: 1,
+          'sourceMetadata.sourceKey': 1,
+        })
+        .sort({ updatedAt: -1, _id: -1 })
+        .lean<ArtifactAppIdentityRecord[]>()
         .exec();
-      if (legacyTyped) {
+
+      if (!existing && legacyApps.some((app) => app.deletion != null)) {
+        throw new ArtifactAppDeletedError();
+      }
+
+      const activeLegacyApps = legacyApps.filter(
+        (app) => app.deletion == null && app.status !== 'archived',
+      );
+      let survivor = existing ?? activeLegacyApps[0];
+      if (!existing && survivor) {
         try {
           const migrated = await getApp()
             .findOneAndUpdate(
               {
-                _id: legacyTyped._id,
-                'sourceMetadata.sourceKey': legacyTyped.sourceMetadata?.sourceKey,
+                _id: survivor._id,
+                deletion: { $exists: false },
+                'sourceMetadata.sourceKey': survivor.sourceMetadata?.sourceKey,
               },
               { $set: { 'sourceMetadata.sourceKey': canonicalSourceKey } },
               { new: true },
             )
-            .select({ _id: 1 })
-            .lean()
+            .select({ _id: 1, deletion: 1 })
+            .lean<ArtifactAppIdentityRecord>()
             .exec();
-          existing = migrated ?? (await getApp().findOne(filter).select({ _id: 1 }).lean().exec());
+          existing =
+            migrated ??
+            (await getApp()
+              .findOne(filter)
+              .select({ _id: 1 })
+              .lean<ArtifactAppIdentityRecord>()
+              .exec());
         } catch (error) {
           if (!isRetryableWriteError(error)) {
             throw error;
           }
-          existing = await getApp().findOne(filter).select({ _id: 1 }).lean().exec();
+          existing = await getApp()
+            .findOne(filter)
+            .select({ _id: 1 })
+            .lean<ArtifactAppIdentityRecord>()
+            .exec();
         }
-        if (existing) {
-          filter = { _id: existing._id };
+        survivor = existing ?? survivor;
+      }
+
+      if (survivor) {
+        const duplicateIds = activeLegacyApps
+          .filter((candidate) => candidate._id.toString() !== survivor._id.toString())
+          .map((candidate) => candidate._id);
+        if (duplicateIds.length > 0) {
+          await getApp()
+            .updateMany(
+              { _id: { $in: duplicateIds }, deletion: { $exists: false } },
+              {
+                $set: {
+                  status: 'archived',
+                  archivedAt: new Date(),
+                  'marketplace.listed': false,
+                },
+                $unset: { syncLock: 1 },
+              },
+            )
+            .exec();
         }
+        existing = survivor;
+        filter = { _id: survivor._id };
       }
     }
 
@@ -484,7 +580,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           ? { tenantId: input.tenantId }
           : { tenantId: { $exists: false } }),
       };
-      existing = await getApp().findOne(legacyFilter).select({ _id: 1 }).lean().exec();
+      existing = await getApp()
+        .findOne(legacyFilter)
+        .select({ _id: 1 })
+        .lean<ArtifactAppIdentityRecord>()
+        .exec();
       if (existing) {
         filter = { _id: existing._id };
       }
@@ -526,6 +626,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         app = await ArtifactApp.findOneAndUpdate(
           {
             ...filter,
+            deletion: { $exists: false },
             $or: [{ syncLock: { $exists: false } }, { 'syncLock.expiresAt': { $lte: now } }],
           },
           {
@@ -541,7 +642,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         if (app) {
           break;
         }
-        if (!(await ArtifactApp.exists(filter))) {
+        const blockedApp = await ArtifactApp.findOne(filter).select({ deletion: 1 }).lean().exec();
+        if (blockedApp?.deletion) {
+          throw new ArtifactAppDeletedError();
+        }
+        if (!blockedApp) {
           throw new Error(
             '[syncArtifactAppWithVersion] Artifact app not found after source lookup',
           );
@@ -565,6 +670,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
               _id: app._id,
               'syncLock.token': lockToken,
               latestVersionNumber: app.latestVersionNumber,
+              deletion: { $exists: false },
             },
             {
               $set: {
@@ -575,6 +681,9 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             { new: true },
           ).exec();
           if (!recoveredApp) {
+            if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
+              throw new ArtifactAppDeletedError();
+            }
             throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
           }
           app = recoveredApp;
@@ -594,7 +703,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
 
         if (activeVersion?.integrity.sourceHash === sourceHash) {
           const updatedApp = await ArtifactApp.findOneAndUpdate(
-            { _id: app._id, 'syncLock.token': lockToken },
+            {
+              _id: app._id,
+              'syncLock.token': lockToken,
+              deletion: { $exists: false },
+            },
             {
               $set: {
                 title: input.title,
@@ -606,6 +719,9 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             { new: true },
           ).exec();
           if (!updatedApp) {
+            if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
+              throw new ArtifactAppDeletedError();
+            }
             throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
           }
           return {
@@ -635,6 +751,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             _id: app._id,
             'syncLock.token': lockToken,
             latestVersionNumber: app.latestVersionNumber,
+            deletion: { $exists: false },
           },
           {
             $set: {
@@ -649,6 +766,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           { new: true },
         ).exec();
         if (!updatedApp) {
+          if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
+            await ArtifactVersion.deleteOne({ artifactVersionId: stagedVersionId }).exec();
+            versionStaged = false;
+            throw new ArtifactAppDeletedError();
+          }
           throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
         }
         return {
@@ -677,6 +799,9 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       const app = await appQuery.exec();
       if (!app) {
         throw new Error('[syncArtifactAppWithVersion] Artifact app not found after source lookup');
+      }
+      if (app.deletion) {
+        throw new ArtifactAppDeletedError();
       }
 
       const versionQuery = app.activeVersionId
@@ -755,7 +880,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
 
   async function resolveArtifactAppId(query: ArtifactAppQuery): Promise<string | null> {
     const doc = await getApp()
-      .findOne({ artifactAppId: query.artifactAppId })
+      .findOne({
+        artifactAppId: query.artifactAppId,
+        deletion: { $exists: false },
+        status: { $ne: 'archived' },
+      })
       .select({ _id: 1, artifactAppId: 1 })
       .lean<{ _id: Types.ObjectId; artifactAppId: string }>()
       .exec();
@@ -763,13 +892,21 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   }
 
   async function listArtifactApps(options: ArtifactAppListOptions): Promise<ArtifactAppListPage> {
-    let ownershipFilter: FilterQuery<IArtifactApp> = { deletion: { $exists: false } };
+    let ownershipFilter: FilterQuery<IArtifactApp> = {
+      deletion: { $exists: false },
+      status: { $ne: 'archived' },
+    };
     if (options.createdBy) {
-      ownershipFilter = { createdBy: options.createdBy, deletion: { $exists: false } };
+      ownershipFilter = {
+        createdBy: options.createdBy,
+        deletion: { $exists: false },
+        status: { $ne: 'archived' },
+      };
     } else if (options.excludeCreatedBy) {
       ownershipFilter = {
         createdBy: { $ne: options.excludeCreatedBy },
         deletion: { $exists: false },
+        status: { $ne: 'archived' },
       };
     }
     const cursor = options.cursor ? decodeAppCursor(options.cursor) : null;
@@ -818,7 +955,15 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     update: ArtifactAppUpdate,
   ): Promise<ArtifactAppRecord | null> {
     const app = await getApp()
-      .findOneAndUpdate({ artifactAppId: query.artifactAppId }, { $set: update }, { new: true })
+      .findOneAndUpdate(
+        {
+          artifactAppId: query.artifactAppId,
+          deletion: { $exists: false },
+          status: { $ne: 'archived' },
+        },
+        { $set: update },
+        { new: true },
+      )
       .lean<IArtifactApp>()
       .exec();
     return app ? toAppRecord(app) : null;
@@ -916,12 +1061,23 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     requestedBy: string,
   ): Promise<boolean> {
     const result = await getApp()
-      .deleteOne({
-        artifactAppId: query.artifactAppId,
-        'deletion.requestedBy': requestedBy,
-      })
+      .updateOne(
+        {
+          artifactAppId: query.artifactAppId,
+          'deletion.requestedBy': requestedBy,
+        },
+        {
+          $set: {
+            'deletion.finalizedAt': new Date(),
+            status: 'archived',
+            archivedAt: new Date(),
+            'marketplace.listed': false,
+          },
+          $unset: { activeVersionId: 1, syncLock: 1 },
+        },
+      )
       .exec();
-    return result.deletedCount === 1;
+    return result.matchedCount === 1;
   }
 
   async function getArtifactVersion(

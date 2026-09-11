@@ -1,3 +1,4 @@
+import { ARTIFACT_SOURCE_KEY_PREFIX } from 'librechat-data-provider';
 import type { ArtifactRuntimeType, TSyncArtifactAppRequest } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 
@@ -39,15 +40,18 @@ export function getArtifactSourceKey(artifact: Artifact | null | undefined): str
     return null;
   }
   if (artifact.id.startsWith('tool-artifact-')) {
-    return `file:${artifact.id}`;
+    return `${ARTIFACT_SOURCE_KEY_PREFIX}file:${artifact.id}`.slice(0, 500);
   }
   if (artifact.identifier && artifact.identifier !== INLINE_DEFAULT_IDENTIFIER) {
-    return `identifier:${artifact.identifier}`.slice(0, 500);
+    return `${ARTIFACT_SOURCE_KEY_PREFIX}identifier:${artifact.identifier}`.slice(0, 500);
   }
   if (!artifact.messageId) {
     return null;
   }
-  return `message:${artifact.messageId}:${artifact.index ?? 0}:${artifact.type}`.slice(0, 500);
+  return `${ARTIFACT_SOURCE_KEY_PREFIX}message:${artifact.messageId}:${artifact.index ?? 0}:${artifact.type}`.slice(
+    0,
+    500,
+  );
 }
 
 export function toArtifactSyncRequest(

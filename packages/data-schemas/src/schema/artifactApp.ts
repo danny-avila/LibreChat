@@ -52,6 +52,7 @@ const deletionSchema = new Schema(
   {
     requestedBy: { type: String, required: true },
     requestedAt: { type: Date, required: true },
+    finalizedAt: { type: Date },
   },
   { _id: false },
 );

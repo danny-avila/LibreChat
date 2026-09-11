@@ -36,6 +36,9 @@ export type ArtifactRuntimeType = z.infer<typeof artifactRuntimeTypeSchema>;
 export const artifactAppListScopeSchema = z.enum(['personal', 'shared', 'all']);
 export type ArtifactAppListScope = z.infer<typeof artifactAppListScopeSchema>;
 
+/** Stable namespace for automatically generated artifact catalog identities. */
+export const ARTIFACT_SOURCE_KEY_PREFIX = 'artifact:v1:' as const;
+
 export const DEFAULT_ARTIFACT_APPS_CONFIG = {
   catalogPageSize: 20,
   versionPageSize: 20,
@@ -49,7 +52,6 @@ export const DEFAULT_ARTIFACT_APPS_CONFIG = {
   clientSyncSettleDelayMs: 500,
   clientSyncRetryBaseDelayMs: 1_000,
   clientSyncRetryMaxDelayMs: 30_000,
-  clientGenerationObservationMs: 120_000,
 } as const;
 
 function boundedInteger(min: number, max: number, defaultValue: number) {
@@ -93,11 +95,6 @@ export const artifactAppsConfigSchema = z
       100,
       600_000,
       DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryMaxDelayMs,
-    ),
-    clientGenerationObservationMs: boundedInteger(
-      1_000,
-      600_000,
-      DEFAULT_ARTIFACT_APPS_CONFIG.clientGenerationObservationMs,
     ),
   })
   .default({});
@@ -198,7 +195,20 @@ export const syncArtifactAppSchema = z.object({
   artifact: artifactSnapshotInputSchema,
   source: artifactSourceMetadataSchema.extend({
     conversationId: z.string().min(1),
-    sourceKey: z.string().min(1).max(500),
+    /**
+     * `artifact:v1:` keys are the unambiguous current format. The three
+     * unversioned prefixes remain accepted while older browser bundles drain
+     * during rolling deployments, but the server treats them as exact legacy
+     * identities and never strips a MIME-looking suffix from them.
+     */
+    sourceKey: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine(
+        (value) => /^(?:artifact:v1:)?(?:identifier|file|message):.+$/.test(value),
+        'Invalid artifact source key',
+      ),
   }),
 });
 export type TSyncArtifactAppRequest = z.infer<typeof syncArtifactAppSchema>;

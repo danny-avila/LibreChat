@@ -1,6 +1,12 @@
 const express = require('express');
 const { createArtifactAppHandlers, generateCheckAccess } = require('@librechat/api');
-const { Permissions, PermissionBits, PermissionTypes } = require('librechat-data-provider');
+const { ResourceCapabilityMap } = require('@librechat/data-schemas');
+const {
+  Permissions,
+  PermissionBits,
+  PermissionTypes,
+  ResourceType,
+} = require('librechat-data-provider');
 const {
   createArtifactAppWithVersion,
   syncArtifactAppWithVersion,
@@ -9,6 +15,8 @@ const {
   listArtifactApps,
   updateArtifactApp,
   deleteArtifactApp,
+  prepareArtifactAppDeletion,
+  finalizeArtifactAppDeletion,
   getArtifactVersion,
   listArtifactVersions,
   releaseArtifactVersion,
@@ -18,6 +26,7 @@ const {
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessArtifactAppResource } = require('~/server/middleware');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const {
   getResourcePermissionsMap,
   grantPermission,
@@ -49,6 +58,8 @@ const handlers = createArtifactAppHandlers({
   listArtifactApps,
   updateArtifactApp,
   deleteArtifactApp,
+  prepareArtifactAppDeletion,
+  finalizeArtifactAppDeletion,
   getArtifactVersion,
   listArtifactVersions,
   releaseArtifactVersion,
@@ -57,6 +68,8 @@ const handlers = createArtifactAppHandlers({
   getResourcePermissionsMap,
   grantPermission,
   removeAllPermissions,
+  hasResourceManagementCapability: (user) =>
+    hasCapability(user, ResourceCapabilityMap[ResourceType.ARTIFACT_APP]),
   recordAuditEntry,
   getConfig: (req) => req.config?.artifactApps,
 });

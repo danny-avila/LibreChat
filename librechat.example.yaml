@@ -496,7 +496,6 @@ actions:
 #   clientSyncSettleDelayMs: 500
 #   clientSyncRetryBaseDelayMs: 1000
 #   clientSyncRetryMaxDelayMs: 30000
-#   clientGenerationObservationMs: 120000
 
 # MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
 # SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).

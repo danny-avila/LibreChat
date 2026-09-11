@@ -168,7 +168,11 @@ describe('useArtifacts', () => {
           lastUpdateTime: 2000,
         }),
       };
-      window.history.replaceState({}, '', '/c/conv-1?artifact=identifier%3Arevenue-chart');
+      window.history.replaceState(
+        {},
+        '',
+        '/c/conv-1?artifact=artifact%3Av1%3Aidentifier%3Arevenue-chart',
+      );
       (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
 
       const { rerender } = renderHook(() => useArtifacts());
@@ -212,7 +216,7 @@ describe('useArtifacts', () => {
         key === 'artifactNavigationRequest'
           ? {
               conversationId: 'conv-1',
-              sourceKey: 'identifier:revenue-chart',
+              sourceKey: 'artifact:v1:identifier:revenue-chart',
             }
           : artifacts,
       );
