@@ -5,6 +5,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   getCodeBaseURL: jest.fn(() => 'http://localhost:8000'),
 }));
 
@@ -20,6 +21,7 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    createCodeOutputPersistence: jest.requireActual('@librechat/api').createCodeOutputPersistence,
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
