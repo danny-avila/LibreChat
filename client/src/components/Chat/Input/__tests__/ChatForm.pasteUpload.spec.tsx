@@ -108,7 +108,7 @@ function Harness() {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <DragDropWrapper>
-          <ChatForm index={0} />
+          <ChatForm index={0} isLandingPage={false} />
         </DragDropWrapper>
       </ChatContext.Provider>
     </ChatFormProvider>

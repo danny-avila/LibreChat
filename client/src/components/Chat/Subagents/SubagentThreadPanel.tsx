@@ -1460,11 +1460,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         {activityPanel}
       </ApprovalProvider>
       {(showControlFooter || composerMode != null) && (
-        /* The main chat form's own bottom rhythm: its composer clears the
-           viewport floor by the height of the disclaimer beneath it, and this
-           one clears it by the same, so the two surfaces end on one line when
-           the panel is open beside the thread. */
-        <div className="shrink-0 px-3 pb-10 pt-2">
+        /* The main chat form's own bottom rhythm: a started conversation carries
+           no disclaimer, so its composer keeps only enough clearance to show its
+           shadow, and this one keeps the same, so the two surfaces end on one
+           line when the panel is open beside the thread. */
+        <div className="shrink-0 px-3 pb-4 pt-2">
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">

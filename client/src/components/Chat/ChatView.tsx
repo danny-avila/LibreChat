@@ -181,6 +181,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             index={index}
                             placeholder={chatFormPlaceholder}
                             project={isProjectLandingPage ? project : undefined}
+                            isLandingPage={isLandingPage}
                           />
                         )}
                       </div>

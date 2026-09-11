@@ -74,6 +74,9 @@ interface ChatFormProps {
   index: number;
   placeholder?: string;
   project?: TChatProject;
+  /** Owned by ChatView: the disclaimer renders beneath the landing composer only,
+   *  and the clearance this band leaves under itself follows it. */
+  isLandingPage: boolean;
   /** From ChatContext: individual values so memo can compare them */
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -107,6 +110,7 @@ const ChatForm = memo(function ChatForm({
   index,
   placeholder,
   project,
+  isLandingPage,
   files,
   setFiles,
   conversation,
@@ -571,6 +575,16 @@ const ChatForm = memo(function ChatForm({
     [isCollapsed, isMoreThanThreeRows],
   );
 
+  /* From `sm` up the band leaves room under itself for the disclaimer, which only
+     the landing page carries — doubled while the centred landing composer floats,
+     and dropped back the moment a submission starts the thread. A started
+     conversation has nothing beneath it, so it keeps only enough to clear the
+     surface's own shadow. Below `sm` the composer runs to the viewport floor in
+     every state. */
+  const landingClearance =
+    centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
+  const bottomClearance = isLandingPage ? landingClearance : 'sm:mb-4';
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
@@ -594,12 +608,7 @@ const ChatForm = memo(function ChatForm({
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
-        centerFormOnLanding &&
-          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
-          !isSubmitting &&
-          conversation?.messages?.length === 0
-          ? 'transition-all duration-200 sm:mb-28'
-          : 'sm:mb-10',
+        bottomClearance,
       )}
     >
       <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
@@ -889,10 +898,12 @@ function ChatFormWrapper({
   index = 0,
   placeholder,
   project,
+  isLandingPage,
 }: {
   index?: number;
   placeholder?: string;
   project?: TChatProject;
+  isLandingPage: boolean;
 }) {
   const {
     files,
@@ -957,6 +968,7 @@ function ChatFormWrapper({
       index={index}
       placeholder={placeholder}
       project={project}
+      isLandingPage={isLandingPage}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
