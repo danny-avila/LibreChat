@@ -5,6 +5,7 @@ import {
   fileConfigSchema,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
+  getDocumentFileExtension,
   bedrockDocumentMimeTypes,
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
@@ -1993,5 +1994,34 @@ describe('agent attachment context limits', () => {
   it('validates and merges an aggregate extracted-text character limit', () => {
     expect(fileConfigSchema.safeParse({ fileContextCharLimit: 250_000 }).success).toBe(true);
     expect(mergeFileConfig({ fileContextCharLimit: 250_000 }).fileContextCharLimit).toBe(250_000);
+  });
+});
+
+describe('getDocumentFileExtension', () => {
+  it.each([
+    ['text/markdown', '.md'],
+    [' TEXT/PLAIN; charset=UTF-8', '.txt'],
+    ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+    ['application/vnd.oasis.opendocument.text', '.odt'],
+    ['text/csv', '.csv'],
+    ['application/csv', '.csv'],
+    ['text/comma-separated-values', '.csv'],
+    [' TEXT/COMMA-SEPARATED-VALUES; charset=utf-8', '.csv'],
+    ['application/vnd.ms-excel', '.xls'],
+    ['application/msexcel', '.xls'],
+    ['application/x-msexcel', '.xls'],
+    ['application/x-ms-excel', '.xls'],
+    ['application/x-excel', '.xls'],
+    ['application/x-dos_ms_excel', '.xls'],
+    ['application/xls', '.xls'],
+    ['application/x-xls', '.xls'],
+    ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
+    ['application/vnd.oasis.opendocument.spreadsheet', '.ods'],
+    ['application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'],
+    ['application/vnd.openxmlformats-officedocument.presentationml.template', '.potx'],
+    ['application/unknown', undefined],
+    [undefined, undefined],
+  ])('resolves %s', (mimeType, expected) => {
+    expect(getDocumentFileExtension(mimeType)).toBe(expected);
   });
 });
