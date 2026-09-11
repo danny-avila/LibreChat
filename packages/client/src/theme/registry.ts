@@ -18,7 +18,7 @@ export const THEME_VERSION = 1 as const;
  * hand-maintained token maps, so a slot added to one and missed in another
  * fails the build rather than surfacing as a broken theme downstream.
  */
-type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type Assert<Declared extends true> = Declared;
 type DeclaredIn<Keys extends PropertyKey, Tokens> = [Keys] extends [keyof Tokens] ? true : false;
 
@@ -391,6 +391,30 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-border-light'] !== undefined
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
+  /**
+   * Slot 8 arrived after the seven-slot scale shipped, so a stored or
+   * environment theme that paints its own scale cannot name it. Filling the
+   * omission from the bundled base would drop LibreChat's indigo onto that
+   * theme's own surfaces — the one pairing it never checked, since the stop's
+   * 3:1 mark contrast is a claim about the bundled surfaces only. The RESOLVED
+   * secondary text is the one colour that tracks whatever the theme reads its
+   * body copy against, whether it names its own or inherits ours, so slot 8
+   * stays exactly as visible as that text; hue-neutral, it cannot collide with
+   * a custom slot 1–7 under protanopia/deuteranopia either. A theme that wants
+   * a hue for slot 8 names it, the way `rgb-surface-composer-hover` opts out of
+   * its own fallback.
+   */
+  const ownsSeriesScale =
+    customColors != null &&
+    ([1, 2, 3, 4, 5, 6, 7] as const).some(
+      (slot) => customColors[`rgb-series-${slot}`] !== undefined,
+    );
+  const seriesEightFallback =
+    customColors?.['rgb-series-8'] === undefined && ownsSeriesScale
+      ? {
+          'rgb-series-8': customColors?.['rgb-text-secondary'] ?? baseColors['rgb-text-secondary'],
+        }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -405,6 +429,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...textMutedFallback,
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
+      ...seriesEightFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */

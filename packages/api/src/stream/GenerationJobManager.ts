@@ -8,8 +8,7 @@ import {
   ApprovalEvents,
   SteerEvents,
   parseTextParts,
-  reconcileContextUsage,
-  promptTokensFromUsage,
+  reconcileContextUsageFromEvent,
 } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -7714,9 +7713,14 @@ class GenerationJobManagerClass {
           snapshot != null &&
           (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
         ) {
-          update.contextUsage = JSON.stringify(
-            reconcileContextUsage(snapshot, promptTokensFromUsage(usage)),
+          const { completedOutputTokens, ...reconciled } = reconcileContextUsageFromEvent(
+            snapshot,
+            usage,
           );
+          update.contextUsage = JSON.stringify({
+            ...reconciled,
+            resumedOutputTokens: completedOutputTokens,
+          });
         }
       } catch {
         /* leave the stored snapshot as-is on parse failure */

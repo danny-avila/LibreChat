@@ -121,6 +121,7 @@ export interface IThemeRGB {
   'rgb-series-5'?: string;
   'rgb-series-6'?: string;
   'rgb-series-7'?: string;
+  'rgb-series-8'?: string;
 
   /**
    * Unchecked track of the shared `Switch`. A control state rather than a
@@ -232,6 +233,7 @@ export interface IThemeVariables {
   '--series-5': string;
   '--series-6': string;
   '--series-7': string;
+  '--series-8': string;
 
   '--switch-unchecked': string;
 
@@ -322,6 +324,7 @@ export interface IThemeColors {
   'series-6'?: string;
   'series-7'?: string;
   'switch-unchecked'?: string;
+  'series-8'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)

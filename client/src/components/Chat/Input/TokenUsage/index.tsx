@@ -43,6 +43,7 @@ function TokenUsageIndicator({
   /** Owned here, not in the popover: `unmountOnHide` would otherwise lose the
    *  in-flight state the moment the pointer leaves. */
   const compaction = useCompactConversation();
+  const compactionAvailable = compactionEnabled && supportsCompaction(conversation?.endpoint);
   const popover = Ariakit.usePopoverStore({ placement: 'top' });
   const popoverOpen = Ariakit.useStoreState(popover, 'open');
   const disclosureRef = useRef<HTMLButtonElement>(null);
@@ -243,10 +244,11 @@ function TokenUsageIndicator({
           <Breakdown
             view={view}
             showCost={showCost}
+            compactionAvailable={compactionAvailable}
             currency={currency}
             langfuseSessionUrl={langfuseSession?.url ?? undefined}
           />
-          {compactionEnabled && supportsCompaction(conversation?.endpoint) && (
+          {compactionAvailable && (
             <>
               <div className="border-t border-border-light" role="separator" />
               <CompactAction
