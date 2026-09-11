@@ -2,7 +2,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { QueryKeys, dataService, DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
 import type {
   TArtifactAppList,
-  TArtifactApp,
+  TArtifactAppWithVersion,
   TArtifactVersion,
   TArtifactVersionList,
   ArtifactAppListScope,
@@ -16,18 +16,20 @@ import { useGetStartupConfig } from '../Endpoints';
 
 export const useListArtifactAppsQuery = (
   scope: ArtifactAppListScope = 'personal',
+  search = '',
   config?: UseInfiniteQueryOptions<TArtifactAppList, Error>,
 ) => {
   const { data: startupConfig } = useGetStartupConfig();
   const pageSize =
     startupConfig?.artifactApps?.catalogPageSize ?? DEFAULT_ARTIFACT_APPS_CONFIG.catalogPageSize;
   return useInfiniteQuery<TArtifactAppList, Error>(
-    [QueryKeys.artifactApps, scope, pageSize],
+    [QueryKeys.artifactApps, scope, pageSize, search],
     ({ pageParam }) =>
       dataService.listArtifactApps({
         scope,
         limit: pageSize,
         cursor: typeof pageParam === 'string' ? pageParam : undefined,
+        search: search || undefined,
       }),
     {
       getNextPageParam: (lastPage) =>
@@ -43,15 +45,16 @@ export const useListArtifactAppsQuery = (
 export const useGetArtifactAppBySourceQuery = (
   conversationId: string | null | undefined,
   sourceKey: string | null | undefined,
-  config?: UseQueryOptions<TArtifactApp>,
-): QueryObserverResult<TArtifactApp> => {
+  config?: UseQueryOptions<TArtifactAppWithVersion>,
+): QueryObserverResult<TArtifactAppWithVersion> => {
   const enabled = !!conversationId && !!sourceKey;
-  return useQuery<TArtifactApp>(
+  return useQuery<TArtifactAppWithVersion>(
     [QueryKeys.artifactApp, 'source', conversationId, sourceKey],
     () => dataService.getArtifactAppBySource(conversationId as string, sourceKey as string),
     {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: 'always',
       retry: false,
       ...config,
       enabled: enabled && (config?.enabled ?? true),
@@ -61,16 +64,16 @@ export const useGetArtifactAppBySourceQuery = (
 
 export const useGetArtifactAppQuery = (
   artifactAppId: string | null | undefined,
-  config?: UseQueryOptions<TArtifactApp>,
-): QueryObserverResult<TArtifactApp> => {
+  config?: UseQueryOptions<TArtifactAppWithVersion>,
+): QueryObserverResult<TArtifactAppWithVersion> => {
   const enabled = !!artifactAppId;
-  return useQuery<TArtifactApp>(
+  return useQuery<TArtifactAppWithVersion>(
     [QueryKeys.artifactApp, artifactAppId],
     () => dataService.getArtifactApp(artifactAppId as string),
     {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: 'always',
       retry: false,
       ...config,
       enabled: enabled && (config?.enabled ?? true),
@@ -96,9 +99,9 @@ export const useListArtifactAppVersionsQuery = (
     {
       getNextPageParam: (lastPage) =>
         lastPage.has_more && lastPage.after ? lastPage.after : undefined,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: 'always',
       ...config,
       enabled: enabled && (config?.enabled ?? true),
     },

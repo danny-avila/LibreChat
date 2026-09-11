@@ -40,6 +40,7 @@ export const DEFAULT_ARTIFACT_APPS_CONFIG = {
   catalogPageSize: 20,
   versionPageSize: 20,
   scanBatchSize: 100,
+  aclBatchSize: 100,
   maxScanBatches: 10,
   syncLockLeaseMs: 5_000,
   syncLockRetryDelayMs: 50,
@@ -48,6 +49,7 @@ export const DEFAULT_ARTIFACT_APPS_CONFIG = {
   clientSyncSettleDelayMs: 500,
   clientSyncRetryBaseDelayMs: 1_000,
   clientSyncRetryMaxDelayMs: 30_000,
+  clientGenerationObservationMs: 120_000,
 } as const;
 
 function boundedInteger(min: number, max: number, defaultValue: number) {
@@ -59,6 +61,7 @@ export const artifactAppsConfigSchema = z
     catalogPageSize: boundedInteger(1, 50, DEFAULT_ARTIFACT_APPS_CONFIG.catalogPageSize),
     versionPageSize: boundedInteger(1, 50, DEFAULT_ARTIFACT_APPS_CONFIG.versionPageSize),
     scanBatchSize: boundedInteger(1, 1_000, DEFAULT_ARTIFACT_APPS_CONFIG.scanBatchSize),
+    aclBatchSize: boundedInteger(1, 100, DEFAULT_ARTIFACT_APPS_CONFIG.aclBatchSize),
     maxScanBatches: boundedInteger(1, 100, DEFAULT_ARTIFACT_APPS_CONFIG.maxScanBatches),
     syncLockLeaseMs: boundedInteger(1_000, 300_000, DEFAULT_ARTIFACT_APPS_CONFIG.syncLockLeaseMs),
     syncLockRetryDelayMs: boundedInteger(
@@ -91,6 +94,11 @@ export const artifactAppsConfigSchema = z
       600_000,
       DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncRetryMaxDelayMs,
     ),
+    clientGenerationObservationMs: boundedInteger(
+      1_000,
+      600_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.clientGenerationObservationMs,
+    ),
   })
   .default({});
 export type ArtifactAppsConfig = z.infer<typeof artifactAppsConfigSchema>;
@@ -99,6 +107,7 @@ export const artifactAppListRequestSchema = z.object({
   scope: artifactAppListScopeSchema.default('personal'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().min(1).optional(),
+  search: z.string().trim().max(200).optional(),
 });
 export type TArtifactAppListRequest = z.infer<typeof artifactAppListRequestSchema>;
 
@@ -279,6 +288,18 @@ export type TArtifactVersionSummary = Omit<
 export interface TArtifactAppWithVersion {
   app: TArtifactApp;
   version: TArtifactVersion | null;
+}
+
+/** Temporary rollout union accepted while older pods may still return a raw app. */
+export type TArtifactAppDetailResponse = TArtifactAppWithVersion | TArtifactApp;
+
+export function normalizeArtifactAppDetail(
+  response: TArtifactAppDetailResponse,
+): TArtifactAppWithVersion {
+  if ('app' in response) {
+    return response;
+  }
+  return { app: response, version: null };
 }
 
 export interface TSyncArtifactAppResponse extends TArtifactAppWithVersion {

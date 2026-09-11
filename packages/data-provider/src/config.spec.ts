@@ -1337,9 +1337,11 @@ describe('artifact app operational configuration', () => {
       catalogPageSize: 20,
       versionPageSize: 20,
       scanBatchSize: 100,
+      aclBatchSize: 100,
       maxScanBatches: 10,
       syncLockLeaseMs: 5000,
       clientSyncSettleDelayMs: 500,
+      clientGenerationObservationMs: 120000,
     });
   });
 
@@ -1349,6 +1351,7 @@ describe('artifact app operational configuration', () => {
       artifactApps: {
         catalogPageSize: 12,
         scanBatchSize: 75,
+        aclBatchSize: 50,
         syncLockLeaseMs: 10_000,
         clientSyncRetryMaxDelayMs: 45_000,
       },
@@ -1357,6 +1360,7 @@ describe('artifact app operational configuration', () => {
     expect(result.artifactApps).toMatchObject({
       catalogPageSize: 12,
       scanBatchSize: 75,
+      aclBatchSize: 50,
       syncLockLeaseMs: 10_000,
       clientSyncRetryMaxDelayMs: 45_000,
     });
@@ -1365,8 +1369,10 @@ describe('artifact app operational configuration', () => {
   it.each([
     { catalogPageSize: 51 },
     { scanBatchSize: 0 },
+    { aclBatchSize: 101 },
     { syncLockLeaseMs: 999 },
     { clientSyncRetryBaseDelayMs: 60_001 },
+    { clientGenerationObservationMs: 999 },
   ])('rejects out-of-range overrides: %o', (artifactApps) => {
     expect(configSchema.safeParse({ version: '1.3.5', artifactApps }).success).toBe(false);
   });

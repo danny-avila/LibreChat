@@ -139,6 +139,40 @@ describe('syncArtifactAppWithVersion', () => {
     );
   });
 
+  test('adopts typed identifier source keys created by the previous implementation', async () => {
+    const legacy = await methods.createArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: {
+          ...sourceMetadata,
+          sourceKey: 'identifier:revenue-chart:application/vnd.react',
+        },
+      }),
+    );
+
+    const synced = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    const persisted = await ArtifactApp.findOne({ artifactAppId: legacy.app.artifactAppId }).lean();
+
+    expect(synced.app.artifactAppId).toBe(legacy.app.artifactAppId);
+    expect(synced.created).toBe(false);
+    expect(await ArtifactApp.countDocuments({})).toBe(1);
+    expect(persisted?.sourceMetadata?.sourceKey).toBe('identifier:revenue-chart');
+  });
+
+  test('canonicalizes source keys still sent by an older browser bundle', async () => {
+    const first = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    const second = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: {
+          ...sourceMetadata,
+          sourceKey: 'identifier:revenue-chart:application/vnd.react',
+        },
+      }),
+    );
+
+    expect(second.app.artifactAppId).toBe(first.app.artifactAppId);
+    expect(await ArtifactApp.countDocuments({})).toBe(1);
+  });
+
   test('creates and activates the next version when content changes', async () => {
     const input = baseInput({ sourceMetadata });
     const first = await methods.syncArtifactAppWithVersion(input);
@@ -336,6 +370,60 @@ describe('CRUD', () => {
     await expect(
       methods.listArtifactApps({ createdBy: 'user-1', limit: 2, cursor: 'not-json' }),
     ).rejects.toThrow('Invalid artifact app cursor');
+  });
+
+  test('applies metadata search before pagination', async () => {
+    await Promise.all(
+      Array.from({ length: 25 }, (_, index) =>
+        methods.createArtifactAppWithVersion(
+          baseInput({
+            title: index === 24 ? 'Needle Artifact' : `Ordinary Artifact ${index}`,
+            tags: index === 23 ? ['needle-tag'] : undefined,
+          }),
+        ),
+      ),
+    );
+
+    const titleResult = await methods.listArtifactApps({
+      createdBy: 'user-1',
+      search: 'needle artifact',
+      limit: 10,
+    });
+    const tagResult = await methods.listArtifactApps({
+      createdBy: 'user-1',
+      search: 'needle-tag',
+      limit: 10,
+    });
+
+    expect(titleResult.entries.map(({ app }) => app.title)).toEqual(['Needle Artifact']);
+    expect(tagResult.entries).toHaveLength(1);
+  });
+
+  test('resumes a standalone deletion after a version cleanup failure', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const deleteVersions = jest
+      .spyOn(ArtifactVersion, 'deleteMany')
+      .mockRejectedValueOnce(new Error('temporary cleanup failure'));
+
+    await expect(
+      methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+    ).rejects.toThrow('temporary cleanup failure');
+    deleteVersions.mockRestore();
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toMatchObject(
+      {
+        deletion: { requestedBy: 'user-1' },
+      },
+    );
+
+    const retry = await methods.prepareArtifactAppDeletion(
+      { artifactAppId: app.artifactAppId },
+      'user-1',
+    );
+    expect(retry.deletedVersions).toBe(1);
+    expect(
+      await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1'),
+    ).toBe(true);
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toBeNull();
   });
 });
 

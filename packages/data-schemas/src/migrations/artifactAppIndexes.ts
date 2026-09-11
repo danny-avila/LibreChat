@@ -1,4 +1,5 @@
 import type { Connection } from 'mongoose';
+import { buildIndexWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 type IndexSpec = Record<string, 1 | -1>;
@@ -59,7 +60,10 @@ export async function ensureArtifactAppIndexes(
     const collection = connection.db!.collection(collectionName);
     for (const { spec, options } of indexes) {
       try {
-        const name = await collection.createIndex(spec, options);
+        const name = await buildIndexWithRetry(
+          () => collection.createIndex(spec, options),
+          `${collectionName}.${JSON.stringify(spec)}`,
+        );
         result.created.push(`${collectionName}.${name}`);
       } catch (err) {
         const msg = `${collectionName}.${JSON.stringify(spec)}: ${(err as Error).message}`;

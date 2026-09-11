@@ -22,7 +22,7 @@ export default function useArtifactCatalogSync(artifact: Artifact | null | undef
   });
 
   return {
-    artifactEntry: entryQuery.data,
+    artifactEntry: entryQuery.data?.app,
     isSyncing: entryQuery.isLoading,
     sourceKey,
   };

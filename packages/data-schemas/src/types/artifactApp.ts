@@ -38,10 +38,16 @@ export interface IArtifactAppSyncLock {
   expiresAt: Date;
 }
 
+export interface IArtifactAppDeletion {
+  requestedBy: string;
+  requestedAt: Date;
+}
+
 export interface ArtifactAppListOptions {
   createdBy?: string;
   excludeCreatedBy?: string;
   cursor?: string;
+  search?: string;
   limit: number;
 }
 
@@ -98,10 +104,18 @@ interface ArtifactAppFields {
 
 export interface ArtifactAppRecord extends ArtifactAppFields {
   id: string;
+  deletion?: IArtifactAppDeletion;
 }
 
 export interface IArtifactApp extends Document<Types.ObjectId>, ArtifactAppFields {
   syncLock?: IArtifactAppSyncLock;
+  deletion?: IArtifactAppDeletion;
+}
+
+export interface ArtifactAppDeletionResult {
+  found: boolean;
+  resourceId?: string;
+  deletedVersions: number;
 }
 
 export interface IArtifactVersionRuntimeConfig {

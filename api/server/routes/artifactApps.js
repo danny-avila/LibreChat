@@ -21,6 +21,7 @@ const { requireJwtAuth, canAccessArtifactAppResource } = require('~/server/middl
 const {
   getResourcePermissionsMap,
   grantPermission,
+  removeAllPermissions,
 } = require('~/server/services/PermissionService');
 const configMiddleware = require('~/server/middleware/config/app');
 
@@ -55,6 +56,7 @@ const handlers = createArtifactAppHandlers({
   withdrawArtifactVersion,
   getResourcePermissionsMap,
   grantPermission,
+  removeAllPermissions,
   recordAuditEntry,
   getConfig: (req) => req.config?.artifactApps,
 });
@@ -78,12 +80,7 @@ router.patch(
   canAccessArtifactAppResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.update,
 );
-router.delete(
-  '/:id',
-  checkArtifactAccess,
-  canAccessArtifactAppResource({ requiredPermission: PermissionBits.DELETE }),
-  handlers.remove,
-);
+router.delete('/:id', checkArtifactAccess, handlers.remove);
 
 // Versions
 router.get(

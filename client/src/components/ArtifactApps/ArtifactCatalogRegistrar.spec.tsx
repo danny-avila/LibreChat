@@ -1,32 +1,13 @@
 import React from 'react';
+import { Constants } from 'librechat-data-provider';
 import { act, render } from '@testing-library/react';
-import { dataService } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { enqueueArtifactSync } from '~/components/ArtifactApps/sync/queue';
 import ArtifactCatalogRegistrar from './ArtifactCatalogRegistrar';
 
-const mockSetQueryData = jest.fn();
-const mockInvalidateQueries = jest.fn();
 const mockUseRecoilValue = jest.fn();
 const mockUseArtifactsContext = jest.fn();
 let mockStartupConfig: { artifactApps?: Record<string, number> } | undefined;
-
-jest.mock('librechat-data-provider', () => {
-  const actual = jest.requireActual('librechat-data-provider');
-  return {
-    ...actual,
-    dataService: {
-      ...actual.dataService,
-      syncArtifactApp: jest.fn(),
-    },
-  };
-});
-
-jest.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({
-    setQueryData: mockSetQueryData,
-    invalidateQueries: mockInvalidateQueries,
-  }),
-}));
 
 jest.mock('recoil', () => ({
   useRecoilValue: () => mockUseRecoilValue(),
@@ -40,9 +21,17 @@ jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: mockStartupConfig }),
 }));
 
+jest.mock('~/hooks', () => ({
+  useAuthContext: () => ({ user: { id: 'user-1' } }),
+}));
+
 jest.mock('~/hooks/Roles/useHasAccess', () => ({
   __esModule: true,
   default: () => true,
+}));
+
+jest.mock('~/components/ArtifactApps/sync/queue', () => ({
+  enqueueArtifactSync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/store', () => ({
@@ -54,7 +43,7 @@ jest.mock('~/utils', () => ({
   logger: { error: jest.fn() },
 }));
 
-const syncArtifactApp = jest.mocked(dataService.syncArtifactApp);
+const mockEnqueueArtifactSync = jest.mocked(enqueueArtifactSync);
 
 function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
   return {
@@ -74,7 +63,6 @@ describe('ArtifactCatalogRegistrar', () => {
   let context: { conversationId: string; isSubmitting: boolean; latestMessageId: string | null };
 
   beforeEach(() => {
-    jest.useFakeTimers();
     jest.clearAllMocks();
     mockStartupConfig = undefined;
     artifacts = { 'artifact-1': makeArtifact() };
@@ -85,19 +73,9 @@ describe('ArtifactCatalogRegistrar', () => {
     };
     mockUseRecoilValue.mockImplementation(() => artifacts);
     mockUseArtifactsContext.mockImplementation(() => context);
-    syncArtifactApp.mockResolvedValue({
-      app: { artifactAppId: 'app-1' },
-      version: { artifactVersionId: 'version-1' },
-      created: true,
-      versionCreated: true,
-    } as Awaited<ReturnType<typeof dataService.syncArtifactApp>>);
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  it('does not synchronize artifacts while reading idle conversation history', async () => {
+  it('does not register artifacts while reading idle conversation history', async () => {
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
     artifacts = { 'artifact-old': makeArtifact({ id: 'artifact-old', content: 'old snapshot' }) };
@@ -107,21 +85,18 @@ describe('ArtifactCatalogRegistrar', () => {
       latestMessageId: 'message-old',
     };
     rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(1000);
-    });
+    await act(async () => Promise.resolve());
 
-    expect(syncArtifactApp).not.toHaveBeenCalled();
+    expect(mockEnqueueArtifactSync).not.toHaveBeenCalled();
   });
 
-  it('synchronizes only artifacts changed by a completed generation', async () => {
+  it('persists only artifacts changed by a completed generation', async () => {
     const unchanged = makeArtifact({ id: 'artifact-old', identifier: 'unchanged' });
     artifacts = { 'artifact-old': unchanged };
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
     context = { ...context, isSubmitting: true };
     rerender(<ArtifactCatalogRegistrar />);
-
     artifacts = {
       'artifact-old': unchanged,
       'artifact-new': makeArtifact({
@@ -131,24 +106,18 @@ describe('ArtifactCatalogRegistrar', () => {
         lastUpdateTime: 2,
       }),
     };
+    context = { ...context, latestMessageId: 'message-2' };
     rerender(<ArtifactCatalogRegistrar />);
-
-    context = { ...context, isSubmitting: false, latestMessageId: 'message-2' };
+    context = { ...context, isSubmitting: false };
     rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(500);
-      await Promise.resolve();
-    });
+    await act(async () => Promise.resolve());
 
-    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
-    expect(syncArtifactApp.mock.calls[0]?.[0].source.sourceKey).toContain('new-chart');
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: expect.arrayContaining(['artifactApps']),
-      refetchType: 'all',
-    });
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].source.sourceKey).toContain('new-chart');
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(500);
   });
 
-  it('continues observing artifacts that resolve after the initial settle delay', async () => {
+  it('continues observing previews that resolve after generation completion', async () => {
     artifacts = {};
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
@@ -156,11 +125,6 @@ describe('ArtifactCatalogRegistrar', () => {
     rerender(<ArtifactCatalogRegistrar />);
     context = { ...context, isSubmitting: false };
     rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(61_000);
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).not.toHaveBeenCalled();
 
     artifacts = {
       'artifact-delayed': makeArtifact({
@@ -172,16 +136,65 @@ describe('ArtifactCatalogRegistrar', () => {
       }),
     };
     rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(500);
-      await Promise.resolve();
-    });
+    await act(async () => Promise.resolve());
 
-    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
-    expect(syncArtifactApp.mock.calls[0]?.[0].artifact.type).toBe('presentation');
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].artifact.type).toBe('presentation');
   });
 
-  it('ignores delayed artifacts from a message outside the completed generation', async () => {
+  it('keeps observing a completed generation while the next generation runs', async () => {
+    artifacts = {};
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, isSubmitting: true, latestMessageId: 'message-a' };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: true, latestMessageId: 'message-b' };
+    rerender(<ArtifactCatalogRegistrar />);
+
+    artifacts = {
+      'artifact-a': makeArtifact({
+        id: 'artifact-a',
+        identifier: 'generation-a',
+        messageId: 'message-a',
+      }),
+    };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].source.messageId).toBe('message-a');
+  });
+
+  it('tracks a first generation when a new conversation receives its persisted id', async () => {
+    artifacts = {};
+    context = {
+      conversationId: String(Constants.NEW_CONVO),
+      isSubmitting: true,
+      latestMessageId: 'message-new',
+    };
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, conversationId: 'conversation-created' };
+    artifacts = {
+      'artifact-new': makeArtifact({
+        id: 'artifact-new',
+        messageId: 'message-new',
+      }),
+    };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].source.conversationId).toBe(
+      'conversation-created',
+    );
+  });
+
+  it('ignores delayed artifacts from a message outside a completed generation', async () => {
     artifacts = {};
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
@@ -189,132 +202,32 @@ describe('ArtifactCatalogRegistrar', () => {
     rerender(<ArtifactCatalogRegistrar />);
     context = { ...context, isSubmitting: false, latestMessageId: 'message-new' };
     rerender(<ArtifactCatalogRegistrar />);
-
     artifacts = {
       'artifact-stale': makeArtifact({
         id: 'artifact-stale',
         identifier: 'stale-presentation',
-        type: 'application/vnd.librechat.presentation-preview',
-        content: '<html>stale presentation</html>',
         messageId: 'message-old',
-        lastUpdateTime: 2,
       }),
     };
     rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(1000);
-      await Promise.resolve();
-    });
+    await act(async () => Promise.resolve());
 
-    expect(syncArtifactApp).not.toHaveBeenCalled();
+    expect(mockEnqueueArtifactSync).not.toHaveBeenCalled();
   });
 
-  it('retries failed automatic registrations with backoff', async () => {
+  it('uses the configured settle delay when persisting registration work', async () => {
+    mockStartupConfig = { artifactApps: { clientSyncSettleDelayMs: 25 } };
     artifacts = {};
-    syncArtifactApp.mockRejectedValueOnce(new Error('temporary failure'));
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
     context = { ...context, isSubmitting: true };
     rerender(<ArtifactCatalogRegistrar />);
-    artifacts = { 'artifact-new': makeArtifact({ id: 'artifact-new' }) };
+    artifacts = { 'artifact-new': makeArtifact() };
     rerender(<ArtifactCatalogRegistrar />);
     context = { ...context, isSubmitting: false };
     rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
 
-    await act(async () => {
-      jest.advanceTimersByTime(500);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).toHaveBeenCalledTimes(2);
-  });
-
-  it('uses retry and settle timings supplied by startup configuration', async () => {
-    mockStartupConfig = {
-      artifactApps: {
-        clientSyncSettleDelayMs: 25,
-        clientSyncRetryBaseDelayMs: 100,
-        clientSyncRetryMaxDelayMs: 100,
-      },
-    };
-    artifacts = {};
-    syncArtifactApp.mockRejectedValueOnce(new Error('temporary failure'));
-    const { rerender } = render(<ArtifactCatalogRegistrar />);
-
-    context = { ...context, isSubmitting: true };
-    rerender(<ArtifactCatalogRegistrar />);
-    artifacts = { 'artifact-new': makeArtifact({ id: 'artifact-new' }) };
-    rerender(<ArtifactCatalogRegistrar />);
-    context = { ...context, isSubmitting: false };
-    rerender(<ArtifactCatalogRegistrar />);
-
-    await act(async () => {
-      jest.advanceTimersByTime(25);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      jest.advanceTimersByTime(100);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not retry permanent registration failures', async () => {
-    artifacts = {};
-    syncArtifactApp.mockRejectedValueOnce({ response: { status: 400 } });
-    const { rerender } = render(<ArtifactCatalogRegistrar />);
-
-    context = { ...context, isSubmitting: true };
-    rerender(<ArtifactCatalogRegistrar />);
-    artifacts = { 'artifact-new': makeArtifact({ id: 'artifact-new' }) };
-    rerender(<ArtifactCatalogRegistrar />);
-    context = { ...context, isSubmitting: false };
-    rerender(<ArtifactCatalogRegistrar />);
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(syncArtifactApp).toHaveBeenCalledTimes(1);
-  });
-
-  it('refreshes catalog scopes after metadata-only synchronization', async () => {
-    syncArtifactApp.mockResolvedValueOnce({
-      app: { artifactAppId: 'app-1' },
-      version: { artifactVersionId: 'version-1' },
-      created: false,
-      versionCreated: false,
-    } as Awaited<ReturnType<typeof dataService.syncArtifactApp>>);
-    const { rerender } = render(<ArtifactCatalogRegistrar />);
-
-    context = { ...context, isSubmitting: true };
-    rerender(<ArtifactCatalogRegistrar />);
-    artifacts = {
-      'artifact-1': makeArtifact({ title: 'Renamed chart', lastUpdateTime: 2 }),
-    };
-    rerender(<ArtifactCatalogRegistrar />);
-    context = { ...context, isSubmitting: false };
-    rerender(<ArtifactCatalogRegistrar />);
-    await act(async () => {
-      jest.advanceTimersByTime(500);
-      await Promise.resolve();
-    });
-
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: expect.arrayContaining(['artifactApps']),
-      refetchType: 'all',
-    });
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(25);
   });
 });

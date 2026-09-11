@@ -48,6 +48,14 @@ const syncLockSchema = new Schema(
   { _id: false },
 );
 
+const deletionSchema = new Schema(
+  {
+    requestedBy: { type: String, required: true },
+    requestedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const reviewSchema = new Schema(
   {
     submittedAt: { type: Date },
@@ -135,6 +143,10 @@ const artifactAppSchema: Schema<IArtifactApp> = new Schema<IArtifactApp>(
       type: syncLockSchema,
       default: undefined,
       select: false,
+    },
+    deletion: {
+      type: deletionSchema,
+      default: undefined,
     },
     review: {
       type: reviewSchema,

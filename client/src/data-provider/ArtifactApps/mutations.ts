@@ -34,7 +34,7 @@ export const useSyncArtifactAppMutation = (): UseMutationResult<
     onSuccess: (data, payload) => {
       queryClient.setQueryData(
         [QueryKeys.artifactApp, 'source', payload.source.conversationId, payload.source.sourceKey],
-        data.app,
+        data,
       );
       queryClient.invalidateQueries([QueryKeys.artifactApps]);
     },

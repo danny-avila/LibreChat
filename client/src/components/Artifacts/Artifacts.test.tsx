@@ -20,6 +20,7 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
+  useHasAccess: () => false,
   useLocalize:
     () =>
     (key: string): string =>
@@ -46,6 +47,16 @@ jest.mock('~/hooks', () => ({
       return () => container?.removeEventListener('keydown', handleKeyDown);
     }, [active, containerRef, onEscape]);
   },
+}));
+
+jest.mock('~/hooks/Artifacts/useClearArtifactNavigationRequest', () => ({
+  __esModule: true,
+  default: () => jest.fn(),
+}));
+
+jest.mock('~/hooks/Artifacts/useArtifactCatalogSync', () => ({
+  __esModule: true,
+  default: () => ({ artifactEntry: null, isSyncing: false }),
 }));
 
 jest.mock('~/hooks/Artifacts/useArtifacts', () => ({

@@ -32,9 +32,12 @@ export default function StandaloneAppView() {
   }>();
 
   const appQuery = useGetArtifactAppQuery(artifactAppId);
-  const selectedVersionId = versionId ?? appQuery.data?.activeVersionId;
+  const app = appQuery.data?.app;
+  const includedVersion = appQuery.data?.version;
+  const selectedVersionId = versionId ?? app?.activeVersionId;
+  const includedVersionSelected = includedVersion?.artifactVersionId === selectedVersionId;
   const versionQuery = useGetArtifactAppVersionQuery(artifactAppId, selectedVersionId, {
-    enabled: !!selectedVersionId,
+    enabled: !!selectedVersionId && !includedVersionSelected,
   });
   const versionsQuery = useListArtifactAppVersionsQuery(artifactAppId);
 
@@ -50,11 +53,11 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
 
-  if (selectedVersionId && versionQuery.isLoading) {
+  if (selectedVersionId && !includedVersionSelected && versionQuery.isLoading) {
     return <StateMessage message={localize('com_ui_artifact_app_loading')} />;
   }
 
-  if (selectedVersionId && versionQuery.isError) {
+  if (selectedVersionId && !includedVersionSelected && versionQuery.isError) {
     const status = errorStatus(versionQuery.error);
     if (status === 403) {
       return <StateMessage message={localize('com_ui_artifact_app_forbidden')} />;
@@ -62,7 +65,6 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
 
-  const app = appQuery.data;
   if (!app) {
     return <StateMessage message={localize('com_ui_artifact_app_not_found')} />;
   }
@@ -74,7 +76,9 @@ export default function StandaloneAppView() {
     return <StateMessage message={localize('com_ui_artifact_app_archived')} />;
   }
 
-  const version: TArtifactVersion | null | undefined = versionQuery.data;
+  const version: TArtifactVersion | null | undefined = includedVersionSelected
+    ? includedVersion
+    : versionQuery.data;
   const versions = versionsQuery.data?.pages.flatMap((page) => page.versions) ?? [];
   const versionOptions =
     !version ||
