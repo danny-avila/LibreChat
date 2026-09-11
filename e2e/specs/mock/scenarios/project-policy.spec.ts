@@ -300,6 +300,7 @@ test.describe.serial('project policy scenarios', () => {
     const marker = `E2E-PROJECT-INSTRUCTIONS-${suffix}`;
     let projectId: string | undefined;
     let agentId: string | undefined;
+    let assistantId: string | undefined;
     try {
       const project = await requestResult(request, {
         path: '/api/projects',
@@ -309,6 +310,19 @@ test.describe.serial('project policy scenarios', () => {
       });
       expectSuccess(project, 201);
       projectId = requireString(asObject(project.body)._id, 'project id');
+      const assistant = await requestResult(request, {
+        path: '/api/assistants/v2',
+        token,
+        method: 'POST',
+        data: {
+          endpoint: 'assistants',
+          model: 'gpt-4o-mini',
+          name: `E2E filtered project assistant ${suffix}`,
+          tools: [],
+        },
+      });
+      expectSuccess(assistant, 201);
+      assistantId = requireString(asObject(assistant.body).id, 'assistant id');
       agentId = await createAgent(request, token, suffix);
 
       await setRuntimeFilters(request, token, {
@@ -346,8 +360,60 @@ test.describe.serial('project policy scenarios', () => {
         marker,
       });
       await expectNoProjectTurn(projectId, messageId);
+      const hostedMessageId = randomUUID();
+      const hostedBlocked = await requestResult(request, {
+        path: '/api/assistants/v2/chat',
+        token,
+        method: 'POST',
+        data: {
+          text: 'Apply the project instructions.',
+          sender: 'User',
+          clientTimestamp: new Date().toISOString(),
+          isCreatedByUser: true,
+          parentMessageId: NO_PARENT,
+          conversationId: null,
+          messageId: hostedMessageId,
+          responseMessageId: `${hostedMessageId}_response`,
+          endpoint: 'assistants',
+          endpointType: 'assistants',
+          model: 'gpt-4o-mini',
+          assistant_id: assistantId,
+          chatProjectId: projectId,
+          files: [],
+          isTemporary: false,
+          isRegenerate: false,
+          error: false,
+        },
+      });
+      expectContentFilterBlock(hostedBlocked, {
+        source: 'agent_instruction',
+        field: 'instructions',
+        marker,
+      });
+
+      const provider = `http://127.0.0.1:${process.env.E2E_ASSISTANTS_PORT || '8890'}`;
+      const recorded = await request.get(`${provider}/__e2e/requests`);
+      expect(recorded.ok()).toBeTruthy();
+      const history = (await recorded.json()) as {
+        requests: Array<{ path: string; body?: { assistant_id?: string } }>;
+      };
+      expect(
+        history.requests.filter(
+          (entry) => entry.path.endsWith('/runs') && entry.body?.assistant_id === assistantId,
+        ),
+      ).toHaveLength(0);
     } finally {
       await runCleanup([
+        async () => {
+          if (assistantId) {
+            await requestResult(request, {
+              path: `/api/assistants/v2/${encodeURIComponent(assistantId)}?endpoint=assistants&model=gpt-4o-mini`,
+              token,
+              method: 'DELETE',
+              data: { endpoint: 'assistants' },
+            });
+          }
+        },
         () => restoreRuntimeFilters(request, token),
         async () => {
           if (projectId) {

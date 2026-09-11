@@ -1,8 +1,4 @@
 import { Schema } from 'mongoose';
-import {
-  MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
-  MAX_CHAT_PROJECT_FILES,
-} from 'librechat-data-provider';
 import type { IChatProjectDocument } from '~/types';
 
 const chatProjectSchema: Schema<IChatProjectDocument> = new Schema<IChatProjectDocument>(
@@ -18,12 +14,10 @@ const chatProjectSchema: Schema<IChatProjectDocument> = new Schema<IChatProjectD
       type: String,
       default: '',
       trim: true,
-      maxlength: 1000,
     },
     instructions: {
       type: String,
       default: '',
-      maxlength: MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
     },
     contextRevision: {
       type: Number,
@@ -33,10 +27,6 @@ const chatProjectSchema: Schema<IChatProjectDocument> = new Schema<IChatProjectD
     file_ids: {
       type: [String],
       default: [],
-      validate: {
-        validator: (ids: string[]) => ids.length <= MAX_CHAT_PROJECT_FILES,
-        message: 'Project file limit reached',
-      },
     },
     user: {
       type: String,

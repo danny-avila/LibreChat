@@ -1,30 +1,8 @@
 import { createHash } from 'crypto';
 import { FileContext } from 'librechat-data-provider';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
-import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
-import type { FilterQuery, SortOrder } from 'mongoose';
-
-export type ProjectFileRecord = Pick<
-  IMongoFile,
-  | '_id'
-  | 'file_id'
-  | 'filename'
-  | 'filepath'
-  | 'object'
-  | 'type'
-  | 'bytes'
-  | 'usage'
-  | 'embedded'
-  | 'context'
-  | 'expiredAt'
-  | 'user'
-  | 'tenantId'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'previewRevision'
-  | 'status'
-  | 'text'
->;
+import type { IChatProject, ProjectFileRecord } from '@librechat/data-schemas';
+export type { ProjectFileRecord } from '@librechat/data-schemas';
 
 export type CanonicalProjectResource = {
   file_id: string;
@@ -33,15 +11,23 @@ export type CanonicalProjectResource = {
 } & ({ availability: 'ready'; file: TFile } | { availability: 'unavailable' });
 
 /** Canonical lookup; metadata snapshots omit bodies, while active policy selects full records. */
-export type GetProjectFiles = (
-  filter: FilterQuery<IMongoFile>,
-  sortOptions?: Record<string, SortOrder> | null,
-  selectFields?: Record<string, 0 | 1> | string | null,
-) => Promise<ReadonlyArray<ProjectFileRecord> | null>;
+export type GetProjectFiles = (options: {
+  fileIds: string[];
+  userId: string;
+  tenantId?: string | null;
+  includeContent?: boolean;
+}) => Promise<ReadonlyArray<ProjectFileRecord> | null>;
 
 /** Project resources are restricted to owner-scoped, unscoped message attachments. */
 export function getChatProjectFileAvailability(
-  file: Pick<IMongoFile, 'embedded' | 'context' | 'expiredAt'> | null | undefined,
+  file:
+    | {
+        embedded?: boolean;
+        context?: string;
+        expiredAt?: Date | number | string | null;
+      }
+    | null
+    | undefined,
 ): 'ready' | 'unavailable' {
   if (!file || file.embedded !== true || file.context !== FileContext.message_attachment) {
     return 'unavailable';
@@ -62,13 +48,13 @@ async function loadProjectFiles({
   project,
   userId,
   tenantId,
-  getFiles,
+  getProjectFiles,
   includeContent = false,
 }: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
   includeContent?: boolean;
 }): Promise<{ fileIds: string[]; byId: Map<string, ProjectFileRecord> }> {
   const fileIds = [
@@ -79,39 +65,12 @@ async function loadProjectFiles({
   if (fileIds.length === 0) {
     return { fileIds, byId: new Map() };
   }
-
-  const files = await getFiles(
-    {
-      file_id: { $in: fileIds },
-      user: userId,
-      embedded: true,
-      context: FileContext.message_attachment,
-      // Mongo's null predicate matches explicit null and legacy missing tenant fields.
-      tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
-    },
-    null,
-    includeContent
-      ? {}
-      : {
-          _id: 1,
-          file_id: 1,
-          filename: 1,
-          filepath: 1,
-          object: 1,
-          type: 1,
-          bytes: 1,
-          usage: 1,
-          embedded: 1,
-          context: 1,
-          expiredAt: 1,
-          user: 1,
-          tenantId: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          previewRevision: 1,
-          status: 1,
-        },
-  );
+  const files = await getProjectFiles({
+    fileIds,
+    userId,
+    tenantId,
+    includeContent,
+  });
   return { fileIds, byId: new Map((files ?? []).map((file) => [file.file_id, file])) };
 }
 
@@ -158,7 +117,7 @@ export async function resolveChatProjectResources(params: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
 }): Promise<CanonicalProjectResource[]> {
   const { fileIds, byId } = await loadProjectFiles(params);
   return fileIds.map((fileId) => {
@@ -173,7 +132,7 @@ export async function resolveChatProjectPolicyFiles(params: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
 }): Promise<ProjectFileRecord[]> {
   const { fileIds, byId } = await loadProjectFiles({ ...params, includeContent: true });
   return fileIds
@@ -206,7 +165,7 @@ export async function resolveChatProjectFiles(params: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
   resources?: readonly CanonicalProjectResource[];
 }): Promise<TFile[]> {
   const resources =
@@ -215,7 +174,7 @@ export async function resolveChatProjectFiles(params: {
       project: params.project,
       userId: params.userId,
       tenantId: params.tenantId,
-      getFiles: params.getFiles,
+      getProjectFiles: params.getProjectFiles,
     }));
   const files: TFile[] = [];
   for (const resource of resources) {
@@ -235,7 +194,7 @@ export async function listChatProjectFileViews(params: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
 }): Promise<TChatProjectFile[]> {
   const { fileIds, byId } = await loadProjectFiles(params);
   return fileIds.map((file_id) => {

@@ -65,7 +65,8 @@ jest.mock('@librechat/api', () => ({
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
-  resolveChatProjectContext: jest.requireActual('@librechat/api').resolveChatProjectContext,
+  startAgentProjectContextResolution:
+    jest.requireActual('@librechat/api').startAgentProjectContextResolution,
   assertModelBoundContent: jest.requireActual('@librechat/api').assertModelBoundContent,
   isContentFilterError: jest.requireActual('@librechat/api').isContentFilterError,
   CHAT_PROJECT_CONTEXT_UNAVAILABLE:

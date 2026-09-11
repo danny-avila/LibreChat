@@ -8,7 +8,7 @@ const project = {
   contextRevision: 3,
   file_ids: ['file-a'],
 };
-const getFiles = jest.fn().mockResolvedValue([]);
+const getProjectFiles = jest.fn().mockResolvedValue([]);
 
 const missingResources = (fileIds: string[]): CanonicalProjectResource[] =>
   fileIds.map((file_id) => ({
@@ -28,7 +28,7 @@ describe('resolveChatProjectContext', () => {
         requestedProjectId: 'project-b',
         resolvedConversation: { conversationId: 'conversation-a', chatProjectId: 'project-a' },
       },
-      { getConvo: jest.fn(), getChatProject, getFiles },
+      { getConvo: jest.fn(), getChatProject, getProjectFiles },
     );
 
     expect(context?.projectId).toBe('project-a');
@@ -37,11 +37,13 @@ describe('resolveChatProjectContext', () => {
   });
   it('keeps authorized guidance available when the unused resource lookup would fail', async () => {
     const getChatProject = jest.fn().mockResolvedValue(project);
-    const getFiles = jest.fn().mockRejectedValue(new Error('Project resource lookup unavailable'));
+    const getProjectFiles = jest
+      .fn()
+      .mockRejectedValue(new Error('Project resource lookup unavailable'));
 
     const guidanceOnly = await resolveChatProjectContext(
       { userId: 'user-a', requestedProjectId: 'project-a', includeResources: false },
-      { getConvo: jest.fn(), getChatProject, getFiles },
+      { getConvo: jest.fn(), getChatProject, getProjectFiles },
     );
     expect(guidanceOnly).toEqual(
       expect.objectContaining({
@@ -51,15 +53,15 @@ describe('resolveChatProjectContext', () => {
         resources: [],
       }),
     );
-    expect(getFiles).not.toHaveBeenCalled();
+    expect(getProjectFiles).not.toHaveBeenCalled();
 
     await expect(
       resolveChatProjectContext(
         { userId: 'user-a', requestedProjectId: 'project-a' },
-        { getConvo: jest.fn(), getChatProject, getFiles },
+        { getConvo: jest.fn(), getChatProject, getProjectFiles },
       ),
     ).rejects.toThrow('Project resource lookup unavailable');
-    expect(getFiles).toHaveBeenCalledTimes(1);
+    expect(getProjectFiles).toHaveBeenCalledTimes(1);
   });
 
   it('preserves an authoritative unscoped conversation', async () => {
@@ -72,7 +74,7 @@ describe('resolveChatProjectContext', () => {
           requestedProjectId: 'project-a',
           resolvedConversation: { conversationId: 'conversation-a', chatProjectId: null },
         },
-        { getConvo: jest.fn(), getChatProject, getFiles },
+        { getConvo: jest.fn(), getChatProject, getProjectFiles },
       ),
     ).resolves.toBeNull();
     expect(getChatProject).not.toHaveBeenCalled();
@@ -87,7 +89,11 @@ describe('resolveChatProjectContext', () => {
           requestedProjectId: 'project-a',
           resolvedConversation: { conversationId: 'conversation-a' },
         },
-        { getConvo: jest.fn(), getChatProject: jest.fn().mockResolvedValue(project), getFiles },
+        {
+          getConvo: jest.fn(),
+          getChatProject: jest.fn().mockResolvedValue(project),
+          getProjectFiles,
+        },
       ),
     ).resolves.toBeNull();
   });
@@ -110,7 +116,7 @@ describe('resolveChatProjectContext', () => {
           chatProjectId: 'project-a',
         }),
         getChatProject: jest.fn().mockResolvedValue(project),
-        getFiles,
+        getProjectFiles,
       },
     );
     expect(context?.projectId).toBe('project-a');
@@ -124,7 +130,7 @@ describe('resolveChatProjectContext', () => {
           {
             getConvo: jest.fn(),
             getChatProject: jest.fn().mockResolvedValue({ ...project, tenantId: projectTenant }),
-            getFiles,
+            getProjectFiles,
           },
         ),
       ).rejects.toThrow('Project context unavailable');
@@ -135,7 +141,7 @@ describe('resolveChatProjectContext', () => {
     await expect(
       resolveChatProjectContext(
         { userId: 'user-a', requestedProjectId: 'project-a' },
-        { getConvo: jest.fn(), getChatProject: jest.fn().mockResolvedValue(null), getFiles },
+        { getConvo: jest.fn(), getChatProject: jest.fn().mockResolvedValue(null), getProjectFiles },
       ),
     ).rejects.toThrow('Project context unavailable');
   });

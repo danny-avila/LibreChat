@@ -65,6 +65,7 @@ const {
   getConvo,
   getChatProject,
   getMessages,
+  getProjectFiles,
   getFiles,
   getAgent,
   getActions,
@@ -223,7 +224,7 @@ async function resolveResumeProjectContext(req, conversationId, { fresh = false 
         return refreshedConversation;
       },
       getChatProject,
-      getFiles,
+      getProjectFiles,
     });
     if (fresh) {
       req.chatProjectFiles = undefined;

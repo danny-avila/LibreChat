@@ -319,12 +319,12 @@ function addProjectFilesToFileSearch(
 async function resolveRuntimeProjectFiles({
   context,
   scope,
-  getFiles,
+  getProjectFiles,
   filters,
 }: {
   context: ResolvedChatProjectContext;
   scope: FileOwnerScope;
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
   filters?: AppConfig['filters'];
 }): Promise<TFile[]> {
   const files = await resolveChatProjectFiles({
@@ -332,7 +332,7 @@ async function resolveRuntimeProjectFiles({
     resources: context.resources,
     userId: scope.userId,
     tenantId: scope.tenantId ?? undefined,
-    getFiles,
+    getProjectFiles,
   });
   if (!hasActiveFilePolicy(filters) || files.length === 0) {
     return files;
@@ -341,7 +341,7 @@ async function resolveRuntimeProjectFiles({
     project: { file_ids: files.map((file) => file.file_id) },
     userId: scope.userId,
     tenantId: scope.tenantId ?? undefined,
-    getFiles,
+    getProjectFiles,
   });
   const admittedById = new Map(context.resources.map((resource) => [resource.file_id, resource]));
   if (policyFiles.length !== files.length) {
@@ -876,6 +876,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     fileIds?: string[],
     options?: { user?: string; tenantId?: string | null },
   ) => Promise<unknown[]>;
+  /** Get owner-scoped project files with optional content. */
+  getProjectFiles: GetProjectFiles;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
@@ -1611,8 +1613,8 @@ export async function initializeAgent(
       params.req?.chatProjectFilesPromise ??
       resolveRuntimeProjectFiles({
         context: runtime.chatProjectContext,
+        getProjectFiles: db.getProjectFiles,
         scope: requestFileOwnerScope,
-        getFiles: db.getFiles as never,
         filters: appConfig?.filters,
       });
     if (params.req) {
@@ -1652,7 +1654,6 @@ export async function initializeAgent(
     provisionState,
     warnings: provisionWarnings,
   } = await primeResources({
-    req: params.req,
     principal: user,
     getFiles: db.getFiles as never,
     filterFiles: db.filterFilesByAgentAccess,

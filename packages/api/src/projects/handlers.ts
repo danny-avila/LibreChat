@@ -8,6 +8,7 @@ import {
   isValidObjectIdString,
 } from '@librechat/data-schemas';
 import type {
+  AppConfig,
   AvailableProjectFilesOptions,
   AvailableProjectFilesResult,
   ChatProjectMethods,
@@ -37,6 +38,7 @@ interface ProjectUser {
 }
 interface ProjectRequest extends Request {
   user?: ProjectUser;
+  config?: AppConfig;
 }
 
 type ProjectHandlerDependencies = Pick<
@@ -50,7 +52,7 @@ type ProjectHandlerDependencies = Pick<
   | 'addChatProjectFile'
   | 'removeChatProjectFile'
 > & {
-  getFiles: GetProjectFiles;
+  getProjectFiles: GetProjectFiles;
   getAvailableProjectFiles: (
     options: AvailableProjectFilesOptions,
   ) => Promise<AvailableProjectFilesResult>;
@@ -86,26 +88,28 @@ const normalizeSortDirection = (
   const sortDirection = queryString(value);
   return sortDirection === 'asc' || sortDirection === 'desc' ? sortDirection : undefined;
 };
-
-const instructionValidationError = (value: unknown): string | null => {
+const instructionValidationError = (
+  value: unknown,
+  maxInstructionsLength: number = MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
+): string | null => {
   if (typeof value !== 'string') {
     return 'instructions must be a string';
   }
-  if (value.length > MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH) {
-    return `instructions must be at most ${MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH} characters`;
+  if (value.length > maxInstructionsLength) {
+    return `instructions must be at most ${maxInstructionsLength} characters`;
   }
   return null;
 };
-
 const createProjectInput = (
   req: ProjectRequest,
+  maxInstructionsLength?: number,
 ): { input: CreateChatProjectInput; error?: never } | { input?: never; error: string } => {
   const name = normalizeString(req.body?.name);
   if (!name) {
     return { error: 'name is required' };
   }
   if (req.body?.instructions !== undefined) {
-    const error = instructionValidationError(req.body.instructions);
+    const error = instructionValidationError(req.body.instructions, maxInstructionsLength);
     if (error) {
       return { error };
     }
@@ -149,13 +153,17 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
   }
 
   async function createProject(req: ProjectRequest, res: Response): Promise<Response> {
-    const parsed = createProjectInput(req);
+    const parsed = createProjectInput(req, req.config?.projects?.maxInstructionsLength);
     if ('error' in parsed) {
       return res.status(400).json({ error: parsed.error });
     }
 
     try {
-      const project = await deps.createChatProject(getUserId(req), parsed.input);
+      const project = await deps.createChatProject(
+        getUserId(req),
+        parsed.input,
+        req.config?.projects,
+      );
       return res.status(201).json(project);
     } catch (error) {
       logger.error('[projects] Error creating project', error);
@@ -229,7 +237,10 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
       input.description = typeof req.body.description === 'string' ? req.body.description : '';
     }
     if (req.body?.instructions !== undefined) {
-      const error = instructionValidationError(req.body.instructions);
+      const error = instructionValidationError(
+        req.body.instructions,
+        req.config?.projects?.maxInstructionsLength,
+      );
       if (error) {
         return res.status(400).json({ error });
       }
@@ -237,7 +248,12 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
     }
 
     try {
-      const project = await deps.updateChatProject(getUserId(req), projectId, input);
+      const project = await deps.updateChatProject(
+        getUserId(req),
+        projectId,
+        input,
+        req.config?.projects,
+      );
       if (!project) {
         return res.status(404).json({ error: PROJECT_NOT_FOUND });
       }
@@ -262,7 +278,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
         project,
         userId: getUserId(req),
         tenantId: project.tenantId,
-        getFiles: deps.getFiles,
+        getProjectFiles: deps.getProjectFiles,
       });
       return res.status(200).json(files);
     } catch (error) {
@@ -322,7 +338,12 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
     }
 
     try {
-      const project = await deps.addChatProjectFile(getUserId(req), projectId, fileId);
+      const project = await deps.addChatProjectFile(
+        getUserId(req),
+        projectId,
+        fileId,
+        req.config?.projects,
+      );
       if (!project) {
         return res.status(404).json({ error: PROJECT_NOT_FOUND });
       }

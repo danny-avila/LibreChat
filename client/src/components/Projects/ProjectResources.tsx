@@ -38,16 +38,16 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TChatProjectFile, TError, TFile, TFileUpload } from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
 import {
   useAddProjectFileMutation,
+  useGetStartupConfig,
   useProjectAvailableFilesInfiniteQuery,
   useProjectFilesQuery,
   useRemoveProjectFileMutation,
   useUploadFileMutation,
 } from '~/data-provider';
 import { useAgentCapabilities, useGetAgentsConfig, useHasAccess, useLocalize } from '~/hooks';
-import { NotificationSeverity } from '~/common';
+import { NotificationSeverity, type LocalizeFunction } from '~/common';
 import { formatFileSize } from '~/utils';
 type ProjectResourcesProps = {
   project: { _id: string; fileCount?: number };
@@ -92,6 +92,8 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
   const { fileSearchEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities ?? defaultAgentCapabilities,
   );
+  const { data: startupConfig } = useGetStartupConfig();
+  const projectFileLimit = startupConfig?.projects?.maxFiles ?? MAX_CHAT_PROJECT_FILES;
   const canUseFileSearch = useHasAccess({
     permissionType: PermissionTypes.FILE_SEARCH,
     permission: Permissions.USE,
@@ -145,7 +147,7 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
     }
     return count;
   };
-  const hasFileCapacity = getEffectiveFileCount() < MAX_CHAT_PROJECT_FILES;
+  const hasFileCapacity = getEffectiveFileCount() < projectFileLimit;
 
   useEffect(() => {
     const remaining = optimisticAttachedIds.filter((fileId) => !attachedIds.has(fileId));
@@ -242,7 +244,7 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
     if (!selected.length || !canUploadFromDevice) {
       return;
     }
-    const availableCapacity = Math.max(0, MAX_CHAT_PROJECT_FILES - getEffectiveFileCount());
+    const availableCapacity = Math.max(0, projectFileLimit - getEffectiveFileCount());
     const accepted = selected.slice(0, availableCapacity).map((file) => ({
       id: v4(),
       filename: file.name,
@@ -281,7 +283,7 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
     if (pendingUploadIdsRef.current.has(item.id) || (!item.fileId && !canUploadFromDevice)) {
       return;
     }
-    if (getEffectiveFileCount() >= MAX_CHAT_PROJECT_FILES) {
+    if (getEffectiveFileCount() >= projectFileLimit) {
       showToast({
         message: localize('com_ui_project_file_excess', { count: 1 }),
         severity: NotificationSeverity.WARNING,
@@ -374,7 +376,7 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
 
       {!hasFileCapacity && (
         <p className="mb-3 text-xs text-text-secondary" role="note">
-          {localize('com_ui_project_file_limit', { count: MAX_CHAT_PROJECT_FILES })}
+          {localize('com_ui_project_file_limit', { count: projectFileLimit })}
         </p>
       )}
       {isError && (

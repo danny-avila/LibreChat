@@ -40,6 +40,33 @@ export type AvailableProjectFilesResult = {
   nextCursor: string | null;
 };
 
+export type ProjectFileRecord = Pick<
+  IMongoFile,
+  | '_id'
+  | 'file_id'
+  | 'filename'
+  | 'filepath'
+  | 'object'
+  | 'type'
+  | 'bytes'
+  | 'usage'
+  | 'embedded'
+  | 'context'
+  | 'expiredAt'
+  | 'user'
+  | 'tenantId'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'previewRevision'
+  | 'status'
+  | 'text'
+>;
+
+export type ProjectFilesOptions = FileOwnerScope & {
+  fileIds: string[];
+  includeContent?: boolean;
+};
+
 export class InvalidAvailableProjectFilesCursorError extends Error {
   constructor() {
     super('Invalid project file cursor');
@@ -98,6 +125,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     _sortOptions?: Record<string, SortOrder> | null,
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
+  getProjectFiles: (options: ProjectFilesOptions) => Promise<ProjectFileRecord[]>;
   getAvailableProjectFiles: (
     options: AvailableProjectFilesOptions,
   ) => Promise<AvailableProjectFilesResult>;
@@ -218,6 +246,46 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
     return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
+  async function getProjectFiles({
+    fileIds,
+    userId,
+    tenantId,
+    includeContent = false,
+  }: ProjectFilesOptions): Promise<ProjectFileRecord[]> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const query = File.find({
+      file_id: { $in: fileIds },
+      user: userId,
+      embedded: true,
+      context: FileContext.message_attachment,
+      // Mongo's null predicate matches explicit null and legacy missing tenant fields.
+      tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
+    });
+    if (includeContent) {
+      query.select({});
+    } else {
+      query.select({
+        _id: 1,
+        file_id: 1,
+        filename: 1,
+        filepath: 1,
+        object: 1,
+        type: 1,
+        bytes: 1,
+        usage: 1,
+        embedded: 1,
+        context: 1,
+        expiredAt: 1,
+        user: 1,
+        tenantId: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        previewRevision: 1,
+        status: 1,
+      });
+    }
+    return (await query.sort({ updatedAt: -1 }).lean<ProjectFileRecord[]>()) ?? [];
+  }
 
   async function getAvailableProjectFiles({
     userId,
@@ -246,6 +314,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       filters[0].file_id = { $nin: excludedFileIds };
     }
     const normalizedSearch = search?.trim();
+
     if (normalizedSearch) {
       filters.push({
         filename: { $regex: escapeRegExp(normalizedSearch), $options: 'i' },
@@ -1097,6 +1166,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   return {
     findFileById,
     getFiles,
+    getProjectFiles,
     getAvailableProjectFiles,
     getExpiredFiles,
     incrementFileDeletionAttempts,

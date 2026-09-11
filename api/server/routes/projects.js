@@ -13,7 +13,7 @@ const handlers = createProjectHandlers({
   assignConversationToProject: db.assignConversationToProject,
   addChatProjectFile: db.addChatProjectFile,
   removeChatProjectFile: db.removeChatProjectFile,
-  getFiles: db.getFiles,
+  getProjectFiles: db.getProjectFiles,
   getAvailableProjectFiles: db.getAvailableProjectFiles,
 });
 router.use(requireJwtAuth);

@@ -77,6 +77,7 @@ jest.mock('~/data-provider', () => {
       };
       return { mutate, isLoading };
     },
+    useGetStartupConfig: () => ({ data: undefined }),
   };
 });
 

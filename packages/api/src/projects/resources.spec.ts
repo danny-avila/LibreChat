@@ -3,7 +3,6 @@ import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods } from '@librechat/data-schemas';
 import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
-import type { GetProjectFiles } from './resources';
 import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
@@ -59,10 +58,30 @@ const file = (
   ...overrides,
 });
 
+const getProjectFiles = async ({
+  fileIds,
+  userId,
+  tenantId,
+  includeContent = false,
+}: {
+  fileIds: string[];
+  userId: string;
+  tenantId?: string | null;
+  includeContent?: boolean;
+}) =>
+  File.find({
+    file_id: { $in: fileIds },
+    user: userId,
+    embedded: true,
+    context: FileContext.message_attachment,
+    tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
+  })
+    .select(includeContent ? {} : { text: 0 })
+    .lean();
 describe('ChatProject resource hydration', () => {
   it('preserves Project compatibility when signed file URLs are refreshed', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
-    const methods = createMethods(mongoose);
+    const methods = { ...createMethods(mongoose), getProjectFiles };
     const fileId = 'signed-reference';
     const originalUrl = 'https://bucket.s3.amazonaws.com/reference.txt?X-Amz-Signature=original';
     const refreshedUrl = 'https://bucket.s3.amazonaws.com/reference.txt?X-Amz-Signature=refreshed';
@@ -92,7 +111,7 @@ describe('ChatProject resource hydration', () => {
 
   it('preserves Project compatibility when a referenced image is reused', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
-    const methods = createMethods(mongoose);
+    const methods = { ...createMethods(mongoose), getProjectFiles };
     const fileId = 'reused-image';
     await File.create(
       file(fileId, owner, { type: 'image/png', filename: 'reference.png', source: 'local' }),
@@ -153,10 +172,6 @@ describe('ChatProject resource hydration', () => {
     await File.create(file('agent-scoped', owner, { tenantId, context: FileContext.agents }));
     await File.create(file('foreign', new mongoose.Types.ObjectId().toString(), { tenantId }));
 
-    const getFiles: GetProjectFiles = async (filter, _sort, select) =>
-      (await File.find(filter)
-        .select(select ?? {})
-        .lean()) as unknown as IMongoFile[];
     const project = {
       file_ids: ['ready', 'expired', 'agent-scoped', 'foreign', 'missing'],
       tenantId,
@@ -166,7 +181,7 @@ describe('ChatProject resource hydration', () => {
       project,
       userId: owner,
       tenantId,
-      getFiles,
+      getProjectFiles,
     });
     expect(runtimeFiles.map((runtimeFile) => runtimeFile.file_id)).toEqual(['ready']);
     expect(runtimeFiles[0]).not.toHaveProperty('text');
@@ -175,7 +190,7 @@ describe('ChatProject resource hydration', () => {
       project,
       userId: owner,
       tenantId,
-      getFiles,
+      getProjectFiles,
     });
     expect(views).toEqual([
       {

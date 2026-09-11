@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { KeyboardEvent, MutableRefObject, RefObject } from 'react';
 import type { TChatProject } from 'librechat-data-provider';
-import { useUpdateProjectMutation } from '~/data-provider';
+import { useUpdateProjectMutation, useGetStartupConfig } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -35,6 +35,9 @@ export default function ProjectEditor({
 }: ProjectEditorProps) {
   const localize = useLocalize();
   const updateProject = useUpdateProjectMutation();
+  const { data: startupConfig } = useGetStartupConfig();
+  const descriptionLimit =
+    startupConfig?.projects?.maxDescriptionLength ?? MAX_CHAT_PROJECT_DESCRIPTION_LENGTH;
   const { showToast } = useToastContext();
   const isSavingRef = useRef(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -61,10 +64,10 @@ export default function ProjectEditor({
   });
   const descriptionRegistration = register('description', {
     maxLength: {
-      value: MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+      value: descriptionLimit,
       message: localize('com_ui_field_max_length', {
         field: localize('com_ui_description'),
-        length: MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+        length: descriptionLimit,
       }),
     },
   });
@@ -216,7 +219,7 @@ export default function ProjectEditor({
             id={descriptionId}
             rows={3}
             readOnly={isBusy}
-            maxLength={MAX_CHAT_PROJECT_DESCRIPTION_LENGTH}
+            maxLength={descriptionLimit}
             aria-invalid={errors.description ? 'true' : 'false'}
             aria-describedby={errors.description ? descriptionErrorId : undefined}
             className={cn(

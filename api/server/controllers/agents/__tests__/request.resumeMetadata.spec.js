@@ -278,7 +278,8 @@ jest.mock('@librechat/api', () => ({
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
-  resolveChatProjectContext: jest.requireActual('@librechat/api').resolveChatProjectContext,
+  startAgentProjectContextResolution:
+    jest.requireActual('@librechat/api').startAgentProjectContextResolution,
   assertModelBoundContent: jest.requireActual('@librechat/api').assertModelBoundContent,
   isContentFilterError: jest.requireActual('@librechat/api').isContentFilterError,
   CHAT_PROJECT_CONTEXT_UNAVAILABLE:
@@ -371,7 +372,7 @@ jest.mock('~/models', () => ({
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
   getChatProject: (...args) => mockGetChatProject(...args),
-  getFiles: (...args) => mockGetFiles(...args),
+  getProjectFiles: (...args) => mockGetFiles(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
   beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),

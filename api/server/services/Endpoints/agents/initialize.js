@@ -557,7 +557,7 @@ const initializeClient = async ({
           {
             getConvo: db.getConvo,
             getChatProject: db.getChatProject,
-            getFiles: db.getFiles,
+            getProjectFiles: db.getProjectFiles,
           },
         ),
       );
@@ -694,6 +694,7 @@ const initializeClient = async ({
       manualSkills,
     },
     {
+      getProjectFiles: db.getProjectFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
@@ -784,6 +785,7 @@ const initializeClient = async ({
       checkPermission,
       logViolation,
       db: {
+        getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -1245,6 +1247,7 @@ const initializeClient = async ({
           defaultActiveOnShare,
         },
         {
+          getProjectFiles: db.getProjectFiles,
           getFiles: db.getFiles,
           getUserKey: db.getUserKey,
           getMessages: db.getMessages,

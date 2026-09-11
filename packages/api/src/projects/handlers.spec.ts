@@ -39,7 +39,7 @@ function setup(overrides: Partial<Parameters<typeof createProjectHandlers>[0]> =
     assignConversationToProject: jest.fn(),
     addChatProjectFile: jest.fn(),
     removeChatProjectFile: jest.fn(),
-    getFiles: jest.fn().mockResolvedValue([]),
+    getProjectFiles: jest.fn().mockResolvedValue([]),
     getAvailableProjectFiles: jest.fn().mockResolvedValue({ files: [], nextCursor: null }),
     ...overrides,
   };

@@ -126,6 +126,7 @@ jest.mock('~/models', () => ({
   getMultiplier: jest.fn(),
   getConvo: (...args) => mockGetConvo(...args),
   getChatProject: (...args) => mockGetChatProject(...args),
+  getProjectFiles: (...args) => mockGetFiles(...args),
   getFiles: (...args) => mockGetFiles(...args),
 }));
 
