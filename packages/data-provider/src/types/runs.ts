@@ -502,6 +502,18 @@ export const reconcileContextUsage = (
   return result;
 };
 
+/** Reconcile and retain the primary call details on live, saved, and resumable snapshots. */
+export const reconcileContextUsageFromEvent = (
+  snapshot: TContextUsageEvent,
+  event: TTokenUsageEvent,
+): TContextUsageEvent => ({
+  ...reconcileContextUsage(snapshot, promptTokensFromUsage(event)),
+  model: event.model,
+  provider: event.provider,
+  cacheRead: finiteNonNegativeInteger(event.input_token_details?.cache_read) ?? 0,
+  cacheWrite: finiteNonNegativeInteger(event.input_token_details?.cache_creation) ?? 0,
+});
+
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
 export type SubagentUpdatePhase =
   | 'start'

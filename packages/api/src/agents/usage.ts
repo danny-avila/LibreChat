@@ -1,9 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import {
-  inputTokensIncludesCache,
-  reconcileContextUsage,
-  promptTokensFromUsage,
-} from 'librechat-data-provider';
+import { inputTokensIncludesCache, reconcileContextUsageFromEvent } from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TResponseUsage,
@@ -410,9 +406,7 @@ export function buildPersistedContextUsage(
   const finalCall = finalPrimaryCall(usageEvents, snapshot.runId);
   const finalUnits = finalCall ? normalizeEventUnits(finalCall) : undefined;
   const completedOutputTokens = finalUnits?.output ?? 0;
-  const reconciled = finalCall
-    ? reconcileContextUsage(snapshot, promptTokensFromUsage(finalCall))
-    : snapshot;
+  const reconciled = finalCall ? reconcileContextUsageFromEvent(snapshot, finalCall) : snapshot;
   const { breakdown } = reconciled;
   const messageTokens = finiteNonNegativeInteger(breakdown.messageTokens) ?? 0;
   const toolTokenCounts = normalizePersistedTokenRecord(breakdown.toolTokenCounts);
@@ -443,12 +437,6 @@ export function buildPersistedContextUsage(
   return {
     ...reconciled,
     breakdown: persistedBreakdown,
-    ...(finalUnits && {
-      cacheRead: finalUnits.cacheRead,
-      cacheWrite: finalUnits.cacheWrite,
-      model: finalCall?.model,
-      provider: finalCall?.provider,
-    }),
     ...(completedOutputTokens > 0 && { completedOutputTokens }),
   };
 }

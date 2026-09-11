@@ -1,6 +1,6 @@
 import { useRef, useMemo } from 'react';
 import { getDefaultStore } from 'jotai';
-import { Constants, reconcileContextUsage, promptTokensFromUsage } from 'librechat-data-provider';
+import { Constants, reconcileContextUsageFromEvent } from 'librechat-data-provider';
 import type {
   TMessage,
   TConversation,
@@ -257,16 +257,9 @@ export default function useUsageHandler(): UsageHandlers {
       if (snapshot.runId != null && data.runId != null && snapshot.runId !== data.runId) {
         return;
       }
-      const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(data));
-      /** Keep the same primary-call details as the persisted context snapshot. */
-      const units = normalizeUsageUnits(data);
       jotai.set(snapshotAtom, {
-        ...reconciled,
+        ...reconcileContextUsageFromEvent(snapshot, data),
         anchorMessageId: snapshot.anchorMessageId,
-        cacheRead: units.cacheRead,
-        cacheWrite: units.cacheWrite,
-        model: data.model,
-        provider: data.provider,
       });
     };
 
