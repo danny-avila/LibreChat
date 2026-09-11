@@ -474,6 +474,9 @@ export type AgentUpdateParams = {
   | 'memory_scope'
 >;
 
+/** Sort modes for the marketplace agent list; the server defaults to 'newest' when omitted. */
+export type AgentSortOption = 'newest' | 'oldest' | 'popular' | 'author';
+
 export type AgentListParams = {
   limit?: number;
   requiredPermission: number;
@@ -481,6 +484,9 @@ export type AgentListParams = {
   search?: string;
   cursor?: string;
   promoted?: 0 | 1;
+  sort?: AgentSortOption;
+  /** When 1, restrict results to agents authored by the requesting user. */
+  mine?: 0 | 1;
 };
 
 export type AgentListResponse = {

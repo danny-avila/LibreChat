@@ -37,6 +37,8 @@ const {
   isContentTraversalProtected,
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
+  marketplaceMineFilter,
+  resolveMarketplaceListQuery,
 } = require('@librechat/api');
 const {
   Time,
@@ -1663,12 +1665,19 @@ const deleteAgentHandler = async (req, res) => {
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
  * @param {string} [req.query.user] - The user ID of the agent's author.
+ * @param {string} [req.query.sort] - One of 'newest' | 'oldest' | 'popular' | 'author'.
+ *   Invalid, repeated and missing values leave the order unset, so the endpoint keeps
+ *   serving its most-recently-edited order; the marketplace asks for 'newest' explicitly.
+ * @param {string} [req.query.mine] - '1' to restrict results to agents authored by the
+ *   caller; any other value is ignored.
  * @returns {Promise<AgentListResponse>} 200 - success response - application/json
  */
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
     const { category, search, limit = 100, cursor, promoted } = req.query;
+    const listQuery = resolveMarketplaceListQuery(req.query);
+    const sortMode = listQuery.sort;
     let requiredPermission = req.query.requiredPermission;
     if (typeof requiredPermission === 'string') {
       requiredPermission = parseInt(requiredPermission, 10);
@@ -1699,6 +1708,10 @@ const getListAgentsHandler = async (req, res) => {
     } else if (promoted === '0') {
       filter.is_promoted = { $ne: true };
     }
+
+    // "Only my agents": the contribution comes from `marketplaceMineFilter`, which owns
+    // what the filter says; this merges it on top of the ACL-resolved `accessibleIds`.
+    Object.assign(filter, marketplaceMineFilter(listQuery, userId));
 
     // Handle search filter (escape regex and cap length)
     if (search && search.trim() !== '') {
@@ -1771,25 +1784,9 @@ const getListAgentsHandler = async (req, res) => {
       cachedRefreshEntry.urlCache != null;
 
     /**
-     * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
-     * This addresses page-size limits preventing refresh of agents beyond the first page.
-     *
-     * Scoped to agents that actually carry an S3 avatar so the `MAX_AVATAR_REFRESH_AGENTS`
-     * budget is spent on agents that can do work. Unfiltered, that budget is the most
-     * recently updated accessible agents regardless of avatar, and because a refresh writes
-     * through `updateAgent` and advances `updatedAt`, the window is self-reinforcing: an
-     * S3-avatar agent ranked past the budget never enters it and its presigned URL is never
-     * regenerated. The predicate is not indexed (`avatar` is `Mixed`), so this trades docs
-     * examined for that coverage.
-     *
-     * Must settle BEFORE the list query below, and is deliberately not parallelized with
-     * it. `updateAgent` writes through `findOneAndUpdate` on a `timestamps: true` schema,
-     * so refreshing an avatar advances `updatedAt`, the very field
-     * `getListAgentsByAccess` sorts and cursors on. A refresh landing after the first
-     * page's snapshot would move that agent ahead of the returned cursor, dropping it
-     * from every later page and silently truncating the caller's flattened list.
-     * Serializing costs nothing on the common path: a cache hit returns below without
-     * issuing any query, so only the once-per-30-minutes miss pays for the ordering.
+     * Refresh accessible S3 avatars before returning their cached URLs. The warm-up
+     * budget is restricted to agents with S3 avatars and ordered by immutable creation
+     * time, so refresh writes cannot change which agents fall inside the budget.
      */
     const resolveAvatarRefresh = async () => {
       if (isValidCachedRefresh) {
@@ -1802,6 +1799,8 @@ const getListAgentsHandler = async (req, res) => {
           otherParams: { 'avatar.source': FileSources.s3 },
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
+          // Keep the warm-up set independent of the requested marketplace ordering.
+          sort: 'newest',
         });
         const { urlCache } = await refreshListAvatars({
           agents: fullList?.data ?? [],
@@ -1827,6 +1826,7 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
       includeSkillConfig: true,
+      sort: sortMode,
     });
 
     const agents = data?.data ?? [];

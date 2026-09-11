@@ -1,117 +1,184 @@
-import React, { useMemo, useState } from 'react';
-import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
+import React, { forwardRef, memo, useId } from 'react';
+import { motion } from 'framer-motion';
+import { ArrowUpRight } from 'lucide-react';
 import type t from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
-import AgentDetailContent from './AgentDetailContent';
+import { agentMorphId, CARD_HANDOFF_VARIANTS, MORPH_CLOSE_TRANSITION } from './morph';
+import AgentContact, { resolveAgentContact } from './AgentContact';
 import { cn, renderAgentAvatar } from '~/utils';
-import AgentContact from './AgentContact';
+import AgentCategoryBadge from './Category';
+import { useLocalize } from '~/hooks';
 
 interface AgentCardProps {
   agent: t.Agent;
-  onSelect?: (agent: t.Agent) => void;
+  onSelect: (agent: t.Agent) => void;
+  /**
+   * True while this card's detail dialog owns the shared surface. The card keeps
+   * its box so the grid never reflows; the shared fields are hidden by the
+   * layout projection and the card-only content fades out.
+   */
+  expanded?: boolean;
+  /**
+   * True for as long as this card's surface is in flight, which outlasts
+   * `expanded` by the contraction. The trigger stays behind at the card's slot
+   * while the surface travels, so its focus ring is held back until the card is
+   * home again rather than framing an empty hole.
+   */
+  morphing?: boolean;
+  /**
+   * The theme's surface radius in pixels, supplied while this card takes part
+   * in a morph so the projection can hold the corner steady as it scales. At
+   * rest the stylesheet's `rounded-theme-surface` governs.
+   */
+  surfaceRadius?: number;
   className?: string;
 }
 
-/**
- * Card component to display agent information with integrated detail dialog
- */
-const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }) => {
-  const localize = useLocalize();
-  const { categories } = useAgentCategories();
-  const [isOpen, setIsOpen] = useState(false);
+/** The list owns preview state so recycling a card cannot dismiss its dialog. */
+const AgentCard = memo(
+  forwardRef<HTMLButtonElement, AgentCardProps>(function AgentCard(
+    { agent, onSelect, expanded = false, morphing = false, surfaceRadius, className = '' },
+    ref,
+  ) {
+    const localize = useLocalize();
+    const id = useId();
+    const titleId = `${id}-title`;
+    const descriptionId = `${id}-description`;
+    const name = agent.name?.trim() || localize('com_ui_agent');
+    const description = agent.description?.trim() || localize('com_agents_description_empty');
+    /* Only fields the dialog also renders take part in the morph, so an absent
+       category or contact never hands over an empty box. `layoutAnchor: false`
+       keeps them resolving against the viewport rather than against whichever
+       section of the dialog currently contains their counterpart. */
+    const contact = resolveAgentContact(agent);
+    const shared = {
+      layoutCrossfade: false,
+      layoutAnchor: false,
+      layoutDependency: expanded,
+      transition: MORPH_CLOSE_TRANSITION,
+    } as const;
 
-  const categoryLabel = useMemo(() => {
-    if (!agent.category) return '';
+    return (
+      <article
+        className={cn(
+          /* The article keeps a plain resting fill so the grid slot still reads as a
+             card while the surface layer is away being the dialog. */
+          'group relative flex h-full min-h-[17.5rem] min-w-0 flex-col rounded-theme-surface bg-surface-secondary p-5',
+          className,
+        )}
+      >
+        <motion.div
+          aria-hidden="true"
+          layoutId={agentMorphId('surface', agent.id)}
+          style={surfaceRadius == null ? undefined : { borderRadius: surfaceRadius }}
+          className="pointer-events-none absolute inset-0 z-0 rounded-theme-surface border border-border-light bg-surface-secondary transition-colors duration-150 group-hover:border-border-medium group-hover:bg-surface-tertiary"
+          {...shared}
+        />
 
-    const category = categories.find((cat) => cat.value === agent.category);
-    if (category) {
-      if (category.label && category.label.startsWith('com_')) {
-        return localize(category.label as TranslationKeys);
-      }
-      return category.label;
-    }
-
-    return agent.category.charAt(0).toUpperCase() + agent.category.slice(1);
-  }, [agent.category, categories, localize]);
-
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open);
-    if (open && onSelect) {
-      onSelect(agent);
-    }
-  };
-
-  return (
-    <OGDialog open={isOpen} onOpenChange={handleOpenChange}>
-      <OGDialogTrigger asChild>
-        <div
+        <button
+          ref={ref}
+          type="button"
           className={cn(
-            'group relative flex h-32 gap-5 overflow-hidden rounded-xl',
-            'cursor-pointer select-none px-6 py-4',
-            'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
-            'md:h-36 lg:h-40',
-            '[&_*]:cursor-pointer',
-            className,
+            'absolute inset-0 z-10 cursor-pointer rounded-theme-surface border-0 bg-transparent p-0 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
+            morphing && 'focus-visible:ring-0',
           )}
-          aria-label={localize('com_agents_agent_card_label', {
-            name: agent.name,
-            description: agent.description ?? '',
-          })}
-          aria-describedby={agent.description ? `agent-${agent.id}-description` : undefined}
-          tabIndex={0}
-          role="button"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setIsOpen(true);
-            }
-          }}
+          aria-label={expanded ? name : undefined}
+          aria-labelledby={expanded ? undefined : titleId}
+          aria-describedby={expanded ? undefined : descriptionId}
+          aria-haspopup="dialog"
+          aria-expanded={expanded}
+          onClick={() => onSelect(agent)}
+        />
+
+        <motion.div
+          initial={false}
+          animate={expanded ? 'handoff' : 'rest'}
+          className="pointer-events-none relative z-20 flex min-h-0 flex-1 flex-col"
         >
-          {/* Category badge - top right */}
-          {categoryLabel && (
-            <span className="absolute right-4 top-3 rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
-              {categoryLabel}
-            </span>
-          )}
-
-          {/* Avatar */}
-          <div className="flex-shrink-0 self-center">
-            <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              {renderAgentAvatar(agent, { size: 'sm', showBorder: false })}
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
-            {/* Agent name */}
-            <Label className="line-clamp-2 text-base font-semibold text-text-primary md:text-lg">
-              {agent.name}
-            </Label>
-
-            {/* Agent description */}
-            {agent.description && (
-              <p
-                id={`agent-${agent.id}-description`}
-                className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-5"
-                aria-label={localize('com_agents_description_card', {
-                  description: agent.description,
-                })}
+          <div className="flex items-start justify-between gap-3">
+            <motion.div
+              layoutId={agentMorphId('avatar', agent.id)}
+              className="shrink-0"
+              {...shared}
+            >
+              {renderAgentAvatar(agent, {
+                size: 'sm',
+                showBorder: false,
+                className:
+                  'rounded-full bg-surface-tertiary ring-1 ring-border-light transition-colors duration-150 group-hover:ring-border-medium',
+              })}
+            </motion.div>
+            {agent.category != null && agent.category !== '' && (
+              <motion.div
+                layout="position"
+                layoutId={agentMorphId('category', agent.id)}
+                className="min-w-0 max-w-[60%] shrink-0 text-end"
+                {...shared}
               >
-                {agent.description}
-              </p>
+                <AgentCategoryBadge
+                  category={agent.category}
+                  className="transition-colors duration-150 group-hover:border-border-medium [&>span]:line-clamp-2"
+                />
+              </motion.div>
             )}
-
-            <AgentContact
-              agent={agent}
-              className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
-            />
           </div>
-        </div>
-      </OGDialogTrigger>
 
-      <AgentDetailContent agent={agent} />
-    </OGDialog>
-  );
-};
+          {/* Full `layout` on the name so the type zooms between the two sizes
+              instead of snapping to the dialog's scale on the first frame. */}
+          <motion.h2
+            layout
+            layoutId={agentMorphId('title', agent.id)}
+            id={titleId}
+            className="mt-4 line-clamp-2 break-words text-lg font-semibold leading-6 text-text-primary"
+            {...shared}
+          >
+            {name}
+          </motion.h2>
+
+          {/* The blurb is the same copy the dialog shows in full, so it travels
+              rather than disappearing; the dialog's extra lines are revealed as
+              the surface grows past the card's three-line clamp. */}
+          <motion.p
+            layout="position"
+            layoutId={agentMorphId('description', agent.id)}
+            id={descriptionId}
+            className="mb-5 mt-2 line-clamp-3 break-words text-sm leading-6 text-text-secondary"
+            {...shared}
+          >
+            {description}
+          </motion.p>
+
+          <footer className="relative mt-auto flex min-w-0 items-end justify-between gap-3 pt-4">
+            <motion.span
+              aria-hidden="true"
+              variants={CARD_HANDOFF_VARIANTS}
+              className="absolute inset-x-0 top-0 h-px bg-border-light"
+            />
+            {contact != null && (
+              <motion.div
+                layout="position"
+                layoutId={agentMorphId('owner', agent.id)}
+                className="min-w-0 [&_a]:pointer-events-auto"
+                {...shared}
+              >
+                <AgentContact
+                  agent={agent}
+                  compact
+                  className="max-w-full text-xs text-text-secondary [&_a]:text-text-primary"
+                />
+              </motion.div>
+            )}
+            <motion.span
+              variants={CARD_HANDOFF_VARIANTS}
+              className="ms-auto flex shrink-0 items-center gap-1 text-sm font-medium text-text-primary"
+            >
+              {localize('com_agents_view_details')}
+              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+            </motion.span>
+          </footer>
+        </motion.div>
+      </article>
+    );
+  }),
+);
 
 export default AgentCard;

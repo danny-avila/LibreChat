@@ -195,14 +195,7 @@ export const useGetAgentCategoriesQuery = (
  * Hook for infinite loading of marketplace agents with cursor-based pagination
  */
 export const useMarketplaceAgentsInfiniteQuery = (
-  params: {
-    requiredPermission: number;
-    category?: string;
-    search?: string;
-    limit?: number;
-    promoted?: 0 | 1;
-    cursor?: string; // For pagination
-  },
+  params: t.AgentListParams,
   config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
 ) => {
   return useInfiniteQuery<t.AgentListResponse>({
@@ -220,8 +213,28 @@ export const useMarketplaceAgentsInfiniteQuery = (
     staleTime: 2 * 60 * 1000, // 2 minutes
     cacheTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
+    // An errored list has no data, so it is stale: regaining connectivity
+    // refetches it instead of leaving the user on a terminal error card.
+    refetchOnReconnect: true,
+    /**
+     * 4xx answers are deterministic, so only transport and server failures are
+     * worth repeating, and only briefly — the error card owns the long backoff,
+     * and every second spent retrying inside the query is a second the user
+     * stares at a skeleton with no way to intervene.
+     */
+    retry: (failureCount, error) => {
+      if (failureCount >= 2) {
+        return false;
+      }
+      const status = (error as { response?: { status?: number } } | null)?.response?.status;
+      if (status != null && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        return false;
+      }
+      return true;
+    },
+    retryDelay: (failureCount) => Math.min(500 * 2 ** failureCount, 2000),
+    // Revisit invalidated popularity pages without reordering the active list after a pin.
+    refetchOnMount: true,
     ...config,
   });
 };

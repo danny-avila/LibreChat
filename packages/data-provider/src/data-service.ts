@@ -703,17 +703,9 @@ export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
 /**
  * Unified marketplace agents endpoint with query string controls
  */
-export const getMarketplaceAgents = (params: {
-  requiredPermission: number;
-  category?: string;
-  search?: string;
-  limit?: number;
-  cursor?: string;
-  promoted?: 0 | 1;
-}): Promise<a.AgentListResponse> => {
+export const getMarketplaceAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
   return request.get(
     endpoints.agents({
-      // path: 'marketplace',
       options: params,
     }),
   );

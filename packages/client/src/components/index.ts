@@ -71,6 +71,10 @@ export { default as SelectDropDown } from './SelectDropDown';
 export { default as ControlCombobox } from './ControlCombobox';
 export { default as EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
+export { default as LoadingDots } from './LoadingDots';
+export type { LoadingDotsProps } from './LoadingDots';
+export { default as RetryableError } from './RetryableError';
+export type { RetryableErrorProps, RetryableErrorLabels } from './RetryableError';
 export { default as TimePicker, MinutePicker, TimeColumn } from './TimePicker';
 export type {
   TimePickerProps,
