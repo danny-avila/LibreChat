@@ -280,6 +280,12 @@ export type TContextUsageEvent = {
   /** Tokens still free after instructions + pruned messages */
   remainingContextTokens?: number;
   calibrationRatio?: number;
+  /** Model and provider of the reconciling primary call, retained across reloads. */
+  model?: string;
+  provider?: string;
+  /** Cache portions of that call's prompt, in normalized display units. */
+  cacheRead?: number;
+  cacheWrite?: number;
   /** Output tokens of the response's final model call (the call this pre-invoke
    *  snapshot precedes). Populated only on the persisted `metadata.contextUsage`
    *  blob so a reloaded multi-call turn adds the same post-snapshot delta the

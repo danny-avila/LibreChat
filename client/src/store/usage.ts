@@ -17,10 +17,6 @@ export interface ContextSnapshot extends TContextUsageEvent {
   anchorMessageId: string | null;
   /** Output tokens finalized after this pre-call snapshot (the last call's response) */
   completedOutputTokens?: number;
-  /** Cache share of the reconciling call's prompt (`input_token_details`), stamped
-   *  client-side at reconcile time; live-path only — persisted blobs predate it. */
-  cacheRead?: number;
-  cacheWrite?: number;
 }
 
 /**

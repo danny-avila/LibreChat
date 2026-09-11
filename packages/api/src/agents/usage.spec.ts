@@ -2056,6 +2056,40 @@ describe('buildPersistedContextUsage', () => {
     expect(result.completedOutputTokens).toBe(25);
   });
 
+  it.each(['openAI', 'bedrock'])('persists the final primary cache split for %s', (provider) => {
+    const events: TTokenUsageEvent[] = [
+      { runId: 'run-1', input_tokens: 100, input_token_details: { cache_read: 10 } },
+      {
+        runId: 'run-1',
+        provider,
+        model: 'primary-model',
+        input_tokens: 200,
+        output_tokens: 25,
+        input_token_details: { cache_read: 80, cache_creation: 40 },
+      },
+      { runId: 'run-2', input_tokens: 900, input_token_details: { cache_read: 900 } },
+      { usage_type: 'summarization', input_tokens: 500, input_token_details: { cache_read: 500 } },
+      { usage_type: 'subagent', input_tokens: 600, input_token_details: { cache_read: 600 } },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    expect(result).toMatchObject({
+      cacheRead: 80,
+      cacheWrite: 40,
+      model: 'primary-model',
+      provider,
+      completedOutputTokens: 25,
+    });
+  });
+
+  it('replaces an earlier cache split with a final uncached call', () => {
+    const result = buildPersistedContextUsage({ ...baseSnapshot, cacheRead: 80, cacheWrite: 40 }, [
+      { input_tokens: 200, output_tokens: 25 },
+    ]);
+    expect(result).toMatchObject({ cacheRead: 0, cacheWrite: 0 });
+    expect(buildPersistedContextUsage(baseSnapshot).cacheRead).toBeUndefined();
+    expect(buildPersistedContextUsage(baseSnapshot).model).toBeUndefined();
+  });
+
   it('omits completedOutputTokens when there are no primary calls', () => {
     expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
   });

@@ -103,6 +103,7 @@ function Row({
 interface BreakdownProps {
   view: TokenUsageView;
   showCost: boolean;
+  compactionAvailable?: boolean;
   currency?: CurrencyConfig;
   langfuseSessionUrl?: string;
 }
@@ -110,6 +111,7 @@ interface BreakdownProps {
 export default function Breakdown({
   view,
   showCost,
+  compactionAvailable = false,
   currency,
   langfuseSessionUrl,
 }: BreakdownProps) {
@@ -237,7 +239,7 @@ export default function Breakdown({
     insights.push(localize('com_ui_context_runway', { 0: String(runwayTurns) }));
   }
   const compactionReclaim = normalizeTokenCount(view.compactionReclaim);
-  if (compactionReclaim > 0) {
+  if (compactionAvailable && compactionReclaim > 0) {
     insights.push(localize('com_ui_context_compaction', { 0: formatTokens(compactionReclaim) }));
   }
 

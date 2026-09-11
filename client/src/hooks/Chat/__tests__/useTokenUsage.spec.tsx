@@ -59,15 +59,19 @@ const messages = [
 const anchorSnapshot = (remaining: number): ContextSnapshot =>
   ({
     anchorMessageId: null,
+    model: 'test-model',
+    provider: 'openAI',
     contextBudget: 200000,
     remainingContextTokens: remaining,
-    breakdown: { maxContextTokens: 200000 },
+    breakdown: { maxContextTokens: 200000, instructionTokens: 4000 },
   }) as unknown as ContextSnapshot;
 
 /** The live snapshot for the tail call: pre-invoke, so its remaining headroom
  *  and message total both predate `a2`'s 2000 output tokens. */
 const tailSnapshot: ContextSnapshot = {
   anchorMessageId: 'u2',
+  model: 'test-model',
+  provider: 'openAI',
   contextBudget: 200000,
   remainingContextTokens: 5000,
   completedOutputTokens: 2000,
@@ -131,6 +135,8 @@ describe('useTokenUsage — post-snapshot output', () => {
   const legacySnapshot = (messageTokens: number): ContextSnapshot =>
     ({
       anchorMessageId: null,
+      model: 'test-model',
+      provider: 'openAI',
       contextBudget: 200000,
       breakdown: { maxContextTokens: 200000, instructionTokens: 4000, messageTokens },
     }) as unknown as ContextSnapshot;
@@ -162,6 +168,65 @@ describe('useTokenUsage — post-snapshot output', () => {
     );
 
     expect(result.current.runwayTurns).toBeUndefined();
+  });
+
+  it.each([
+    { model: 'other-model' },
+    { provider: 'anthropic' },
+    { agentId: 'other-agent' },
+    { contextBudget: 100000 },
+    { breakdown: { maxContextTokens: 200000, instructionTokens: 8000 } },
+    { breakdown: { maxContextTokens: 200000, toolSchemaTokens: 8000 } },
+    { model: undefined },
+    { provider: undefined },
+  ])('withholds runway across a configuration change: %j', (change) => {
+    const { result } = renderTokenUsage(
+      new Map([
+        [
+          'a1',
+          {
+            ...anchorSnapshot(196000),
+            ...change,
+            breakdown: { ...anchorSnapshot(196000).breakdown, ...change.breakdown },
+          },
+        ],
+        ['a2', anchorSnapshot(195000)],
+      ]),
+    );
+    expect(result.current.runwayTurns).toBeUndefined();
+  });
+
+  it('withholds old runway history during a newly configured run', () => {
+    const { result } = renderTokenUsage(undefined, {
+      snapshot: { ...tailSnapshot, model: 'new-model' },
+    });
+    expect(result.current.runwayTurns).toBeUndefined();
+  });
+
+  it('restores cache rows and call identity from persisted snapshots', () => {
+    const persisted = {
+      ...anchorSnapshot(195000),
+      cacheRead: 800,
+      cacheWrite: 200,
+      completedOutputTokens: 50,
+    };
+    const persistedById: Record<string, ContextSnapshot> = {
+      a1: anchorSnapshot(196000),
+      a2: persisted,
+    };
+    const { result } = renderTokenUsage(new Map(), {
+      snapshot: { ...tailSnapshot, anchorMessageId: 'unrelated-branch' },
+      messages: messages.map((message) => ({
+        ...message,
+        metadata: {
+          contextUsage: persistedById[message.messageId],
+        },
+      })),
+    });
+    expect(result.current.cacheRead).toBe(800);
+    expect(result.current.cacheWrite).toBe(200);
+    expect(result.current.snapshot?.model).toBe('test-model');
+    expect(result.current.runwayTurns).toBe(194);
   });
 
   it('leaves a summarizing turn’s summary completion out of the reclaim estimate', () => {

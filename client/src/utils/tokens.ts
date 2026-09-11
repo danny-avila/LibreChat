@@ -1,5 +1,11 @@
 import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TMessage, TResponseUsage, TTokenUsageEvent } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TResponseUsage,
+  TTokenUsageEvent,
+  TContextUsageEvent,
+  TTokenBudgetBreakdown,
+} from 'librechat-data-provider';
 
 /** Provider-reported usage of one response, in display units (post-normalize). */
 export interface BranchUsage {
@@ -543,6 +549,27 @@ export function prunedBranchTokens(
 export interface AnchorReading {
   used: number;
   basis: 'remaining' | 'breakdown';
+  configuration?: string;
+}
+
+/** Compare the measured call configuration, including fixed prompt overhead.
+ * Older snapshots without call identity cannot establish comparability. */
+export function snapshotConfiguration(
+  snapshot: Pick<TContextUsageEvent, 'model' | 'provider' | 'agentId' | 'contextBudget'> & {
+    breakdown?: Partial<TTokenBudgetBreakdown>;
+  },
+): string | undefined {
+  if (!snapshot.model || !snapshot.provider) {
+    return undefined;
+  }
+  return JSON.stringify([
+    snapshot.model,
+    snapshot.provider,
+    snapshot.agentId,
+    snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens,
+    snapshot.breakdown?.instructionTokens,
+    snapshot.breakdown?.toolSchemaTokens,
+  ]);
 }
 
 /**
@@ -573,33 +600,27 @@ export function collectAnchorSeries(
       break;
     }
     const snapshot = anchors.get(currentId) as
-      | {
-          contextBudget?: number;
-          remainingContextTokens?: number;
-          effectiveInstructionTokens?: number;
-          breakdown?: {
-            maxContextTokens?: number;
-            instructionTokens?: number;
-            messageTokens?: number;
-          };
-        }
+      | (Partial<Omit<TContextUsageEvent, 'breakdown'>> & {
+          breakdown?: Partial<TTokenBudgetBreakdown>;
+        })
       | undefined;
     if (snapshot != null) {
       const budget = normalizeTokenCount(
         snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens,
       );
+      const configuration = snapshotConfiguration(snapshot);
       /** Same precedence as the render path's `baseUsed`: the backend's
        *  remaining headroom when it was saved, else the breakdown sum. */
       if (snapshot.remainingContextTokens != null && budget > 0) {
         const remaining = normalizeTokenCount(snapshot.remainingContextTokens);
-        series.push({ used: Math.max(0, budget - remaining), basis: 'remaining' });
+        series.push({ used: Math.max(0, budget - remaining), basis: 'remaining', configuration });
       } else {
         const used =
           normalizeTokenCount(
             snapshot.effectiveInstructionTokens ?? snapshot.breakdown?.instructionTokens,
           ) + normalizeTokenCount(snapshot.breakdown?.messageTokens);
         if (used > 0) {
-          series.push({ used, basis: 'breakdown' });
+          series.push({ used, basis: 'breakdown', configuration });
         }
       }
     }

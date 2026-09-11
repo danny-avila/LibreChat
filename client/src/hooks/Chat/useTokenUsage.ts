@@ -27,6 +27,7 @@ import {
   sumTotalUsage,
   prunedBranchTokens,
   collectAnchorSeries,
+  snapshotConfiguration,
   latestExchangeTokens,
   findBranchSnapshotAnchor,
   normalizeTokenCount,
@@ -78,7 +79,7 @@ export interface TokenUsageView {
    *  Undefined when the producing SDK doesn't report it (older snapshots) or
    *  the estimate is zero — the row stays hidden. A SUBSET of messages. */
   toolCallTokens?: number;
-  /** Cache split of the reconciling call's prompt (live snapshots only) — a
+  /** Cache split of the reconciling call's prompt (live or persisted) — a
    *  share of the used context, not an addition. */
   cacheRead?: number;
   cacheWrite?: number;
@@ -285,7 +286,13 @@ export default function useTokenUsage({
        *  (a snapshot saved before `remainingContextTokens` existed) differs by
        *  the content the breakdown omits, not by what the last call added. The
        *  projection stays unavailable rather than reporting that difference. */
-      const perCallGrowth = latest.basis === previous.basis ? latest.used - previous.used : 0;
+      const comparable =
+        latest.basis === previous.basis &&
+        latest.configuration != null &&
+        latest.configuration === previous.configuration &&
+        effective != null &&
+        latest.configuration === snapshotConfiguration(effective);
+      const perCallGrowth = comparable ? latest.used - previous.used : 0;
       if (perCallGrowth > 0) {
         runwayTurns = Math.max(0, Math.floor(remainingForRunway / perCallGrowth));
       }

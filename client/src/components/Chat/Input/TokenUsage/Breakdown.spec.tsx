@@ -432,6 +432,18 @@ describe('TokenUsage Breakdown', () => {
       expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
     });
 
+    it('hides the compaction hint when the operation is unavailable', async () => {
+      renderBreakdown({
+        view: { ...toolSplitView, runwayTurns: 2, compactionReclaim: 90000 },
+        compactionAvailable: false,
+      });
+      await userEvent.click(toggle());
+      await userEvent.click(screen.getByTestId('context-insights-toggle'));
+      const hints = await screen.findByTestId('context-hints');
+      expect(hints.textContent).toContain('com_ui_context_runway');
+      expect(hints.textContent).not.toContain('com_ui_context_compaction');
+    });
+
     it('warns under pressure inline, with insights behind the ⓘ button', async () => {
       const pressured = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
       pressured.percent = 85;
@@ -443,7 +455,7 @@ describe('TokenUsage Breakdown', () => {
       pressured.runwayTurns = 2;
       pressured.compactionReclaim = 90000;
 
-      renderBreakdown({ view: pressured });
+      renderBreakdown({ view: pressured, compactionAvailable: true });
       await userEvent.click(toggle());
 
       /** Pressure warns inline; insights stay hidden until the ⓘ is hovered */

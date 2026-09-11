@@ -38,6 +38,7 @@ const primaryUsage = (over?: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
   total_tokens: 59553,
   input_token_details: { cache_read: 2071, cache_creation: 0 },
   provider: 'anthropic',
+  model: 'primary-model',
   runId: 'run-1',
   seq: 1,
   ...over,
@@ -65,6 +66,12 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     /** instructions/summary stay raw; the anchor is preserved */
     expect(snap?.breakdown.instructionTokens).toBe(4205);
     expect(snap?.anchorMessageId).toBe('u1');
+    expect(snap).toMatchObject({
+      cacheRead: 2071,
+      cacheWrite: 0,
+      model: 'primary-model',
+      provider: 'anthropic',
+    });
   });
 
   it('does not reconcile a replayed (already-folded) primary usage', () => {

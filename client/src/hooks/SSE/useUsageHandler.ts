@@ -258,14 +258,15 @@ export default function useUsageHandler(): UsageHandlers {
         return;
       }
       const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(data));
-      /** Stamp the reconciling call's cache split so the breakdown can show the
-       *  cached share of the window (live-path only; persisted blobs predate it). */
+      /** Keep the same primary-call details as the persisted context snapshot. */
       const units = normalizeUsageUnits(data);
       jotai.set(snapshotAtom, {
         ...reconciled,
         anchorMessageId: snapshot.anchorMessageId,
         cacheRead: units.cacheRead,
         cacheWrite: units.cacheWrite,
+        model: data.model,
+        provider: data.provider,
       });
     };
 
