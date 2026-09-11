@@ -1,3 +1,8 @@
+export * from './conversationResource';
+import {
+  createConversationResourceMethods,
+  type ConversationResourceMethods,
+} from './conversationResource';
 import type { RoleMethods, RoleDeps } from './role';
 import {
   createOpenIDRefreshFlightMethods,
@@ -247,6 +252,7 @@ export type AllMethods = UserMethods &
   ConversationImportMethods &
   MessageMethods &
   ConversationMethods &
+  ConversationResourceMethods &
   ChatProjectMethods &
   TxMethods &
   TransactionMethods &
@@ -472,6 +478,7 @@ export function createMethods(
     ...createConversationImportMethods(mongoose),
     ...messageMethods,
     ...conversationMethods,
+    ...createConversationResourceMethods(mongoose),
     ...createChatProjectMethods(mongoose),
     /* Tier 3 */
     ...txMethods,

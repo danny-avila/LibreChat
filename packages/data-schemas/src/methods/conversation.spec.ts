@@ -18,6 +18,8 @@ import type {
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { createChatProjectMethods } from './chatProject';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -323,6 +325,41 @@ describe('Conversation Operations', () => {
       const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
       expect(refreshedProject?.conversationCount).toBe(1);
       expect(refreshedProject?.lastConversationId).toBe(firstConversationId);
+    });
+
+    it('returns the committed conversation when derived project bookkeeping fails', async () => {
+      const project = await ChatProject.create({ user: mockCtx.userId, name: 'Project Stats' });
+      const conversationId = uuidv4();
+      const chatProjectId = project._id!.toString();
+      await saveConvo(mockCtx, {
+        conversationId,
+        title: 'Before',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId,
+      });
+      const updateOneSpy = jest.spyOn(ChatProject, 'findOneAndUpdate').mockReturnValueOnce({
+        lean: () => Promise.reject(new Error('project stats unavailable')),
+      } as unknown as ReturnType<typeof ChatProject.findOneAndUpdate>);
+
+      try {
+        const result = await saveConvo(
+          mockCtx,
+          { conversationId, title: 'After', isArchived: true },
+          { noUpsert: true, appendMessageIds: [] },
+        );
+
+        expect(result).toMatchObject({ conversationId, title: 'After', chatProjectId });
+        await expect(Conversation.findOne({ conversationId }).lean()).resolves.toMatchObject({
+          title: 'After',
+        });
+        const projects = createChatProjectMethods(mongoose);
+        expect(await projects.getChatProject(mockCtx.userId, chatProjectId)).toMatchObject({
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+      } finally {
+        updateOneSpy.mockRestore();
+      }
     });
 
     it('bulkSaveConvos keeps owned project ids and strips orphan ones', async () => {
@@ -740,14 +777,15 @@ describe('Conversation Operations', () => {
       });
 
       /** Alternating requests can split every retry, and exhausting them still proves
-       * nothing about whether the chat exists, so it must not become a 404 either. */
-      it('does not report a missing chat when every archive retry is split', async () => {
+       * nothing about whether the chat exists; an unapplied write must report failure. */
+      it('reports failure without applying metadata when every archive retry is split', async () => {
         const conversationId = uuidv4();
         const original = new Date('2026-03-01T12:00:00.000Z');
         await Conversation.collection.insertOne({
           conversationId,
           user: 'user123',
           title: 'Perpetually split',
+          tags: ['original'],
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           isArchived: true,
@@ -782,12 +820,15 @@ describe('Conversation Operations', () => {
         try {
           const archived = await saveConvo(
             { userId: 'user123' },
-            { conversationId, isArchived: true },
+            { conversationId, isArchived: true, title: 'Requested', tags: ['requested'] },
             { preserveUpdatedAt: true, noUpsert: true },
           );
 
-          expect(archived).not.toBeNull();
-          expect(archived?.conversationId).toBe(conversationId);
+          expect(archived).toEqual({ message: 'Error saving conversation' });
+          expect(await Conversation.findOne({ conversationId }).lean()).toMatchObject({
+            title: 'Perpetually split',
+            tags: ['original'],
+          });
         } finally {
           writeSpy.mockRestore();
         }
@@ -972,6 +1013,55 @@ describe('Conversation Operations', () => {
         );
 
         expect(result?.isArchived).toBe(true);
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('reports required retention backfill failure and repairs visibility on retry', async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Legacy',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        const ctx = {
+          userId: 'user123',
+          interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+        };
+        const backfill = jest
+          .spyOn(Conversation, 'updateOne')
+          .mockRejectedValueOnce(new Error('retention write unavailable'));
+        try {
+          await expect(
+            saveConvo(
+              ctx,
+              { conversationId, title: 'Renamed' },
+              { preserveUpdatedAt: true, noUpsert: true },
+            ),
+          ).resolves.toEqual({
+            message: 'Error saving conversation',
+          });
+        } finally {
+          backfill.mockRestore();
+        }
+        const visibility = { conversationId, ...buildRetentionVisibilityFilter<IConversation>() };
+        expect(await Conversation.exists(visibility)).toBeNull();
+        await expect(
+          saveConvo(
+            ctx,
+            { conversationId, title: 'Renamed' },
+            { preserveUpdatedAt: true, noUpsert: true },
+          ),
+        ).resolves.toMatchObject({
+          conversationId,
+          title: 'Renamed',
+          isTemporary: false,
+        });
+        expect(await Conversation.exists(visibility)).not.toBeNull();
         const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
         expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
       });
@@ -2208,6 +2298,15 @@ describe('Conversation Operations', () => {
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
       await expect(
+        deleteConvos('user123', { conversationId: 'already-absent' }, { allowEmpty: true }),
+      ).resolves.toEqual({
+        acknowledged: true,
+        deletedCount: 0,
+        messages: { deletedCount: 0 },
+        conversationIds: ['already-absent'],
+      });
+
+      await expect(
         deleteConvos(
           'user123',
           { conversationId: { $in: ['already-absent'] } },
@@ -2301,7 +2400,7 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(1);
     });
 
-    it('should clamp tag counts at zero and never go negative', async () => {
+    it('retains the existing zero clamp for tag decrements', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 0, position: 1 });
       const convoId = uuidv4();
       await Conversation.create({

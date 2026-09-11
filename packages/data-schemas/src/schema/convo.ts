@@ -397,6 +397,7 @@ convoSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ tenantId: 1, isTemporary: 1, initial_agent_id: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ tenantId: 1, isTemporary: 1, agent_id: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ user: 1, _id: 1 });
+convoSchema.index({ tenantId: 1, user: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
 /** The archive view pages by `archivedAt`, then `createdAt`, then `_id`; the middle key

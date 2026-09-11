@@ -12,7 +12,6 @@ import { tenantContextMiddleware } from './tenant';
 
 export interface AgentManagementAuthDeps {
   findUser: UserMethods['findUser'];
-  isPrincipalActive: (userId: string) => Promise<boolean>;
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
   verifyAccessToken?: (token: string, config: OidcAccessTokenConfig) => Promise<JwtPayload>;
 }
@@ -105,10 +104,13 @@ function findClientBinding(auth: ManagementAuth, clientId: string): ManagementCl
 
 async function resolvePrincipal(
   binding: ManagementClient,
-  deps: Pick<AgentManagementAuthDeps, 'findUser' | 'isPrincipalActive'>,
+  deps: Pick<AgentManagementAuthDeps, 'findUser'>,
 ): Promise<PrincipalResolution> {
   return tenantStorage.run({ tenantId: binding.tenantId }, async () => {
-    const user = await deps.findUser({ _id: binding.userId, tenantId: binding.tenantId });
+    const user = await deps.findUser(
+      { _id: binding.userId, tenantId: binding.tenantId },
+      '+agentTriggerDeletionStartedAt',
+    );
     if (!user) return { status: 'missing' };
 
     const userId = String(user._id);
@@ -116,7 +118,7 @@ async function resolvePrincipal(
       return { status: 'missing' };
     }
 
-    if (!(await deps.isPrincipalActive(userId))) {
+    if (Object.prototype.hasOwnProperty.call(user, 'agentTriggerDeletionStartedAt')) {
       return { status: 'inactive' };
     }
 

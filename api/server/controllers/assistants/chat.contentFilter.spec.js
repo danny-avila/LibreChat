@@ -10,6 +10,7 @@ const mockHandleError = jest.fn();
 const mockRetrieveAssistant = jest.fn();
 const mockListThreadMessages = jest.fn();
 const mockGetConvo = jest.fn();
+const mockGetImportedAssistantMessages = jest.fn();
 const mockGetFiles = jest.fn();
 const mockGetOpenAIClient = jest.fn().mockResolvedValue({
   openai: {
@@ -117,6 +118,7 @@ jest.mock('~/models', () => ({
   getTransactions: jest.fn(),
   getMultiplier: jest.fn(),
   getConvo: (...args) => mockGetConvo(...args),
+  getImportedAssistantMessages: (...args) => mockGetImportedAssistantMessages(...args),
   getFiles: (...args) => mockGetFiles(...args),
 }));
 
@@ -133,6 +135,12 @@ jest.mock('./helpers', () => ({
   getOpenAIClient: (...args) => mockGetOpenAIClient(...args),
 }));
 
+const {
+  countTokens,
+  checkBalance,
+  getBalanceConfig,
+  getModelMaxTokens,
+} = require('@librechat/api');
 const chatV1 = require('./chatV1');
 const chatV2 = require('./chatV2');
 
@@ -146,6 +154,10 @@ describe.each([
 
   beforeEach(() => {
     jest.clearAllMocks();
+    countTokens.mockReset();
+    checkBalance.mockReset();
+    getBalanceConfig.mockReset();
+    getModelMaxTokens.mockReset();
     mockRetrieveAssistant.mockReset().mockResolvedValue({
       id: 'asst-1',
       instructions: 'Safe assistant',
@@ -157,6 +169,7 @@ describe.each([
     });
     mockGetFiles.mockReset().mockResolvedValue([]);
     mockGetConvo.mockReset().mockResolvedValue(null);
+    mockGetImportedAssistantMessages.mockReset().mockResolvedValue(null);
     mockInitThread.mockReset();
     closeHandler = undefined;
     req = {
@@ -308,6 +321,225 @@ describe.each([
     });
   });
 
+  it.each(['assistants', 'azureAssistants'])(
+    'starts a fresh %s thread with imported history',
+    async (endpoint) => {
+      req.body.endpoint = endpoint;
+      req.body.conversationId = 'imported-conversation';
+      req.body.parentMessageId = 'imported-parent';
+      delete req.body.thread_id;
+      mockGetImportedAssistantMessages.mockResolvedValue([
+        {
+          messageId: 'imported-parent',
+          conversationId: 'imported-conversation',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          text: 'Historical context',
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+      mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+      await chatController(req, res);
+      expect(mockInitThread).toHaveBeenCalledTimes(1);
+      const initialization = mockInitThread.mock.calls[0][0];
+      expect(initialization.thread_id).toBeUndefined();
+      expect(JSON.stringify(initialization.body.messages)).toContain('Historical context');
+      expect(JSON.stringify(initialization.body.messages)).toContain('Safe current message');
+      expect(mockListThreadMessages).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['assistants', 'azureAssistants'])(
+    'awaits imported %s history before balance accounting',
+    async (endpoint) => {
+      req.body.endpoint = endpoint;
+      req.body.conversationId = 'imported-conversation';
+      req.body.parentMessageId = 'imported-parent';
+      delete req.body.thread_id;
+      let resolveHistory;
+      let signalHistoryStarted;
+      const historyStarted = new Promise((resolve) => {
+        signalHistoryStarted = resolve;
+      });
+      mockGetImportedAssistantMessages.mockImplementation(() => {
+        signalHistoryStarted();
+        return new Promise((resolve) => {
+          resolveHistory = resolve;
+        });
+      });
+      let rejectInitialization;
+      let signalInitializationStarted;
+      const initializationStarted = new Promise((resolve) => {
+        signalInitializationStarted = resolve;
+      });
+      mockInitThread.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            signalInitializationStarted();
+            rejectInitialization = reject;
+          }),
+      );
+      let signalBalanceChecked;
+      const balanceChecked = new Promise((resolve) => {
+        signalBalanceChecked = resolve;
+      });
+      getBalanceConfig.mockReturnValue({ enabled: true });
+      getModelMaxTokens.mockReturnValue(8192);
+      countTokens.mockResolvedValue(321);
+      checkBalance.mockImplementation(async () => {
+        signalBalanceChecked();
+      });
+
+      const pending = chatController(req, res);
+      await historyStarted;
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(getBalanceConfig).not.toHaveBeenCalled();
+      expect(countTokens).not.toHaveBeenCalled();
+      resolveHistory([
+        {
+          messageId: 'imported-parent',
+          conversationId: 'imported-conversation',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          text: 'Historical context',
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+      await balanceChecked;
+      expect(countTokens).toHaveBeenCalledWith(expect.stringContaining('Historical context'));
+      expect(countTokens).toHaveBeenCalledWith(expect.stringContaining('Safe current message'));
+      expect(checkBalance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          txData: expect.objectContaining({ amount: 326 }),
+        }),
+        expect.any(Object),
+      );
+      await initializationStarted;
+      rejectInitialization(new Error('stop after balance verification'));
+      await pending;
+    },
+  );
+
+  it.each(['assistants', 'azureAssistants'])(
+    'rejects %s balance admission before writes and permits retry',
+    async (endpoint) => {
+      req.body.endpoint = endpoint;
+      req.body.conversationId = 'imported-conversation';
+      req.body.parentMessageId = 'imported-parent';
+      delete req.body.thread_id;
+      mockGetImportedAssistantMessages.mockResolvedValue([
+        {
+          messageId: 'imported-parent',
+          conversationId: 'imported-conversation',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          text: 'History',
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+      getBalanceConfig.mockReturnValue({ enabled: true });
+      getModelMaxTokens.mockReturnValue(8192);
+      countTokens.mockResolvedValue(321);
+      let signalBalanceStarted;
+      const balanceStarted = new Promise((resolve) => {
+        signalBalanceStarted = resolve;
+      });
+      let rejectBalance;
+      checkBalance.mockImplementation(() => {
+        signalBalanceStarted();
+        return new Promise((_resolve, reject) => {
+          rejectBalance = reject;
+        });
+      });
+      const pending = chatController(req, res);
+      await balanceStarted;
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(mockSaveUserMessage).not.toHaveBeenCalled();
+      rejectBalance(new Error('balance admission rejected'));
+      await pending;
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(mockSaveUserMessage).not.toHaveBeenCalled();
+      checkBalance.mockResolvedValue(undefined);
+      mockInitThread.mockRejectedValueOnce(new Error('stop after admitted initialization'));
+      await chatController(req, res);
+      expect(mockInitThread).toHaveBeenCalledTimes(1);
+      expect(mockInitThread.mock.calls[0][0].thread_id).toBeUndefined();
+    },
+  );
+
+  it('does not initialize after the request closes during balance admission', async () => {
+    getBalanceConfig.mockReturnValue({ enabled: true });
+    getModelMaxTokens.mockReturnValue(8192);
+    countTokens.mockResolvedValue(1);
+    checkBalance.mockImplementation(async () => {
+      res.destroyed = true;
+    });
+    await chatController(req, res);
+    expect(mockInitThread).not.toHaveBeenCalled();
+    expect(mockSaveUserMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves attachment-only input (imported=%s)', async (imported) => {
+    req.body.text = '   ';
+    req.body.files = [{ file_id: 'attachment', type: 'text/plain' }];
+    delete req.body.thread_id;
+    if (imported) {
+      req.body.conversationId = 'imported-conversation';
+      req.body.parentMessageId = 'imported-parent';
+      mockGetImportedAssistantMessages.mockResolvedValue([
+        {
+          messageId: 'imported-parent',
+          conversationId: 'imported-conversation',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          text: 'History',
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+    }
+    mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+    await chatController(req, res);
+    expect(mockInitThread).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockInitThread.mock.calls[0][0].body.messages)).toContain(
+      require('@librechat/api').ATTACHMENT_ONLY_TEXT,
+    );
+  });
+
+  it('checks imported context before creating a provider thread', async () => {
+    req.body.conversationId = 'imported-conversation';
+    req.body.parentMessageId = 'imported-parent';
+    delete req.body.thread_id;
+    req.config.filters.messages.pii = {
+      fields: ['content_part'],
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+    };
+    mockGetImportedAssistantMessages.mockResolvedValue([
+      {
+        messageId: 'imported-parent',
+        conversationId: 'imported-conversation',
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        text: 'PRIVATE-NOTE',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      },
+    ]);
+    await chatController(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockInitThread).not.toHaveBeenCalled();
+    expect(mockSaveUserMessage).not.toHaveBeenCalled();
+    await closeHandler();
+    expect(mockHandleError).not.toHaveBeenCalled();
+  });
+
+  it('keeps rejecting an existing conversation without eligible imported history', async () => {
+    req.body.conversationId = 'existing';
+    delete req.body.thread_id;
+    await chatController(req, res);
+    expect(mockInitThread).not.toHaveBeenCalled();
+    expect(mockSaveUserMessage).not.toHaveBeenCalled();
+  });
+
   it('revalidates remote history at the initial run boundary before committing SSE headers', async () => {
     req.config.filters = {
       messages: {
@@ -374,6 +606,7 @@ describe.each([
 
     await chatController(req, res);
 
+    expect(mockGetImportedAssistantMessages).not.toHaveBeenCalled();
     expect(mockRetrieveAssistant).not.toHaveBeenCalled();
     expect(mockListThreadMessages).not.toHaveBeenCalled();
     expect(mockGetFiles).not.toHaveBeenCalled();

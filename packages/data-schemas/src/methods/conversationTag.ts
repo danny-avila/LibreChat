@@ -1,4 +1,6 @@
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model } from 'mongoose';
+import type { IConversation } from '~/types/convo';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -10,6 +12,13 @@ interface IConversationTag {
   count: number;
   createdAt?: Date;
   [key: string]: unknown;
+}
+
+function optionalTenantFilter<T>(tenantId?: string | null): FilterQuery<T> {
+  if (tenantId === null) {
+    return { tenantId: { $exists: false } } as FilterQuery<T>;
+  }
+  return (tenantId === undefined ? {} : { tenantId }) as FilterQuery<T>;
 }
 
 /**
@@ -32,6 +41,7 @@ export async function decrementTagCounts(
   mongoose: typeof import('mongoose'),
   user: string,
   tags: string[],
+  tenantId?: string | null,
 ): Promise<void> {
   if (!tags.length) {
     return;
@@ -51,22 +61,23 @@ export async function decrementTagCounts(
 
   try {
     const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const tenantFilter = optionalTenantFilter<IConversationTag>(tenantId);
     const bulkOps = [...decrementByTag.entries()].flatMap(([tag, amount]) => [
       {
         updateOne: {
-          filter: { user, tag, count: null },
+          filter: { user, tag, count: null, ...tenantFilter },
           update: { $set: { count: 0 } },
         },
       },
       {
         updateOne: {
-          filter: { user, tag },
+          filter: { user, tag, ...tenantFilter },
           update: { $inc: { count: -amount } },
         },
       },
       {
         updateOne: {
-          filter: { user, tag, count: { $lt: 0 } },
+          filter: { user, tag, count: { $lt: 0 }, ...tenantFilter },
           update: { $set: { count: 0 } },
         },
       },
@@ -158,6 +169,12 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     | null
   >;
   deleteConversationTags: (filter: Record<string, unknown>) => Promise<number>;
+  updateConversationResourceTags: (
+    user: string,
+    conversationId: string,
+    tags: string[],
+    tenantId: string | null,
+  ) => Promise<IConversation | null>;
   bulkIncrementTagCounts: (user: string, tags: string[]) => Promise<void>;
   updateTagsForConversation: (
     user: string,
@@ -402,17 +419,29 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   /**
    * Updates tags for a specific conversation.
    */
-  async function updateTagsForConversation(
+  async function updateConversationTags(
     user: string,
     conversationId: string,
     tags: string[],
-  ): Promise<string[]> {
+    scope?: { tenantId: string | null },
+  ): Promise<IConversation | null> {
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-      const Conversation = mongoose.models.Conversation;
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const tenantFilter = optionalTenantFilter<IConversation>(scope?.tenantId);
+      const filter = () =>
+        scope == null
+          ? { user, conversationId }
+          : {
+              $and: [
+                { user, conversationId, ...tenantFilter, subagentThread: { $exists: false } },
+                buildRetentionVisibilityFilter<IConversation>(),
+              ],
+            };
 
-      const conversation = await Conversation.findOne({ user, conversationId }).lean();
+      const conversation = await Conversation.findOne(filter()).lean();
       if (!conversation) {
+        if (scope != null) return null;
         throw new Error('Conversation not found');
       }
 
@@ -435,7 +464,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of addedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
+            filter: { user, tag, ...tenantFilter },
             update: { $inc: { count: 1 } },
             upsert: true,
           },
@@ -445,7 +474,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of removedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
+            filter: { user, tag, ...tenantFilter },
             update: { $inc: { count: -1 } },
           },
         });
@@ -455,19 +484,34 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         await tenantSafeBulkWrite(ConversationTag, bulkOps);
       }
 
-      const updatedConversation = (
-        await Conversation.findOneAndUpdate(
-          { user, conversationId },
-          { $set: { tags: [...newTags] } },
-          { new: true },
-        )
-      ).toObject();
-
-      return updatedConversation.tags;
+      return await Conversation.findOneAndUpdate(
+        filter(),
+        { $set: { tags: [...newTags] } },
+        { new: true },
+      ).lean<IConversation>();
     } catch (error) {
       logger.error('[updateTagsForConversation] Error updating tags', error);
       throw new Error('Error updating tags for conversation');
     }
+  }
+
+  async function updateTagsForConversation(
+    user: string,
+    conversationId: string,
+    tags: string[],
+  ): Promise<string[]> {
+    const conversation = await updateConversationTags(user, conversationId, tags);
+    if (conversation == null) throw new Error('Conversation not found');
+    return conversation.tags ?? [];
+  }
+
+  async function updateConversationResourceTags(
+    user: string,
+    conversationId: string,
+    tags: string[],
+    tenantId: string | null,
+  ): Promise<IConversation | null> {
+    return updateConversationTags(user, conversationId, tags, { tenantId });
   }
 
   /**
@@ -525,6 +569,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     deleteConversationTags,
     bulkIncrementTagCounts,
     updateTagsForConversation,
+    updateConversationResourceTags,
   };
 }
 

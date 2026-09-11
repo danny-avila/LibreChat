@@ -79,7 +79,6 @@ function createDeps(overrides: Partial<AgentManagementAuthDeps> = {}): AgentMana
   return {
     getAppConfig: jest.fn().mockResolvedValue(createConfig()),
     findUser: jest.fn().mockResolvedValue(createUser()),
-    isPrincipalActive: jest.fn().mockResolvedValue(true),
     verifyAccessToken: jest.fn().mockResolvedValue(createPayload()),
     ...overrides,
   };
@@ -156,7 +155,6 @@ describe('getMachineClientId', () => {
     await runMiddleware(deps, createRequest(), res, jest.fn());
 
     expect(deps.findUser).not.toHaveBeenCalled();
-    expect(deps.isPrincipalActive).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 });
@@ -185,7 +183,10 @@ describe('createAgentManagementAuth', () => {
       issuer: 'https://issuer.example.com',
       audience: 'https://agents.example.com',
     });
-    expect(deps.findUser).toHaveBeenCalledWith({ _id: USER_ID, tenantId: TENANT_ID });
+    expect(deps.findUser).toHaveBeenCalledWith(
+      { _id: USER_ID, tenantId: TENANT_ID },
+      '+agentTriggerDeletionStartedAt',
+    );
     expect(lookupTenant).toBe(TENANT_ID);
     expect(downstreamTenant).toBe(TENANT_ID);
     expect(req.user).toMatchObject({ id: USER_ID, tenantId: TENANT_ID, role: 'USER' });
@@ -204,10 +205,13 @@ describe('createAgentManagementAuth', () => {
 
     await runMiddleware(deps, createRequest(), createResponse(), next);
 
-    expect(deps.findUser).toHaveBeenCalledWith({
-      _id: USER_ID.toUpperCase(),
-      tenantId: TENANT_ID,
-    });
+    expect(deps.findUser).toHaveBeenCalledWith(
+      {
+        _id: USER_ID.toUpperCase(),
+        tenantId: TENANT_ID,
+      },
+      '+agentTriggerDeletionStartedAt',
+    );
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -313,7 +317,11 @@ describe('createAgentManagementAuth', () => {
   });
 
   it('returns the established deletion-fence response for an inactive User', async () => {
-    const deps = createDeps({ isPrincipalActive: jest.fn().mockResolvedValue(false) });
+    const deps = createDeps({
+      findUser: jest
+        .fn()
+        .mockResolvedValue({ ...createUser(), agentTriggerDeletionStartedAt: new Date() }),
+    });
     const res = createResponse();
 
     await runMiddleware(deps, createRequest(), res, jest.fn());
@@ -325,7 +333,7 @@ describe('createAgentManagementAuth', () => {
     });
   });
 
-  it('checks the deletion fence after resolving the bound User', async () => {
+  it('continues using a single bound-user lookup', async () => {
     let resolveUser: ((user: IUser) => void) | undefined;
     const findUser = jest.fn(
       () =>
@@ -333,8 +341,7 @@ describe('createAgentManagementAuth', () => {
           resolveUser = resolve;
         }),
     );
-    const isPrincipalActive = jest.fn().mockResolvedValue(true);
-    const deps = createDeps({ findUser, isPrincipalActive });
+    const deps = createDeps({ findUser });
     const next = jest.fn();
 
     const pending = runMiddleware(deps, createRequest(), createResponse(), next);
@@ -342,11 +349,11 @@ describe('createAgentManagementAuth', () => {
     await Promise.resolve();
 
     expect(findUser).toHaveBeenCalledTimes(1);
-    expect(isPrincipalActive).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
     resolveUser?.(createUser());
     await pending;
 
-    expect(isPrincipalActive).toHaveBeenCalledWith(USER_ID);
+    expect(findUser).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenCalledTimes(1);
   });
 

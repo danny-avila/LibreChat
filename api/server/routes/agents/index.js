@@ -56,6 +56,7 @@ const {
 const responses = require('./responses');
 const management = require('./management');
 const skills = require('./skills');
+const conversations = require('./conversations');
 const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
@@ -121,6 +122,8 @@ const router = express.Router();
  * @see https://openresponses.org/specification
  */
 router.use('/v1/responses', responses);
+
+router.use('/v1/conversations', conversations);
 
 /**
  * Machine-authenticated Agent Management routes.

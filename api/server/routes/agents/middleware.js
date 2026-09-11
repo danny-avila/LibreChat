@@ -5,6 +5,7 @@ const {
   createRequireApiKeyAuth,
   createRemoteAgentAuth,
   createAgentManagementAuth,
+  createConversationManagementAuth,
   createCheckAgentTriggerAccess,
   createCheckRemoteAgentAccess,
 } = require('@librechat/api');
@@ -18,25 +19,36 @@ const apiKeyMiddleware = createRequireApiKeyAuth({
   isPrincipalActive: db.isAgentTriggerPrincipalActive,
 });
 
-const requireRemoteAgentAuth = createRemoteAgentAuth({
-  apiKeyMiddleware,
-  findUser: db.findUser,
-  getRolesByNames: db.findRolesByNames,
-  updateUser: db.updateUser,
-  isPrincipalActive: db.isAgentTriggerPrincipalActive,
-  getAppConfig,
-});
+const remoteAuth = (getConfig) =>
+  createRemoteAgentAuth({
+    apiKeyMiddleware,
+    findUser: db.findUser,
+    getRolesByNames: db.findRolesByNames,
+    updateUser: db.updateUser,
+    isPrincipalActive: db.isAgentTriggerPrincipalActive,
+    getAppConfig: getConfig,
+  });
 
-const requireAgentManagementAuth = createAgentManagementAuth({
-  findUser: db.findUser,
-  isPrincipalActive: db.isAgentTriggerPrincipalActive,
-  getAppConfig,
-});
+const managementAuth = (getConfig) =>
+  createAgentManagementAuth({
+    findUser: db.findUser,
+    getAppConfig: getConfig,
+  });
+
+const requireRemoteAgentAuth = remoteAuth(getAppConfig);
+const requireAgentManagementAuth = managementAuth(getAppConfig);
 
 const checkRemoteAgentsFeature = generateCheckAccess({
   permissionType: PermissionTypes.REMOTE_AGENTS,
   permissions: [Permissions.USE],
   getRoleByName: db.getRoleByName,
+});
+
+const requireConversationManagementAuth = createConversationManagementAuth({
+  getAppConfig,
+  remoteAuth,
+  remoteAccess: checkRemoteAgentsFeature,
+  managementAuth,
 });
 
 const agentAccessDependencies = {
@@ -53,5 +65,6 @@ module.exports = {
   preAuthTenantMiddleware,
   requireRemoteAgentAuth,
   requireAgentManagementAuth,
+  requireConversationManagementAuth,
   checkRemoteAgentsFeature,
 };

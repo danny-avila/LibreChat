@@ -218,3 +218,67 @@ describe('decrementTagCounts', () => {
     await expect(decrementTagCounts(mongoose, userId, ['', 'nonexistent'])).resolves.not.toThrow();
   });
 });
+
+describe('scoped conversation tag mutations', () => {
+  it('removes imported names without manufacturing missing catalog rows', async () => {
+    await Conversation.create({
+      user: 'owner',
+      conversationId: 'imported',
+      endpoint: 'openAI',
+      tags: ['missing'],
+      title: 'Kept',
+    });
+    const methods = createConversationTagMethods(mongoose);
+    await expect(
+      methods.updateConversationResourceTags('owner', 'imported', [], null),
+    ).resolves.toMatchObject({ conversationId: 'imported', title: 'Kept', tags: [] });
+    expect(await ConversationTag.countDocuments({ user: 'owner' })).toBe(0);
+  });
+
+  it.each([
+    { user: 'other' },
+    { tenantId: 'other-tenant' },
+    { expiredAt: new Date(0) },
+    { subagentThread: 'hidden' },
+  ])('rejects excluded targets before catalog mutation: %j', async (fields) => {
+    await Conversation.collection.insertOne({
+      user: 'owner',
+      conversationId: 'excluded',
+      tags: [],
+      ...fields,
+    });
+    const methods = createConversationTagMethods(mongoose);
+    await expect(
+      methods.updateConversationResourceTags('owner', 'excluded', ['new'], null),
+    ).resolves.toBeNull();
+    expect(await ConversationTag.countDocuments({})).toBe(0);
+  });
+
+  it('keeps tenantless membership and catalog writes separate from historical tenant rows', async () => {
+    await Conversation.collection.insertMany([
+      { user: 'owner', conversationId: 'same', tags: [] },
+      { user: 'owner', conversationId: 'same', tenantId: 'old', tags: [] },
+    ]);
+    await ConversationTag.collection.insertOne({
+      user: 'owner',
+      tag: 'red',
+      tenantId: 'old',
+      count: 8,
+    });
+    const methods = createConversationTagMethods(mongoose);
+    await methods.updateConversationResourceTags('owner', 'same', ['red'], null);
+    expect(
+      await ConversationTag.findOne({ user: 'owner', tag: 'red', tenantId: 'old' }).lean(),
+    ).toMatchObject({ count: 8 });
+    expect(
+      await ConversationTag.findOne({
+        user: 'owner',
+        tag: 'red',
+        tenantId: { $exists: false },
+      }).lean(),
+    ).toMatchObject({ count: 1 });
+    expect(
+      await Conversation.findOne({ user: 'owner', conversationId: 'same', tenantId: 'old' }).lean(),
+    ).toMatchObject({ tags: [] });
+  });
+});

@@ -56,6 +56,18 @@ function resetCheckpointRows(rows = []) {
   deletionTargets.clear();
 }
 
+function loadConversationApi() {
+  const previous = process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
+  process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'GEN_TITLE';
+  try {
+    return jest.requireActual('@librechat/api');
+  } finally {
+    if (previous !== undefined) {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = previous;
+    }
+  }
+}
+
 module.exports = {
   archiveAllHandler,
   ownerPrefix,
@@ -68,7 +80,10 @@ module.exports = {
   checkpointRows,
   resetCheckpointRows,
 
-  agents: () => ({ sleep: jest.fn() }),
+  agents: () => ({
+    ...jest.requireActual('@librechat/agents'),
+    sleep: jest.fn(),
+  }),
 
   api: (overrides = {}) => ({
     /** Mirrors the real helper so query-flag parsing (`isArchived`, `pinned`) is exercised. */
@@ -157,10 +172,14 @@ module.exports = {
     deleteOwnedAgentCheckpoints,
     openCheckpointDeletion,
     isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
+    createConversationDeletionService: loadConversationApi().createConversationDeletionService,
+    updateConversationArchiveMetadata: loadConversationApi().updateConversationArchiveMetadata,
+    updateConversationTitleMetadata: loadConversationApi().updateConversationTitleMetadata,
     ...overrides,
   }),
 
   dataSchemas: () => ({
+    ...jest.requireActual('@librechat/data-schemas'),
     logger: {
       debug: jest.fn(),
       info: jest.fn(),
@@ -176,6 +195,7 @@ module.exports = {
   }),
 
   dataProvider: (overrides = {}) => ({
+    ...jest.requireActual('librechat-data-provider'),
     CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
     EModelEndpoint: {
       azureAssistants: 'azureAssistants',

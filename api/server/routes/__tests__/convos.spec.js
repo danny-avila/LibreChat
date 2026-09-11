@@ -80,11 +80,15 @@ describe('Convos Routes', () => {
 
     /** Mock authenticated user */
     app.use((req, res, next) => {
-      req.user = { id: 'test-user-123', role: 'USER' };
       const tenantId = req.get('x-test-tenant');
-      if (tenantId) {
-        req.user.tenantId = tenantId;
+      if (req.get('x-test-resolved-temporary') === 'true') {
+        req.resolvedConversation = { isTemporary: true, expiredAt: new Date('2027-01-01') };
       }
+      req.user = {
+        id: 'test-user-123',
+        role: 'USER',
+        ...(tenantId == null ? {} : { tenantId }),
+      };
       req.config = {
         messageFilter: {
           pii: {
@@ -614,7 +618,10 @@ describe('Convos Routes', () => {
       expect(
         deleteConvos.mock.calls.filter(([, filter]) => Object.keys(filter).length === 0),
       ).toHaveLength(2);
-      expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'test-user-123',
+        tenantId: { $exists: false },
+      });
       expect(deleteOwnedAgentCheckpoints).toHaveBeenCalledWith(
         'test-user-123',
         undefined,
@@ -647,7 +654,10 @@ describe('Convos Routes', () => {
         {},
         expect.objectContaining({ allowEmpty: true }),
       );
-      expect(deleteMessages).toHaveBeenLastCalledWith({ user: 'test-user-123' });
+      expect(deleteMessages).toHaveBeenLastCalledWith({
+        user: 'test-user-123',
+        tenantId: { $exists: false },
+      });
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -676,13 +686,26 @@ describe('Convos Routes', () => {
       );
       expect(deleteConvos).toHaveBeenCalledTimes(1);
 
-      /** Verify deleteToolCalls was called with correct userId */
-      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123');
+      /** Verify deleteToolCalls was called with the explicit legacy tenant boundary. */
+      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', undefined, null);
       expect(deleteToolCalls).toHaveBeenCalledTimes(1);
 
       /** Verify deleteAllSharedLinksWithCleanup was called with correct userId */
-      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123', null);
       expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledTimes(1);
+    });
+
+    it('scopes tool-call cleanup to the authenticated tenant', async () => {
+      deleteConvos.mockResolvedValue({ deletedCount: 1 });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 1 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 1 });
+
+      const response = await request(app)
+        .delete('/api/convos/all')
+        .set('x-test-tenant', 'tenant-a');
+
+      expect(response.status).toBe(201);
+      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', undefined, 'tenant-a');
     });
 
     it('should call deleteAllSharedLinksWithCleanup even when no conversations exist', async () => {
@@ -701,7 +724,7 @@ describe('Convos Routes', () => {
       const response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123', null);
     });
 
     it('should return 500 if deleteConvos fails', async () => {
@@ -763,7 +786,7 @@ describe('Convos Routes', () => {
       let response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123', null);
 
       jest.clearAllMocks();
 
@@ -783,7 +806,7 @@ describe('Convos Routes', () => {
       response = await request(app2).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-456');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-456', null);
     });
 
     it('should execute deletions in correct sequence', async () => {
@@ -832,7 +855,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
 
       /** Verify that shared links cleanup was called for the same user */
-      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123', null);
 
       /** Verify no shared links remain for deleted conversations */
       expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledAfter(deleteConvos);
@@ -840,6 +863,38 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('keeps browser deletion successful when retried after the root is gone', async () => {
+      let exists = true;
+      deleteConvos.mockImplementation(async (_owner, filter, options) => {
+        if (typeof filter.conversationId !== 'string') {
+          return { deletedCount: 0, conversationIds: [] };
+        }
+        if (!exists && !options.allowEmpty) {
+          throw new Error('Conversation not found or already deleted.');
+        }
+        const deletedCount = exists ? 1 : 0;
+        await options.beforeDelete?.([filter.conversationId]);
+        exists = false;
+        return { deletedCount, conversationIds: [filter.conversationId] };
+      });
+      const remove = () =>
+        request(app)
+          .delete('/api/convos')
+          .set('x-test-tenant', 'tenant-a')
+          .send({ arg: { conversationId: 'deleted-root' } });
+
+      expect((await remove()).status).toBe(201);
+      const retry = await remove();
+      expect(retry.status).toBe(201);
+      expect(retry.body.deletedCount).toBe(0);
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        { conversationId: 'deleted-root' },
+        expect.objectContaining({ allowEmpty: true, tenantId: 'tenant-a' }),
+      );
+      expect(deleteToolCalls).toHaveBeenLastCalledWith('test-user-123', 'deleted-root', 'tenant-a');
+    });
+
     it('fences the owner when DELETE / is called without a conversation filter', async () => {
       deleteConvos.mockResolvedValue({ deletedCount: 3, conversationIds: ['a', 'b', 'c'] });
 
@@ -1007,6 +1062,7 @@ describe('Convos Routes', () => {
       );
       expect(deleteMessages).toHaveBeenCalledWith({
         user: 'test-user-123',
+        tenantId: { $exists: false },
         conversationId: { $in: ['parent-conversation', 'child-conversation'] },
       });
     });
@@ -1265,7 +1321,7 @@ describe('Convos Routes', () => {
       );
     });
 
-    it('drains a tenant user legacy generation without pruning its ambiguous namespace', async () => {
+    it('preserves a tenantless generation when deleting the same ID in a named tenant', async () => {
       const createdAt = Date.now();
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
         'legacy-run',
@@ -1297,10 +1353,7 @@ describe('Convos Routes', () => {
         .send({ arg: { conversationId: 'conversation-1' } });
 
       expect(response.status).toBe(201);
-      expect(generationJobManager.abortJob).toHaveBeenCalledWith('legacy-run', {
-        expectedCreatedAt: createdAt,
-        awaitProviderDrain: true,
-      });
+      expect(generationJobManager.abortJob).not.toHaveBeenCalled();
       expect(deleteOwnedAgentCheckpoints).toHaveBeenCalledWith(
         'test-user-123',
         'tenant-1',
@@ -1393,6 +1446,7 @@ describe('Convos Routes', () => {
       );
       expect(deleteMessages).toHaveBeenCalledWith({
         user: 'test-user-123',
+        tenantId: { $exists: false },
         conversationId: { $in: ['conversation-1'] },
       });
     });
@@ -1551,12 +1605,13 @@ describe('Convos Routes', () => {
       );
 
       /** Verify deleteToolCalls was called */
-      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', mockConversationId);
+      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', mockConversationId, null);
 
       /** Verify deleteConvoSharedLinksWithCleanup was called */
       expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
         'test-user-123',
         mockConversationId,
+        null,
       );
     });
 
@@ -1598,6 +1653,7 @@ describe('Convos Routes', () => {
       expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
         'test-user-123',
         mockConversationId,
+        null,
       );
     });
 
@@ -1726,6 +1782,7 @@ describe('Convos Routes', () => {
       expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
         'test-user-123',
         mockConversationId,
+        null,
       );
 
       /** Verify it was called after the conversation was deleted */
@@ -1873,6 +1930,14 @@ describe('Convos Routes', () => {
   });
 
   describe('POST /archive', () => {
+    it('returns 500 when persistence returns its error sentinel', async () => {
+      saveConvo.mockResolvedValue({ message: 'Error saving conversation' });
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'conv-error', isArchived: true } });
+      expect(response.status).toBe(500);
+    });
+
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';
       const mockArchivedConvo = {
@@ -1902,9 +1967,10 @@ describe('Convos Routes', () => {
           isArchived: true,
         },
         {
-          context: `POST /api/convos/archive ${mockConversationId}`,
+          context: `conversation archive update ${mockConversationId}`,
           preserveUpdatedAt: true,
           noUpsert: true,
+          tenantId: null,
         },
       );
     });
@@ -1935,9 +2001,10 @@ describe('Convos Routes', () => {
         expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
         {
-          context: `POST /api/convos/archive ${mockConversationId}`,
+          context: `conversation archive update ${mockConversationId}`,
           preserveUpdatedAt: true,
           noUpsert: true,
+          tenantId: null,
         },
       );
     });
@@ -1967,6 +2034,29 @@ describe('Convos Routes', () => {
         expect.anything(),
         expect.anything(),
         expect.objectContaining({ preserveUpdatedAt: true }),
+      );
+    });
+
+    it('preserves resolved retention instead of accepting the browser hint', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'temporary', isArchived: true });
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .set('x-test-resolved-temporary', 'true')
+        .send({
+          isTemporary: false,
+          arg: { conversationId: 'temporary', isArchived: true },
+        });
+
+      expect(response.status).toBe(200);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-123',
+          isTemporary: true,
+          expiredAt: new Date('2027-01-01'),
+        }),
+        expect.anything(),
+        expect.anything(),
       );
     });
 
@@ -2071,6 +2161,50 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual({ archivedCount: 4 });
       expect(archiveAllHandler).toHaveBeenCalledTimes(1);
       expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
+    });
+  });
+
+  describe('POST /update', () => {
+    it('returns 500 when persistence returns its error sentinel', async () => {
+      saveConvo.mockResolvedValue({ message: 'Error saving conversation' });
+      const response = await request(app)
+        .post('/api/convos/update')
+        .send({ arg: { conversationId: 'conv-error', title: 'New title' } });
+      expect(response.status).toBe(500);
+    });
+
+    it('uses the shared title operation and preserves resolved retention', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'temporary', title: 'Trimmed title' });
+
+      const response = await request(app)
+        .post('/api/convos/update')
+        .set('x-test-resolved-temporary', 'true')
+        .send({
+          isTemporary: false,
+          arg: { conversationId: 'temporary', title: '  Trimmed title  ' },
+        });
+
+      expect(response.status).toBe(201);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-123',
+          isTemporary: true,
+          expiredAt: new Date('2027-01-01'),
+        }),
+        { conversationId: 'temporary', title: 'Trimmed title' },
+        expect.objectContaining({ noUpsert: true, tenantId: null }),
+      );
+    });
+
+    it('returns not found when deletion wins the title update race', async () => {
+      saveConvo.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/update')
+        .send({ arg: { conversationId: 'missing', title: 'New title' } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
     });
   });
 

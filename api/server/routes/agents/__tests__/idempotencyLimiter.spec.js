@@ -66,6 +66,11 @@ jest.mock('~/server/routes/agents/management', () => {
   router.use((_req, res) => res.status(200).json({ surface: 'management' }));
   return router;
 });
+jest.mock('~/server/routes/agents/conversations', () => {
+  const router = require('express').Router();
+  router.use((_req, res) => res.status(200).json({ surface: 'conversations' }));
+  return router;
+});
 jest.mock('~/server/controllers/agents/steer', () => {
   const controller = (_req, _res, next) => next();
   controller.SteerDeliveryController = (_req, _res, next) => next();
@@ -92,6 +97,13 @@ describe('Agent Management route precedence', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ surface: 'management' });
+  });
+
+  it('reaches conversation management before the catch-all execution router', async () => {
+    const response = await request(app).get('/agents/v1/conversations');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ surface: 'conversations' });
   });
 });
 

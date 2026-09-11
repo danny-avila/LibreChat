@@ -1368,6 +1368,12 @@ export const agentsEndpointSchema = baseEndpointSchema
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
         })
         .optional(),
+      conversationApi: z
+        .object({
+          auth: z.enum(['remote', 'management']),
+        })
+        .strict()
+        .optional(),
       managementApi: managementApiSchema.optional(),
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
