@@ -25,13 +25,13 @@ function Footer({ className, startupConfig }: FooterProps) {
   const termsOfService = config?.interface?.termsOfService;
 
   const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
+    <a className="text-text-muted underline" href={privacyPolicy.externalUrl} rel="noreferrer">
       {localize('com_ui_privacy_policy')}
     </a>
   );
 
   const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
+    <a className="text-text-muted underline" href={termsOfService.externalUrl} rel="noreferrer">
       {localize('com_ui_terms_of_service')}
     </a>
   );
@@ -61,7 +61,7 @@ function Footer({ className, startupConfig }: FooterProps) {
           a: ({ node: _n, href, children, ...otherProps }) => {
             return (
               <a
-                className="text-text-secondary underline"
+                className="text-text-muted underline"
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -89,7 +89,16 @@ function Footer({ className, startupConfig }: FooterProps) {
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
+          /* The disclaimer is the least important text on the landing page and
+             sat in `text-primary`, the same weight as the greeting above it.
+             `text-muted` is the quietest text token that still clears AA for
+             12px copy on `bg-presentation` — 5.11:1 on white, 7.93:1 on the dark
+             canvas — and the contrast modes collapse every text token to pure
+             black or white, so they stay at 21:1. The links keep the same colour
+             rather than the brighter `text-secondary`: the underline carries the
+             affordance, and a link that outshines its own sentence puts the
+             emphasis back where this change takes it from. */
+          'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-muted sm:flex md:px-[60px]'
         }
       >
         {footerElements.map((contentRender, index) => {
