@@ -149,6 +149,7 @@ function createTailwindColors() {
     'series-5': cssVar('--series-5'),
     'series-6': cssVar('--series-6'),
     'series-7': cssVar('--series-7'),
+    'series-8': cssVar('--series-8'),
 
     'switch-unchecked': cssVar('--switch-unchecked'),
   };

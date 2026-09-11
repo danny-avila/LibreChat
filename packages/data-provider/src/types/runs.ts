@@ -260,6 +260,10 @@ export type TTokenBudgetBreakdown = {
   toolTokenCounts?: Record<string, number>;
   /** Names of counted tools that are deferred (`defer_loading`) and discovered */
   deferredToolNames?: string[];
+  /** Calibrated retained tool traffic: tool results plus assistant turns made only of tool calls, inline provider tool results and reasoning. A subset of messageTokens, not an additional budget category. */
+  toolMessageTokens?: number;
+  /** Per-tool result-message share; excludes assistant invocation overhead. */
+  toolMessageTokenCounts?: Record<string, number>;
 };
 
 /** Per-model-call context snapshot, dispatched after pruning and before the LLM call. */
@@ -332,6 +336,13 @@ export type TTokenUsageEvent = {
   cost?: number;
 };
 
+const finiteNonNegativeInteger = (value: unknown): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(value)));
+};
+
 /**
  * Full prompt token count for one completed model call — the EXACT context the
  * model saw, provider-aware: additive providers (Bedrock) report `input_tokens`
@@ -343,26 +354,66 @@ export type TTokenUsageEvent = {
  * gauge reconciles its calibrated estimate to.
  */
 export const promptTokensFromUsage = (event: TTokenUsageEvent): number => {
-  const input = event.input_tokens ?? 0;
+  const input = finiteNonNegativeInteger(event.input_tokens) ?? 0;
   const details = event.input_token_details ?? {};
-  const cacheRead = details.cache_read ?? 0;
-  const cacheCreation = details.cache_creation ?? 0;
+  const cacheRead = finiteNonNegativeInteger(details.cache_read) ?? 0;
+  const cacheCreation = finiteNonNegativeInteger(details.cache_creation) ?? 0;
   const includesCache =
     event.provider != null
       ? inputTokensIncludesCache(event.provider)
       : cacheRead + cacheCreation <= input;
-  return includesCache ? input : input + cacheRead + cacheCreation;
+  return includesCache
+    ? input
+    : Math.min(Number.MAX_SAFE_INTEGER, input + cacheRead + cacheCreation);
+};
+
+/**
+ * Scales per-tool result-message counts while bounding both malformed input and
+ * rounding error. Null-prototype records keep tool names as ordinary data keys;
+ * cumulative apportionment preserves the scaled sum in one linear pass.
+ */
+const scaleToolMessageTokenCounts = (
+  value: unknown,
+  oldTotal: number,
+  newTotal: number,
+): Record<string, number> | undefined => {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const scaled: Record<string, number> = Object.create(null);
+  let remaining = oldTotal;
+  let cumulative = 0;
+  let allocated = 0;
+  let found = false;
+  for (const [name, rawCount] of Object.entries(value)) {
+    const count = finiteNonNegativeInteger(rawCount);
+    if (count == null || count === 0) {
+      continue;
+    }
+    const bounded = Math.min(count, remaining);
+    remaining -= bounded;
+    cumulative += bounded;
+    const target = oldTotal > 0 ? Math.round((cumulative / oldTotal) * newTotal) : 0;
+    const apportioned = target - allocated;
+    allocated = target;
+    if (apportioned > 0) {
+      scaled[name] = apportioned;
+      found = true;
+    }
+  }
+  return found ? scaled : undefined;
 };
 
 /**
  * Reconciles a pre-invoke context snapshot's CALIBRATED estimate to a call's
  * ACTUAL prompt tokens. The SDK's calibration multiplier scales only
- * `messageTokens` (instructions/summary are raw tiktoken counts), and it can
+ * `messageTokens` (instructions/summary are raw tiktoken counts) and can
  * over-shoot badly when a provider injects server-side content the SDK never
  * counted (e.g. Anthropic web search) — pinning the gauge several× too high and
  * persisting it. Trust the provider's own prompt count: keep the raw
- * instruction/summary rows, set `messageTokens` to the remainder, and recompute
- * the free space. No-op when `promptTokens` is unusable.
+ * instruction/summary rows, set `messageTokens` to the remainder, recompute the
+ * free space, and rescale the `toolMessageTokens` share to the new message
+ * total. No-op when `promptTokens` is unusable.
  */
 export const reconcileContextUsage = (
   snapshot: TContextUsageEvent,
@@ -371,16 +422,78 @@ export const reconcileContextUsage = (
   if (!Number.isFinite(promptTokens) || promptTokens <= 0) {
     return snapshot;
   }
+  const normalizedPromptTokens = Math.min(Number.MAX_SAFE_INTEGER, Math.floor(promptTokens));
+  if (normalizedPromptTokens <= 0) {
+    return snapshot;
+  }
   const { breakdown } = snapshot;
-  const budget = snapshot.contextBudget ?? breakdown.maxContextTokens;
-  const nonMessageTokens = (breakdown.instructionTokens ?? 0) + (breakdown.summaryTokens ?? 0);
-  const messageTokens = Math.max(0, promptTokens - nonMessageTokens);
-  return {
-    ...snapshot,
-    breakdown: { ...breakdown, messageTokens },
-    remainingContextTokens:
-      budget != null ? Math.max(0, budget - promptTokens) : snapshot.remainingContextTokens,
+  const instructionTokens = finiteNonNegativeInteger(breakdown.instructionTokens) ?? 0;
+  const summaryTokens = finiteNonNegativeInteger(breakdown.summaryTokens) ?? 0;
+  const budget =
+    finiteNonNegativeInteger(snapshot.contextBudget) ??
+    finiteNonNegativeInteger(breakdown.maxContextTokens);
+  const nonMessageTokens = instructionTokens + summaryTokens;
+  const messageTokens = Math.max(0, normalizedPromptTokens - nonMessageTokens);
+  /** `toolMessageTokens` is a subset of the OLD (calibrated) `messageTokens`;
+   * rescale it by the same proportion so the split tracks the provider's real
+   * total. A supplied zero remains a known-zero split; absent fields stay absent
+   * for older snapshots. */
+  const priorMessageTokens = finiteNonNegativeInteger(breakdown.messageTokens) ?? 0;
+  const priorToolMessageTokens = finiteNonNegativeInteger(breakdown.toolMessageTokens);
+  let toolMessageTokens: number | undefined;
+  if (priorToolMessageTokens != null) {
+    toolMessageTokens = 0;
+    if (priorMessageTokens > 0 && priorToolMessageTokens > 0) {
+      toolMessageTokens = Math.min(
+        messageTokens,
+        Math.round(
+          (Math.min(priorToolMessageTokens, priorMessageTokens) / priorMessageTokens) *
+            messageTokens,
+        ),
+      );
+    }
+  }
+  const toolMessageTokenCounts =
+    toolMessageTokens != null
+      ? scaleToolMessageTokenCounts(
+          breakdown.toolMessageTokenCounts,
+          Math.min(priorToolMessageTokens ?? 0, priorMessageTokens),
+          toolMessageTokens,
+        )
+      : undefined;
+
+  const nextBreakdown = {
+    ...breakdown,
+    instructionTokens,
+    summaryTokens,
+    messageTokens,
   };
+  if (toolMessageTokens == null) {
+    delete nextBreakdown.toolMessageTokens;
+    delete nextBreakdown.toolMessageTokenCounts;
+  } else {
+    nextBreakdown.toolMessageTokens = toolMessageTokens;
+    if (toolMessageTokenCounts == null) {
+      delete nextBreakdown.toolMessageTokenCounts;
+    } else {
+      nextBreakdown.toolMessageTokenCounts = toolMessageTokenCounts;
+    }
+  }
+  const result = {
+    ...snapshot,
+    breakdown: nextBreakdown,
+  };
+  if (budget != null) {
+    result.remainingContextTokens = Math.max(0, budget - normalizedPromptTokens);
+  } else {
+    const remaining = finiteNonNegativeInteger(snapshot.remainingContextTokens);
+    if (remaining == null) {
+      delete result.remainingContextTokens;
+    } else {
+      result.remainingContextTokens = remaining;
+    }
+  }
+  return result;
 };
 
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
