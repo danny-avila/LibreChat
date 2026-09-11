@@ -22,6 +22,7 @@ const {
   assertStoredMessageMutationAllowed,
   assertChatMutationAllowed,
   assertStoredMessageBranchAllowed,
+  reportLocatorTraversalFailure,
   mergeUserSubmittedPaths,
   mergeUserSubmittedMessageFieldPaths,
   isContentFilterError,
@@ -351,7 +352,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
         message: newMessage,
         user: req.user,
       },
-      { getFiles: db.getFiles },
+      { getFiles: db.getFiles, onTraversalFailure: reportLocatorTraversalFailure },
     );
 
     const savedMessage = await db.saveMessage(

@@ -31,6 +31,7 @@ const {
   getAgentCheckpointer,
   isContentFilterError,
   preflightResumeContent,
+  reportLocatorTraversalFailure,
   getResumeProvenance,
   getUserFacingResumeError,
   decrementPendingRequest,
@@ -197,6 +198,7 @@ async function deleteFailedResumeCheckpoint(args, context) {
 const GENERIC_RESUME_ERROR = 'Resume failed';
 
 const resumeContentProtectionDependencies = {
+  onTraversalFailure: reportLocatorTraversalFailure,
   getAgentCheckpointer,
   checkAccess,
   getMessages,

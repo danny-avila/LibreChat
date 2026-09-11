@@ -5356,6 +5356,7 @@ class AgentClient extends BaseClient {
         },
         {
           getAgentCheckpointer,
+          onTraversalFailure: reportLocatorTraversalFailure,
           getMessages: db.getMessages,
           getFiles: db.getFiles,
         },

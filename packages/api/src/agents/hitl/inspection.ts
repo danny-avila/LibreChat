@@ -9,6 +9,7 @@ import {
 import type { Agent, FiltersConfig, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { StoredMessageContentInput } from '~/protection/adapters/submissions';
+import type { LocatorTraversalReporter } from '../../protection/diagnostics';
 import type { ExternalChatMessage } from '~/protection/adapters/messages';
 import {
   hasActiveFilePolicy,
@@ -69,6 +70,7 @@ type GetResumeMessages = (filter: {
 }) => Promise<ResumeMessage[] | null | undefined>;
 
 export interface ResumeContentInspectionInput {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   appConfig?: AppConfig;
   conversationId: string;
   targetMessageId?: string | null;
@@ -374,6 +376,7 @@ async function getResumeFileInspection(
     fileReferenceInputs: input.fileReferenceInputs ?? [],
   };
   const fileInspection = await resolveCanonicalFileReferences({
+    onTraversalFailure: input.onTraversalFailure,
     filters,
     input: originalInput,
     user: input.user,

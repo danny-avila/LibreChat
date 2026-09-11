@@ -982,6 +982,7 @@ describe('file content inspection policy', () => {
   });
 
   it('hydrates discovered file names without rejecting an unrelated oversized subtree', async () => {
+    const onTraversalFailure = jest.fn();
     const canonicalFile = {
       file_id: 'owned-file',
       filename: 'safe-report.txt',
@@ -1015,11 +1016,19 @@ describe('file content inspection policy', () => {
         input,
         user: { id: 'user-1' },
         getFiles,
+        onTraversalFailure,
       }),
     ).resolves.toMatchObject({
       sanitizedInput: input,
       hydratedFiles: [canonicalFile],
     });
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        resolvedFileCount: 1,
+      }),
+    );
     expect(getFiles).toHaveBeenCalledWith(
       { file_id: { $in: ['owned-file'] }, user: 'user-1' },
       {},

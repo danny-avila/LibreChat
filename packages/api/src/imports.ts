@@ -14,6 +14,7 @@ import type {
   StoredMessageContentInput,
 } from './protection/adapters/submissions';
 import type { ModelBoundContentInput } from './middleware/modelBoundContent';
+import type { LocatorTraversalReporter } from './protection/diagnostics';
 import {
   getContentTraversalFragments,
   getContentTraversalScopes,
@@ -50,6 +51,7 @@ export interface ConversationImportSnapshot {
 }
 
 export interface ConversationImportProtectionContext {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly user?: CanonicalFileInspectionUser;
   readonly getFiles?: GetCanonicalFilesForInspection;
   readonly trustedLiveFiles?: readonly CanonicalFileInspectionFile[];
@@ -131,6 +133,7 @@ async function inspectConversationImportContent(
   let resolvedFiles: CanonicalFileInspectionFile[] = [];
   if (hasActiveFilePolicy(activeFilters)) {
     const fileInspection = await resolveCanonicalFileReferences({
+      onTraversalFailure: context.onTraversalFailure,
       filters: activeFilters,
       input: snapshot.messages,
       user: context.user,
@@ -145,6 +148,7 @@ async function inspectConversationImportContent(
     context.assertModelBoundContent ?? assertModelBoundContentAtBoundary;
   if (resolvedFiles.length > 0) {
     assertModelBoundContent({
+      onTraversalFailure: context.onTraversalFailure,
       filters: activeFilters,
       resolvedFiles,
     });
@@ -153,6 +157,7 @@ async function inspectConversationImportContent(
   for (const message of storedMessages) {
     try {
       assertModelBoundContent({
+        onTraversalFailure: context.onTraversalFailure,
         filters: activeFilters,
         legacyPii,
         storedMessages: [message],

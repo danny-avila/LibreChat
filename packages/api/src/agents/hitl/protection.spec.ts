@@ -41,6 +41,39 @@ function createInput(appConfig: unknown): AssertResumeRuntimeContentAllowedInput
 }
 
 describe('assertResumeRuntimeContentAllowed', () => {
+  it('reports locator failures from restored HITL content through its dependencies', async () => {
+    const onTraversalFailure = jest.fn();
+    const dependencies = { ...createDependencies(), onTraversalFailure };
+    dependencies.getFiles.mockResolvedValue([{ file_id: 'owned', filename: 'safe.txt' }]);
+    const input = createInput({
+      filters: { files: { pii: { fields: ['name'], starterPatterns: ['sk_prefix'] } } },
+    });
+    await expect(
+      assertResumeRuntimeContentAllowed(
+        {
+          ...input,
+          storedMessages: [
+            {
+              messageId: 'source-message',
+              isCreatedByUser: true,
+              role: 'user',
+              files: [{ file_id: 'owned' }],
+              content: Array.from({ length: 4200 }, () => ({ type: 'text', text: 'safe' })),
+            },
+          ],
+        },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        resolvedFileCount: 1,
+      }),
+    );
+  });
+
   it.each([
     { filters: { prompts: { pii: {} } } },
     {

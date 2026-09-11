@@ -93,6 +93,7 @@ export type GetCanonicalFilesForInspection = (
 ) => Promise<CanonicalFileInspectionFile[] | null | undefined>;
 
 export interface CanonicalFileReferenceInspectionInput<T> {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly filters?: FiltersConfig;
   readonly input: T;
   readonly user?: CanonicalFileInspectionUser;
@@ -1274,7 +1275,9 @@ export async function resolveCanonicalFileReferences<T>(
   let sanitizedInput = input.input;
   if (currentById.size > 0) {
     try {
-      sanitizedInput = omitResolvedCanonicalFileLocators(input.input, currentById);
+      sanitizedInput = omitResolvedCanonicalFileLocators(input.input, currentById, {
+        onTraversalFailure: input.onTraversalFailure,
+      });
     } catch (error) {
       if (!(error instanceof ContentTraversalLimitError)) {
         throw error;
