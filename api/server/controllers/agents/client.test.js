@@ -2939,7 +2939,7 @@ describe('AgentClient - startup telemetry', () => {
     );
     expect(client.contentParts).toContainEqual({
       type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]: 'An error occurred while processing the request',
+      [ContentTypes.ERROR]: JSON.stringify({ type: 'upstream_model_error', status: 500 }),
     });
     errorSpy.mockRestore();
   });
@@ -9643,7 +9643,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('PROVIDER_INTERNAL');
     expect(context.contentParts).toContainEqual({
       type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]: 'An error occurred while resuming the request',
+      [ContentTypes.ERROR]: JSON.stringify({ type: 'upstream_model_error', status: 503 }),
     });
     errorSpy.mockRestore();
   });

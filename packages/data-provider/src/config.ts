@@ -3458,6 +3458,10 @@ export enum ErrorTypes {
    */
   MODEL_RATE_LIMIT = 'model_rate_limit',
   /**
+   * An agent model provider failed and the run could not recover.
+   */
+  UPSTREAM_MODEL_ERROR = 'upstream_model_error',
+  /**
    * Context pruning removed every message; nothing fits the configured context window
    */
   EMPTY_MESSAGES = 'empty_messages',

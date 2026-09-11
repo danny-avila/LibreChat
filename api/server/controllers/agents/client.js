@@ -5106,10 +5106,13 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]:
             videoError ??
-            getUserFacingRequestError(
-              'An error occurred while processing the request',
+            terminalRunError.getUserFacingError(
               err,
-              this.options.req.config,
+              getUserFacingRequestError(
+                'An error occurred while processing the request',
+                err,
+                this.options.req.config,
+              ),
             ),
         });
       }
@@ -5776,10 +5779,13 @@ class AgentClient extends BaseClient {
         terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: getUserFacingRequestError(
-            'An error occurred while resuming the request',
+          [ContentTypes.ERROR]: terminalRunError.getUserFacingError(
             err,
-            appConfig,
+            getUserFacingRequestError(
+              'An error occurred while resuming the request',
+              err,
+              appConfig,
+            ),
           ),
         });
       }
