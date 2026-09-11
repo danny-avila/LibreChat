@@ -51,8 +51,25 @@ test.describe('agent management file lifecycle', () => {
   });
 
   test.afterAll(async () => {
-    await mongoose.disconnect();
-    await oidc?.close();
+    try {
+      // Unlinking intentionally retains files; teardown owns the fixture tenant's data.
+      await withMongo(async (db) => {
+        for (const { name } of await db.listCollections({}, { nameOnly: true }).toArray()) {
+          if (name.startsWith('system.')) {
+            continue;
+          }
+          await db.collection(name).deleteMany({ tenantId: managementTenantId });
+        }
+      });
+      await fs.promises.rm(path.resolve('uploads', managementUserId), {
+        recursive: true,
+        force: true,
+      });
+      await fs.promises.rm(stagingPath, { recursive: true, force: true });
+    } finally {
+      await mongoose.disconnect();
+      await oidc?.close();
+    }
   });
 
   for (const purpose of ['context', 'file_search', 'execute_code']) {
