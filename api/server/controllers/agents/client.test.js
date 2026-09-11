@@ -2872,6 +2872,7 @@ describe('AgentClient - startup telemetry', () => {
       },
     });
     const graphError = new Error('model execution failed', { cause: providerError });
+    const abortController = new AbortController();
     const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     mockCreateRun.mockImplementation(async (options) => {
       const tracker = options.modelCallbacks.find(
@@ -2881,6 +2882,7 @@ describe('AgentClient - startup telemetry', () => {
         Graph: null,
         processStream: jest.fn(async () => {
           tracker.handleLLMError(providerError, 'model-run');
+          abortController.abort();
           throw graphError;
         }),
         getCalibrationRatio: jest.fn(() => 0),
@@ -2916,7 +2918,7 @@ describe('AgentClient - startup telemetry', () => {
     client.parentMessageId = 'parent-upstream-error';
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
-    await client.chatCompletion({ payload: [] });
+    await client.chatCompletion({ payload: [], abortController });
 
     expect(errorSpy).toHaveBeenCalledWith(
       '[api/server/controllers/agents/client.js #sendCompletion] Upstream model error',
@@ -9597,6 +9599,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
       code: 'PROVIDER_INTERNAL',
       status: 503,
     });
+    const abortController = new AbortController();
     const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     mockCreateRun.mockImplementation(async (options) => {
       const tracker = options.modelCallbacks.find(
@@ -9605,6 +9608,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
       return {
         resume: jest.fn(async () => {
           tracker.handleLLMError(providerError, 'resumed-model-run');
+          abortController.abort();
           throw providerError;
         }),
         getCalibrationRatio: jest.fn(() => 0),
@@ -9619,7 +9623,10 @@ describe('AgentClient - resumeCompletion content protection', () => {
       },
     });
 
-    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      abortController,
+    });
 
     expect(errorSpy).toHaveBeenCalledWith(
       '[api/server/controllers/agents/client.js #resumeCompletion] Upstream model error',

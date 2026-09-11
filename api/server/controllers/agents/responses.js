@@ -671,8 +671,8 @@ const executeResponse = async (envelope, { req, res }) => {
     onSettlementError: (error) => {
       logger.error('[Responses API] Failed to settle execution:', getSafeErrorMetadata(error));
     },
-    handleExecutionError: (error) => {
-      terminalRunError.log(error);
+    handleExecutionError: (error, signal) => {
+      terminalRunError.log(error, signal);
       return handleExecutionError({ error, res, appConfig });
     },
     execute: async (execution) => {

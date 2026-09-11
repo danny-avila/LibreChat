@@ -352,7 +352,7 @@ jest.mock('@librechat/api', () => ({
       return await execute(execution);
     } catch (error) {
       executionError = error;
-      if (handleExecutionError) return await handleExecutionError(error);
+      if (handleExecutionError) return await handleExecutionError(error, execution?.signal);
       throw error;
     } finally {
       removeCloseListener();
@@ -1040,6 +1040,28 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('safe error logging', () => {
+    it('does not classify a client disconnect as an upstream model error', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
+      mockProcessStream.mockImplementationOnce(async () => {
+        const modelCallback = api.createRun.mock.calls
+          .at(-1)[0]
+          .modelCallbacks.find(({ name }) => name === 'librechat-upstream-model-error-tracker');
+        modelCallback.handleLLMError(abortError);
+        res.once.mock.calls.find(([event]) => event === 'close')[1]();
+        throw abortError;
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockExecution.signal.aborted).toBe(true);
+      expect(logger.error).not.toHaveBeenCalledWith(
+        '[OpenAI API] Upstream model error',
+        expect.anything(),
+      );
+    });
+
     it('logs bounded metadata and returns a raw-free provider error', async () => {
       const api = require('@librechat/api');
       const { logger } = require('@librechat/data-schemas');

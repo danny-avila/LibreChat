@@ -169,6 +169,7 @@ const {
   selectRunContextMetaToPublish,
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
+  isAgentRunCancellation,
 } = require('@librechat/api');
 const {
   Run,
@@ -5070,7 +5071,7 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: err.message,
         });
-      } else if (abortController.signal.aborted) {
+      } else if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
@@ -5095,7 +5096,7 @@ class AgentClient extends BaseClient {
           },
         );
       } else {
-        terminalRunError.log(err);
+        terminalRunError.log(err, abortController.signal);
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -5754,7 +5755,7 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-      if (abortController.signal.aborted) {
+      if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
           {
@@ -5772,7 +5773,7 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId },
         );
       } else {
-        terminalRunError.log(err);
+        terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: getUserFacingRequestError(

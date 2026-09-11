@@ -434,8 +434,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     onSettlementError: (error) => {
       logger.error('[OpenAI API] Failed to settle execution:', getSafeErrorMetadata(error));
     },
-    handleExecutionError: (error) => {
-      terminalRunError.log(error);
+    handleExecutionError: (error, signal) => {
+      terminalRunError.log(error, signal);
       return handleExecutionError({ error, res, context, appConfig });
     },
     execute: async (execution) => {

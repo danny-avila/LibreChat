@@ -48,6 +48,49 @@ describe('terminal agent-run error logging', () => {
     expect(logger.error).toHaveBeenCalledWith('[Agent API] Error:', { type: 'Error' });
   });
 
+  it('does not log a tracked client cancellation as an upstream failure', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const controller = new AbortController();
+    const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
+    observer.modelCallback.handleLLMError(abortError);
+    controller.abort();
+
+    observer.log(abortError, controller.signal);
+
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps provider AbortErrors observable while the run signal is live', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const abortError = Object.assign(new Error('provider aborted'), { name: 'AbortError' });
+    observer.modelCallback.handleLLMError(abortError);
+
+    observer.log(abortError, new AbortController().signal);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[Agent API] Upstream model error',
+      expect.objectContaining({ errorCode: 'UPSTREAM_MODEL_ERROR' }),
+    );
+  });
+
+  it('keeps real provider failures observable when Stop wins the same-tick race', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const controller = new AbortController();
+    const providerError = new Error('provider failed');
+    observer.modelCallback.handleLLMError(providerError);
+    controller.abort();
+
+    observer.log(providerError, controller.signal);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[Agent API] Upstream model error',
+      expect.objectContaining({ errorCode: 'UPSTREAM_MODEL_ERROR' }),
+    );
+  });
+
   it('uses a bounded fallback type and omits unavailable trace correlation', () => {
     expect(getUpstreamModelErrorMetadata(new Error('provider failed'))).toEqual({
       type: 'Error',
