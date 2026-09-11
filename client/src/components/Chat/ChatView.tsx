@@ -207,6 +207,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             project={isProjectLandingPage ? project : undefined}
                             isLandingPage={isLandingPage}
                             footerBelow={footerBelow}
+                            centerFormOnLanding={centerFormOnLanding}
                           />
                         )}
                         {/* The generic disclaimer is the welcome screen's; a

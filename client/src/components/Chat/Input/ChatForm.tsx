@@ -77,6 +77,9 @@ interface ChatFormProps {
   /** Owned by ChatView: which layout the composer sits in — the welcome screen
    *  floats or bottoms it out, a conversation ends the page with it. */
   isLandingPage: boolean;
+  /** Owned by the host: the app-level preference for where the welcome-screen
+   *  composer sits. The chat feature only consumes it. */
+  centerFormOnLanding: boolean;
   /** Owned by ChatView: whether a footer bar renders under this band. It is an
    *  absolutely positioned bar in a zero-height wrapper, so the clearance here
    *  is the only thing keeping it off the composer. True on the welcome screen,
@@ -118,6 +121,7 @@ const ChatForm = memo(function ChatForm({
   project,
   isLandingPage,
   footerBelow,
+  centerFormOnLanding,
   files,
   setFiles,
   conversation,
@@ -144,7 +148,6 @@ const ChatForm = memo(function ChatForm({
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
@@ -921,12 +924,14 @@ function ChatFormWrapper({
   project,
   isLandingPage,
   footerBelow,
+  centerFormOnLanding,
 }: {
   index?: number;
   placeholder?: string;
   project?: TChatProject;
   isLandingPage: boolean;
   footerBelow: boolean;
+  centerFormOnLanding: boolean;
 }) {
   const {
     files,
@@ -993,6 +998,7 @@ function ChatFormWrapper({
       project={project}
       isLandingPage={isLandingPage}
       footerBelow={footerBelow}
+      centerFormOnLanding={centerFormOnLanding}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
