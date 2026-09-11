@@ -72,7 +72,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
         const percent = meta?.width;
         let widthStyle: React.CSSProperties | undefined;
         if (cell.column.id === 'select') {
-          widthStyle = { width: '32px', maxWidth: '32px', minWidth: '32px' };
+          widthStyle = { width: '2rem', maxWidth: '2rem', minWidth: '2rem' };
         } else if (percent) {
           widthStyle = {
             width: `${percent}%`,
@@ -91,7 +91,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
               'group-hover:bg-surface-secondary-alt group-data-[state=selected]:bg-surface-active',
               cell.column.id === 'select' && 'w-8 p-1',
               meta?.className,
-              isDesktopOnly && 'hidden md:table-cell',
+              isDesktopOnly && '[display:var(--data-table-desktop-display,table-cell)]',
             )}
             style={widthStyle}
           >
@@ -168,7 +168,7 @@ export const SkeletonRows: React.MemoExoticComponent<
                 className={cn(
                   'px-3 py-1',
                   meta?.className,
-                  meta?.desktopOnly && 'hidden md:table-cell',
+                  meta?.desktopOnly && '[display:var(--data-table-desktop-display,table-cell)]',
                 )}
               >
                 <Skeleton className="h-6 w-full" />

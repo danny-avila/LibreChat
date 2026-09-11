@@ -128,10 +128,13 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
             : 'ml-auto gap-2 rounded-lg p-1.5 md:rounded-md md:px-2 md:py-1',
         )}
       >
-        <span className="relative flex size-[18px] items-center justify-center" aria-hidden="true">
+        <span
+          className="relative flex size-[1.125rem] items-center justify-center"
+          aria-hidden="true"
+        >
           <MorphIcon
             icon={stateIcon}
-            size={18}
+            size="1.125rem"
             className={cn(
               'absolute transition-opacity duration-300',
               isLoading ? 'opacity-0' : 'opacity-100',
@@ -143,7 +146,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
               isLoading ? 'opacity-100' : 'opacity-0',
             )}
           >
-            <Spinner className="animate-spin" size={18} />
+            <Spinner className="size-[1.125rem] animate-spin" />
           </span>
         </span>
         {!iconOnly && (

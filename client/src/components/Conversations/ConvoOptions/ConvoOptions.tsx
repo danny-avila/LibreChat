@@ -2,8 +2,8 @@ import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
+import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { DropdownPopup, Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Ellipsis,
   Share2,
@@ -26,6 +26,7 @@ import {
   usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import ProjectButton from './ProjectButton';
@@ -58,7 +59,7 @@ function ConvoOptions({
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);

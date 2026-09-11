@@ -3,18 +3,14 @@ import {
   Button,
   CircleHelpIcon,
   Dropdown,
+  InfoHoverCard,
   Input,
   Label,
   SecretInput,
   Spinner,
+  ESide,
   useToastContext,
 } from '@librechat/client';
-import {
-  Root as Popover,
-  Portal as PopoverPortal,
-  Trigger as PopoverTrigger,
-  Content as PopoverContent,
-} from '@radix-ui/react-popover';
 import type {
   TLangfuseConnectionStatus,
   TLangfuseConnectionTestErrorCode,
@@ -398,48 +394,32 @@ export default function LangfuseConnection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Popover>
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
-            <div className="rounded-full border border-brand-purple/40 bg-brand-purple/10 px-2 py-0.5 text-xs font-medium text-brand-purple">
-              {localize('com_ui_beta')}
-            </div>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label={localize('com_ui_more_info')}
-                className="inline-flex size-6 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
-              >
-                <CircleHelpIcon className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </PopoverTrigger>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
+          <div className="rounded-full border border-brand-purple/40 bg-brand-purple/10 px-2 py-0.5 text-xs font-medium text-brand-purple">
+            {localize('com_ui_beta')}
           </div>
-          <div
-            data-testid="langfuse-connection-status"
-            className={`ml-auto flex max-w-full shrink-0 items-start justify-end gap-1.5 text-right text-xs sm:max-w-[50%] ${connectionStatusTextClass}`}
-            aria-live="polite"
-            title={connectionStatusTitle}
-          >
-            {connectionTestState === 'checking' ? (
-              <Spinner className="h-3 w-3" />
-            ) : (
-              <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${connectionStatusDotClass}`} />
-            )}
-            <span>{connectionStatusLabel}</span>
-          </div>
+          <InfoHoverCard side={ESide.Top} text={localize('com_ui_langfuse_beta_info')}>
+            <span className="flex size-6 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary">
+              <CircleHelpIcon className="h-4 w-4" aria-hidden="true" />
+            </span>
+          </InfoHoverCard>
         </div>
-
-        <PopoverPortal>
-          <PopoverContent
-            side="top"
-            sideOffset={6}
-            className="z-[999] w-80 rounded-xl border border-border-light bg-surface-secondary p-4 text-text-primary shadow-md outline-none"
-          >
-            <p className="text-sm text-text-secondary">{localize('com_ui_langfuse_beta_info')}</p>
-          </PopoverContent>
-        </PopoverPortal>
-      </Popover>
+        <div
+          data-testid="langfuse-connection-status"
+          className={`ml-auto flex max-w-full shrink-0 items-start justify-end gap-1.5 text-right text-xs sm:max-w-[50%] ${connectionStatusTextClass}`}
+          aria-live="polite"
+          title={connectionStatusTitle}
+        >
+          {connectionTestState === 'checking' ? (
+            <Spinner className="h-3 w-3" />
+          ) : (
+            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${connectionStatusDotClass}`} />
+          )}
+          <span>{connectionStatusLabel}</span>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <Label id="langfuse-destination-label">{localize('com_ui_langfuse_destination')}</Label>

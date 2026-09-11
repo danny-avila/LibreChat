@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import { throttle } from 'lodash';
-import { Spinner } from '@librechat/client';
+import { Spinner, useRemScale } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
@@ -24,6 +24,8 @@ const GAP_SIZE = 24; // gap-6 in pixels
 const ROW_HEIGHT = CARD_HEIGHT + GAP_SIZE;
 const CARDS_PER_ROW_MOBILE = 1;
 const CARDS_PER_ROW_DESKTOP = 2;
+/** Baseline layout width a two-column row needs, in unscaled pixels. */
+const TWO_COLUMN_MIN_WIDTH = 768;
 const OVERSCAN_ROW_COUNT = 3;
 
 /**
@@ -36,6 +38,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   scrollElement,
 }) => {
   const localize = useLocalize();
+  const remScale = useRemScale();
   const listRef = useRef<VirtualList>(null);
   const { categories } = useAgentCategories();
 
@@ -118,9 +121,13 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   }, [currentAgents]);
 
   // Helper functions for grid calculations
-  const getCardsPerRow = useCallback((width: number) => {
-    return width >= 768 ? CARDS_PER_ROW_DESKTOP : CARDS_PER_ROW_MOBILE;
-  }, []);
+  /** Cards are sized in rem, so the physical container width has to be read back
+   *  into baseline layout pixels before it can be compared with the breakpoint. */
+  const getCardsPerRow = useCallback(
+    (width: number) =>
+      width / remScale >= TWO_COLUMN_MIN_WIDTH ? CARDS_PER_ROW_DESKTOP : CARDS_PER_ROW_MOBILE,
+    [remScale],
+  );
 
   const getRowCount = useCallback((agentCount: number, cardsPerRow: number) => {
     return Math.ceil(agentCount / cardsPerRow);
@@ -164,10 +171,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
       return (
         <div key={key} style={style}>
           <div
-            className={cn(
-              'grid gap-6 px-0',
-              cardsPerRow === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2',
-            )}
+            className={cn('grid gap-6 px-0', cardsPerRow === 1 ? 'grid-cols-1' : 'grid-cols-2')}
             role="row"
             aria-rowindex={index + 1}
           >
@@ -291,7 +295,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                         onScroll={onChildScroll}
                         overscanRowCount={OVERSCAN_ROW_COUNT}
                         rowCount={rowCount}
-                        rowHeight={ROW_HEIGHT}
+                        rowHeight={ROW_HEIGHT * remScale}
                         rowRenderer={rowRenderer}
                         scrollTop={scrollTop}
                         width={width}
@@ -320,7 +324,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                     height={height}
                     overscanRowCount={OVERSCAN_ROW_COUNT}
                     rowCount={rowCount}
-                    rowHeight={ROW_HEIGHT}
+                    rowHeight={ROW_HEIGHT * remScale}
                     rowRenderer={rowRenderer}
                     width={width}
                     style={{ outline: 'none' }}

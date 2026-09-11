@@ -308,7 +308,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
               />
             )}
             {showCode && (
-              <div className="min-h-[150px] bg-surface-primary-alt p-4">
+              <div className="min-h-[9.375rem] bg-surface-primary-alt p-4">
                 <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs text-text-secondary">
                   {children}
                 </pre>
@@ -367,7 +367,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
       return (
         <div
           className={cn(
-            'flex min-h-[200px] w-full items-center justify-center rounded-lg border border-border-light bg-surface-primary-alt text-text-secondary',
+            'flex min-h-[12.5rem] w-full items-center justify-center rounded-lg border border-border-light bg-surface-primary-alt text-text-secondary',
             fillContainer && 'h-full rounded-xl',
           )}
           role="status"
@@ -391,7 +391,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
         </div>
         <pre
           ref={streamingCodeRef}
-          className="max-h-[350px] min-h-[150px] overflow-auto whitespace-pre-wrap bg-surface-primary-alt p-4 font-mono text-xs text-text-secondary"
+          className="max-h-[21.875rem] min-h-[9.375rem] overflow-auto whitespace-pre-wrap bg-surface-primary-alt p-4 font-mono text-xs text-text-secondary"
         >
           {children}
         </pre>

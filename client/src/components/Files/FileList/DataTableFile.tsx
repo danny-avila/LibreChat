@@ -162,7 +162,7 @@ export default function DataTableFile<TData, TValue>({
         </div>
       </div>
       <div className="relative mt-3 max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-border-light pb-4 sm:min-h-[28rem]">
-        <Table className="w-full min-w-[600px] border-separate border-spacing-0">
+        <Table className="w-full min-w-[37.5rem] border-separate border-spacing-0">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

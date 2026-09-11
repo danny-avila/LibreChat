@@ -10,7 +10,9 @@ import { TOOL_ARTIFACT_TYPES, isCodeOnlyArtifact, isPreviewOnlyArtifact } from '
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
+import { ARTIFACTS_SHEET_MAX_WIDTH } from '~/utils/breakpoints';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
+import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
@@ -26,7 +28,7 @@ export default function Artifacts() {
   const localize = useLocalize();
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
-  const isMobile = useMediaQuery('(max-width: 868px)');
+  const isMobile = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const previewRef = useRef<SandpackPreviewRef>();
   const artifactContainerRef = useRef<HTMLDivElement>(null);
@@ -348,8 +350,8 @@ export default function Artifacts() {
             'flex w-full flex-col bg-surface-primary text-xl text-text-primary motion-reduce:transition-none',
             isMobile
               ? cn(
-                  'fixed z-[100] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
-                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[20px]',
+                  'fixed z-[100] shadow-[0_-0.625rem_3.75rem_rgba(0,0,0,0.35)]',
+                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[1.25rem]',
                   isVisible && !isClosing
                     ? 'translate-y-0 opacity-100'
                     : 'duration-250 translate-y-full opacity-0 transition-all',
@@ -389,7 +391,7 @@ export default function Artifacts() {
           {/* Header */}
           <div
             className={cn(
-              'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300 motion-reduce:transition-none',
+              'flex h-[3.25rem] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300 motion-reduce:transition-none',
               isMobile ? 'justify-center' : 'overflow-hidden',
             )}
           >
@@ -432,11 +434,10 @@ export default function Artifacts() {
                   aria-label={localize('com_ui_refresh')}
                 >
                   {isRefreshing ? (
-                    <Spinner size={16} />
+                    <Spinner className="m-auto size-4" />
                   ) : (
                     <RefreshCw
-                      size={16}
-                      className="transition-transform duration-200 motion-reduce:transition-none"
+                      className="size-4 transition-transform duration-200 motion-reduce:transition-none"
                       aria-hidden="true"
                     />
                   )}
@@ -453,14 +454,14 @@ export default function Artifacts() {
                   )}
                 >
                   {isFullscreen ? (
-                    <Minimize2 size={16} aria-hidden="true" />
+                    <Minimize2 className="size-4" aria-hidden="true" />
                   ) : (
-                    <Maximize2 size={16} aria-hidden="true" />
+                    <Maximize2 className="size-4" aria-hidden="true" />
                   )}
                 </Button>
               )}
               {displayedTab !== 'preview' && isMutating && (
-                <RefreshCw size={16} className="animate-spin text-text-secondary" />
+                <RefreshCw className="size-4 animate-spin text-text-secondary" />
               )}
               {orderedArtifactIds.length > 1 && (
                 <ArtifactVersion
@@ -496,7 +497,7 @@ export default function Artifacts() {
                 onClick={closeArtifacts}
                 aria-label={localize('com_ui_close')}
               >
-                <X size={16} aria-hidden="true" />
+                <X className="size-4" aria-hidden="true" />
               </Button>
             </div>
           </div>
@@ -525,7 +526,7 @@ export default function Artifacts() {
                   isRefreshing ? 'scale-100' : 'scale-95',
                 )}
               >
-                <Spinner size={24} />
+                <Spinner className="m-auto size-6" />
               </div>
             </div>
           </div>

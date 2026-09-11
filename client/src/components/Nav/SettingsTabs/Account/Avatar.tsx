@@ -191,7 +191,7 @@ function Avatar() {
         <span>{localize('com_nav_profile_picture')}</span>
         <OGDialogTrigger asChild>
           <Button variant="outline">
-            <FileImage className="mr-2 flex w-[22px] items-center" aria-hidden="true" />
+            <FileImage className="mr-2 flex w-[1.375rem] items-center" aria-hidden="true" />
             <span>{localize('com_nav_change_picture')}</span>
           </Button>
         </OGDialogTrigger>
@@ -208,7 +208,7 @@ function Avatar() {
             <>
               <div
                 className={cn(
-                  'relative overflow-hidden rounded-full ring-4 ring-border-light transition-all',
+                  'relative w-full max-w-[17.5rem] overflow-hidden rounded-full ring-4 ring-border-light transition-all',
                   isDragging && 'cursor-move ring-ring-primary',
                 )}
                 onMouseDown={() => setIsDragging(true)}
@@ -228,6 +228,10 @@ function Avatar() {
                   position={position}
                   onPositionChange={handlePositionChange}
                   className="cursor-move"
+                  /* The width/height props stay at 280 so the exported avatar keeps its
+                     resolution; only the rendered canvas yields to the dialog, which is
+                     narrower than 17.5rem once the scale or the reader's font grows. */
+                  style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }}
                 />
                 {!isDragging && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">

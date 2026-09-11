@@ -34,7 +34,7 @@ export default function MentionItem({
     >
       <div
         className={cn(
-          'text-token-text-primary group flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
+          'text-token-text-primary group flex min-h-[2.75rem] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
           isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >

@@ -12,6 +12,14 @@ import {
   useToastContext,
 } from '@librechat/client';
 import {
+  megabyte,
+  mergeFileConfig,
+  checkOpenAIStorage,
+  isAssistantsEndpoint,
+  getEndpointFileConfig,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
+import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -23,14 +31,6 @@ import {
   type VisibilityState,
   type ColumnFiltersState,
 } from '@tanstack/react-table';
-import {
-  megabyte,
-  mergeFileConfig,
-  checkOpenAIStorage,
-  isAssistantsEndpoint,
-  getEndpointFileConfig,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
@@ -257,7 +257,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                           }}
                           className={
                             isFilenameCell
-                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary'
+                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-0.125rem] focus-visible:outline-text-primary'
                               : ''
                           }
                           data-skip-refocus="true"

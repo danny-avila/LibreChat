@@ -21,8 +21,8 @@ export default function Instructions() {
             onBlur={field.onBlur}
             inputRef={field.ref}
             placeholder={localize('com_agents_instructions_placeholder')}
-            className="min-h-[88px] resize-y"
-            labelClassName="block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className="min-h-[5.5rem] resize-y"
+            labelClassName="block text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary"
             rows={3}
             required={true}
             invalid={error != null}

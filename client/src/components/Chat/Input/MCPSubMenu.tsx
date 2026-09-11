@@ -101,11 +101,11 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
             flip="left bottom-end top-end"
             aria-label={localize('com_ui_mcp_servers')}
             className={cn(
-              'animate-popover-left z-40 flex min-w-[min(260px,calc(100vw-1rem))] max-w-[min(320px,calc(100vw-1rem))] flex-col rounded-xl',
+              'animate-popover-left z-40 flex min-w-[min(16.25rem,calc(100vw-1rem))] max-w-[min(20rem,calc(100vw-1rem))] flex-col rounded-xl',
               'border border-border-light bg-presentation p-1.5 shadow-lg',
             )}
           >
-            <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">
+            <div className="flex max-h-[20rem] flex-col gap-1 overflow-y-auto">
               {selectableServers.map((server) => (
                 <MCPServerMenuItem
                   key={server.serverName}

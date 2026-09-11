@@ -193,7 +193,7 @@ function PickerShell({
         align="start"
         sideOffset={6}
         className={cn(
-          'z-[999] rounded-xl border border-border-light bg-surface-secondary p-2 shadow-lg outline-none',
+          'z-[999] max-w-[min(calc(100vw-1rem),var(--radix-popover-content-available-width))] rounded-xl border border-border-light bg-surface-secondary p-2 shadow-lg outline-none',
           // Same enter/exit motion as the shared Radix primitives (Combobox,
           // Select, DropdownMenu): fade + zoom from the trigger edge, with Radix's
           // own transform origin so the zoom grows out of wherever it was placed.

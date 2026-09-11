@@ -57,7 +57,7 @@ export default function StackedToolIcons({
           key={icon.key}
           className={cn(
             'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-secondary',
-            'h-[22px] w-[22px]',
+            'h-[1.375rem] w-[1.375rem]',
             index > 0 && '-ml-2.5',
           )}
           style={{ zIndex: visibleIcons.length - index }}
@@ -74,7 +74,7 @@ export default function StackedToolIcons({
         <div
           className={cn(
             'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-tertiary',
-            '-ml-2.5 h-[22px] w-[22px] text-xs font-medium text-text-secondary',
+            '-ml-2.5 h-[1.375rem] w-[1.375rem] text-xs font-medium text-text-secondary',
           )}
           style={{ zIndex: 0 }}
         >

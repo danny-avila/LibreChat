@@ -55,7 +55,7 @@ export default function PopoverButtons({
         label: localize(showExamples === true ? 'com_hide_examples' : 'com_show_examples'),
         buttonClass: isGenerativeModel === true || isTextModel ? 'disabled' : '',
         handler: triggerExamples,
-        icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
+        icon: <MessagesSquared className={cn('mr-1 w-[0.875rem]', iconClass)} />,
       },
     ],
   };
@@ -75,7 +75,7 @@ export default function PopoverButtons({
         buttonClass: '',
         type: 'alternative',
         handler: () => setSettingsView(SettingsViews.advanced),
-        icon: <DataIcon className={cn('mr-1 h-6 w-[14px]', iconClass)} />,
+        icon: <DataIcon className={cn('mr-1 h-6 w-[0.875rem]', iconClass)} />,
       },
     ],
     [SettingsViews.advanced]: [
@@ -84,7 +84,7 @@ export default function PopoverButtons({
         buttonClass: '',
         type: 'alternative',
         handler: () => setSettingsView(SettingsViews.default),
-        icon: <AssistantIcon className={cn('mr-1 h-6 w-[14px]', iconClass)} />,
+        icon: <AssistantIcon className={cn('mr-1 h-6 w-[0.875rem]', iconClass)} />,
       },
     ],
   };
@@ -114,7 +114,7 @@ export default function PopoverButtons({
         ))}
       </div>
       {disabled ? null : (
-        <div className="flex w-[150px] items-center justify-end">
+        <div className="flex w-[9.375rem] items-center justify-end">
           {additionalButtons[settingsView].map((button, index) => (
             <Button
               key={`button-${index}`}

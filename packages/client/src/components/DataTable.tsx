@@ -17,8 +17,12 @@ import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
 import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import AnimatedSearchInput from './AnimatedSearchInput';
+import useRemScale from '~/hooks/useRemScale';
 import { TrashIcon, Spinner } from '~/svgs';
 import { Skeleton } from './Skeleton';
+
+/** Matches the rem-based height of a rendered row at the 16px baseline. */
+const ROW_HEIGHT = 48;
 import { Checkbox } from './Checkbox';
 import { Button } from './Button';
 import { cn } from '~/utils';
@@ -45,7 +49,7 @@ const SelectionCheckbox = memo(
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.stopPropagation()}
-      className="flex h-full w-[30px] items-center justify-center"
+      className="flex h-full w-[1.875rem] items-center justify-center"
       onClick={(e) => e.stopPropagation()}
     >
       <Checkbox checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} />
@@ -191,7 +195,7 @@ const DeleteButton = memo(
         variant="outline"
         onClick={onDelete}
         disabled={disabled}
-        className={cn('min-w-[40px] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
+        className={cn('min-w-[2.5rem] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
         aria-label={ariaLabel}
       >
         {isDeleting ? (
@@ -244,7 +248,7 @@ export default function DataTable<TData, TValue>({
     const selectColumn = {
       id: 'select',
       header: ({ table }: { table: TTable<TData> }) => (
-        <div className="flex h-full w-[30px] items-center justify-center">
+        <div className="flex h-full w-[1.875rem] items-center justify-center">
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(Boolean(value))}
@@ -259,7 +263,7 @@ export default function DataTable<TData, TValue>({
           ariaLabel="Select row"
         />
       ),
-      meta: { size: '50px' },
+      meta: { size: '3.125rem' },
     };
     return [selectColumn, ...columns];
   }, [columns, enableRowSelection, showCheckboxes]);
@@ -284,14 +288,27 @@ export default function DataTable<TData, TValue>({
     onRowSelectionChange: setRowSelection,
   });
 
+  const remScale = useRemScale();
   const { rows } = table.getRowModel();
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: useCallback(() => 48, []),
+    estimateSize: useCallback(() => ROW_HEIGHT * remScale, [remScale]),
     overscan: 10,
   });
+
+  /** TanStack Virtual memoizes its measurements on the item-size cache, not on
+   *  estimateSize, so a new estimate on its own leaves the previous scale's row
+   *  offsets in place. measure() drops that cache and forces a recompute. */
+  const measuredScaleRef = useRef(remScale);
+  useEffect(() => {
+    if (measuredScaleRef.current === remScale) {
+      return;
+    }
+    measuredScaleRef.current = remScale;
+    rowVirtualizer.measure();
+  }, [remScale, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -437,7 +454,7 @@ export default function DataTable<TData, TValue>({
       >
         <Table
           unwrapped
-          className="w-full min-w-[300px] table-fixed border-separate border-spacing-0"
+          className="w-full min-w-[18.75rem] table-fixed border-separate border-spacing-0"
         >
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (

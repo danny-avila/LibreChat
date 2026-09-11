@@ -107,7 +107,7 @@ export default function MessageRow({
         <div className={cn('flex w-full flex-col gap-1', isCreatedByUser && !plain && 'items-end')}>
           <div
             className={cn(
-              'flex min-h-[20px] max-w-full flex-grow flex-col gap-0',
+              'flex min-h-[1.25rem] max-w-full flex-grow flex-col gap-0',
               isCreatedByUser && !isEditing && !plain
                 ? 'w-fit rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5'
                 : 'w-full',
