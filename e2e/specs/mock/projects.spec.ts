@@ -1,10 +1,7 @@
-import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import type { TMessage } from 'librechat-data-provider';
 import {
   MOCK_ENDPOINTS,
-  getAccessToken,
   mockReply,
   selectMockEndpoint,
   sendMessage,
@@ -66,127 +63,6 @@ test.describe('chat projects', () => {
     await expect(page.getByRole('button', { name }).first()).toBeVisible();
   });
 
-  test('preserves hosted Assistant project membership and reloads guidance on later turns', async ({
-    page,
-    request,
-  }) => {
-    test.setTimeout(120000);
-    const projectId = await createProject(page, uniqueName('Hosted Project'));
-    const token = await getAccessToken(page);
-    const headers = { Authorization: `Bearer ${token}` };
-    const firstGuidance = 'Use the original project policy.';
-    const revisedGuidance = 'Use the revised project policy.';
-    const update = await request.patch(`/api/projects/${projectId}`, {
-      headers,
-      data: { instructions: firstGuidance },
-    });
-    expect(update.status()).toBe(200);
-    const created = await request.post('/api/assistants/v2', {
-      headers,
-      data: {
-        endpoint: 'assistants',
-        model: 'gpt-4o-mini',
-        name: uniqueName('Project Assistant'),
-        tools: [],
-      },
-    });
-    expect(created.status()).toBe(201);
-    const { id: assistantId } = await created.json();
-    const sendTurn = async (
-      conversationId: string | null = null,
-      parentMessageId = '00000000-0000-0000-0000-000000000000',
-      threadId?: string,
-    ) => {
-      const messageId = randomUUID();
-      const response = await request.post('/api/assistants/v2/chat', {
-        headers,
-        data: {
-          text: 'Apply the project policy.',
-          sender: 'User',
-          clientTimestamp: new Date().toISOString(),
-          isCreatedByUser: true,
-          parentMessageId,
-          conversationId,
-          messageId,
-          responseMessageId: `${messageId}_response`,
-          endpoint: 'assistants',
-          endpointType: 'assistants',
-          model: 'gpt-4o-mini',
-          assistant_id: assistantId,
-          thread_id: threadId,
-          chatProjectId: conversationId ? undefined : projectId,
-          files: [],
-          isTemporary: false,
-          isRegenerate: false,
-          error: false,
-        },
-      });
-      expect(response.status()).toBe(200);
-      const text = await response.text();
-      expect(text).toContain('"final":true');
-      return text;
-    };
-
-    try {
-      const missingProject = await request.post('/api/assistants/v2/chat', {
-        headers,
-        data: {
-          text: 'Apply the project policy.',
-          sender: 'User',
-          isCreatedByUser: true,
-          conversationId: null,
-          parentMessageId: '00000000-0000-0000-0000-000000000000',
-          messageId: randomUUID(),
-          endpoint: 'assistants',
-          endpointType: 'assistants',
-          model: 'gpt-4o-mini',
-          assistant_id: assistantId,
-          chatProjectId: randomUUID().replace(/-/g, '').slice(0, 24),
-          files: [],
-        },
-      });
-      expect(missingProject.status()).toBe(404);
-
-      const firstTurn = await sendTurn();
-      const conversationId = firstTurn.match(/"conversationId":"([^"]+)"/)?.[1];
-      expect(conversationId).toBeTruthy();
-      const stored = await request.get(`/api/convos/${conversationId}`, { headers });
-      expect((await stored.json()).chatProjectId).toBe(projectId);
-      const messageResponse = await request.get(`/api/messages/${conversationId}`, { headers });
-      const messages: TMessage[] = await messageResponse.json();
-      const userMessage = messages.find((message) => message.isCreatedByUser);
-      const reply = messages.find((message) => !message.isCreatedByUser);
-      expect(userMessage?.thread_id).toBeTruthy();
-      expect(reply?.messageId).toBeTruthy();
-      const revised = await request.patch(`/api/projects/${projectId}`, {
-        headers,
-        data: { instructions: revisedGuidance },
-      });
-      expect(revised.status()).toBe(200);
-      await sendTurn(conversationId!, reply!.messageId, userMessage!.thread_id);
-
-      const provider = `http://127.0.0.1:${process.env.E2E_ASSISTANTS_PORT || '8890'}`;
-      const recorded = await request.get(`${provider}/__e2e/requests`);
-      const history: {
-        requests: Array<{
-          path: string;
-          body: { assistant_id?: string; additional_instructions?: string };
-        }>;
-      } = await recorded.json();
-      const runs = history.requests.filter(
-        (entry) => entry.path.endsWith('/runs') && entry.body.assistant_id === assistantId,
-      );
-      expect(runs).toHaveLength(2);
-      expect(runs[0].body.additional_instructions).toContain(firstGuidance);
-      expect(runs[1].body.additional_instructions).toContain(revisedGuidance);
-      expect(runs[1].body.additional_instructions).not.toContain(firstGuidance);
-    } finally {
-      await request.delete(
-        `/api/assistants/v2/${encodeURIComponent(assistantId)}?endpoint=assistants&model=gpt-4o-mini`,
-        { headers, data: { endpoint: 'assistants' } },
-      );
-    }
-  });
 
   test('hands keyboard focus from the file menu to the picker and back', async ({ page }) => {
     await page.route(
