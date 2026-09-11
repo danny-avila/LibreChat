@@ -29,7 +29,7 @@ import logger from '~/config/winston';
 /**
  * A single validation issue emitted by a skill validator. Most issues are
  * errors and block the mutation; some are warnings (e.g. "description is
- * awfully short, Claude may undertrigger the skill") that surface inline
+ * awfully short, the agent may undertrigger the skill") that surface inline
  * coaching without rejecting the request.
  */
 export type ValidationIssue = {
@@ -163,7 +163,7 @@ export function validateSkillDescription(description: unknown): ValidationIssue[
       code: 'TOO_SHORT',
       severity: 'warning',
       message:
-        'Short descriptions may cause Claude to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
+        'Short descriptions may cause the agent to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
     });
   }
   return issues;
