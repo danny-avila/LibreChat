@@ -57,8 +57,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   useScrollbarGutterSeed();
 
   /** A conversation carries a footer only for configured content, and the
-   *  composer's clearance has to account for the bar when it does. */
-  const hasConfiguredFooter = useConfiguredFooter();
+   *  composer's clearance has to account for the bar when it does — including
+   *  while the config is still in flight, so a cold load does not jump. */
+  const configuredFooter = useConfiguredFooter();
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -110,6 +111,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const isLandingPage =
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
+
+  /** A footer bar renders beneath the composer on the welcome screen always,
+   *  and in a conversation when the deployment configured one. Unresolved
+   *  counts as present: a cold load that guessed otherwise would jump the
+   *  composer when the config answered. */
+  const footerBelow = isLandingPage || configuredFooter.present || !configuredFooter.resolved;
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
 
@@ -199,13 +206,13 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             placeholder={chatFormPlaceholder}
                             project={isProjectLandingPage ? project : undefined}
                             isLandingPage={isLandingPage}
-                            footerBelow={isLandingPage || hasConfiguredFooter}
+                            footerBelow={footerBelow}
                           />
                         )}
                         {/* The generic disclaimer is the welcome screen's; a
                             deployment's own footer, privacy policy and terms
                             stay with the conversation that always showed them. */}
-                        {!isLandingPage && hasConfiguredFooter && <Footer configuredOnly />}
+                        {!isLandingPage && configuredFooter.present && <Footer configuredOnly />}
                       </div>
                     </div>
                     {isLandingPage && <Footer />}

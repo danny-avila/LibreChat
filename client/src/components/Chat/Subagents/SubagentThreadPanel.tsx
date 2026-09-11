@@ -110,7 +110,9 @@ const failedControlLocaleKey = (reason?: string) => {
 };
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
-  const hasConfiguredFooter = useConfiguredFooter();
+  const configuredFooter = useConfiguredFooter();
+  /** Reserve while the config is in flight, for the same reason the composer does. */
+  const clearsFooter = configuredFooter.present || !configuredFooter.resolved;
   const localize = useLocalize();
   const panelStore = useStore();
   const { showToast } = useToastContext();
@@ -1467,7 +1469,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
            when the deployment configured one and otherwise keeps only enough to
            show the composer's shadow, and this surface keeps the same, so the
            two end on one line when the panel is open beside the thread. */
-        <div className={cn('shrink-0 px-3 pt-2', hasConfiguredFooter ? 'pb-10' : 'pb-4')}>
+        <div className={cn('shrink-0 px-3 pt-2', clearsFooter ? 'pb-10' : 'pb-4')}>
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">

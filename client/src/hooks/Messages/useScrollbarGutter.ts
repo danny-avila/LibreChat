@@ -84,9 +84,11 @@ export function useScrollbarGutterSeed(): void {
       root.style.setProperty(SCROLLBAR_GUTTER_PROPERTY, `${gutter}px`);
     };
 
-    if (root.style.getPropertyValue(SCROLLBAR_GUTTER_PROPERTY) === '') {
-      measure();
-    }
+    /** Measure on every mount, never trusting what is already there: the value
+     *  outlives this screen on purpose, and the screens it outlives — the auth
+     *  layout among them — carry a theme selector that can change the band while
+     *  nothing is watching. */
+    measure();
 
     if (typeof MutationObserver === 'undefined') {
       return;

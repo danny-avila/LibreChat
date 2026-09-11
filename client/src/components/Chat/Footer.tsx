@@ -22,21 +22,35 @@ type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'cus
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
+export type ConfiguredFooter = {
+  /** The deployment configured footer content of its own: a custom footer, a
+   *  privacy policy or terms of service. */
+  present: boolean;
+  /** The startup config has answered. Until it does, `present` is only the
+   *  absence of an answer. */
+  resolved: boolean;
+};
+
 /**
- * Whether the deployment configured footer content of its own: a custom footer,
- * a privacy policy or terms of service. A conversation renders the footer only
- * for this content, and the composer above it reserves the clearance the bar
- * needs — the bar is absolutely positioned in a zero-height wrapper, so a
- * composer that did not reserve it would be painted over. Both decisions read
- * the same answer from here so they cannot disagree.
+ * What a conversation has to render beneath its composer, and how sure it is.
+ * A conversation renders the footer only for configured content, and the
+ * composer above it reserves the band that bar needs — the bar is absolutely
+ * positioned in a zero-height wrapper, so a composer that did not reserve it
+ * would be painted over. Both decisions read this one answer so they cannot
+ * disagree, and they read `resolved` differently on purpose: an unanswered
+ * config renders nothing, because there is nothing to render yet, but it keeps
+ * the clearance, because a cold load that guessed "no footer" would jump the
+ * composer down and then back up when the answer arrived.
  */
-export function useConfiguredFooter(): boolean {
-  const { data: config } = useGetStartupConfig();
-  return (
-    typeof config?.customFooter === 'string' ||
-    config?.interface?.privacyPolicy?.externalUrl != null ||
-    config?.interface?.termsOfService?.externalUrl != null
-  );
+export function useConfiguredFooter(): ConfiguredFooter {
+  const { data: config, isFetched } = useGetStartupConfig();
+  return {
+    present:
+      typeof config?.customFooter === 'string' ||
+      config?.interface?.privacyPolicy?.externalUrl != null ||
+      config?.interface?.termsOfService?.externalUrl != null,
+    resolved: isFetched,
+  };
 }
 
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {
