@@ -35,6 +35,8 @@ import {
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  applyServerReplyStamp,
+  markLocallyCommittedReply,
   removeConvoFromAllQueries,
   findConversationInInfinite,
   preserveStreamedContentIdentity,
@@ -922,6 +924,20 @@ export default function useEventHandlers({
          *  holds for a stopped turn too: the server persists a title that finished
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
+          /* Pair the durable server stamp with the exact final messages cache object before
+           * point/list cache events can ask useConversationSeen to acknowledge it. */
+          const serverLastResponseAt = serverConversation.lastResponseAt;
+          if (conversation.conversationId && !_isTemporary && serverLastResponseAt) {
+            markLocallyCommittedReply(
+              queryClient,
+              conversation.conversationId,
+              serverLastResponseAt,
+            );
+            applyServerReplyStamp(queryClient, conversation.conversationId, {
+              lastResponseAt: serverLastResponseAt,
+              updatedAt: serverConversation.updatedAt,
+            });
+          }
           setConversation((prevState) => {
             const update = {
               ...prevState,
@@ -1007,10 +1023,38 @@ export default function useEventHandlers({
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
+      /** A persisted terminal error carries the server's winning reply stamp in its nested
+       * conversation snapshot. The exact error messages cache object is paired with that stamp
+       * before the list update can ask useConversationSeen to acknowledge it. */
+      const getSettledErrorReadState = (
+        convoId: string,
+      ): { lastResponseAt: string; updatedAt?: string } | undefined => {
+        if (submission.isTemporary === true || !data || !convoId) {
+          return undefined;
+        }
+        const settledConversation = data.conversation;
+        const lastResponseAt = settledConversation?.lastResponseAt;
+        if (typeof lastResponseAt !== 'string' || lastResponseAt.length === 0) {
+          return undefined;
+        }
+        return {
+          lastResponseAt,
+          updatedAt:
+            typeof settledConversation.updatedAt === 'string'
+              ? settledConversation.updatedAt
+              : undefined,
+        };
+      };
+
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
         const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
+        const settled = getSettledErrorReadState(convoId);
+        if (settled) {
+          markLocallyCommittedReply(queryClient, convoId, settled.lastResponseAt);
+          applyServerReplyStamp(queryClient, convoId, settled);
+        }
       };
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
@@ -1071,7 +1115,6 @@ export default function useEventHandlers({
         setIsSubmitting(false);
         return;
       }
-
       const errorResponse = tMessageSchema.parse({
         ...data,
         error: true,

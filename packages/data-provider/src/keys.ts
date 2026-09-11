@@ -156,4 +156,6 @@ export enum MutationKeys {
   pairCodeEnvironment = 'pairCodeEnvironment',
   updateCodeEnvironmentSettings = 'updateCodeEnvironmentSettings',
   deleteCodeEnvironment = 'deleteCodeEnvironment',
+  convoSeen = 'convoSeen',
+  convoUnread = 'convoUnread',
 }

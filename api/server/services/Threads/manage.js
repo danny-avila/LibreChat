@@ -1,14 +1,20 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const { countTokens } = require('@librechat/api');
-const { escapeRegExp } = require('@librechat/data-schemas');
+const { logger, escapeRegExp } = require('@librechat/data-schemas');
 const {
   Constants,
   ContentTypes,
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
-const { saveMessage, getMessages, spendTokens, saveConvo } = require('~/models');
+const {
+  saveConvo,
+  getMessages,
+  spendTokens,
+  saveMessage,
+  stampConvoLastResponse,
+} = require('~/models');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 
 /**
@@ -100,7 +106,10 @@ async function saveUserMessage(req, params) {
   const savedConvo = await saveConvo(
     { ...ctx, expiredAt: message?.expiredAt ?? ctx.expiredAt },
     convo,
-    { context: 'api/server/services/Threads/manage.js #saveUserMessage' },
+    {
+      context: 'api/server/services/Threads/manage.js #saveUserMessage',
+      ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
+    },
   );
   if (savedConvo != null) {
     req.resolvedConversation = savedConvo;
@@ -128,7 +137,8 @@ async function saveUserMessage(req, params) {
  * @param {string} [params.iconURL]
  * Overrides the instructions of the assistant.
  * @param {string} [params.promptPrefix] - Optional: from preset for `additional_instructions` field.
- * @return {Promise<Run>} A promise that resolves to the created run object.
+ * @return {Promise<{message: Object|null, conversation: Object|null}>} The persisted assistant
+ * message and the conversation snapshot settled by the same write.
  */
 async function saveAssistantMessage(req, params) {
   // const tokenCount = // TODO: need to count each content part
@@ -170,14 +180,22 @@ async function saveAssistantMessage(req, params) {
       iconURL: params.iconURL,
       spec: params.spec,
     },
-    { context: 'api/server/services/Threads/manage.js #saveAssistantMessage' },
+    {
+      context: 'api/server/services/Threads/manage.js #saveAssistantMessage',
+      /** Only reached once the assistant message above is actually in the history: a write
+       *  that resolved empty would announce a reply nobody can open. `saveConvo` assigns the
+       *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
+       *  flight cannot outrank this reply. */
+      stampReply: message != null && ctx.isTemporary !== true,
+      ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
+    },
   );
 
   if (savedConvo != null) {
     req.resolvedConversation = savedConvo;
   }
 
-  return message;
+  return { message, conversation: savedConvo };
 }
 
 /**
@@ -243,6 +261,9 @@ async function syncMessages({
     expiredAt: openai.req?.resolvedConversation?.expiredAt,
     interfaceConfig: openai.req?.config?.interfaceConfig,
   };
+  /** The assistant writes this synchronization performed. Their results decide whether a reply
+   *  is actually in the history: a write that resolved empty must not raise an indicator. */
+  const assistantRecordPromises = [];
 
   /**
    *
@@ -253,7 +274,11 @@ async function syncMessages({
    * @param {dbMessage} params.apiMessage
    */
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
-    recordPromises.push(saveMessage(ctx, { ...dbMessage, user: openai.req.user.id }));
+    const recorded = saveMessage(ctx, { ...dbMessage, user: openai.req.user.id });
+    recordPromises.push(recorded);
+    if (dbMessage.role === 'assistant') {
+      assistantRecordPromises.push(recorded);
+    }
 
     if (!apiMessage.id.includes('msg_')) {
       return;
@@ -358,6 +383,7 @@ async function syncMessages({
   }, []);
 
   await Promise.all(modifyPromises);
+  const recordedAssistantReplies = await Promise.all(assistantRecordPromises);
   await Promise.all(recordPromises);
 
   const savedConvo = await saveConvo(
@@ -370,6 +396,20 @@ async function syncMessages({
   );
   if (savedConvo != null) {
     openai.req.resolvedConversation = savedConvo;
+  }
+
+  /* Every caller that reaches here recovers assistant output the normal save path never wrote:
+     a cancelled run, or one that errored after the model had already produced content. The
+     `saveConvo` above carries no reply stamp, so without this the recovered reply would never
+     raise its unseen indicator. Only a write that actually persisted counts, and it is
+     best-effort, since those messages are already durable. */
+  const persistedAssistantReply = recordedAssistantReplies.some((message) => message != null);
+  if (persistedAssistantReply && ctx.isTemporary !== true) {
+    try {
+      await stampConvoLastResponse(openai.req.user.id, conversationId);
+    } catch (error) {
+      logger.warn('[syncMessages] Failed to stamp lastResponseAt', error);
+    }
   }
 
   return result;

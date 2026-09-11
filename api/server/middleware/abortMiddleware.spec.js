@@ -69,6 +69,7 @@ const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 jest.mock('~/models', () => ({
   saveMessage: jest.fn().mockResolvedValue(),
+  stampConvoLastResponse: jest.fn().mockResolvedValue(),
   getConvo: jest.fn().mockResolvedValue({ title: 'Test Chat' }),
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
@@ -361,6 +362,49 @@ describe('abortMiddleware - transactions config', () => {
     mockGetTransactionsConfig.mockReturnValue({ enabled: false });
     mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
     db.getConvo.mockResolvedValue({ title: 'Test Chat' });
+  });
+
+  it.each([null, undefined])(
+    'keeps read state unchanged when the abort save returns %s',
+    async (saved) => {
+      const conversation = {
+        title: 'Test Chat',
+        lastResponseAt: '2026-09-01T10:00:00.000Z',
+        lastSeenAt: '2026-09-01T10:01:00.000Z',
+      };
+      db.saveMessage.mockResolvedValueOnce(saved);
+      db.getConvo.mockResolvedValueOnce(conversation);
+      GenerationJobManager.abortJob.mockResolvedValue({
+        success: true,
+        jobData: buildJobData(),
+        content: [],
+        text: 'partial',
+        collectedUsage: [],
+      });
+      const res = buildRes();
+
+      await handleAbort()(buildReq(), res);
+
+      expect(db.stampConvoLastResponse).not.toHaveBeenCalled();
+      expect(JSON.parse(res.send.mock.calls[0][0]).conversation).toEqual(conversation);
+    },
+  );
+
+  it('announces a persisted stopped reply', async () => {
+    db.saveMessage.mockResolvedValueOnce({ messageId: 'msg-123' });
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+    const res = buildRes();
+
+    await handleAbort()(buildReq(), res);
+
+    expect(db.stampConvoLastResponse).toHaveBeenCalledWith('user-123', 'convo-123');
+    expect(JSON.parse(res.send.mock.calls[0][0]).final).toBe(true);
   });
 
   it('forwards transactions through spendCollectedUsage to recordCollectedUsage', async () => {

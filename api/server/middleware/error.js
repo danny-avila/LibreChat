@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { parseConvo } = require('librechat-data-provider');
 const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
-const { saveMessage, getMessages, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo, stampConvoLastResponse } = require('~/models');
 
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
@@ -46,8 +46,10 @@ const sendError = async (req, res, options, callback) => {
     await callback();
   }
 
+  let settledReadState;
   if (shouldSaveMessage) {
-    await saveMessage(
+    const isTemporary = (req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary) === true;
+    const savedError = await saveMessage(
       {
         userId: req?.user?.id,
         isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
@@ -59,6 +61,31 @@ const sendError = async (req, res, options, callback) => {
         context: 'api/server/utils/streamResponse.js - sendError',
       },
     );
+
+    /* The terminal error is a persisted assistant turn, and on the fallback paths that reach
+     * here it is the only one: without a stamp another device never learns the run ended.
+     * Best-effort, and only once the row is durable, so a failed stamp cannot turn a handled
+     * error into an unhandled one. */
+    const stampUserId = req?.user?.id ?? user;
+    if (savedError != null && !isTemporary && stampUserId && conversationId) {
+      try {
+        settledReadState = await stampConvoLastResponse(stampUserId, conversationId);
+      } catch (err) {
+        logger.error('[sendError] Failed to stamp the persisted error reply', err);
+      }
+    }
+  }
+
+  /* Keep the settled server stamp in the error event itself. The client uses this nested
+   * conversation snapshot to update its sidebar/read caches before the rendered error can be
+   * acknowledged; no browser-generated timestamp can safely stand in for a failed or transient
+   * persistence path. */
+  if (settledReadState?.lastResponseAt != null) {
+    errorMessage.conversation = {
+      conversationId,
+      lastResponseAt: settledReadState.lastResponseAt,
+      ...(settledReadState.updatedAt != null ? { updatedAt: settledReadState.updatedAt } : {}),
+    };
   }
 
   if (!errorMessage.error) {

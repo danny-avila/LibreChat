@@ -169,7 +169,12 @@ const addTitle = async (
         conversationId: convoId,
         title,
       },
-      { context: 'api/server/services/Endpoints/agents/title.js', noUpsert: true },
+      {
+        context: 'api/server/services/Endpoints/agents/title.js',
+        noUpsert: true,
+        preserveUpdatedAt: true,
+        appendMessageIds: [],
+      },
     );
   } catch (error) {
     logger.error('Error generating title:', error);

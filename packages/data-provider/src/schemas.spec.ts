@@ -13,6 +13,7 @@ import {
   eReasoningContextSchema,
   subagentThreadLineageSchema,
   getGoogleThinkingBudgetBounds,
+  tPresetSchema,
 } from './schemas';
 
 describe('anthropicSettings', () => {
@@ -730,5 +731,35 @@ describe('tMessageSchema user-submitted provenance', () => {
     [{ path: '/content/0/tool_call/output', field: 'answer', extra: true }],
   ])('rejects invalid exact message-field provenance %#', (userSubmittedMessageFieldPaths) => {
     expect(() => tMessageSchema.parse({ ...message, userSubmittedMessageFieldPaths })).toThrow();
+  });
+});
+
+describe('tPresetSchema', () => {
+  it('strips all unseen-reply state from preset payloads', () => {
+    /* Saving a preset off a live conversation captures read-state fields; none may stamp stale
+       state back onto every conversation it is applied to. */
+    const parsed = tPresetSchema.parse({
+      conversationId: null,
+      endpoint: 'openAI',
+      lastResponseAt: '2026-08-16T10:00:00.000Z',
+      lastResponseIsManual: true,
+      lastSeenAt: '2026-08-16T09:00:00.000Z',
+    });
+
+    expect(parsed).not.toHaveProperty('lastResponseAt');
+    expect(parsed).not.toHaveProperty('lastResponseIsManual');
+    expect(parsed).not.toHaveProperty('lastSeenAt');
+  });
+
+  it('keeps stripping the runtime timestamps presets never carry', () => {
+    const parsed = tPresetSchema.parse({
+      conversationId: null,
+      endpoint: 'openAI',
+      createdAt: '2026-08-16T10:00:00.000Z',
+      updatedAt: '2026-08-16T10:00:00.000Z',
+    });
+
+    expect(parsed).not.toHaveProperty('createdAt');
+    expect(parsed).not.toHaveProperty('updatedAt');
   });
 });

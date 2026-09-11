@@ -36,6 +36,9 @@ export type MinimalConversation = Pick<
   | 'user'
   | 'chatProjectId'
   | 'pinned'
+  | 'lastResponseAt'
+  | 'lastResponseIsManual'
+  | 'lastSeenAt'
 >;
 
 export type ConversationListResponse = {
