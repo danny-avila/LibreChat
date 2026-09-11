@@ -1,19 +1,20 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
+import { useDrop } from 'react-dnd';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
-import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { Spinner, useMediaQuery, buttonVariants } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { ConversationDragItem } from './dnd';
 import {
-  useLocalize,
-  TranslationKeys,
-  useFavorites,
-  useShowMarketplace,
-  useElementSize,
-} from '~/hooks';
-import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+  CONVERSATION_DRAG_TYPE,
+  markExternalHover,
+  useAssignDroppedConversation,
+  useEffectiveProjectId,
+} from './dnd';
+import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
@@ -39,7 +40,6 @@ interface ConversationsProps {
   isSearchLoading: boolean;
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
-  showFavorites?: boolean;
   /** Actions for the Chats header, alongside the Projects header's own. */
   chatsHeaderTrailing?: ReactNode;
 }
@@ -94,17 +94,24 @@ interface ChatsHeaderProps {
   onToggle: () => void;
   /** Section-scoped actions, mirroring the Projects header. */
   trailing?: ReactNode;
+  /** Drop-target affordance while a project conversation is dragged over the section. */
+  highlight?: boolean;
 }
 
 /** Collapsible header for the Chats section */
-const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing }) => {
+const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing, highlight }) => {
   const localize = useLocalize();
 
   return (
-    <div className="flex h-8 w-full items-center pr-2">
+    <div
+      className={cn(
+        'flex h-8 w-full items-center pr-2',
+        highlight && 'rounded-lg bg-surface-active-alt',
+      )}
+    >
       <button
         onClick={onToggle}
-        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+        className={cn(buttonVariants({ variant: 'section-header' }), 'group min-w-0 flex-1')}
         type="button"
         aria-expanded={isExpanded}
       >
@@ -142,7 +149,6 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
 DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
-  | { type: 'favorites' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -157,22 +163,36 @@ const Conversations: FC<ConversationsProps> = ({
   isSearchLoading,
   isChatsExpanded,
   setIsChatsExpanded,
-  showFavorites = true,
   chatsHeaderTrailing,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
-  const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  /* Dropping a project conversation on the Chats section files it back out of
+   * its project. Root-list chats already live here, so they are rejected. */
+  const assignDropped = useAssignDroppedConversation();
+  const effectiveProjectId = useEffectiveProjectId();
+  const chatsRegionRef = useRef<HTMLDivElement>(null);
+  const [{ isDropOver, canDrop }, dropRef] = useDrop<
+    ConversationDragItem,
+    unknown,
+    { isDropOver: boolean; canDrop: boolean }
+  >({
+    accept: CONVERSATION_DRAG_TYPE,
+    canDrop: (item) => effectiveProjectId(item) != null,
+    /* Reported even when refused, so a root chat dropped back on Chats does not
+     * save the shift its pointer caused on the way out of the pinned list. */
+    hover: () => markExternalHover(),
+    drop: (item) => assignDropped(item, null),
+    collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
+  });
+  dropRef(chatsRegionRef);
   const convoHeight = isSmallScreen ? 44 : 34;
-  const showAgentMarketplace = useShowMarketplace();
   const {
     ref: listContainerRef,
     width: listWidth,
     height: listHeight,
   } = useElementSize<HTMLDivElement>();
-
-  const favoritesContentKeyRef = useRef('');
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
@@ -180,14 +200,6 @@ const Conversations: FC<ConversationsProps> = ({
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
   );
-
-  // Determine if FavoritesList will render content
-  const shouldShowFavorites =
-    showFavorites &&
-    !search.query &&
-    (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
-
-  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -205,6 +217,18 @@ const Conversations: FC<ConversationsProps> = ({
      conversations input actually changes; a failed fetchNextPage leaves
      the same array and must not loop. */
   const paginatedFromRef = useRef<Array<TConversation | null> | null>(null);
+
+  /* A drain that exhausted its retries leaves that array unchanged, so the
+     guard above would bar every later attempt and the remaining chats would
+     stay unreachable for the rest of the session. Collapsing the section is a
+     deliberate act, so reopening it is allowed to try once more, which is a
+     retry path rather than a loop. */
+  useEffect(() => {
+    if (!isChatsExpanded) {
+      paginatedFromRef.current = null;
+    }
+  }, [isChatsExpanded]);
+
   useEffect(() => {
     if (!isChatsExpanded || isLoading || isSearchLoading || groupedConversations.length > 0) {
       return;
@@ -225,11 +249,6 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    // Only include favorites row if FavoritesList will render content
-    if (shouldShowFavorites) {
-      items.push({ type: 'favorites' });
-    }
-
     if (isChatsExpanded) {
       groupedConversations.forEach(([groupName, convos]) => {
         items.push({ type: 'header', groupName });
@@ -241,7 +260,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [groupedConversations, isLoading, isChatsExpanded]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -258,12 +277,8 @@ const Conversations: FC<ConversationsProps> = ({
           if (!item) {
             return `unknown-${index}`;
           }
-          if (item.type === 'favorites') {
-            return `favorites-${favoritesContentKeyRef.current}`;
-          }
           if (item.type === 'header') {
-            const firstHeaderIndex = flattenedItemsRef.current[0]?.type === 'favorites' ? 1 : 0;
-            return `header-${item.groupName}-${index === firstHeaderIndex ? 'first' : 'sub'}`;
+            return `header-${item.groupName}-${index === 0 ? 'first' : 'sub'}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
@@ -276,22 +291,6 @@ const Conversations: FC<ConversationsProps> = ({
       }),
     [convoHeight],
   );
-
-  const clearFavoritesCache = useCallback(() => {
-    if (cache) {
-      cache.clear(0, 0);
-      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
-        containerRef.current.recomputeRowHeights(0);
-      }
-    }
-  }, [cache, containerRef]);
-
-  useEffect(() => {
-    const frameId = requestAnimationFrame(() => {
-      clearFavoritesCache();
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
@@ -345,19 +344,10 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
-      if (item.type === 'favorites') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
-          </MeasuredRow>
-        );
-      }
-
       if (item.type === 'header') {
-        const firstHeaderIndex = flattenedItems[0]?.type === 'favorites' ? 1 : 0;
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
+            <DateLabel groupName={item.groupName} isFirst={index === 0} />
           </MeasuredRow>
         );
       }
@@ -371,6 +361,7 @@ const Conversations: FC<ConversationsProps> = ({
               retainView={moveToTop}
               toggleNav={toggleNav}
               isGenerating={isGenerating}
+              draggable
             />
           </MeasuredRow>
         );
@@ -378,7 +369,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [cache, flattenedItems, moveToTop, toggleNav, isSmallScreen, activeJobIds],
+    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds],
   );
 
   const getRowHeight = useCallback(
@@ -401,12 +392,16 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+    <div
+      ref={chatsRegionRef}
+      className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary"
+    >
       <div className="px-3">
         <ChatsHeader
           isExpanded={isChatsExpanded}
           onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
           trailing={chatsHeaderTrailing}
+          highlight={isDropOver && canDrop}
         />
       </div>
       {isSearchLoading ? (
