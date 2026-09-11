@@ -21,13 +21,13 @@ import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
 import { pendingApprovalActionFamily } from './approval/state';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import Footer, { useConfiguredFooter } from './Footer';
 import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
-import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -55,6 +55,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   /** The welcome screen reserves the message column's scrollbar band before any
    *  column exists to measure it (see the column's class list below). */
   useScrollbarGutterSeed();
+
+  /** A conversation carries a footer only for configured content, and the
+   *  composer's clearance has to account for the bar when it does. */
+  const hasConfiguredFooter = useConfiguredFooter();
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -195,12 +199,13 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             placeholder={chatFormPlaceholder}
                             project={isProjectLandingPage ? project : undefined}
                             isLandingPage={isLandingPage}
+                            footerBelow={isLandingPage || hasConfiguredFooter}
                           />
                         )}
                         {/* The generic disclaimer is the welcome screen's; a
                             deployment's own footer, privacy policy and terms
                             stay with the conversation that always showed them. */}
-                        {!isLandingPage && <Footer configuredOnly />}
+                        {!isLandingPage && hasConfiguredFooter && <Footer configuredOnly />}
                       </div>
                     </div>
                     {isLandingPage && <Footer />}

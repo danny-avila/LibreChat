@@ -74,9 +74,15 @@ interface ChatFormProps {
   index: number;
   placeholder?: string;
   project?: TChatProject;
-  /** Owned by ChatView: the disclaimer renders beneath the landing composer only,
-   *  and the clearance this band leaves under itself follows it. */
+  /** Owned by ChatView: which layout the composer sits in — the welcome screen
+   *  floats or bottoms it out, a conversation ends the page with it. */
   isLandingPage: boolean;
+  /** Owned by ChatView: whether a footer bar renders under this band. It is an
+   *  absolutely positioned bar in a zero-height wrapper, so the clearance here
+   *  is the only thing keeping it off the composer. True on the welcome screen,
+   *  which always carries one, and in a conversation whose deployment
+   *  configured footer content of its own. */
+  footerBelow: boolean;
   /** From ChatContext: individual values so memo can compare them */
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -111,6 +117,7 @@ const ChatForm = memo(function ChatForm({
   placeholder,
   project,
   isLandingPage,
+  footerBelow,
   files,
   setFiles,
   conversation,
@@ -583,7 +590,14 @@ const ChatForm = memo(function ChatForm({
      every state. */
   const landingClearance =
     centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
-  const bottomClearance = isLandingPage ? landingClearance : 'sm:mb-4';
+  let bottomClearance = 'sm:mb-4';
+  if (isLandingPage) {
+    bottomClearance = landingClearance;
+  } else if (footerBelow) {
+    /* A conversation that carries a configured footer keeps the band that bar
+       needs, exactly as the welcome screen does. */
+    bottomClearance = 'sm:mb-10';
+  }
 
   return (
     <form
@@ -906,11 +920,13 @@ function ChatFormWrapper({
   placeholder,
   project,
   isLandingPage,
+  footerBelow,
 }: {
   index?: number;
   placeholder?: string;
   project?: TChatProject;
   isLandingPage: boolean;
+  footerBelow: boolean;
 }) {
   const {
     files,
@@ -976,6 +992,7 @@ function ChatFormWrapper({
       placeholder={placeholder}
       project={project}
       isLandingPage={isLandingPage}
+      footerBelow={footerBelow}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}

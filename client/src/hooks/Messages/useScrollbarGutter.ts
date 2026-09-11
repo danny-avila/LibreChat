@@ -56,26 +56,47 @@ export default function useScrollbarGutter(
  *  It measures in a layout effect, before the browser paints: a passive effect
  *  would let the first frame reserve the token's 8px and then recentre the
  *  welcome screen by 4px once the real band is known, which is the same visible
- *  shift this reservation exists to remove. */
+ *  shift this reservation exists to remove.
+ *
+ *  The band is not a constant of the platform either: the contrast modes widen
+ *  the app's own scrollbar (`--scrollbar-size` goes to 0.75rem under
+ *  `html.high-contrast`), and a reader can turn contrast on — or have the OS
+ *  turn it on — while the welcome screen is the only thing mounted, with no
+ *  message column to republish. `ThemeProvider` carries every contrast and
+ *  scheme decision as a class on the document element, so remeasuring on that
+ *  is remeasuring on the thing that changed the band. */
 export function useScrollbarGutterSeed(): void {
   useLayoutEffect(() => {
     const root = document.documentElement;
-    if (root.style.getPropertyValue(SCROLLBAR_GUTTER_PROPERTY) !== '') {
+
+    const measure = () => {
+      const probe = document.createElement('div');
+      probe.style.position = 'absolute';
+      probe.style.top = '-9999px';
+      probe.style.width = '100px';
+      probe.style.height = '100px';
+      probe.style.overflowY = 'auto';
+      probe.style.scrollbarGutter = 'stable';
+      probe.style.visibility = 'hidden';
+      document.body.appendChild(probe);
+      const gutter = Math.max(0, probe.offsetWidth - probe.clientWidth);
+      probe.remove();
+      root.style.setProperty(SCROLLBAR_GUTTER_PROPERTY, `${gutter}px`);
+    };
+
+    if (root.style.getPropertyValue(SCROLLBAR_GUTTER_PROPERTY) === '') {
+      measure();
+    }
+
+    if (typeof MutationObserver === 'undefined') {
       return;
     }
 
-    const probe = document.createElement('div');
-    probe.style.position = 'absolute';
-    probe.style.top = '-9999px';
-    probe.style.width = '100px';
-    probe.style.height = '100px';
-    probe.style.overflowY = 'auto';
-    probe.style.scrollbarGutter = 'stable';
-    probe.style.visibility = 'hidden';
-    document.body.appendChild(probe);
-    const gutter = Math.max(0, probe.offsetWidth - probe.clientWidth);
-    probe.remove();
+    /** A mounted column observes its own box and republishes on the same flip,
+     *  so the two agree; this is what covers the screens that have no column. */
+    const observer = new MutationObserver(measure);
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme'] });
 
-    root.style.setProperty(SCROLLBAR_GUTTER_PROPERTY, `${gutter}px`);
+    return () => observer.disconnect();
   }, []);
 }

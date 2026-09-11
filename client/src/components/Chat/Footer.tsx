@@ -22,6 +22,23 @@ type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'cus
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
+/**
+ * Whether the deployment configured footer content of its own: a custom footer,
+ * a privacy policy or terms of service. A conversation renders the footer only
+ * for this content, and the composer above it reserves the clearance the bar
+ * needs — the bar is absolutely positioned in a zero-height wrapper, so a
+ * composer that did not reserve it would be painted over. Both decisions read
+ * the same answer from here so they cannot disagree.
+ */
+export function useConfiguredFooter(): boolean {
+  const { data: config } = useGetStartupConfig();
+  return (
+    typeof config?.customFooter === 'string' ||
+    config?.interface?.privacyPolicy?.externalUrl != null ||
+    config?.interface?.termsOfService?.externalUrl != null
+  );
+}
+
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {
   const shouldFetchConfig = startupConfig === undefined;
   const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });
