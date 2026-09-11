@@ -37,6 +37,7 @@ const {
   isContentTraversalProtected,
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
+  reportLocatorTraversalFailure,
 } = require('@librechat/api');
 const {
   Time,
@@ -176,6 +177,7 @@ const blockFilteredAgentContent = async (req, res, agentData) => {
   if (filePolicyActive) {
     try {
       const fileInspection = await resolveCanonicalFileReferences({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters,
         input: agentData,
         user: req.user,

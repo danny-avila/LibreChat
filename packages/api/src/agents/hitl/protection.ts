@@ -37,6 +37,7 @@ import type {
   ResumeContentInspectionInput,
   ResumeSnapshotAgent,
 } from './inspection';
+import type { LocatorTraversalReporter } from '../../protection/diagnostics';
 import type { TextContentFragment } from '~/protection/types';
 import type { CheckAccessParams } from '~/middleware/access';
 import {
@@ -167,6 +168,7 @@ const ENCRYPTED_ACTION_METADATA_FIELDS = [
 ] as const;
 
 export interface ResumeContentProtectionDependencies {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   getAgentCheckpointer: (
     config: TCheckpointerConfig | undefined,
   ) => Promise<ResumeCheckpointer | undefined>;
@@ -219,7 +221,7 @@ export interface AssertResumeRuntimeContentAllowedInput
 
 export type ResumeRuntimeContentProtectionDependencies = Pick<
   ResumeContentProtectionDependencies,
-  'getAgentCheckpointer' | 'getMessages' | 'getFiles'
+  'getAgentCheckpointer' | 'getMessages' | 'getFiles' | 'onTraversalFailure'
 >;
 
 export interface ResumeRuntimeContentProjection {
@@ -800,6 +802,7 @@ async function assertResumeAgentContentAllowed({
     definitionAgents.push(memoryAgentDefinition.definition);
   }
   assertModelBoundContent({
+    onTraversalFailure: dependencies.onTraversalFailure,
     filters: appConfig?.filters,
     legacyPii: appConfig?.messageFilter?.pii,
     agents: definitionAgents,
@@ -855,6 +858,7 @@ async function assertResumeModelBoundContentAllowed(
 ): Promise<ResumeModelBoundContentProjection> {
   if (!hasResumeHistoryProtection(appConfig)) {
     assertModelBoundContent({
+      onTraversalFailure: dependencies.onTraversalFailure,
       filters: appConfig?.filters,
       legacyPii: appConfig?.messageFilter?.pii,
       agents,
@@ -883,6 +887,7 @@ async function assertResumeModelBoundContentAllowed(
   }
   const checkpointContent = getResumeCheckpointContent(checkpointMessages);
   const contentInspection = await getResumeContentInspection({
+    onTraversalFailure: dependencies.onTraversalFailure,
     appConfig,
     conversationId,
     targetMessageId,
@@ -897,6 +902,7 @@ async function assertResumeModelBoundContentAllowed(
     getFiles: dependencies.getFiles,
   });
   assertModelBoundContent({
+    onTraversalFailure: dependencies.onTraversalFailure,
     filters: appConfig?.filters,
     legacyPii: appConfig?.messageFilter?.pii,
     submittedMessages: contentInspection.submittedMessages,

@@ -10,6 +10,7 @@ import type {
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
+import type { LocatorTraversalReporter } from '../protection/diagnostics';
 import { hasActiveFilePolicy, resolveCanonicalFileReferences } from '../protection/files';
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
@@ -65,6 +66,7 @@ interface AssistantUserMessage extends ExternalChatMessage {
 }
 
 interface PreflightAssistantRunContentInput {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly config?: AssistantProtectionConfig;
   readonly openai: AssistantOpenAIClient;
   readonly user?: CanonicalFileInspectionUser;
@@ -74,6 +76,7 @@ interface PreflightAssistantRunContentInput {
 }
 
 interface PreflightAssistantUserMessageContentInput {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly config?: AssistantProtectionConfig;
   readonly user?: CanonicalFileInspectionUser;
   readonly message: AssistantUserMessage;
@@ -310,6 +313,7 @@ export async function preflightAssistantRunContent({
   assistantId,
   threadId,
   getFiles,
+  onTraversalFailure,
 }: PreflightAssistantRunContentInput): Promise<AssistantContentInput | undefined> {
   const filters = config?.filters;
   const legacyPii = config?.messageFilter?.pii;
@@ -339,6 +343,8 @@ export async function preflightAssistantRunContent({
   let resolvedFiles: CanonicalFileInspectionFile[] = [];
   if (hasActiveFilePolicy(filters)) {
     const fileInspection = await resolveCanonicalFileReferences({
+      messageCount: storedMessages.length,
+      onTraversalFailure,
       filters,
       input: content,
       user,
@@ -349,6 +355,7 @@ export async function preflightAssistantRunContent({
   }
 
   assertModelBoundContent({
+    onTraversalFailure,
     filters,
     legacyPii,
     submittedMessages: hasActivePiiPatterns(legacyPii)
@@ -372,6 +379,7 @@ export async function preflightAssistantUserMessageContent({
   message,
   fileIds,
   getFiles,
+  onTraversalFailure,
 }: PreflightAssistantUserMessageContentInput): Promise<void> {
   const filters = config?.filters;
   if (!hasActiveFilePolicy(filters)) {
@@ -386,6 +394,8 @@ export async function preflightAssistantUserMessageContent({
           file_ids: [...new Set([...(message.file_ids ?? []), ...fileIds])],
         };
   const fileInspection = await resolveCanonicalFileReferences({
+    messageCount: 1,
+    onTraversalFailure,
     filters,
     input: inspectionMessage,
     user,
@@ -393,6 +403,7 @@ export async function preflightAssistantUserMessageContent({
   });
 
   assertModelBoundContent({
+    onTraversalFailure,
     filters,
     legacyPii: config?.messageFilter?.pii,
     submittedMessages: [fileInspection.sanitizedInput],

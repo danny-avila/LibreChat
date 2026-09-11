@@ -12,6 +12,7 @@ const {
   isContentFilterError,
   hasActiveFilePolicy,
   preflightAssistantRunContent,
+  reportLocatorTraversalFailure,
   preflightAssistantUserMessageContent,
 } = require('@librechat/api');
 const {
@@ -206,6 +207,7 @@ const chatV2 = async (req, res) => {
     await validateAuthor({ req, openai });
     try {
       await preflightAssistantRunContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         config: req.config,
         openai,
         user: req.user,
@@ -377,6 +379,7 @@ const chatV2 = async (req, res) => {
       await getRequestFileIds();
       try {
         await preflightAssistantUserMessageContent({
+          onTraversalFailure: reportLocatorTraversalFailure,
           config: req.config,
           user: req.user,
           message: userMessage,
@@ -489,6 +492,7 @@ const chatV2 = async (req, res) => {
 
     try {
       await preflightAssistantRunContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         config: req.config,
         openai,
         user: req.user,
