@@ -427,6 +427,52 @@ describe('success fill defaults', () => {
   });
 });
 
+/** `status-verified` paints one thing: the check a first-party item wears next
+ *  to its name. Same two ratios as the success fill — AA under the
+ *  `text-on-status` check it carries, and the 3:1 mark floor against the card
+ *  panel, which is `surface-secondary` in every mode. Separate from
+ *  `status-success-strong` on purpose: green already means selected on the same
+ *  card, so provenance needs its own hue. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s verified fill', (_name, theme: IThemeRGB) => {
+  it('carries its check at WCAG AA', () => {
+    const ratio = contrast(toRgb(theme, 'rgb-status-verified'), toRgb(theme, 'rgb-text-on-status'));
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+  });
+
+  it('keeps its silhouette at the 3:1 mark floor on the panel', () => {
+    const ratio = contrast(
+      toRgb(theme, 'rgb-status-verified'),
+      toRgb(theme, 'rgb-surface-secondary'),
+    );
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  });
+});
+
+describe('verified fill defaults', () => {
+  /** Tuned values rather than palette steps in either mode, so the stylesheet
+   *  cannot alias them to a `--blue-*` step and both copies move together. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--status-verified:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    expect(declared).toEqual([
+      defaultTheme['rgb-status-verified'],
+      darkTheme['rgb-status-verified'],
+    ]);
+  });
+});
+
 /** The shared `Switch` paints this track, so it travels with the package rather
  *  than the app stylesheet. It is a UI component boundary under WCAG 1.4.11 and
  *  has to stay distinct from the `surface-primary` thumb on it and from the

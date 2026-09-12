@@ -226,6 +226,11 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
 - `text-status-error` / `bg-status-error-subtle` / `border-status-error-border`
 - `text-status-neutral` / `bg-status-neutral-subtle` / `border-status-neutral-border`
 - `bg-status-success-strong` / `bg-status-info-strong` / `bg-status-warning-strong` / `bg-status-error-strong`
+- `text-status-verified` — solid blue of the verified mark on a first-party
+  item, worn by `VerifiedIcon`, whose badge is filled with `currentColor` and
+  carries a `stroke-text-on-status` check. A color with no family: the mark is
+  the only thing it paints, and it is painted rather than outlined, since an
+  outline would halo the badge against the card.
 
 ### Other Colors
 

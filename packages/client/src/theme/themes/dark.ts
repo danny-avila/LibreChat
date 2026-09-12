@@ -94,6 +94,11 @@ export const darkTheme: IThemeRGB = {
   'rgb-status-neutral': '205 205 205', // #cdcdcd (gray-300)
   'rgb-status-neutral-subtle': '33 33 33', // #212121 (gray-800)
   'rgb-status-neutral-border': '47 47 47', // #2f2f2f (gray-700)
+  /** Verified mark. Not `status-info`'s `blue-300`, which is a text hue and
+   *  leaves a white check at 1.35:1; and not `blue-600`, which drops to 3.12:1
+   *  against the #212121 panel. Balanced like the success fill above: 4.71:1
+   *  under the white `text-on-status` check and 3.42:1 against the panel. */
+  'rgb-status-verified': '11 116 212', // #0b74d4
   'rgb-text-on-status': '255 255 255', // #fff (white)
 
   // Brand colors
