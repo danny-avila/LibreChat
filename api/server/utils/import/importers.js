@@ -60,8 +60,10 @@ function sanitizeImportedMessage(message) {
   const content = normalizeImportedArray(message.content);
   const attachments = normalizeImportedArray(message.attachments);
   const importable = { ...message };
-  /** Server-private run state never comes from an import. */
+  /** Server-private run state and trace sampling records never come from an import. */
   delete importable.contextMeta;
+  delete importable.langfuseSampled;
+  delete importable.langfuseDestinationIds;
   return {
     ...importable,
     isUserSubmitted: true,

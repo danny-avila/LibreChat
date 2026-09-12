@@ -223,6 +223,30 @@ describe('Trace Viewer', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not call a failed record with no end time running', async () => {
+    jest.spyOn(dataService, 'getConversationTraceRecords').mockResolvedValue({
+      records: [
+        record({
+          id: 'broken',
+          name: 'broken_tool',
+          kind: 'tool',
+          status: 'error',
+          endTime: undefined,
+        }),
+      ],
+    });
+    renderViewer();
+
+    const row = await treeItem(/broken_tool/);
+
+    expect(row).not.toHaveAccessibleName(/com_ui_trace_status_running/);
+    expect(row).toHaveAccessibleName(/com_ui_trace_status_error/);
+    await userEvent.click(row);
+    const inspector = screen.getByTestId('trace-inspector');
+    expect(within(inspector).queryByText('com_ui_trace_status_running')).not.toBeInTheDocument();
+    expect(within(inspector).getByText('—')).toBeInTheDocument();
+  });
+
   it('filters the tree by search and keeps the match context', async () => {
     renderViewer();
     await treeItem(/AgentGraph/);

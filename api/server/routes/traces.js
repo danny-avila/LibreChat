@@ -3,6 +3,7 @@ const {
   createTraceHandlers,
   createTraceReadLimiter,
   createLangfuseTraceReader,
+  resolveLangfuseReadDestinations,
 } = require('@librechat/api');
 const configMiddleware = require('~/server/middleware/config/app');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -14,6 +15,8 @@ const handlers = createTraceHandlers({
   reader: createLangfuseTraceReader({
     getConversationTraceRefs: db.getConversationTraceRefs,
     hasSampledTraceMessage: db.hasSampledTraceMessage,
+    resolveDestinations: resolveLangfuseReadDestinations,
+    fetch: (url, init) => fetch(url, init),
   }),
   getConvoOwnership: db.getConvoOwnership,
 });

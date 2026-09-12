@@ -1,6 +1,10 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TraceNode } from './model';
 import useClockFormat from '~/hooks/useClockFormat';
+
+/** Shown for a finished record the backend gave no end, which has no measurable duration. */
+const UNKNOWN_DURATION = '—';
 
 export type TraceFormat = {
   duration: (ms: number) => string;
@@ -74,6 +78,21 @@ export function createTraceFormat(language?: string, hour12?: boolean): TraceFor
   };
   formats.set(key, format);
   return format;
+}
+
+/**
+ * A record's duration as the ledger and inspector show it. Running is read from the
+ * record's status, not from a missing end: a failed record can lack an end too.
+ */
+export function recordDurationText(
+  node: TraceNode,
+  format: TraceFormat,
+  runningLabel: string,
+): string {
+  if (node.record.status === 'running') {
+    return runningLabel;
+  }
+  return node.end == null ? UNKNOWN_DURATION : format.duration(node.end - node.start);
 }
 
 /** Formats in the app's language and the user's clock setting, as message timestamps do. */

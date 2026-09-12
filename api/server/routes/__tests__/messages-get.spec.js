@@ -528,6 +528,8 @@ describe('message route conversation ownership filters', () => {
           encoding: 'claude',
           fading: { v: 1, budgetTokens: 1, masked: true },
         },
+        langfuseSampled: true,
+        langfuseDestinationIds: ['forged-destination'],
       });
 
     expect(response.status).toBe(201);
@@ -546,6 +548,8 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedMessageFieldPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('contextMeta');
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('langfuseSampled');
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('langfuseDestinationIds');
     expect(response.body.messageId).toBe(savedMessage.messageId);
     expect(response.body).not.toHaveProperty('contextMeta');
     expect(saveConvo).toHaveBeenCalledWith(

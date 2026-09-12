@@ -166,6 +166,27 @@ describe('trace entry point and surface', () => {
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
   });
 
+  it('marks cached record details stale too when a response settles', async () => {
+    const { rerenderHost, client } = renderHost({ conversationId: 'convo-1' });
+    const detailKey = [QueryKeys.conversationTraceRecord, 'convo-1', 'obs-1', null];
+    client.setQueryData(detailKey, { record: {}, contentAvailable: true });
+
+    rerenderHost({ conversationId: 'convo-1', isSubmitting: true });
+    rerenderHost({ conversationId: 'convo-1', isSubmitting: false });
+
+    await waitFor(() => expect(client.getQueryState(detailKey)?.isInvalidated).toBe(true));
+  });
+
+  it('checks availability again when the server cannot decide yet', async () => {
+    availability
+      .mockResolvedValueOnce({ available: false, retryAfterMs: 20 })
+      .mockResolvedValue({ available: true });
+    renderHost({ conversationId: 'convo-1' });
+
+    expect(await screen.findByTestId('header-trace-button')).toBeInTheDocument();
+    expect(availability).toHaveBeenCalledTimes(2);
+  });
+
   it('covers the chat without unmounting it and restores it with focus on close', async () => {
     renderHost({ conversationId: 'convo-1' });
     await userEvent.type(screen.getByLabelText('composer'), 'unsent draft');

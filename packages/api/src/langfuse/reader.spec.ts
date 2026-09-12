@@ -18,7 +18,7 @@ jest.mock('~/admin/secrets', () => ({
   decryptConfigSecret: jest.fn((value: string) => value),
 }));
 
-import { createLangfuseTraceReader } from './reader';
+import { createLangfuseTraceReader, resolveLangfuseReadDestinations } from './reader';
 import { getLangfuseDestinationId } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { traceIdForMessage } from './trace';
@@ -139,7 +139,7 @@ describe('createLangfuseTraceReader', () => {
         refs: createRefs({ sampledMessages: [] }),
       });
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: false });
       expect(getConversationTraceRefs).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -151,7 +151,7 @@ describe('createLangfuseTraceReader', () => {
         }),
       });
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: false });
     });
 
     it('stays available when only newer responses reached a readable destination', async () => {
@@ -164,7 +164,7 @@ describe('createLangfuseTraceReader', () => {
         }),
       });
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: true });
       expect(hasSampledTraceMessage).toHaveBeenCalledWith({
         user: 'owner',
         conversationId: 'convo-1',
@@ -179,8 +179,8 @@ describe('createLangfuseTraceReader', () => {
       );
       logger.warn.mockClear();
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: false });
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: false });
 
       expect(hasSampledTraceMessage).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledTimes(1);
@@ -190,7 +190,7 @@ describe('createLangfuseTraceReader', () => {
     it('answers from one existence query without loading every response or reading Langfuse', async () => {
       const { reader, fetchMock, getConversationTraceRefs, hasSampledTraceMessage } = setup();
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: true });
       expect(hasSampledTraceMessage).toHaveBeenCalledTimes(1);
       expect(getConversationTraceRefs).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
@@ -226,7 +226,7 @@ describe('createLangfuseTraceReader', () => {
     it('prefers the tenant connection over central when both hold the trace', async () => {
       const { reader, fetchMock } = setup({
         refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
-        responses: [jsonResponse({ data: [] })],
+        responses: [jsonResponse({ data: [observation()] })],
       });
 
       await reader.listRecords(createQuery());
@@ -256,12 +256,28 @@ describe('createLangfuseTraceReader', () => {
             { messageId: 'response-2', langfuseDestinationIds: ['central-id', 'connection-id'] },
           ],
         }),
-        responses: [jsonResponse({ data: [] })],
+        responses: [jsonResponse({ data: [observation()] })],
       });
 
       await reader.listRecords(createQuery());
 
       expect(requestedUrl(fetchMock).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('tries the next readable project when legacy responses left the first one empty', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [
+          jsonResponse({ data: [] }),
+          jsonResponse({ data: [observation({ id: 'legacy' })] }),
+        ],
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'legacy' }] });
     });
 
     it('normalizes owned observations and drops traces the user does not own', async () => {
@@ -707,6 +723,7 @@ describe('createLangfuseTraceReader', () => {
         async (_url: string, _init: RequestInit): Promise<Response> => jsonResponse({ data: [] }),
       );
       const reader = createLangfuseTraceReader({
+        resolveDestinations: resolveLangfuseReadDestinations,
         hasSampledTraceMessage: async () => true,
         getConversationTraceRefs: async () =>
           createRefs({
@@ -732,18 +749,23 @@ describe('createLangfuseTraceReader', () => {
       );
     });
 
-    it('never waits on the central project lookup, whatever the configured timeout', async () => {
+    it('never waits on the central project lookup, and asks the client to check again', async () => {
       process.env.LANGFUSE_PUBLIC_KEY = 'pk-slow';
       process.env.LANGFUSE_SECRET_KEY = 'sk-slow';
       process.env.LANGFUSE_BASE_URL = 'https://slow.langfuse.test';
       const lookup = jest.spyOn(global, 'fetch').mockImplementation(() => new Promise(() => {}));
-      const hasSampledTraceMessage = jest.fn(async () => true);
+      const hasSampledTraceMessage = jest.fn(async () => false);
       const reader = createLangfuseTraceReader({
         getConversationTraceRefs: async () => createRefs(),
         hasSampledTraceMessage,
+        resolveDestinations: resolveLangfuseReadDestinations,
+        fetch: jest.fn(),
       });
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({
+        available: false,
+        retryAfterMs: 30_000,
+      });
 
       expect(lookup).toHaveBeenCalledWith(
         'https://slow.langfuse.test/api/public/projects',
@@ -765,9 +787,11 @@ describe('createLangfuseTraceReader', () => {
         getConversationTraceRefs: async () =>
           createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
         hasSampledTraceMessage,
+        resolveDestinations: resolveLangfuseReadDestinations,
+        fetch: jest.fn(),
       });
 
-      await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
+      await expect(reader.isAvailable(createQuery())).resolves.toEqual({ available: false });
       expect(hasSampledTraceMessage).not.toHaveBeenCalled();
     });
   });

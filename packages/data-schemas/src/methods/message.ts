@@ -419,6 +419,18 @@ const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
  * never the `news` collection). The JSON export mirrors this cache, so
  * fields removed here also leave user exports.
  */
+/**
+ * A response the server generated and sampled into a trace. Its trace fields are
+ * an ownership claim, so rows a client authored (the message-create route and
+ * imports stamp `isUserSubmitted: true`) never count, even if one was persisted
+ * with forged fields before those writes stripped them.
+ */
+const SERVER_AUTHORED_SAMPLED_RESPONSE = {
+  langfuseSampled: true,
+  isCreatedByUser: false,
+  isUserSubmitted: { $ne: true },
+} as const;
+
 export const CLIENT_MESSAGE_SELECT: string = [
   '-_id',
   '-__v',
@@ -3360,7 +3372,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           .select('createdAt -_id')
           .sort({ createdAt: 1 })
           .lean<Pick<IMessage, 'createdAt'>>(),
-        Message.find({ user, conversationId, langfuseSampled: true })
+        Message.find({ user, conversationId, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
           .select('messageId createdAt langfuseDestinationIds -_id')
           .sort({ createdAt: 1 })
           .lean<Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>>(),
@@ -3395,7 +3407,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const match = await Message.findOne({
         user,
         conversationId,
-        langfuseSampled: true,
+        ...SERVER_AUTHORED_SAMPLED_RESPONSE,
         $or: [
           { langfuseDestinationIds: null },
           { langfuseDestinationIds: { $in: destinationIds } },

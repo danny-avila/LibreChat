@@ -6,9 +6,9 @@ import type { ReactNode } from 'react';
 import type { TranslationKeys } from '~/hooks';
 import type { TraceNode } from './model';
 import { useConversationTraceRecordQuery } from '~/data-provider';
+import { useTraceFormat, recordDurationText } from './format';
 import { formatCost, formatTokens } from '~/utils/tokens';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
-import { useTraceFormat } from './format';
 import { formatJSON } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -142,8 +142,7 @@ function Inspector({
     { label: 'com_ui_trace_offset', value: format.duration(node.start - turnStart) },
     {
       label: 'com_ui_trace_column_duration',
-      value:
-        node.end == null ? localize(STATUS_LABEL.running) : format.duration(node.end - node.start),
+      value: recordDurationText(node, format, localize(STATUS_LABEL.running)),
     },
   ];
   if (node.firstToken != null) {

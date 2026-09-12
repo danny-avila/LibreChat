@@ -12,6 +12,8 @@ import type {
   UseQueryOptions,
 } from '@tanstack/react-query';
 
+const MAX_AVAILABILITY_RETRIES = 10;
+
 /** Availability flips only when a response is sampled, so callers re-enable it after a turn. */
 export const useConversationTraceAvailabilityQuery = (
   conversationId: string,
@@ -23,6 +25,11 @@ export const useConversationTraceAvailabilityQuery = (
     {
       retry: false,
       refetchOnWindowFocus: false,
+      /** The server asks again only while it cannot decide yet, and only a few times. */
+      refetchInterval: (data, query) =>
+        data?.retryAfterMs != null && query.state.dataUpdateCount < MAX_AVAILABILITY_RETRIES
+          ? data.retryAfterMs
+          : false,
       ...config,
     },
   );

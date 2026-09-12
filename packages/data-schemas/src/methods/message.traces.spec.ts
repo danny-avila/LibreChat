@@ -23,8 +23,11 @@ function at(minutes: number): Date {
   return new Date(Date.UTC(2026, 8, 1, 12, minutes));
 }
 
+/** Inserts raw rows; `isCreatedByUser` gets the schema's default, as a Mongoose write would. */
 async function seed(messages: Array<Partial<IMessage>>): Promise<void> {
-  await Message.collection.insertMany(messages.map((message) => ({ ...message })));
+  await Message.collection.insertMany(
+    messages.map((message) => ({ isCreatedByUser: false, ...message })),
+  );
 }
 
 beforeAll(async () => {
@@ -83,6 +86,33 @@ describe('getConversationTraceRefs', () => {
     });
   });
 
+  it('never treats a client-authored row as a sampled response', async () => {
+    await seed([
+      {
+        messageId: 'server-response',
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(1),
+        isCreatedByUser: false,
+        isUserSubmitted: false,
+        langfuseSampled: true,
+      },
+      {
+        messageId: 'forged-victim-response-id',
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(2),
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        langfuseSampled: true,
+      },
+    ]);
+
+    const refs = await methods.getConversationTraceRefs({ user: 'owner', conversationId: 'convo' });
+
+    expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['server-response']);
+  });
+
   it("never returns another user's messages from a conversation with the same id", async () => {
     await seed([
       {
@@ -136,6 +166,7 @@ describe('hasSampledTraceMessage', () => {
     user: 'owner',
     createdAt: at(1),
     langfuseSampled: true,
+    isCreatedByUser: false,
     ...overrides,
   });
 
@@ -173,11 +204,13 @@ describe('hasSampledTraceMessage', () => {
     ).resolves.toBe(true);
   });
 
-  it('ignores unsampled responses, an empty destination record and other users', async () => {
+  it('ignores unsampled responses, an empty destination record, other users and client-authored rows', async () => {
     await seed([
       sampled('unsampled', { langfuseSampled: false }),
       sampled('recorded-none', { langfuseDestinationIds: [] }),
       sampled('someone-else', { user: 'victim' }),
+      sampled('forged-by-client', { isUserSubmitted: true }),
+      sampled('user-turn', { isCreatedByUser: true }),
     ]);
 
     await expect(

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type {
+  TTracePage,
   TTraceUsage,
   TTraceRecord,
   TTraceStatus,
@@ -25,6 +26,8 @@ const MAX_PAGE_SIZE = 1000;
 /** Langfuse stamps observations with the exporting server's clock; the margin
  *  absorbs skew between that clock and the database's message timestamps. */
 const TIME_WINDOW_MARGIN_MS = 10 * 60 * 1000;
+/** Matches the central project lookup's own retry cadence. */
+const IDENTITY_RETRY_MS = 30_000;
 const NAME_MAX_LENGTH = 200;
 const STATUS_MESSAGE_MAX_LENGTH = 1000;
 const LIST_FIELDS = 'core,basic,time,model,usage';
@@ -75,10 +78,23 @@ export interface LangfuseTraceReaderDeps {
     conversationId: string;
     destinationIds: string[];
   }) => Promise<boolean>;
-  /** Defaults to the destinations feedback scores use, which carry the read credentials. */
-  resolveDestinations?: (appConfig?: AppConfig) => Promise<LangfuseScoreDestination[]>;
-  fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** The projects a read may use; production passes {@link resolveLangfuseReadDestinations}. */
+  resolveDestinations: (appConfig?: AppConfig) => Promise<LangfuseScoreDestination[]>;
+  fetch: (url: string, init: RequestInit) => Promise<Response>;
   now?: () => number;
+}
+
+/**
+ * The destinations feedback scores use, which carry the read credentials. Never
+ * waits on the central project lookup: the process starts it at boot, and a read
+ * must not stall behind a `/api/public/projects` call that `requestTimeoutMs`
+ * does not govern. Until it resolves, central has no id; availability then asks
+ * the client to check again rather than answering a definitive no.
+ */
+export function resolveLangfuseReadDestinations(
+  appConfig?: AppConfig,
+): Promise<LangfuseScoreDestination[]> {
+  return getScoreDestinations(appConfig, '', true, { waitForCentralProjectId: false });
 }
 
 const KIND_BY_TYPE: Record<string, TTraceRecordKind> = {
@@ -302,13 +318,8 @@ function isTimeout(error: unknown): boolean {
 export function createLangfuseTraceReader({
   getConversationTraceRefs,
   hasSampledTraceMessage,
-  /** Never waits on the central project lookup: the process starts it at boot,
-   *  and a read must not stall behind a slow `/api/public/projects` call that
-   *  `requestTimeoutMs` does not govern. Until it resolves, central reads only
-   *  responses recorded without destination ids. */
-  resolveDestinations = (appConfig) =>
-    getScoreDestinations(appConfig, '', true, { waitForCentralProjectId: false }),
-  fetch: fetchImpl = (input, init) => fetch(input, init),
+  resolveDestinations,
+  fetch: fetchImpl,
   now = Date.now,
 }: LangfuseTraceReaderDeps): TraceReader {
   async function readableDestinations(appConfig?: AppConfig): Promise<LangfuseScoreDestination[]> {
@@ -419,64 +430,89 @@ export function createLangfuseTraceReader({
     async isAvailable(query) {
       const destinations = await readableDestinations(query.appConfig);
       if (destinations.length === 0) {
-        return false;
+        return { available: false };
       }
-      return hasSampledTraceMessage({
+      const available = await hasSampledTraceMessage({
         user: query.userId,
         conversationId: query.conversationId,
         destinationIds: destinations.flatMap(({ id }) => (id != null ? [id] : [])),
       });
+      if (available) {
+        return { available: true };
+      }
+      /** A response recorded against central cannot match until central's id resolves. */
+      const identityPending = destinations.some(({ name, id }) => name === 'central' && id == null);
+      return identityPending
+        ? { available: false, retryAfterMs: IDENTITY_RETRY_MS }
+        : { available: false };
     },
 
     async listRecords(query) {
       const continuation = query.cursor != null ? decodeCursor(query.cursor) : undefined;
       const { refs, ranked } = await loadConversation(query);
-      const destination =
-        continuation != null
-          ? ranked.find((candidate) => isSource(candidate, continuation.s))
-          : ranked[0];
-      if (!destination) {
-        throw continuation != null
-          ? new TraceReadError(
-              'invalid_request',
-              'The page cursor names a source this conversation cannot read',
-            )
-          : new TraceReadError('not_found', 'No sampled trace for this conversation');
-      }
-      const sourceId = sourceIdOf(destination);
       const owners = buildTraceOwners(refs.sampledMessages);
       const window = timeWindow(refs);
-      const records: TTraceRecord[] = [];
-      let cursor = continuation?.c;
-      let remaining = query.settings.maxRecords;
 
-      for (;;) {
-        const params = new URLSearchParams({
-          sessionId: query.conversationId,
-          fields: LIST_FIELDS,
-          limit: String(Math.min(MAX_PAGE_SIZE, remaining)),
-          toStartTime: window.to,
-        });
-        if (window.from) {
-          params.set('fromStartTime', window.from);
+      async function readFrom(destination: LangfuseScoreDestination, startCursor?: string) {
+        const sourceId = sourceIdOf(destination);
+        const records: TTraceRecord[] = [];
+        let cursor = startCursor;
+        let remaining = query.settings.maxRecords;
+
+        for (;;) {
+          const params = new URLSearchParams({
+            sessionId: query.conversationId,
+            fields: LIST_FIELDS,
+            limit: String(Math.min(MAX_PAGE_SIZE, remaining)),
+            toStartTime: window.to,
+          });
+          if (window.from) {
+            params.set('fromStartTime', window.from);
+          }
+          if (cursor) {
+            params.set('cursor', cursor);
+          }
+          const page = await requestPage(destination, params, query, cursor != null);
+          for (const { observation, messageId } of parseRows(page.data, owners)) {
+            records.push(toRecord(observation, messageId));
+          }
+          remaining -= page.data.length;
+          const next = page.meta?.cursor || undefined;
+          if (!next || page.data.length === 0) {
+            return { records, sourceId };
+          }
+          if (remaining <= 0) {
+            return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
+          }
+          cursor = next;
         }
-        if (cursor) {
-          params.set('cursor', cursor);
-        }
-        const page = await requestPage(destination, params, query, cursor != null);
-        for (const { observation, messageId } of parseRows(page.data, owners)) {
-          records.push(toRecord(observation, messageId));
-        }
-        remaining -= page.data.length;
-        const next = page.meta?.cursor || undefined;
-        if (!next || page.data.length === 0) {
-          return { records, sourceId };
-        }
-        if (remaining <= 0) {
-          return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
-        }
-        cursor = next;
       }
+
+      if (continuation != null) {
+        const pinned = ranked.find((candidate) => isSource(candidate, continuation.s));
+        if (!pinned) {
+          throw new TraceReadError(
+            'invalid_request',
+            'The page cursor names a source this conversation cannot read',
+          );
+        }
+        return readFrom(pinned, continuation.c);
+      }
+
+      if (ranked.length === 0) {
+        throw new TraceReadError('not_found', 'No sampled trace for this conversation');
+      }
+      /** Responses recorded before destinations were tracked rank every project equally,
+       *  so an empty first choice is not proof the trace lives nowhere. */
+      let first: TTracePage | undefined;
+      for (const destination of ranked) {
+        const page = await readFrom(destination);
+        first ??= page;
+        if (page.records.length > 0 || page.nextCursor != null) {
+          return page;
+        }
+      }
+      return first ?? { records: [] };
     },
 
     async getRecord(query) {

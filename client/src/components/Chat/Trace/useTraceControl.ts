@@ -49,6 +49,7 @@ export default function useTraceControl({
     wasSubmitting.current = isSubmitting;
     if (settled && eligible && conversationId != null) {
       queryClient.invalidateQueries([QueryKeys.conversationTraceRecords, conversationId]);
+      queryClient.invalidateQueries([QueryKeys.conversationTraceRecord, conversationId]);
     }
   }, [isSubmitting, eligible, conversationId, queryClient]);
 

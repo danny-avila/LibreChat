@@ -29,7 +29,7 @@ const record: TTraceRecordDetail['record'] = {
 
 function createReader(overrides: Partial<TraceReader> = {}): jest.Mocked<TraceReader> {
   return {
-    isAvailable: jest.fn(async () => true),
+    isAvailable: jest.fn(async () => ({ available: true })),
     listRecords: jest.fn(async (): Promise<TTracePage> => ({ records: [record] })),
     getRecord: jest.fn(
       async (): Promise<TTraceRecordDetail> => ({ record, contentAvailable: false }),
@@ -137,7 +137,7 @@ describe('trace handlers', () => {
     const reader = createReader({
       isAvailable: jest.fn(async () => {
         readerStarted();
-        return true;
+        return { available: true };
       }),
     });
     /** Owned only if the lookup was already running; a serial handler times out to unowned. */
@@ -152,6 +152,20 @@ describe('trace handlers', () => {
     const response = await request(app).get('/api/traces/convo-1/availability');
 
     expect(response.body).toEqual({ available: true });
+  });
+
+  it('passes a retry hint through only for an owned conversation', async () => {
+    const reader = createReader({
+      isAvailable: jest.fn(async () => ({ available: false, retryAfterMs: 30_000 })),
+    });
+    const owned = createApp({ reader });
+    const unowned = createApp({ reader, getConvoOwnership: jest.fn(async () => null) });
+
+    const ownedResponse = await request(owned.app).get('/api/traces/convo-1/availability');
+    const unownedResponse = await request(unowned.app).get('/api/traces/convo-1/availability');
+
+    expect(ownedResponse.body).toEqual({ available: false, retryAfterMs: 30_000 });
+    expect(unownedResponse.body).toEqual({ available: false });
   });
 
   it('answers unavailable for an unowned conversation even when the lookup fails', async () => {

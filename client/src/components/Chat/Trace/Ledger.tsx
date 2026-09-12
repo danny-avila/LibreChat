@@ -2,9 +2,9 @@ import { memo, useId, useMemo, useState } from 'react';
 import { ChevronRight, CircleAlert, CircleDashed } from 'lucide-react';
 import type { RefObject, CSSProperties, KeyboardEvent } from 'react';
 import type { TraceModel, TraceNode, TraceRow, TraceTurn, TraceWindow } from './model';
+import { useTraceFormat, recordDurationText } from './format';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
 import { formatTokens } from '~/utils/tokens';
-import { useTraceFormat } from './format';
 import { useRowWindow } from './virtual';
 import { useLocalize } from '~/hooks';
 import { turnKey } from './model';
@@ -263,10 +263,8 @@ function Ledger({
     const turnStart = turnDomains.get(record.messageId)?.start ?? model.start;
     const appearance = KIND_APPEARANCE[record.kind];
     const Icon = appearance.icon;
-    const running = node.end == null;
-    const duration = running
-      ? localize(STATUS_LABEL.running)
-      : format.duration((node.end ?? node.start) - node.start);
+    const running = record.status === 'running';
+    const duration = recordDurationText(node, format, localize(STATUS_LABEL.running));
     const statusText =
       record.status === 'error' || record.status === 'warning'
         ? `${duration}, ${localize(STATUS_LABEL[record.status])}`

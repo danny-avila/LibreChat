@@ -966,12 +966,14 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
-  it('drops server-private context meta from imported messages', async () => {
+  it('drops server-private context meta and trace sampling from imported messages', async () => {
     const message = {
       messageId: 'message-1',
       parentMessageId: Constants.NO_PARENT,
       text: 'Imported response',
       isCreatedByUser: false,
+      langfuseSampled: true,
+      langfuseDestinationIds: ['forged-destination'],
       contextMeta: {
         calibrationRatio: 1,
         encoding: 'claude',
@@ -990,6 +992,8 @@ describe('importLibreChatConvo', () => {
     await importer(jsonData, 'user-123', () => importBatchBuilder);
 
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseSampled');
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseDestinationIds');
     expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
   });
 

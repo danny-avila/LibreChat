@@ -57,6 +57,8 @@ export type TTraceErrorResponse = {
 
 export type TTraceAvailability = {
   available: boolean;
+  /** Set when the backend cannot decide yet; ask again after this many milliseconds. */
+  retryAfterMs?: number;
 };
 
 export type TTracePageParams = {

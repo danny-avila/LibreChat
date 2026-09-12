@@ -6,7 +6,12 @@ import {
   TRACE_SOURCE_ID_MAX_LENGTH,
   resolveTraceViewerConfig,
 } from 'librechat-data-provider';
-import type { TTraceRecord, TTraceErrorCode, TTraceErrorResponse } from 'librechat-data-provider';
+import type {
+  TTraceRecord,
+  TTraceErrorCode,
+  TTraceAvailability,
+  TTraceErrorResponse,
+} from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { TraceQuery, TraceReader } from './types';
 import type { ServerRequest } from '~/types/http';
@@ -185,7 +190,7 @@ export function createTraceHandlers({
       /** Both reads are scoped to the requesting user, so they start together on
        *  the conversation-load path; nothing is answered until ownership holds. */
       const availability = reader.isAvailable(scope.query).then(
-        (available) => ({ available }),
+        (value) => ({ value }),
         (error: unknown) => ({ error }),
       );
       const [owned, result] = await Promise.all([isOwned(scope.query), availability]);
@@ -195,7 +200,8 @@ export function createTraceHandlers({
       if ('error' in result) {
         throw result.error;
       }
-      return res.status(200).json({ available: result.available });
+      const body: TTraceAvailability = result.value;
+      return res.status(200).json(body);
     } catch (error) {
       return handleFailure(res, error, 'availability');
     }

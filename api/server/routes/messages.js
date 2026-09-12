@@ -529,6 +529,10 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     /** Server-private run state: a client-authored row must never seed a run's
      * calibration or fading tiers, so the field only ever comes from the server. */
     delete message.contextMeta;
+    /** Trace sampling records which traces a response produced; the trace viewer and
+     * feedback scores treat them as ownership, so a client can never author them. */
+    delete message.langfuseSampled;
+    delete message.langfuseDestinationIds;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,

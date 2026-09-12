@@ -1,5 +1,6 @@
 import type {
   TTracePage,
+  TTraceAvailability,
   TTraceErrorCode,
   TTraceRecordDetail,
   TResolvedTraceViewerConfig,
@@ -26,7 +27,7 @@ export interface TraceReader {
    * Whether a trace may exist. Runs alongside the ownership check, so it may
    * read only the requesting user's own data and never the backend's records.
    */
-  isAvailable(query: TraceQuery): Promise<boolean>;
+  isAvailable(query: TraceQuery): Promise<TTraceAvailability>;
   listRecords(query: TraceQuery & { cursor?: string }): Promise<TTracePage>;
   /** `null` when the record is absent or outside the conversation's traces. */
   /** `sourceId` pins the read to the page that listed the record when that source is still readable. */
