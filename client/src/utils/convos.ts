@@ -90,12 +90,28 @@ const getConversationDate = (
   field: ConversationDateField,
   fallbackDate: Date,
 ) => {
-  const dateValue = conversation[field] ?? conversation.updatedAt ?? conversation.createdAt;
+  /* The archive's legacy group — archived before `archivedAt` was recorded — is ordered
+     and dated by `createdAt` on the server, so reading `updatedAt` first here would put
+     those rows in a bucket the cursor never sorted them into. */
+  const fallbackField = field === 'archivedAt' ? conversation.createdAt : conversation.updatedAt;
+  const dateValue = conversation[field] ?? fallbackField ?? conversation.createdAt;
   return dateValue ? parseISO(dateValue) : fallbackDate;
 };
 
 const getTitle = (conversation: TConversation) =>
   typeof conversation.title === 'string' ? conversation.title.trim() : '';
+
+/** A title's own initial, as a code point: `charAt(0)` on a supplementary-plane letter
+ *  returns half a surrogate pair, which renders as a replacement character and collapses
+ *  unrelated initials into one heading. Non-letters share a single `#` group. The case is
+ *  left as written so each heading matches the order the server paged the titles in. */
+const getTitleInitial = (title: string): string => {
+  const initial = [...title][0];
+  if (initial == null || !/\p{L}/u.test(initial)) {
+    return '#';
+  }
+  return initial;
+};
 
 export const groupConversations = (
   conversations: Array<TConversation | null>,
@@ -118,15 +134,10 @@ export const groupConversations = (
     }
     seenConversationIds.add(conversation.conversationId);
 
-    let groupName: string;
-    if (field === 'title') {
-      const title = getTitle(conversation);
-      /* Any script's letter heads its own group — restricting this to A–Z would sweep
-         every Japanese or Greek title into the same `#` bucket as the punctuation. */
-      groupName = /^\p{L}/u.test(title) ? title.charAt(0).toUpperCase() : '#';
-    } else {
-      groupName = getGroupName(getConversationDate(conversation, field, now));
-    }
+    const groupName =
+      field === 'title'
+        ? getTitleInitial(getTitle(conversation))
+        : getGroupName(getConversationDate(conversation, field, now));
     const group = groups.get(groupName);
     if (group) {
       group.push(conversation);
@@ -136,31 +147,12 @@ export const groupConversations = (
   });
 
   if (field === 'title') {
-    const sortedGroups = Array.from(groups.keys()).sort((a, b) => {
-      // Alphabetical groups read A–Z with # last when ascending; descending reverses that order.
-      if (a === '#' && b === '#') {
-        return 0;
-      }
-      if (a === '#') {
-        return direction === 'asc' ? 1 : -1;
-      }
-      if (b === '#') {
-        return direction === 'asc' ? -1 : 1;
-      }
-      const comparison = a.localeCompare(b, undefined, { sensitivity: 'base' });
-      return direction === 'asc' ? comparison : -comparison;
-    });
-
-    return sortedGroups.map((groupName) => {
-      const group = groups.get(groupName)!;
-      group.sort((a, b) => {
-        const comparison = getTitle(a).localeCompare(getTitle(b), undefined, {
-          sensitivity: 'base',
-        });
-        return direction === 'asc' ? comparison : -comparison;
-      });
-      return [groupName, group];
-    });
+    /* Paging is a keyset over the server's own string order, so re-sorting what arrived can
+       only disagree with it: a title that belongs before this page sits behind its cursor and
+       arrives later, and a client-side reorder would then show a broken alphabet. The rows
+       therefore keep the order they were fetched in, and the headings are the initials as
+       written — that order groups `Z` before `a`, which a case-folded heading would hide. */
+    return Array.from(groups, ([groupName, group]) => [groupName, group]);
   }
 
   const yearMonthGroups = Array.from(groups.keys())

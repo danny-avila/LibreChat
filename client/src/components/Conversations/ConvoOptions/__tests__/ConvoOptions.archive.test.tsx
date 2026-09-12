@@ -1,10 +1,8 @@
 import React from 'react';
-import { Provider, createStore } from 'jotai';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
-import { chatFilterStatusAtom } from '../../chatFilters';
 import ConvoOptions from '../ConvoOptions';
 
 const mockArchiveMutate = jest.fn();
@@ -92,13 +90,12 @@ jest.mock('../ProjectButton', () => () => null);
 jest.mock('../DeleteButton', () => () => null);
 jest.mock('../ShareButton', () => () => null);
 
-const renderOptions = (status: 'active' | 'archived') => {
-  const jotaiStore = createStore();
-  jotaiStore.set(chatFilterStatusAtom, status);
+const renderOptions = (isArchived: boolean) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const props = {
     conversationId: 'conversation-1',
     title: 'A conversation',
+    isArchived,
     retainView: mockRetainView,
     renameHandler: jest.fn(),
     isPopoverActive: false,
@@ -108,13 +105,11 @@ const renderOptions = (status: 'active' | 'archived') => {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <Provider store={jotaiStore}>
-        <MemoryRouter initialEntries={['/c/conversation-1']}>
-          <Routes>
-            <Route path="/c/:conversationId" element={<ConvoOptions {...props} />} />
-          </Routes>
-        </MemoryRouter>
-      </Provider>
+      <MemoryRouter initialEntries={['/c/conversation-1']}>
+        <Routes>
+          <Route path="/c/:conversationId" element={<ConvoOptions {...props} />} />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 };
@@ -133,8 +128,11 @@ describe('ConvoOptions archive action', () => {
     jest.useRealTimers();
   });
 
-  it('restores the open archived conversation without navigating away', () => {
-    renderOptions('archived');
+  /** The row's own state decides the direction: an unarchived pin stays listed beside the
+   *  archive, and the previous page's rows outlive a status switch, so a list-level flag
+   *  would offer to restore a conversation that was never archived. */
+  it('restores an archived conversation without navigating away from it', () => {
+    renderOptions(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_unarchive' }));
 
@@ -148,8 +146,8 @@ describe('ConvoOptions archive action', () => {
     expect(mockNewConversation).not.toHaveBeenCalled();
   });
 
-  it('archives the open active conversation and navigates to a new chat', () => {
-    renderOptions('active');
+  it('archives an unarchived conversation and leaves the one it just hid', () => {
+    renderOptions(false);
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
 

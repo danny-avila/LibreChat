@@ -94,10 +94,14 @@ export const resetChatFiltersAtom = atom(null, (_get, set) => {
  */
 export const setChatFilterStatusAtom = atom(null, (get, set, status: ChatFilterStatus) => {
   set(chatFilterStatusAtom, status);
-  const sort = get(storedChatSortAtom);
-  if (!sortFieldsFor(status).includes(sort.field)) {
-    set(storedChatSortAtom, DEFAULT_CHAT_SORT);
-  }
+  const sort = sanitizeSort(get(storedChatSortAtom), status);
+  set(storedChatSortAtom, sort);
+});
+
+/** Reset account-scoped filters without discarding the per-device sort preference. */
+export const resetChatFilterSessionAtom = atom(null, (_get, set) => {
+  set(chatFilterStatusAtom, 'active');
+  set(chatFilterTagsAtom, []);
 });
 
 export const toggleChatFilterTagAtom = atom(null, (get, set, tag: string) => {

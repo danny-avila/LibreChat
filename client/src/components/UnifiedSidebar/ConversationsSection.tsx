@@ -25,6 +25,8 @@ import { collectPinnedConversations } from '~/utils';
 import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
+const chatsHeaderTrailing = <ChatFilterMenu />;
+
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -37,26 +39,33 @@ const ConversationsSection = memo(() => {
   const tags = useAtomValue(chatFilterTagsAtom);
   const sort = useAtomValue(chatSortAtom);
   const isArchivedView = useAtomValue(isArchivedChatViewAtom);
-
   const search = useRecoilValue(store.search);
 
-  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, isPreviousData } =
-    useConversationsInfiniteQuery(
-      {
-        /** Omitted rather than `false`: the parameter's absence is what the server reads
-         *  as "not archived", and a stray `isArchived=false` would key a third cache. */
-        isArchived: isArchivedView ? true : undefined,
-        sortBy: sort.field,
-        sortDirection: sort.direction,
-        tags: tags.length === 0 ? undefined : tags,
-        search: search.debouncedQuery || undefined,
-      },
-      {
-        enabled: isAuthenticated,
-        staleTime: 30000,
-        cacheTime: 300000,
-      },
-    );
+  const {
+    data,
+    fetchNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isFetching,
+    isPreviousData,
+    isError,
+    refetch,
+  } = useConversationsInfiniteQuery(
+    {
+      /** Omitted rather than `false`: the parameter's absence is what the server reads
+       *  as "not archived", and a stray `isArchived=false` would key a third cache. */
+      isArchived: isArchivedView ? true : undefined,
+      sortBy: sort.field,
+      sortDirection: sort.direction,
+      tags: tags.length === 0 ? undefined : tags,
+      search: search.debouncedQuery || undefined,
+    },
+    {
+      enabled: isAuthenticated,
+      staleTime: 30000,
+      cacheTime: 300000,
+    },
+  );
 
   const computedHasNextPage = useMemo(() => {
     if (data?.pages && data.pages.length > 0) {
@@ -129,6 +138,10 @@ const ConversationsSection = memo(() => {
     fetchNextPage();
   }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
+  const retryConversations = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
   const [isSearchLoading, setIsSearchLoading] = useState(
     !!search.query && (search.isTyping || isLoading || isFetching),
   );
@@ -184,7 +197,9 @@ const ConversationsSection = memo(() => {
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
           hasNextPage={computedHasNextPage}
-          chatsHeaderTrailing={<ChatFilterMenu />}
+          isError={isError}
+          onRetry={retryConversations}
+          chatsHeaderTrailing={chatsHeaderTrailing}
         />
       </div>
     </div>

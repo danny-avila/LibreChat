@@ -24,6 +24,9 @@ const mockUseFavorites = jest.fn(() => ({
   isLoading: false,
 }));
 const mockUseGetConversationTags = jest.fn(() => ({ data: [] as unknown[] }));
+const mockConversationsRender = jest.fn();
+const mockSetChatsExpanded = jest.fn();
+const mockMoveToTop = jest.fn();
 const mockUseTitleGeneration = jest.fn(() => {
   useRecoilValue(streamTickAtom);
 });
@@ -35,9 +38,11 @@ const mockUseTitleGeneration = jest.fn(() => {
 const mockConversationsResult = {
   data: { pages: [{ conversations: [] as unknown[], nextCursor: null }] },
   fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
   isFetchingNextPage: false,
   isLoading: false,
   isFetching: false,
+  isError: false,
 };
 
 /** Same identity rule as above: a fresh `pinnedData.conversations` array would
@@ -63,8 +68,8 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useHasAccess: () => true,
   useAuthContext: () => ({ isAuthenticated: true }),
-  useLocalStorage: () => [true, jest.fn()],
-  useNavScrolling: () => ({ moveToTop: jest.fn() }),
+  useLocalStorage: () => [true, mockSetChatsExpanded],
+  useNavScrolling: () => ({ moveToTop: mockMoveToTop }),
   useFavorites: () => mockUseFavorites(),
   useShowMarketplace: () => false,
   useNewConvo: () => ({ newConversation: jest.fn() }),
@@ -92,10 +97,14 @@ jest.mock('~/hooks/Input/useSelectMention', () => ({
   default: () => ({ onSelectEndpoint: jest.fn(), onSelectSpec: jest.fn() }),
 }));
 
-jest.mock('~/components/Conversations', () => ({
-  __esModule: true,
-  Conversations: () => <div data-testid="conversations-stub" />,
-}));
+jest.mock('~/components/Conversations', () => {
+  const { memo } = jest.requireActual('react');
+  const ConversationsStub = memo(function ConversationsStub() {
+    mockConversationsRender();
+    return <div data-testid="conversations-stub" />;
+  });
+  return { __esModule: true, Conversations: ConversationsStub };
+});
 
 jest.mock('~/components/Conversations/ProjectsSection', () => ({
   __esModule: true,
@@ -190,6 +199,7 @@ describe('ConversationsSection section order', () => {
 
 describe('ConversationsSection streaming re-renders', () => {
   beforeEach(() => {
+    mockConversationsRender.mockClear();
     mockUseFavorites.mockImplementation(() => ({
       favorites: [],
       reorderFavorites: jest.fn(),
@@ -202,7 +212,7 @@ describe('ConversationsSection streaming re-renders', () => {
   });
 
   it(
-    'does not re-render FavoritesList when the section re-renders mid-stream',
+    'does not re-render memoized children when the section re-renders mid-stream',
     async () => {
       renderSection();
       await settleRenders();
@@ -210,6 +220,7 @@ describe('ConversationsSection streaming re-renders', () => {
       expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
 
       const favBaseline = mockUseFavorites.mock.calls.length;
+      const conversationsBaseline = mockConversationsRender.mock.calls.length;
       const titleBaseline = mockUseTitleGeneration.mock.calls.length;
 
       // Simulate a stream: repeatedly re-render ConversationsSection.
@@ -224,6 +235,7 @@ describe('ConversationsSection streaming re-renders', () => {
 
       // The memoized children, fed referentially stable props, did not re-render.
       expect(mockUseFavorites.mock.calls.length).toBe(favBaseline);
+      expect(mockConversationsRender.mock.calls.length).toBe(conversationsBaseline);
     },
     TEST_TIMEOUT,
   );

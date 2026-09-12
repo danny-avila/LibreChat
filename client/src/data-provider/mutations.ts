@@ -47,6 +47,10 @@ export const useUpdateConversationMutation = (
             : updatedConvo;
         queryClient.setQueryData<t.TConversation>([QueryKeys.conversation, targetId], applyRename);
         updateConvoInAllQueries(queryClient, targetId, applyRename);
+        /* A title-keyset cursor encodes the old ordering; patching loaded rows
+         * cannot repair boundaries that have not been fetched yet. */
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.archivedConversations] });
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },
@@ -100,29 +104,19 @@ export const useArchiveConvoMutation = (
 
         removeConvoFromAllQueries(queryClient, vars.conversationId);
 
-        const archivedQueries = queryClient
-          .getQueryCache()
-          .findAll([QueryKeys.archivedConversations], { exact: false });
-
-        for (const query of archivedQueries) {
-          queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
-            query.queryKey,
-            (oldData) => {
-              if (!oldData) {
-                return oldData;
-              }
-              if (isArchived) {
-                return {
-                  ...oldData,
-                  pages: [
-                    {
-                      ...oldData.pages[0],
-                      conversations: [_data, ...oldData.pages[0].conversations],
-                    },
-                    ...oldData.pages.slice(1),
-                  ],
-                };
-              } else {
+        /* Restoring removes the row from every cached archived variant immediately.
+         * Archiving itself is reconciled by the all-pages invalidation in onSettled;
+         * the mutation cannot know which sort/filter cursor owns the new row. */
+        if (!isArchived) {
+          for (const query of queryClient
+            .getQueryCache()
+            .findAll([QueryKeys.archivedConversations], { exact: false })) {
+            queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
+              query.queryKey,
+              (oldData) => {
+                if (!oldData) {
+                  return oldData;
+                }
                 return {
                   ...oldData,
                   pages: oldData.pages.map((page) => ({
@@ -132,9 +126,9 @@ export const useArchiveConvoMutation = (
                     ),
                   })),
                 };
-              }
-            },
-          );
+              },
+            );
+          }
         }
 
         queryClient.setQueryData(
@@ -156,9 +150,12 @@ export const useArchiveConvoMutation = (
           queryKey: convoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        /* Archived ordering and membership depend on the selected sort/filter, which
+         * this mutation does not receive. Refetch every cached page/variant so a row
+         * is not stranded on a later page or replayed through an old cursor. */
         queryClient.invalidateQueries({
           queryKey: archivedConvoQueryKey,
-          refetchPage: (_, index) => index === 0,
+          refetchType: 'all',
         });
         /** Archiving drops the chat from the pinned cache, so restoring one that is
          * still pinned has to refetch or the section would stay missing it. */
@@ -230,6 +227,9 @@ export const usePinConversationMutation = (
             ? { ...data, isShared: cachedPin.isShared }
             : data;
         updateConvoInAllQueries(queryClient, vars.conversationId, () => next);
+        /* Pinned state is list-relevant in both active and archived views. The
+         * archived variants carry filter/sort parameters, so invalidate by prefix. */
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.archivedConversations] });
         /** An older pin may exist only in the dedicated pinned cache. Unpinning
          * it has to put the returned row onto the chats list; later pages
          * cannot recover a conversation whose updatedAt just jumped ahead of
@@ -292,6 +292,7 @@ const syncSharedLinkQueries = (
   );
 
   setConversationSharedFlag(queryClient, data.conversationId, true);
+  queryClient.invalidateQueries({ queryKey: [QueryKeys.archivedConversations] });
   queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedLinks], exact: false });
 };
 
@@ -455,11 +456,10 @@ export const useDeleteSharedLinkMutation = (
         queryKey: [QueryKeys.sharedLinks],
         exact: false,
       });
-      /* A conversation can hold several links (one per target message), so clearing the
-         badge optimistically is only a guess. Let the server, which derives `isShared`
-         from the links that are actually left, settle it. Every cached page refetches:
-         the affected conversation is as likely to sit on page three as on page one. */
+      /* Shared state is derived on every list response; an archived row needs the
+       * same refresh as the active and pinned sections. */
       queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.archivedConversations] });
       /** The pinned section renders the same badge from its own cache. */
       queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
     },
@@ -574,60 +574,51 @@ export const useConversationTagMutation = ({
 export const useDeleteTagInConversations = () => {
   const queryClient = useQueryClient();
   const deleteTagInAllConversation = (deletedTag: string) => {
-    const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
-      QueryKeys.allConversations,
-    ]);
+    const conversationIdsWithTag = new Set<string>();
 
-    // If there is no conversations cache yet, nothing to update
-    if (!data || !Array.isArray(data.pages) || data.pages.length === 0) {
-      return;
+    for (const listKey of [QueryKeys.allConversations, QueryKeys.archivedConversations]) {
+      const queries = queryClient.getQueryCache().findAll([listKey], { exact: false });
+      for (const query of queries) {
+        queryClient.setQueryData<InfiniteData<ConversationListResponse>>(query.queryKey, (data) => {
+          if (!data) {
+            return data;
+          }
+
+          return {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              conversations: page.conversations.map((conversation) => {
+                const conversationTags = (conversation as t.TConversation).tags;
+                if (
+                  conversation.conversationId &&
+                  Array.isArray(conversationTags) &&
+                  conversationTags.includes(deletedTag)
+                ) {
+                  conversationIdsWithTag.add(conversation.conversationId);
+                  return {
+                    ...conversation,
+                    tags: conversationTags.filter((tag) => tag !== deletedTag),
+                  };
+                }
+                return conversation;
+              }),
+            })),
+          };
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: [listKey] });
     }
 
-    const conversationIdsWithTag: string[] = [];
-
-    // Create an updated copy of the infinite query data without mutating the cache directly
-    const updatedData: InfiniteData<ConversationListResponse> = {
-      pageParams: Array.isArray(data.pageParams) ? [...data.pageParams] : [],
-      pages: data.pages.map((page) => ({
-        ...page,
-        conversations: page.conversations.map((conversation) => {
-          if (
-            conversation.conversationId &&
-            'tags' in conversation &&
-            Array.isArray((conversation as unknown as { tags?: string[] }).tags) &&
-            (conversation as unknown as { tags: string[] }).tags.includes(deletedTag)
-          ) {
-            conversationIdsWithTag.push(conversation.conversationId);
-            return {
-              ...conversation,
-              tags: (conversation as unknown as { tags: string[] }).tags.filter(
-                (tag: string) => tag !== deletedTag,
-              ),
-            } as t.TConversation;
-          }
-          return conversation as t.TConversation;
-        }),
-      })),
-    };
-
-    queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
-      [QueryKeys.allConversations],
-      updatedData,
-    );
-
-    // Remove the deleted tag from the cache of each individual conversation
-    for (let i = 0; i < conversationIdsWithTag.length; i++) {
-      const conversationId = conversationIdsWithTag[i];
+    for (const conversationId of conversationIdsWithTag) {
       const conversationData = queryClient.getQueryData<t.TConversation>([
         QueryKeys.conversation,
         conversationId,
       ]);
-      if (conversationData && Array.isArray((conversationData as { tags?: string[] }).tags)) {
+      if (conversationData?.tags) {
         queryClient.setQueryData<t.TConversation>([QueryKeys.conversation, conversationId], {
           ...conversationData,
-          tags: (conversationData as { tags: string[] }).tags.filter(
-            (tag: string) => tag !== deletedTag,
-          ),
+          tags: conversationData.tags.filter((tag) => tag !== deletedTag),
         });
       }
     }

@@ -211,10 +211,13 @@ describe('Conversation Utilities', () => {
       ]);
     });
 
-    it('groups titles alphabetically with a shared non-letter bucket', () => {
+    /** The server pages titles by its own string order, so the grouping must not reorder
+     *  what arrived: a re-sort would show an alphabet the cursor cannot keep filling. */
+    it('keeps the fetched order for title groups and shares one non-letter bucket', () => {
       const conversations = [
-        { conversationId: 'apple', title: 'apple' },
         { conversationId: 'avocado', title: 'Avocado' },
+        { conversationId: 'zoo', title: 'Zoo' },
+        { conversationId: 'apple', title: 'apple' },
         { conversationId: 'number', title: '42 things' },
         { conversationId: 'empty', title: '' },
       ];
@@ -224,24 +227,32 @@ describe('Conversation Utilities', () => {
         direction: 'asc',
       });
 
-      expect(grouped.map(([key]) => key)).toEqual(['A', '#']);
-      expect(grouped[0][1].map((conversation) => conversation.conversationId)).toEqual([
-        'apple',
-        'avocado',
-      ]);
-      expect(grouped[1][1].map((conversation) => conversation.conversationId)).toEqual([
-        'empty',
-        'number',
-      ]);
+      expect(grouped.map(([key]) => key)).toEqual(['A', 'Z', 'a', '#']);
+      expect(
+        grouped.map(([, group]) => group.map((conversation) => conversation.conversationId)),
+      ).toEqual([['avocado'], ['zoo'], ['apple'], ['number', 'empty']]);
     });
 
-    it('falls back to createdAt when archivedAt is missing', () => {
+    /** `charAt(0)` would return a lone surrogate here, which renders as a replacement
+     *  character and merges every supplementary-plane initial into one heading. */
+    it('heads a title group with its first code point', () => {
+      const grouped = groupConversations(
+        [{ conversationId: 'deseret', title: '𐐖ohn' }] as TConversation[],
+        { field: 'title' },
+      );
+
+      expect(grouped.map(([key]) => key)).toEqual(['𐐖']);
+    });
+
+    /** The cursor orders the archive's legacy group — archived before `archivedAt` was
+     *  recorded — by `createdAt`, so reading `updatedAt` first would misplace those rows. */
+    it('dates a legacy archived chat by createdAt rather than last activity', () => {
       const conversations = [
         {
-          conversationId: 'archived',
+          conversationId: 'legacy',
           archivedAt: null,
-          createdAt: '2023-06-01T12:00:00Z',
-          updatedAt: null,
+          createdAt: '2022-06-01T12:00:00Z',
+          updatedAt: '2023-06-01T12:00:00Z',
         },
       ];
 
@@ -250,7 +261,7 @@ describe('Conversation Utilities', () => {
       });
 
       expect(grouped).toHaveLength(1);
-      expect(grouped[0][0]).toBe(' 2023');
+      expect(grouped[0][0]).toBe(' 2022');
     });
 
     it('correctly groups and sorts conversations for every month of the year', () => {

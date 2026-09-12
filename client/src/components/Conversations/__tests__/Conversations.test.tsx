@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
@@ -150,11 +150,15 @@ describe('Conversations: all-pin pages still paginate', () => {
     loadMoreConversations,
     isChatsExpanded = true,
     isLoading = false,
+    isError = false,
+    onRetry,
   }: {
     conversations: TConversation[];
     loadMoreConversations: () => void;
     isChatsExpanded?: boolean;
     isLoading?: boolean;
+    isError?: boolean;
+    onRetry?: () => void;
   }) =>
     render(
       <QueryClientProvider client={queryClient}>
@@ -167,6 +171,8 @@ describe('Conversations: all-pin pages still paginate', () => {
               containerRef={containerRef}
               loadMoreConversations={loadMoreConversations}
               isLoading={isLoading}
+              isError={isError}
+              onRetry={onRetry}
               isSearchLoading={false}
               isChatsExpanded={isChatsExpanded}
               setIsChatsExpanded={jest.fn()}
@@ -175,6 +181,20 @@ describe('Conversations: all-pin pages still paginate', () => {
         </DndProvider>
       </QueryClientProvider>,
     );
+  it('renders a retryable load error instead of the empty state', () => {
+    const onRetry = jest.fn();
+    renderList({
+      conversations: [],
+      loadMoreConversations: jest.fn(),
+      isError: true,
+      onRetry,
+    });
+
+    expect(screen.getByTestId('convo-list-error')).toHaveTextContent('com_ui_chats_load_error');
+    expect(screen.queryByTestId('convo-list-empty')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 
   it('requests another page when grouping leaves the chats list empty', () => {
     const loadMoreConversations = jest.fn();

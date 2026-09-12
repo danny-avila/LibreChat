@@ -96,6 +96,22 @@ describe('useAssignConversationToProjectMutation', () => {
     expect(assignConversationToProject.mock.calls[0][0]).toMatchObject({ projectId: 'project-b' });
     expect(assignConversationToProject.mock.calls[1][0]).toMatchObject({ projectId: 'project-a' });
   });
+  it('invalidates archived conversation list variants after assignment', async () => {
+    const archivedKey = [QueryKeys.archivedConversations, { isArchived: true }];
+    assignConversationToProject.mockResolvedValue(response('c-archived', 'project-b'));
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+    activeQueryClient.setQueryData(archivedKey, {
+      pages: [{ conversations: [{ conversationId: 'c-archived', isArchived: true }] }],
+      pageParams: [undefined],
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'c-archived', projectId: 'project-b' });
+    });
+
+    expect(activeQueryClient.getQueryState(archivedKey)?.isInvalidated).toBe(true);
+  });
 
   it('leaves different conversations independent', async () => {
     const held = deferred<never>();

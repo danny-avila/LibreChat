@@ -3,10 +3,17 @@
  */
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { getDefaultStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
 import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TAuthConfig } from '~/common';
+import {
+  chatFilterStatusAtom,
+  chatFilterTagsAtom,
+  chatSortAtom,
+  resetChatFilterSessionAtom,
+} from '~/components/Conversations/chatFilters';
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
 
@@ -247,6 +254,23 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
 
     expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
+  });
+  it('resets account-scoped chat filters at the logout session boundary', () => {
+    const jotaiStore = getDefaultStore();
+    jotaiStore.set(chatFilterStatusAtom, 'archived');
+    jotaiStore.set(chatFilterTagsAtom, ['legacy-bookmark']);
+    jotaiStore.set(chatSortAtom, { field: 'title', direction: 'asc' });
+
+    renderProvider();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
+    });
+
+    expect(jotaiStore.get(chatFilterStatusAtom)).toBe('active');
+    expect(jotaiStore.get(chatFilterTagsAtom)).toEqual([]);
+    expect(jotaiStore.get(chatSortAtom)).toEqual({ field: 'title', direction: 'asc' });
+    jotaiStore.set(resetChatFilterSessionAtom);
   });
 
   it('does not call window.location.replace when redirect is absent', async () => {

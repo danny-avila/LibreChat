@@ -76,6 +76,8 @@ export const useDeleteProjectMutation = (): UseMutationResult<
       queryClient.removeQueries([QueryKeys.project, projectId], { type: 'inactive' });
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      /** Archived rows carry the same project field and menu state. */
+      queryClient.invalidateQueries([QueryKeys.archivedConversations]);
       /** Deleting a project unsets chatProjectId on its chats, pinned ones included. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
     },
@@ -207,6 +209,8 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
         });
         queryClient.invalidateQueries([QueryKeys.projects]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
+        /** Archived rows carry the same project field and menu state. */
+        queryClient.invalidateQueries([QueryKeys.archivedConversations]);
         /** The pinned row carries `chatProjectId` for its options menu. */
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);

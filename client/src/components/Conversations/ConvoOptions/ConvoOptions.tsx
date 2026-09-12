@@ -1,5 +1,4 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
-import { useAtomValue } from 'jotai';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -34,21 +33,19 @@ import {
   usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
-import { isArchivedChatViewAtom } from '../chatFilters';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import ProjectButton from './ProjectButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
-
 /** The overflow menu and the shift-held quick action show the same archive control in two
  *  sizes, and must never disagree about which direction it moves the conversation. */
-function renderArchiveIcon(isLoading: boolean, isArchivedView: boolean, className: string) {
+function renderArchiveIcon(isLoading: boolean, isArchived: boolean, className: string) {
   if (isLoading) {
     return <Spinner className="size-4" />;
   }
-  if (isArchivedView) {
+  if (isArchived) {
     return <ArchiveRestore className={className} aria-hidden="true" />;
   }
   return <Archive className={className} aria-hidden="true" />;
@@ -59,6 +56,7 @@ function ConvoOptions({
   chatProjectId,
   title,
   isPinned = false,
+  isArchived = false,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -70,6 +68,8 @@ function ConvoOptions({
   chatProjectId?: string | null;
   title: string | null;
   isPinned?: boolean;
+  /** This row's own archive state, which the sidebar filter does not stand in for. */
+  isArchived?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -80,7 +80,6 @@ function ConvoOptions({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const isArchivedView = useAtomValue(isArchivedChatViewAtom);
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
@@ -222,16 +221,16 @@ function ConvoOptions({
       }
 
       archiveConvoMutation.mutate(
-        { conversationId: convoId, isArchived: !isArchivedView },
+        { conversationId: convoId, isArchived: !isArchived },
         {
           onSuccess: () => {
             setAnnouncement(
-              localize(isArchivedView ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
+              localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
             );
             setTimeout(() => {
               setAnnouncement('');
             }, 10000);
-            if (!isArchivedView && (currentConvoId === convoId || currentConvoId === 'new')) {
+            if (!isArchived && (currentConvoId === convoId || currentConvoId === 'new')) {
               newConversation();
               navigate('/c/new', { replace: true });
             }
@@ -240,7 +239,7 @@ function ConvoOptions({
           },
           onError: () => {
             showToast({
-              message: localize(isArchivedView ? 'com_ui_unarchive_error' : 'com_ui_archive_error'),
+              message: localize(isArchived ? 'com_ui_unarchive_error' : 'com_ui_archive_error'),
               severity: NotificationSeverity.ERROR,
               showIcon: true,
             });
@@ -250,7 +249,7 @@ function ConvoOptions({
     },
     [
       conversationId,
-      isArchivedView,
+      isArchived,
       currentConvoId,
       archiveConvoMutation,
       navigate,
@@ -349,10 +348,10 @@ function ConvoOptions({
         ),
       },
       {
-        label: localize(isArchivedView ? 'com_ui_unarchive' : 'com_ui_archive'),
+        label: localize(isArchived ? 'com_ui_unarchive' : 'com_ui_archive'),
         onClick: handleArchiveClick,
         hideOnClick: false,
-        icon: renderArchiveIcon(isArchiveLoading, isArchivedView, 'icon-sm mr-2 text-text-primary'),
+        icon: renderArchiveIcon(isArchiveLoading, isArchived, 'icon-sm mr-2 text-text-primary'),
       },
       {
         label: localize('com_ui_delete'),
@@ -375,7 +374,7 @@ function ConvoOptions({
       renameHandler,
       deleteHandler,
       isArchiveLoading,
-      isArchivedView,
+      isArchived,
       isDuplicateLoading,
       handlePinClick,
       handleArchiveClick,
@@ -403,12 +402,12 @@ function ConvoOptions({
     return (
       <div className="flex items-center gap-0.5">
         <button
-          aria-label={localize(isArchivedView ? 'com_ui_unarchive' : 'com_ui_archive')}
+          aria-label={localize(isArchived ? 'com_ui_unarchive' : 'com_ui_archive')}
           className={cn(buttonClassName, 'hover:bg-surface-hover')}
           onClick={handleArchiveClick}
           disabled={isArchiveLoading}
         >
-          {renderArchiveIcon(isArchiveLoading, isArchivedView, 'icon-md text-text-secondary')}
+          {renderArchiveIcon(isArchiveLoading, isArchived, 'icon-md text-text-secondary')}
         </button>
         <button
           aria-label={localize('com_ui_delete')}
@@ -514,6 +513,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.title === nextProps.title &&
     prevProps.chatProjectId === nextProps.chatProjectId &&
     prevProps.isPinned === nextProps.isPinned &&
+    prevProps.isArchived === nextProps.isArchived &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

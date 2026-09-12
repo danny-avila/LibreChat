@@ -13,6 +13,7 @@ import {
   chatFilterCountAtom,
   chatFilterTagsAtom,
   chatSortAtom,
+  isAlphabeticalSort,
   isArchivedChatViewAtom,
   resetChatFiltersAtom,
 } from './chatFilters';
@@ -52,6 +53,10 @@ interface ConversationsProps {
   chatsHeaderTrailing?: ReactNode;
   /** Whether another page exists, so an empty list can be told apart from an unpaged one. */
   hasNextPage?: boolean;
+  /** Whether the initial conversations request failed without usable rows. */
+  isError?: boolean;
+  /** Re-run the conversations request from the error state. */
+  onRetry?: () => void;
 }
 
 interface MeasuredRowProps {
@@ -141,20 +146,24 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing
 
 ChatsHeader.displayName = 'ChatsHeader';
 
-const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
-  const localize = useLocalize();
-  return (
-    <h2
-      aria-label={localize('com_a11y_chats_date_section', {
-        date: localize(groupName as TranslationKeys) || groupName,
-      })}
-      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
-      style={{ fontSize: '0.7rem' }}
-    >
-      {localize(groupName as TranslationKeys) || groupName}
-    </h2>
-  );
-});
+const DateLabel: FC<{ groupName: string; isFirst?: boolean; isAlphabetical?: boolean }> = memo(
+  ({ groupName, isFirst, isAlphabetical = false }) => {
+    const localize = useLocalize();
+    const displayName = localize(groupName as TranslationKeys) || groupName;
+    return (
+      <h2
+        aria-label={localize(
+          isAlphabetical ? 'com_a11y_chats_alpha_section' : 'com_a11y_chats_date_section',
+          isAlphabetical ? { letter: displayName } : { date: displayName },
+        )}
+        className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
+        style={{ fontSize: '0.7rem' }}
+      >
+        {displayName}
+      </h2>
+    );
+  },
+);
 
 DateLabel.displayName = 'DateLabel';
 
@@ -175,6 +184,8 @@ const Conversations: FC<ConversationsProps> = ({
   setIsChatsExpanded,
   chatsHeaderTrailing,
   hasNextPage = false,
+  isError = false,
+  onRetry,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -371,7 +382,11 @@ const Conversations: FC<ConversationsProps> = ({
       if (item.type === 'header') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} isFirst={index === 0} />
+            <DateLabel
+              groupName={item.groupName}
+              isFirst={index === 0}
+              isAlphabetical={isAlphabeticalSort(sort.field)}
+            />
           </MeasuredRow>
         );
       }
@@ -393,7 +408,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds],
+    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds, sort.field],
   );
 
   const getRowHeight = useCallback(
@@ -414,6 +429,12 @@ const Conversations: FC<ConversationsProps> = ({
     },
     [flattenedItems.length, throttledLoadMore],
   );
+  const isListError =
+    isChatsExpanded &&
+    isError &&
+    !isLoading &&
+    !isSearchLoading &&
+    filteredConversations.length === 0;
 
   /** A list that came back empty is a dead end the user has to be able to leave: say why
    *  it is empty and offer the way back. Pagination can legitimately yield an empty first
@@ -422,6 +443,7 @@ const Conversations: FC<ConversationsProps> = ({
     isChatsExpanded &&
     !isLoading &&
     !isSearchLoading &&
+    !isListError &&
     !hasNextPage &&
     groupedConversations.length === 0;
 
@@ -460,6 +482,25 @@ const Conversations: FC<ConversationsProps> = ({
       <div className="flex flex-1 items-center justify-center">
         <Spinner className="text-text-primary" />
         <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
+      </div>
+    );
+  } else if (isListError) {
+    body = (
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+        data-testid="convo-list-error"
+        role="alert"
+      >
+        <span className="text-sm text-text-secondary">{localize('com_ui_chats_load_error')}</span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg px-2 py-1 text-sm text-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          >
+            {localize('com_ui_retry')}
+          </button>
+        )}
       </div>
     );
   } else if (isEmpty) {
