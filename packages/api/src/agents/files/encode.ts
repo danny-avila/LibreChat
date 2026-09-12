@@ -66,8 +66,15 @@ export interface RunFileMessageEncoderDeps {
   }) => Promise<string | undefined>;
 }
 
+export interface RunFileMessageEncoder {
+  validate: (files: TFile[], agentId: string) => void;
+  encode: (files: TFile[], agentId: string) => Promise<BaseMessage[]>;
+}
+
 /** Encodes authorized run files for the receiving child, without provisioning new resources. */
-export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
+export function createRunFileMessageEncoder(
+  deps: RunFileMessageEncoderDeps,
+): RunFileMessageEncoder {
   function prepare(files: TFile[], agentId: string) {
     const agent = deps.getAgent(agentId);
     if (!agent) {

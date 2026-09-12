@@ -13,6 +13,7 @@ import type {
 } from './manifest';
 import type { RunArtifactDescriptor } from '~/files/code/publication';
 import type { RunFileSnapshotStore } from './snapshots';
+import type { RunFileMessageEncoder } from './encode';
 import { createRunFileManifest, describeRunFiles } from './manifest';
 
 export interface SharedRunArtifact {
@@ -69,8 +70,8 @@ export interface RunFileSessionDeps {
     revision: number;
     signal: AbortSignal;
   }) => Promise<void>;
-  validateMessages: (files: TFile[], agentId: string) => void;
-  encodeMessages: (files: TFile[], agentId: string) => Promise<BaseMessage[]>;
+  validateMessages: RunFileMessageEncoder['validate'];
+  encodeMessages: RunFileMessageEncoder['encode'];
   emit: (
     file: TFile & { messageId: string; toolCallId?: string; agentId: string },
   ) => Promise<void>;
