@@ -1644,6 +1644,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         {
           stateful_code_sessions: true,
           code_environment_id: 'attached-vm',
+          code_workspace_id: 'project-a',
         },
       );
       mockReq.user.id = existingAgentAuthorId.toString();
@@ -1673,6 +1674,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.status).not.toHaveBeenCalledWith(400);
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.code_environment_id).toBeUndefined();
+      expect(agentInDb.code_workspace_id).toBe('');
     });
 
     test('clears a configured Git identity', async () => {

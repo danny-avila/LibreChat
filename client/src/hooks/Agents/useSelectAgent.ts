@@ -40,7 +40,12 @@ export default function useSelectAgent() {
         return;
       }
       const currentConvo = getDefaultConversation({
-        conversation: { ...(conversation ?? {}), agent_id: agent.id, ...specDisplayFieldReset },
+        conversation: {
+          ...(conversation ?? {}),
+          agent_id: agent.id,
+          codeWorkspaces: undefined,
+          ...specDisplayFieldReset,
+        },
         preset: template,
       });
       newConversation({
@@ -63,6 +68,7 @@ export default function useSelectAgent() {
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         conversationId: Constants.NEW_CONVO as string,
+        codeWorkspaces: undefined,
         ...specDisplayFieldReset,
       };
 

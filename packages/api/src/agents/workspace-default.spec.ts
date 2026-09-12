@@ -9,8 +9,10 @@ describe('agent workspace default', () => {
     expect(agentUpdateSchema.parse({}).code_workspace_id).toBeUndefined();
   });
 
-  it('rejects unbounded or non-string defaults', () => {
+  it('rejects malformed or non-string defaults', () => {
     expect(agentUpdateSchema.safeParse({ code_workspace_id: 'x'.repeat(129) }).success).toBe(false);
+    expect(agentUpdateSchema.safeParse({ code_workspace_id: 'bad workspace' }).success).toBe(false);
+    expect(agentUpdateSchema.safeParse({ code_workspace_id: '../escape' }).success).toBe(false);
     expect(agentUpdateSchema.safeParse({ code_workspace_id: {} }).success).toBe(false);
   });
 });

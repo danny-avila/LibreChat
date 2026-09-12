@@ -38,6 +38,7 @@ const {
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
   reportLocatorTraversalFailure,
+  reconcileAgentWorkspaceDefault,
 } = require('@librechat/api');
 const {
   Time,
@@ -1066,7 +1067,7 @@ const updateAgentHandler = async (req, res) => {
       _id,
       ...rest
     } = validatedData;
-    const updateData = removeNullishValues(rest);
+    let updateData = removeNullishValues(rest);
     if (codeEnvironmentIdField !== undefined) {
       updateData.code_environment_id = codeEnvironmentIdField;
     }
@@ -1094,6 +1095,11 @@ const updateAgentHandler = async (req, res) => {
       const codeEnvironmentSelectionChanged =
         updateData.code_environment_id !== undefined &&
         updateData.code_environment_id !== existingAgent.code_environment_id;
+      updateData = reconcileAgentWorkspaceDefault({
+        update: updateData,
+        request: validatedData,
+        currentEnvironmentId: existingAgent.code_environment_id,
+      });
       const statefulConfigurationChanged =
         (updateData.stateful_code_sessions !== undefined &&
           (updateData.stateful_code_sessions === true) !==
@@ -1829,6 +1835,7 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
       includeSkillConfig: true,
+      includeExecutionConfig: true,
     });
 
     const agents = data?.data ?? [];
