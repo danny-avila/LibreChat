@@ -11,7 +11,13 @@ import type { AzureOpenAIInput } from '@librechat/agents/langchain/openai';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
-import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
+import {
+  sanitizeModelName,
+  constructAzureURL,
+  isCanonicalAzureURL,
+  getAzureDeploymentName,
+  constructAzureChatBasePath,
+} from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -155,12 +161,7 @@ function isCanonicalAzureBaseURL(baseURL?: string | null, azure?: false | t.Azur
   if (!baseURL) {
     return true;
   }
-  try {
-    const url = new URL(constructAzureURL({ baseURL, azureOptions: azure }));
-    return /\.(?:openai|cognitiveservices|services\.ai)\.azure\.(?:com|us|cn)$/i.test(url.hostname);
-  } catch {
-    return false;
-  }
+  return isCanonicalAzureURL(constructAzureURL({ baseURL, azureOptions: azure }));
 }
 
 function requiresResponsesApiForReasoning({
@@ -1034,7 +1035,9 @@ export function getOpenAILLMConfig({
   const updatedAzure = { ...azure };
   updatedAzure.azureOpenAIApiDeploymentName = useModelName
     ? sanitizeModelName(llmConfig.model || '')
-    : azure.azureOpenAIApiDeploymentName;
+    : azure.azureOpenAIApiDeploymentName ||
+      getAzureDeploymentName(baseURL, azure) ||
+      (firstPartyAstra || llmConfig.useResponsesApi ? model : undefined);
 
   if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
     llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
@@ -1044,13 +1047,7 @@ export function getOpenAILLMConfig({
     if (!baseURL) {
       return;
     }
-    const azureURL = constructAzureURL({
-      baseURL,
-      azureOptions: updatedAzure,
-    });
-    updatedAzure.azureOpenAIBasePath = azureURL.split(
-      `/${updatedAzure.azureOpenAIApiDeploymentName}`,
-    )[0];
+    updatedAzure.azureOpenAIBasePath = constructAzureChatBasePath(baseURL, updatedAzure);
   };
 
   constructAzureOpenAIBasePath();

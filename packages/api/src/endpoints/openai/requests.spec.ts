@@ -5,9 +5,38 @@ import type { OpenAIConfiguration } from '~/types';
 import { getOpenAIConfig } from './config';
 
 describe('Azure Astra requests', () => {
-  it.each(['gpt-6-astra', 'production-deployment'])(
-    'sends tool requests to Responses with deployment %s and Astra constraints',
-    async (deploymentName) => {
+  it.each([
+    { deploymentName: 'gpt-6-astra', wireModel: 'gpt-6-astra', baseURL: undefined },
+    {
+      deploymentName: 'production-deployment',
+      wireModel: 'production-deployment',
+      baseURL: undefined,
+    },
+    ...[
+      'https://test-instance.openai.azure.com',
+      'https://test-instance.openai.azure.com/',
+      'https://test-instance.openai.azure.com/openai/',
+      'https://test-instance.openai.azure.com/openai/v1/',
+      'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+    ].map((baseURL) => ({
+      deploymentName: 'production-deployment',
+      wireModel: 'production-deployment',
+      baseURL,
+    })),
+    {
+      deploymentName: undefined,
+      wireModel: 'url-deployment',
+      baseURL:
+        'https://test-instance.openai.azure.com/openai/deployments/url-deployment?api-version=2025-04-01-preview',
+    },
+    {
+      deploymentName: undefined,
+      wireModel: 'gpt-6-astra',
+      baseURL: 'https://test-instance.openai.azure.com/openai/v1',
+    },
+  ])(
+    'sends tool requests to $wireModel from $baseURL with Astra constraints',
+    async ({ deploymentName, wireModel, baseURL }) => {
       const requests: {
         url: URL;
         headers: Headers;
@@ -23,7 +52,7 @@ describe('Azure Astra requests', () => {
           id: 'resp_test',
           object: 'response',
           status: 'completed',
-          model: deploymentName,
+          model: wireModel,
           output: [
             {
               type: 'function_call',
@@ -41,6 +70,7 @@ describe('Azure Astra requests', () => {
         'test-azure-key',
         {
           streaming: false,
+          reverseProxyUrl: baseURL,
           azure: {
             azureOpenAIApiInstanceName: 'test-instance',
             azureOpenAIApiDeploymentName: deploymentName,
@@ -93,8 +123,11 @@ describe('Azure Astra requests', () => {
         'https://test-instance.openai.azure.com/openai/v1/responses',
       );
       expect(headers.get('api-key')).toBe('test-azure-key');
+      if (baseURL?.includes('?api-version=')) {
+        expect(url.searchParams.get('api-version')).toBe('2025-04-01-preview');
+      }
       expect(body).toMatchObject({
-        model: deploymentName,
+        model: wireModel,
         max_output_tokens: 2048,
         reasoning: { effort: 'low' },
         tools: [expect.objectContaining({ type: 'function', name: 'calculator' })],

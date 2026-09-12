@@ -11,6 +11,7 @@ import {
   extractEnvVariable,
   providerEndpointMap,
   normalizeEndpointName,
+  mapModelToAzureConfig,
 } from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
@@ -97,10 +98,10 @@ import {
 } from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
+import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
-import { resolveConfigHeaders, resolveModelHeaders } from '~/utils/headers';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -723,6 +724,74 @@ function resolveBuiltInClientOverrides(
   return Object.keys(shaping).length > 0 ? shaping : undefined;
 }
 
+/** Resolve the summary model's deployment and transport before the SDK inherits agent options. */
+function resolveAzureSummarization(
+  model: string,
+  appConfig: AppConfig | undefined,
+  parameters: SummarizationConfig['parameters'],
+  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
+  const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!azureConfig) {
+    return undefined;
+  }
+  const { azureOptions, baseURL, headers, serverless } = mapModelToAzureConfig({
+    modelName: model,
+    modelGroupMap: azureConfig.modelGroupMap,
+    groupMap: azureConfig.groupMap,
+  });
+  const groupName = azureConfig.modelGroupMap[model]?.group;
+  const group = groupName ? azureConfig.groupMap[groupName] : undefined;
+  const resolvedBaseURL = baseURL ?? getBuiltInBaseURL(EModelEndpoint.azureOpenAI);
+  if (isUserProvided(resolvedBaseURL) || isUserProvided(azureOptions.azureOpenAIApiKey)) {
+    throw new Error(
+      'Azure summarization requires credentials and a base URL for its configured model.',
+    );
+  }
+  const resolvedHeaders = resolveModelHeaders({
+    headers: mergeHeaders(appConfig?.endpoints?.all?.headers, headers) ?? {},
+    user: createSafeUser(headerContext.user),
+    tenantId: headerContext.tenantId,
+    body: headerContext.requestBody,
+  });
+  const { llmConfig, configOptions } = getOpenAIConfig(
+    azureOptions.azureOpenAIApiKey,
+    {
+      azure: serverless ? undefined : azureOptions,
+      reverseProxyUrl: resolvedBaseURL,
+      proxy: process.env.PROXY ?? undefined,
+      headers: serverless
+        ? { ...resolvedHeaders, 'api-key': azureOptions.azureOpenAIApiKey }
+        : resolvedHeaders,
+      defaultQuery: serverless ? { 'api-version': azureOptions.azureOpenAIApiVersion } : undefined,
+      modelOptions: {
+        model,
+        reasoning_effort: summarizationReasoningEffort(parameters),
+        useResponsesApi:
+          typeof parameters?.useResponsesApi === 'boolean' ? parameters.useResponsesApi : undefined,
+      },
+      addParams: group?.addParams,
+      dropParams: group?.dropParams,
+    },
+    EModelEndpoint.azureOpenAI,
+  );
+  return {
+    provider: !serverless && !llmConfig.useResponsesApi ? Providers.AZURE : Providers.OPENAI,
+    clientOverrides: {
+      ...llmConfig,
+      apiKey: azureOptions.azureOpenAIApiKey,
+      useResponsesApi: llmConfig.useResponsesApi ?? false,
+      firstPartyEndpoint: llmConfig.firstPartyEndpoint ?? false,
+      reasoning: llmConfig.reasoning,
+      modelKwargs: {
+        ...llmConfig.modelKwargs,
+        model: llmConfig.modelKwargs?.model ?? llmConfig.model,
+      },
+      configuration: configOptions,
+    },
+  };
+}
+
 /**
  * Resolves a summarization provider string (which may be a custom-endpoint name
  * like "Ollama") into the SDK-recognized provider and any client-option
@@ -921,13 +990,25 @@ function shapeSummarizationConfig(
 
   const model = config?.model ?? fallbackModel;
 
-  const { provider, clientOverrides } = isSameEndpointAsAgent
-    ? { provider: fallbackProvider, clientOverrides: undefined }
-    : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
-        model,
-        parameters: config?.parameters,
-        agentProvider: fallbackProvider,
-      });
+  const targetsAzure =
+    rawProvider === EModelEndpoint.azureOpenAI ||
+    (agentEndpoint === EModelEndpoint.azureOpenAI && rawProvider === fallbackProvider);
+  const azureOverrides =
+    targetsAzure &&
+    isNonEmptyString(model) &&
+    config?.enabled !== false &&
+    (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel)
+      ? resolveAzureSummarization(model, appConfig, config?.parameters, headerContext)
+      : undefined;
+  const { provider, clientOverrides } =
+    azureOverrides ??
+    (isSameEndpointAsAgent
+      ? { provider: fallbackProvider, clientOverrides: undefined }
+      : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
+          model,
+          parameters: config?.parameters,
+          agentProvider: fallbackProvider,
+        }));
   const trigger =
     config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
