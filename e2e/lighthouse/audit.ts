@@ -15,6 +15,9 @@ const REPORTS_DIRECTORY = '.lighthouse';
 
 const DEFAULT_RUNS = 3;
 
+/** Attempts per run before a crashed Lighthouse process fails the audit. */
+const RUN_ATTEMPTS = 2;
+
 const DEFAULT_BUDGETS: MedianBudgets = {
   'largest-contentful-paint': 4500,
   'cumulative-layout-shift': 0.1,
@@ -79,10 +82,33 @@ export async function auditPage({
   try {
     for (let run = 1; run <= runs; run++) {
       const output = path.join(directory, `lhr-${run}`);
-      const { stdout } = await exec(process.execPath, [cli, ...flags, `--output-path=${output}`]);
-      console.log(`Lighthouse run ${run}/${runs} wrote ${output}.report.json`);
-      if (stdout.trim()) {
-        console.log(stdout);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const { stdout } = await exec(process.execPath, [
+            cli,
+            ...flags,
+            `--output-path=${output}`,
+          ]);
+          console.log(`Lighthouse run ${run}/${runs} wrote ${output}.report.json`);
+          if (stdout.trim()) {
+            console.log(stdout);
+          }
+          break;
+        } catch (error) {
+          if (attempt >= RUN_ATTEMPTS) {
+            throw error;
+          }
+          /** Lighthouse crashes out of a run it could not trace — NO_NAVSTART is
+           *  the usual one, and its own message is "run Lighthouse again". The
+           *  page is measured `runs` times for exactly this noise, so one lost
+           *  process should cost a repeat, not the lane. A page that is really
+           *  broken fails every attempt and still fails here. */
+          console.log(
+            `Lighthouse run ${run}/${runs} attempt ${attempt} did not complete, retrying: ${
+              error instanceof Error ? error.message.split('\n')[0] : String(error)
+            }`,
+          );
+        }
       }
     }
   } finally {

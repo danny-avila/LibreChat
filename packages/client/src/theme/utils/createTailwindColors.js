@@ -140,6 +140,7 @@ function createTailwindColors() {
     'status-neutral': cssVar('--status-neutral'),
     'status-neutral-subtle': cssVar('--status-neutral-subtle'),
     'status-neutral-border': cssVar('--status-neutral-border'),
+    'status-verified': cssVar('--status-verified'),
     'text-on-status': cssVar('--text-on-status'),
 
     'series-1': cssVar('--series-1'),

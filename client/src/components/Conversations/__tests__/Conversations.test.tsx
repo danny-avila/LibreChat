@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
@@ -79,7 +79,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/utils', () => ({
-  groupConversationsByDate: () => [],
+  groupConversations: () => [],
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 
@@ -150,11 +150,17 @@ describe('Conversations: all-pin pages still paginate', () => {
     loadMoreConversations,
     isChatsExpanded = true,
     isLoading = false,
+    isError = false,
+    onRetry,
+    hasNextPage = false,
   }: {
     conversations: TConversation[];
     loadMoreConversations: () => void;
     isChatsExpanded?: boolean;
     isLoading?: boolean;
+    isError?: boolean;
+    onRetry?: () => void;
+    hasNextPage?: boolean;
   }) =>
     render(
       <QueryClientProvider client={queryClient}>
@@ -168,18 +174,45 @@ describe('Conversations: all-pin pages still paginate', () => {
               loadMoreConversations={loadMoreConversations}
               isLoading={isLoading}
               isSearchLoading={false}
+              isError={isError}
+              onRetry={onRetry}
               isChatsExpanded={isChatsExpanded}
               setIsChatsExpanded={jest.fn()}
+              hasNextPage={hasNextPage}
             />
           </RecoilRoot>
         </DndProvider>
       </QueryClientProvider>,
     );
+  it('renders a retryable load error instead of the empty state', () => {
+    const onRetry = jest.fn();
+    renderList({
+      conversations: [],
+      loadMoreConversations: jest.fn(),
+      isError: true,
+      onRetry,
+    });
+
+    expect(screen.getByTestId('convo-list-error')).toHaveTextContent('com_ui_chats_load_error');
+    expect(screen.queryByTestId('convo-list-empty')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 
   it('requests another page when grouping leaves the chats list empty', () => {
     const loadMoreConversations = jest.fn();
     renderList({ conversations: [pinnedConvo], loadMoreConversations });
     expect(loadMoreConversations).toHaveBeenCalled();
+  });
+
+  it('does not show no chats when a drained unfiltered page contains only pinned rows', () => {
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations: jest.fn(),
+      hasNextPage: false,
+    });
+
+    expect(screen.queryByText('com_ui_no_chats')).not.toBeInTheDocument();
   });
 
   it('does not request another page while chats are collapsed', () => {

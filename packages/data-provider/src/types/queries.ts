@@ -33,6 +33,7 @@ export type MinimalConversation = Pick<
   | 'createdAt'
   | 'updatedAt'
   | 'archivedAt'
+  | 'isArchived'
   | 'user'
   | 'chatProjectId'
   | 'pinned'

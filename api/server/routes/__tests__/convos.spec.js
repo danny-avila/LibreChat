@@ -1872,6 +1872,40 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / sort normalization', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    it('forwards a whitelisted sort field and direction', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ sortBy: 'title', sortDirection: 'asc' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ sortBy: 'title', sortDirection: 'asc' }),
+      );
+    });
+
+    /** An unknown field reaches `getConvosByCursor`, which throws on it, so forwarding
+     * a stale or hand-edited value would answer 500 instead of listing anything. */
+    it('falls back to the default ordering for values it does not recognize', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ sortBy: 'DROP TABLE', sortDirection: 'sideways' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ sortBy: 'updatedAt', sortDirection: 'desc' }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';

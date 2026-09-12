@@ -3,11 +3,20 @@ import { useDrop } from 'react-dnd';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { Spinner, useMediaQuery, buttonVariants } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
+import {
+  chatFilterCountAtom,
+  chatFilterTagsAtom,
+  chatSortAtom,
+  isAlphabeticalSort,
+  isArchivedChatViewAtom,
+  resetChatFiltersAtom,
+} from './chatFilters';
 import {
   CONVERSATION_DRAG_TYPE,
   markExternalHover,
@@ -15,7 +24,7 @@ import {
   useEffectiveProjectId,
 } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
-import { groupConversationsByDate, cn } from '~/utils';
+import { groupConversations, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
 import store from '~/store';
@@ -42,6 +51,12 @@ interface ConversationsProps {
   setIsChatsExpanded: (expanded: boolean) => void;
   /** Actions for the Chats header, alongside the Projects header's own. */
   chatsHeaderTrailing?: ReactNode;
+  /** Whether another page exists, so an empty list can be told apart from an unpaged one. */
+  hasNextPage?: boolean;
+  /** Whether the initial conversations request failed without usable rows. */
+  isError?: boolean;
+  /** Re-run the conversations request from the error state. */
+  onRetry?: () => void;
 }
 
 interface MeasuredRowProps {
@@ -131,20 +146,24 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing
 
 ChatsHeader.displayName = 'ChatsHeader';
 
-const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
-  const localize = useLocalize();
-  return (
-    <h2
-      aria-label={localize('com_a11y_chats_date_section', {
-        date: localize(groupName as TranslationKeys) || groupName,
-      })}
-      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
-      style={{ fontSize: '0.7rem' }}
-    >
-      {localize(groupName as TranslationKeys) || groupName}
-    </h2>
-  );
-});
+const DateLabel: FC<{ groupName: string; isFirst?: boolean; isAlphabetical?: boolean }> = memo(
+  ({ groupName, isFirst, isAlphabetical = false }) => {
+    const localize = useLocalize();
+    const displayName = localize(groupName as TranslationKeys) || groupName;
+    return (
+      <h2
+        aria-label={localize(
+          isAlphabetical ? 'com_a11y_chats_alpha_section' : 'com_a11y_chats_date_section',
+          isAlphabetical ? { letter: displayName } : { date: displayName },
+        )}
+        className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
+        style={{ fontSize: '0.7rem' }}
+      >
+        {displayName}
+      </h2>
+    );
+  },
+);
 
 DateLabel.displayName = 'DateLabel';
 
@@ -164,9 +183,17 @@ const Conversations: FC<ConversationsProps> = ({
   isChatsExpanded,
   setIsChatsExpanded,
   chatsHeaderTrailing,
+  hasNextPage = false,
+  isError = false,
+  onRetry,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const sort = useAtomValue(chatSortAtom);
+  const isArchivedView = useAtomValue(isArchivedChatViewAtom);
+  const activeFilterCount = useAtomValue(chatFilterCountAtom);
+  const filterTags = useAtomValue(chatFilterTagsAtom);
+  const resetFilters = useSetAtom(resetChatFiltersAtom);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   /* Dropping a project conversation on the Chats section files it back out of
    * its project. Root-list chats already live here, so they are rejected. */
@@ -206,9 +233,17 @@ const Conversations: FC<ConversationsProps> = ({
     [rawConversations],
   );
 
+  /** The pinned section above carries pins, so they stay out of these groups — except in
+   *  the archive, which that section does not cover: an archived pin would otherwise be
+   *  absent from the sidebar entirely rather than merely further down it. */
   const groupedConversations = useMemo(
-    () => groupConversationsByDate(filteredConversations),
-    [filteredConversations],
+    () =>
+      groupConversations(filteredConversations, {
+        field: sort.field,
+        direction: sort.direction,
+        includePinned: isArchivedView,
+      }),
+    [filteredConversations, isArchivedView, sort.direction, sort.field],
   );
 
   /* Pins are stripped from the date groups. An all-pin page leaves the
@@ -347,7 +382,11 @@ const Conversations: FC<ConversationsProps> = ({
       if (item.type === 'header') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} isFirst={index === 0} />
+            <DateLabel
+              groupName={item.groupName}
+              isFirst={index === 0}
+              isAlphabetical={isAlphabeticalSort(sort.field)}
+            />
           </MeasuredRow>
         );
       }
@@ -369,7 +408,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds],
+    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds, sort.field],
   );
 
   const getRowHeight = useCallback(
@@ -390,6 +429,102 @@ const Conversations: FC<ConversationsProps> = ({
     },
     [flattenedItems.length, throttledLoadMore],
   );
+  const isListError =
+    isChatsExpanded &&
+    isError &&
+    !isLoading &&
+    !isSearchLoading &&
+    filteredConversations.length === 0;
+
+  /** A list that came back empty is a dead end the user has to be able to leave: say why
+   *  it is empty and offer the way back. A drained page can still contain only pinned rows,
+   *  which render in PinnedSection and do not make the account empty. */
+  const hasUnfilteredRows =
+    !search.query && filterTags.length === 0 && !isArchivedView && filteredConversations.length > 0;
+  const isEmpty =
+    isChatsExpanded &&
+    !isLoading &&
+    !isSearchLoading &&
+    !isListError &&
+    !hasNextPage &&
+    groupedConversations.length === 0 &&
+    !hasUnfilteredRows;
+
+  let emptyLabel: TranslationKeys = 'com_ui_no_chats';
+  if (search.query) {
+    emptyLabel = 'com_ui_no_search_results';
+  } else if (filterTags.length > 0) {
+    emptyLabel = 'com_ui_no_chats_match_filters';
+  } else if (isArchivedView) {
+    emptyLabel = 'com_ui_no_archived_chats';
+  }
+
+  let body: ReactNode = (
+    <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+      <List
+        ref={containerRef}
+        width={listWidth}
+        height={listHeight}
+        deferredMeasurementCache={cache}
+        rowCount={flattenedItems.length}
+        rowHeight={getRowHeight}
+        rowRenderer={rowRenderer}
+        overscanRowCount={10}
+        aria-readonly={false}
+        className="outline-none"
+        aria-label="Conversations"
+        onRowsRendered={handleRowsRendered}
+        tabIndex={-1}
+        style={{ outline: 'none' }}
+        containerRole="rowgroup"
+      />
+    </div>
+  );
+  if (isSearchLoading) {
+    body = (
+      <div className="flex flex-1 items-center justify-center">
+        <Spinner className="text-text-primary" />
+        <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
+      </div>
+    );
+  } else if (isListError) {
+    body = (
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+        data-testid="convo-list-error"
+        role="alert"
+      >
+        <span className="text-sm text-text-secondary">{localize('com_ui_chats_load_error')}</span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg px-2 py-1 text-sm text-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          >
+            {localize('com_ui_retry')}
+          </button>
+        )}
+      </div>
+    );
+  } else if (isEmpty) {
+    body = (
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+        data-testid="convo-list-empty"
+      >
+        <span className="text-sm text-text-secondary">{localize(emptyLabel)}</span>
+        {activeFilterCount > 0 && (
+          <button
+            type="button"
+            onClick={() => resetFilters()}
+            className="rounded-lg px-2 py-1 text-sm text-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          >
+            {localize('com_ui_clear_filters')}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -404,32 +539,7 @@ const Conversations: FC<ConversationsProps> = ({
           highlight={isDropOver && canDrop}
         />
       </div>
-      {isSearchLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Spinner className="text-text-primary" />
-          <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
-        </div>
-      ) : (
-        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
-          <List
-            ref={containerRef}
-            width={listWidth}
-            height={listHeight}
-            deferredMeasurementCache={cache}
-            rowCount={flattenedItems.length}
-            rowHeight={getRowHeight}
-            rowRenderer={rowRenderer}
-            overscanRowCount={10}
-            aria-readonly={false}
-            className="outline-none"
-            aria-label="Conversations"
-            onRowsRendered={handleRowsRendered}
-            tabIndex={-1}
-            style={{ outline: 'none' }}
-            containerRole="rowgroup"
-          />
-        </div>
-      )}
+      {body}
     </div>
   );
 };
