@@ -51,7 +51,7 @@
   </a>
 </p>
 
-## 🚀 What's New in v0.8.8
+## 🚀 What's New in v0.8.8-rc3
 
 - **Agent Management API (beta):** Create, discover, update, and delete Agents; manage Agent files and Skills; and authenticate machine clients through deployment-bound OIDC identities while preserving existing role and Agent access controls.
 - **Attached workspaces (highly experimental):** Select an advertised workspace for each managed or personal code worker, then let Agents inspect trees, read and search files, author changes, and run Bash with bounded timeouts. Personal workers support bounded self-service enrollment, readiness status, and per-Agent Git identity.
@@ -65,7 +65,7 @@
 - **Observability:** Export correlated application logs through OpenTelemetry, configure allowlisted Langfuse trace identity and metadata, tag browser diagnostics with client build IDs, and scope Insights to authorized Agents.
 - **Reliability and security:** Strengthened Agent continuation and checkpoint recovery, Redis liveness detection, DocumentDB coordination, OpenID and MCP OAuth sessions, shared-link throttling, tenant isolation, attachment bounds, and upload error handling.
 
-Read the [full v0.8.8 changelog](https://www.librechat.ai/changelog/v0.8.8).
+Read the [full v0.8.8-rc3 changelog](https://www.librechat.ai/changelog/v0.8.8-rc3).
 
 # ✨ Features
 
