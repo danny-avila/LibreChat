@@ -427,6 +427,66 @@ describe('success fill defaults', () => {
   });
 });
 
+/** `status-verified` paints one thing: the check a first-party item wears next
+ *  to its name. Both of its relationships are graphical objects under WCAG
+ *  1.4.11, so both owe 3:1 and neither owes AA: the badge against the card it
+ *  sits on, and the `text-on-status` check against the badge. That is where it
+ *  parts from the success fill above, which carries a text label and therefore
+ *  owes AA. The card is not one surface — `ToolCard` rests on the dialog and
+ *  repaints to `surface-tertiary` on hover — so the silhouette is checked
+ *  against every background the card can take. Separate from
+ *  `status-success-strong` on purpose: green already means selected on the same
+ *  card, so provenance needs its own hue. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s verified fill', (_name, theme: IThemeRGB) => {
+  it('carries its check at the 3:1 mark floor', () => {
+    const ratio = contrast(toRgb(theme, 'rgb-status-verified'), toRgb(theme, 'rgb-text-on-status'));
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  });
+
+  it('keeps its silhouette at the 3:1 mark floor on every card state', () => {
+    const mark = toRgb(theme, 'rgb-status-verified');
+    /** Resting card, the panel behind the grid, and the hover repaint from
+     *  `ToolCard`'s `hover:bg-surface-tertiary`. */
+    const surfaces: Array<keyof IThemeRGB> = [
+      'rgb-surface-dialog',
+      'rgb-surface-secondary',
+      'rgb-surface-tertiary',
+    ];
+
+    const failures = surfaces.flatMap((surface) => {
+      const ratio = contrast(mark, toRgb(theme, surface));
+      return ratio < WCAG_MARK_MIN ? [`${surface}: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('verified fill defaults', () => {
+  /** Tuned values rather than palette steps in either mode, so the stylesheet
+   *  cannot alias them to a `--blue-*` step and both copies move together. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--status-verified:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    expect(declared).toEqual([
+      defaultTheme['rgb-status-verified'],
+      darkTheme['rgb-status-verified'],
+    ]);
+  });
+});
+
 /** The shared `Switch` paints this track, so it travels with the package rather
  *  than the app stylesheet. It is a UI component boundary under WCAG 1.4.11 and
  *  has to stay distinct from the `surface-primary` thumb on it and from the

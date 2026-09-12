@@ -4350,6 +4350,32 @@ describe('MCPManager', () => {
         dispose: jest.fn().mockResolvedValue(undefined),
       }) as unknown as MCPConnection;
 
+    /** An OAuth server whose connection build refreshes credentials, fencing the catalog mid-build. */
+    const refreshingOAuthServer = () => {
+      const connection = newUserConnection();
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://oauth-mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+        requiresOAuth: true,
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (_basic: t.BasicConnectionOptions, options: t.OAuthConnectionOptions) => {
+          const publish = await options.onOAuthCredentialsChanging?.({ userId, serverName });
+          await publish?.();
+          return connection;
+        },
+      );
+      return {
+        connection,
+        serverConfig,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      };
+    };
+
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
       mockAppConnections({
         has: jest.fn().mockResolvedValue(false),
@@ -5465,6 +5491,70 @@ describe('MCPManager', () => {
         );
 
         expect(connection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+        expect(connection.dispose).toHaveBeenCalled();
+        expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('leases a new connection under the generation its own credential refresh published', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const { serverConfig, flowManager } = refreshingOAuthServer();
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          flowManager,
+          serverConfig,
+          onOAuthCredentialsChanging: async () => async () => 'generation-b',
+        });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-b',
+        });
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('still fences a new connection when a rotation follows its own credential refresh', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(false);
+      const { serverConfig, flowManager, connection } = refreshingOAuthServer();
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.getUserConnection({
+            serverName,
+            user: mockUser,
+            flowManager,
+            serverConfig,
+            onOAuthCredentialsChanging: async () => async () => 'generation-b',
+          }),
+        ).rejects.toThrow('Publication lease is no longer current');
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-b',
+        });
         expect(connection.dispose).toHaveBeenCalled();
         expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
       } finally {

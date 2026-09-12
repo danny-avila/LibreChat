@@ -32,6 +32,20 @@ export const themeColorTokens: readonly (keyof IThemeRGB)[] = Object.freeze(
   Object.keys(defaultTheme) as Array<keyof IThemeRGB>,
 );
 
+/**
+ * What the verified mark is measured against: the fill it wore before it had a
+ * token, the check it carries, and the backgrounds `ToolCard` takes at rest and
+ * on hover. A theme naming any of these coordinated the mark; one naming none
+ * of them never looked at it.
+ */
+export const MARK_NEIGHBOURHOOD: readonly (keyof IThemeRGB)[] = Object.freeze([
+  'rgb-status-success-strong',
+  'rgb-text-on-status',
+  'rgb-surface-dialog',
+  'rgb-surface-secondary',
+  'rgb-surface-tertiary',
+]);
+
 export const themeAppearanceProperties: Readonly<
   Record<keyof IThemeAppearance, `--theme-${string}`>
 > = Object.freeze({
@@ -415,6 +429,26 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
           'rgb-series-8': customColors?.['rgb-text-secondary'] ?? baseColors['rgb-text-secondary'],
         }
       : {};
+  /**
+   * The verified mark was painted with `status-success-strong` until it earned
+   * its own token, so a theme that paints what the mark is measured against —
+   * the fill it used to wear, the check it carries, or the card it sits on —
+   * coordinated that green and cannot have named the blue. Dropping LibreChat's
+   * stock blue into such a palette puts an unchecked pairing on surfaces the
+   * theme chose; keeping the old fill preserves the relationship it did check.
+   * A theme that repaints anything else keeps the bundled default, and any
+   * theme takes the blue by naming the token, the way
+   * `rgb-surface-composer-hover` opts out of its own fallback.
+   */
+  const ownsMarkSurroundings =
+    customColors != null && MARK_NEIGHBOURHOOD.some((token) => customColors[token] !== undefined);
+  const verifiedFallback =
+    ownsMarkSurroundings && customColors?.['rgb-status-verified'] === undefined
+      ? {
+          'rgb-status-verified':
+            customColors?.['rgb-status-success-strong'] ?? baseColors['rgb-status-success-strong'],
+        }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -430,6 +464,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
       ...seriesEightFallback,
+      ...verifiedFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */

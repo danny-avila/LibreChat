@@ -1,8 +1,8 @@
 import { useRef, useEffect } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TSchedule } from 'librechat-data-provider';
 import { trackScheduledRun, releaseScheduledRun } from '~/data-provider/Schedules/admission';
+import { invalidateConversationLists } from '~/utils';
 
 type Occurrences = Pick<TSchedule, 'inFlight' | 'lastRun'>;
 
@@ -95,7 +95,7 @@ export default function useRunSync(schedules?: TSchedule[], observedAt?: number)
         : [...previous].some(([id, state]) => current.get(id) !== state) ||
           [...current].some(([id, state]) => !previous.has(id) && state !== IDLE_STATE);
     if (moved) {
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
+      invalidateConversationLists(queryClient);
     }
   }, [schedules, observedAt, queryClient]);
 }

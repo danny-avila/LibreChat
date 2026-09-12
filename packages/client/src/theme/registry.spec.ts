@@ -294,6 +294,71 @@ describe('theme registry', () => {
     );
   });
 
+  it('keeps the verified mark on the success fill a theme already named', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-verified-reference',
+        modes: { dark: { colors: { 'rgb-status-success-strong': '8 135 89' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('8 135 89');
+  });
+
+  it('keeps the verified mark on a success fill the theme only inherits', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'partial-verified-reference',
+        modes: { dark: { colors: { 'rgb-surface-tertiary': '30 30 38' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe(darkTheme['rgb-status-success-strong']);
+  });
+
+  it('keeps the bundled verified fill for a theme with no colors of its own', () => {
+    expect(resolveTheme(libreChatTheme, 'dark').colors['rgb-status-verified']).toBe(
+      darkTheme['rgb-status-verified'],
+    );
+  });
+
+  it('keeps the bundled verified fill for a theme that repaints nothing around the mark', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'unrelated-partial-reference',
+        modes: { dark: { colors: { 'rgb-text-primary': '250 250 250' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe(darkTheme['rgb-status-verified']);
+  });
+
+  it('preserves an explicit verified fill', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-verified-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-status-success-strong': '8 135 89',
+              'rgb-status-verified': '26 127 216',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('26 127 216');
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

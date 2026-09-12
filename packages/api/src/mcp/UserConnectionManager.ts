@@ -796,6 +796,27 @@ export abstract class UserConnectionManager {
         ephemeralConnection,
       };
 
+      /**
+       * A credential refresh performed while this connection is being built rotates the very
+       * generation captured above, so the build would otherwise fence itself: the connection
+       * holding the newest credentials publishes under a generation its own refresh retired.
+       * Recording what it published lets the fence keep pointing at foreign rotations only.
+       */
+      let selfPublishedGeneration: string | undefined;
+      const trackPublishedGeneration: t.UserConnectionContext['onOAuthCredentialsChanging'] =
+        onOAuthCredentialsChanging == null
+          ? undefined
+          : async (scope) => {
+              const publish = await onOAuthCredentialsChanging(scope);
+              return async () => {
+                const published = await publish();
+                if (published) {
+                  selfPublishedGeneration = published;
+                }
+                return published;
+              };
+            };
+
       const useOAuth = usesDirectOpenIDBearerRecovery(config)
         ? false
         : requiresOAuthMachinery(runtimeConfig);
@@ -826,7 +847,7 @@ export abstract class UserConnectionManager {
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
           onOAuthCredentialsChanged,
-          onOAuthCredentialsChanging,
+          onOAuthCredentialsChanging: trackPublishedGeneration,
         };
       } else {
         connectionOptions = {
@@ -844,8 +865,12 @@ export abstract class UserConnectionManager {
 
       this.assertCreationNotCancelled(creationGuard, userId, serverName);
 
-      if (publicationGeneration) {
-        this.toolPublicationGenerations.set(connection, publicationGeneration);
+      const effectiveGeneration = ephemeralConnection
+        ? undefined
+        : (selfPublishedGeneration ?? publicationGeneration);
+
+      if (effectiveGeneration) {
+        this.toolPublicationGenerations.set(connection, effectiveGeneration);
       }
       if (configGeneration) {
         this.toolConfigGenerations.set(connection, configGeneration);
@@ -857,7 +882,7 @@ export abstract class UserConnectionManager {
           userId,
           serverName,
           serverConfig: config,
-          ...(publicationGeneration && { publicationGeneration }),
+          ...(effectiveGeneration && { publicationGeneration: effectiveGeneration }),
           ...(publicationRevision && { publicationRevision }),
         });
       });

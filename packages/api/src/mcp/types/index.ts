@@ -263,11 +263,15 @@ export interface UserConnectionContext {
   deadlineMs?: number;
   /** Advances application authorization state after OAuth token persistence succeeds. */
   onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
-  /** Persists authorization-fence intent before OAuth token rows change and returns its publisher. */
+  /**
+   * Persists authorization-fence intent before OAuth token rows change and returns its publisher.
+   * The publisher reports the generation it wrote, so a caller that fenced its own credential
+   * change can adopt that generation instead of the one it captured beforehand.
+   */
   onOAuthCredentialsChanging?: (scope: {
     userId: string;
     serverName: string;
-  }) => Promise<() => Promise<void>>;
+  }) => Promise<() => Promise<string | undefined>>;
 }
 
 export interface RequestScopedMCPConnectionStore {

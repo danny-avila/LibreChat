@@ -1,8 +1,8 @@
 import React from 'react';
 import { DndProvider } from 'react-dnd';
 import { BrowserRouter } from 'react-router-dom';
+import { render, act } from '@testing-library/react';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { atom, RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { SetterOrUpdater } from 'recoil';
@@ -16,8 +16,6 @@ import type { SetterOrUpdater } from 'recoil';
  */
 const streamTickAtom = atom<number>({ key: 'conversations-section-stream-tick', default: 0 });
 
-/** Generous because it covers a first-require module transform, not a race. */
-const LAZY_CHUNK_TIMEOUT = 15_000;
 const TEST_TIMEOUT = 30_000;
 
 const mockUseFavorites = jest.fn(() => ({
@@ -26,6 +24,9 @@ const mockUseFavorites = jest.fn(() => ({
   isLoading: false,
 }));
 const mockUseGetConversationTags = jest.fn(() => ({ data: [] as unknown[] }));
+const mockConversationsRender = jest.fn();
+const mockSetChatsExpanded = jest.fn();
+const mockMoveToTop = jest.fn();
 const mockUseTitleGeneration = jest.fn(() => {
   useRecoilValue(streamTickAtom);
 });
@@ -37,9 +38,11 @@ const mockUseTitleGeneration = jest.fn(() => {
 const mockConversationsResult = {
   data: { pages: [{ conversations: [] as unknown[], nextCursor: null }] },
   fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
   isFetchingNextPage: false,
   isLoading: false,
   isFetching: false,
+  isError: false,
 };
 
 /** Same identity rule as above: a fresh `pinnedData.conversations` array would
@@ -65,8 +68,8 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useHasAccess: () => true,
   useAuthContext: () => ({ isAuthenticated: true }),
-  useLocalStorage: () => [true, jest.fn()],
-  useNavScrolling: () => ({ moveToTop: jest.fn() }),
+  useLocalStorage: () => [true, mockSetChatsExpanded],
+  useNavScrolling: () => ({ moveToTop: mockMoveToTop }),
   useFavorites: () => mockUseFavorites(),
   useShowMarketplace: () => false,
   useNewConvo: () => ({ newConversation: jest.fn() }),
@@ -94,10 +97,14 @@ jest.mock('~/hooks/Input/useSelectMention', () => ({
   default: () => ({ onSelectEndpoint: jest.fn(), onSelectSpec: jest.fn() }),
 }));
 
-jest.mock('~/components/Conversations', () => ({
-  __esModule: true,
-  Conversations: () => <div data-testid="conversations-stub" />,
-}));
+jest.mock('~/components/Conversations', () => {
+  const { memo } = jest.requireActual('react');
+  const ConversationsStub = memo(function ConversationsStub() {
+    mockConversationsRender();
+    return <div data-testid="conversations-stub" />;
+  });
+  return { __esModule: true, Conversations: ConversationsStub };
+});
 
 jest.mock('~/components/Conversations/ProjectsSection', () => ({
   __esModule: true,
@@ -139,14 +146,11 @@ function TickController() {
 const createQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 const renderCount = () =>
-  mockUseFavorites.mock.calls.length +
-  mockUseGetConversationTags.mock.calls.length +
-  mockUseTitleGeneration.mock.calls.length;
+  mockUseFavorites.mock.calls.length + mockUseTitleGeneration.mock.calls.length;
 
 /**
- * Yield a full event-loop turn inside act. The lazy BookmarkNav's Suspense commit
- * lands during waitFor's polling, outside act, so its follow-up work sits in the real
- * scheduler as a macrotask that a microtask-only `await act(async () => {})` misses.
+ * Yield a full event-loop turn inside act, so follow-up work that lands in the real
+ * scheduler as a macrotask is flushed before render counts are compared.
  */
 const flushEventLoopTurn = () =>
   act(async () => {
@@ -195,6 +199,7 @@ describe('ConversationsSection section order', () => {
 
 describe('ConversationsSection streaming re-renders', () => {
   beforeEach(() => {
+    mockConversationsRender.mockClear();
     mockUseFavorites.mockImplementation(() => ({
       favorites: [],
       reorderFavorites: jest.fn(),
@@ -207,29 +212,15 @@ describe('ConversationsSection streaming re-renders', () => {
   });
 
   it(
-    'does not re-render FavoritesList or BookmarkNav when the section re-renders mid-stream',
+    'does not re-render memoized children when the section re-renders mid-stream',
     async () => {
       renderSection();
-
-      // BookmarkNav is lazy-loaded; wait until it has actually rendered (its own
-      // data hook firing is the deterministic signal that the chunk resolved).
-      // Resolving that import means transforming BookmarkNav's whole module graph
-      // on first require, which outruns the default one-second budget whenever the
-      // transform cache is cold or the machine is busy.
-      await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled(), {
-        timeout: LAZY_CHUNK_TIMEOUT,
-      });
-
-      // waitFor resolves once the hook first fires, but on loaded Windows shards the
-      // Suspense resolution can leave a trailing pass pending in the real scheduler,
-      // which the first stream tick's act would flush into the children's counts.
       await settleRenders();
 
       expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
-      expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);
 
       const favBaseline = mockUseFavorites.mock.calls.length;
-      const tagBaseline = mockUseGetConversationTags.mock.calls.length;
+      const conversationsBaseline = mockConversationsRender.mock.calls.length;
       const titleBaseline = mockUseTitleGeneration.mock.calls.length;
 
       // Simulate a stream: repeatedly re-render ConversationsSection.
@@ -244,7 +235,7 @@ describe('ConversationsSection streaming re-renders', () => {
 
       // The memoized children, fed referentially stable props, did not re-render.
       expect(mockUseFavorites.mock.calls.length).toBe(favBaseline);
-      expect(mockUseGetConversationTags.mock.calls.length).toBe(tagBaseline);
+      expect(mockConversationsRender.mock.calls.length).toBe(conversationsBaseline);
     },
     TEST_TIMEOUT,
   );

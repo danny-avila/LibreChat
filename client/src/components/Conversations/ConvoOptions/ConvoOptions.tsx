@@ -4,23 +4,24 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
-  Ellipsis,
-  Share2,
-  CopyPlus,
-  Archive,
-  FolderInput,
-  FolderX,
-  Pen,
-  Pin,
-  Trash,
-} from 'lucide-react';
-import {
   DropdownPopup,
   Spinner,
   buttonVariants,
   useToastContext,
   useMediaQuery,
 } from '@librechat/client';
+import {
+  Ellipsis,
+  Share2,
+  CopyPlus,
+  Archive,
+  ArchiveRestore,
+  FolderInput,
+  FolderX,
+  Pen,
+  Pin,
+  Trash,
+} from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import {
@@ -32,18 +33,30 @@ import {
   usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { NotificationSeverity } from '~/common';
-import { useChatContext } from '~/Providers';
 import ProjectButton from './ProjectButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
+/** The overflow menu and the shift-held quick action show the same archive control in two
+ *  sizes, and must never disagree about which direction it moves the conversation. */
+function renderArchiveIcon(isLoading: boolean, isArchived: boolean, className: string) {
+  if (isLoading) {
+    return <Spinner className="size-4" />;
+  }
+  if (isArchived) {
+    return <ArchiveRestore className={className} aria-hidden="true" />;
+  }
+  return <Archive className={className} aria-hidden="true" />;
+}
 
 function ConvoOptions({
   conversationId,
   chatProjectId,
   title,
   isPinned = false,
+  isArchived = false,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -55,6 +68,8 @@ function ConvoOptions({
   chatProjectId?: string | null;
   title: string | null;
   isPinned?: boolean;
+  /** This row's own archive state, which the sidebar filter does not stand in for. */
+  isArchived?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -65,13 +80,21 @@ function ConvoOptions({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const { index } = useChatContext();
+  const { index, setConversation } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
+  /* Archiving or restoring removes the row from the list that held it, unmounting this
+     menu: the announcement has to come from a live region that outlives the row. */
+  const { announcePolite } = useLiveAnnouncer();
 
   const navigate = useNavigate();
   const { conversationId: currentConvoId } = useParams();
+  /* A mutation callback outlives the click that made it: the route it should compare
+     against is whichever chat is open when the request resolves, not the one that was
+     open when the menu item was pressed. */
+  const openConvoIdRef = useRef(currentConvoId);
+  openConvoIdRef.current = currentConvoId;
   const { newConversation } = useNewConvo();
 
   const menuId = useId();
@@ -82,7 +105,6 @@ function ConvoOptions({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
-  const [announcement, setAnnouncement] = useState('');
 
   const canCreateSharedLinks = useHasAccess({
     permissionType: PermissionTypes.SHARED_LINKS,
@@ -206,14 +228,21 @@ function ConvoOptions({
       }
 
       archiveConvoMutation.mutate(
-        { conversationId: convoId, isArchived: true },
+        { conversationId: convoId, isArchived: !isArchived },
         {
           onSuccess: () => {
-            setAnnouncement(localize('com_ui_convo_archived'));
-            setTimeout(() => {
-              setAnnouncement('');
-            }, 10000);
-            if (currentConvoId === convoId || currentConvoId === 'new') {
+            /* The request outlives the row: by the time it resolves the user may have opened
+               another chat, so the open conversation is identified at commit time rather than
+               from the one this callback closed over. */
+            setConversation((prev) =>
+              prev?.conversationId === convoId ? { ...prev, isArchived: !isArchived } : prev,
+            );
+            announcePolite({
+              message: localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
+              isStatus: true,
+            });
+            const openConvoId = openConvoIdRef.current;
+            if (!isArchived && (openConvoId === convoId || openConvoId === 'new')) {
               newConversation();
               navigate('/c/new', { replace: true });
             }
@@ -222,7 +251,7 @@ function ConvoOptions({
           },
           onError: () => {
             showToast({
-              message: localize('com_ui_archive_error'),
+              message: localize(isArchived ? 'com_ui_unarchive_error' : 'com_ui_archive_error'),
               severity: NotificationSeverity.ERROR,
               showIcon: true,
             });
@@ -232,12 +261,14 @@ function ConvoOptions({
     },
     [
       conversationId,
-      currentConvoId,
+      isArchived,
+      setConversation,
       archiveConvoMutation,
       navigate,
       newConversation,
       retainView,
       setIsPopoverActive,
+      announcePolite,
       showToast,
       localize,
     ],
@@ -330,14 +361,10 @@ function ConvoOptions({
         ),
       },
       {
-        label: localize('com_ui_archive'),
+        label: localize(isArchived ? 'com_ui_unarchive' : 'com_ui_archive'),
         onClick: handleArchiveClick,
         hideOnClick: false,
-        icon: isArchiveLoading ? (
-          <Spinner className="size-4" />
-        ) : (
-          <Archive className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
-        ),
+        icon: renderArchiveIcon(isArchiveLoading, isArchived, 'icon-sm mr-2 text-text-primary'),
       },
       {
         label: localize('com_ui_delete'),
@@ -360,6 +387,7 @@ function ConvoOptions({
       renameHandler,
       deleteHandler,
       isArchiveLoading,
+      isArchived,
       isDuplicateLoading,
       handlePinClick,
       handleArchiveClick,
@@ -387,16 +415,12 @@ function ConvoOptions({
     return (
       <div className="flex items-center gap-0.5">
         <button
-          aria-label={localize('com_ui_archive')}
+          aria-label={localize(isArchived ? 'com_ui_unarchive' : 'com_ui_archive')}
           className={cn(buttonClassName, 'hover:bg-surface-hover')}
           onClick={handleArchiveClick}
           disabled={isArchiveLoading}
         >
-          {isArchiveLoading ? (
-            <Spinner className="size-4" />
-          ) : (
-            <Archive className="icon-md text-text-secondary" aria-hidden={true} />
-          )}
+          {renderArchiveIcon(isArchiveLoading, isArchived, 'icon-md text-text-secondary')}
         </button>
         <button
           aria-label={localize('com_ui_delete')}
@@ -416,9 +440,6 @@ function ConvoOptions({
 
   return (
     <>
-      <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {announcement}
-      </span>
       <DropdownPopup
         /**
          * Must portal: the row sits inside the nav's `overflow-hidden` and a
@@ -502,6 +523,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.title === nextProps.title &&
     prevProps.chatProjectId === nextProps.chatProjectId &&
     prevProps.isPinned === nextProps.isPinned &&
+    prevProps.isArchived === nextProps.isArchived &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld
