@@ -192,6 +192,10 @@ export default function useCodeWorkspace(
     required && selectionMetadataComplete,
   );
   const storedSelections = conversation?.codeWorkspaces;
+  const attachedEnvironmentIds = new Set(attachedEnvironments.map(({ id }) => id));
+  const hasForeignStoredSelection = storedSelections?.some(
+    ({ environmentId }) => !attachedEnvironmentIds.has(environmentId),
+  );
   const isNewChat =
     conversation != null &&
     (conversation.conversationId == null || conversation.conversationId === 'new');
@@ -203,7 +207,7 @@ export default function useCodeWorkspace(
         : [];
     let stored = storedSelections?.find(({ environmentId }) => environmentId === environment.id);
     let conflictingDefaults = false;
-    if (stored == null && isNewChat) {
+    if (stored == null && isNewChat && !hasForeignStoredSelection) {
       const defaults = workspaceMetadata.defaults.get(environment.id) ?? new Set<string>();
       let preferred: string | undefined;
       if (defaults.size === 1) preferred = [...defaults][0];
@@ -222,7 +226,8 @@ export default function useCodeWorkspace(
       status: status?.data,
       workspaces,
       stored,
-      hasStoredSelections: stored != null || conflictingDefaults,
+      hasStoredSelections:
+        stored != null || conflictingDefaults || hasForeignStoredSelection === true,
     });
     let state: CodeWorkspaceEnvironmentResult['state'] = 'choose';
     if (status == null || status.isLoading) state = 'loading';
