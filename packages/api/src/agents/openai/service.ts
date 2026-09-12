@@ -1,3 +1,4 @@
+import type { LocatorTraversalReporter } from '../../protection/diagnostics';
 /**
  * OpenAI-compatible chat completions service for agents.
  *
@@ -85,6 +86,7 @@ import { createSafeUser } from '~/utils';
  * Dependencies for the chat completion service
  */
 export interface ChatCompletionDependencies {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   /** Get agent by ID */
   getAgent: (params: { id: string }) => Promise<Agent | null>;
   /** Initialize agent for use */
@@ -776,6 +778,7 @@ export async function createAgentChatCompletion(
       );
     }
     assertModelBoundContent({
+      onTraversalFailure: deps.onTraversalFailure,
       filters,
       legacyPii,
       submittedMessages,

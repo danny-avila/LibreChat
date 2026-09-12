@@ -9,6 +9,10 @@ import {
   type TConversation,
   type TMessage,
 } from 'librechat-data-provider';
+import {
+  MessagesViewContext,
+  type MessagesViewContextValue,
+} from '~/Providers/MessagesViewContext';
 import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
@@ -35,6 +39,7 @@ function renderHoverButtons({
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
   handleFeedback,
+  thread,
 }: {
   isSubmitting: boolean;
   message?: TMessage;
@@ -43,6 +48,9 @@ function renderHoverButtons({
   latestMessageId?: string;
   getCanCopy?: () => boolean;
   handleFeedback?: () => void;
+  /** The rows the hover controls resolve the message's parent from. Omitted, the
+   *  thread is unavailable, as on a search row. */
+  thread?: TMessage[];
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -53,23 +61,27 @@ function renderHoverButtons({
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
-        <MemoryRouter>
-          <HoverButtons
-            index={0}
-            isLast={isLast}
-            isEditing={false}
-            message={message}
-            conversation={targetConversation}
-            isSubmitting={isSubmitting}
-            enterEdit={jest.fn()}
-            regenerate={jest.fn()}
-            handleContinue={jest.fn()}
-            copyToClipboard={jest.fn()}
-            getCanCopy={getCanCopy}
-            latestMessageId={latestMessageId}
-            handleFeedback={handleFeedback}
-          />
-        </MemoryRouter>
+        <MessagesViewContext.Provider
+          value={{ getMessages: () => thread } as unknown as MessagesViewContextValue}
+        >
+          <MemoryRouter>
+            <HoverButtons
+              index={0}
+              isLast={isLast}
+              isEditing={false}
+              message={message}
+              conversation={targetConversation}
+              isSubmitting={isSubmitting}
+              enterEdit={jest.fn()}
+              regenerate={jest.fn()}
+              handleContinue={jest.fn()}
+              copyToClipboard={jest.fn()}
+              getCanCopy={getCanCopy}
+              latestMessageId={latestMessageId}
+              handleFeedback={handleFeedback}
+            />
+          </MemoryRouter>
+        </MessagesViewContext.Provider>
       </RecoilRoot>
     </QueryClientProvider>,
   );
@@ -213,6 +225,257 @@ describe('HoverButtons edit affordance', () => {
     expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).toBeNull();
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** A compaction turn parents onto the leaf it summarized, so every rerun shape
+   *  would replay a model turn in the user slot: the submission mints a user
+   *  message under an existing response's id and runs on empty text. Its editor
+   *  has nothing to show either — neither a summary nor the error part a skipped
+   *  or failed compaction persists is an editable part type. */
+  it.each([
+    [
+      'a finished compaction',
+      [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    ],
+    [
+      'a failed compaction',
+      [
+        {
+          type: ContentTypes.SUMMARY,
+          failed: true,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    ],
+    ['a compaction that persisted an error part', [{ type: ContentTypes.ERROR, error: 'failed' }]],
+  ])('withholds rerun controls on %s', (_label, content) => {
+    const summarizedLeaf = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: 'user-1',
+      isCreatedByUser: false,
+      text: 'The long answer',
+    } as TMessage;
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: summarizedLeaf.messageId,
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content,
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+      thread: [userMessage, summarizedLeaf, compactionMessage],
+    });
+
+    /** The row itself is intact — only the rerun shapes are withheld. */
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** Compact runs on whatever leaf the branch ends with, so its summary can hang
+   *  off a user message. Replaying that message would answer it again instead of
+   *  redoing the compaction, so the server's marker withholds the rerun shapes
+   *  there too. */
+  it('withholds rerun controls on a marked compaction hanging off a user message', () => {
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          initiatedBy: 'user',
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+      thread: [userMessage, compactionMessage],
+    });
+
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** An ordinary turn that auto-summarized and was cancelled before its first
+   *  answer token persists the same summary-only content, but it hangs off the
+   *  user's message and is exactly the turn a user needs to rerun. */
+  it('keeps rerun controls on a cancelled turn that only auto-summarized', () => {
+    const summarizedResponse = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Older turns were summarized.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: summarizedResponse,
+      isLast: true,
+      latestMessageId: summarizedResponse.messageId,
+      thread: [userMessage, summarizedResponse],
+    });
+
+    expect(container.querySelector(`#edit-${summarizedResponse.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
+    expect(screen.getByTestId('continue-generation-button')).toBeEnabled();
+  });
+
+  /** An imported or restored conversation can chain one model turn onto another
+   *  without a user message between them. That reply has no user turn to replay,
+   *  so the rerun shapes go, but its stored content is saved directly by the
+   *  editor and stays editable. */
+  it('keeps the editor, not the rerun shapes, on a model turn chained onto another', () => {
+    const firstReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: 'The first half of the answer',
+    } as TMessage;
+    const chainedReply = {
+      ...userMessage,
+      messageId: 'assistant-2',
+      parentMessageId: firstReply.messageId,
+      isCreatedByUser: false,
+      text: 'The second half of the answer',
+      finish_reason: 'length',
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: chainedReply,
+      isLast: true,
+      latestMessageId: chainedReply.messageId,
+      thread: [userMessage, firstReply, chainedReply],
+    });
+
+    expect(container.querySelector(`#edit-${chainedReply.messageId}`)).not.toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** An artifact keeps its own read-only renderer, so a chained reply made only of
+   *  one has no field to type in and no turn to replay: its editor would be dead. */
+  it('withholds the editor on a chained model turn whose only content is an artifact', () => {
+    const firstReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: 'Here it comes',
+    } as TMessage;
+    const artifactReply = {
+      ...userMessage,
+      messageId: 'assistant-2',
+      parentMessageId: firstReply.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [
+        {
+          type: ContentTypes.TEXT,
+          text: ':::artifact{identifier="demo" type="text/html" title="Demo"}\n<div />\n:::',
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: artifactReply,
+      isLast: true,
+      latestMessageId: artifactReply.messageId,
+      thread: [userMessage, firstReply, artifactReply],
+    });
+
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${artifactReply.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+  });
+
+  /** A response whose parts the editor cannot show a field for still opens the
+   *  editor when there is a user turn behind it: its Rerun is the point. */
+  it('keeps the editor on an uneditable response that still has a user turn behind it', () => {
+    const toolOnlyReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'failed' }],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: toolOnlyReply,
+      isLast: true,
+      latestMessageId: toolOnlyReply.messageId,
+      thread: [userMessage, toolOnlyReply],
+    });
+
+    expect(container.querySelector(`#edit-${toolOnlyReply.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
+  });
+
+  /** A row rendered outside the messages view cannot resolve its parent. Withholding
+   *  on an unknown parent would strip the controls from every such row, so the gate
+   *  stays open and the rerun paths refuse a non-user parent on their own. */
+  it('keeps rerun controls when the thread is unavailable', () => {
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: 'assistant-1',
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+    });
+
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
   });
 });
 

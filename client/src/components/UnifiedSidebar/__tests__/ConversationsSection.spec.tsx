@@ -30,6 +30,22 @@ const mockUseTitleGeneration = jest.fn(() => {
   useRecoilValue(streamTickAtom);
 });
 
+/** One stable identity across renders, like react-query's cached data: the
+ *  section's derived `conversations` memo (and so the PinnedSection props)
+ *  keeps referential stability mid-stream, which is what the memoized-children
+ *  guarantee below depends on. */
+const mockConversationsResult = {
+  data: { pages: [{ conversations: [] as unknown[], nextCursor: null }] },
+  fetchNextPage: jest.fn(),
+  isFetchingNextPage: false,
+  isLoading: false,
+  isFetching: false,
+};
+
+/** Same identity rule as above: a fresh `pinnedData.conversations` array would
+ *  rebuild `pinnedConversations` and re-render PinnedSection on every tick. */
+const mockPinnedResult = { data: { conversations: [] as unknown[], nextCursor: null } };
+
 jest.mock('~/store', () => {
   const { atom: recoilAtom } = jest.requireActual('recoil');
   return {
@@ -59,16 +75,8 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/data-provider', () => ({
   __esModule: true,
-  useConversationsInfiniteQuery: () => ({
-    data: { pages: [{ conversations: [], nextCursor: null }] },
-    fetchNextPage: jest.fn(),
-    isFetchingNextPage: false,
-    isLoading: false,
-    isFetching: false,
-  }),
-  usePinnedConversationsQuery: () => ({
-    data: { conversations: [], nextCursor: null },
-  }),
+  useConversationsInfiniteQuery: () => mockConversationsResult,
+  usePinnedConversationsQuery: () => mockPinnedResult,
   useTitleGeneration: () => mockUseTitleGeneration(),
   useGetEndpointsQuery: () => ({ data: {}, isLoading: false }),
   useGetStartupConfig: () => ({ data: { modelSpecs: { list: [] } } }),
@@ -96,10 +104,18 @@ jest.mock('~/components/Conversations/ProjectsSection', () => ({
   default: () => <div data-testid="projects-stub" />,
 }));
 
-jest.mock('~/components/Conversations/PinnedSection', () => ({
-  __esModule: true,
-  default: () => <div data-testid="pinned-stub" />,
-}));
+jest.mock('~/components/Conversations/PinnedSection', () => {
+  const { memo } = jest.requireActual('react');
+  /** Mirrors the real merged section closely enough for the streaming test:
+   *  memoized like it, and its first act is the same `useFavorites` call
+   *  through the ~/hooks mock, so that hook's call count tracks its renders. */
+  const PinnedSectionStub = memo(function PinnedSectionStub() {
+    mockUseFavorites();
+    return <div data-testid="pinned-stub" />;
+  });
+  PinnedSectionStub.displayName = 'PinnedSectionStub';
+  return { __esModule: true, default: PinnedSectionStub };
+});
 
 jest.mock('~/components/Nav/SearchBar', () => ({
   __esModule: true,

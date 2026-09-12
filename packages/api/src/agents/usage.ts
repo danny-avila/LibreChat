@@ -1,9 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import {
-  inputTokensIncludesCache,
-  reconcileContextUsage,
-  promptTokensFromUsage,
-} from 'librechat-data-provider';
+import { inputTokensIncludesCache, reconcileContextUsageFromEvent } from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TResponseUsage,
@@ -352,41 +348,93 @@ function finalPrimaryCall(
   return undefined;
 }
 
+const finiteNonNegativeInteger = (value: unknown): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(value)));
+};
+
+/**
+ * Sanitizes persisted per-tool counts and drops zero entries. Null-prototype
+ * records keep tool names as data keys; the cap bounds each result-message share.
+ */
+const normalizePersistedTokenRecord = (
+  value: unknown,
+  maxTotal?: number,
+): Record<string, number> | undefined => {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized: Record<string, number> = Object.create(null);
+  let remaining = maxTotal;
+  let found = false;
+  for (const [name, rawCount] of Object.entries(value)) {
+    const count = finiteNonNegativeInteger(rawCount);
+    if (count == null) {
+      continue;
+    }
+    const bounded = remaining == null ? count : Math.min(count, remaining);
+    if (bounded === 0) {
+      continue;
+    }
+    normalized[name] = bounded;
+    found = true;
+    if (remaining != null) {
+      remaining -= bounded;
+    }
+  }
+  return found ? normalized : undefined;
+};
+
 /**
  * Projects the latest live context snapshot into the blob persisted on
  * `responseMessage.metadata.contextUsage`. Reconciles the calibrated estimate to
  * the final call's ACTUAL prompt tokens (the SDK multiplier over-inflates
  * `messageTokens`, badly so when a provider injects server-side content like web
  * search), so a reloaded turn shows the real context — not a several×-too-high
- * number. Trims zero-valued per-tool counts (privacy/size) and records the final
- * call's output as `completedOutputTokens` so rehydration adds the same
- * post-snapshot delta the live gauge did. The client re-anchors the blob to the
- * response message id on load.
+ * number. Sanitizes malformed optional token fields, bounds each result-message
+ * share by the parent total, and records the final call's output as
+ * `completedOutputTokens` so rehydration adds the same post-snapshot delta the
+ * live gauge did. The client re-anchors the blob to the response message id on
+ * load.
  */
 export function buildPersistedContextUsage(
   snapshot: TContextUsageEvent,
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
 ): TContextUsageEvent {
   const finalCall = finalPrimaryCall(usageEvents, snapshot.runId);
-  const completedOutputTokens = finalCall ? normalizeEventUnits(finalCall).output : 0;
-  const reconciled = finalCall
-    ? reconcileContextUsage(snapshot, promptTokensFromUsage(finalCall))
-    : snapshot;
+  const reconciled = finalCall ? reconcileContextUsageFromEvent(snapshot, finalCall) : snapshot;
   const { breakdown } = reconciled;
-  let toolTokenCounts = breakdown.toolTokenCounts;
-  if (toolTokenCounts != null) {
-    const trimmed: Record<string, number> = {};
-    for (const [name, count] of Object.entries(toolTokenCounts)) {
-      if (count > 0) {
-        trimmed[name] = count;
-      }
+  const messageTokens = finiteNonNegativeInteger(breakdown.messageTokens) ?? 0;
+  const toolTokenCounts = normalizePersistedTokenRecord(breakdown.toolTokenCounts);
+  const rawToolMessageTokens = finiteNonNegativeInteger(breakdown.toolMessageTokens);
+  const toolMessageTokens =
+    rawToolMessageTokens == null ? undefined : Math.min(rawToolMessageTokens, messageTokens);
+  const toolMessageTokenCounts =
+    toolMessageTokens != null
+      ? normalizePersistedTokenRecord(breakdown.toolMessageTokenCounts, toolMessageTokens)
+      : undefined;
+  const persistedBreakdown = { ...breakdown, messageTokens };
+  if (toolTokenCounts == null) {
+    delete persistedBreakdown.toolTokenCounts;
+  } else {
+    persistedBreakdown.toolTokenCounts = toolTokenCounts;
+  }
+  if (toolMessageTokens == null) {
+    delete persistedBreakdown.toolMessageTokens;
+    delete persistedBreakdown.toolMessageTokenCounts;
+  } else {
+    persistedBreakdown.toolMessageTokens = toolMessageTokens;
+    if (toolMessageTokenCounts == null) {
+      delete persistedBreakdown.toolMessageTokenCounts;
+    } else {
+      persistedBreakdown.toolMessageTokenCounts = toolMessageTokenCounts;
     }
-    toolTokenCounts = Object.keys(trimmed).length > 0 ? trimmed : undefined;
   }
   return {
     ...reconciled,
-    breakdown: { ...breakdown, toolTokenCounts },
-    ...(completedOutputTokens > 0 && { completedOutputTokens }),
+    breakdown: persistedBreakdown,
   };
 }
 

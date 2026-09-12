@@ -36,8 +36,17 @@ export const useUpdateConversationMutation = (
     {
       onSuccess: (updatedConvo, payload) => {
         const targetId = payload.conversationId || id;
-        queryClient.setQueryData([QueryKeys.conversation, targetId], updatedConvo);
-        updateConvoInAllQueries(queryClient, targetId, () => updatedConvo);
+        /* A rename carries only a title, so only the title is taken from its
+         * response. Writing the whole conversation would also restore its
+         * pre-request copy of every other field, undoing a concurrent change
+         * whose response happened to land first: an assignment moving the chat
+         * to another project would silently revert here. */
+        const applyRename = (previous?: t.TConversation): t.TConversation =>
+          previous
+            ? { ...previous, title: updatedConvo.title, updatedAt: updatedConvo.updatedAt }
+            : updatedConvo;
+        queryClient.setQueryData<t.TConversation>([QueryKeys.conversation, targetId], applyRename);
+        updateConvoInAllQueries(queryClient, targetId, applyRename);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },

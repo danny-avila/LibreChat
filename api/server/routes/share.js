@@ -3,6 +3,7 @@ const express = require('express');
 const {
   assertModelBoundContent,
   createShareContentPreflight,
+  reportLocatorTraversalFailure,
   isEnabled,
   isContentFilterError,
   isConversationImportError,
@@ -140,6 +141,7 @@ const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
 const enforceSharedFileContentPolicy = (req, res, next) => {
   try {
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: req.config?.filters,
       files: [req.liveFile],
     });
@@ -367,6 +369,7 @@ if (allowSharedLinks) {
     async (req, res) => {
       try {
         const contentPreflight = createShareContentPreflight(req.config?.filters, {
+          onTraversalFailure: reportLocatorTraversalFailure,
           sharedFileMetadata: true,
           legacyPii: req.config?.messageFilter?.pii,
         });
@@ -429,6 +432,7 @@ if (allowSharedLinks) {
           // the GET share route so disabled file snapshots aren't copied into forks.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
           sharedContentPreflight: createShareContentPreflight(req.config?.filters, {
+            onTraversalFailure: reportLocatorTraversalFailure,
             sharedFileMetadata: true,
             legacyPii: req.config?.messageFilter?.pii,
           }),
@@ -653,6 +657,7 @@ router.post(
       // did not uncheck "share files" (body flag absent defaults to enabled).
       const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        onTraversalFailure: reportLocatorTraversalFailure,
         snapshotFiles,
         user: req.user,
         getFiles,
@@ -723,6 +728,7 @@ router.patch(
 
       const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        onTraversalFailure: reportLocatorTraversalFailure,
         snapshotFiles,
         user: req.user,
         getFiles,

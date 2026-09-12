@@ -1133,6 +1133,57 @@ describe('assertModelBoundContent', () => {
     ).not.toThrow();
   });
 
+  it('inspects long stored history per message and still filters hydrated file content', () => {
+    const onTraversalFailure = jest.fn();
+    const storedMessages = Array.from({ length: 58 }, (_, index) => ({
+      isCreatedByUser: true,
+      role: 'user',
+      text: `Historical step ${index}`,
+      files: index === 0 ? [{ file_id: 'file-owned' }] : [],
+      content: Array.from({ length: 80 }, () => ({ type: 'text', text: 'safe preview material' })),
+    }));
+    const input = {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+            uninspectable: 'block',
+          },
+        },
+      } as FiltersConfig,
+      storedMessages,
+      onTraversalFailure,
+      resolvedFiles: [{ file_id: 'file-owned', text: 'safe canonical content' }],
+    };
+
+    expect(() => assertModelBoundContent(input)).not.toThrow();
+    expect(() =>
+      assertModelBoundContent({
+        ...input,
+        resolvedFiles: [{ file_id: 'file-owned', text: 'PRIVATE-FILE' }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() =>
+      assertModelBoundContent({
+        ...input,
+        storedMessages: [
+          { ...storedMessages[0], content: storedMessages.flatMap((m) => m.content) },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(onTraversalFailure).toHaveBeenCalledTimes(1);
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        messageCount: 1,
+        resolvedFileCount: 1,
+      }),
+    );
+  });
+
   it('inspects owner-resolved file content before authorizing its stored locator', () => {
     expect(() =>
       assertModelBoundContent({

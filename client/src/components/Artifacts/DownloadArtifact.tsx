@@ -3,11 +3,15 @@ import { Download, CircleCheckBig } from 'lucide';
 import { Button, MorphIcon } from '@librechat/client';
 import type { Artifact } from '~/common';
 import {
+  getArtifactDownloadFilename,
+  getOriginalArtifactFilename,
+  isPreviewOnlyArtifact,
+} from '~/utils/artifacts';
+import {
   useAttachmentLink,
   isLocallyStoredSource,
 } from '~/components/Chat/Messages/Content/Parts/LogLink';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
 
@@ -17,12 +21,8 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
 
-  /* Office artifacts (pptx/xlsx/docx) render a server-generated HTML
-   * preview in `content`, not the binary file — serializing that blob
-   * would download the preview instead of the original. Fetch the real
-   * file through the same path the inline card uses. Source-code and
-   * text artifacts keep the blob path: their `content` IS the file (and
-   * reflects any in-panel edits). */
+  /* Unedited file-backed artifacts download the original: cached extraction
+   * can be truncated or transformed. Edited content is exported as a blob. */
   const { download } = artifact;
   /* Only take the original-file branch when `useAttachmentLink` can
    * actually fetch something: a usable `filepath` (http target, share
@@ -37,10 +37,12 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     (download?.file_id != null &&
       download?.user != null &&
       isLocallyStoredSource(download?.source));
-  const downloadOriginalFile = isPreviewOnlyArtifact(artifact.type) && hasUsableRoute;
+  const hasEdits = currentCode != null && currentCode !== artifact.content;
+  const downloadOriginalFile =
+    hasUsableRoute && (isPreviewOnlyArtifact(artifact.type) || !hasEdits);
   const { handleDownload: downloadAttachment } = useAttachmentLink({
     href: download?.filepath ?? '',
-    filename: artifact.title ?? fileName,
+    filename: getOriginalArtifactFilename(artifact, fileName),
     file_id: download?.file_id,
     user: download?.user,
     source: download?.source,
@@ -52,15 +54,15 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   };
 
   const downloadContent = () => {
-    const content = currentCode ?? artifact.content ?? '';
-    if (!content) {
+    const content = currentCode ?? artifact.content;
+    if (content == null) {
       return;
     }
     const blob = new Blob([content], { type: 'text/plain' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = fileName;
+    link.download = getArtifactDownloadFilename(artifact, fileName, content);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

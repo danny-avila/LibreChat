@@ -110,7 +110,12 @@ function Harness() {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <Profiler id="composer" onRender={() => (commits += 1)}>
-          <ChatForm index={0} />
+          <ChatForm
+            index={0}
+            isLandingPage={false}
+            footerBelow={false}
+            centerFormOnLanding={false}
+          />
         </Profiler>
       </ChatContext.Provider>
     </ChatFormProvider>

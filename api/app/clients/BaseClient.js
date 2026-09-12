@@ -16,6 +16,7 @@ const {
   getLangfuseTraceMessageFields,
   isContentFilterError,
   assertModelBoundProviderContent,
+  reportLocatorTraversalFailure,
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
@@ -302,6 +303,7 @@ class BaseClient {
       : [{ role: 'user', content: payload, isCreatedByUser: true, isUserSubmitted: true }];
     const fileProjection = this.getModelBoundFileProjection();
     assertModelBoundProviderContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req?.config?.filters,
       legacyPii: this.options.req?.config?.messageFilter?.pii,
       providerMessages: messages,

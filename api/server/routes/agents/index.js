@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  reportLocatorTraversalFailure,
   isEnabled,
   GenerationJobManager,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
@@ -1054,6 +1055,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,
@@ -1074,6 +1076,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,
@@ -1113,6 +1116,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,
