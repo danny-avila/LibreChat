@@ -12,7 +12,6 @@ const mockListThreadMessages = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetFiles = jest.fn();
 const mockEncodeAndFormat = jest.fn();
-const mockGetSafeErrorMetadata = jest.fn(() => ({ type: 'Error', status: 404 }));
 const mockGetOpenAIClient = jest.fn().mockResolvedValue({
   openai: {
     beta: {
@@ -56,7 +55,6 @@ jest.mock('@librechat/api', () => {
     checkBalance: jest.fn(),
     getBalanceConfig: jest.fn(),
     getModelMaxTokens: jest.fn(),
-    getSafeErrorMetadata: (...args) => mockGetSafeErrorMetadata(...args),
   };
 });
 
@@ -412,11 +410,12 @@ describe.each([
         await chatV1(req, res);
 
         expect(mockEncodeAndFormat).toHaveBeenCalled();
-        expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(failure);
-        expect(logger.error).toHaveBeenCalledWith('[/assistants/chat/]', {
-          type: 'Error',
-          status: 404,
-        });
+        const [message, ...metadata] = logger.error.mock.calls.find((call) =>
+          String(call[0]).startsWith('[/assistants/chat/]'),
+        );
+        expect(metadata).toEqual([]);
+        expect(message).toContain('NoSuchKey for https://minio.example.com/[redacted]');
+        expect(message).not.toContain('X-Amz-Signature');
         expect(JSON.stringify(logger.error.mock.calls)).not.toContain(signedUrl);
         expect(JSON.stringify(mockSendResponse.mock.calls)).not.toContain(signedUrl);
       });

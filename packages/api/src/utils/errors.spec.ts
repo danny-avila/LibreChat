@@ -1,4 +1,4 @@
-import { getSafeErrorMetadata, isAbortError } from './errors';
+import { getSafeErrorMetadata, getSafeErrorText, isAbortError } from './errors';
 
 describe('getSafeErrorMetadata', () => {
   it('keeps bounded diagnostic fields without serializing raw provider data', () => {
@@ -49,6 +49,84 @@ describe('getSafeErrorMetadata', () => {
         message: rawValue,
       }),
     ).toEqual({ type: 'UnknownError' });
+  });
+});
+
+describe('getSafeErrorText', () => {
+  const signedUrl =
+    'https://minio.example.com/bucket/images/user123/photo.png?X-Amz-Credential=AKIA123&X-Amz-Signature=deadbeef';
+
+  it('keeps the origin of a signed storage URL and drops its path and signature', () => {
+    const text = getSafeErrorText(new Error(`Access denied for ${signedUrl}`));
+
+    expect(text).toContain('https://minio.example.com/[redacted]');
+    expect(text).not.toContain('X-Amz-Signature');
+    expect(text).not.toContain('deadbeef');
+    expect(text).not.toContain('bucket/images/user123');
+  });
+
+  it('preserves the description and stack an operator needs to place the failure', () => {
+    const text = getSafeErrorText(new Error('No agent found for the requested endpoint'));
+
+    expect(text).toContain('Error: No agent found for the requested endpoint');
+    expect(text).toContain('errors.spec.ts');
+  });
+
+  it('redacts every URL an SDK error folds into its stack', () => {
+    const error = new Error(`upload failed: ${signedUrl}`);
+    error.stack = `Error: upload failed: ${signedUrl}\n    at send (/app/api/s3.js:1:1)`;
+
+    const text = getSafeErrorText(error);
+
+    expect(text).not.toContain('deadbeef');
+    expect(text).toContain('at send (/app/api/s3.js:1:1)');
+  });
+
+  it('keeps file:// stack frames readable', () => {
+    const error = new Error('boom');
+    error.stack = 'Error: boom\n    at run (file:///app/api/server.js:10:5)';
+
+    expect(getSafeErrorText(error)).toContain('file:///app/api/server.js:10:5');
+  });
+
+  it('redacts bearer credentials echoed into a message', () => {
+    const error = new Error('request rejected: Bearer sk-live-abcdef123456');
+
+    const text = getSafeErrorText(error);
+
+    expect(text).toContain('Bearer [redacted]');
+    expect(text).not.toContain('sk-live-abcdef123456');
+  });
+
+  it('describes an error-like object that carries no stack', () => {
+    expect(getSafeErrorText({ name: 'RestError', message: `blob read failed ${signedUrl}` })).toBe(
+      'RestError: blob read failed https://minio.example.com/[redacted]',
+    );
+  });
+
+  it('survives a value whose accessors throw', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('accessor exploded');
+        },
+      },
+    );
+
+    expect(getSafeErrorText(hostile)).toBe('UnknownError');
+  });
+
+  it('tolerates non-object values', () => {
+    expect(getSafeErrorText(undefined)).toBe('UnknownError');
+    expect(getSafeErrorText(42)).toBe('UnknownError');
+    expect(getSafeErrorText(`failed at ${signedUrl}`)).toBe(
+      'failed at https://minio.example.com/[redacted]',
+    );
+  });
+
+  it('bounds the text a very long error can write into the log', () => {
+    expect(getSafeErrorText(new Error('x'.repeat(9000))).length).toBeLessThanOrEqual(2000);
   });
 });
 

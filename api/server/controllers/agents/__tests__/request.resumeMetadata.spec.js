@@ -279,6 +279,7 @@ jest.mock('@librechat/api', () => ({
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
+  getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -2606,7 +2607,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
-  it('logs bounded metadata at the initialization boundary', async () => {
+  it('names the failure class at the initialization boundary', async () => {
     const initializeClient = jest.fn().mockRejectedValue(new AttachmentStorageError());
     const req = {
       user: { id: 'user-123' },
@@ -2623,9 +2624,12 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
 
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      '[ResumableAgentController] Initialization error:',
-      { type: 'Error' },
+    const [message, ...metadata] = mockLogger.error.mock.calls.find((call) =>
+      String(call[0]).startsWith('[ResumableAgentController] Initialization error:'),
+    );
+    expect(metadata).toEqual([]);
+    expect(message).toContain(
+      'AttachmentStorageError: An attached file could not be read from storage.',
     );
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
@@ -2633,6 +2637,35 @@ describe('ResumableAgentController resume metadata', () => {
       1000,
       expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
+  });
+
+  it('redacts a signed storage URL an initialization failure carries into the log', async () => {
+    const signedUrl =
+      'https://minio.example.com/bucket/image.png?X-Amz-Credential=secret&X-Amz-Signature=signed';
+    const initializeClient = jest
+      .fn()
+      .mockRejectedValue(new Error(`AccessDenied reading ${signedUrl}`));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [message, ...metadata] = mockLogger.error.mock.calls.find((call) =>
+      String(call[0]).startsWith('[ResumableAgentController] Initialization error:'),
+    );
+    expect(metadata).toEqual([]);
+    expect(message).toContain('AccessDenied reading https://minio.example.com/[redacted]');
+    expect(message).not.toContain('X-Amz-Signature');
+    expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(signedUrl);
   });
 
   it('publishes a safe image storage failure during generation and releases the request', async () => {
