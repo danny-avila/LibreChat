@@ -787,14 +787,10 @@ export const useDeleteConversationMutation = (
           exact: true,
         });
 
-        /* A fork inherits the source's archive state, so it can belong to either list. */
+        /* The row is gone from both lists, and cancelled races mean neither cache can be
+           trusted to have settled. */
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.allConversations],
-          refetchPage: () => true,
-          refetchType: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: [QueryKeys.archivedConversations],
           refetchPage: () => true,
           refetchType: 'active',
         });
@@ -840,14 +836,8 @@ export const useDuplicateConversationMutation = (
       );
       /* The copy inherits the source's archive state, so a duplicate made from an archived
          row belongs to the archived list, not the active one. */
-      /* A fork inherits the source's archive state, so it can belong to either list. */
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: () => true,
-        refetchType: 'active',
-      });
-      queryClient.invalidateQueries({
-        queryKey: [QueryKeys.archivedConversations],
         refetchPage: () => true,
         refetchType: 'active',
       });

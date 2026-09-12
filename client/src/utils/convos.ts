@@ -294,12 +294,25 @@ function conversationBelongsToListQuery(
 }
 
 /**
+ * Whether only the server can say what a variant holds after a write. Two things put it
+ * out of the client's reach: an order keyed on something other than last activity, which
+ * these writers cannot place a row against, and a search, which the server evaluates —
+ * a title edit or a new message can make a row start or stop matching one.
+ */
+function queryNeedsServerReconciliation(queryKey: readonly unknown[]): boolean {
+  if (!queryListsNewestFirst(queryKey)) {
+    return true;
+  }
+  const { search } = getConversationListQueryParams(queryKey);
+  return typeof search === 'string' && search.trim() !== '';
+}
+
+/**
  * What a writer may do with a row it wants to add to a variant.
  *
- * `skip` is only for a variant the row provably does not belong to. Where membership or
- * position cannot be decided here — a search the server evaluates, or an order keyed on
- * something other than last activity — the variant is refetched instead: skipping it
- * silently would leave a mounted list missing a row that belongs in it.
+ * `skip` is only for a variant the row provably does not belong to, by the facets the
+ * client decides: project, archive state, bookmarks. Anything left to the server is
+ * refetched instead — skipping it silently would leave a mounted list missing a row.
  */
 type ListInsertVerdict = 'insert' | 'skip' | 'refetch';
 
@@ -310,17 +323,14 @@ function conversationInsertVerdict(
   if (!conversationBelongsToListQuery(queryKey, conversation)) {
     return 'skip';
   }
-  const { tags, search } = getConversationListQueryParams(queryKey);
-  if (typeof search === 'string' && search.trim() !== '') {
-    return 'refetch';
-  }
+  const { tags } = getConversationListQueryParams(queryKey);
   if (Array.isArray(tags) && tags.length > 0) {
     const conversationTags = conversation.tags;
     if (!Array.isArray(conversationTags) || !tags.some((tag) => conversationTags.includes(tag))) {
       return 'skip';
     }
   }
-  return queryListsNewestFirst(queryKey) ? 'insert' : 'refetch';
+  return queryNeedsServerReconciliation(queryKey) ? 'refetch' : 'insert';
 }
 
 /** Dedicated pinned data wins for ids it already has. Pins that only live on
@@ -713,7 +723,7 @@ export function upsertConvoInAllQueries(
 
       return { ...oldData, pages };
     });
-    if (!newestFirst || verdict === 'refetch') {
+    if (queryNeedsServerReconciliation(query.queryKey)) {
       /* Inactive variants are only marked stale: they refresh when something mounts them. */
       queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
     }
@@ -927,7 +937,7 @@ export function updateConvoInAllQueries(
 
       return { ...oldData, pages: newPages };
     });
-    if (!newestFirst) {
+    if (queryNeedsServerReconciliation(query.queryKey)) {
       /* Inactive variants are only marked stale: they refresh when something mounts them. */
       queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
     }

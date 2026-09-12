@@ -887,6 +887,22 @@ describe('Conversation Utilities', () => {
         expect(queryClient.getQueryState(searchKey)?.isInvalidated).toBe(true);
       });
 
+      /** A title edit or a new message can make a row start or stop matching a search, and
+       *  only the server can say which: the mounted result has to be refetched either way. */
+      it('refetches a cached search variant after a field update', () => {
+        const searchKey = ['allConversations', { search: 'draft' }];
+        queryClient.setQueryData(searchKey, {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, title: 'No longer a draft' }));
+
+        const searched = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(searchKey);
+        expect(searched!.pages[0].conversations[0].title).toBe('No longer a draft');
+        expect(queryClient.getQueryState(searchKey)?.isInvalidated).toBe(true);
+      });
+
       it('updates a row in place under a non-default sort rather than moving it to the top', () => {
         const sortedKey = ['allConversations', { sortBy: 'createdAt' }];
         const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
