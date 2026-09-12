@@ -261,7 +261,7 @@ export default function useCodeWorkspace(
           });
           continue;
         }
-        if (selections == null && result.selected != null && result.state === 'ready') {
+        if (requested == null && result.selected != null && result.state === 'ready') {
           resolved.push(result.selected);
           continue;
         }
