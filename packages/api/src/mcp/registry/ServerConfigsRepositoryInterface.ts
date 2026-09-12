@@ -50,6 +50,12 @@ export interface IServerConfigsRepositoryInterface {
   //ACL Entry check if read is possible
   get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined>;
 
+  /**
+   * Reads an entry past any process-local snapshot, for a decision that must see a write another
+   * replica just made. Optional: stores whose `get` already reads current state omit it.
+   */
+  getCurrent?(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined>;
+
   //ACL Entry get all accessible mcp config definitions + any mcp configured with agents
   getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>>;
 

@@ -318,6 +318,20 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
     });
   });
 
+  describe('getCurrent operation', () => {
+    it('reads a write from another replica that its local snapshot predates', async () => {
+      const replicaA = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const replicaB = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      await replicaA.add('server1', mockConfig1);
+      await replicaA.getAll();
+      await replicaB.update('server1', mockConfig2);
+
+      expect(await replicaA.get('server1')).toMatchObject(mockConfig1);
+      expect(await replicaA.getCurrent('server1')).toMatchObject(mockConfig2);
+      expect(await replicaA.get('server1')).toMatchObject(mockConfig2);
+    });
+  });
+
   describe('replaceStub operation', () => {
     const stub = { ...mockConfig1, inspectionFailed: true } as ParsedServerConfig;
 

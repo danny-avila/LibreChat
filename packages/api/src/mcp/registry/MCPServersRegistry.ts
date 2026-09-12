@@ -710,11 +710,12 @@ export class MCPServersRegistry {
    * against the same allowlists therefore share one inspection and one write, and the write
    * replaces only the stub that was inspected, so a replica that lost the race writes nothing.
    *
-   * An entry that is no longer failed was already recovered and resolves to the stored config
-   * without another inspection, including when that recovery is found only after this call's
-   * own inspection failed. A stub that a registry re-initialization replaced while it was
-   * inspected resolves through an inspection of the newer stub. A server that is still
-   * unreachable rejects with `MCPInspectionFailedError`; an allowlist rejection is rethrown as is.
+   * Every decision reads the entry past the store's process-local snapshot. An entry that is no
+   * longer failed was already recovered and resolves to the stored config without another
+   * inspection, including when that recovery is found only after this call's own inspection
+   * failed. A stub that a registry re-initialization replaced while it was inspected resolves
+   * through an inspection of the newer stub. A server that is still unreachable rejects with
+   * `MCPInspectionFailedError`; an allowlist rejection is rethrown as is.
    */
   public async reinspectServer(
     serverName: string,
@@ -807,7 +808,8 @@ export class MCPServersRegistry {
    * Settles a reinspection whose own inspection did not replace `stub` against the entry stored
    * now. A recovery another writer stored is the outcome, and this replica's read caches drop
    * the stub they may still memoize from before it. A newer stub from a registry
-   * re-initialization gets its own inspection. A stub still in place rejects with `failure`.
+   * re-initialization is inspected within this flight rather than by joining another, so no
+   * flight ever waits on a second one. A stub still in place rejects with `failure`.
    */
   private async resolveStoredEntry(
     target: ReinspectionTarget,
@@ -824,7 +826,7 @@ export class MCPServersRegistry {
     if (current.updatedAt === stub.updatedAt) {
       throw failure;
     }
-    return this.joinReinspection(target, allowlists, current);
+    return this.reinspectStub(target, allowlists, current);
   }
 
   private async getReinspectionEntry({
@@ -833,7 +835,9 @@ export class MCPServersRegistry {
     storageLocation,
     userId,
   }: ReinspectionTarget): Promise<t.ParsedServerConfig> {
-    const entry = await configRepo.get(serverName, userId);
+    const entry = configRepo.getCurrent
+      ? await configRepo.getCurrent(serverName, userId)
+      : await configRepo.get(serverName, userId);
     if (!entry) {
       throw new Error(`Server "${serverName}" not found in ${storageLocation} for reinspection.`);
     }

@@ -1002,6 +1002,62 @@ describe('MCPServersRegistry', () => {
       );
     });
 
+    it('inspects a newer stub itself instead of waiting on the flight another request started for it', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
+      });
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
+      });
+      let releaseNewer!: () => void;
+      const newerHeld = new Promise<void>((resolve) => {
+        releaseNewer = resolve;
+      });
+      let markNewerInspecting!: () => void;
+      const newerInspecting = new Promise<void>((resolve) => {
+        markNewerInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markReplacedInspecting();
+          await replacedHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markNewerInspecting();
+          await newerHeld;
+          return inspect(...args);
+        });
+
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const newer = registry.reinspectServer('stub_server', 'CACHE');
+      await newerInspecting;
+
+      releaseReplaced();
+      const replacedResult = await replaced;
+      expect(inspectSpy).toHaveBeenCalledTimes(3);
+      expect(inspectSpy.mock.calls[2][1]).toMatchObject(movedOptions);
+      expect(replacedResult.config).toMatchObject(movedOptions);
+      expect(replacedResult.config.inspectionFailed).toBeUndefined();
+
+      releaseNewer();
+      await expect(newer).resolves.toEqual(replacedResult);
+      expect(inspectSpy).toHaveBeenCalledTimes(3);
+    });
+
     it('rejects instead of waiting on itself when storage leaves the inspected stub in place', async () => {
       await registry.addServerStub('stub_server', stubOptions, 'CACHE');
       jest

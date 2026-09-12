@@ -201,6 +201,13 @@ export class ServerConfigsCacheRedisAggregateKey
     return all[serverName];
   }
 
+  /** Reads past the local snapshot, which can lag another replica's write by up to its TTL. */
+  public async getCurrent(serverName: string): Promise<ParsedServerConfig | undefined> {
+    this.invalidateLocalSnapshot();
+    const all = await this.getAll();
+    return all[serverName];
+  }
+
   public async add(serverName: string, config: ParsedServerConfig): Promise<AddServerResult> {
     if (this.leaderOnly) await this.leaderCheck('add MCP servers');
     return this.withWriteLock(async () => {
