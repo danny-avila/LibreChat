@@ -226,16 +226,26 @@ interface RecoveryStateEntry {
   lastTouchedAt: number;
   outcome?: RecoveryOutcome;
   inFlight?: Promise<RecoveryOutcome>;
-  /**
-   * Present while this flight's own credential publication is open: the generation each clear
-   * received meanwhile carried, or `undefined` for a clear that carried none.
-   */
-  heldClears?: Array<string | undefined>;
+  /** Whether this flight's own discovery has a credential publication open. */
+  publishing?: boolean;
 }
 
-/** A clear that carries the generation its publication wrote spares state recorded under it. */
+/**
+ * A clear from a publication carries the generation it wrote, which only signals that the shared
+ * generation advanced. Generations carry no order, so that signal cannot tell whether a flight still
+ * in flight predates it; such a flight, when it has a known generation or is publishing its own
+ * change, is judged by its requests against the shared generation, as a rotation from another
+ * replica would be. Other state is cleared unless it was recorded under that generation, and a
+ * clear that carries no generation clears unconditionally.
+ */
 function isClearedBy(entry: RecoveryStateEntry, generation: string | undefined): boolean {
-  return generation == null || entry.recoveryGeneration !== generation;
+  if (generation == null) {
+    return true;
+  }
+  if (entry.inFlight != null && (entry.recoveryGeneration != null || entry.publishing === true)) {
+    return false;
+  }
+  return entry.recoveryGeneration !== generation;
 }
 
 /** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
@@ -354,7 +364,7 @@ export class MCPServerCatalogRecoveryTracker {
 
   /**
    * Clears suppression after a credential/config mutation commits. A clear from a publication
-   * carries the generation it wrote, which spares state already recorded under that generation.
+   * carries the generation it wrote; see `isClearedBy` for the state it spares.
    */
   public clear(userId: string, serverName?: string, generation?: string): void {
     if (serverName != null) {
@@ -369,39 +379,11 @@ export class MCPServerCatalogRecoveryTracker {
     }
   }
 
-  /** A flight still publishing its own credential change decides a clear once that ends. */
   private clearState(key: string, generation: string | undefined): void {
     const entry = this.states.get(key);
-    if (entry == null) {
-      return;
-    }
-    if (entry.inFlight != null && entry.heldClears != null) {
-      entry.heldClears.push(generation);
-      return;
-    }
-    if (isClearedBy(entry, generation)) {
+    if (entry != null && isClearedBy(entry, generation)) {
       this.states.delete(key);
     }
-  }
-
-  /** Adopts the generation a flight's publication wrote, then applies every clear held meanwhile. */
-  private finishPublication(
-    key: string,
-    entry: RecoveryStateEntry,
-    heldClears: ReadonlyArray<string | undefined>,
-    published: string | undefined,
-  ): boolean {
-    if (this.states.get(key) !== entry) {
-      return false;
-    }
-    if (published != null) {
-      entry.recoveryGeneration = published;
-    }
-    if (heldClears.some((generation) => isClearedBy(entry, generation))) {
-      this.states.delete(key);
-      return false;
-    }
-    return published != null;
   }
 
   public run(
@@ -419,7 +401,7 @@ export class MCPServerCatalogRecoveryTracker {
       existing?.configFingerprint === configFingerprint &&
       (recoveryGeneration == null ||
         existing.recoveryGeneration === recoveryGeneration ||
-        (existing.inFlight != null && existing.heldClears != null));
+        (existing.inFlight != null && existing.publishing === true));
     if (sameObservedState) {
       existing.lastTouchedAt = now;
       this.touch(key, existing);
@@ -444,26 +426,25 @@ export class MCPServerCatalogRecoveryTracker {
     /**
      * A credential refresh inside discovery writes a new shared generation, then clears local
      * recovery state with it, and only then reports what it wrote. While that bounded publication is
-     * open, requests for the same server join this flight and its clears are held, so neither the
-     * refresh's own clear nor a request that already reads the new generation supersedes it. The
-     * flight then adopts the generation and applies each held clear against it: its own clear
-     * carries that generation, while a teardown or another publication's clear does not.
+     * open, requests for the same server join this flight, so a request that already reads the new
+     * generation does not start a second discovery; the refresh's own clear spares the flight (see
+     * `isClearedBy`). A flight that is still current once the publication completes adopts the
+     * generation it wrote.
      */
     const trackPublication: PublicationTracker = async (publish) => {
-      if (settled || entry.heldClears != null || this.states.get(key) !== entry) {
+      if (settled || entry.publishing === true || this.states.get(key) !== entry) {
         return publish();
       }
-      const heldClears: Array<string | undefined> = [];
-      entry.heldClears = heldClears;
-      let published: string | undefined;
+      entry.publishing = true;
       try {
-        published = await publish();
-        return published;
-      } finally {
-        entry.heldClears = undefined;
-        if (this.finishPublication(key, entry, heldClears, settled ? undefined : published)) {
+        const published = await publish();
+        if (published != null && !settled && this.states.get(key) === entry) {
+          entry.recoveryGeneration = published;
           adopted = true;
         }
+        return published;
+      } finally {
+        entry.publishing = false;
       }
     };
     const flight = Promise.resolve()

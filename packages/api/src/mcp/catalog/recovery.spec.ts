@@ -344,13 +344,26 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
   });
 
   it.each([
-    ['spares a flight observed under the generation a clear carries', 'generation-2', true],
-    ['clears a flight observed under another generation', 'generation-3', false],
-    ['clears a flight when the clear carries no generation', undefined, false],
-  ])('%s', async (_case, clearedGeneration, kept) => {
+    [
+      'spares a flight observed under the generation a clear carries',
+      'generation-2',
+      'generation-2',
+    ],
+    [
+      'spares a flight observed under another generation for its requests to confirm',
+      'generation-2',
+      'generation-3',
+    ],
+    [
+      'clears a flight that observed no generation on a clear that carries one',
+      undefined,
+      'generation-3',
+    ],
+    ['clears a flight on a clear that carries no generation', 'generation-2', undefined],
+  ])('%s', async (_case, observedGeneration, clearedGeneration) => {
     const tracker = new MCPServerCatalogRecoveryTracker();
     let releaseDiscovery: () => void = () => undefined;
-    const flight = tracker.run(user, candidate, policy, 'generation-2', async () => {
+    const flight = tracker.run(user, candidate, policy, observedGeneration, async () => {
       await new Promise<void>((resolve) => {
         releaseDiscovery = resolve;
       });
@@ -361,8 +374,9 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     tracker.clear(user.id, serverName, clearedGeneration);
     releaseDiscovery();
 
+    const kept = observedGeneration != null && clearedGeneration != null;
     await expect(flight).resolves.toEqual(
-      kept ? { ...listed(), recoveryGeneration: 'generation-2' } : { serverName, tools: null },
+      kept ? { ...listed(), recoveryGeneration: observedGeneration } : { serverName, tools: null },
     );
   });
 
@@ -1180,10 +1194,11 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       await flush();
       releaseDiscovery.splice(0).forEach((release) => release());
 
-      const recovered = expect.objectContaining({
-        serverTools: new Map([[serverName, recoveredTools]]),
-      });
-      await expect(Promise.all([first, second])).resolves.toEqual([recovered, recovered]);
+      const results = await Promise.all([first, second]);
+      expect(results.map(({ serverTools }) => serverTools)).toEqual([
+        new Map([[serverName, recoveredTools]]),
+        new Map([[serverName, recoveredTools]]),
+      ]);
       expect(discoverServerTools).toHaveBeenCalledTimes(1);
     },
   );
@@ -1201,10 +1216,11 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-2');
     const second = loadCatalogs(fence, discoverServerTools);
 
-    const recovered = expect.objectContaining({
-      serverTools: new Map([[serverName, recoveredTools]]),
-    });
-    await expect(Promise.all([first, second])).resolves.toEqual([recovered, recovered]);
+    const results = await Promise.all([first, second]);
+    expect(results.map(({ serverTools }) => serverTools)).toEqual([
+      new Map([[serverName, recoveredTools]]),
+      new Map([[serverName, recoveredTools]]),
+    ]);
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
   });
 
@@ -1273,6 +1289,36 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       );
     },
   );
+
+  it('keeps a catalog discovered under a newer generation when an outlived refresh clears with an older one', async () => {
+    const fence = createFence();
+    const releaseDiscovery: Array<() => void> = [];
+    let completeRefresh: (() => Promise<string | undefined>) | undefined;
+    const discoverServerTools = jest
+      .fn()
+      .mockImplementationOnce(async ({ onOAuthCredentialsChanging }: ToolDiscoveryOptions) => {
+        completeRefresh = await onOAuthCredentialsChanging?.(scope);
+        return { tools: null };
+      })
+      .mockImplementation(async () => {
+        await new Promise<void>((resolve) => releaseDiscovery.push(resolve));
+        return { tools: listedTools };
+      });
+
+    await loadCatalogs(fence, discoverServerTools);
+    const releasePublication = fence.holdPublication();
+    const publication = completeRefresh?.();
+    await flush();
+    await fence.rotateOnAnotherReplica();
+    const takeover = loadCatalogs(fence, discoverServerTools);
+    await flush();
+    releasePublication();
+    await publication;
+    releaseDiscovery.splice(0).forEach((release) => release());
+
+    await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-3');
+    expect((await takeover).serverTools).toEqual(new Map([[serverName, recoveredTools]]));
+  });
 
   it('lets a refresh that outlives its discovery clear the backoff instead of adopting it', async () => {
     const fence = createFence();
