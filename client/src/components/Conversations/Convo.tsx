@@ -272,6 +272,9 @@ function Conversation({
   const convoOptionsProps = {
     title,
     isPinned: conversation.pinned,
+    /* The row's own state, not the list's: the sidebar shows unarchived pins beside an
+       archived list, and the previous page's rows stay on screen while the next loads. */
+    isArchived: conversation.isArchived === true,
     retainView,
     renameHandler: handleRename,
     isActiveConvo,
