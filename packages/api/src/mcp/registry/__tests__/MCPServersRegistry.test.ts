@@ -873,26 +873,88 @@ describe('MCPServersRegistry', () => {
       await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(result.config);
     });
 
-    it('rejects without writing when a newer failed stub replaced the inspected one', async () => {
+    it('inspects the newer stub when a registry re-initialization replaced the inspected one', async () => {
       await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
       const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
-      jest.spyOn(MCPServerInspector, 'inspect').mockImplementationOnce(async (...args) => {
-        jest.setSystemTime(new Date(FIXED_TIME + 1000));
-        await registry['cacheConfigsRepo'].update('stub_server', {
-          ...stubOptions,
-          source: 'yaml',
-          inspectionFailed: true,
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          jest.setSystemTime(new Date(FIXED_TIME + 1000));
+          await registry['cacheConfigsRepo'].update('stub_server', {
+            ...movedOptions,
+            source: 'yaml',
+            inspectionFailed: true,
+          });
+          return inspect(...args);
         });
-        return inspect(...args);
+
+      const result = await registry.reinspectServer('stub_server', 'CACHE');
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(inspectSpy.mock.calls[1][1]).toMatchObject(movedOptions);
+      expect(result.config).toMatchObject(movedOptions);
+      expect(result.config.inspectionFailed).toBeUndefined();
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(result.config);
+    });
+
+    it('does not answer a caller that read a newer stub with the inspection of the one it replaced', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
       });
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markReplacedInspecting();
+          await replacedHeld;
+          return inspect(...args);
+        });
+
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+
+      const current = await registry.reinspectServer('stub_server', 'CACHE');
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(inspectSpy.mock.calls[1][1]).toMatchObject(movedOptions);
+      expect(current.config).toMatchObject(movedOptions);
+
+      releaseReplaced();
+      await expect(replaced).resolves.toEqual(current);
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(
+        current.config,
+      );
+    });
+
+    it('rejects instead of waiting on itself when storage leaves the inspected stub in place', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      jest
+        .spyOn(ServerConfigsCacheInMemory.prototype, 'replaceStub')
+        .mockResolvedValueOnce(undefined);
 
       await expect(registry.reinspectServer('stub_server', 'CACHE')).rejects.toThrow(
         MCPInspectionFailedError,
       );
       await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toMatchObject({
         inspectionFailed: true,
-        updatedAt: FIXED_TIME + 1000,
       });
+
+      const retried = await registry.reinspectServer('stub_server', 'CACHE');
+      expect(retried.config.inspectionFailed).toBeUndefined();
     });
 
     it('rejects every concurrent caller while the server is unreachable, then retries on the next call', async () => {
