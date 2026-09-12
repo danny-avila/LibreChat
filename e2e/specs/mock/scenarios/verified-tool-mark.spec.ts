@@ -97,10 +97,10 @@ test.describe('native tool verified mark', () => {
 
     const card = mark.locator(CARD_FROM_MARK);
     const resting = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-    const behind =
-      channels(resting)[0] === 0 && resting.includes('rgba')
-        ? await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)
-        : resting;
+    /** A resting card is transparent, so what sits behind the mark is the panel. */
+    const behind = resting.endsWith(', 0)')
+      ? await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)
+      : resting;
     expect(contrast(paint.color, behind)).toBeGreaterThanOrEqual(MARK_FLOOR);
   });
 
@@ -117,15 +117,25 @@ test.describe('native tool verified mark', () => {
     await expect(mark).toBeVisible();
     const card = mark.locator(CARD_FROM_MARK);
 
-    await card.hover();
-    const hovered = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-    /** The hover repaint has to have happened, or the assertion below would
-     *  measure the resting card and pass for the wrong reason. */
-    expect(hovered).not.toContain('rgba(0, 0, 0, 0)');
+    const panel = await dialog.evaluate((element) => getComputedStyle(element).backgroundColor);
+    /** A touch viewport has no hover state to lose, so there the card keeps its
+     *  resting background and that is what the mark has to survive. */
+    const hoverable = await page.evaluate(() => matchMedia('(hover: hover)').matches);
+    if (hoverable) {
+      await card.hover();
+    }
+    const painted = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+    /** A resting card is transparent, so what sits behind the mark is the panel. */
+    const background = painted.endsWith(', 0)') ? panel : painted;
+    if (hoverable) {
+      /** The repaint has to have happened, or the assertion below would measure
+       *  the resting card and pass for the wrong reason. */
+      expect(background).not.toBe(panel);
+    }
 
     const paint = await paintOf(mark);
     expect(paint.badgeStroke).toBe('none');
-    expect(contrast(paint.color, hovered)).toBeGreaterThanOrEqual(MARK_FLOOR);
+    expect(contrast(paint.color, background)).toBeGreaterThanOrEqual(MARK_FLOOR);
     expect(contrast(paint.color, paint.checkStroke)).toBeGreaterThanOrEqual(MARK_FLOOR);
   });
 

@@ -103,9 +103,17 @@ export async function openAgentBuilder(page: Page) {
         await agentBuilderButton.click();
       }
     } else {
-      const controlPanelButton = page.getByRole('button', { name: 'Control Panel' });
-      await expect(controlPanelButton).toBeVisible();
-      await controlPanelButton.click();
+      /** Below the breakpoint there is no rail: the panel switcher lives inside
+       *  the sidebar, which starts off-canvas, and each panel is an entry in
+       *  the menu it opens. */
+      const openSidebarButton = page.getByRole('button', { name: 'Open sidebar' });
+      if (await openSidebarButton.isVisible()) {
+        await openSidebarButton.click();
+      }
+      const panelSwitcher = page.getByTestId('panel-switcher-button');
+      await expect(panelSwitcher).toBeVisible();
+      await panelSwitcher.click();
+      await page.getByRole('menuitemcheckbox', { name: 'Agent Builder' }).click();
     }
   }
   await expect(form).toBeVisible();
