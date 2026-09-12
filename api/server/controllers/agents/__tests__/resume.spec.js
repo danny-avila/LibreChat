@@ -2461,6 +2461,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
     });
 
+    it('enforces the current fingerprint while retaining the rolling-deploy digest', async () => {
+      const { computeAgentRequestFingerprint, computeLegacyAgentRequestFingerprint } =
+        jest.requireActual('@librechat/api');
+      const pausedBody = {
+        endpoint: 'agents',
+        agent_id: AGENT_ID,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-a' }],
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.requestFingerprint =
+        computeLegacyAgentRequestFingerprint(pausedBody);
+      job.metadata.pendingAction.requestFingerprintV2 = computeAgentRequestFingerprint(pausedBody);
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(
+        approveBody({
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-b' }],
+        }),
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/different agent configuration/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('403 when the resume sends a different promptPrefix than the paused config', async () => {
       const { computeAgentRequestFingerprint } = jest.requireActual('@librechat/api');
       const job = makeToolApprovalJob();

@@ -444,6 +444,39 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     });
   });
 
+  it('accepts an equivalent retry regardless of selection order', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(workspaceStatus([{ id: 'project-a' }]));
+    const personal = { environmentId: 'personal', workspaceId: 'project-a' };
+    const team = { environmentId: 'team', workspaceId: 'project-b' };
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [team, personal],
+        persistedSelections: [personal, team],
+        environments,
+        getAppConfig,
+      }),
+    ).resolves.toMatchObject({ codeWorkspace: personal });
+  });
+
+  it('rejects a request that changes a persisted workspace before contacting Code API', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-b' }],
+        persistedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toMatchObject({ reason: 'locked' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('fails when the saved workspace disappears instead of selecting another', async () => {
     jest.spyOn(globalThis, 'fetch').mockResolvedValue(workspaceStatus([{ id: 'replacement' }]));
 

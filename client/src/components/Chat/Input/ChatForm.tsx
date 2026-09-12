@@ -650,6 +650,28 @@ const ChatForm = memo(function ChatForm({
               onRestoreToComposer={restoreReclaimedSteer}
             />
           )}
+          {(project ||
+            (codeWorkspace.required && (!codeWorkspace.locked || !codeWorkspace.canSubmit))) && (
+            <div
+              data-testid="composer-context-rail"
+              className={cn(
+                'mx-4 -mb-3 flex min-w-0 flex-wrap items-center gap-1 rounded-t-2xl',
+                'border border-border-light bg-surface-secondary px-2 pb-4 pt-1',
+                isRTL && 'flex-row-reverse',
+              )}
+            >
+              {project ? <ProjectLandingChip project={project} /> : null}
+              {codeWorkspace.required && (!codeWorkspace.locked || !codeWorkspace.canSubmit) ? (
+                <div className="min-w-0 px-1 pt-1">
+                  <CodeWorkspaceMenu
+                    setConversation={setConversation}
+                    workspace={codeWorkspace}
+                    disabled={disableInputs || isSubmitting}
+                  />
+                </div>
+              ) : null}
+            </div>
+          )}
           <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
             <Mention
               index={index}
@@ -703,7 +725,6 @@ const ChatForm = memo(function ChatForm({
                 isTemporary && 'border-series-6/50 bg-series-6/10 high-contrast:border-series-6',
               )}
             >
-              {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
               {quotesEnabled && (
@@ -782,11 +803,6 @@ const ChatForm = memo(function ChatForm({
                       onFocus={handleTextareaFocus}
                       onBlur={handleTextareaBlur}
                       aria-label={localize('com_ui_message_input')}
-                      aria-describedby={
-                        codeWorkspace.state === 'choose' || codeWorkspace.state === 'missing'
-                          ? `code-workspace-hint-${index}`
-                          : undefined
-                      }
                       onClick={handleFocusOrClick}
                       style={{ height: 44, overflowY: 'auto' }}
                       className={cn(
@@ -804,15 +820,6 @@ const ChatForm = memo(function ChatForm({
                     />
                   </div>
                 </div>
-              )}
-              {(codeWorkspace.state === 'choose' || codeWorkspace.state === 'missing') && (
-                <p
-                  id={`code-workspace-hint-${index}`}
-                  role="status"
-                  className="px-5 pb-2 text-sm text-text-secondary"
-                >
-                  {localize('com_error_code_workspace_required')}
-                </p>
               )}
               <div
                 className={cn(
@@ -848,12 +855,6 @@ const ChatForm = memo(function ChatForm({
                   conversation={conversation}
                   addedConversation={addedConvo}
                   setConversation={setConversation}
-                  disabled={disableInputs || isSubmitting}
-                />
-                <CodeWorkspaceMenu
-                  conversation={conversation}
-                  setConversation={setConversation}
-                  workspace={codeWorkspace}
                   disabled={disableInputs || isSubmitting}
                 />
                 {index === 0 && conversationId != null && (
@@ -964,6 +965,7 @@ function ChatFormWrapper({
       conversation?.model,
       conversation?.maxContextTokens,
       conversation?.codeApprovalMode,
+      conversation?.codeEnvironmentMode,
       conversation?.codeWorkspaces,
       hasMessages,
     ],

@@ -78,17 +78,45 @@ describe('AgentClient code approval persistence', () => {
       },
       req: {
         body: { codeApprovalMode: 'acceptEdits' },
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [
+            { environmentId: 'attached-vm', workspaceId: 'project-a' },
+            { environmentId: 'team-vm', workspaceId: 'project-b' },
+          ],
+        },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
       },
     };
 
     expect(client.getSaveOptions()).toMatchObject({
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [
         { environmentId: 'attached-vm', workspaceId: 'project-a' },
         { environmentId: 'team-vm', workspaceId: 'project-b' },
       ],
     });
+  });
+
+  it('does not combine a normalized no-attached mode with stale request selections', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {
+          codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'stale-project' }],
+        },
+        _codeEnvironmentDecision: { mode: 'without_attached' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions.codeEnvironmentMode).toBe('without_attached');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
   });
 });
 

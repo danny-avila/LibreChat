@@ -1,5 +1,6 @@
 import type {
   CodeApprovalMode,
+  CodeEnvironmentMode,
   CodeWorkspaceSelection,
   TSubagentThreadLineage,
 } from 'librechat-data-provider';
@@ -270,6 +271,7 @@ export interface IConversation extends Document {
   imageDetail?: string;
   agent_id?: string;
   codeApprovalMode?: CodeApprovalMode;
+  codeEnvironmentMode?: CodeEnvironmentMode;
   codeWorkspaces?: CodeWorkspaceSelection[];
   /** Immutable primary persisted-agent attribution for Insights. */
   initial_agent_id?: string | null;

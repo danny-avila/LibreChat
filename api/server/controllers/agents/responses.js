@@ -18,8 +18,6 @@ const {
   createAgentRunEnvelope,
   createAgentExecutionContext,
   createMCPRuntimeRequestBody,
-  getCodeWorkspaceSelections,
-  collectReachableAgents,
   buildAgentScopedContext,
   buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
@@ -84,6 +82,7 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  resolveConversationCodeEnvironmentDecision,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -449,7 +448,14 @@ async function saveResponseOutput(
  * @param {object} agent
  * @returns {Promise<void>}
  */
-async function saveConversation(req, conversationId, agentId, agent, codeWorkspaces) {
+async function saveConversation(
+  req,
+  conversationId,
+  agentId,
+  agent,
+  codeEnvironmentMode,
+  codeWorkspaces,
+) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
     {
@@ -462,6 +468,7 @@ async function saveConversation(req, conversationId, agentId, agent, codeWorkspa
       conversationId,
       endpoint: EModelEndpoint.agents,
       agent_id: agentId,
+      codeEnvironmentMode,
       ...(codeWorkspaces !== undefined && { codeWorkspaces }),
       ...(title != null && { title }),
       model: agent?.model,
@@ -697,11 +704,18 @@ const executeResponse = async (envelope, { req, res }) => {
         }
       }
 
+      const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+        conversationId,
+        requestedMode: request.code_environment_mode,
+        requestedSelections: request.code_workspaces,
+        conversation: req.resolvedConversation,
+      });
       const parentMessageId = null;
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
-        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
+        codeEnvironmentMode: codeEnvironmentDecision.mode,
+        codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
       });
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const ordinaryToolCancellationEnabled =
@@ -1333,9 +1347,8 @@ const executeResponse = async (envelope, { req, res }) => {
               conversationId,
               agentId,
               agent,
-              getCodeWorkspaceSelections(
-                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
-              ),
+              codeEnvironmentDecision.mode,
+              codeEnvironmentDecision.codeWorkspaces,
             );
 
             // Save input messages
@@ -1572,9 +1585,8 @@ const executeResponse = async (envelope, { req, res }) => {
               conversationId,
               agentId,
               agent,
-              getCodeWorkspaceSelections(
-                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
-              ),
+              codeEnvironmentDecision.mode,
+              codeEnvironmentDecision.codeWorkspaces,
             );
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);

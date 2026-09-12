@@ -43,8 +43,8 @@ const {
   buildPendingAction,
   toClientPendingAction,
   captureCodeExecutionApprovalBinding,
-  getCodeWorkspaceSelections,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
   pickResumeContext,
@@ -1997,6 +1997,7 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
+    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
 
     return removeNullishValues(
       Object.assign(
@@ -2011,9 +2012,12 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeWorkspaces: getCodeWorkspaceSelections(
-            collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
-          ),
+          codeEnvironmentMode:
+            codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
+          codeWorkspaces:
+            codeEnvironmentDecision != null
+              ? codeEnvironmentDecision.codeWorkspaces
+              : this.options.req.body.codeWorkspaces,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -4308,7 +4312,11 @@ class AgentClient extends BaseClient {
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
-      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Keep the legacy digest in its established field so an old replica can
+      // resume pauses written during a rolling deploy; current replicas also
+      // enforce the stricter code-environment-aware digest below.
+      requestFingerprint: computeLegacyAgentRequestFingerprint(this.options.req?.body ?? {}),
+      requestFingerprintV2: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
       // Persist those same fields verbatim so the resume route can REPLAY them — a
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
@@ -4508,6 +4516,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -5284,6 +5295,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,

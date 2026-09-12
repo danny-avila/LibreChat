@@ -1,12 +1,18 @@
 import { useCallback, useMemo } from 'react';
-import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   EModelEndpoint,
   Tools,
   isEphemeralAgentId,
   isCodeWorkspaceSelections,
 } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  PermissionTypes,
+  Permissions,
+} from 'librechat-data-provider';
 import type {
+  CodeEnvironmentMode,
   CodeWorkspaceDescriptor,
   CodeWorkspaceSelection,
   TConfig,
@@ -15,7 +21,7 @@ import type {
   TPublicCodeEnvironment,
 } from 'librechat-data-provider';
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
-import { useCodeEnvironmentStatusQueries } from '~/data-provider';
+import { useCodeEnvironmentStatusQueries, useGetStartupConfig } from '~/data-provider';
 import { useWorkspacePreferences } from './workspacePreferences';
 import useAgentToolPermissions from './useAgentToolPermissions';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -24,6 +30,7 @@ import { useAgentsMapContext } from '~/Providers';
 
 export type CodeWorkspaceState =
   | 'not_required'
+  | 'without_attached'
   | 'loading'
   | 'choose'
   | 'ready'
@@ -40,6 +47,9 @@ export interface CodeWorkspaceEnvironmentResult {
 
 export interface CodeWorkspaceResult {
   required: boolean;
+  supportsEnvironmentDecisions: boolean;
+  locked: boolean;
+  mode?: CodeEnvironmentMode;
   state: CodeWorkspaceState;
   canSubmit: boolean;
   environments: CodeWorkspaceEnvironmentResult[];
@@ -49,7 +59,10 @@ export interface CodeWorkspaceResult {
   ) => CodeWorkspaceSelection[] | undefined;
   resolveSubmission: (
     selections?: CodeWorkspaceSelection[],
-  ) => { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined;
+    mode?: CodeEnvironmentMode,
+  ) =>
+    | { codeEnvironmentMode?: CodeEnvironmentMode; codeWorkspaces?: CodeWorkspaceSelection[] }
+    | undefined;
   rememberSelection: (selection: CodeWorkspaceSelection) => void;
 }
 
@@ -95,6 +108,9 @@ export default function useCodeWorkspace(
   conversation: TConversation | null,
   addedConversation?: TConversation | null,
 ): CodeWorkspaceResult {
+  const { data: startupConfig } = useGetStartupConfig();
+  const supportsEnvironmentDecisions =
+    startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -199,6 +215,7 @@ export default function useCodeWorkspace(
   const isNewChat =
     conversation != null &&
     (conversation.conversationId == null || conversation.conversationId === 'new');
+  const locked = conversation != null && !isNewChat;
   const environmentResults = attachedEnvironments.map((environment, index) => {
     const status = statuses[index];
     const workspaces =
@@ -278,20 +295,55 @@ export default function useCodeWorkspace(
   );
 
   const selections = resolveSelections(storedSelections);
-  const state = configurationPending
-    ? 'loading'
-    : aggregateState(required, metadataComplete, environmentResults, selections);
+  let inferredMode: CodeEnvironmentMode | undefined = conversation?.codeEnvironmentMode;
+  if (inferredMode == null && storedSelections != null) {
+    inferredMode = 'attached';
+  } else if (inferredMode == null && selections != null) {
+    inferredMode = 'attached';
+  } else if (inferredMode == null && required && supportsEnvironmentDecisions) {
+    inferredMode = 'without_attached';
+  }
+  let state: CodeWorkspaceState;
+  const hasLockedWithoutAttachedDecision =
+    inferredMode === 'without_attached' &&
+    (conversation?.codeEnvironmentMode === 'without_attached' || locked);
+  if (hasLockedWithoutAttachedDecision) {
+    state = 'without_attached';
+  } else if (configurationPending) {
+    state = 'loading';
+  } else {
+    state = aggregateState(required, metadataComplete, environmentResults, selections);
+  }
   const resolveSubmission = useCallback(
     (
       candidateSelections?: CodeWorkspaceSelection[],
-    ): { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined => {
+      candidateMode?: CodeEnvironmentMode,
+    ):
+      | { codeEnvironmentMode?: CodeEnvironmentMode; codeWorkspaces?: CodeWorkspaceSelection[] }
+      | undefined => {
       if (!required) return {};
+      const requestedMode =
+        candidateMode ??
+        inferredMode ??
+        (isCodeWorkspaceSelections(candidateSelections) && candidateSelections.length > 0
+          ? 'attached'
+          : undefined);
+      if (requestedMode === 'without_attached') {
+        return supportsEnvironmentDecisions
+          ? { codeEnvironmentMode: 'without_attached' }
+          : undefined;
+      }
+      if (requestedMode == null && supportsEnvironmentDecisions) {
+        return { codeEnvironmentMode: 'without_attached' };
+      }
       const codeWorkspaces = resolveSelections(candidateSelections);
-      return codeWorkspaces == null ? undefined : { codeWorkspaces };
+      return codeWorkspaces == null
+        ? undefined
+        : { codeEnvironmentMode: 'attached', codeWorkspaces };
     },
-    [required, resolveSelections],
+    [inferredMode, required, resolveSelections, supportsEnvironmentDecisions],
   );
-  const canSubmit = resolveSubmission(storedSelections) != null;
+  const canSubmit = resolveSubmission(storedSelections, conversation?.codeEnvironmentMode) != null;
   const rememberSelection = useCallback(
     (selection: CodeWorkspaceSelection) => {
       preferences.remember(selection.environmentId, selection.workspaceId, [
@@ -302,6 +354,9 @@ export default function useCodeWorkspace(
   );
   return {
     required,
+    supportsEnvironmentDecisions,
+    locked,
+    mode: inferredMode,
     state,
     canSubmit,
     environments: environmentResults,

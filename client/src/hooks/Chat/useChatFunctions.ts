@@ -332,12 +332,17 @@ export default function useChatFunctions({
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
     const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
-    const workspaceSubmission = codeWorkspaceState.resolveSubmission(latestCodeWorkspaces);
+    const latestCodeEnvironmentMode =
+      getConversation()?.codeEnvironmentMode ?? conversation?.codeEnvironmentMode;
+    const workspaceSubmission = codeWorkspaceState.resolveSubmission(
+      latestCodeWorkspaces,
+      latestCodeEnvironmentMode,
+    );
     if (workspaceSubmission == null) {
       logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
       return false;
     }
-    const { codeWorkspaces } = workspaceSubmission;
+    const { codeEnvironmentMode, codeWorkspaces } = workspaceSubmission;
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
@@ -757,6 +762,7 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       codeApprovalMode,
+      codeEnvironmentMode,
       codeWorkspaces,
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,

@@ -337,11 +337,13 @@ jest.mock('@librechat/api', () => ({
     messageId,
     conversationId,
     parentMessageId,
+    codeEnvironmentMode,
     codeWorkspaces,
   }) => ({
     messageId,
     conversationId,
     parentMessageId,
+    ...(codeEnvironmentMode !== undefined ? { codeEnvironmentMode } : {}),
     ...(codeWorkspaces !== undefined ? { codeWorkspaces } : {}),
   }),
 }));
@@ -1428,6 +1430,53 @@ describe('ResumableAgentController resume metadata', () => {
     expect(jobOptions.initialMetadata.userMessage.messageId).toBe(requestBody.parentMessageId);
     expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
     expect(requestBody.messageId).not.toBe(req.body.messageId);
+  });
+
+  it('pins a normalized code-environment decision before provider execution', async () => {
+    let signalProviderStarted;
+    const providerStarted = new Promise((resolve) => {
+      signalProviderStarted = resolve;
+    });
+    const sendMessage = jest.fn(() => {
+      signalProviderStarted();
+      return new Promise(() => {});
+    });
+    const initializeClient = jest.fn(async ({ req }) => {
+      req.body.codeEnvironmentMode = 'without_attached';
+      delete req.body.codeWorkspaces;
+      return { client: { options: {}, sendMessage } };
+    });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Continue without my attached machine.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+    await providerStarted;
+
+    const initialRequestBody =
+      mockGenerationJobManager.createJob.mock.calls[0][3].initialMetadata.mcpRequestBody;
+    expect(initialRequestBody).not.toHaveProperty('codeEnvironmentMode');
+    expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+      'conversation-123',
+      {
+        mcpRequestBody: {
+          ...initialRequestBody,
+          codeEnvironmentMode: 'without_attached',
+        },
+      },
+      1000,
+    );
+    expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      sendMessage.mock.invocationCallOrder[0],
+    );
   });
 
   it('uses the effective overridden conversation in the MCP request body', async () => {
@@ -3803,15 +3852,18 @@ describe('ResumableAgentController resume metadata', () => {
           modelOptions: { model: 'gpt-4o' },
           chatProjectId: '507f1f77bcf86cd799439011',
         },
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+      });
+      const initializeClient = jest.fn().mockImplementation(async ({ req: request }) => {
+        request._codeEnvironmentDecision = {
+          mode: 'attached',
+          codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+        };
+        throw new Error('model unavailable');
       });
 
-      await AgentController(
-        req,
-        res,
-        jest.fn(),
-        jest.fn().mockRejectedValue(new Error('model unavailable')),
-        null,
-      );
+      await AgentController(req, res, jest.fn(), initializeClient, null);
 
       const mintedConversationId = res.json.mock.calls[0][0].conversationId;
       expect(mockSaveMessage).toHaveBeenCalledWith(
@@ -3829,6 +3881,8 @@ describe('ResumableAgentController resume metadata', () => {
           endpoint: 'azureOpenAI',
           model: 'gpt-4o',
           chatProjectId: '507f1f77bcf86cd799439011',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
         }),
         expect.objectContaining({ initialAgentId: null }),
       );

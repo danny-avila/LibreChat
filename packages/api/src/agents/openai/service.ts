@@ -20,7 +20,7 @@ import type { LocatorTraversalReporter } from '../../protection/diagnostics';
  * ```
  */
 import { nanoid } from 'nanoid';
-import { isCodeWorkspaceSelections } from 'librechat-data-provider';
+import { isCodeEnvironmentMode, isCodeWorkspaceSelections } from 'librechat-data-provider';
 import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
@@ -539,6 +539,12 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
     return { valid: false, error: 'conversation_id must be a string' };
   }
   if (
+    request.code_environment_mode !== undefined &&
+    !isCodeEnvironmentMode(request.code_environment_mode)
+  ) {
+    return { valid: false, error: 'code_environment_mode is invalid' };
+  }
+  if (
     request.code_workspaces !== undefined &&
     !isCodeWorkspaceSelections(request.code_workspaces)
   ) {
@@ -655,6 +661,7 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
+    codeEnvironmentMode: request.code_environment_mode,
     codeWorkspaces: request.code_workspaces,
     parentMessageId: mcpParentMessageId,
   });

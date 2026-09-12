@@ -2458,6 +2458,103 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
+  it('withholds attached code tools when the conversation works without an environment', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    agent.stateful_code_sessions = true;
+    agent.code_environment_id = 'personal-vm';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+              },
+            ],
+          },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'without_attached',
+        },
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        statefulSessionsAvailable: true,
+      },
+      db,
+    );
+
+    expect(result.codeEnvAvailable).toBe(false);
+    expect(result.codeExecutionContext).toEqual(
+      expect.objectContaining({ executionProfile: 'default', statefulSessions: false }),
+    );
+    expect(result.toolDefinitions?.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining(['bash_tool', 'read_file', 'create_file', 'edit_file']),
+    );
+  });
+
+  it('does not disable managed code tools for the without-attached decision', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    agent.stateful_code_sessions = true;
+    agent.code_environment_id = 'managed-code';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'managed-code',
+                name: 'Managed code',
+                type: 'managed',
+                baseURL: 'https://code.example.com/v1',
+              },
+            ],
+          },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'without_attached',
+        },
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        statefulSessionsAvailable: true,
+      },
+      db,
+    );
+
+    expect(result.codeEnvAvailable).toBe(true);
+    expect(result.toolDefinitions?.map(({ name }) => name)).toEqual(
+      expect.arrayContaining(['bash_tool', 'read_file']),
+    );
+  });
+
   it('routes code-file priming through the stateful profile before tools load', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];
