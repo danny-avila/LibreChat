@@ -7,6 +7,7 @@ import {
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
+  SKILL_BODY_MAX_LENGTH,
 } from 'librechat-data-provider';
 import {
   partitionIssues,
@@ -565,6 +566,31 @@ describe('skill validation helpers', () => {
 });
 
 describe('Skill CRUD methods', () => {
+  it('rejects an oversized body before scanning its frontmatter on create', async () => {
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(methods.createSkill(makeSkillInput({ body }))).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
+  it('rejects an oversized body before scanning its frontmatter on update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: 1,
+        update: { body },
+      }),
+    ).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
   it('creates a skill with version 1 and default fileCount 0', async () => {
     const { skill, warnings } = await methods.createSkill(makeSkillInput());
     expect(skill.name).toBe('demo-skill');
