@@ -1,11 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import {
-  MOCK_ENDPOINTS,
-  mockReply,
-  selectMockEndpoint,
-  sendMessage,
-} from './helpers';
+import { MOCK_ENDPOINTS, mockReply, selectMockEndpoint, sendMessage } from './helpers';
 
 /**
  * Creates a project from the all-projects page and returns its id.
@@ -63,7 +58,6 @@ test.describe('chat projects', () => {
     await expect(page.getByRole('button', { name }).first()).toBeVisible();
   });
 
-
   test('hands keyboard focus from the file menu to the picker and back', async ({ page }) => {
     await page.route(
       (url) => url.pathname === '/api/config',
@@ -95,10 +89,12 @@ test.describe('chat projects', () => {
   test('edits long project metadata inline without overflowing mobile layouts', async ({
     page,
   }) => {
-    await createProject(page, uniqueName('Inline project'));
+    const initialName = uniqueName('Inline project');
+    await createProject(page, initialName);
     await page.setViewportSize({ width: 320, height: 844 });
-    await page.getByRole('button', { name: 'Project options', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Edit project', exact: true }).click();
+    /** The workspace edits metadata in place: its title is the control that opens the
+     *  editor, and the options menu carries only destructive actions. */
+    await page.getByRole('main').getByRole('button', { name: initialName, exact: true }).click();
 
     const nameInput = page.getByRole('textbox', { name: 'Project name', exact: true });
     await expect(nameInput).toBeFocused();

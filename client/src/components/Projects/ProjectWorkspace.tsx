@@ -50,6 +50,17 @@ const WORKSPACE_PANEL_IDS = ['project-details', 'project-chats'];
 const DETAILS_PANEL_IDS_WITH_FILES = ['project-instructions', 'project-files'];
 const DETAILS_PANEL_IDS = ['project-instructions'];
 
+/** Both separators grab from a band this wide, and the junction that moves all three
+ *  panels is where the two bands cross: at the library's 10px default the crossing is
+ *  only ~4.5px of aim, so the bands are widened to keep it comfortable. Both stay
+ *  inside the 12px gutters flanking each separator, so no panel content is covered. */
+const RESIZE_TARGET_SIZE = { coarse: 32, fine: 22 };
+
+/** A section is its header plus an empty-state card (badge, two wrapped lines); shrinking
+ *  a panel past that would scroll chrome that has nothing to scroll, so the drag stops
+ *  here instead. Panels holding content still scroll, which is the point of scrolling. */
+const DETAILS_PANEL_MIN_SIZE = '240px';
+
 export default function ProjectWorkspace() {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -374,22 +385,16 @@ export default function ProjectWorkspace() {
             menuId={projectMenuId}
             isOpen={isProjectMenuOpen}
             setIsOpen={setIsProjectMenuOpen}
-            finalFocus={isEditOpen ? nameInputRef : undefined}
             trigger={
               <Ariakit.MenuButton
                 aria-label={localize('com_ui_project_options')}
                 className="shrink-0 aria-expanded:bg-surface-hover"
-                render={<Button type="button" variant="ghost" size="icon" />}
+                render={<Button type="button" variant="outline" size="icon" />}
               >
                 <MoreHorizontal className="size-5" aria-hidden="true" />
               </Ariakit.MenuButton>
             }
             items={[
-              {
-                label: localize('com_ui_edit_project'),
-                icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
-                onClick: () => startEditing('name'),
-              },
               {
                 label: localize('com_ui_delete_project_action'),
                 icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
@@ -431,6 +436,7 @@ export default function ProjectWorkspace() {
           id="project-workspace"
           defaultLayout={workspaceLayout.defaultLayout}
           onLayoutChanged={workspaceLayout.onLayoutChanged}
+          resizeTargetMinimumSize={RESIZE_TARGET_SIZE}
           className="min-h-0 flex-1"
         >
           <ResizablePanel
@@ -440,22 +446,27 @@ export default function ProjectWorkspace() {
             maxSize="70"
             className="min-w-0"
           >
-            <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 py-6 pl-4 pr-3 md:pl-6">
-              {detailsHeader}
+            <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 py-6 pl-4 md:pl-6">
+              <div className="pr-3">{detailsHeader}</div>
+              {/** The gutter before the workspace separator lives on each section rather than
+               *  this column, so the details group reaches the panel edge and its horizontal
+               *  separator overlaps the vertical one. Dragging that overlap resizes both
+               *  groups at once, which is what moves all three panels together. */}
               <ResizablePanelGroup
                 orientation="vertical"
                 id="project-details-panels"
                 defaultLayout={detailsLayout.defaultLayout}
                 onLayoutChanged={detailsLayout.onLayoutChanged}
+                resizeTargetMinimumSize={RESIZE_TARGET_SIZE}
                 className="min-h-0 flex-1"
               >
                 <ResizablePanel
                   id="project-instructions"
                   defaultSize="55"
-                  minSize="20"
+                  minSize={DETAILS_PANEL_MIN_SIZE}
                   className="min-h-0"
                 >
-                  <div className="h-full pb-3">{instructionsSection}</div>
+                  <div className="h-full pb-3 pr-3">{instructionsSection}</div>
                 </ResizablePanel>
                 {filesSection != null && (
                   <>
@@ -463,10 +474,10 @@ export default function ProjectWorkspace() {
                     <ResizablePanel
                       id="project-files"
                       defaultSize="45"
-                      minSize="20"
+                      minSize={DETAILS_PANEL_MIN_SIZE}
                       className="min-h-0"
                     >
-                      <div className="h-full pt-3">{filesSection}</div>
+                      <div className="h-full pr-3 pt-3">{filesSection}</div>
                     </ResizablePanel>
                   </>
                 )}

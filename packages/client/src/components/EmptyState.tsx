@@ -33,8 +33,11 @@ export default function EmptyState({
         className,
       )}
     >
-      <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
-        <Icon className="size-5 text-text-secondary" aria-hidden={true} />
+      {/** `shrink-0` because the card is a flex column: in a short panel the badge is
+       *  the only item with height to give up, and flexing it squashes the circle into
+       *  an ellipse instead of letting the card scroll or clip. */}
+      <div className="mb-2 flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-tertiary">
+        <Icon className="size-5 shrink-0 text-text-secondary" aria-hidden={true} />
       </div>
       {title != null && <p className="text-sm font-medium text-text-primary">{title}</p>}
       {description != null && (
