@@ -39,6 +39,8 @@ const {
   resolveCanonicalFileReferences,
   reportLocatorTraversalFailure,
   reconcileAgentWorkspaceDefault,
+  shouldValidateAgentWorkspaceDefaultBinding,
+  validateAgentWorkspaceDefaultBinding,
 } = require('@librechat/api');
 const {
   Time,
@@ -482,16 +484,27 @@ const validateStatefulCodeEnvironment = (
   environmentId,
   environmentIdSelected = false,
   workspaceId,
+  currentWorkspaceId,
+  currentEnvironmentId,
 ) => {
-  const hasWorkspaceDefault = typeof workspaceId === 'string' && workspaceId.length > 0;
-  if (enabled !== true && !environmentIdSelected && !hasWorkspaceDefault) {
+  const configuredEnvironments =
+    req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
+  const workspaceValidation = validateAgentWorkspaceDefaultBinding({
+    workspaceId,
+    environmentId,
+    currentWorkspaceId,
+    currentEnvironmentId,
+    environments: configuredEnvironments,
+  });
+  if (!workspaceValidation.valid) {
+    res.status(400).json({ error: workspaceValidation.error });
+    return false;
+  }
+  if (enabled !== true && !environmentIdSelected) {
     return true;
   }
-  let configuredEnvironment;
   if (environmentId != null) {
-    const configuredEnvironments =
-      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
-    configuredEnvironment = configuredEnvironments.find(
+    const configuredEnvironment = configuredEnvironments.find(
       (configured) => configured.id === environmentId,
     );
     const pairingOnly =
@@ -504,12 +517,6 @@ const validateStatefulCodeEnvironment = (
       });
       return false;
     }
-  }
-  if (hasWorkspaceDefault && configuredEnvironment?.type !== 'attached') {
-    res.status(400).json({
-      error: 'Code workspace defaults require an explicit attached code environment',
-    });
-    return false;
   }
   if (enabled !== true) {
     return true;
@@ -1128,8 +1135,15 @@ const updateAgentHandler = async (req, res) => {
         updateData.code_workspace_id ?? existingAgent.code_workspace_id;
       const selectsWorkspaceDefault =
         includesWorkspaceConfiguration &&
-        typeof effectiveCodeWorkspaceId === 'string' &&
-        effectiveCodeWorkspaceId.length > 0;
+        shouldValidateAgentWorkspaceDefaultBinding({
+          workspaceId: effectiveCodeWorkspaceId,
+          environmentId:
+            updateData.code_environment_id === null
+              ? undefined
+              : (updateData.code_environment_id ?? existingAgent.code_environment_id),
+          currentWorkspaceId: existingAgent.code_workspace_id,
+          currentEnvironmentId: existingAgent.code_environment_id,
+        });
       if (statefulConfigurationChanged || selectsWorkspaceDefault || activatesCodeExecution) {
         const effectiveStatefulSessions =
           updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
@@ -1148,6 +1162,8 @@ const updateAgentHandler = async (req, res) => {
             effectiveCodeEnvironmentId,
             codeEnvironmentSelectionChanged,
             effectiveCodeWorkspaceId,
+            existingAgent.code_workspace_id,
+            existingAgent.code_environment_id,
           )
         ) {
           return;

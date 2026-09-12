@@ -1742,6 +1742,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         {
           stateful_code_sessions: true,
           code_environment_id: 'removed-vm',
+          code_workspace_id: 'project-a',
         },
       );
       mockReq.user.id = existingAgentAuthorId.toString();
@@ -1759,6 +1760,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       mockReq.body = {
         stateful_code_sessions: false,
         code_environment_id: 'removed-vm',
+        code_workspace_id: 'project-a',
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -1767,6 +1769,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.stateful_code_sessions).toBe(false);
       expect(agentInDb.code_environment_id).toBe('removed-vm');
+      expect(agentInDb.code_workspace_id).toBe('project-a');
     });
 
     test('restores the deployment-default code environment', async () => {

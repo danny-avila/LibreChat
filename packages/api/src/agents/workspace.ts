@@ -4,6 +4,67 @@ interface AgentWorkspaceUpdate {
   [key: string]: unknown;
 }
 
+interface AgentWorkspaceEnvironment {
+  id: string;
+  type?: string;
+}
+
+export const AGENT_WORKSPACE_ATTACHED_ENVIRONMENT_ERROR =
+  'Code workspace defaults require an explicit attached code environment';
+
+export function shouldValidateAgentWorkspaceDefaultBinding({
+  workspaceId,
+  environmentId,
+  currentWorkspaceId,
+  currentEnvironmentId,
+}: {
+  workspaceId?: string;
+  environmentId?: string | null;
+  currentWorkspaceId?: string;
+  currentEnvironmentId?: string | null;
+}): boolean {
+  return Boolean(
+    workspaceId &&
+      (workspaceId !== currentWorkspaceId ||
+        (environmentId ?? undefined) !== (currentEnvironmentId ?? undefined)),
+  );
+}
+
+/** Validate only a newly selected or rebound machine-scoped workspace default. */
+export function validateAgentWorkspaceDefaultBinding({
+  workspaceId,
+  environmentId,
+  currentWorkspaceId,
+  currentEnvironmentId,
+  environments,
+}: {
+  workspaceId?: string;
+  environmentId?: string | null;
+  currentWorkspaceId?: string;
+  currentEnvironmentId?: string | null;
+  environments?: readonly AgentWorkspaceEnvironment[];
+}): { valid: true } | { valid: false; error: string } {
+  if (
+    !shouldValidateAgentWorkspaceDefaultBinding({
+      workspaceId,
+      environmentId,
+      currentWorkspaceId,
+      currentEnvironmentId,
+    })
+  ) {
+    return { valid: true };
+  }
+
+  const configuredEnvironment = environments?.find(
+    (environment) => environment.id === (environmentId ?? undefined),
+  );
+  if (configuredEnvironment?.type === 'attached') {
+    return { valid: true };
+  }
+
+  return { valid: false, error: AGENT_WORKSPACE_ATTACHED_ENVIRONMENT_ERROR };
+}
+
 /** Clear a machine-scoped default when its environment changes without a replacement default. */
 export function reconcileAgentWorkspaceDefault<T extends AgentWorkspaceUpdate>({
   update,
