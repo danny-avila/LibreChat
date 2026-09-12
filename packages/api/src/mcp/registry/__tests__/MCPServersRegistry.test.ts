@@ -1,5 +1,6 @@
 import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
+import { setImmediate as realSetImmediate } from 'timers';
 import type * as t from '~/mcp/types';
 import {
   MCPServersRegistry,
@@ -1002,7 +1003,7 @@ describe('MCPServersRegistry', () => {
       );
     });
 
-    it('inspects a newer stub itself instead of waiting on the flight another request started for it', async () => {
+    it('adopts the outcome of the flight another request started for a newer stub', async () => {
       await registry.addServerStub('stub_server', stubOptions, 'CACHE');
       const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
       const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
@@ -1033,7 +1034,8 @@ describe('MCPServersRegistry', () => {
           markNewerInspecting();
           await newerHeld;
           return inspect(...args);
-        });
+        })
+        .mockRejectedValue(new Error('connect ECONNREFUSED'));
 
       const replaced = registry.reinspectServer('stub_server', 'CACHE');
       await replacedInspecting;
@@ -1047,14 +1049,71 @@ describe('MCPServersRegistry', () => {
       await newerInspecting;
 
       releaseReplaced();
-      const replacedResult = await replaced;
-      expect(inspectSpy).toHaveBeenCalledTimes(3);
-      expect(inspectSpy.mock.calls[2][1]).toMatchObject(movedOptions);
-      expect(replacedResult.config).toMatchObject(movedOptions);
-      expect(replacedResult.config.inspectionFailed).toBeUndefined();
+      /** The store is promise-only, so one real macrotask lets the replaced flight settle as far
+       *  as it can while the newer flight is still held. */
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
+      releaseNewer();
+      const [replacedResult, newerResult] = await Promise.all([replaced, newer]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(newerResult.config).toMatchObject(movedOptions);
+      expect(newerResult.config.inspectionFailed).toBeUndefined();
+      expect(replacedResult).toEqual(newerResult);
+    });
+
+    it('inspects a replacement stub stored with an older timestamp itself instead of joining its flight', async () => {
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const skewedOptions: t.MCPOptions = { ...stubOptions, url: 'https://skewed.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseNewer!: () => void;
+      const newerHeld = new Promise<void>((resolve) => {
+        releaseNewer = resolve;
+      });
+      let markNewerInspecting!: () => void;
+      const newerInspecting = new Promise<void>((resolve) => {
+        markNewerInspecting = resolve;
+      });
+      let releaseSkewed!: () => void;
+      const skewedHeld = new Promise<void>((resolve) => {
+        releaseSkewed = resolve;
+      });
+      let markSkewedInspecting!: () => void;
+      const skewedInspecting = new Promise<void>((resolve) => {
+        markSkewedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markNewerInspecting();
+          await newerHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markSkewedInspecting();
+          await skewedHeld;
+          return inspect(...args);
+        });
+
+      const newer = registry.reinspectServer('stub_server', 'CACHE');
+      await newerInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...skewedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const skewed = registry.reinspectServer('stub_server', 'CACHE');
+      await skewedInspecting;
 
       releaseNewer();
-      await expect(newer).resolves.toEqual(replacedResult);
+      const newerResult = await newer;
+      expect(inspectSpy).toHaveBeenCalledTimes(3);
+      expect(inspectSpy.mock.calls[2][1]).toMatchObject(skewedOptions);
+      expect(newerResult.config).toMatchObject(skewedOptions);
+
+      releaseSkewed();
+      await expect(skewed).resolves.toEqual(newerResult);
       expect(inspectSpy).toHaveBeenCalledTimes(3);
     });
 

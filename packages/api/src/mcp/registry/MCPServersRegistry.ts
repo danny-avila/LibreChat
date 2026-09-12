@@ -197,6 +197,11 @@ interface ResolvedMCPAllowlists {
   allowedAddresses?: string[] | null;
 }
 
+/** Whether `current` was stored after `stub`, the order that flights may wait in. */
+function isNewerStub(current: t.ParsedServerConfig, stub: t.ParsedServerConfig): boolean {
+  return current.updatedAt != null && stub.updatedAt != null && current.updatedAt > stub.updatedAt;
+}
+
 /** The stored entry a reinspection reads and writes back to. */
 interface ReinspectionTarget {
   configRepo: IServerConfigsRepositoryInterface;
@@ -808,8 +813,8 @@ export class MCPServersRegistry {
    * Settles a reinspection whose own inspection did not replace `stub` against the entry stored
    * now. A recovery another writer stored is the outcome, and this replica's read caches drop
    * the stub they may still memoize from before it. A newer stub from a registry
-   * re-initialization is inspected within this flight rather than by joining another, so no
-   * flight ever waits on a second one. A stub still in place rejects with `failure`.
+   * re-initialization is settled through its own flight, which this one joins when another
+   * request already started it. A stub still in place rejects with `failure`.
    */
   private async resolveStoredEntry(
     target: ReinspectionTarget,
@@ -825,6 +830,11 @@ export class MCPServersRegistry {
     }
     if (current.updatedAt === stub.updatedAt) {
       throw failure;
+    }
+    /** Joining only a flight for a strictly newer stub keeps flights acyclic: every wait points
+     *  forward in `updatedAt`. A replacement that is not newer (clock skew) is inspected here. */
+    if (isNewerStub(current, stub)) {
+      return this.joinReinspection(target, allowlists, current);
     }
     return this.reinspectStub(target, allowlists, current);
   }
