@@ -54,8 +54,7 @@ const getCloseRange = (
   }
 
   const markerStart = lineStart + contentStart;
-  const markerText = text.slice(markerStart);
-  if (!markerText.startsWith(ARTIFACT_END) || markerText.startsWith(ARTIFACT_START)) {
+  if (!text.startsWith(ARTIFACT_END, markerStart) || text.startsWith(ARTIFACT_START, markerStart)) {
     return null;
   }
 
@@ -213,70 +212,38 @@ const replaceRange = (
   return originalText.substring(0, start) + updated + separator + endText;
 };
 
-const isWhitespaceOnly = (value: string): boolean => {
-  for (let i = 0; i < value.length; i++) {
-    if (!/\s/.test(value[i])) {
-      return false;
-    }
-  }
-  return true;
-};
-
-const isCodeFenceLine = (line: string): boolean => {
-  const marker = line[0];
+const isClosingArtifactFenceAt = (text: string, start: number): boolean => {
+  const marker = text[start];
   if (marker !== '`' && marker !== '~') {
     return false;
   }
 
-  let markerEnd = 1;
-  while (markerEnd < line.length && line[markerEnd] === marker) {
+  let markerEnd = start + 1;
+  while (markerEnd < text.length && text[markerEnd] === marker) {
     markerEnd++;
   }
-  return markerEnd >= 3 && isWhitespaceOnly(line.slice(markerEnd));
-};
-
-const normalizeBeforeClosingArtifactFence = (text: string): string => {
-  const lines = text.split('\n');
-  const closesArtifact = new Set<number>();
-  let nextContentLine = -1;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (isWhitespaceOnly(lines[i])) {
-      continue;
-    }
-    if (
-      nextContentLine !== -1 &&
-      isCodeFenceLine(lines[i]) &&
-      lines[nextContentLine].trimStart().startsWith(ARTIFACT_END)
-    ) {
-      closesArtifact.add(i);
-    }
-    nextContentLine = i;
+  if (markerEnd - start < 3) {
+    return false;
   }
 
-  const blankLinesBeforeClose = new Set<number>();
-  let precedesClosingFence = false;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (closesArtifact.has(i)) {
-      precedesClosingFence = true;
+  let hasLineBreak = false;
+  for (let i = markerEnd; i < text.length; i++) {
+    if (text[i] === '\n') {
+      hasLineBreak = true;
       continue;
     }
-    if (precedesClosingFence && lines[i] === '') {
-      blankLinesBeforeClose.add(i);
+    if (/\s/.test(text[i])) {
       continue;
     }
-    precedesClosingFence = false;
+    return hasLineBreak && text.startsWith(ARTIFACT_END, i);
   }
-
-  return lines
-    .filter((line, index) => {
-      if (line !== '' || !blankLinesBeforeClose.has(index)) {
-        return true;
-      }
-      return index === 0;
-    })
-    .join('\n');
+  return false;
 };
+
+const normalizeBeforeClosingArtifactFence = (text: string): string =>
+  text.replace(/\n{2,}/g, (newlines, offset: number) =>
+    isClosingArtifactFenceAt(text, offset + newlines.length) ? '\n' : newlines,
+  );
 
 export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] => {
   const artifacts: ArtifactBoundary[] = [];

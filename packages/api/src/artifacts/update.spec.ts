@@ -47,4 +47,11 @@ describe('replaceArtifactContent', () => {
 
     expect(result).toContain(updated);
   }, 1_000);
+
+  it('normalizes a near-limit newline run without per-line allocations', () => {
+    const updated = `UPDATED${'\n'.repeat(2_500_000)}`;
+    const result = replaceArtifactContent(artifactText, artifact, 'ORIGINAL', updated);
+
+    expect(result).toContain('UPDATED\n```\n:::');
+  }, 1_000);
 });
