@@ -28,6 +28,7 @@ const banner = require('./banner');
 const search = require('./search');
 const models = require('./models');
 const convos = require('./convos');
+const traces = require('./traces');
 const config = require('./config');
 const agents = require('./agents');
 const roles = require('./roles');
@@ -69,6 +70,7 @@ module.exports = {
   banner,
   agents,
   convos,
+  traces,
   search,
   config,
   models,

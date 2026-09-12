@@ -467,6 +467,18 @@ export const skillFile = (id: string, relativePath: string) =>
 export const insights = () => `${BASE_URL}/api/insights`;
 export const insightsAccess = () => `${insights()}/access`;
 
+/* Conversation traces */
+export const conversationTrace = (conversationId: string) =>
+  `${BASE_URL}/api/traces/${encodeURIComponent(conversationId)}`;
+export const conversationTraceAvailability = (conversationId: string) =>
+  `${conversationTrace(conversationId)}/availability`;
+export const conversationTraceRecords = (conversationId: string, cursor?: string) =>
+  `${conversationTrace(conversationId)}/records${
+    cursor ? `?${new URLSearchParams({ cursor }).toString()}` : ''
+  }`;
+export const conversationTraceRecord = (conversationId: string, recordId: string) =>
+  `${conversationTrace(conversationId)}/records/${encodeURIComponent(recordId)}`;
+
 export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
 export const adminSkillsSyncStatus = () => `${adminSkillsSync()}/status`;
 export const adminSkillsSyncRun = () => `${adminSkillsSync()}/run`;

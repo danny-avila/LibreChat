@@ -1841,6 +1841,75 @@ const mcpServersSchema = z
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
+/** Values the trace viewer uses for any `interface.traceViewer` field left unset. */
+export const traceViewerDefaults = {
+  enabled: false,
+  showInputOutput: false,
+  maxRecords: 1000,
+  maxContentLength: 50_000,
+  requestsPerMinute: 30,
+} as const;
+
+export const TRACE_VIEWER_MAX_RECORDS_CEILING = 10_000;
+export const TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING = 1_000_000;
+
+const traceViewerSchema = z.object({
+  /** Shows the conversation trace control for traces this deployment exported. */
+  enabled: z.boolean().optional(),
+  /** Returns observation input, output and metadata in the record inspector. */
+  showInputOutput: z.boolean().optional(),
+  /** Observations read from the tracing backend per request. */
+  maxRecords: z.number().int().min(1).max(TRACE_VIEWER_MAX_RECORDS_CEILING).optional(),
+  /** Characters kept from each input, output and metadata value before truncation. */
+  maxContentLength: z.number().int().min(1).max(TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING).optional(),
+  /** Trace reads one user may start per minute. */
+  requestsPerMinute: z.number().int().min(1).max(1000).optional(),
+});
+
+export type TTraceViewerConfig = z.infer<typeof traceViewerSchema>;
+export type TResolvedTraceViewerConfig = {
+  enabled: boolean;
+  showInputOutput: boolean;
+  maxRecords: number;
+  maxContentLength: number;
+  requestsPerMinute: number;
+};
+
+function boundedInteger(value: unknown, fallback: number, max: number): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
+    ? Math.min(value, max)
+    : fallback;
+}
+
+/**
+ * Fills unset or invalid `interface.traceViewer` fields from
+ * {@link traceViewerDefaults}. Admin config overrides reach runtime without
+ * schema validation, so every consumer reads the section through this.
+ */
+export function resolveTraceViewerConfig(
+  config?: Partial<Record<keyof TTraceViewerConfig, unknown>> | null,
+): TResolvedTraceViewerConfig {
+  return {
+    enabled: config?.enabled === true,
+    showInputOutput: config?.showInputOutput === true,
+    maxRecords: boundedInteger(
+      config?.maxRecords,
+      traceViewerDefaults.maxRecords,
+      TRACE_VIEWER_MAX_RECORDS_CEILING,
+    ),
+    maxContentLength: boundedInteger(
+      config?.maxContentLength,
+      traceViewerDefaults.maxContentLength,
+      TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING,
+    ),
+    requestsPerMinute: boundedInteger(
+      config?.requestsPerMinute,
+      traceViewerDefaults.requestsPerMinute,
+      1000,
+    ),
+  };
+}
+
 export enum RetentionMode {
   ALL = 'all',
   TEMPORARY = 'temporary',
@@ -1916,6 +1985,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    traceViewer: traceViewerSchema.optional(),
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),

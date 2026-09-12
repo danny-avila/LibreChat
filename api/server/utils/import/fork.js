@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { withoutTraceRefs } = require('@librechat/api');
 const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
 const { getConvo, getMessages, getSharedMessages } = require('~/models');
@@ -64,7 +65,7 @@ function cloneMessagesWithTimestamps(
     }
 
     const clonedMessage = {
-      ...message,
+      ...withoutTraceRefs(message),
       messageId: newMessageId,
       parentMessageId: parentId,
       createdAt,

@@ -572,6 +572,21 @@ export type ParentSubagentTaskRecord = {
   >;
 };
 
+/** A response message whose run was sampled into a trace. */
+export interface SampledTraceMessage {
+  messageId: string;
+  createdAt?: Date;
+  /** Opaque ids of the tracing destinations eligible to hold the trace, when recorded. */
+  langfuseDestinationIds?: string[];
+}
+
+export interface ConversationTraceRefs {
+  /** Creation time of the user's earliest message in the conversation. */
+  firstMessageAt?: Date;
+  /** Sampled response messages, oldest first. */
+  sampledMessages: SampledTraceMessage[];
+}
+
 export interface MessageMethods {
   saveMessage(
     ctx: {
@@ -586,6 +601,16 @@ export interface MessageMethods {
     },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
+  /**
+   * Reads the references a trace viewer needs for one of the user's
+   * conversations: when it began and which responses were sampled into traces.
+   * `sampledLimit` bounds the sampled list for existence checks.
+   */
+  getConversationTraceRefs(input: {
+    user: string;
+    conversationId: string;
+    sampledLimit?: number;
+  }): Promise<ConversationTraceRefs>;
   recordSubagentTaskControlReceipt(input: {
     userId: string;
     conversationId: string;
@@ -3313,6 +3338,48 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     );
   }
 
+  async function getConversationTraceRefs({
+    user,
+    conversationId,
+    sampledLimit,
+  }: {
+    user: string;
+    conversationId: string;
+    sampledLimit?: number;
+  }): Promise<ConversationTraceRefs> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const sampledQuery = Message.find({ user, conversationId, langfuseSampled: true })
+        .select('messageId createdAt langfuseDestinationIds -_id')
+        .sort({ createdAt: 1 });
+      if (sampledLimit != null && sampledLimit > 0) {
+        sampledQuery.limit(sampledLimit);
+      }
+      const [first, sampled] = await Promise.all([
+        Message.findOne({ user, conversationId })
+          .select('createdAt -_id')
+          .sort({ createdAt: 1 })
+          .lean<Pick<IMessage, 'createdAt'>>(),
+        sampledQuery.lean<
+          Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>
+        >(),
+      ]);
+      return {
+        firstMessageAt: first?.createdAt,
+        sampledMessages: sampled
+          .filter((message) => typeof message.messageId === 'string')
+          .map(({ messageId, createdAt, langfuseDestinationIds }) => ({
+            messageId,
+            ...(createdAt != null ? { createdAt } : {}),
+            ...(Array.isArray(langfuseDestinationIds) ? { langfuseDestinationIds } : {}),
+          })),
+      };
+    } catch (err) {
+      logger.error('Error getting conversation trace references:', err);
+      throw err;
+    }
+  }
+
   /**
    * Retrieves a single message from the database.
    */
@@ -3411,6 +3478,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
+    getConversationTraceRefs,
     getMessagesForSubagentThreadView,
     listSubagentTasksForThreads,
     getMessage,

@@ -1,4 +1,10 @@
 import type { AxiosResponse } from 'axios';
+import type {
+  TTracePage,
+  TTracePageParams,
+  TTraceAvailability,
+  TTraceRecordDetail,
+} from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
@@ -34,6 +40,26 @@ export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResp
 
 export function getInsightsAccess(): Promise<TInsightsAccessResponse> {
   return request.get(endpoints.insightsAccess());
+}
+
+export function getConversationTraceAvailability(
+  conversationId: string,
+): Promise<TTraceAvailability> {
+  return request.get(endpoints.conversationTraceAvailability(conversationId));
+}
+
+export function getConversationTraceRecords({
+  conversationId,
+  cursor,
+}: TTracePageParams): Promise<TTracePage> {
+  return request.get(endpoints.conversationTraceRecords(conversationId, cursor));
+}
+
+export function getConversationTraceRecord(
+  conversationId: string,
+  recordId: string,
+): Promise<TTraceRecordDetail> {
+  return request.get(endpoints.conversationTraceRecord(conversationId, recordId));
 }
 
 export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
