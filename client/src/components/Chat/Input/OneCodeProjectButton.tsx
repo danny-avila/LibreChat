@@ -17,7 +17,6 @@ import {
   clearStoredOneCodeWorkspace,
   createOneCodeProjectFolder,
   getStoredOneCodeRecentProjects,
-  getStoredOneCodeWorkspace,
   getWorkspaceBasename,
   getOneCodeProjectStatus,
   initOneCodeProject,
@@ -33,6 +32,7 @@ import {
   type OneCodeProjectStatus,
   type OneCodeRunSummary,
 } from '~/onecode/project';
+import { useOneCodeWorkspace } from '~/onecode/workspace';
 import { openOneCodeConsole } from '~/onecode/console';
 import { cn } from '~/utils';
 
@@ -53,7 +53,7 @@ const createProjectNameFromPrompt = () => {
 
 const OneCodeProjectButton = ({ disabled = false }: { disabled?: boolean }) => {
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const [workspace, setWorkspace] = useState(() => getStoredOneCodeWorkspace());
+  const workspace = useOneCodeWorkspace();
   const [recentProjects, setRecentProjects] = useState(() => getStoredOneCodeRecentProjects());
   const [mcpStatus, setMcpStatus] = useState<'idle' | 'syncing' | 'ready' | 'error'>('idle');
   const [projectStatus, setProjectStatus] = useState<OneCodeProjectStatus | undefined>();
@@ -89,7 +89,6 @@ const OneCodeProjectButton = ({ disabled = false }: { disabled?: boolean }) => {
       if (!normalized) {
         return;
       }
-      setWorkspace(normalized);
       setRecentProjects(setStoredOneCodeWorkspace(normalized));
       setMcpStatus('syncing');
       void syncOneCodeFilesystemMCP(normalized)
@@ -107,7 +106,6 @@ const OneCodeProjectButton = ({ disabled = false }: { disabled?: boolean }) => {
 
   const clearWorkspace = useCallback(() => {
     clearStoredOneCodeWorkspace();
-    setWorkspace('');
     setMcpStatus('idle');
     setProjectStatus(undefined);
     setRuns([]);

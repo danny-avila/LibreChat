@@ -142,9 +142,19 @@ function filesystemMCPConfig(workspace) {
 }
 
 async function syncOneCodeFilesystemMCP(workspace, userId, deps = {}) {
+  const status = await getOneCodeProjectStatus(workspace);
+  if (
+    status?.allowed !== true ||
+    status?.exists !== true ||
+    typeof status.workspace !== 'string' ||
+    !status.workspace.trim()
+  ) {
+    throw new Error('workspace could not be confirmed by OneCode');
+  }
+
   const registry = deps.registry ?? getMCPServersRegistry();
   const manager = deps.manager ?? getMCPManager(userId);
-  const config = filesystemMCPConfig(workspace);
+  const config = filesystemMCPConfig(status.workspace);
   const existing = await registry.getServerConfig(ONECODE_FILESYSTEM_MCP_SERVER, userId);
 
   if (existing) {

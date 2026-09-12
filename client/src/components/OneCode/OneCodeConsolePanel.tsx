@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import {
   getOneCodeProjectStatus,
@@ -6,7 +6,6 @@ import {
   getOneCodeModelConfig,
   getOneCodeVerifierPolicy,
   getOneCodeVerifierPresets,
-  getStoredOneCodeWorkspace,
   initOneCodeProject,
   listOneCodeRuns,
   resumeOneCodeRun,
@@ -24,6 +23,7 @@ import {
   type OneCodeVerifierPolicy,
   type OneCodeVerifierPreset,
 } from '~/onecode/project';
+import { useOneCodeWorkspace } from '~/onecode/workspace';
 import {
   ONECODE_CONSOLE_TAB_LABELS,
   ONECODE_CONSOLE_TABS,
@@ -45,7 +45,7 @@ export default function OneCodeConsolePanel({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<OneCodeConsoleTab>(initialTab);
-  const [workspace, setWorkspace] = useState(() => getStoredOneCodeWorkspace());
+  const workspace = useOneCodeWorkspace();
   const [projectStatus, setProjectStatus] = useState<OneCodeProjectStatus | undefined>();
   const [runs, setRuns] = useState<OneCodeRunSummary[]>([]);
   const [selectedRunId, setSelectedRunId] = useState('');
@@ -56,24 +56,43 @@ export default function OneCodeConsolePanel({
   const [doctor, setDoctor] = useState<OneCodeDiagnostic | undefined>();
   const [selfAudit, setSelfAudit] = useState<OneCodeDiagnostic | undefined>();
   const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const actionPending = useRef(false);
+  const evidenceRequest = useRef(0);
+
+  const runAction = useCallback(async (action: () => Promise<void>) => {
+    if (actionPending.current) {
+      return;
+    }
+    actionPending.current = true;
+    setBusy(true);
+    setMessage('');
+    try {
+      await action();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'OneCode 请求失败');
+    } finally {
+      actionPending.current = false;
+      setBusy(false);
+    }
+  }, []);
 
   const refreshProject = useCallback(async () => {
-    const current = getStoredOneCodeWorkspace();
-    setWorkspace(current);
-    if (!current) {
+    if (!workspace) {
       setProjectStatus(undefined);
       setRuns([]);
-      setMessage('未选择项目');
+      setSelectedRunId('');
+      setEvidence(undefined);
       return;
     }
     try {
-      const status = await getOneCodeProjectStatus(current);
+      const status = await getOneCodeProjectStatus(workspace);
       setProjectStatus(status);
       setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '项目状态不可用');
     }
-  }, []);
+  }, [workspace]);
 
   const refreshRuns = useCallback(async () => {
     if (!workspace) {
@@ -96,11 +115,17 @@ export default function OneCodeConsolePanel({
     if (!workspace || !selectedRunId) {
       return;
     }
+    const request = ++evidenceRequest.current;
     try {
-      setEvidence(await getOneCodeRunEvidence(workspace, selectedRunId));
-      setTab('evidence');
+      const result = await getOneCodeRunEvidence(workspace, selectedRunId);
+      if (request === evidenceRequest.current) {
+        setEvidence(result);
+        setTab('evidence');
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '证据不可用');
+      if (request === evidenceRequest.current) {
+        setMessage(error instanceof Error ? error.message : '证据不可用');
+      }
     }
   }, [selectedRunId, workspace]);
 
@@ -131,6 +156,15 @@ export default function OneCodeConsolePanel({
   }, [refreshProject]);
 
   useEffect(() => {
+    evidenceRequest.current += 1;
+    setProjectStatus(undefined);
+    setRuns([]);
+    setSelectedRunId('');
+    setEvidence(undefined);
+    setMessage(workspace ? '' : '未选择项目');
+  }, [workspace]);
+
+  useEffect(() => {
     if (tab === 'runs') {
       void refreshRuns();
     }
@@ -158,13 +192,19 @@ export default function OneCodeConsolePanel({
           if (!workspace) {
             return;
           }
-          void initOneCodeProject(workspace).then(setProjectStatus);
+          void runAction(async () => {
+            const result = await initOneCodeProject(workspace);
+            setProjectStatus(result);
+          });
         }}
         onSyncMCP={() => {
           if (!workspace) {
             return;
           }
-          void syncOneCodeFilesystemMCP(workspace).then(() => setMessage('MCP 已同步'));
+          void runAction(async () => {
+            await syncOneCodeFilesystemMCP(workspace);
+            setMessage('MCP 已同步');
+          });
         }}
       />
     ),
@@ -175,15 +215,21 @@ export default function OneCodeConsolePanel({
         onSelect={(run) => setSelectedRunId(run.run_id)}
         onInspect={(run) => {
           setSelectedRunId(run.run_id);
-          void getOneCodeRunEvidence(workspace, run.run_id).then((result) => {
-            setEvidence(result);
-            setTab('evidence');
+          evidenceRequest.current += 1;
+          const request = evidenceRequest.current;
+          void runAction(async () => {
+            const result = await getOneCodeRunEvidence(workspace, run.run_id);
+            if (request === evidenceRequest.current) {
+              setEvidence(result);
+              setTab('evidence');
+            }
           });
         }}
         onResume={(run) => {
-          void resumeOneCodeRun(workspace, run.run_id, '继续完成上次运行').then(() =>
-            refreshRuns(),
-          );
+          void runAction(async () => {
+            await resumeOneCodeRun(workspace, run.run_id, '继续完成上次运行');
+            await refreshRuns();
+          });
         }}
       />
     ),
@@ -193,26 +239,18 @@ export default function OneCodeConsolePanel({
         message={tab === 'model' ? message : ''}
         onLoad={loadModelConfig}
         onDiscover={(input) => {
-          void discoverOneCodeModels(input)
-            .then((result) => {
-              setModelConfig(result);
-              setMessage(
-                result.source === 'fallback' ? '模型列表使用内置候选项' : '模型列表已更新',
-              );
-            })
-            .catch((error) => {
-              setMessage(error instanceof Error ? error.message : '模型发现失败');
-            });
+          void runAction(async () => {
+            const result = await discoverOneCodeModels(input);
+            setModelConfig(result);
+            setMessage(result.source === 'fallback' ? '模型列表使用内置候选项' : '模型列表已更新');
+          });
         }}
         onSave={(input) => {
-          void writeOneCodeModelConfig(input)
-            .then((result) => {
-              setModelConfig(result);
-              setMessage('模型配置已保存');
-            })
-            .catch((error) => {
-              setMessage(error instanceof Error ? error.message : '模型配置保存失败');
-            });
+          void runAction(async () => {
+            const result = await writeOneCodeModelConfig(input);
+            setModelConfig(result);
+            setMessage('模型配置已保存');
+          });
         }}
       />
     ),
@@ -228,13 +266,17 @@ export default function OneCodeConsolePanel({
           if (!workspace) {
             return;
           }
-          void writeOneCodeVerifierPolicy(workspace, undefined, false).then(setPolicy);
+          void runAction(async () => {
+            setPolicy(await writeOneCodeVerifierPolicy(workspace, undefined, false));
+          });
         }}
         onOverwriteDefault={() => {
           if (!workspace) {
             return;
           }
-          void writeOneCodeVerifierPolicy(workspace, undefined, true).then(setPolicy);
+          void runAction(async () => {
+            setPolicy(await writeOneCodeVerifierPolicy(workspace, undefined, true));
+          });
         }}
       />
     ),
@@ -242,8 +284,8 @@ export default function OneCodeConsolePanel({
       <DiagnosticsTab
         doctor={doctor}
         selfAudit={selfAudit}
-        onDoctor={() => void runOneCodeDoctor().then(setDoctor)}
-        onSelfAudit={() => void runOneCodeSelfAudit().then(setSelfAudit)}
+        onDoctor={() => void runAction(async () => setDoctor(await runOneCodeDoctor()))}
+        onSelfAudit={() => void runAction(async () => setSelfAudit(await runOneCodeSelfAudit()))}
       />
     ),
   } satisfies Record<OneCodeConsoleTab, React.ReactNode>;
@@ -287,7 +329,16 @@ export default function OneCodeConsolePanel({
           当前运行: <span className="font-mono">{selectedRun.run_id}</span>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto">{content[tab]}</div>
+      {message && (
+        <div role="status" aria-live="polite" className="border-b border-border-light px-3 py-2 text-xs text-text-secondary">
+          {message}
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-auto" aria-busy={busy}>
+        <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
+          {content[tab]}
+        </fieldset>
+      </div>
     </aside>
   );
 }

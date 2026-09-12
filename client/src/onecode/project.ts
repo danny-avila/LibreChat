@@ -4,6 +4,7 @@ export const ONECODE_PROJECT_STORAGE_KEY = 'onecode.workspace';
 export const ONECODE_RECENT_PROJECTS_STORAGE_KEY = 'onecode.recentWorkspaces';
 export const ONECODE_MAX_RECENT_PROJECTS = 6;
 export const ONECODE_ENDPOINT_NAME = 'OneCode';
+export const ONECODE_WORKSPACE_CHANGED_EVENT = 'onecode:workspace-changed';
 
 export type OneCodeProjectPickerResult = {
   workspace?: string;
@@ -168,17 +169,26 @@ export function setStoredOneCodeWorkspace(
   const normalized = normalizeOneCodeWorkspace(workspace);
   if (!normalized) {
     storage.removeItem(ONECODE_PROJECT_STORAGE_KEY);
+    notifyWorkspaceChange(storage);
     return getStoredOneCodeRecentProjects(storage);
   }
 
   const recents = rememberOneCodeWorkspace(normalized, getStoredOneCodeRecentProjects(storage));
   storage.setItem(ONECODE_PROJECT_STORAGE_KEY, normalized);
   storage.setItem(ONECODE_RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(recents));
+  notifyWorkspaceChange(storage);
   return recents;
 }
 
 export function clearStoredOneCodeWorkspace(storage: Storage = window.localStorage): void {
   storage.removeItem(ONECODE_PROJECT_STORAGE_KEY);
+  notifyWorkspaceChange(storage);
+}
+
+function notifyWorkspaceChange(storage: Storage): void {
+  if (typeof window !== 'undefined' && storage === window.localStorage) {
+    window.dispatchEvent(new Event(ONECODE_WORKSPACE_CHANGED_EVENT));
+  }
 }
 
 export function buildOneCodeMetadata(workspace: string): { workspace: string } | undefined {

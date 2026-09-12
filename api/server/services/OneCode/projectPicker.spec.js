@@ -91,6 +91,14 @@ describe('OneCode project picker service', () => {
   });
 
   it('adds the OneCode filesystem MCP server when missing', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        allowed: true,
+        exists: true,
+        workspace: '/canonical/project-a',
+      }),
+    });
     const registry = {
       getServerConfig: jest.fn().mockResolvedValue(undefined),
       addServer: jest.fn().mockResolvedValue({ serverName: 'onecode-filesystem' }),
@@ -101,20 +109,33 @@ describe('OneCode project picker service', () => {
     await expect(
       syncOneCodeFilesystemMCP('/Users/aidi/project-a', 'user-1', { registry, manager }),
     ).resolves.toEqual({ serverName: 'onecode-filesystem', status: 'created' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:19080/v1/onecode/project/status?workspace=%2FUsers%2Faidi%2Fproject-a',
+      expect.any(Object),
+    );
     expect(registry.addServer).toHaveBeenCalledWith(
       'onecode-filesystem',
-      filesystemMCPConfig('/Users/aidi/project-a'),
+      filesystemMCPConfig('/canonical/project-a'),
       'CACHE',
       'user-1',
     );
+    expect(registry.updateServer).not.toHaveBeenCalled();
     expect(manager.disconnectUserConnection).toHaveBeenCalledWith('user-1', 'onecode-filesystem');
   });
 
   it('updates the OneCode filesystem MCP server when it already exists', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        allowed: true,
+        exists: true,
+        workspace: '/canonical/project-a',
+      }),
+    });
     const registry = {
       getServerConfig: jest.fn().mockResolvedValue(filesystemMCPConfig('/old/project')),
       addServer: jest.fn(),
-      updateServer: jest.fn().mockResolvedValue(filesystemMCPConfig('/Users/aidi/project-a')),
+      updateServer: jest.fn().mockResolvedValue(filesystemMCPConfig('/canonical/project-a')),
     };
     const manager = { disconnectUserConnection: jest.fn() };
 
@@ -123,10 +144,112 @@ describe('OneCode project picker service', () => {
     ).resolves.toEqual({ serverName: 'onecode-filesystem', status: 'updated' });
     expect(registry.updateServer).toHaveBeenCalledWith(
       'onecode-filesystem',
-      filesystemMCPConfig('/Users/aidi/project-a'),
+      filesystemMCPConfig('/canonical/project-a'),
       'CACHE',
       'user-1',
     );
+    expect(registry.addServer).not.toHaveBeenCalled();
+    expect(manager.disconnectUserConnection).toHaveBeenCalledWith('user-1', 'onecode-filesystem');
+  });
+
+  describe.each(['new', 'existing'])('MCP workspace validation (%s server)', (serverState) => {
+    const confirmedStatus = {
+      allowed: true,
+      exists: true,
+      workspace: '/canonical/project-a',
+    };
+    let registry;
+    let manager;
+
+    beforeEach(() => {
+      registry = {
+        getServerConfig: jest
+          .fn()
+          .mockResolvedValue(
+            serverState === 'existing' ? filesystemMCPConfig('/old/project') : undefined,
+          ),
+        addServer: jest.fn(),
+        updateServer: jest.fn(),
+      };
+      manager = { disconnectUserConnection: jest.fn() };
+    });
+
+    it.each([
+      ['denied workspace', { ...confirmedStatus, allowed: false }],
+      ['missing permission', { exists: true, workspace: '/canonical/project-a' }],
+      ['non-boolean permission', { ...confirmedStatus, allowed: 'true' }],
+      ['nonexistent directory', { ...confirmedStatus, exists: false }],
+      ['missing directory status', { allowed: true, workspace: '/canonical/project-a' }],
+      ['non-boolean directory status', { ...confirmedStatus, exists: 1 }],
+      ['missing canonical workspace', { allowed: true, exists: true }],
+      ['null canonical workspace', { ...confirmedStatus, workspace: null }],
+      ['non-string canonical workspace', { ...confirmedStatus, workspace: 123 }],
+      ['empty canonical workspace', { ...confirmedStatus, workspace: '' }],
+      ['blank canonical workspace', { ...confirmedStatus, workspace: ' \t\n ' }],
+      ['null response', null],
+      ['incomplete response', {}],
+    ])('rejects %s', async (_name, status) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => status,
+      });
+
+      await expect(
+        syncOneCodeFilesystemMCP('/Users/aidi/project-a', 'user-1', { registry, manager }),
+      ).rejects.toThrow('workspace could not be confirmed by OneCode');
+      expect(registry.addServer).not.toHaveBeenCalled();
+      expect(registry.updateServer).not.toHaveBeenCalled();
+      expect(registry.getServerConfig).not.toHaveBeenCalled();
+      expect(manager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [403, { error: { message: 'workspace denied by kernel' } }, 'workspace denied by kernel'],
+      [503, confirmedStatus, 'OneCode request failed: 503'],
+    ])('rejects a kernel HTTP %s response', async (status, payload, message) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => payload,
+      });
+
+      await expect(
+        syncOneCodeFilesystemMCP('/Users/aidi/project-a', 'user-1', { registry, manager }),
+      ).rejects.toThrow(message);
+      expect(registry.addServer).not.toHaveBeenCalled();
+      expect(registry.updateServer).not.toHaveBeenCalled();
+      expect(registry.getServerConfig).not.toHaveBeenCalled();
+      expect(manager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the kernel cannot be reached', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('kernel unavailable'));
+
+      await expect(
+        syncOneCodeFilesystemMCP('/Users/aidi/project-a', 'user-1', { registry, manager }),
+      ).rejects.toThrow('kernel unavailable');
+      expect(registry.addServer).not.toHaveBeenCalled();
+      expect(registry.updateServer).not.toHaveBeenCalled();
+      expect(registry.getServerConfig).not.toHaveBeenCalled();
+      expect(manager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed kernel JSON response', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError('invalid kernel JSON');
+        },
+      });
+
+      await expect(
+        syncOneCodeFilesystemMCP('/Users/aidi/project-a', 'user-1', { registry, manager }),
+      ).rejects.toThrow('invalid kernel JSON');
+      expect(registry.addServer).not.toHaveBeenCalled();
+      expect(registry.updateServer).not.toHaveBeenCalled();
+      expect(registry.getServerConfig).not.toHaveBeenCalled();
+      expect(manager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
   });
 
   it('checks whether a workspace is inside allowed roots', () => {
