@@ -39,15 +39,20 @@ export default function useSelectAgent() {
         });
         return;
       }
-      const currentConvo = getDefaultConversation({
+      const switchesAgent = conversation?.agent_id !== agent.id;
+      const resolvedConvo = getDefaultConversation({
         conversation: {
           ...(conversation ?? {}),
           agent_id: agent.id,
-          codeWorkspaces: undefined,
+          codeWorkspaces: switchesAgent ? undefined : conversation?.codeWorkspaces,
           ...specDisplayFieldReset,
         },
         preset: template,
       });
+      const currentConvo = {
+        ...resolvedConvo,
+        codeWorkspaces: switchesAgent ? undefined : conversation?.codeWorkspaces,
+      };
       newConversation({
         template: currentConvo,
         preset: template as Partial<TPreset>,

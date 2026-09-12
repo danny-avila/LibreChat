@@ -6,16 +6,9 @@ import { AgentCapabilities } from 'librechat-data-provider';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { AgentForm } from '~/common';
 import CodeSettings from '../Code/Settings';
+const mockWorkspaceStatusQueries = jest.fn();
 jest.mock('~/data-provider', () => ({
-  useCodeEnvironmentStatusQueries: () => [
-    {
-      data: {
-        status: 'ready',
-        environmentId: 'byom',
-        workspaces: [{ id: 'project-a', name: 'Project A' }],
-      },
-    },
-  ],
+  useCodeEnvironmentStatusQueries: () => mockWorkspaceStatusQueries(),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -31,7 +24,27 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identity'] }) {
+beforeEach(() => {
+  mockWorkspaceStatusQueries.mockReturnValue([
+    {
+      data: {
+        status: 'ready',
+        environmentId: 'byom',
+        workspaces: [{ id: 'project-a', name: 'Project A' }],
+      },
+      isLoading: false,
+      isError: false,
+    },
+  ]);
+});
+
+function IdentityForm({
+  savedIdentity,
+  savedWorkspace,
+}: {
+  savedIdentity?: AgentForm['git_identity'];
+  savedWorkspace?: string;
+}) {
   const [dialogOpen, setDialogOpen] = useState(true);
   const methods = useForm<AgentForm>({
     mode: 'onChange',
@@ -39,6 +52,7 @@ function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identi
       execute_code: true,
       stateful_code_sessions: true,
       git_identity: savedIdentity,
+      code_workspace_id: savedWorkspace,
     },
   });
   return (
@@ -71,6 +85,26 @@ test('saves a workspace default bound to the selected machine and permits cleari
   fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_code_workspace_default' }));
   fireEvent.click(await screen.findByRole('option', { name: 'com_ui_code_workspace_last_used' }));
   expect(screen.getByTestId('workspace-default')).toBeEmptyDOMElement();
+});
+
+test.each([
+  [{ isLoading: true, isError: false }, 'com_ui_code_workspace_loading'],
+  [{ isLoading: false, isError: true }, 'com_ui_code_workspace_unavailable'],
+  [
+    {
+      isLoading: false,
+      isError: false,
+      data: { status: 'ready', environmentId: 'byom', workspaces: undefined },
+    },
+    'com_ui_code_workspace_unsupported',
+  ],
+])('preserves a saved workspace while discovery reports %s', (query, expectedLabel) => {
+  mockWorkspaceStatusQueries.mockReturnValue([query]);
+  render(<IdentityForm savedWorkspace="project-a" />);
+
+  expect(screen.getByRole('status')).toHaveTextContent(expectedLabel);
+  expect(screen.getByTestId('workspace-default')).toHaveTextContent('project-a');
+  expect(screen.queryByText(/com_ui_code_workspace_missing/)).not.toBeInTheDocument();
 });
 
 test.each(['', 'not-an-email'])(

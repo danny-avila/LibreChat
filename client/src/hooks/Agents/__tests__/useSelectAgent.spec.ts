@@ -145,4 +145,27 @@ describe('useSelectAgent', () => {
     expect(mockNewConversation.mock.calls[1][0].template.codeWorkspaces).toBeUndefined();
     expect(mockGetDefaultConversation.mock.calls[0][0].conversation.codeWorkspaces).toBeUndefined();
   });
+
+  it('preserves a workspace selected while the same agent is hydrating', async () => {
+    const selectedWorkspace = [{ environmentId: 'machine-a', workspaceId: 'project-a' }];
+    mockGetConversation
+      .mockResolvedValueOnce({
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-old',
+      } as TConversation)
+      .mockResolvedValueOnce({
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+        codeWorkspaces: selectedWorkspace,
+      } as TConversation);
+    mockFetchQuery.mockResolvedValue({ id: 'agent-1', name: 'Full Agent' });
+    const { result } = renderHook(() => useSelectAgent());
+
+    await act(async () => {
+      await result.current.onSelect('agent-1');
+    });
+
+    expect(mockNewConversation.mock.calls[0][0].template.codeWorkspaces).toBeUndefined();
+    expect(mockNewConversation.mock.calls[1][0].template.codeWorkspaces).toEqual(selectedWorkspace);
+  });
 });

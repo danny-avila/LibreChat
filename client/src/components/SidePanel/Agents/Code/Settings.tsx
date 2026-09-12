@@ -34,6 +34,11 @@ const ENVIRONMENT_LABELS = {
 } as const;
 
 const DEPLOYMENT_DEFAULT_ENVIRONMENT = '__deployment_default__';
+const WORKSPACE_STATUS_LABELS = {
+  loading: 'com_ui_code_workspace_loading',
+  unavailable: 'com_ui_code_workspace_unavailable',
+  unsupported: 'com_ui_code_workspace_unsupported',
+} as const;
 
 export default function CodeSettings() {
   const localize = useLocalize();
@@ -71,8 +76,22 @@ export default function CodeSettings() {
     effectiveExecutionEnvironment?.type === 'attached' ? [effectiveExecutionEnvironment.id] : [],
     showGitIdentity === true,
   );
-  const workspaceStatus = workspaceStatuses[0]?.data;
+  const workspaceStatusQuery = workspaceStatuses[0];
+  const workspaceStatus = workspaceStatusQuery?.data;
+  let workspaceDiscoveryState: 'loading' | 'unavailable' | 'unsupported' | 'ready' = 'ready';
+  if (workspaceStatusQuery == null || workspaceStatusQuery.isLoading) {
+    workspaceDiscoveryState = 'loading';
+  } else if (
+    workspaceStatusQuery.isError ||
+    workspaceStatus?.status !== 'ready' ||
+    workspaceStatus.environmentId !== effectiveExecutionEnvironment?.id
+  ) {
+    workspaceDiscoveryState = 'unavailable';
+  } else if (workspaceStatus.workspaces == null) {
+    workspaceDiscoveryState = 'unsupported';
+  }
   const workspaces =
+    workspaceDiscoveryState === 'ready' &&
     workspaceStatus?.status === 'ready' &&
     workspaceStatus.environmentId === effectiveExecutionEnvironment?.id
       ? (workspaceStatus.workspaces ?? [])
@@ -238,6 +257,7 @@ export default function CodeSettings() {
               </label>
               <Select
                 value={workspaceId || '__automatic__'}
+                disabled={workspaceDiscoveryState !== 'ready'}
                 onValueChange={(value) => {
                   if (value !== '__automatic__' && !workspaces.some(({ id }) => id === value))
                     return;
@@ -258,11 +278,18 @@ export default function CodeSettings() {
                   <SelectItem value="__automatic__">
                     {localize('com_ui_code_workspace_last_used')}
                   </SelectItem>
-                  {workspaceId && !workspaces.some(({ id }) => id === workspaceId) && (
-                    <SelectItem value={workspaceId} disabled>
-                      {workspaceId} — {localize('com_ui_code_workspace_missing')}
-                    </SelectItem>
-                  )}
+                  {workspaceId &&
+                    (workspaceDiscoveryState !== 'ready' ||
+                      !workspaces.some(({ id }) => id === workspaceId)) && (
+                      <SelectItem value={workspaceId} disabled>
+                        {workspaceId} —{' '}
+                        {localize(
+                          workspaceDiscoveryState === 'ready'
+                            ? 'com_ui_code_workspace_missing'
+                            : WORKSPACE_STATUS_LABELS[workspaceDiscoveryState],
+                        )}
+                      </SelectItem>
+                    )}
                   {workspaces.map(({ id, name }) => (
                     <SelectItem key={id} value={id}>
                       {name ?? id}
@@ -270,6 +297,11 @@ export default function CodeSettings() {
                   ))}
                 </SelectContent>
               </Select>
+              {workspaceDiscoveryState !== 'ready' && (
+                <p className="text-xs text-text-tertiary" role="status">
+                  {localize(WORKSPACE_STATUS_LABELS[workspaceDiscoveryState])}
+                </p>
+              )}
               <p className="text-xs text-text-tertiary">
                 {localize('com_ui_code_workspace_default_description')}
               </p>
