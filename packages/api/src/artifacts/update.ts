@@ -214,7 +214,7 @@ const replaceRange = (
 };
 
 const normalizeBeforeClosingArtifactFence = (text: string): string =>
-  text.replace(/\n+(?=(?:`{3,}|~{3,})\s*\n\s*:::)/g, '\n');
+  text.replace(/\n+(?=(?:`{3,}|~{3,})[ \t]*\n[ \t]*:::)/g, '\n');
 
 export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] => {
   const artifacts: ArtifactBoundary[] = [];
