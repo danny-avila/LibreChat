@@ -107,6 +107,17 @@ test.each([
   expect(screen.queryByText(/com_ui_code_workspace_missing/)).not.toBeInTheDocument();
 });
 
+test('permits clearing a saved workspace while discovery is unavailable', async () => {
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+  mockWorkspaceStatusQueries.mockReturnValue([{ isLoading: false, isError: true }]);
+  render(<IdentityForm savedWorkspace="project-a" />);
+
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_code_workspace_default' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'com_ui_code_workspace_last_used' }));
+
+  expect(screen.getByTestId('workspace-default')).toBeEmptyDOMElement();
+});
+
 test.each(['', 'not-an-email'])(
   'restores the saved identity when reopening an invalid draft: %s',
   async (email) => {

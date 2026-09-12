@@ -257,7 +257,6 @@ export default function CodeSettings() {
               </label>
               <Select
                 value={workspaceId || '__automatic__'}
-                disabled={workspaceDiscoveryState !== 'ready'}
                 onValueChange={(value) => {
                   if (value !== '__automatic__' && !workspaces.some(({ id }) => id === value))
                     return;
