@@ -13,7 +13,11 @@ const {
   isFileSnapshotEnabled,
   getEndpointsDropParamsMap,
 } = require('@librechat/api');
-const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
+const {
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  EModelEndpoint,
+  defaultSocialLogins,
+} = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -309,6 +313,7 @@ router.get('/', async function (req, res) {
       langfuseConnectionAccess,
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
       compactionEnabled: appConfig?.summarization?.enabled !== false,
+      codeEnvironmentDecisionVersion: CODE_ENVIRONMENT_DECISION_VERSION,
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),

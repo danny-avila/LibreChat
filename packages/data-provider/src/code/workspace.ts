@@ -1,6 +1,8 @@
 export const CODE_WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** Protocol-v1 ceiling enforced by the worker and Code API. */
 export const CODE_WORKSPACE_MAX_COUNT = 32;
+/** API/client protocol for immutable conversation-owned environment decisions. */
+export const CODE_ENVIRONMENT_DECISION_VERSION = 1 as const;
 export const CODE_WORKSPACE_OPERATIONS = [
   'read_file',
   'search_text',

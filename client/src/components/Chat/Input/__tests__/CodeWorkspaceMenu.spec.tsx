@@ -39,6 +39,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
   const selected = { environmentId: environment.id, workspaceId: 'project-a' };
   return {
     required: true,
+    supportsEnvironmentDecisions: true,
     locked: false,
     mode: 'attached',
     state: 'ready',
@@ -105,6 +106,23 @@ describe('CodeWorkspaceMenu', () => {
       codeEnvironmentMode: 'without_attached',
       codeWorkspaces: undefined,
     });
+  });
+
+  test('does not offer selection-less decisions before the API advertises support', async () => {
+    render(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({ supportsEnvironmentDecisions: false })}
+        disabled={false}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('code-workspace'));
+
+    expect(
+      screen.queryByRole('menuitemradio', { name: /com_ui_code_workspace_without_attached/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: /Project A/ })).toBeInTheDocument();
   });
 
   test('commits an explicit attached-workspace choice only when the user selects it', async () => {

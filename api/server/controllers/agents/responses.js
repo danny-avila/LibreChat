@@ -18,8 +18,6 @@ const {
   createAgentRunEnvelope,
   createAgentExecutionContext,
   createMCPRuntimeRequestBody,
-  getCodeWorkspaceSelections,
-  collectReachableAgents,
   buildAgentScopedContext,
   buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
@@ -1350,9 +1348,7 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               agent,
               codeEnvironmentDecision.mode,
-              getCodeWorkspaceSelections(
-                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
-              ),
+              codeEnvironmentDecision.codeWorkspaces,
             );
 
             // Save input messages
@@ -1590,9 +1586,7 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               agent,
               codeEnvironmentDecision.mode,
-              getCodeWorkspaceSelections(
-                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
-              ),
+              codeEnvironmentDecision.codeWorkspaces,
             );
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);

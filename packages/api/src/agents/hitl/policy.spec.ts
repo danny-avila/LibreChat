@@ -690,13 +690,16 @@ describe('computeAgentRequestFingerprint', () => {
 
   it('keeps a legacy-compatible digest while the current digest pins code environments', () => {
     const base = { endpoint: 'agents', agent_id: 'agent-1' };
-    const withAttachedWorkspace = {
+    const withWorkspace = {
       ...base,
-      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
     };
+    const withAttachedWorkspace = { ...withWorkspace, codeEnvironmentMode: 'attached' as const };
 
-    expect(computeLegacyAgentRequestFingerprint(base)).toBe(
+    expect(computeLegacyAgentRequestFingerprint(base)).not.toBe(
+      computeLegacyAgentRequestFingerprint(withAttachedWorkspace),
+    );
+    expect(computeLegacyAgentRequestFingerprint(withWorkspace)).toBe(
       computeLegacyAgentRequestFingerprint(withAttachedWorkspace),
     );
     expect(computeAgentRequestFingerprint(base)).not.toBe(

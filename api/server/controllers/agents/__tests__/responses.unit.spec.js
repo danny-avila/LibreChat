@@ -621,6 +621,38 @@ describe('createResponse controller', () => {
     },
   );
 
+  it.each([false, true])(
+    'persists the normalized no-attached decision atomically: stream=%s',
+    async (stream) => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.getCodeWorkspaceSelections.mockReturnValueOnce([
+        { environmentId: 'machine', workspaceId: 'stale-project' },
+      ]);
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream,
+          store: true,
+          code_environment_mode: 'without_attached',
+        },
+      });
+
+      await createResponse(req, res);
+
+      expect(db.saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          codeEnvironmentMode: 'without_attached',
+        }),
+        expect.anything(),
+      );
+      expect(db.saveConvo.mock.calls.at(-1)[1]).not.toHaveProperty('codeWorkspaces');
+      expect(api.getCodeWorkspaceSelections).not.toHaveBeenCalled();
+    },
+  );
+
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await createResponse(req, res);
 

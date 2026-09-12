@@ -774,6 +774,9 @@ export function computeLegacyAgentRequestFingerprint(
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
       ? { codeApprovalMode: fields.codeApprovalMode ?? null }
       : {}),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspaces')
+      ? { codeWorkspaces: fields.codeWorkspaces ?? null }
+      : {}),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }

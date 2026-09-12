@@ -350,6 +350,7 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+      expect(response.body.codeEnvironmentDecisionVersion).toBe(1);
     });
 
     it('should strip private prompt fields from model spec presets', async () => {

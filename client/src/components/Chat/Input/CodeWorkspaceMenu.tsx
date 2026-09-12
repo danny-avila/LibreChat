@@ -151,32 +151,34 @@ export default function CodeWorkspaceMenu({
         >
           {localize('com_ui_code_environment')}
         </Ariakit.MenuHeading>
-        <Ariakit.MenuItemRadio
-          name="codeEnvironmentMode"
-          value="without_attached"
-          checked={workspace.mode === 'without_attached'}
-          hideOnClick={true}
-          onChange={selectWithoutAttached}
-          className={cn(
-            'group flex w-full cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2',
-            'outline-none transition-colors duration-theme-fast',
-            'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
-            workspace.mode === 'without_attached' && 'bg-surface-active-alt',
-          )}
-        >
-          <FolderX className="mt-0.5 size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          <div className="min-w-0 flex-1 text-left">
-            <div className="truncate text-sm font-medium text-text-primary">
-              {localize('com_ui_code_workspace_without_attached')}
+        {workspace.supportsEnvironmentDecisions && (
+          <Ariakit.MenuItemRadio
+            name="codeEnvironmentMode"
+            value="without_attached"
+            checked={workspace.mode === 'without_attached'}
+            hideOnClick={true}
+            onChange={selectWithoutAttached}
+            className={cn(
+              'group flex w-full cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2',
+              'outline-none transition-colors duration-theme-fast',
+              'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+              workspace.mode === 'without_attached' && 'bg-surface-active-alt',
+            )}
+          >
+            <FolderX className="mt-0.5 size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            <div className="min-w-0 flex-1 text-left">
+              <div className="truncate text-sm font-medium text-text-primary">
+                {localize('com_ui_code_workspace_without_attached')}
+              </div>
+              <p className="text-xs text-text-secondary">
+                {localize('com_ui_code_workspace_without_attached_info')}
+              </p>
             </div>
-            <p className="text-xs text-text-secondary">
-              {localize('com_ui_code_workspace_without_attached_info')}
-            </p>
-          </div>
-          {workspace.mode === 'without_attached' && (
-            <Check className="mt-0.5 size-4 shrink-0 text-text-primary" aria-hidden="true" />
-          )}
-        </Ariakit.MenuItemRadio>
+            {workspace.mode === 'without_attached' && (
+              <Check className="mt-0.5 size-4 shrink-0 text-text-primary" aria-hidden="true" />
+            )}
+          </Ariakit.MenuItemRadio>
+        )}
         {workspace.environments.map(({ environment, state, workspaces, selected }) => (
           <div key={environment.id}>
             <Ariakit.MenuHeading

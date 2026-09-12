@@ -6,6 +6,7 @@ import useCodeWorkspace from '../useCodeWorkspace';
 const mockAgentPermissions = jest.fn();
 const mockAgentsConfig = jest.fn();
 const mockStatus = jest.fn();
+const mockStartupConfig = jest.fn();
 const mockAgentsMap = jest.fn();
 const mockAccess = jest.fn();
 const mockPreference = jest.fn();
@@ -25,6 +26,7 @@ jest.mock('../useGetAgentsConfig', () => () => mockAgentsConfig());
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => mockAgentsMap() }));
 jest.mock('~/data-provider', () => ({
   useCodeEnvironmentStatusQueries: (...args: unknown[]) => mockStatus(...args),
+  useGetStartupConfig: () => ({ data: mockStartupConfig() }),
 }));
 
 const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConversation =>
@@ -40,6 +42,7 @@ describe('useCodeWorkspace', () => {
     mockPreference.mockReset();
     mockRememberPreference.mockReset();
     mockAccess.mockReturnValue(true);
+    mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
       agent: {
@@ -107,6 +110,20 @@ describe('useCodeWorkspace', () => {
       { environmentId: 'personal-vm', workspaceId: 'project-a' },
     ]);
     expect(mockStatus).toHaveBeenCalledWith(['personal-vm'], true);
+  });
+
+  it('does not emit a selection-less decision until the API advertises support', () => {
+    mockStartupConfig.mockReturnValue({});
+    mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+
+    expect(result.current.supportsEnvironmentDecisions).toBe(false);
+    expect(result.current.mode).toBeUndefined();
+    expect(result.current.state).toBe('choose');
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.resolveSubmission()).toBeUndefined();
+    expect(result.current.resolveSubmission(undefined, 'without_attached')).toBeUndefined();
   });
 
   it('uses an agent default ahead of the last used workspace only for new chats', () => {

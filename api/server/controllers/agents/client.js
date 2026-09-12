@@ -2015,7 +2015,9 @@ class AgentClient extends BaseClient {
           codeEnvironmentMode:
             codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
           codeWorkspaces:
-            codeEnvironmentDecision?.codeWorkspaces ?? this.options.req.body.codeWorkspaces,
+            codeEnvironmentDecision != null
+              ? codeEnvironmentDecision.codeWorkspaces
+              : this.options.req.body.codeWorkspaces,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
