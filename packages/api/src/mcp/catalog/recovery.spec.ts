@@ -262,7 +262,7 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     );
 
     const outcome = await flight;
-    expect(outcome).toEqual({ ...listed(), recoveryGeneration: 'generation-2' });
+    expect(outcome).toEqual({ ...listed(), recoveryGeneration: 'generation-2', adopted: true });
     await expect(joined).resolves.toBe(outcome);
     expect(replacement).not.toHaveBeenCalled();
   });
@@ -1069,6 +1069,9 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       failReads: () => {
         readsFail = true;
       },
+      restoreReads: () => {
+        readsFail = false;
+      },
       /** A credential change committed on another replica moves only the shared generation. */
       rotateOnAnotherReplica: async () => rotate(),
       /** A credential change committed by another request on this replica. */
@@ -1236,11 +1239,40 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
 
     const first = await loadCatalogs(fence, discoverServerTools);
     const second = await loadCatalogs(fence, discoverServerTools);
+    fence.failReads();
+    const duringOutage = await loadCatalogs(fence, discoverServerTools);
 
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
     expect(first.reauthRequiredGenerations).toEqual(new Map([[serverName, 'generation-2']]));
     expect(second.reauthRequiredGenerations).toEqual(new Map([[serverName, 'generation-2']]));
+    expect(duringOutage.reauthRequiredGenerations).toEqual(new Map([[serverName, 'generation-2']]));
   });
+
+  it.each([
+    ['keeps', 'the shared generation confirms it', true],
+    ['discards', 'the shared generation cannot confirm it', false],
+  ])(
+    '%s a catalog its refresh published for a request that observed no generation when %s',
+    async (_verb, _condition, confirmable) => {
+      const fence = createFence();
+      fence.failReads();
+      const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+        await refreshAccessToken(options);
+        if (confirmable) {
+          fence.restoreReads();
+        } else {
+          await fence.rotateOnAnotherReplica();
+        }
+        return { tools: listedTools };
+      });
+
+      const result = await loadCatalogs(fence, discoverServerTools);
+
+      expect(result.serverTools).toEqual(
+        confirmable ? new Map([[serverName, recoveredTools]]) : new Map(),
+      );
+    },
+  );
 
   it('lets a refresh that outlives its discovery clear the backoff instead of adopting it', async () => {
     const fence = createFence();

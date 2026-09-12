@@ -214,6 +214,8 @@ type RecoveryOutcome = {
   tools: LCAvailableTools | null;
   state?: 'reauth_required' | 'backoff';
   recoveryGeneration?: string;
+  /** Marks a flight's own result when its generation came from its own publication; never retained. */
+  adopted?: boolean;
 };
 
 interface RecoveryStateEntry {
@@ -388,16 +390,18 @@ export class MCPServerCatalogRecoveryTracker {
     entry: RecoveryStateEntry,
     heldClears: ReadonlyArray<string | undefined>,
     published: string | undefined,
-  ): void {
+  ): boolean {
     if (this.states.get(key) !== entry) {
-      return;
+      return false;
     }
     if (published != null) {
       entry.recoveryGeneration = published;
     }
     if (heldClears.some((generation) => isClearedBy(entry, generation))) {
       this.states.delete(key);
+      return false;
     }
+    return published != null;
   }
 
   public run(
@@ -436,6 +440,7 @@ export class MCPServerCatalogRecoveryTracker {
       lastTouchedAt: now,
     };
     let settled = false;
+    let adopted = false;
     /**
      * A credential refresh inside discovery writes a new shared generation, then clears local
      * recovery state with it, and only then reports what it wrote. While that bounded publication is
@@ -456,7 +461,9 @@ export class MCPServerCatalogRecoveryTracker {
         return published;
       } finally {
         entry.heldClears = undefined;
-        this.finishPublication(key, entry, heldClears, settled ? undefined : published);
+        if (this.finishPublication(key, entry, heldClears, settled ? undefined : published)) {
+          adopted = true;
+        }
       }
     };
     const flight = Promise.resolve()
@@ -488,7 +495,7 @@ export class MCPServerCatalogRecoveryTracker {
         } else {
           this.states.delete(key);
         }
-        return outcome;
+        return adopted ? { ...outcome, adopted } : outcome;
       })
       .finally(() => {
         if (this.states.get(key) === entry) {
@@ -798,10 +805,13 @@ async function recoverMCPServerCatalogsWithState(
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
       const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
-      /** A flight can finish under a generation this request never observed — one its own refresh
-       *  published. Such an outcome stands only while the shared generation still confirms it. */
+      /** A flight can finish under a generation this request never observed: one its own refresh
+       *  published, or a different one than this request read. Such an outcome stands only while
+       *  the shared generation still confirms it. A request that read nothing keeps a generation
+       *  the tracker merely carried over, so a cache outage does not discard retained state. */
       const unobservedGeneration =
-        recoveryGeneration != null && outcomeGeneration !== recoveryGeneration;
+        outcomeGeneration !== recoveryGeneration &&
+        (recoveryGeneration != null || outcome.adopted === true);
       const superseded =
         outcomeGeneration != null &&
         (unobservedGeneration
