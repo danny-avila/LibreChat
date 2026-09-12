@@ -130,7 +130,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
                 required: localize('com_auth_password_required'),
                 minLength: {
                   value: startupConfig?.minPasswordLength || 8,
-                  message: localize('com_auth_password_min_length'),
+                  message: localize('com_auth_password_min_length', {
+                    0: startupConfig?.minPasswordLength || 8,
+                  }),
                 },
                 maxLength: { value: 128, message: localize('com_auth_password_max_length') },
               })}

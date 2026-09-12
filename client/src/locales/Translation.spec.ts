@@ -1,4 +1,4 @@
-import type { TranslationResource } from './i18n';
+import type { SupportedLocale, TranslationResource } from './i18n';
 import {
   __resetLocaleForTests,
   __setLocaleLoaderForTests,
@@ -6,6 +6,7 @@ import {
   ensureLocale,
   initializeI18n,
   normalizeLocale,
+  supportedLocales,
 } from './i18n';
 import English from './en/translation.json';
 import Spanish from './es/translation.json';
@@ -66,6 +67,106 @@ describe('i18next translation tests', () => {
 
     await changeLanguageSafely('fr');
     expect(i18n.t('com_endpoint_default_with_num', { 0: 'Marie' })).toBe('par défaut : Marie');
+  });
+
+  it.each(supportedLocales)('uses the actual account limits in %s', async (locale) => {
+    await changeLanguageSafely(locale);
+
+    for (const minimum of [8, 12]) {
+      const message = i18n.t('com_auth_password_min_length', { 0: minimum });
+      expect(message).toContain(String(minimum));
+      expect(message).not.toMatch(/[{}]/);
+    }
+    expect(i18n.t('com_auth_username_max_length')).toContain('80');
+  });
+
+  it.each<{
+    locale: SupportedLocale;
+    key: TranslationKeys;
+    values: Record<string, string | number>;
+    expected: string[];
+  }>([
+    {
+      locale: 'ar',
+      key: 'com_agents_agent_card_label',
+      values: { name: 'Agent', description: 'Description' },
+      expected: ['Agent', 'Description'],
+    },
+    {
+      locale: 'fr',
+      key: 'com_agents_agent_card_label',
+      values: { name: 'Agent', description: 'Description' },
+      expected: ['Agent', 'Description'],
+    },
+    { locale: 'he', key: 'com_file_pages', values: { pages: '3, 7' }, expected: ['3, 7'] },
+    {
+      locale: 'it',
+      key: 'com_ui_read_file',
+      values: { 0: 'report.pdf' },
+      expected: ['report.pdf'],
+    },
+    { locale: 'it', key: 'com_ui_search_result_count', values: { count: 1 }, expected: ['1'] },
+    { locale: 'lv', key: 'com_nav_mcp_vars_update_error', values: {}, expected: [] },
+    { locale: 'nb', key: 'com_agents_chat_with', values: { name: 'Agent' }, expected: ['Agent'] },
+    { locale: 'nb', key: 'com_error_files_upload_too_large', values: { 0: 20 }, expected: ['20'] },
+    {
+      locale: 'nb',
+      key: 'com_ui_conversation_label',
+      values: { title: 'Conversation' },
+      expected: ['Conversation'],
+    },
+    { locale: 'nn', key: 'com_agents_chat_with', values: { name: 'Agent' }, expected: ['Agent'] },
+    { locale: 'nn', key: 'com_error_files_upload_too_large', values: { 0: 20 }, expected: ['20'] },
+    {
+      locale: 'nn',
+      key: 'com_nav_chat_direction_selected',
+      values: { direction: 'LTR' },
+      expected: ['LTR'],
+    },
+    {
+      locale: 'nn',
+      key: 'com_sources_download_aria_label',
+      values: { filename: 'report.pdf', status: '' },
+      expected: ['report.pdf'],
+    },
+    {
+      locale: 'nn',
+      key: 'com_ui_conversation_label',
+      values: { title: 'Conversation' },
+      expected: ['Conversation'],
+    },
+    {
+      locale: 'nn',
+      key: 'com_ui_memory_already_exceeded',
+      values: { tokens: 42 },
+      expected: ['42'],
+    },
+    { locale: 'nn', key: 'com_ui_memory_would_exceed', values: { tokens: 42 }, expected: ['42'] },
+    {
+      locale: 'pt-BR',
+      key: 'com_ui_memory_would_exceed',
+      values: { tokens: 42 },
+      expected: ['42'],
+    },
+    { locale: 'pt-PT', key: 'com_ui_delete_tool_error', values: {}, expected: [] },
+    { locale: 'ru', key: 'com_ui_delete_tool_error', values: {}, expected: [] },
+    {
+      locale: 'ru',
+      key: 'com_ui_share_everyone_description_var',
+      values: { resource: 'Resource' },
+      expected: ['Resource'],
+    },
+    { locale: 'de', key: 'com_ui_capabilities_count', values: { count: 3 }, expected: ['3'] },
+    { locale: 'he', key: 'com_sources_more_sources', values: { count: 3 }, expected: ['3'] },
+  ])('preserves runtime values in $locale/$key', async ({ locale, key, values, expected }) => {
+    await changeLanguageSafely(locale);
+    const message = i18n.t(key, values);
+
+    expect(message).not.toBe(key);
+    expect(message).not.toMatch(/[{}]/);
+    for (const value of expected) {
+      expect(message).toContain(value);
+    }
   });
 
   it('should normalize language selector values to locale files', () => {

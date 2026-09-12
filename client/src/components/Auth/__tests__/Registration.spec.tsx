@@ -203,6 +203,24 @@ test('shows validation error messages', async () => {
   expect(alerts[5]).toHaveTextContent(/Passwords do not match/i);
 });
 
+test('shows the configured password minimum length', async () => {
+  const startupConfig = {
+    ...mockStartupConfig,
+    data: { ...mockStartupConfig.data, minPasswordLength: 12 },
+  };
+  const { getByTestId, findByText, getByRole } = setup({
+    useGetStartupConfigReturnValue: startupConfig,
+  });
+
+  await userEvent.type(getByTestId('password'), 'a'.repeat(11));
+
+  expect(await findByText(/Password must be at least 12 characters/i)).toHaveAttribute(
+    'role',
+    'alert',
+  );
+  expect(getByRole('button', { name: /Submit registration/i })).toBeDisabled();
+});
+
 test('shows error message when registration fails', async () => {
   const mutate = jest.fn();
   const { getByTestId, getByRole } = setup({

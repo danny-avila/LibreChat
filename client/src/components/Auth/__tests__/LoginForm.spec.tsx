@@ -161,3 +161,21 @@ test('displays validation error messages', async () => {
   expect(getByText(/You must enter a valid email address/i)).toBeInTheDocument();
   expect(getByText(/Password must be at least 8 characters/i)).toBeInTheDocument();
 });
+
+test('displays the configured password minimum length', async () => {
+  const { getByLabelText, getByRole, findByRole } = render(
+    <Login
+      onSubmit={mockLogin}
+      startupConfig={{ ...mockStartupConfig, minPasswordLength: 12 }}
+      error={undefined}
+      setError={jest.fn()}
+    />,
+  );
+
+  await userEvent.type(getByLabelText(/email/i), 'test@example.com');
+  await userEvent.type(getByLabelText(/password/i), 'a'.repeat(11));
+  await userEvent.click(getByRole('button', { name: /continue/i }));
+
+  expect(await findByRole('alert')).toHaveTextContent(/Password must be at least 12 characters/i);
+  expect(mockLogin).not.toHaveBeenCalled();
+});
