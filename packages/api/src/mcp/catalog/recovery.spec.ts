@@ -375,9 +375,49 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     releaseDiscovery();
 
     const kept = observedGeneration != null && clearedGeneration != null;
+    const unconfirmed = kept && observedGeneration !== clearedGeneration;
     await expect(flight).resolves.toEqual(
-      kept ? { ...listed(), recoveryGeneration: observedGeneration } : { serverName, tools: null },
+      kept
+        ? {
+            ...listed(),
+            recoveryGeneration: observedGeneration,
+            ...(unconfirmed && { unconfirmed }),
+          }
+        : { serverName, tools: null },
     );
+  });
+
+  it('does not retain the outcome of a flight that a mismatched clear spared', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    let releaseDiscovery: () => void = () => undefined;
+    const flight = tracker.run(user, candidate, policy, 'generation-2', async () => {
+      await new Promise<void>((resolve) => {
+        releaseDiscovery = resolve;
+      });
+      return failed();
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    tracker.clear(user.id, serverName, 'generation-3');
+    releaseDiscovery();
+    await flight;
+
+    const retry = jest.fn(async () => failed());
+    await tracker.run(user, candidate, policy, 'generation-2', retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a flight with no known generation that a clear spared while its publication failed', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    const flight = tracker.run(user, candidate, policy, undefined, async (trackPublication) => {
+      await trackPublication(async () => {
+        tracker.clear(user.id, serverName, 'generation-3');
+        throw new Error('tool cache unavailable');
+      }).catch(() => undefined);
+      return listed();
+    });
+
+    await expect(flight).resolves.toEqual({ serverName, tools: null });
   });
 
   it('keeps a newer flight when a publication that outlived its own flight clears with its generation', async () => {
@@ -1318,6 +1358,32 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
 
     await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-3');
     expect((await takeover).serverTools).toEqual(new Map([[serverName, recoveredTools]]));
+  });
+
+  it('discards a catalog a mismatched clear spared when the shared generation cannot confirm it', async () => {
+    const fence = createFence();
+    const releaseDiscovery: Array<() => void> = [];
+    let completeRefresh: (() => Promise<string | undefined>) | undefined;
+    const discoverServerTools = jest
+      .fn()
+      .mockImplementationOnce(async ({ onOAuthCredentialsChanging }: ToolDiscoveryOptions) => {
+        completeRefresh = await onOAuthCredentialsChanging?.(scope);
+        return { tools: listedTools };
+      })
+      .mockImplementation(async () => {
+        await new Promise<void>((resolve) => releaseDiscovery.push(resolve));
+        return { tools: listedTools };
+      });
+
+    await loadCatalogs(fence, discoverServerTools);
+    const replacement = loadCatalogs(fence, discoverServerTools);
+    await flush();
+    await completeRefresh?.();
+    fence.failReads();
+    releaseDiscovery.splice(0).forEach((release) => release());
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    expect((await replacement).serverTools).toEqual(new Map());
   });
 
   it('lets a refresh that outlives its discovery clear the backoff instead of adopting it', async () => {

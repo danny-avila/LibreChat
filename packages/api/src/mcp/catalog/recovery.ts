@@ -216,6 +216,8 @@ type RecoveryOutcome = {
   recoveryGeneration?: string;
   /** Marks a flight's own result when its generation came from its own publication; never retained. */
   adopted?: boolean;
+  /** Marks a flight's own result when a clear for another generation spared it; never retained. */
+  unconfirmed?: boolean;
 };
 
 interface RecoveryStateEntry {
@@ -228,24 +230,8 @@ interface RecoveryStateEntry {
   inFlight?: Promise<RecoveryOutcome>;
   /** Whether this flight's own discovery has a credential publication open. */
   publishing?: boolean;
-}
-
-/**
- * A clear from a publication carries the generation it wrote, which only signals that the shared
- * generation advanced. Generations carry no order, so that signal cannot tell whether a flight still
- * in flight predates it; such a flight, when it has a known generation or is publishing its own
- * change, is judged by its requests against the shared generation, as a rotation from another
- * replica would be. Other state is cleared unless it was recorded under that generation, and a
- * clear that carries no generation clears unconditionally.
- */
-function isClearedBy(entry: RecoveryStateEntry, generation: string | undefined): boolean {
-  if (generation == null) {
-    return true;
-  }
-  if (entry.inFlight != null && (entry.recoveryGeneration != null || entry.publishing === true)) {
-    return false;
-  }
-  return entry.recoveryGeneration !== generation;
+  /** Generations carried by publication clears that spared this flight while it was in flight. */
+  sparedClears?: string[];
 }
 
 /** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
@@ -364,7 +350,7 @@ export class MCPServerCatalogRecoveryTracker {
 
   /**
    * Clears suppression after a credential/config mutation commits. A clear from a publication
-   * carries the generation it wrote; see `isClearedBy` for the state it spares.
+   * carries the generation it wrote; see `clearState` for the state it spares.
    */
   public clear(userId: string, serverName?: string, generation?: string): void {
     if (serverName != null) {
@@ -379,11 +365,27 @@ export class MCPServerCatalogRecoveryTracker {
     }
   }
 
+  /**
+   * A clear from a publication carries the generation it wrote, which only signals that the shared
+   * generation advanced. Generations carry no order, so that signal cannot tell whether a flight
+   * still in flight predates it: such a flight, when it has a known generation or is publishing its
+   * own change, is spared and records the generation, and settles against it once it finishes
+   * (see `run`). Any other state is cleared, as is everything on a clear that carries no generation.
+   */
   private clearState(key: string, generation: string | undefined): void {
     const entry = this.states.get(key);
-    if (entry != null && isClearedBy(entry, generation)) {
-      this.states.delete(key);
+    if (entry == null) {
+      return;
     }
+    if (
+      generation != null &&
+      entry.inFlight != null &&
+      (entry.recoveryGeneration != null || entry.publishing === true)
+    ) {
+      entry.sparedClears = [...(entry.sparedClears ?? []), generation];
+      return;
+    }
+    this.states.delete(key);
   }
 
   public run(
@@ -428,7 +430,7 @@ export class MCPServerCatalogRecoveryTracker {
      * recovery state with it, and only then reports what it wrote. While that bounded publication is
      * open, requests for the same server join this flight, so a request that already reads the new
      * generation does not start a second discovery; the refresh's own clear spares the flight (see
-     * `isClearedBy`). A flight that is still current once the publication completes adopts the
+     * `clearState`). A flight that is still current once the publication completes adopts the
      * generation it wrote.
      */
     const trackPublication: PublicationTracker = async (publish) => {
@@ -459,7 +461,17 @@ export class MCPServerCatalogRecoveryTracker {
         entry.lastTouchedAt = Date.now();
         this.touch(key, entry);
         outcome.recoveryGeneration = entry.recoveryGeneration;
-        if (outcome.state === 'reauth_required') {
+        /** A clear for a generation this flight did not finish under may be newer than it, so the
+         *  outcome must be confirmed against the shared generation and is never retained. */
+        const unconfirmed = (entry.sparedClears ?? []).some(
+          (generation) => generation !== entry.recoveryGeneration,
+        );
+        if (unconfirmed) {
+          this.states.delete(key);
+          if (entry.recoveryGeneration == null) {
+            return { serverName: candidate.serverName, tools: null };
+          }
+        } else if (outcome.state === 'reauth_required') {
           entry.failureCount = 0;
           entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
           /** Keep the authorization decision, but never promote an unfenced discovery catalog
@@ -476,7 +488,10 @@ export class MCPServerCatalogRecoveryTracker {
         } else {
           this.states.delete(key);
         }
-        return adopted ? { ...outcome, adopted } : outcome;
+        if (!adopted && !unconfirmed) {
+          return outcome;
+        }
+        return { ...outcome, ...(adopted && { adopted }), ...(unconfirmed && { unconfirmed }) };
       })
       .finally(() => {
         if (this.states.get(key) === entry) {
@@ -786,16 +801,18 @@ async function recoverMCPServerCatalogsWithState(
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
       const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
-      /** A flight can finish under a generation this request never observed: one its own refresh
-       *  published, or a different one than this request read. Such an outcome stands only while
-       *  the shared generation still confirms it. A request that read nothing keeps a generation
-       *  the tracker merely carried over, so a cache outage does not discard retained state. */
-      const unobservedGeneration =
-        outcomeGeneration !== recoveryGeneration &&
-        (recoveryGeneration != null || outcome.adopted === true);
+      /** An outcome stands without a final read only under a generation this request observed and
+       *  no clear has contested. A flight can finish under a generation its own refresh published or
+       *  one this request never read, and a clear for another generation can spare it; any of those
+       *  stands only while the shared generation still confirms it. A request that read nothing
+       *  keeps a generation the tracker merely carried over, so a cache outage keeps retained state. */
+      const requiresConfirmation =
+        outcome.unconfirmed === true ||
+        (outcomeGeneration !== recoveryGeneration &&
+          (recoveryGeneration != null || outcome.adopted === true));
       const superseded =
         outcomeGeneration != null &&
-        (unobservedGeneration
+        (requiresConfirmation
           ? finalGeneration !== outcomeGeneration
           : finalGeneration != null && finalGeneration !== outcomeGeneration);
       if (superseded) {
