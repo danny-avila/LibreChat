@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { devices, expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openAgentBuilder } from '../agents.helpers';
 import { NEW_CHAT_PATH, fetchJson, getAccessToken } from '../helpers';
@@ -182,5 +182,36 @@ test.describe('native tool verified mark', () => {
     const serverCard = dialog.getByRole('button', { name: new RegExp(MCP_SERVER_NAME) }).first();
     await expect(serverCard).toBeVisible();
     await expect(serverCard.locator('svg[aria-label="Native"]')).toHaveCount(0);
+  });
+});
+
+/** The mock project is Desktop Chrome, so the touch layout — the sidebar
+ *  switcher that replaces the rail, and a card that never receives hover —
+ *  only gets exercised if a test asks for it. */
+test.describe('native tool verified mark on a touch viewport', () => {
+  /** Only the context knobs: spreading the whole device descriptor would carry
+   *  `defaultBrowserType`, which Playwright refuses inside a describe. */
+  test.use({ viewport: devices['Pixel 7'].viewport, hasTouch: true });
+
+  test('@scenario:verified-mark-survives-a-touch-viewport a native tool keeps its mark where there is no hover', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const dialog = await openToolLibrary(page);
+
+    const mark = verifiedMark(dialog);
+    await expect(mark).toBeVisible();
+    expect(await page.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(false);
+
+    const paint = await paintOf(mark);
+    expect(paint.badgeStroke).toBe('none');
+    expect(contrast(paint.color, paint.checkStroke)).toBeGreaterThanOrEqual(MARK_FLOOR);
+
+    const card = mark.locator(CARD_FROM_MARK);
+    const resting = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const behind = resting.endsWith(', 0)')
+      ? await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)
+      : resting;
+    expect(contrast(paint.color, behind)).toBeGreaterThanOrEqual(MARK_FLOOR);
   });
 });

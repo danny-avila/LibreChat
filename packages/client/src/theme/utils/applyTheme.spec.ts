@@ -257,6 +257,16 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--status-verified')).toBe('26 127 216');
   });
 
+  it('carries a legacy theme that names no fills onto the mode palette it inherits', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-surface-tertiary': '30 30 38' }, root, {
+      'rgb-status-success-strong': '8 135 89',
+    });
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('8 135 89');
+  });
+
   it('clears only properties owned by the theme module', () => {
     const root = document.documentElement;
     root.style.setProperty('--text-primary', '1 2 3');

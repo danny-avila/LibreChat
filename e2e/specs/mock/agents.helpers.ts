@@ -5,6 +5,12 @@ import { MOCK_ENDPOINTS, NEW_CHAT_PATH, fetchJson, getAccessToken, requestJson }
 
 export const AGENT_EDIT_PERMISSION = 2;
 
+/** Tailwind's `md`, where the side rail replaces the sidebar's switcher menu. */
+const MD_BREAKPOINT = 768;
+/** Playwright reports no viewport only for a full-page context, which the mock
+ *  projects never use; treat that as the desktop layout. */
+const DESKTOP_WIDTH = 1280;
+
 export type AgentSummary = {
   _id: string;
   id: string;
@@ -91,29 +97,28 @@ export async function openAgentBuilder(page: Page) {
     .then(() => true)
     .catch(() => false);
   if (!builderVisible) {
-    /** The rail collapses below the desktop breakpoint, where the same panel is
-     *  reached through the header's Control Panel toggle instead. */
-    const agentBuilderButton = page.getByRole('button', { name: 'Agent Builder' });
-    const railVisible = await agentBuilderButton
-      .waitFor({ state: 'visible', timeout: 1000 })
-      .then(() => true)
-      .catch(() => false);
-    if (railVisible) {
-      if ((await agentBuilderButton.getAttribute('aria-pressed')) !== 'true') {
-        await agentBuilderButton.click();
-      }
-    } else {
-      /** Below the breakpoint there is no rail: the panel switcher lives inside
-       *  the sidebar, which starts off-canvas, and each panel is an entry in
-       *  the menu it opens. */
+    /** Which control exists is a layout decision, not a timing one: the rail is
+     *  desktop-only, and below Tailwind's `md` the same panels are entries in
+     *  the sidebar's switcher menu. Probing for the rail instead would turn a
+     *  slow first paint into the wrong branch. */
+    const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) < MD_BREAKPOINT;
+    if (narrow) {
       const openSidebarButton = page.getByRole('button', { name: 'Open sidebar' });
       if (await openSidebarButton.isVisible()) {
         await openSidebarButton.click();
       }
+      /** The switcher lives inside the sidebar, so closing it would take the
+       *  control with it. */
       const panelSwitcher = page.getByTestId('panel-switcher-button');
       await expect(panelSwitcher).toBeVisible();
       await panelSwitcher.click();
       await page.getByRole('menuitemcheckbox', { name: 'Agent Builder' }).click();
+    } else {
+      const agentBuilderButton = page.getByRole('button', { name: 'Agent Builder' });
+      await expect(agentBuilderButton).toBeVisible();
+      if ((await agentBuilderButton.getAttribute('aria-pressed')) !== 'true') {
+        await agentBuilderButton.click();
+      }
     }
   }
   await expect(form).toBeVisible();

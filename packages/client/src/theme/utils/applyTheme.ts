@@ -17,7 +17,10 @@ function validateRGB(rgb: string): boolean {
   return match !== null && match.slice(1).every((channel) => Number(channel) <= 255);
 }
 
-function mapColors(colors: IThemeRGB): Array<[string, string]> {
+/** `base` is the bundled palette for the mode being applied. The adapter writes
+ *  only the keys a theme names, so a derivation whose source the theme inherits
+ *  rather than restates has nothing to read without it. */
+function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]> {
   const variables = themeColorTokens.reduce<Array<[string, string]>>((result, token) => {
     const value = colors[token];
     if (value !== undefined) {
@@ -66,13 +69,13 @@ function mapColors(colors: IThemeRGB): Array<[string, string]> {
    * Same compatibility as `resolveTheme`: the mark wore `status-success-strong`
    * before it had a token of its own, and this adapter writes only the keys a
    * theme names, so an older stored or environment theme would otherwise keep
-   * the stock blue while the palette around it moved.
+   * the stock blue while the palette around it moved. A theme that inherits the
+   * green rather than restating it gets the same treatment through `base`.
    */
-  if (
-    colors['rgb-status-verified'] === undefined &&
-    colors['rgb-status-success-strong'] !== undefined
-  ) {
-    variables.push(['--status-verified', colors['rgb-status-success-strong']]);
+  const inheritedSuccess =
+    colors['rgb-status-success-strong'] ?? base?.['rgb-status-success-strong'];
+  if (colors['rgb-status-verified'] === undefined && inheritedSuccess !== undefined) {
+    variables.push(['--status-verified', inheritedSuccess]);
   }
 
   return variables;
@@ -113,12 +116,13 @@ export function applyResolvedTheme(
 export default function applyTheme(
   themeRGB?: IThemeRGB,
   root: HTMLElement = document.documentElement,
+  base?: IThemeRGB,
 ): void {
   if (!themeRGB) {
     return;
   }
 
-  mapColors(themeRGB).forEach(([property, value]) => {
+  mapColors(themeRGB, base).forEach(([property, value]) => {
     if (!validateRGB(value)) {
       console.error(`Invalid RGB value for ${property}: ${value}`);
       return;

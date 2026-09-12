@@ -417,16 +417,20 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       : {};
   /**
    * The verified mark was painted with `status-success-strong` until it earned
-   * its own token, so a theme written before that names the green but not the
-   * blue. Filling the omission from the bundled palette would drop LibreChat's
-   * stock blue into a palette that never chose it, beside the deployment's own
-   * `text-on-status` check and card surfaces; carrying the fill it used to wear
-   * keeps that coordination, and a theme that wants the blue names the token.
+   * its own token, so no theme written before that names it — whether or not it
+   * restates the green. Filling the omission from the bundled palette would
+   * drop LibreChat's stock blue into a palette that never chose it, beside the
+   * deployment's own `text-on-status` check and card surfaces; the fill the
+   * mark used to wear keeps that coordination, restated or inherited, and a
+   * theme that wants the blue names the token, the way
+   * `rgb-surface-composer-hover` opts out of its own fallback.
    */
   const verifiedFallback =
-    customColors?.['rgb-status-verified'] === undefined &&
-    customColors?.['rgb-status-success-strong'] !== undefined
-      ? { 'rgb-status-verified': customColors['rgb-status-success-strong'] }
+    customColors != null && customColors['rgb-status-verified'] === undefined
+      ? {
+          'rgb-status-verified':
+            customColors['rgb-status-success-strong'] ?? baseColors['rgb-status-success-strong'],
+        }
       : {};
 
   return {
