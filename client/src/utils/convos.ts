@@ -99,9 +99,6 @@ const getConversationDate = (
   return dateValue ? parseISO(dateValue) : fallbackDate;
 };
 
-const getTitle = (conversation: TConversation) =>
-  typeof conversation.title === 'string' ? conversation.title.trim() : '';
-
 /** A title's own initial, as a code point: `charAt(0)` on a supplementary-plane letter
  *  returns half a surrogate pair, which renders as a replacement character and collapses
  *  unrelated initials into one heading. Non-letters share a single `#` group. The case is
@@ -142,7 +139,8 @@ export const groupConversations = (
     seenConversationIds.add(conversation.conversationId);
 
     if (field === 'title') {
-      const groupName = getTitleInitial(getTitle(conversation));
+      const title = typeof conversation.title === 'string' ? conversation.title : '';
+      const groupName = getTitleInitial(title);
       const currentRun = runs[runs.length - 1];
       if (currentRun && currentRun[0] === groupName) {
         currentRun[1].push(conversation);

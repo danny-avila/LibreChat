@@ -11,6 +11,7 @@ const mockNewConversation = jest.fn();
 const mockRetainView = jest.fn();
 const mockSetIsPopoverActive = jest.fn();
 const mockAnnouncePolite = jest.fn();
+const mockSetConversation = jest.fn();
 
 jest.mock('@ariakit/react', () => ({
   MenuButton: jest
@@ -76,7 +77,11 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
-  useChatContext: () => ({ index: 0 }),
+  useChatContext: () => ({
+    index: 0,
+    conversation: { conversationId: 'conversation-1', isArchived: true },
+    setConversation: mockSetConversation,
+  }),
   useLiveAnnouncer: () => ({ announcePolite: mockAnnouncePolite }),
 }));
 
@@ -125,6 +130,7 @@ describe('ConvoOptions archive action', () => {
     mockRetainView.mockReset();
     mockSetIsPopoverActive.mockReset();
     mockAnnouncePolite.mockReset();
+    mockSetConversation.mockReset();
   });
 
   afterEach(() => {
@@ -134,7 +140,7 @@ describe('ConvoOptions archive action', () => {
   /** The row's own state decides the direction: an unarchived pin stays listed beside the
    *  archive, and the previous page's rows outlive a status switch, so a list-level flag
    *  would offer to restore a conversation that was never archived. */
-  it('restores an archived conversation without navigating away from it', () => {
+  it('restores the open archived conversation state without navigating away from it', () => {
     renderOptions(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_unarchive' }));
@@ -152,6 +158,10 @@ describe('ConvoOptions archive action', () => {
     expect(mockAnnouncePolite).toHaveBeenCalledWith({
       message: 'com_ui_convo_unarchived',
       isStatus: true,
+    });
+    expect(mockSetConversation).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      isArchived: false,
     });
   });
 

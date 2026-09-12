@@ -437,15 +437,18 @@ const Conversations: FC<ConversationsProps> = ({
     filteredConversations.length === 0;
 
   /** A list that came back empty is a dead end the user has to be able to leave: say why
-   *  it is empty and offer the way back. Pagination can legitimately yield an empty first
-   *  page (an all-pinned page), so only a drained cursor counts as empty. */
+   *  it is empty and offer the way back. A drained page can still contain only pinned rows,
+   *  which render in PinnedSection and do not make the account empty. */
+  const hasUnfilteredRows =
+    !search.query && filterTags.length === 0 && !isArchivedView && filteredConversations.length > 0;
   const isEmpty =
     isChatsExpanded &&
     !isLoading &&
     !isSearchLoading &&
     !isListError &&
     !hasNextPage &&
-    groupedConversations.length === 0;
+    groupedConversations.length === 0 &&
+    !hasUnfilteredRows;
 
   let emptyLabel: TranslationKeys = 'com_ui_no_chats';
   if (search.query) {

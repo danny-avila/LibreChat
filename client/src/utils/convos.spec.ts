@@ -235,6 +235,23 @@ describe('Conversation Utilities', () => {
       ).toEqual([['avocado'], ['zoo'], ['apple'], ['number', 'empty']]);
     });
 
+    it('keeps a leading-space title in the server order and labels it as non-letter', () => {
+      const conversations = [
+        { conversationId: 'zebra', title: ' Zebra' },
+        { conversationId: 'apple', title: 'Apple' },
+      ];
+
+      const grouped = groupConversations(conversations as TConversation[], {
+        field: 'title',
+        direction: 'asc',
+      });
+
+      expect(grouped.map(([key]) => key)).toEqual(['#', 'A']);
+      expect(
+        grouped.flatMap(([, group]) => group.map((conversation) => conversation.conversationId)),
+      ).toEqual(['zebra', 'apple']);
+    });
+
     /** A non-letter heading can appear on either side of a letter in the server's order
      *  (`!draft`, `Apple`, `_scratch`), and merging those two `#` rows into one group would
      *  move a row across the cursor boundary the next page continues from. */

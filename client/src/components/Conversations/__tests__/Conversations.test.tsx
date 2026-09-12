@@ -152,6 +152,7 @@ describe('Conversations: all-pin pages still paginate', () => {
     isLoading = false,
     isError = false,
     onRetry,
+    hasNextPage = false,
   }: {
     conversations: TConversation[];
     loadMoreConversations: () => void;
@@ -159,6 +160,7 @@ describe('Conversations: all-pin pages still paginate', () => {
     isLoading?: boolean;
     isError?: boolean;
     onRetry?: () => void;
+    hasNextPage?: boolean;
   }) =>
     render(
       <QueryClientProvider client={queryClient}>
@@ -171,11 +173,12 @@ describe('Conversations: all-pin pages still paginate', () => {
               containerRef={containerRef}
               loadMoreConversations={loadMoreConversations}
               isLoading={isLoading}
+              isSearchLoading={false}
               isError={isError}
               onRetry={onRetry}
-              isSearchLoading={false}
               isChatsExpanded={isChatsExpanded}
               setIsChatsExpanded={jest.fn()}
+              hasNextPage={hasNextPage}
             />
           </RecoilRoot>
         </DndProvider>
@@ -200,6 +203,16 @@ describe('Conversations: all-pin pages still paginate', () => {
     const loadMoreConversations = jest.fn();
     renderList({ conversations: [pinnedConvo], loadMoreConversations });
     expect(loadMoreConversations).toHaveBeenCalled();
+  });
+
+  it('does not show no chats when a drained unfiltered page contains only pinned rows', () => {
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations: jest.fn(),
+      hasNextPage: false,
+    });
+
+    expect(screen.queryByText('com_ui_no_chats')).not.toBeInTheDocument();
   });
 
   it('does not request another page while chats are collapsed', () => {

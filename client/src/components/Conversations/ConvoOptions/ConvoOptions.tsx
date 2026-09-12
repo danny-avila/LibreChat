@@ -80,7 +80,7 @@ function ConvoOptions({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const { index } = useChatContext();
+  const { index, conversation, setConversation } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
@@ -226,6 +226,9 @@ function ConvoOptions({
         { conversationId: convoId, isArchived: !isArchived },
         {
           onSuccess: () => {
+            if (conversation?.conversationId === convoId) {
+              setConversation({ ...conversation, isArchived: !isArchived });
+            }
             announcePolite({
               message: localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
               isStatus: true,
@@ -251,6 +254,8 @@ function ConvoOptions({
       conversationId,
       isArchived,
       currentConvoId,
+      conversation,
+      setConversation,
       archiveConvoMutation,
       navigate,
       newConversation,
