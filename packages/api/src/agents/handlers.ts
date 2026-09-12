@@ -2,7 +2,11 @@ import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
-import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
+import {
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+  hasToolCallErrorPrefix,
+} from 'librechat-data-provider';
 import type {
   LCTool,
   FileRefs,
@@ -5124,7 +5128,7 @@ function getFileAuthoringQueueKey(
  * failed background run renders as clean stdout.
  */
 function toBackgroundToolFailure(toolName: string, message: string): string {
-  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
+  if (hasToolCallErrorPrefix(message)) {
     return message;
   }
   return `Error: [${toolName}] tool call failed: ${message}`;
