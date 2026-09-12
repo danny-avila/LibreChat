@@ -1,7 +1,7 @@
 import React from 'react';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useInfiniteQuery, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
@@ -20,6 +20,7 @@ jest.mock('librechat-data-provider', () => {
       updateConversation: jest.fn(),
       pinConversation: jest.fn(),
       archiveConversation: jest.fn(),
+      listConversations: jest.fn(),
     },
   };
 });
@@ -134,7 +135,7 @@ describe('archived conversation mutation cache reconciliation', () => {
     expect(queryClient.getQueryState(archivedKey)?.isInvalidated).toBe(true);
   });
 
-  it('refetches every archived page when the archived row belongs on a later sort page', async () => {
+  it('marks inactive archived variants stale without refetching them', async () => {
     const queryClient = createQueryClient();
     const firstPage = listResponse(
       [
@@ -145,9 +146,8 @@ describe('archived conversation mutation cache reconciliation', () => {
     const oldSecondPage = listResponse([
       { ...archivedConversation, conversationId: 'archived-second', title: 'B' },
     ] as TConversation[]);
-    const newSecondPage = listResponse([archivedConversation], null);
     const archivedQuery = jest.fn(({ pageParam }: { pageParam?: string }) =>
-      Promise.resolve(pageParam === 'cursor-2' ? newSecondPage : firstPage),
+      Promise.resolve(pageParam === 'cursor-2' ? oldSecondPage : firstPage),
     );
 
     await queryClient.fetchInfiniteQuery(archivedKey, archivedQuery, {
@@ -167,10 +167,67 @@ describe('archived conversation mutation cache reconciliation', () => {
       await result.current.mutateAsync({ conversationId: 'archived-1', isArchived: true });
     });
 
-    await waitFor(() => expect(archivedQuery).toHaveBeenCalledTimes(3));
-    const cached = queryClient.getQueryData<{
-      pages: Array<{ conversations: TConversation[] }>;
-    }>(archivedKey);
-    expect(cached?.pages[1].conversations).toEqual([archivedConversation]);
+    expect(archivedQuery).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryState(archivedKey)?.isInvalidated).toBe(true);
+  });
+
+  it('refetches every loaded active page when restoring a row onto a later page', async () => {
+    const queryClient = createQueryClient();
+    const activeKey = [
+      QueryKeys.allConversations,
+      {
+        isArchived: false,
+        sortBy: 'title',
+        sortDirection: 'asc',
+        tags: [],
+        search: undefined,
+        projectId: undefined,
+      },
+    ];
+    const firstPage = listResponse(
+      [{ ...archivedConversation, conversationId: 'active-first', title: 'A' }] as TConversation[],
+      'cursor-2',
+    );
+    const staleSecondPage = listResponse([
+      { ...archivedConversation, conversationId: 'active-second', title: 'B' },
+    ] as TConversation[]);
+    const restored = { ...archivedConversation, isArchived: false };
+    const restoredSecondPage = listResponse([restored], null);
+    const activeQuery = jest.fn(({ pageParam }: { pageParam?: string }) =>
+      Promise.resolve(pageParam === 'cursor-2' ? restoredSecondPage : firstPage),
+    );
+
+    const { result: activeResult } = renderHook(
+      () =>
+        useInfiniteQuery<ConversationListResponse>({
+          queryKey: activeKey,
+          queryFn: ({ pageParam }) => activeQuery({ pageParam: pageParam as string | undefined }),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await waitFor(() => expect(activeResult.current.isSuccess).toBe(true));
+    queryClient.setQueryData(activeKey, {
+      pages: [firstPage, staleSecondPage],
+      pageParams: [undefined, 'cursor-2'],
+    });
+    archiveConversation.mockResolvedValue(restored);
+
+    const { result } = renderHook(() => useArchiveConvoMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId: restored.conversationId!,
+        isArchived: false,
+      });
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<{
+        pages: Array<{ conversations: TConversation[] }>;
+      }>(activeKey);
+      expect(cached?.pages[1].conversations).toEqual([restored]);
+    });
   });
 });

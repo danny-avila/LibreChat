@@ -233,6 +233,27 @@ describe('Conversation Utilities', () => {
       ).toEqual([['avocado'], ['zoo'], ['apple'], ['number', 'empty']]);
     });
 
+    /** A non-letter heading can appear on either side of a letter in the server's order
+     *  (`!draft`, `Apple`, `_scratch`), and merging those two `#` rows into one group would
+     *  move a row across the cursor boundary the next page continues from. */
+    it('emits repeated title headings as separate runs', () => {
+      const conversations = [
+        { conversationId: 'draft', title: '!draft' },
+        { conversationId: 'apple', title: 'Apple' },
+        { conversationId: 'scratch', title: '_scratch' },
+      ];
+
+      const grouped = groupConversations(conversations as TConversation[], {
+        field: 'title',
+        direction: 'asc',
+      });
+
+      expect(grouped.map(([key]) => key)).toEqual(['#', 'A', '#']);
+      expect(
+        grouped.map(([, group]) => group.map((conversation) => conversation.conversationId)),
+      ).toEqual([['draft'], ['apple'], ['scratch']]);
+    });
+
     /** `charAt(0)` would return a lone surrogate here, which renders as a replacement
      *  character and merges every supplementary-plane initial into one heading. */
     it('heads a title group with its first code point', () => {
@@ -791,6 +812,43 @@ describe('Conversation Utilities', () => {
         expect(
           searched!.pages[0].conversations.map((c: TConversation) => c.conversationId),
         ).toEqual(['a']);
+      });
+
+      /** Only newest-first can be reproduced client-side: seeding a row at the front of a
+       *  title- or created-at-ordered page invents a position the next page contradicts. */
+      it('leaves a non-default sort variant to the server instead of seeding a row into it', () => {
+        const sortedKey = ['allConversations', { sortBy: 'title', sortDirection: 'asc' }];
+        queryClient.setQueryData(sortedKey, {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        upsertConvoInAllQueries(queryClient, convoB);
+
+        const sorted = queryClient.getQueryData<InfiniteData<any>>(sortedKey);
+        expect(sorted!.pages[0].conversations.map((c: TConversation) => c.conversationId)).toEqual([
+          'a',
+        ]);
+        expect(queryClient.getQueryState(sortedKey)?.isInvalidated).toBe(true);
+      });
+
+      it('updates a row in place under a non-default sort rather than moving it to the top', () => {
+        const sortedKey = ['allConversations', { sortBy: 'createdAt' }];
+        const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
+        queryClient.setQueryData(sortedKey, {
+          pages: [{ conversations: [convoC, convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, title: 'Renamed' }), true);
+
+        const sorted = queryClient.getQueryData<InfiniteData<any>>(sortedKey);
+        expect(sorted!.pages[0].conversations.map((c: TConversation) => c.conversationId)).toEqual([
+          'c',
+          'a',
+        ]);
+        expect(sorted!.pages[0].conversations[1].title).toBe('Renamed');
+        expect(queryClient.getQueryState(sortedKey)?.isInvalidated).toBe(true);
       });
 
       it('upsertConvoInAllQueries adds missing conversations to the top', () => {

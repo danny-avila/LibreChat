@@ -123,6 +123,12 @@ export const groupConversations = (
 
   const seenConversationIds = new Set<string | null>();
   const groups = new Map<string, TConversation[]>();
+  /* Title paging is a keyset over the server's own string order, so re-sorting what arrived
+     can only disagree with it: a title that belongs before this page sits behind its cursor
+     and arrives later. These groups therefore keep the fetched order, which means a heading
+     can repeat — `!draft`, `Apple`, `_scratch` puts two non-letter rows either side of `A` —
+     and merging those two into one `#` group would move a row across the cursor boundary. */
+  const runs: GroupedConversations = [];
   const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
@@ -134,10 +140,18 @@ export const groupConversations = (
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const groupName =
-      field === 'title'
-        ? getTitleInitial(getTitle(conversation))
-        : getGroupName(getConversationDate(conversation, field, now));
+    if (field === 'title') {
+      const groupName = getTitleInitial(getTitle(conversation));
+      const currentRun = runs[runs.length - 1];
+      if (currentRun && currentRun[0] === groupName) {
+        currentRun[1].push(conversation);
+      } else {
+        runs.push([groupName, [conversation]]);
+      }
+      return;
+    }
+
+    const groupName = getGroupName(getConversationDate(conversation, field, now));
     const group = groups.get(groupName);
     if (group) {
       group.push(conversation);
@@ -147,12 +161,7 @@ export const groupConversations = (
   });
 
   if (field === 'title') {
-    /* Paging is a keyset over the server's own string order, so re-sorting what arrived can
-       only disagree with it: a title that belongs before this page sits behind its cursor and
-       arrives later, and a client-side reorder would then show a broken alphabet. The rows
-       therefore keep the order they were fetched in, and the headings are the initials as
-       written — that order groups `Z` before `a`, which a case-folded heading would hide. */
-    return Array.from(groups, ([groupName, group]) => [groupName, group]);
+    return runs;
   }
 
   const yearMonthGroups = Array.from(groups.keys())
@@ -216,12 +225,29 @@ function conversationMatchesProjectQuery(
 function getConversationListQueryParams(queryKey: readonly unknown[]): {
   tags?: string[];
   search?: string;
+  sortBy?: string;
+  sortDirection?: string;
 } {
   const params = queryKey[1];
   if (!params || typeof params !== 'object') {
     return {};
   }
-  return params as { tags?: string[]; search?: string };
+  return params as { tags?: string[]; search?: string; sortBy?: string; sortDirection?: string };
+}
+
+/**
+ * Newest-first is the only order these writers can reproduce. A title or created-at
+ * variant, or an ascending one, orders rows by a key the client cannot place a row
+ * against without the server's cursor, so moving a row to the front of those pages —
+ * or seeding one there — would invent an order the next page contradicts. Those
+ * variants take the field update in place and are refetched instead.
+ */
+function queryListsNewestFirst(queryKey: readonly unknown[]): boolean {
+  const { sortBy, sortDirection } = getConversationListQueryParams(queryKey);
+  return (
+    (sortBy == null || sortBy === 'updatedAt') &&
+    (sortDirection == null || sortDirection === 'desc')
+  );
 }
 
 /** Inserts must not land in a bookmark or search cache the row would not
@@ -550,6 +576,9 @@ export function upsertConvoInAllQueries(
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
+    /* A variant the writers cannot order takes the merge in place and is refetched, so the
+       row's new text shows at once while the server decides where it belongs. */
+    const newestFirst = queryListsNewestFirst(query.queryKey);
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -570,7 +599,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!conversationMatchesListQuery(query.queryKey, listConvo)) {
+        if (!newestFirst || !conversationMatchesListQuery(query.queryKey, listConvo)) {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
@@ -600,7 +629,7 @@ export function upsertConvoInAllQueries(
         return removeConvoFromInfinitePages(oldData, updated.conversationId ?? '');
       }
 
-      if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
+      if (!moveToTop || !newestFirst || (pageIdx === 0 && convoIdx === 0)) {
         return {
           ...oldData,
           pages: oldData.pages.map((page, pi) =>
@@ -633,6 +662,10 @@ export function upsertConvoInAllQueries(
 
       return { ...oldData, pages };
     });
+    if (!newestFirst) {
+      /* Inactive variants are only marked stale: they refresh when something mounts them. */
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
+    }
   }
 }
 
@@ -770,6 +803,9 @@ export function updateConvoInAllQueries(
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
+    /* A variant ordered by a key the client cannot place a row against keeps its positions
+       and is refetched instead: a rename also moves a row under a title sort. */
+    const newestFirst = queryListsNewestFirst(query.queryKey);
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -805,7 +841,7 @@ export function updateConvoInAllQueries(
       }
 
       // If not moving to top, or already at top of page 0, update in place
-      if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
+      if (!moveToTop || !newestFirst || (pageIdx === 0 && convoIdx === 0)) {
         return {
           ...oldData,
           pages: oldData.pages.map((page, pi) =>
@@ -842,6 +878,10 @@ export function updateConvoInAllQueries(
 
       return { ...oldData, pages: newPages };
     });
+    if (!newestFirst) {
+      /* Inactive variants are only marked stale: they refresh when something mounts them. */
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
+    }
   }
 }
 

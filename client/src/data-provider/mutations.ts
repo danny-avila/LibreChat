@@ -1,3 +1,4 @@
+import { useSetAtom } from 'jotai';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import {
@@ -19,6 +20,7 @@ import {
   clearDeletedConversationMessagesCache,
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
+import { chatFilterTagsAtom } from '~/components/Conversations/chatFilters';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { useConversationTagsQuery } from './queries';
 
@@ -148,14 +150,16 @@ export const useArchiveConvoMutation = (
       onSettled: () => {
         queryClient.invalidateQueries({
           queryKey: convoQueryKey,
-          refetchPage: (_, index) => index === 0,
+          refetchPage: () => true,
+          refetchType: 'active',
         });
         /* Archived ordering and membership depend on the selected sort/filter, which
-         * this mutation does not receive. Refetch every cached page/variant so a row
-         * is not stranded on a later page or replayed through an old cursor. */
+         * this mutation does not receive. Refetch every loaded page in mounted variants;
+         * inactive variants are marked stale and refresh when mounted. */
         queryClient.invalidateQueries({
           queryKey: archivedConvoQueryKey,
-          refetchType: 'all',
+          refetchPage: () => true,
+          refetchType: 'active',
         });
         /** Archiving drops the chat from the pinned cache, so restoring one that is
          * still pinned has to refetch or the section would stay missing it. */
@@ -175,9 +179,17 @@ export const useArchiveAllConversationsMutation = (
   const { onSuccess, onError, ..._options } = options || {};
 
   const reconcileCaches = () => {
-    queryClient.invalidateQueries([QueryKeys.allConversations]);
+    /* Archiving everything invalidates every cached list wholesale, so unlike a single
+       archive this one refetches inactive variants too: leaving them merely stale would
+       let a remembered sort or bookmark variant render chats that are all archived now. */
+    queryClient.invalidateQueries({
+      queryKey: [QueryKeys.allConversations],
+      refetchPage: () => true,
+      refetchType: 'all',
+    });
     queryClient.invalidateQueries({
       queryKey: [QueryKeys.archivedConversations],
+      refetchPage: () => true,
       refetchType: 'all',
     });
     /** The pinned section fetches on its own key with a five-minute stale time, so an
@@ -489,6 +501,7 @@ export const useConversationTagMutation = ({
 }): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
+  const setChatFilterTags = useSetAtom(chatFilterTagsAtom);
   const onMutationSuccess: typeof onSuccess = (_data, vars) => {
     queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (queryData) => {
       if (!queryData) {
@@ -530,6 +543,11 @@ export const useConversationTagMutation = ({
       logger.log('tag_mutation', `Updating tag from ${context}`, queryData, _data);
       return updateConversationTag(queryData, vars, _data, tag);
     });
+    if (tag != null && _data.tag) {
+      setChatFilterTags((selectedTags) =>
+        selectedTags.map((selectedTag) => (selectedTag === tag ? _data.tag : selectedTag)),
+      );
+    }
     if (vars.addToConversation === true && vars.conversationId != null && _data.tag) {
       const currentConvo = queryClient.getQueryData<t.TConversation>([
         QueryKeys.conversation,
@@ -633,6 +651,7 @@ export const useDeleteConversationTagMutation = (
   const deleteTagInAllConversations = useDeleteTagInConversations();
 
   const { onSuccess, ..._options } = options || {};
+  const setChatFilterTags = useSetAtom(chatFilterTagsAtom);
 
   return useMutation((tag: string) => dataService.deleteConversationTag(tag), {
     onSuccess: (_data, tagToDelete, context) => {
@@ -644,6 +663,9 @@ export const useDeleteConversationTagMutation = (
       });
 
       deleteTagInAllConversations(tagToDelete);
+      setChatFilterTags((selectedTags) =>
+        selectedTags.filter((selectedTag) => selectedTag !== tagToDelete),
+      );
       /** Deleting a selected bookmark empties that tag-keyed pinned set. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       onSuccess?.(_data, tagToDelete, context);
@@ -762,11 +784,13 @@ export const useDeleteConversationMutation = (
 
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.allConversations],
-          refetchPage: (_, index) => index === 0,
+          refetchPage: () => true,
+          refetchType: 'active',
         });
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.archivedConversations],
-          refetchPage: (_, index) => index === 0,
+          refetchPage: () => true,
+          refetchType: 'active',
         });
         /** Cancelling races is best effort, so reconcile the pinned list afterwards too. */
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
@@ -805,7 +829,8 @@ export const useDuplicateConversationMutation = (
       );
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
+        refetchPage: () => true,
+        refetchType: 'active',
       });
       /** A duplicated, forked or imported chat can arrive already pinned. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
@@ -855,7 +880,8 @@ export const useForkConvoMutation = (
       queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
+        refetchPage: () => true,
+        refetchType: 'active',
       });
       /** A duplicated, forked or imported chat can arrive already pinned. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
@@ -912,7 +938,8 @@ export const useForkSharedConvoMutation = (
         queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.allConversations],
-          refetchPage: (_, index) => index === 0,
+          refetchPage: () => true,
+          refetchType: 'active',
         });
 
         onSuccess?.(data, vars, context);

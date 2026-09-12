@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { getDefaultStore } from 'jotai';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,6 +23,7 @@ import {
   usePinConversationMutation,
 } from '../mutations';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
+import { chatFilterTagsAtom } from '~/components/Conversations/chatFilters';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -80,6 +82,7 @@ const readPinnedCache = (queryClient: QueryClient) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  getDefaultStore().set(chatFilterTagsAtom, []);
 });
 
 describe('usePinnedConversationsQuery', () => {
@@ -521,8 +524,10 @@ const tagResponse: TConversationTag = {
 };
 
 describe('bookmark mutations invalidate the pinned cache', () => {
-  it('invalidates pins when a bookmark is renamed', async () => {
+  it('invalidates pins and carries a selected bookmark filter across a rename', async () => {
     updateConversationTag.mockResolvedValue(tagResponse);
+    const jotaiStore = getDefaultStore();
+    jotaiStore.set(chatFilterTagsAtom, ['work', 'other']);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -537,10 +542,13 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(jotaiStore.get(chatFilterTagsAtom)).toEqual(['office', 'other']);
   });
 
-  it('invalidates pins when a bookmark is deleted', async () => {
+  it('invalidates pins and removes a selected bookmark filter on delete', async () => {
     deleteConversationTag.mockResolvedValue({ ...tagResponse, tag: 'work' });
+    const jotaiStore = getDefaultStore();
+    jotaiStore.set(chatFilterTagsAtom, ['work', 'other']);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -554,6 +562,7 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(jotaiStore.get(chatFilterTagsAtom)).toEqual(['other']);
   });
 });
 
