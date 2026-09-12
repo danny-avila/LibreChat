@@ -1,8 +1,8 @@
-import { memo, useState, useCallback, useContext } from 'react';
+import { memo, useState, useEffect, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
-import { useStore } from 'jotai';
+import { useAtom, useStore } from 'jotai';
 import { buildTree } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { CalendarDays, ExternalLink, RefreshCw, Settings, MessageSquarePlus } from 'lucide-react';
@@ -53,7 +53,25 @@ function SharedView() {
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
 
-  const [langcode, setLangcode] = useRecoilState(store.lang);
+  const [langcode, setLangcode] = useAtom(store.lang);
+
+  /**
+   * Apply `interface.defaultLanguage` from the shared-link startup config for
+   * viewers who have not chosen a language themselves. The public share view has
+   * no LanguageSync, so it needs the same effect. 'auto' is skipped and the raw
+   * selector-conform value is stored (see LanguageSync).
+   */
+  const sharedDefaultLanguage = config?.interface?.defaultLanguage;
+  useEffect(() => {
+    if (!sharedDefaultLanguage || sharedDefaultLanguage === 'auto') {
+      return;
+    }
+    const userChoseLanguage = !!Cookies.get('lang') || localStorage.getItem('lang') !== null;
+    if (userChoseLanguage) {
+      return;
+    }
+    setLangcode(sharedDefaultLanguage);
+  }, [sharedDefaultLanguage, setLangcode]);
 
   const forkShare = useForkSharedConvoMutation({
     onSuccess: (forkData) => {

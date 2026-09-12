@@ -464,6 +464,29 @@ describe('agent background task config', () => {
   });
 });
 
+describe('interface.defaultLanguage schema', () => {
+  it.each(['de-DE', 'en-US', 'de', 'pt-BR', 'auto'])(
+    'accepts the supported locale "%s"',
+    (defaultLanguage) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        interface: { defaultLanguage },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects a value that is not a supported locale', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      interface: { defaultLanguage: 'klingon' },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('speechTab schema', () => {
   it.each(['browser', 'external', 'openai', 'azureOpenAI'])(
     'accepts the speech-to-text engine "%s"',

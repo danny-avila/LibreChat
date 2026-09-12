@@ -94,11 +94,12 @@ export function buildSharedLinkStartupPayload(
     payload.customFooter = env.CUSTOM_FOOTER;
   }
 
-  const { privacyPolicy, termsOfService } = appConfig?.interfaceConfig ?? {};
-  if (privacyPolicy || termsOfService) {
+  const { privacyPolicy, termsOfService, defaultLanguage } = appConfig?.interfaceConfig ?? {};
+  if (privacyPolicy || termsOfService || defaultLanguage) {
     payload.interface = {
       ...(privacyPolicy ? { privacyPolicy } : {}),
       ...(termsOfService ? { termsOfService } : {}),
+      ...(defaultLanguage ? { defaultLanguage } : {}),
     };
   }
 

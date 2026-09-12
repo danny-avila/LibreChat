@@ -3,6 +3,7 @@ export * from './azure';
 export * from './bedrock';
 export * from './balance';
 export * from './config';
+export * from './locales';
 export * from './langchain';
 export * from './filters';
 export * from './file-config';
