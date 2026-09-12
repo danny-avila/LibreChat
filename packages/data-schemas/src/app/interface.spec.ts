@@ -235,4 +235,23 @@ describe('loadDefaultInterface', () => {
 
     expect(interfaceConfig).not.toHaveProperty('defaultPinnedTools');
   });
+
+  it('passes the trace viewer section through unchanged', async () => {
+    const traceViewer = { enabled: true, showInputOutput: false, maxRecords: 200 };
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: { traceViewer } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.traceViewer).toEqual(traceViewer);
+  });
+
+  it('leaves the trace viewer unset when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.traceViewer).toBeUndefined();
+  });
 });

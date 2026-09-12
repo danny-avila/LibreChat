@@ -26,6 +26,7 @@ import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import { TraceSurface } from './Trace';
 import Landing from './Landing';
 import Header from './Header';
 import { cn } from '~/utils';
@@ -156,7 +157,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
           <AddedChatContext.Provider value={addedChatHelpers}>
             <ApprovalProvider pendingAction={pendingAction}>
               <Presentation>
-                <div className="relative flex h-full w-full flex-col">
+                <TraceSurface conversationId={conversationId}>
                   <h1 className="sr-only">{pageHeading}</h1>
                   <Header
                     parentConversationId={parentConversationId}
@@ -218,7 +219,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                     </div>
                     {isLandingPage && <Footer />}
                   </>
-                </div>
+                </TraceSurface>
               </Presentation>
             </ApprovalProvider>
           </AddedChatContext.Provider>

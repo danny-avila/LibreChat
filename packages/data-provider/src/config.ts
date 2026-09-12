@@ -1841,6 +1841,81 @@ const mcpServersSchema = z
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
+/** Values the trace viewer uses for any `interface.traceViewer` field left unset. */
+export const traceViewerDefaults = {
+  enabled: false,
+  showInputOutput: false,
+  maxRecords: 1000,
+  maxContentLength: 50_000,
+  requestsPerMinute: 30,
+  requestTimeoutMs: 10_000,
+} as const;
+
+type TraceViewerLimitField =
+  | 'maxRecords'
+  | 'maxContentLength'
+  | 'requestsPerMinute'
+  | 'requestTimeoutMs';
+
+/** Inclusive bounds for the numeric `interface.traceViewer` fields. */
+export const traceViewerLimits: Readonly<
+  Record<TraceViewerLimitField, { readonly min: number; readonly max: number }>
+> = {
+  maxRecords: { min: 1, max: 10_000 },
+  maxContentLength: { min: 1, max: 1_000_000 },
+  requestsPerMinute: { min: 1, max: 1000 },
+  requestTimeoutMs: { min: 1000, max: 300_000 },
+};
+
+const boundedIntegerSchema = (field: TraceViewerLimitField) =>
+  z.number().int().min(traceViewerLimits[field].min).max(traceViewerLimits[field].max).optional();
+
+const traceViewerSchema = z.object({
+  /** Shows the conversation trace control for traces this deployment exported. */
+  enabled: z.boolean().optional(),
+  /** Returns observation input, output and metadata in the record inspector. */
+  showInputOutput: z.boolean().optional(),
+  /** Observations read from the tracing backend per request. */
+  maxRecords: boundedIntegerSchema('maxRecords'),
+  /** Characters kept from each input, output and metadata value before truncation. */
+  maxContentLength: boundedIntegerSchema('maxContentLength'),
+  /** Trace reads one user may start per minute. */
+  requestsPerMinute: boundedIntegerSchema('requestsPerMinute'),
+  /** Budget for each round trip to the tracing backend, in milliseconds. */
+  requestTimeoutMs: boundedIntegerSchema('requestTimeoutMs'),
+});
+
+export type TTraceViewerConfig = z.infer<typeof traceViewerSchema>;
+export type TResolvedTraceViewerConfig = {
+  enabled: boolean;
+  showInputOutput: boolean;
+} & Record<TraceViewerLimitField, number>;
+
+function boundedInteger(value: unknown, field: TraceViewerLimitField): number {
+  const { min, max } = traceViewerLimits[field];
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= min
+    ? Math.min(value, max)
+    : traceViewerDefaults[field];
+}
+
+/**
+ * Fills unset or invalid `interface.traceViewer` fields from
+ * {@link traceViewerDefaults}. Admin config overrides reach runtime without
+ * schema validation, so every consumer reads the section through this.
+ */
+export function resolveTraceViewerConfig(
+  config?: Partial<Record<keyof TTraceViewerConfig, unknown>> | null,
+): TResolvedTraceViewerConfig {
+  return {
+    enabled: config?.enabled === true,
+    showInputOutput: config?.showInputOutput === true,
+    maxRecords: boundedInteger(config?.maxRecords, 'maxRecords'),
+    maxContentLength: boundedInteger(config?.maxContentLength, 'maxContentLength'),
+    requestsPerMinute: boundedInteger(config?.requestsPerMinute, 'requestsPerMinute'),
+    requestTimeoutMs: boundedInteger(config?.requestTimeoutMs, 'requestTimeoutMs'),
+  };
+}
+
 export enum RetentionMode {
   ALL = 'all',
   TEMPORARY = 'temporary',
@@ -1916,6 +1991,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    traceViewer: traceViewerSchema.optional(),
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
