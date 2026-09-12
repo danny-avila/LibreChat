@@ -1,6 +1,5 @@
 import { EToolResources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
-import type { BaseMessage } from '@librechat/agents/langchain';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type { ProvisionCallbackDeps, ProvisionToolContext } from '~/files/provision/callback';
 import type { ToolEndCallback, ToolEndCallbackMetadata } from '~/agents/handlers';
@@ -79,6 +78,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   getInputs,
   loadFiles,
   filterFiles,
+  validateMessages,
   encodeMessages,
   listPublications,
   snapshots,
@@ -94,7 +94,8 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   getInputs: () => readonly TFile[];
   loadFiles: (fileIds: string[]) => Promise<TFile[]>;
   filterFiles: TFilterFilesByAgentAccess;
-  encodeMessages: (files: TFile[], agentId: string) => Promise<BaseMessage[]>;
+  validateMessages: RunFileSessionDeps['validateMessages'];
+  encodeMessages: RunFileSessionDeps['encodeMessages'];
   listPublications: RunFileSessionDeps['listPublications'];
   snapshots: RunFileSessionDeps['snapshots'];
   publish: RunFileSessionDeps['publish'];
@@ -169,6 +170,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     publish,
     emit,
     audit,
+    validateMessages,
     encodeMessages,
     prepareAgent: async ({ actor, files, revision, sessionKey, signal }) => {
       const key = JSON.stringify(actor);
@@ -196,14 +198,9 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           assertModelBoundContent({ filters: req.config?.filters, files: admitted });
           return admitted;
         };
-        screen(files);
         const signature = JSON.stringify(files.map((file) => file.file_id).sort());
         const existingContext = executionContexts.get(key);
         if (isRoot) {
-          if (previous?.signature === signature) {
-            previous.revision = revision;
-            return;
-          }
           // The root already passed normal conversation authorization and priming.
           // Sharing only limits what descendants inherit; its own historical files,
           // pending uploads and runtime session must survive activation and refresh.
@@ -218,10 +215,21 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
               ...(previous?.files.values() ?? []),
             ].map((file) => [file.file_id, file]),
           );
+          const currentIds = new Set(files.map((file) => file.file_id));
+          let consumedBytes = 0;
+          for (const file of existingFiles.values()) {
+            if (!currentIds.has(file.file_id) && !previous?.files.has(file.file_id)) {
+              consumedBytes += file.bytes;
+            }
+          }
+          screen(files, consumedBytes);
+          if (previous?.signature === signature) {
+            previous.revision = revision;
+            return;
+          }
           const currentFiles = files.map(
             (file) => existingFiles.get(file.file_id) ?? structuredClone(file),
           );
-          const currentIds = new Set(currentFiles.map((file) => file.file_id));
           const removed = new Set(
             [...(previous?.files.keys() ?? [])].filter((id) => !currentIds.has(id)),
           );
@@ -299,6 +307,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           });
           return;
         }
+        screen(files);
         const codeExecutionContext =
           source.codeExecutionContext == null
             ? undefined

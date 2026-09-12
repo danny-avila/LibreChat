@@ -5,6 +5,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { z } from 'zod';
+import { ImageDetail } from 'librechat-data-provider';
 import { Run, InMemorySubagentTaskStore } from '@librechat/agents';
 import { tool } from '@librechat/agents/langchain/tools';
 import type { LCTool, SubagentExecutionContext } from '@librechat/agents';
@@ -95,6 +96,26 @@ function agent(id: string, extra: Partial<RunAgent> = {}): RunAgent {
     tools: [],
     ...extra,
   };
+}
+
+function team(reader: RunAgent, writer: RunAgent): RunAgent {
+  return agent('parent', {
+    subagents: { enabled: true, allowSelf: false },
+    subagentGraphConfigs: [
+      {
+        definition: {
+          type: 'team',
+          name: 'Team',
+          description: 'Reader and writer',
+          agent_ids: ['reader', 'writer'],
+          edges: [],
+          entry_agent_id: 'reader',
+          result_agent_id: 'writer',
+        },
+        memberConfigs: [reader, writer],
+      },
+    ],
+  });
 }
 
 async function create(
@@ -337,6 +358,9 @@ describe('run file SDK bridge', () => {
   it.each([
     agent('writer', { provider: 'anthropic' }),
     agent('writer', { endpoint: 'restricted-endpoint' }),
+    agent('writer', { imageDetail: ImageDetail.high }),
+    agent('writer', { imageDetail: ImageDetail.low }),
+    agent('writer', { imageDetail: ImageDetail.auto }),
     agent('writer', {
       model_parameters: { ...agent('reader').model_parameters, model: 'claude-sonnet' },
     }),
@@ -346,28 +370,20 @@ describe('run file SDK bridge', () => {
   ])(
     'rejects incompatible team document formats before injecting shared files (%j)',
     async (writer) => {
-      await expect(
-        create(makeSession(), [
-          agent('parent', {
-            subagents: { enabled: true, allowSelf: false },
-            subagentGraphConfigs: [
-              {
-                definition: {
-                  type: 'team',
-                  name: 'Team',
-                  description: 'Reader and writer',
-                  agent_ids: ['reader', 'writer'],
-                  edges: [],
-                  entry_agent_id: 'reader',
-                  result_agent_id: 'writer',
-                },
-                memberConfigs: [agent('reader'), writer],
-              },
-            ],
-          }),
-        ]),
-      ).rejects.toThrow('same provider');
+      await expect(create(makeSession(), [team(agent('reader'), writer)])).rejects.toThrow(
+        'same provider',
+      );
       expect(Run.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, ImageDetail.auto, ImageDetail.low, ImageDetail.high])(
+    'accepts matching team image-detail settings (%s)',
+    async (imageDetail) => {
+      const config = await create(makeSession(), [
+        team(agent('reader', { imageDetail }), agent('writer', { imageDetail })),
+      ]);
+      expect(config.graphConfig.agents[0].subagentConfigs?.[0].agents).toHaveLength(2);
     },
   );
 });

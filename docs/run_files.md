@@ -111,7 +111,11 @@ A normal locked install includes the required SDK; no local SDK build is needed.
 capability check rejects enabled sharing if an incompatible SDK is loaded.
 
 The first implementation supports foreground chat delegation with managed code environments and
-subagent teams whose members use the same provider, endpoint, model, and Responses API setting.
+subagent teams whose members use the same provider, endpoint, model, Responses API setting, and
+image-detail setting. An unset image detail inherits the request value, so it differs from an
+explicit `auto` setting. Shared prompts are checked against every member's permanent attachments
+before the files are encoded once for the team. The root's endpoint file budget also includes
+retained historical and setup resources, counting each file once and releasing removed publications.
 Detached child threads and background code
 execution are disabled for shared-file runs until their durable task records can carry the same
 authorization scope. Attached workstation environments, native provider tool objects without host

@@ -36,6 +36,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  ImageDetail,
   CodeApprovalMode,
   TAgentsEndpoint,
   AgentModelParameters,
@@ -416,6 +417,7 @@ type RunAgent = Omit<Agent, 'tools'> & {
   /** Pre-ratio context budget from initializeAgent. */
   baseContextTokens?: number;
   useLegacyContent?: boolean;
+  imageDetail?: ImageDetail;
   toolContextMap?: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   toolRegistry?: LCToolRegistry;
@@ -1797,12 +1799,14 @@ export async function createRun({
               member.endpoint ?? member.provider,
               member.model_parameters?.model ?? member.model,
               resolveUseResponsesApi(member.model_parameters?.useResponsesApi) === true,
+              // Unset detail inherits the request value, which may differ from explicit auto.
+              member.imageDetail ?? null,
             ]),
           ),
         );
         if (deliveryTargets.size > 1) {
           throw new Error(
-            'Shared-file subagent teams must use the same provider, endpoint, model, and API mode for every member.',
+            'Shared-file subagent teams must use the same provider, endpoint, model, API mode, and image-detail setting for every member.',
           );
         }
       }

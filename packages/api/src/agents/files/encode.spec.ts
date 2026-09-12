@@ -54,7 +54,7 @@ function setup({
     getStrategyFunctions: jest.fn(),
     extractText,
   };
-  return { ...deps, encode: createRunFileMessageEncoder(deps) };
+  return { ...deps, ...createRunFileMessageEncoder(deps) };
 }
 
 describe('createRunFileMessageEncoder', () => {

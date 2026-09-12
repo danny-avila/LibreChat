@@ -69,6 +69,7 @@ export interface RunFileSessionDeps {
     revision: number;
     signal: AbortSignal;
   }) => Promise<void>;
+  validateMessages: (files: TFile[], agentId: string) => void;
   encodeMessages: (files: TFile[], agentId: string) => Promise<BaseMessage[]>;
   emit: (
     file: TFile & { messageId: string; toolCallId?: string; agentId: string },
@@ -298,26 +299,40 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     members.set(leaf.subagentRunId, [...memberAgentIds]);
     if (input.resumed) resumedExecutions.add(leaf.subagentRunId);
     const agentSessions: Record<string, { codeSessionKey: string }> = {};
-    let messages: BaseMessage[] = [];
-    await Promise.all(
-      memberAgentIds.map(async (agentId, index) => {
+    const preparations = await Promise.all(
+      memberAgentIds.map(async (agentId) => {
         const actor = actorFor(agentId, context);
         const revision = nextPreparation(actor);
         const files = await manifest!.getFiles(actor, signal);
         const key = sessionKey(actor);
-        await deps.prepareAgent({ actor, files, sessionKey: key, revision, signal });
-        agentSessions[agentId] = { codeSessionKey: key };
-        if (!input.resumed && index === 0) {
-          const catalog = describeRunFiles(files, scope!.runId);
-          messages = [
-            new HumanMessage({
-              content: `Files shared for this task (read-only inputs):\n${JSON.stringify(catalog)}\nUse list_run_files to discover later publications. Generated outputs remain private until publish_artifact succeeds.`,
-            }),
-            ...(await deps.encodeMessages(files, agentId)),
-          ];
-        }
+        if (!input.resumed) deps.validateMessages(files, agentId);
+        return { actor, files, sessionKey: key, revision, signal };
       }),
     );
+    await Promise.all(
+      preparations.map(async (preparation) => {
+        await deps.prepareAgent(preparation);
+        const {
+          actor: { agentId },
+          sessionKey: key,
+        } = preparation;
+        agentSessions[agentId] = { codeSessionKey: key };
+      }),
+    );
+    let messages: BaseMessage[] = [];
+    if (!input.resumed && preparations.length > 0) {
+      const {
+        actor: { agentId },
+        files,
+      } = preparations[0];
+      const catalog = describeRunFiles(files, scope.runId);
+      messages = [
+        new HumanMessage({
+          content: `Files shared for this task (read-only inputs):\n${JSON.stringify(catalog)}\nUse list_run_files to discover later publications. Generated outputs remain private until publish_artifact succeeds.`,
+        }),
+        ...(await deps.encodeMessages(files, agentId)),
+      ];
+    }
     return { messages, agentSessions };
   }
 

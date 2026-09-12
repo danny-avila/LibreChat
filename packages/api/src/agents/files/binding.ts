@@ -122,6 +122,7 @@ export function createChatRunFileBindings({
       }),
   });
   const emitted = new Set<string>();
+  const messageEncoder = createRunFileMessageEncoder({ ...encoder, req, getStrategyFunctions });
   const host = createRunFileHost({
     req,
     contexts,
@@ -134,7 +135,8 @@ export function createChatRunFileBindings({
     snapshots,
     provisioning,
     inputFileIds: new Set(requestFiles.flatMap((file) => (file.file_id ? [file.file_id] : []))),
-    encodeMessages: createRunFileMessageEncoder({ ...encoder, req, getStrategyFunctions }),
+    validateMessages: messageEncoder.validate,
+    encodeMessages: messageEncoder.encode,
     publish: async ({ scope, artifact, provenance, signal }) => {
       signal?.throwIfAborted();
       const file = await publishArtifact({

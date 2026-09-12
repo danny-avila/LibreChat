@@ -68,10 +68,7 @@ export interface RunFileMessageEncoderDeps {
 
 /** Encodes authorized run files for the receiving child, without provisioning new resources. */
 export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
-  return async (files: TFile[], agentId: string): Promise<BaseMessage[]> => {
-    if (files.length === 0) {
-      return [];
-    }
+  function prepare(files: TFile[], agentId: string) {
     const agent = deps.getAgent(agentId);
     if (!agent) {
       throw new Error('The target agent is not available for shared file delivery.');
@@ -127,7 +124,16 @@ export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
       endpoint,
     });
     assertModelBoundContent({ filters: deps.req.config?.filters, files: sharedFiles });
+    return { agent, params, sharedFiles, fileConfig, endpointConfig };
+  }
 
+  function validate(files: TFile[], agentId: string): void {
+    if (files.length > 0) prepare(files, agentId);
+  }
+
+  async function encode(files: TFile[], agentId: string): Promise<BaseMessage[]> {
+    if (files.length === 0) return [];
+    const { agent, params, sharedFiles, fileConfig, endpointConfig } = prepare(files, agentId);
     const images: TFile[] = [];
     const documents: TFile[] = [];
     const audios: TFile[] = [];
@@ -179,15 +185,15 @@ export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
       }
     }
 
-    const encode = <T>(encoder: MediaEncoder<T>, inputs: TFile[], empty: T): Promise<T> =>
+    const encodeMedia = <T>(encoder: MediaEncoder<T>, inputs: TFile[], empty: T): Promise<T> =>
       inputs.length > 0
         ? encoder(deps.req, inputs, params, deps.getStrategyFunctions)
         : Promise.resolve(empty);
     const [imageResult, documentResult, audioResult, videoResult, text] = await Promise.all([
-      encode(deps.encodeImages, images, { image_urls: [] }),
-      encode(deps.encodeDocuments, documents, { documents: [] }),
-      encode(deps.encodeAudios, audios, { audios: [] }),
-      encode(deps.encodeVideos, videos, { videos: [] }),
+      encodeMedia(deps.encodeImages, images, { image_urls: [] }),
+      encodeMedia(deps.encodeDocuments, documents, { documents: [] }),
+      encodeMedia(deps.encodeAudios, audios, { audios: [] }),
+      encodeMedia(deps.encodeVideos, videos, { videos: [] }),
       textFiles.length > 0
         ? deps.extractText({ attachments: textFiles, req: deps.req, tokenCountFn: countTokens })
         : Promise.resolve(undefined),
@@ -212,5 +218,7 @@ export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
       } as Parameters<typeof formatMessage>[0]['message'],
     });
     return [new HumanMessage({ content: formatted.content as BaseMessage['content'] })];
-  };
+  }
+
+  return { validate, encode };
 }

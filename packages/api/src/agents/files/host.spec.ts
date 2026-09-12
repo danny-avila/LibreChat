@@ -190,6 +190,7 @@ function harness(options: { inputs?: TFile[]; setup?: TFile[] } = {}) {
     },
     publish,
     emit,
+    validateMessages: jest.fn(),
     encodeMessages,
     provisioning: {
       provisionToCodeEnv,
@@ -683,6 +684,110 @@ describe('run file execution host', () => {
     await expect(h.prepare()).rejects.toThrow('not supported by the receiving agent');
     expect(h.host.getContext('worker', identity())).toBeUndefined();
     expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+  });
+
+  it.each(['resource', 'code queue', 'search queue'] as const)(
+    'includes retained root files from the %s in the shared-file budget',
+    async (location) => {
+      const h = harness({ inputs: [file('input', { bytes: 600_000 })], setup: [] });
+      h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
+      const retained = file('retained', { bytes: 600_000 });
+      const root = h.contexts.get('parent')!;
+      root.tool_resources = {
+        execute_code: { files: location === 'resource' ? [retained] : [] },
+      };
+      root.provisionState = {
+        codeEnvFiles: location === 'code queue' ? [retained] : [],
+        vectorDBFiles: location === 'search queue' ? [retained] : [],
+        aliveFileIds: new Set(),
+        agentScopedFileIds: new Set(),
+      };
+      const resources = structuredClone(root.tool_resources);
+      const queues = structuredClone({
+        codeEnvFiles: root.provisionState.codeEnvFiles,
+        vectorDBFiles: root.provisionState.vectorDBFiles,
+      });
+      try {
+        await expect(h.host.session.prepareTools('parent', undefined, h.signal)).rejects.toThrow(
+          'not supported by the receiving agent',
+        );
+        expect(root.tool_resources).toEqual(resources);
+        expect(root.provisionState).toMatchObject(queues);
+        expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+        expect(h.loadFiles).not.toHaveBeenCalled();
+
+        retained.bytes = 400_000;
+        await h.host.session.prepareTools('parent', undefined, h.signal);
+        expect(root.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toContain('input');
+      } finally {
+        await h.host.session.close();
+      }
+    },
+  );
+
+  it('counts retained root files once across resources, queues and the current manifest', async () => {
+    const current = file('input', { bytes: 600_000 });
+    const retained = file('retained', { bytes: 400_000 });
+    const h = harness({ inputs: [current], setup: [] });
+    h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
+    const root = h.contexts.get('parent')!;
+    root.tool_resources = {
+      execute_code: { files: [retained, current] },
+      file_search: { files: [retained] },
+    };
+    root.provisionState = {
+      codeEnvFiles: [retained, current],
+      vectorDBFiles: [retained],
+      aliveFileIds: new Set(),
+      agentScopedFileIds: new Set(),
+    };
+    try {
+      await h.host.session.prepareTools('parent', undefined, h.signal);
+      await h.host.session.prepareTools('parent', undefined, h.signal);
+      expect(root.provisionState.codeEnvFiles.map((entry) => entry.file_id)).toEqual([
+        'retained',
+        'input',
+      ]);
+
+      root.provisionState.vectorDBFiles.push(file('later-setup', { bytes: 100_000 }));
+      await expect(h.host.session.prepareTools('parent', undefined, h.signal)).rejects.toThrow(
+        'not supported by the receiving agent',
+      );
+    } finally {
+      await h.host.session.close();
+    }
+  });
+
+  it('releases the root budget when a previous publication is removed', async () => {
+    const h = harness({ inputs: [], setup: [] });
+    h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
+    const root = h.contexts.get('parent')!;
+    root.tool_resources = { execute_code: { files: [file('retained', { bytes: 300_000 })] } };
+    const preparation = {
+      actor: h.host.session.actorFor('parent'),
+      sessionKey: root.codeExecutionContext!.codeSessionKey,
+      signal: h.signal,
+    };
+    try {
+      await h.deps.prepareAgent({
+        ...preparation,
+        files: [file('old-publication', { bytes: 600_000 })],
+        revision: 1,
+      });
+      await h.deps.prepareAgent({
+        ...preparation,
+        files: [file('new-publication', { bytes: 600_000 })],
+        revision: 2,
+      });
+      expect(root.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toEqual([
+        'new-publication',
+      ]);
+      expect(root.tool_resources.execute_code?.files?.map((entry) => entry.file_id)).toEqual([
+        'retained',
+      ]);
+    } finally {
+      await h.host.session.close();
+    }
   });
 
   it('counts a current attachment also present in agent setup only once', async () => {

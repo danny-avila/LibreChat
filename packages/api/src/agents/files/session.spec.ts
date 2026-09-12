@@ -3,9 +3,22 @@ import { FileContext, FileSources } from 'librechat-data-provider';
 import type { SubagentExecutionContext } from '@librechat/agents';
 import type { TFile } from 'librechat-data-provider';
 import type { RunArtifactDescriptor } from '~/files/code/publication';
+import type { RunFileSessionDeps } from './session';
+import type { ServerRequest } from '~/types';
 import { createRunFileSession, getAuthorizedRunFileSnapshot } from './session';
+import { AgentAttachmentLimitError } from '../attachments';
+import { createRunFileMessageEncoder } from './encode';
 
-function setup(subagentsEnabled = true, options: { signal?: AbortSignal; ttlMs?: number } = {}) {
+function setup(
+  subagentsEnabled = true,
+  options: {
+    signal?: AbortSignal;
+    ttlMs?: number;
+    inputs?: TFile[];
+    validateMessages?: RunFileSessionDeps['validateMessages'];
+    encodeMessages?: RunFileSessionDeps['encodeMessages'];
+  } = {},
+) {
   const saved: TFile[] = [];
   const publishedSources: RunArtifactDescriptor[] = [];
   const publishedBytes: Buffer[] = [];
@@ -45,8 +58,8 @@ function setup(subagentsEnabled = true, options: { signal?: AbortSignal; ttlMs?:
       ttlMs: options.ttlMs ?? 60_000,
     },
     snapshots,
-    getInputs: () => [],
-    inputFileIds: new Set(),
+    getInputs: () => options.inputs ?? [],
+    inputFileIds: new Set(options.inputs?.map((file) => file.file_id)),
     getAgent: (id) => {
       if (id === 'writer') {
         return { id, subagents: { enabled: true, allowSelf: false, agent_ids: ['reader'] } };
@@ -102,7 +115,8 @@ function setup(subagentsEnabled = true, options: { signal?: AbortSignal; ttlMs?:
       return file;
     },
     prepareAgent: prepared,
-    encodeMessages: async () => [],
+    validateMessages: options.validateMessages ?? jest.fn(),
+    encodeMessages: options.encodeMessages ?? (async () => []),
     emit,
   });
   const context: SubagentExecutionContext = {
@@ -173,6 +187,74 @@ it('prepares every graph member from one read and reuses the snapshot for the ca
     result.agentSessions?.writer.codeSessionKey,
   );
 });
+
+it.each([{ totalSizeLimit: 1 }, { fileLimit: 1 }])(
+  'checks later team members before encoding shared files or provisioning resources (%j)',
+  async (limits) => {
+    const input: TFile = {
+      file_id: 'shared-report',
+      filename: 'report.pdf',
+      type: 'application/pdf',
+      bytes: 600_000,
+      user: 'user',
+      embedded: false,
+      filepath: '/files/report.pdf',
+      object: 'file',
+      usage: 0,
+      source: FileSources.local,
+      llmDeliveryPath: 'provider',
+      metadata: { destinationChosen: true },
+    };
+    const writerAttachments = [{ ...input, file_id: 'writer-setup', context: FileContext.agents }];
+    const document = {
+      type: 'file',
+      file: { filename: 'report.pdf', file_data: 'data:application/pdf;base64,cGRm' },
+    };
+    const encodeDocuments = jest.fn(async () => ({ documents: [document] }));
+    const fileConfig: NonNullable<ServerRequest['config']>['fileConfig'] = {
+      endpoints: { openAI: limits },
+    };
+    const encoder = createRunFileMessageEncoder({
+      req: { body: {}, config: { fileConfig } } as ServerRequest,
+      getAgent: (id) => ({
+        provider: 'openAI',
+        agentContextAttachments: id === 'writer' ? writerAttachments : [],
+      }),
+      encodeDocuments,
+      encodeImages: async () => ({ image_urls: [] }),
+      encodeAudios: async () => ({ audios: [] }),
+      encodeVideos: async () => ({ videos: [] }),
+      extractText: async () => undefined,
+      getStrategyFunctions: jest.fn(),
+    });
+    const validateMessages = jest.fn(encoder.validate);
+    const { session, preparation, prepared, read } = setup(true, {
+      inputs: [input],
+      validateMessages,
+      encodeMessages: encoder.encode,
+    });
+    try {
+      await expect(session.prepare(preparation)).rejects.toThrow(AgentAttachmentLimitError);
+      expect(prepared).not.toHaveBeenCalled();
+      expect(encodeDocuments).not.toHaveBeenCalled();
+
+      writerAttachments.splice(0);
+      const result = await session.prepare(preparation);
+      expect(prepared).toHaveBeenCalledTimes(2);
+      expect(encodeDocuments).toHaveBeenCalledTimes(1);
+      expect(result.messages?.[1].content).toEqual(expect.arrayContaining([document]));
+      expect(read).toHaveBeenCalledTimes(2);
+
+      validateMessages.mockClear();
+      const resumed = await session.prepare({ ...preparation, resumed: true });
+      expect(resumed.messages).toEqual([]);
+      expect(validateMessages).not.toHaveBeenCalled();
+      expect(encodeDocuments).toHaveBeenCalledTimes(1);
+    } finally {
+      await session.close();
+    }
+  },
+);
 
 it('reuses publications for unrelated batches while preparing and authorizing each execution', async () => {
   const { session, preparation, context, read, prepared } = setup();
