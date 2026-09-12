@@ -16,6 +16,7 @@ import type {
 } from 'librechat-data-provider';
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
 import { useCodeEnvironmentStatusQueries } from '~/data-provider';
+import { useWorkspacePreferences } from './workspacePreferences';
 import useAgentToolPermissions from './useAgentToolPermissions';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useGetAgentsConfig from './useGetAgentsConfig';
@@ -49,6 +50,7 @@ export interface CodeWorkspaceResult {
   resolveSubmission: (
     selections?: CodeWorkspaceSelection[],
   ) => { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined;
+  rememberSelection: (selection: CodeWorkspaceSelection) => void;
 }
 
 function aggregateState(
@@ -93,6 +95,7 @@ export default function useCodeWorkspace(
   conversation: TConversation | null,
   addedConversation?: TConversation | null,
 ): CodeWorkspaceResult {
+  const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
@@ -118,6 +121,8 @@ export default function useCodeWorkspace(
   );
   const workspaceMetadata = useMemo(() => {
     const unique = new Map<string, TPublicCodeEnvironment>();
+    const defaults = new Map<string, Set<string>>();
+    const preferenceAgentIds = new Map<string, Set<string>>();
     let complete = true;
     for (const agent of reachable.agents) {
       if (agent.stateful_code_sessions !== true || !agent.tools?.includes(Tools.execute_code)) {
@@ -125,13 +130,47 @@ export default function useCodeWorkspace(
       }
       const environment = findExecutionEnvironment(agent, statefulCodeSessions?.environments);
       if (agent.code_environment_id && environment == null) complete = false;
-      if (environment?.type === 'attached') unique.set(environment.id, environment);
+      if (environment?.type !== 'attached') continue;
+      unique.set(environment.id, environment);
+      if (agent.code_environment_id === environment.id && agent.code_workspace_id) {
+        const choices = defaults.get(environment.id) ?? new Set<string>();
+        choices.add(agent.code_workspace_id);
+        defaults.set(environment.id, choices);
+      }
+    }
+
+    for (const [rootAgent, rootAgentId] of [
+      [primaryAgent, conversation?.agent_id],
+      [addedAgent, addedConversation?.agent_id],
+    ] as const) {
+      if (!rootAgent || !rootAgentId) continue;
+      const rootReachable = collectReachableAgents([rootAgent], agentsMap, [rootAgentId]);
+      for (const agent of rootReachable.agents) {
+        if (agent.stateful_code_sessions !== true || !agent.tools?.includes(Tools.execute_code)) {
+          continue;
+        }
+        const environment = findExecutionEnvironment(agent, statefulCodeSessions?.environments);
+        if (environment?.type !== 'attached') continue;
+        const owners = preferenceAgentIds.get(environment.id) ?? new Set<string>();
+        owners.add(rootAgentId);
+        preferenceAgentIds.set(environment.id, owners);
+      }
     }
     return {
       complete,
+      defaults,
+      preferenceAgentIds,
       environments: [...unique.values()].sort((a, b) => a.id.localeCompare(b.id)),
     };
-  }, [reachable.agents, statefulCodeSessions?.environments]);
+  }, [
+    addedAgent,
+    addedConversation?.agent_id,
+    agentsMap,
+    conversation?.agent_id,
+    primaryAgent,
+    reachable.agents,
+    statefulCodeSessions?.environments,
+  ]);
   const isAgentsConversation =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents;
   const expectedRoot = conversation?.agent_id != null || addedConversation?.agent_id != null;
@@ -153,19 +192,42 @@ export default function useCodeWorkspace(
     required && selectionMetadataComplete,
   );
   const storedSelections = conversation?.codeWorkspaces;
+  const attachedEnvironmentIds = new Set(attachedEnvironments.map(({ id }) => id));
+  const hasForeignStoredSelection = storedSelections?.some(
+    ({ environmentId }) => !attachedEnvironmentIds.has(environmentId),
+  );
+  const isNewChat =
+    conversation != null &&
+    (conversation.conversationId == null || conversation.conversationId === 'new');
   const environmentResults = attachedEnvironments.map((environment, index) => {
     const status = statuses[index];
     const workspaces =
       status?.data?.status === 'ready' && Array.isArray(status.data.workspaces)
         ? status.data.workspaces
         : [];
-    const stored = storedSelections?.find(({ environmentId }) => environmentId === environment.id);
+    let stored = storedSelections?.find(({ environmentId }) => environmentId === environment.id);
+    let conflictingDefaults = false;
+    if (stored == null && isNewChat && !hasForeignStoredSelection) {
+      const defaults = workspaceMetadata.defaults.get(environment.id) ?? new Set<string>();
+      let preferred: string | undefined;
+      if (defaults.size === 1) preferred = [...defaults][0];
+      else if (defaults.size === 0) {
+        preferred = [...(workspaceMetadata.preferenceAgentIds.get(environment.id) ?? [])]
+          .map((agentId) => preferences.get(environment.id, agentId))
+          .find((workspaceId) => workspaces.some(({ id }) => id === workspaceId));
+      }
+      if (preferred && (defaults.size > 0 || workspaces.some(({ id }) => id === preferred))) {
+        stored = { environmentId: environment.id, workspaceId: preferred };
+      }
+      conflictingDefaults = defaults.size > 1;
+    }
     const selected = resolveEnvironmentSelection({
       environment,
       status: status?.data,
       workspaces,
       stored,
-      hasStoredSelections: storedSelections != null,
+      hasStoredSelections:
+        stored != null || conflictingDefaults || hasForeignStoredSelection === true,
     });
     let state: CodeWorkspaceEnvironmentResult['state'] = 'choose';
     if (status == null || status.isLoading) state = 'loading';
@@ -204,11 +266,8 @@ export default function useCodeWorkspace(
           });
           continue;
         }
-        if (selections == null && result.workspaces.length === 1 && result.state === 'ready') {
-          resolved.push({
-            environmentId: result.environment.id,
-            workspaceId: result.workspaces[0].id,
-          });
+        if (requested == null && result.selected != null && result.state === 'ready') {
+          resolved.push(result.selected);
           continue;
         }
         return undefined;
@@ -233,6 +292,14 @@ export default function useCodeWorkspace(
     [required, resolveSelections],
   );
   const canSubmit = resolveSubmission(storedSelections) != null;
+  const rememberSelection = useCallback(
+    (selection: CodeWorkspaceSelection) => {
+      preferences.remember(selection.environmentId, selection.workspaceId, [
+        ...(workspaceMetadata.preferenceAgentIds.get(selection.environmentId) ?? []),
+      ]);
+    },
+    [preferences, workspaceMetadata.preferenceAgentIds],
+  );
   return {
     required,
     state,
@@ -241,5 +308,6 @@ export default function useCodeWorkspace(
     selections,
     resolveSelections,
     resolveSubmission,
+    rememberSelection,
   };
 }

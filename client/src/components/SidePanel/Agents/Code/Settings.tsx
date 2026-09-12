@@ -24,6 +24,7 @@ import {
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useAuthContext, useGetAgentsConfig, useLocalize } from '~/hooks';
+import { useCodeEnvironmentStatusQueries } from '~/data-provider';
 import { ESide } from '~/common';
 
 const ENVIRONMENT_LABELS = {
@@ -33,6 +34,11 @@ const ENVIRONMENT_LABELS = {
 } as const;
 
 const DEPLOYMENT_DEFAULT_ENVIRONMENT = '__deployment_default__';
+const WORKSPACE_STATUS_LABELS = {
+  loading: 'com_ui_code_workspace_loading',
+  unavailable: 'com_ui_code_workspace_unavailable',
+  unsupported: 'com_ui_code_workspace_unsupported',
+} as const;
 
 export default function CodeSettings() {
   const localize = useLocalize();
@@ -52,6 +58,7 @@ export default function CodeSettings() {
   const codeEnabled = watch(AgentCapabilities.execute_code);
   const environment = watch('stateful_code_environment') ?? 'user';
   const codeEnvironmentId = watch('code_environment_id');
+  const workspaceId = watch('code_workspace_id') ?? '';
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
   const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const statefulSessionsAvailable =
@@ -65,6 +72,30 @@ export default function CodeSettings() {
     codeEnabled &&
     enabled &&
     effectiveExecutionEnvironment?.type === 'attached';
+  const workspaceStatuses = useCodeEnvironmentStatusQueries(
+    effectiveExecutionEnvironment?.type === 'attached' ? [effectiveExecutionEnvironment.id] : [],
+    showGitIdentity === true,
+  );
+  const workspaceStatusQuery = workspaceStatuses[0];
+  const workspaceStatus = workspaceStatusQuery?.data;
+  let workspaceDiscoveryState: 'loading' | 'unavailable' | 'unsupported' | 'ready' = 'ready';
+  if (workspaceStatusQuery == null || workspaceStatusQuery.isLoading) {
+    workspaceDiscoveryState = 'loading';
+  } else if (
+    workspaceStatusQuery.isError ||
+    workspaceStatus?.status !== 'ready' ||
+    workspaceStatus.environmentId !== effectiveExecutionEnvironment?.id
+  ) {
+    workspaceDiscoveryState = 'unavailable';
+  } else if (workspaceStatus.workspaces == null) {
+    workspaceDiscoveryState = 'unsupported';
+  }
+  const workspaces =
+    workspaceDiscoveryState === 'ready' &&
+    workspaceStatus?.status === 'ready' &&
+    workspaceStatus.environmentId === effectiveExecutionEnvironment?.id
+      ? (workspaceStatus.workspaces ?? [])
+      : [];
   const releaseIdentity = useCallback(() => {
     const identity = getValues('git_identity');
     const empty = !identity?.name?.trim() && !identity?.email?.trim();
@@ -151,6 +182,7 @@ export default function CodeSettings() {
               <Select
                 value={codeEnvironmentId ?? DEPLOYMENT_DEFAULT_ENVIRONMENT}
                 onValueChange={(value) => {
+                  setValue('code_workspace_id', '', { shouldDirty: true });
                   setValue(
                     'code_environment_id',
                     value === DEPLOYMENT_DEFAULT_ENVIRONMENT ? null : value,
@@ -215,6 +247,65 @@ export default function CodeSettings() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
+          {showGitIdentity && (
+            <div className="space-y-2">
+              <label
+                htmlFor="code-workspace-default"
+                className="text-xs font-medium text-text-secondary"
+              >
+                {localize('com_ui_code_workspace_default')}
+              </label>
+              <Select
+                value={workspaceId || '__automatic__'}
+                onValueChange={(value) => {
+                  if (value !== '__automatic__' && !workspaces.some(({ id }) => id === value))
+                    return;
+                  setValue('code_workspace_id', value === '__automatic__' ? '' : value, {
+                    shouldDirty: true,
+                  });
+                  if (value !== '__automatic__' && effectiveExecutionEnvironment) {
+                    setValue('code_environment_id', effectiveExecutionEnvironment.id, {
+                      shouldDirty: true,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger id="code-workspace-default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__automatic__">
+                    {localize('com_ui_code_workspace_last_used')}
+                  </SelectItem>
+                  {workspaceId &&
+                    (workspaceDiscoveryState !== 'ready' ||
+                      !workspaces.some(({ id }) => id === workspaceId)) && (
+                      <SelectItem value={workspaceId} disabled>
+                        {workspaceId} —{' '}
+                        {localize(
+                          workspaceDiscoveryState === 'ready'
+                            ? 'com_ui_code_workspace_missing'
+                            : WORKSPACE_STATUS_LABELS[workspaceDiscoveryState],
+                        )}
+                      </SelectItem>
+                    )}
+                  {workspaces.map(({ id, name }) => (
+                    <SelectItem key={id} value={id}>
+                      {name ?? id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {workspaceDiscoveryState !== 'ready' && (
+                <p className="text-xs text-text-tertiary" role="status">
+                  {localize(WORKSPACE_STATUS_LABELS[workspaceDiscoveryState])}
+                </p>
+              )}
+              <p className="text-xs text-text-tertiary">
+                {localize('com_ui_code_workspace_default_description')}
+              </p>
+            </div>
+          )}
           {showGitIdentity && (
             <div className="space-y-2 border-t border-border-light pt-3">
               <div className="text-xs font-medium text-text-secondary">
