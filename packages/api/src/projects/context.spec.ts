@@ -1,6 +1,7 @@
-import type { CanonicalProjectResource } from './resources';
+import type { CanonicalProjectResource, ProjectFileRecord } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
 import { PARTIAL_RESOLVED_CONVERSATION } from '../agents/conversationSymbols';
+import { toCanonicalProjectResource } from './resources';
 
 const project = {
   _id: 'project-a',
@@ -144,6 +145,35 @@ describe('resolveChatProjectContext', () => {
         { getConvo: jest.fn(), getChatProject: jest.fn().mockResolvedValue(null), getProjectFiles },
       ),
     ).rejects.toThrow('Project context unavailable');
+  });
+  it('keeps the resume key stable for normalized file identities', () => {
+    const file: ProjectFileRecord = {
+      _id: '507f1f77bcf86cd799439011',
+      file_id: 'file-a',
+      filename: 'file-a.txt',
+      filepath: '/uploads/file-a.txt',
+      object: 'file',
+      type: 'text/plain',
+      bytes: 12,
+      usage: 0,
+      embedded: true,
+      context: 'message_attachment',
+      user: 'user-a',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+    const makeContext = () => ({
+      projectId: 'project-a',
+      contextRevision: 1,
+      instructions: '',
+      file_ids: ['file-a'],
+      resources: [toCanonicalProjectResource({ ...file })],
+    });
+
+    const first = makeContext();
+    const second = makeContext();
+    expect(first.resources[0]?.identity).toBe(file._id);
+    expect(getChatProjectContextKey(first)).toBe(getChatProjectContextKey(second));
   });
 
   it('changes its stable key when revision or resources change without exposing instructions', () => {

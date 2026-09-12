@@ -40,7 +40,28 @@ export type AvailableProjectFilesResult = {
   nextCursor: string | null;
 };
 
-export type ProjectFileRecord = Pick<
+export type ProjectFileRecord = {
+  _id: string;
+  file_id: string;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  bytes: number;
+  usage: number;
+  embedded?: boolean;
+  context?: string;
+  expiredAt?: Date | null;
+  user: string;
+  tenantId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  previewRevision?: string;
+  status?: 'pending' | 'ready' | 'failed';
+  text?: string;
+};
+
+type ProjectFileRecordSource = Pick<
   IMongoFile,
   | '_id'
   | 'file_id'
@@ -61,6 +82,29 @@ export type ProjectFileRecord = Pick<
   | 'status'
   | 'text'
 >;
+
+function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileRecord {
+  return {
+    _id: file._id.toString(),
+    file_id: file.file_id,
+    filename: file.filename,
+    filepath: file.filepath,
+    object: file.object,
+    type: file.type,
+    bytes: file.bytes,
+    usage: file.usage,
+    ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
+    ...(file.context !== undefined ? { context: file.context } : {}),
+    ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
+    user: file.user.toString(),
+    ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
+    ...(file.createdAt !== undefined ? { createdAt: file.createdAt } : {}),
+    ...(file.updatedAt !== undefined ? { updatedAt: file.updatedAt } : {}),
+    ...(file.previewRevision !== undefined ? { previewRevision: file.previewRevision } : {}),
+    ...(file.status !== undefined ? { status: file.status } : {}),
+    ...(file.text !== undefined ? { text: file.text } : {}),
+  };
+}
 
 export type ProjectFilesOptions = FileOwnerScope & {
   fileIds: string[];
@@ -284,7 +328,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         status: 1,
       });
     }
-    return (await query.sort({ updatedAt: -1 }).lean<ProjectFileRecord[]>()) ?? [];
+    const files = (await query.sort({ updatedAt: -1 }).lean<ProjectFileRecordSource[]>()) ?? [];
+    return files.map(normalizeProjectFileRecord);
   }
 
   async function getAvailableProjectFiles({

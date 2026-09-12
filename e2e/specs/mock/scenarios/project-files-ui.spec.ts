@@ -2,10 +2,11 @@ import { randomUUID } from 'crypto';
 import { ObjectId } from 'mongodb';
 import type { APIRequestContext, Locator, Page, Response, Route } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { FileContext, MAX_CHAT_PROJECT_FILES } from 'librechat-data-provider';
+import { FileContext } from 'librechat-data-provider';
 import { getE2EUser } from '../../../setup/user';
 import { withMongo } from '../db';
 import { escapeRegExp, getAccessToken, uniqueName } from '../helpers';
+import { loginAdmin } from '../content-filters.helpers';
 
 type UserDocument = {
   _id: ObjectId;
@@ -16,6 +17,20 @@ type UserDocument = {
 type UploadedFile = {
   file_id?: string;
 };
+
+const CONFIGURED_PROJECT_FILE_LIMIT = 2;
+
+async function getPrimaryUserId(): Promise<string> {
+  const owner = await withMongo(async (db) =>
+    db
+      .collection<UserDocument>('users')
+      .findOne({ email: getE2EUser().email }, { projection: { _id: 1 } }),
+  );
+  if (!owner) {
+    throw new Error('The authenticated e2e user was not found while resolving config override');
+  }
+  return owner._id.toString();
+}
 
 /** Creates a project from the all-projects page and returns its id. */
 async function createProject(page: Page, name: string): Promise<string> {
@@ -178,15 +193,40 @@ test.describe('project file workspace UI', () => {
     request,
   }) => {
     test.setTimeout(120000);
+    const token = await loginAdmin(request);
+    const userId = await getPrimaryUserId();
+    const headers = { Authorization: `Bearer ${token}` };
     let projectId: string | undefined;
     const fileIds: string[] = [];
     const filenames: string[] = [];
     try {
+      const override = await request.put(`/api/admin/config/user/${encodeURIComponent(userId)}`, {
+        headers,
+        data: { overrides: { projects: { maxFiles: CONFIGURED_PROJECT_FILE_LIMIT } } },
+      });
+      const overrideText = await override.text();
+      expect(override.ok(), overrideText).toBe(true);
+      await expect
+        .poll(
+          async () => {
+            const configResponse = await request.get('/api/config', {
+              headers,
+              failOnStatusCode: false,
+            });
+            const config = (await configResponse.json()) as {
+              projects?: { maxFiles?: number };
+            };
+            return config.projects?.maxFiles;
+          },
+          { timeout: 30000, intervals: [250, 500, 1000] },
+        )
+        .toBe(CONFIGURED_PROJECT_FILE_LIMIT);
+
       await enableProjectFiles(page);
       projectId = await createProject(page, uniqueName('Multi-file project'));
       const seeded = await seedProjectFiles(
         projectId,
-        MAX_CHAT_PROJECT_FILES - 1,
+        CONFIGURED_PROJECT_FILE_LIMIT - 1,
         uniqueName('capacity-seed'),
       );
       fileIds.push(...seeded.fileIds);
@@ -219,10 +259,39 @@ test.describe('project file workspace UI', () => {
         0,
       );
       await expect(filesRegion.getByRole('note')).toContainText(
-        `up to ${MAX_CHAT_PROJECT_FILES} reference files`,
+        `up to ${CONFIGURED_PROJECT_FILE_LIMIT} reference files`,
       );
+
+      const serverCheck = await seedProjectFiles(
+        projectId,
+        1,
+        uniqueName('server-capacity-check'),
+        undefined,
+        false,
+      );
+      fileIds.push(...serverCheck.fileIds);
+      filenames.push(...serverCheck.filenames);
+      const rejectedAssociation = await request.post(
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+        {
+          headers,
+          data: { file_id: serverCheck.fileIds[0] },
+          failOnStatusCode: false,
+        },
+      );
+      expect(rejectedAssociation.status()).toBe(409);
+      expect(await rejectedAssociation.json()).toEqual({ error: 'Project file limit reached' });
     } finally {
-      await cleanupProjectAndFiles(page, request, projectId, fileIds, filenames);
+      try {
+        await cleanupProjectAndFiles(page, request, projectId, fileIds, filenames);
+      } finally {
+        const removed = await request.delete(
+          `/api/admin/config/user/${encodeURIComponent(userId)}`,
+          { headers, failOnStatusCode: false },
+        );
+        const removedText = await removed.text();
+        expect([200, 404], removedText).toContain(removed.status());
+      }
     }
   });
 

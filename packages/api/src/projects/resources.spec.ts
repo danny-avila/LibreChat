@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods } from '@librechat/data-schemas';
-import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
+import type { IChatProject, IMongoFile, ProjectFileRecord } from '@librechat/data-schemas';
 import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
@@ -68,8 +68,8 @@ const getProjectFiles = async ({
   userId: string;
   tenantId?: string | null;
   includeContent?: boolean;
-}) =>
-  File.find({
+}): Promise<ProjectFileRecord[]> => {
+  const files = await File.find({
     file_id: { $in: fileIds },
     user: userId,
     embedded: true,
@@ -77,7 +77,29 @@ const getProjectFiles = async ({
     tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
   })
     .select(includeContent ? {} : { text: 0 })
-    .lean();
+    .lean<IMongoFile[]>();
+  return files.map((file) => ({
+    _id: file._id.toString(),
+    file_id: file.file_id,
+    filename: file.filename,
+    filepath: file.filepath,
+    object: file.object,
+    type: file.type,
+    bytes: file.bytes,
+    usage: file.usage,
+    ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
+    ...(file.context !== undefined ? { context: file.context } : {}),
+    ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
+    user: file.user.toString(),
+    ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
+    ...(file.createdAt !== undefined ? { createdAt: file.createdAt } : {}),
+    ...(file.updatedAt !== undefined ? { updatedAt: file.updatedAt } : {}),
+    ...(file.previewRevision !== undefined ? { previewRevision: file.previewRevision } : {}),
+    ...(file.status !== undefined ? { status: file.status } : {}),
+    ...(file.text !== undefined ? { text: file.text } : {}),
+  }));
+};
+
 describe('ChatProject resource hydration', () => {
   it('preserves Project compatibility when signed file URLs are refreshed', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
