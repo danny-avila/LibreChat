@@ -56,6 +56,8 @@ export type TraceFilter = {
   collapsed: ReadonlySet<string>;
   query: string;
   window: TraceWindow | null;
+  /** The labels a row shows for its record (kind and status, localized), which search also matches. */
+  labelsFor?: (record: TTraceRecord) => readonly string[];
 };
 
 const EMPTY_SUMMARY: TraceSummary = {
@@ -240,12 +242,16 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
   return { nodes, turns, start, end, summary };
 }
 
-function matchesQuery(node: TraceNode, query: string): boolean {
+function matchesQuery(
+  node: TraceNode,
+  query: string,
+  labelsFor: TraceFilter['labelsFor'],
+): boolean {
   if (!query) {
     return true;
   }
-  const { name, model, kind, statusMessage } = node.record;
-  return [name, model, kind, statusMessage].some(
+  const { record } = node;
+  return [record.name, record.model, record.statusMessage, ...(labelsFor?.(record) ?? [])].some(
     (value) => value != null && value.toLowerCase().includes(query),
   );
 }
@@ -255,10 +261,15 @@ function overlapsWindow(node: TraceNode, window: TraceWindow | null): boolean {
 }
 
 /** Records that match the filter, plus every ancestor so a match keeps its context. */
-function visibleIds(model: TraceModel, query: string, window: TraceWindow | null): Set<string> {
+function visibleIds(
+  model: TraceModel,
+  query: string,
+  window: TraceWindow | null,
+  labelsFor: TraceFilter['labelsFor'],
+): Set<string> {
   const visible = new Set<string>();
   for (const [id, node] of model.nodes) {
-    if (!matchesQuery(node, query) || !overlapsWindow(node, window)) {
+    if (!matchesQuery(node, query, labelsFor) || !overlapsWindow(node, window)) {
       continue;
     }
     let current: string | null = id;
@@ -276,11 +287,11 @@ function visibleIds(model: TraceModel, query: string, window: TraceWindow | null
  */
 export function flattenRows(
   model: TraceModel,
-  { collapsed, query, window }: TraceFilter,
+  { collapsed, query, window, labelsFor }: TraceFilter,
 ): TraceRow[] {
   const normalizedQuery = query.trim().toLowerCase();
   const filtering = normalizedQuery !== '' || window != null;
-  const visible = filtering ? visibleIds(model, normalizedQuery, window) : null;
+  const visible = filtering ? visibleIds(model, normalizedQuery, window, labelsFor) : null;
   const rows: TraceRow[] = [];
 
   const turns = model.turns.flatMap((turn) => {

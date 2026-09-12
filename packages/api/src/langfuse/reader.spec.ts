@@ -347,6 +347,80 @@ describe('createLangfuseTraceReader', () => {
       );
     });
 
+    it('fails over to a project holding the same turns when the preferred one fails', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const { reader, fetchMock } = setup({
+        refs,
+        responses: [
+          jsonResponse({ message: 'expired key' }, 401),
+          jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'more' } }),
+        ],
+      });
+
+      const page = await reader.listRecords(
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+      );
+
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'a' }] });
+
+      const later = setup({
+        refs,
+        responses: [jsonResponse({ data: [observation({ id: 'b' })] })],
+      });
+      const older = await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
+
+      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
+      expect(requestedUrl(later.fetchMock).searchParams.get('cursor')).toBe('more');
+      expect(older.records.map(({ id }) => id)).toEqual(['b']);
+    });
+
+    it('reports the failure when every project holding the turns fails, and never fails over mid-project', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const allFail = setup({
+        refs,
+        responses: [
+          jsonResponse({ message: 'expired key' }, 401),
+          jsonResponse({ message: 'down' }, 503),
+        ],
+      });
+      const midProject = setup({ refs, responses: [jsonResponse({ message: 'down' }, 503)] });
+      const cursor = Buffer.from(JSON.stringify({ s: 'connection-id', c: 'more' })).toString(
+        'base64url',
+      );
+
+      await expect(allFail.reader.listRecords(createQuery())).rejects.toMatchObject({
+        code: 'upstream_error',
+      });
+      await expect(
+        midProject.reader.listRecords({ ...createQuery(), cursor }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
+      expect(midProject.fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats two credentials for one project as one source instead of replaying its page', async () => {
+      const centralAlias = { ...central, id: 'connection-id', authorization: 'Basic alias' };
+      const { reader, fetchMock } = setup({
+        destinations: [centralAlias, connection],
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [jsonResponse({ data: [observation()] })],
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(page.nextCursor).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('normalizes owned observations and drops traces the user does not own', async () => {
       const { reader } = setup({
         responses: [
@@ -752,6 +826,26 @@ describe('createLangfuseTraceReader', () => {
 
       expect(requestedUrl(fetchMock, 0).origin).toBe('https://central.langfuse.test');
       expect(requestedUrl(fetchMock, 1).origin).toBe('https://tenant.langfuse.test');
+    });
+
+    it('fails over a detail read when the pinned project fails', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [
+          jsonResponse({ message: 'down' }, 503),
+          jsonResponse({ data: [observation()] }),
+        ],
+      });
+
+      const detail = await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        sourceId: 'connection-id',
+      });
+
+      expect(detail?.record.id).toBe('obs-root');
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
     });
 
     it('returns null for an observation outside the user-owned traces', async () => {

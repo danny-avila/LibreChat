@@ -3,7 +3,7 @@ import { useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants, resolveTraceViewerConfig } from 'librechat-data-provider';
 import type { TTraceViewerConfig } from 'librechat-data-provider';
-import { useConversationTraceAvailabilityQuery } from '~/data-provider';
+import { keepNewestTracePage, useConversationTraceAvailabilityQuery } from '~/data-provider';
 import { traceViewerConversationAtom } from './store';
 
 export type TraceControl = {
@@ -48,6 +48,7 @@ export default function useTraceControl({
     const settled = wasSubmitting.current && !isSubmitting;
     wasSubmitting.current = isSubmitting;
     if (settled && eligible && conversationId != null) {
+      keepNewestTracePage(queryClient, conversationId);
       queryClient.invalidateQueries([QueryKeys.conversationTraceRecords, conversationId]);
       queryClient.invalidateQueries([QueryKeys.conversationTraceRecord, conversationId]);
     }

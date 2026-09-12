@@ -1,5 +1,6 @@
 import { useId, useRef, useMemo, useState, useEffect, useCallback, useDeferredValue } from 'react';
 import axios from 'axios';
+import { useQueryClient } from '@tanstack/react-query';
 import { resolveTraceViewerConfig } from 'librechat-data-provider';
 import { Button, Spinner, EmptyState, FilterInput, buttonVariants } from '@librechat/client';
 import {
@@ -13,16 +14,18 @@ import {
   TriangleAlert,
   ChartNoAxesGantt,
 } from 'lucide-react';
-import type { TTraceErrorCode, TTraceErrorResponse } from 'librechat-data-provider';
+import type { TTraceRecord, TTraceErrorCode, TTraceErrorResponse } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import type { TranslationKeys } from '~/hooks';
 import type { TraceWindow } from './model';
 import {
+  keepNewestTracePage,
   useGetStartupConfig,
   useGetLangfuseSessionLinkQuery,
   useConversationTraceRecordsQuery,
 } from '~/data-provider';
 import { ZOOM_STEP, zoomWindow, flattenRows, buildTraceModel, collapsibleKeys } from './model';
+import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
 import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import Inspector from './Inspector';
@@ -60,6 +63,7 @@ export default function Viewer({
   onClose: () => void;
 }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const format = useTraceFormat();
   const headingId = useId();
   const searchId = useId();
@@ -80,6 +84,24 @@ export default function Viewer({
   const [query, setQuery] = useState('');
   const [view, setView] = useState<TraceWindow | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lastRead, setLastRead] = useState<'refresh' | 'older'>('refresh');
+  const labelsFor = useCallback(
+    (record: TTraceRecord) => [
+      localize(KIND_APPEARANCE[record.kind].label),
+      localize(STATUS_LABEL[record.status]),
+    ],
+    [localize],
+  );
+  /** Rereads only the newest page; older pages cannot change and reload on demand. */
+  const refresh = useCallback(() => {
+    setLastRead('refresh');
+    keepNewestTracePage(queryClient, conversationId);
+    recordsQuery.refetch();
+  }, [queryClient, conversationId, recordsQuery]);
+  const loadOlder = useCallback(() => {
+    setLastRead('older');
+    recordsQuery.fetchNextPage();
+  }, [recordsQuery]);
   const deferredQuery = useDeferredValue(query);
 
   const pages = recordsQuery.data?.pages;
@@ -106,8 +128,8 @@ export default function Viewer({
       : undefined;
   const model = useMemo(() => buildTraceModel(records), [records]);
   const rows = useMemo(
-    () => flattenRows(model, { collapsed, query: deferredQuery, window: view }),
-    [model, collapsed, deferredQuery, view],
+    () => flattenRows(model, { collapsed, query: deferredQuery, window: view, labelsFor }),
+    [model, collapsed, deferredQuery, view, labelsFor],
   );
   const selectedNode = selectedId != null ? model.nodes.get(selectedId) : undefined;
   const selectedTurnStart =
@@ -164,7 +186,7 @@ export default function Viewer({
       variant="outline"
       aria-label={localize('com_ui_trace_refresh')}
       disabled={recordsQuery.isFetching}
-      onClick={() => recordsQuery.refetch()}
+      onClick={refresh}
     >
       <RefreshCw
         aria-hidden="true"
@@ -194,7 +216,7 @@ export default function Viewer({
             title={localize('com_ui_trace_error_title')}
             description={localize(errorMessageKey(recordsQuery.error))}
             action={
-              <Button size="sm" variant="outline" onClick={() => recordsQuery.refetch()}>
+              <Button size="sm" variant="outline" onClick={refresh}>
                 {localize('com_ui_retry')}
               </Button>
             }
@@ -211,7 +233,7 @@ export default function Viewer({
             title={localize('com_ui_trace_empty_title')}
             description={localize('com_ui_trace_empty_description')}
             action={
-              <Button size="sm" variant="outline" onClick={() => recordsQuery.refetch()}>
+              <Button size="sm" variant="outline" onClick={refresh}>
                 {localize('com_ui_trace_refresh')}
               </Button>
             }
@@ -329,7 +351,7 @@ export default function Viewer({
                       size="sm"
                       variant="outline"
                       disabled={recordsQuery.isFetching}
-                      onClick={() => recordsQuery.refetch()}
+                      onClick={lastRead === 'older' ? loadOlder : refresh}
                     >
                       {localize('com_ui_retry')}
                     </Button>
@@ -340,7 +362,7 @@ export default function Viewer({
                     size="sm"
                     variant="outline"
                     disabled={recordsQuery.isFetchingNextPage}
-                    onClick={() => recordsQuery.fetchNextPage()}
+                    onClick={loadOlder}
                   >
                     {recordsQuery.isFetchingNextPage && <Spinner className="size-3.5" />}
                     {localize('com_ui_trace_load_older')}

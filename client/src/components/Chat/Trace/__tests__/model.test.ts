@@ -268,6 +268,20 @@ describe('flattenRows', () => {
     expect(rowKeys(rows)).toEqual([turnKey('response-1'), 'root', 'tool', 'nested']);
   });
 
+  it('matches the localized labels a row shows rather than internal kind names', () => {
+    const labelsFor = (entry: TTraceRecord) => [
+      entry.kind === 'generation' ? 'Modellaufruf' : 'Schritt',
+      entry.status === 'ok' ? 'Abgeschlossen' : 'Fehler',
+    ];
+
+    expect(rowKeys(flattenRows(model, { ...noFilter, query: 'modellauf', labelsFor }))).toEqual([
+      turnKey('response-1'),
+      'root',
+      'llm',
+    ]);
+    expect(flattenRows(model, { ...noFilter, query: 'generation', labelsFor })).toEqual([]);
+  });
+
   it('drops turns with nothing left to show', () => {
     expect(flattenRows(model, { ...noFilter, query: 'no such record' })).toEqual([]);
   });

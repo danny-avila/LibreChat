@@ -1,6 +1,7 @@
 import http from 'http';
 import express from 'express';
 import request from 'supertest';
+import { MemoryStore } from 'express-rate-limit';
 import type { TTracePage, TTraceRecordDetail, TTraceViewerConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
@@ -343,6 +344,41 @@ describe('trace handlers', () => {
     expect(signal?.aborted).toBe(true);
     const { logger } = jest.requireMock<{ logger: { warn: jest.Mock } }>('@librechat/data-schemas');
     expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('cancelled'));
+  });
+
+  it('counts the same user id in two tenants as two principals', async () => {
+    const store = new MemoryStore();
+    const limiter = createTraceReadLimiter({ store });
+    const handlers = createTraceHandlers({
+      reader: createReader(),
+      getConvoOwnership: jest.fn(async (user, _conversationId, tenantId) => ({
+        user,
+        tenantId,
+      })),
+    });
+    const appFor = (tenantId?: string) => {
+      const app = express();
+      app.use((req, _res, next) => {
+        Object.assign(req, {
+          user: { id: 'shared-user-id', tenantId },
+          config: { interfaceConfig: { traceViewer: { enabled: true, requestsPerMinute: 1 } } },
+        });
+        next();
+      });
+      app.get('/records/:conversationId', limiter, (req, res) =>
+        handlers.records(req as TraceRequest, res),
+      );
+      return app;
+    };
+
+    const tenantA = await request(appFor('tenant-a')).get('/records/convo-1');
+    const tenantB = await request(appFor('tenant-b')).get('/records/convo-1');
+    const tenantless = await request(appFor()).get('/records/convo-1');
+    const tenantAAgain = await request(appFor('tenant-a')).get('/records/convo-1');
+
+    expect([tenantA.status, tenantB.status, tenantless.status, tenantAAgain.status]).toEqual([
+      200, 200, 200, 429,
+    ]);
   });
 
   it('limits trace reads per user with the configured ceiling', async () => {

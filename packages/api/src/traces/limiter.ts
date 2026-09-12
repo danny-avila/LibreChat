@@ -6,6 +6,7 @@ import type { RequestHandler } from 'express';
 import type { ServerRequest } from '~/types/http';
 
 const WINDOW_MS = 60 * 1000;
+const TENANTLESS = '~tenantless';
 
 /**
  * Per-user limit on trace reads, which spend the tracing backend's own API
@@ -30,9 +31,11 @@ export function createTraceReadLimiter({
       };
       res.status(429).json(body);
     },
+    /** Tenants can share one store, so a user's bucket is named within their tenant. */
     keyGenerator: (req) => {
       const user = (req as ServerRequest).user;
-      return String(user?.id ?? user?._id?.toString() ?? '');
+      const userId = String(user?.id ?? user?._id?.toString() ?? '');
+      return `${user?.tenantId || TENANTLESS}:${userId}`;
     },
     store,
   });

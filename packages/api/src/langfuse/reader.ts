@@ -245,13 +245,27 @@ function rankDestinations(
         b.coverage - a.coverage ||
         DESTINATION_PREFERENCE[a.destination.name] - DESTINATION_PREFERENCE[b.destination.name],
     )
-    .map(({ destination }) => destination);
+    .map(({ destination }) => destination)
+    .filter((destination, index, ordered) => {
+      const sourceId = sourceIdOf(destination);
+      /** Two credentials for one project are one source; a cursor could not tell them apart. */
+      return ordered.findIndex((candidate) => sourceIdOf(candidate) === sourceId) === index;
+    });
 }
 
 /** Stable, opaque identity of a destination; its project hash when Langfuse gave one. */
 function sourceIdOf(destination: LangfuseScoreDestination): string {
   return destination.id ?? `name:${destination.name}`;
 }
+
+/** Failures of one project that another project holding the same turns can stand in for. */
+const FAILOVER_CODES = new Set([
+  'unauthorized',
+  'unsupported',
+  'timeout',
+  'rate_limited',
+  'upstream_error',
+]);
 
 /** A destination named before its project id resolved still matches once the id arrives. */
 function isSource(destination: LangfuseScoreDestination, sourceId?: string): boolean {
@@ -261,15 +275,24 @@ function isSource(destination: LangfuseScoreDestination, sourceId?: string): boo
   );
 }
 
-const cursorSchema = z.object({ s: z.string().min(1), c: z.string().min(1).optional() });
+const cursorSchema = z.object({
+  s: z.string().min(1),
+  c: z.string().min(1).optional(),
+  /** Sources that failed earlier in this read; the plan is rebuilt without them. */
+  x: z.array(z.string().min(1)).max(8).optional(),
+});
 
 /**
  * Binds a continuation to one project, so every page of a read comes from one
  * project: `c` resumes that project's Langfuse cursor, and its absence starts it.
  */
-function encodeCursor(sourceId: string, cursor?: string): string {
+function encodeCursor(sourceId: string, cursor?: string, excluded?: ReadonlySet<string>): string {
   return Buffer.from(
-    JSON.stringify({ s: sourceId, ...(cursor ? { c: cursor } : {}) }),
+    JSON.stringify({
+      s: sourceId,
+      ...(cursor ? { c: cursor } : {}),
+      ...(excluded != null && excluded.size > 0 ? { x: [...excluded] } : {}),
+    }),
     'utf8',
   ).toString('base64url');
 }
@@ -489,7 +512,6 @@ export function createLangfuseTraceReader({
     async listRecords(query) {
       const continuation = query.cursor != null ? decodeCursor(query.cursor) : undefined;
       const { refs, ranked } = await loadConversation(query);
-      const plan = readPlan(ranked, refs.sampledMessages);
       const owners = buildTraceOwners(refs.sampledMessages);
       const window = timeWindow(refs);
 
@@ -528,6 +550,11 @@ export function createLangfuseTraceReader({
         }
       }
 
+      const excluded = new Set(continuation?.x ?? []);
+      let plan = readPlan(
+        ranked.filter((candidate) => !excluded.has(sourceIdOf(candidate))),
+        refs.sampledMessages,
+      );
       let index = 0;
       if (continuation != null) {
         index = plan.findIndex((candidate) => isSource(candidate, continuation.s));
@@ -543,31 +570,64 @@ export function createLangfuseTraceReader({
 
       let startCursor = continuation?.c;
       let firstSourceId: string | undefined;
-      for (; index < plan.length; index++) {
+      let lastFailure: TraceReadError | undefined;
+      while (index < plan.length) {
         const destination = plan[index];
         const sourceId = sourceIdOf(destination);
+        let read: Awaited<ReturnType<typeof readFrom>>;
+        try {
+          read = await readFrom(destination, startCursor);
+        } catch (error) {
+          /** A fresh start can move to a project holding the same turns; a mid-project cursor
+           *  cannot, and a cancelled read has no one left to answer. */
+          if (
+            startCursor != null ||
+            query.signal?.aborted ||
+            !(error instanceof TraceReadError) ||
+            !FAILOVER_CODES.has(error.code)
+          ) {
+            throw error;
+          }
+          lastFailure = error;
+          excluded.add(sourceId);
+          /** The plan's prefix depends only on the ranking before it, so `index` still points
+           *  at the first project not yet read. */
+          plan = readPlan(
+            ranked.filter((candidate) => !excluded.has(sourceIdOf(candidate))),
+            refs.sampledMessages,
+          );
+          continue;
+        }
+        const { records, next } = read;
         firstSourceId ??= sourceId;
-        const { records, next } = await readFrom(destination, startCursor);
         startCursor = undefined;
         if (next) {
-          return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
+          return { records, sourceId, nextCursor: encodeCursor(sourceId, next, excluded) };
         }
         const following = plan[index + 1];
         /** An empty project moves straight on, so a legacy trace in a later one is not shown as missing. */
         if (records.length > 0 || following == null) {
           return following
-            ? { records, sourceId, nextCursor: encodeCursor(sourceIdOf(following)) }
+            ? {
+                records,
+                sourceId,
+                nextCursor: encodeCursor(sourceIdOf(following), undefined, excluded),
+              }
             : { records, sourceId };
         }
+        index++;
+      }
+      if (firstSourceId == null && lastFailure != null) {
+        throw lastFailure;
       }
       return { records: [], ...(firstSourceId ? { sourceId: firstSourceId } : {}) };
     },
 
     async getRecord(query) {
       const { refs, ranked } = await loadConversation(query);
-      const destination =
-        ranked.find((candidate) => isSource(candidate, query.sourceId)) ?? ranked[0];
-      if (!destination) {
+      const pinned = ranked.find((candidate) => isSource(candidate, query.sourceId));
+      const candidates = pinned ? [pinned, ...ranked.filter((entry) => entry !== pinned)] : ranked;
+      if (candidates.length === 0) {
         return null;
       }
       const owners = buildTraceOwners(refs.sampledMessages);
@@ -586,7 +646,26 @@ export function createLangfuseTraceReader({
         limit: '1',
         filter: JSON.stringify(filter),
       });
-      const page = await requestPage(destination, params, query, false);
+      let page: z.infer<typeof pageSchema> | undefined;
+      for (const destination of candidates) {
+        try {
+          page = await requestPage(destination, params, query, false);
+          break;
+        } catch (error) {
+          const lastCandidate = destination === candidates[candidates.length - 1];
+          if (
+            lastCandidate ||
+            query.signal?.aborted ||
+            !(error instanceof TraceReadError) ||
+            !FAILOVER_CODES.has(error.code)
+          ) {
+            throw error;
+          }
+        }
+      }
+      if (!page) {
+        return null;
+      }
       const match = parseRows(page.data, owners).find(
         ({ observation }) => observation.id === query.recordId,
       );

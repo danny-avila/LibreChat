@@ -1,16 +1,18 @@
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type {
+  QueryClient,
+  InfiniteData,
+  UseInfiniteQueryResult,
+  QueryObserverResult,
+  UseQueryOptions,
+} from '@tanstack/react-query';
+import type {
   TTracePage,
   TTraceAvailability,
   TTraceRecordParams,
   TTraceRecordDetail,
 } from 'librechat-data-provider';
-import type {
-  UseInfiniteQueryResult,
-  QueryObserverResult,
-  UseQueryOptions,
-} from '@tanstack/react-query';
 import { getResponseStatus } from '~/utils/errors';
 
 const MAX_AVAILABILITY_RETRIES = 10;
@@ -85,3 +87,18 @@ export const useConversationTraceRecordQuery = (
       refetchOnWindowFocus: false,
     },
   );
+
+/**
+ * Keeps only the newest page of a conversation's trace, so the next fetch reads
+ * one page. Older pages cannot change, but replaying them all through the
+ * per-user trace limiter on every refresh would exhaust it; they reload on demand.
+ */
+export function keepNewestTracePage(queryClient: QueryClient, conversationId: string): void {
+  queryClient.setQueryData<InfiniteData<TTracePage>>(
+    [QueryKeys.conversationTraceRecords, conversationId],
+    (data) =>
+      data != null && data.pages.length > 1
+        ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) }
+        : data,
+  );
+}

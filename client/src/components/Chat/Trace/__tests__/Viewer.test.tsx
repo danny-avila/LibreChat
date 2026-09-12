@@ -360,6 +360,49 @@ describe('Trace Viewer', () => {
     expect(list).toHaveBeenCalledTimes(3);
   });
 
+  it('refreshes by rereading only the newest page, not every loaded page', async () => {
+    const list = jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation(async ({ cursor }) =>
+        cursor == null
+          ? { records: records.slice(1), nextCursor: 'older' }
+          : { records: records.slice(0, 1) },
+      );
+    renderViewer();
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_refresh' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'com_ui_trace_load_older' }),
+    ).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(list).toHaveBeenLastCalledWith(
+      { conversationId: 'convo-1', cursor: undefined },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('retries the read that failed: an older page retries that page', async () => {
+    const list = jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockResolvedValueOnce({ records: records.slice(1), nextCursor: 'older' })
+      .mockRejectedValueOnce(axiosError(504, 'timeout'))
+      .mockResolvedValue({ records: records.slice(0, 1) });
+    renderViewer();
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_trace_error_timeout');
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list).toHaveBeenLastCalledWith(
+      { conversationId: 'convo-1', cursor: 'older' },
+      expect.any(AbortSignal),
+    );
+  });
+
   it('closes the inspector on Escape before closing the trace', async () => {
     const { onClose } = renderViewer();
     await userEvent.click(await treeItem(/llm/));
