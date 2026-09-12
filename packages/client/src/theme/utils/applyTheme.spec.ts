@@ -238,6 +238,45 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--chart-widget-stroke')).toBe('50 51 52');
   });
 
+  it('carries a legacy theme without a verified fill onto its success fill', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-status-success-strong': '8 135 89' }, root);
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('8 135 89');
+  });
+
+  it('leaves a legacy theme that names its own verified fill alone', () => {
+    const root = document.documentElement;
+
+    applyTheme(
+      { 'rgb-status-success-strong': '8 135 89', 'rgb-status-verified': '26 127 216' },
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('26 127 216');
+  });
+
+  it('carries a legacy theme that names no fills onto the mode palette it inherits', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-surface-tertiary': '30 30 38' }, root, {
+      'rgb-status-success-strong': '8 135 89',
+    });
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('8 135 89');
+  });
+
+  it('leaves the verified fill alone for a legacy theme that repaints nothing around the mark', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-primary': '10 20 30' }, root, {
+      'rgb-status-success-strong': '8 135 89',
+    });
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('');
+  });
+
   it('clears only properties owned by the theme module', () => {
     const root = document.documentElement;
     root.style.setProperty('--text-primary', '1 2 3');
