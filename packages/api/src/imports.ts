@@ -25,7 +25,7 @@ import {
 import {
   getBlockedOpaqueFileField,
   hasActiveFilePolicy,
-  resolveCanonicalFileReferences,
+  resolveCanonicalFileReferenceUnits,
   UninspectableFileError,
 } from './protection/files';
 import { assertModelBoundContent as assertModelBoundContentAtBoundary } from './middleware/modelBoundContent';
@@ -132,7 +132,7 @@ async function inspectConversationImportContent(
   let storedMessages = snapshot.messages;
   let resolvedFiles: CanonicalFileInspectionFile[] = [];
   if (hasActiveFilePolicy(activeFilters)) {
-    const fileInspection = await resolveCanonicalFileReferences({
+    const fileInspection = await resolveCanonicalFileReferenceUnits({
       messageCount: snapshot.messages.length,
       onTraversalFailure: context.onTraversalFailure,
       filters: activeFilters,
