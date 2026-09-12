@@ -37,7 +37,7 @@ import {
 import ProjectInstructionsDialog from './ProjectInstructionsDialog';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useElementSize, useLocalize, useNewConvo } from '~/hooks';
 import ProjectResources from './ProjectResources';
 import ProjectChatList from './ProjectChatList';
 import { clearMessagesCache } from '~/utils';
@@ -58,8 +58,11 @@ const RESIZE_TARGET_SIZE = { coarse: 32, fine: 22 };
 
 /** A section is its header plus an empty-state card (badge, two wrapped lines); shrinking
  *  a panel past that would scroll chrome that has nothing to scroll, so the drag stops
- *  here instead. Panels holding content still scroll, which is the point of scrolling. */
-const DETAILS_PANEL_MIN_SIZE = '240px';
+ *  here instead. Panels holding content still scroll, which is the point of scrolling.
+ *  The cap preserves that floor when the group is tall while the measured group height
+ *  keeps both panels' floors feasible in short viewports. */
+const DETAILS_PANEL_MAX_MIN_SIZE = 240;
+const DETAILS_PANEL_HANDLE_ALLOWANCE = 1;
 
 export default function ProjectWorkspace() {
   const localize = useLocalize();
@@ -103,6 +106,11 @@ export default function ProjectWorkspace() {
     panelIds: isRagEnabled ? DETAILS_PANEL_IDS_WITH_FILES : DETAILS_PANEL_IDS,
     storage: localStorage,
   });
+  const { ref: detailsGroupRef, height: detailsGroupHeight } = useElementSize<HTMLDivElement>();
+  const detailsPanelMinSize = `${Math.min(
+    DETAILS_PANEL_MAX_MIN_SIZE,
+    Math.max(0, Math.floor((detailsGroupHeight - DETAILS_PANEL_HANDLE_ALLOWANCE) / 2)),
+  )}px`;
 
   const startEditing = (field: 'name' | 'description') => {
     setInitialEditField(field);
@@ -218,6 +226,7 @@ export default function ProjectWorkspace() {
             <span className="line-clamp-2 min-w-0 [overflow-wrap:anywhere] md:line-clamp-1">
               {project.name}
             </span>
+            <span className="sr-only">, {localize('com_ui_project_edit_name')}</span>
           </Button>
         </h1>
       </div>
@@ -231,6 +240,7 @@ export default function ProjectWorkspace() {
         <span className="line-clamp-3 min-w-0 [overflow-wrap:anywhere]">
           {project.description || localize('com_ui_add_description')}
         </span>
+        <span className="sr-only">, {localize('com_ui_project_edit_description')}</span>
       </Button>
     </div>
   );
@@ -452,36 +462,38 @@ export default function ProjectWorkspace() {
                *  this column, so the details group reaches the panel edge and its horizontal
                *  separator overlaps the vertical one. Dragging that overlap resizes both
                *  groups at once, which is what moves all three panels together. */}
-              <ResizablePanelGroup
-                orientation="vertical"
-                id="project-details-panels"
-                defaultLayout={detailsLayout.defaultLayout}
-                onLayoutChanged={detailsLayout.onLayoutChanged}
-                resizeTargetMinimumSize={RESIZE_TARGET_SIZE}
-                className="min-h-0 flex-1"
-              >
-                <ResizablePanel
-                  id="project-instructions"
-                  defaultSize="55"
-                  minSize={DETAILS_PANEL_MIN_SIZE}
-                  className="min-h-0"
+              <div ref={detailsGroupRef} className="min-h-0 flex-1">
+                <ResizablePanelGroup
+                  orientation="vertical"
+                  id="project-details-panels"
+                  defaultLayout={detailsLayout.defaultLayout}
+                  onLayoutChanged={detailsLayout.onLayoutChanged}
+                  resizeTargetMinimumSize={RESIZE_TARGET_SIZE}
+                  className="h-full"
                 >
-                  <div className="h-full pb-3 pr-3">{instructionsSection}</div>
-                </ResizablePanel>
-                {filesSection != null && (
-                  <>
-                    <ResizableHandleAlt withHandle />
-                    <ResizablePanel
-                      id="project-files"
-                      defaultSize="45"
-                      minSize={DETAILS_PANEL_MIN_SIZE}
-                      className="min-h-0"
-                    >
-                      <div className="h-full pr-3 pt-3">{filesSection}</div>
-                    </ResizablePanel>
-                  </>
-                )}
-              </ResizablePanelGroup>
+                  <ResizablePanel
+                    id="project-instructions"
+                    defaultSize="55"
+                    minSize={detailsPanelMinSize}
+                    className="min-h-0"
+                  >
+                    <div className="h-full pb-3 pr-3">{instructionsSection}</div>
+                  </ResizablePanel>
+                  {filesSection != null && (
+                    <>
+                      <ResizableHandleAlt withHandle />
+                      <ResizablePanel
+                        id="project-files"
+                        defaultSize="45"
+                        minSize={detailsPanelMinSize}
+                        className="min-h-0"
+                      >
+                        <div className="h-full pr-3 pt-3">{filesSection}</div>
+                      </ResizablePanel>
+                    </>
+                  )}
+                </ResizablePanelGroup>
+              </div>
             </div>
           </ResizablePanel>
           <ResizableHandleAlt withHandle />

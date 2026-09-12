@@ -56,6 +56,59 @@ const app = express();
 app.use(express.json());
 app.use('/api/projects', projectsRouter);
 
+const routeCases = [
+  { name: 'list projects', method: 'get', path: '/api/projects', resolvesConfig: false },
+  { name: 'create projects', method: 'post', path: '/api/projects', resolvesConfig: true },
+  {
+    name: 'assign conversations',
+    method: 'put',
+    path: '/api/projects/conversations/conversation-id',
+    resolvesConfig: false,
+  },
+  {
+    name: 'list available project files',
+    method: 'get',
+    path: '/api/projects/project-id/files/available',
+    resolvesConfig: false,
+  },
+  {
+    name: 'list project files',
+    method: 'get',
+    path: '/api/projects/project-id/files',
+    resolvesConfig: false,
+  },
+  {
+    name: 'add project files',
+    method: 'post',
+    path: '/api/projects/project-id/files',
+    resolvesConfig: true,
+  },
+  {
+    name: 'remove project files',
+    method: 'delete',
+    path: '/api/projects/project-id/files/file-id',
+    resolvesConfig: false,
+  },
+  {
+    name: 'get projects',
+    method: 'get',
+    path: '/api/projects/project-id',
+    resolvesConfig: false,
+  },
+  {
+    name: 'update projects',
+    method: 'patch',
+    path: '/api/projects/project-id',
+    resolvesConfig: true,
+  },
+  {
+    name: 'delete projects',
+    method: 'delete',
+    path: '/api/projects/project-id',
+    resolvesConfig: false,
+  },
+];
+
 describe('Projects route middleware', () => {
   beforeEach(() => {
     mockRequireJwtAuth.mockClear();
@@ -63,26 +116,36 @@ describe('Projects route middleware', () => {
     mockHandler.mockClear();
   });
 
-  it('resolves the authenticated user config before project mutation handlers', async () => {
-    const response = await request(app)
-      .post('/api/projects')
-      .send({ name: 'Configured project', instructions: 'Use the configured limits.' });
+  it.each(routeCases)(
+    '$name resolves config only when required',
+    async ({ method, path, resolvesConfig }) => {
+      const response = await request(app)[method](path);
 
-    expect(response.status).toBe(200);
-    expect(response.body.config).toEqual(resolvedConfig);
-    expect(mockRequireJwtAuth).toHaveBeenCalledTimes(1);
-    expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
-    expect(mockHandler).toHaveBeenCalledTimes(1);
-    expect(mockHandler.mock.calls[0][0].config).toEqual(resolvedConfig);
-    expect(mockRequireJwtAuth.mock.invocationCallOrder[0]).toBeLessThan(
-      mockConfigMiddleware.mock.invocationCallOrder[0],
-    );
-    expect(mockConfigMiddleware.mock.calls[0][0].user).toEqual({
-      id: 'project-user',
-      tenantId: 'tenant-a',
-    });
-    expect(mockConfigMiddleware.mock.invocationCallOrder[0]).toBeLessThan(
-      mockHandler.mock.invocationCallOrder[0],
-    );
-  });
+      expect(response.status).toBe(200);
+      expect(mockRequireJwtAuth).toHaveBeenCalledTimes(1);
+      expect(mockHandler).toHaveBeenCalledTimes(1);
+      expect(mockHandler.mock.calls[0][0].config).toEqual(
+        resolvesConfig ? resolvedConfig : undefined,
+      );
+
+      if (resolvesConfig) {
+        expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
+        expect(mockConfigMiddleware.mock.calls[0][0].user).toEqual({
+          id: 'project-user',
+          tenantId: 'tenant-a',
+        });
+        expect(mockRequireJwtAuth.mock.invocationCallOrder[0]).toBeLessThan(
+          mockConfigMiddleware.mock.invocationCallOrder[0],
+        );
+        expect(mockConfigMiddleware.mock.invocationCallOrder[0]).toBeLessThan(
+          mockHandler.mock.invocationCallOrder[0],
+        );
+      } else {
+        expect(mockConfigMiddleware).not.toHaveBeenCalled();
+        expect(mockRequireJwtAuth.mock.invocationCallOrder[0]).toBeLessThan(
+          mockHandler.mock.invocationCallOrder[0],
+        );
+      }
+    },
+  );
 });

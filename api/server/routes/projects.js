@@ -17,17 +17,15 @@ const handlers = createProjectHandlers({
   getAvailableProjectFiles: db.getAvailableProjectFiles,
 });
 router.use(requireJwtAuth);
-router.use(configMiddleware);
-
 router.get('/', handlers.listProjects);
-router.post('/', handlers.createProject);
+router.post('/', configMiddleware, handlers.createProject);
 router.put('/conversations/:conversationId', handlers.assignConversationToProject);
 router.get('/:projectId/files/available', handlers.listAvailableProjectFiles);
 router.get('/:projectId/files', handlers.listProjectFiles);
-router.post('/:projectId/files', handlers.addProjectFile);
+router.post('/:projectId/files', configMiddleware, handlers.addProjectFile);
 router.delete('/:projectId/files/:fileId', handlers.removeProjectFile);
 router.get('/:projectId', handlers.getProject);
-router.patch('/:projectId', handlers.updateProject);
+router.patch('/:projectId', configMiddleware, handlers.updateProject);
 router.delete('/:projectId', handlers.deleteProject);
 
 module.exports = router;

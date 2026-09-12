@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { MOCK_ENDPOINTS, mockReply, selectMockEndpoint, sendMessage } from './helpers';
+import {
+  MOCK_ENDPOINTS,
+  escapeRegExp,
+  mockReply,
+  selectMockEndpoint,
+  sendMessage,
+} from './helpers';
 
 /**
  * Creates a project from the all-projects page and returns its id.
@@ -14,7 +20,7 @@ async function createProject(page: Page, name: string): Promise<string> {
   await dialog.getByRole('textbox', { name: 'Project name' }).fill(name);
   await dialog.getByRole('button', { name: 'Create project' }).click();
 
-  await expect(page.getByRole('heading', { name })).toBeVisible();
+  await expect(page.getByRole('heading', { name: new RegExp(escapeRegExp(name)) })).toBeVisible();
   const projectId = new URL(page.url()).pathname.split('/projects/')[1];
   expect(projectId).toBeTruthy();
   return projectId;
@@ -94,7 +100,10 @@ test.describe('chat projects', () => {
     await page.setViewportSize({ width: 320, height: 844 });
     /** The workspace edits metadata in place: its title is the control that opens the
      *  editor, and the options menu carries only destructive actions. */
-    await page.getByRole('main').getByRole('button', { name: initialName, exact: true }).click();
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: new RegExp(escapeRegExp(initialName)) })
+      .click();
 
     const nameInput = page.getByRole('textbox', { name: 'Project name', exact: true });
     await expect(nameInput).toBeFocused();
@@ -104,10 +113,14 @@ test.describe('chat projects', () => {
     await nameInput.fill(longName);
     await page.getByRole('textbox', { name: /^Description/ }).fill(longDescription);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('heading', { name: longName, exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: new RegExp(escapeRegExp(longName)) }),
+    ).toBeVisible();
     await page.reload();
 
-    const title = page.getByRole('heading', { name: longName, exact: true }).getByText(longName);
+    const title = page
+      .getByRole('heading', { name: new RegExp(escapeRegExp(longName)) })
+      .getByText(longName);
     await expect(title).toBeVisible();
     const mobileTitle = await title.evaluate((element) => ({
       height: element.getBoundingClientRect().height,
@@ -118,11 +131,13 @@ test.describe('chat projects', () => {
       320,
     );
 
-    await page.getByRole('button', { name: longDescription, exact: true }).click();
+    await page.getByRole('button', { name: new RegExp(escapeRegExp(longDescription)) }).click();
     await expect(page.getByRole('textbox', { name: /^Description/ })).toHaveValue(longDescription);
     await page.getByRole('textbox', { name: 'Project name', exact: true }).fill('Unsaved change');
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('heading', { name: longName, exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: new RegExp(escapeRegExp(longName)) }),
+    ).toBeVisible();
 
     await page.setViewportSize({ width: 1280, height: 900 });
     const desktopTitle = await title.evaluate((element) => ({
