@@ -5,7 +5,6 @@ import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import type { CodeWorkspaceSelection, TConversation } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { CodeWorkspaceResult, TranslationKeys } from '~/hooks';
-import { useWorkspacePreferences } from '~/hooks/Agents/workspacePreferences';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -29,7 +28,6 @@ export default function CodeWorkspaceMenu({
   disabled: boolean;
 }) {
   const localize = useLocalize();
-  const preferences = useWorkspacePreferences(conversation?.agent_id);
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
 
@@ -56,7 +54,7 @@ export default function CodeWorkspaceMenu({
 
   const environmentIds = new Set(workspace.environments.map(({ environment }) => environment.id));
   const selectWorkspace = (selection: CodeWorkspaceSelection) => {
-    preferences.remember(selection.environmentId, selection.workspaceId);
+    workspace.rememberSelection(selection);
     setConversation((current) => {
       if (current == null) return current;
       const retained = (current.codeWorkspaces ?? []).filter(

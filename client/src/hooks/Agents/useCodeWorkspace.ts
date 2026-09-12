@@ -50,6 +50,7 @@ export interface CodeWorkspaceResult {
   resolveSubmission: (
     selections?: CodeWorkspaceSelection[],
   ) => { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined;
+  rememberSelection: (selection: CodeWorkspaceSelection) => void;
 }
 
 function aggregateState(
@@ -121,6 +122,7 @@ export default function useCodeWorkspace(
   const workspaceMetadata = useMemo(() => {
     const unique = new Map<string, TPublicCodeEnvironment>();
     const defaults = new Map<string, Set<string>>();
+    const preferenceAgentIds = new Map<string, Set<string>>();
     let complete = true;
     for (const agent of reachable.agents) {
       if (agent.stateful_code_sessions !== true || !agent.tools?.includes(Tools.execute_code)) {
@@ -136,12 +138,39 @@ export default function useCodeWorkspace(
         defaults.set(environment.id, choices);
       }
     }
+
+    for (const [rootAgent, rootAgentId] of [
+      [primaryAgent, conversation?.agent_id],
+      [addedAgent, addedConversation?.agent_id],
+    ] as const) {
+      if (!rootAgent || !rootAgentId) continue;
+      const rootReachable = collectReachableAgents([rootAgent], agentsMap, [rootAgentId]);
+      for (const agent of rootReachable.agents) {
+        if (agent.stateful_code_sessions !== true || !agent.tools?.includes(Tools.execute_code)) {
+          continue;
+        }
+        const environment = findExecutionEnvironment(agent, statefulCodeSessions?.environments);
+        if (environment?.type !== 'attached') continue;
+        const owners = preferenceAgentIds.get(environment.id) ?? new Set<string>();
+        owners.add(rootAgentId);
+        preferenceAgentIds.set(environment.id, owners);
+      }
+    }
     return {
       complete,
       defaults,
+      preferenceAgentIds,
       environments: [...unique.values()].sort((a, b) => a.id.localeCompare(b.id)),
     };
-  }, [reachable.agents, statefulCodeSessions?.environments]);
+  }, [
+    addedAgent,
+    addedConversation?.agent_id,
+    agentsMap,
+    conversation?.agent_id,
+    primaryAgent,
+    reachable.agents,
+    statefulCodeSessions?.environments,
+  ]);
   const isAgentsConversation =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents;
   const expectedRoot = conversation?.agent_id != null || addedConversation?.agent_id != null;
@@ -178,7 +207,11 @@ export default function useCodeWorkspace(
       const defaults = workspaceMetadata.defaults.get(environment.id) ?? new Set<string>();
       let preferred: string | undefined;
       if (defaults.size === 1) preferred = [...defaults][0];
-      else if (defaults.size === 0) preferred = preferences.get(environment.id);
+      else if (defaults.size === 0) {
+        preferred = [...(workspaceMetadata.preferenceAgentIds.get(environment.id) ?? [])]
+          .map((agentId) => preferences.get(environment.id, agentId))
+          .find((workspaceId) => workspaces.some(({ id }) => id === workspaceId));
+      }
       if (preferred && (defaults.size > 0 || workspaces.some(({ id }) => id === preferred))) {
         stored = { environmentId: environment.id, workspaceId: preferred };
       }
@@ -254,6 +287,14 @@ export default function useCodeWorkspace(
     [required, resolveSelections],
   );
   const canSubmit = resolveSubmission(storedSelections) != null;
+  const rememberSelection = useCallback(
+    (selection: CodeWorkspaceSelection) => {
+      preferences.remember(selection.environmentId, selection.workspaceId, [
+        ...(workspaceMetadata.preferenceAgentIds.get(selection.environmentId) ?? []),
+      ]);
+    },
+    [preferences, workspaceMetadata.preferenceAgentIds],
+  );
   return {
     required,
     state,
@@ -262,5 +303,6 @@ export default function useCodeWorkspace(
     selections,
     resolveSelections,
     resolveSubmission,
+    rememberSelection,
   };
 }

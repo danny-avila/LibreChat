@@ -39,3 +39,14 @@ test('storage errors never prevent a manual choice', () => {
   });
   expect(() => act(() => result.current.remember('machine-a', 'project-a'))).not.toThrow();
 });
+
+test('records a shared selection for every root agent that reaches the machine', () => {
+  const first = renderHook(() => useWorkspacePreferences(), { wrapper: Provider });
+  act(() => first.result.current.remember('machine-a', 'project-a', ['agent-a', 'agent-b']));
+  first.unmount();
+
+  const { result } = renderHook(() => useWorkspacePreferences(), { wrapper: Provider });
+  expect(result.current.get('machine-a', 'agent-a')).toBe('project-a');
+  expect(result.current.get('machine-a', 'agent-b')).toBe('project-a');
+  expect(result.current.get('machine-a', 'agent-c')).toBeUndefined();
+});

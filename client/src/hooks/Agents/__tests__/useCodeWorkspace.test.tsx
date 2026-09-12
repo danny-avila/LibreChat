@@ -9,8 +9,9 @@ const mockStatus = jest.fn();
 const mockAgentsMap = jest.fn();
 const mockAccess = jest.fn();
 const mockPreference = jest.fn();
+const mockRememberPreference = jest.fn();
 jest.mock('../workspacePreferences', () => ({
-  useWorkspacePreferences: () => ({ get: mockPreference }),
+  useWorkspacePreferences: () => ({ get: mockPreference, remember: mockRememberPreference }),
 }));
 jest.mock('~/hooks/Roles/useHasAccess', () => () => mockAccess());
 
@@ -37,6 +38,7 @@ const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConver
 describe('useCodeWorkspace', () => {
   beforeEach(() => {
     mockPreference.mockReset();
+    mockRememberPreference.mockReset();
     mockAccess.mockReturnValue(true);
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
@@ -132,6 +134,66 @@ describe('useCodeWorkspace', () => {
       useCodeWorkspace({ ...conversation(saved), conversationId: 'new' }),
     );
     expect(existing.result.current.selections).toEqual(saved);
+  });
+
+  it('reads and records preferences for the root that reaches each environment', () => {
+    const primaryAgent = {
+      id: 'agent_primary',
+      stateful_code_sessions: true,
+      code_environment_id: 'primary-vm',
+      tools: [Tools.execute_code],
+    };
+    const addedAgent = {
+      id: 'agent_added',
+      stateful_code_sessions: true,
+      code_environment_id: 'added-vm',
+      tools: [Tools.execute_code],
+    };
+    mockAgentPermissions.mockImplementation((agentId) => ({
+      tools: [Tools.execute_code],
+      agent: agentId === 'agent_added' ? addedAgent : primaryAgent,
+    }));
+    mockAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
+        statefulCodeSessions: {
+          environments: [
+            { id: 'primary-vm', name: 'Primary VM', type: 'attached' },
+            { id: 'added-vm', name: 'Added VM', type: 'attached' },
+          ],
+        },
+      },
+    });
+    mockStatus.mockReturnValue(
+      ['added-vm', 'primary-vm'].map((environmentId) => ({
+        data: {
+          environmentId,
+          status: 'ready',
+          workspaces: [{ id: 'project-a' }, { id: 'project-b' }],
+        },
+        isLoading: false,
+        isError: false,
+      })),
+    );
+    mockPreference.mockImplementation((environmentId, agentId) =>
+      environmentId === 'added-vm' && agentId === 'agent_added' ? 'project-b' : 'project-a',
+    );
+
+    const addedConversation = {
+      ...conversation(),
+      conversationId: 'new',
+      agent_id: 'agent_added',
+    };
+    const { result } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), conversationId: 'new' }, addedConversation),
+    );
+
+    expect(result.current.selections).toEqual([
+      { environmentId: 'added-vm', workspaceId: 'project-b' },
+      { environmentId: 'primary-vm', workspaceId: 'project-a' },
+    ]);
+    result.current.rememberSelection({ environmentId: 'added-vm', workspaceId: 'project-a' });
+    expect(mockRememberPreference).toHaveBeenCalledWith('added-vm', 'project-a', ['agent_added']);
   });
 
   it('ignores stale remembered choices but never silently replaces a missing agent default', () => {

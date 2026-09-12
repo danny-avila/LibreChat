@@ -3,9 +3,6 @@ import { render, screen } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { CodeWorkspaceResult } from '~/hooks';
 import CodeWorkspaceMenu from '../CodeWorkspaceMenu';
-jest.mock('~/hooks/Agents/workspacePreferences', () => ({
-  useWorkspacePreferences: () => ({ remember: jest.fn() }),
-}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -55,6 +52,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
     selections: [selected],
     resolveSelections: () => [selected],
     resolveSubmission: () => ({ codeWorkspaces: [selected] }),
+    rememberSelection: jest.fn(),
     ...overrides,
   };
 }
@@ -89,6 +87,7 @@ describe('CodeWorkspaceMenu', () => {
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'removed-project' }],
     };
     const setConversation = jest.fn();
+    const rememberSelection = jest.fn();
     render(
       <CodeWorkspaceMenu
         conversation={savedConversation}
@@ -104,6 +103,7 @@ describe('CodeWorkspaceMenu', () => {
               selected: undefined,
             },
           ],
+          rememberSelection,
         })}
         disabled={false}
       />,
@@ -114,6 +114,10 @@ describe('CodeWorkspaceMenu', () => {
     await userEvent.click(screen.getByTestId('code-workspace'));
     await userEvent.click(await screen.findByText('Project A'));
 
+    expect(rememberSelection).toHaveBeenCalledWith({
+      environmentId: 'personal-vm',
+      workspaceId: 'project-a',
+    });
     const update = setConversation.mock.calls[0][0];
     expect(update(savedConversation)).toEqual({
       ...savedConversation,
