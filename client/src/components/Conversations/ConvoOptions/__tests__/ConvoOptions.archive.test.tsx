@@ -10,6 +10,7 @@ const mockNavigate = jest.fn();
 const mockNewConversation = jest.fn();
 const mockRetainView = jest.fn();
 const mockSetIsPopoverActive = jest.fn();
+const mockAnnouncePolite = jest.fn();
 
 jest.mock('@ariakit/react', () => ({
   MenuButton: jest
@@ -76,6 +77,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ index: 0 }),
+  useLiveAnnouncer: () => ({ announcePolite: mockAnnouncePolite }),
 }));
 
 jest.mock('react-router-dom', () => {
@@ -122,6 +124,7 @@ describe('ConvoOptions archive action', () => {
     mockNewConversation.mockReset();
     mockRetainView.mockReset();
     mockSetIsPopoverActive.mockReset();
+    mockAnnouncePolite.mockReset();
   });
 
   afterEach(() => {
@@ -144,6 +147,12 @@ describe('ConvoOptions archive action', () => {
     act(() => callbacks.onSuccess());
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockNewConversation).not.toHaveBeenCalled();
+    /* The restored row leaves the archived list, unmounting this menu, so the message has
+       to reach the app-level live region rather than one inside the row. */
+    expect(mockAnnouncePolite).toHaveBeenCalledWith({
+      message: 'com_ui_convo_unarchived',
+      isStatus: true,
+    });
   });
 
   it('archives an unarchived conversation and leaves the one it just hid', () => {

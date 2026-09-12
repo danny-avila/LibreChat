@@ -33,8 +33,8 @@ import {
   usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { NotificationSeverity } from '~/common';
-import { useChatContext } from '~/Providers';
 import ProjectButton from './ProjectButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
@@ -84,6 +84,9 @@ function ConvoOptions({
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
+  /* Archiving or restoring removes the row from the list that held it, unmounting this
+     menu: the announcement has to come from a live region that outlives the row. */
+  const { announcePolite } = useLiveAnnouncer();
 
   const navigate = useNavigate();
   const { conversationId: currentConvoId } = useParams();
@@ -97,7 +100,6 @@ function ConvoOptions({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
-  const [announcement, setAnnouncement] = useState('');
 
   const canCreateSharedLinks = useHasAccess({
     permissionType: PermissionTypes.SHARED_LINKS,
@@ -224,12 +226,10 @@ function ConvoOptions({
         { conversationId: convoId, isArchived: !isArchived },
         {
           onSuccess: () => {
-            setAnnouncement(
-              localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
-            );
-            setTimeout(() => {
-              setAnnouncement('');
-            }, 10000);
+            announcePolite({
+              message: localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
+              isStatus: true,
+            });
             if (!isArchived && (currentConvoId === convoId || currentConvoId === 'new')) {
               newConversation();
               navigate('/c/new', { replace: true });
@@ -256,6 +256,7 @@ function ConvoOptions({
       newConversation,
       retainView,
       setIsPopoverActive,
+      announcePolite,
       showToast,
       localize,
     ],
@@ -427,9 +428,6 @@ function ConvoOptions({
 
   return (
     <>
-      <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {announcement}
-      </span>
       <DropdownPopup
         /**
          * Must portal: the row sits inside the nav's `overflow-hidden` and a
