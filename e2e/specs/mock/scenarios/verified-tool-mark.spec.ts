@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { openAgentBuilder } from '../agents.helpers';
-import { fetchJson, getAccessToken } from '../helpers';
+import { NEW_CHAT_PATH, fetchJson, getAccessToken } from '../helpers';
 
 const MCP_SERVER_NAME = 'e2e-memory';
 const MCP_TOOL_ID = `remember_fact_mcp_${MCP_SERVER_NAME}`;
@@ -150,6 +150,9 @@ test.describe('native tool verified mark', () => {
     page,
   }) => {
     test.setTimeout(120000);
+    /** The token is minted from the page session, so the app has to be loaded
+     *  before the request has an origin to resolve against. */
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const token = await getAccessToken(page);
     await expect
       .poll(

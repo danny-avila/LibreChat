@@ -91,10 +91,21 @@ export async function openAgentBuilder(page: Page) {
     .then(() => true)
     .catch(() => false);
   if (!builderVisible) {
+    /** The rail collapses below the desktop breakpoint, where the same panel is
+     *  reached through the header's Control Panel toggle instead. */
     const agentBuilderButton = page.getByRole('button', { name: 'Agent Builder' });
-    await expect(agentBuilderButton).toBeVisible();
-    if ((await agentBuilderButton.getAttribute('aria-pressed')) !== 'true') {
-      await agentBuilderButton.click();
+    const railVisible = await agentBuilderButton
+      .waitFor({ state: 'visible', timeout: 1000 })
+      .then(() => true)
+      .catch(() => false);
+    if (railVisible) {
+      if ((await agentBuilderButton.getAttribute('aria-pressed')) !== 'true') {
+        await agentBuilderButton.click();
+      }
+    } else {
+      const controlPanelButton = page.getByRole('button', { name: 'Control Panel' });
+      await expect(controlPanelButton).toBeVisible();
+      await controlPanelButton.click();
     }
   }
   await expect(form).toBeVisible();
