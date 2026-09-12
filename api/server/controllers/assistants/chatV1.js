@@ -6,6 +6,7 @@ const {
   countTokens,
   checkBalance,
   getBalanceConfig,
+  getSafeErrorText,
   getModelMaxTokens,
   getTransactionsConfig,
   ATTACHMENT_ONLY_TEXT,
@@ -164,7 +165,7 @@ const chatV1 = async (req, res) => {
     } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
       return sendResponse(req, res, messageData, error.message);
     } else {
-      logger.error('[/assistants/chat/]', error);
+      logger.error(`[/assistants/chat/] ${getSafeErrorText(error)}`);
     }
 
     if (!openai || !thread_id || !run_id) {
