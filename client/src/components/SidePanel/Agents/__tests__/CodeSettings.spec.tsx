@@ -102,7 +102,7 @@ test.each([
   mockWorkspaceStatusQueries.mockReturnValue([query]);
   render(<IdentityForm savedWorkspace="project-a" />);
 
-  expect(screen.getByRole('status')).toHaveTextContent(expectedLabel);
+  expect(screen.getByText(expectedLabel, { selector: 'p[role="status"]' })).toBeInTheDocument();
   expect(screen.getByTestId('workspace-default')).toHaveTextContent('project-a');
   expect(screen.queryByText(/com_ui_code_workspace_missing/)).not.toBeInTheDocument();
 });
