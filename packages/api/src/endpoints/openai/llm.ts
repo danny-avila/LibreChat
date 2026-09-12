@@ -11,7 +11,13 @@ import type { AzureOpenAIInput } from '@librechat/agents/langchain/openai';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
-import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
+import {
+  sanitizeModelName,
+  constructAzureURL,
+  isCanonicalAzureURL,
+  getAzureDeploymentName,
+  constructAzureChatBasePath,
+} from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -138,14 +144,24 @@ const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
  * Decided here rather than in the agents SDK at invocation time: the max-tokens
  * field below is shaped from `useResponsesApi`, so a later switch would send
  * `max_completion_tokens` to an endpoint expecting `max_output_tokens`. Config
- * time is also the only place that knows the model before Azure replaces it
- * with a deployment name.
+ * time is also where Azure decides whether the model keeps its identity, with
+ * the deployment as the wire model, or becomes the deployment name outright.
  * @see https://developers.openai.com/api/docs/guides/latest-model
  */
 const responsesApiPreferredPattern = /^gpt-6-astra(?:-|$)/i;
 
 function prefersResponsesApi(model?: string): boolean {
   return typeof model === 'string' && responsesApiPreferredPattern.test(model);
+}
+
+function isCanonicalAzureBaseURL(baseURL?: string | null, azure?: false | t.AzureOptions): boolean {
+  if (!azure) {
+    return false;
+  }
+  if (!baseURL) {
+    return true;
+  }
+  return isCanonicalAzureURL(constructAzureURL({ baseURL, azureOptions: azure }));
 }
 
 function requiresResponsesApiForReasoning({
@@ -874,10 +890,17 @@ export function getOpenAILLMConfig({
    */
   const responsesApiExplicitlyOptedOut =
     dropParams != null && dropParams.includes('useResponsesApi');
-  if (
+  const firstPartyOpenAI =
+    !useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL);
+  const firstPartyAzure =
     !useOpenRouter &&
-    endpoint === EModelEndpoint.openAI &&
-    isCanonicalOpenAIBaseURL(baseURL) &&
+    endpoint === EModelEndpoint.azureOpenAI &&
+    isCanonicalAzureBaseURL(baseURL, azure);
+  const firstPartyEndpoint = firstPartyOpenAI || firstPartyAzure;
+  /** Astra keeps its model identity on Azure, where the deployment becomes the wire model. */
+  const firstPartyAstra = firstPartyEndpoint && prefersResponsesApi(llmConfig.model);
+  if (
+    firstPartyOpenAI &&
     reasoningFormat !== ReasoningParameterFormat.disabled &&
     llmConfig.useResponsesApi == null &&
     !responsesApiOptedOut &&
@@ -889,16 +912,9 @@ export function getOpenAILLMConfig({
   /**
    * Route GPT-6 Astra to the Responses API for every turn. Unlike the GPT-5.6
    * rule above this does not depend on reasoning params: Astra serves tool calls
-   * only from Responses, and OpenAI recommends it generally.
+   * only from Responses on both OpenAI and Azure OpenAI.
    */
-  if (
-    !useOpenRouter &&
-    endpoint === EModelEndpoint.openAI &&
-    isCanonicalOpenAIBaseURL(baseURL) &&
-    llmConfig.useResponsesApi == null &&
-    !responsesApiExplicitlyOptedOut &&
-    prefersResponsesApi(llmConfig.model)
-  ) {
+  if (firstPartyAstra && llmConfig.useResponsesApi == null && !responsesApiExplicitlyOptedOut) {
     llmConfig.useResponsesApi = true;
   }
 
@@ -908,13 +924,8 @@ export function getOpenAILLMConfig({
    * above uses, so the decision lives in one place: OpenRouter and custom
    * gateways route through endpoints whose contract is not OpenAI's, and only
    * this layer can tell them apart.
-   *
-   * Scoped to the canonical OpenAI endpoint. Astra is not documented as
-   * available on Azure OpenAI, and Azure's first-party hosts do not satisfy the
-   * OpenAI-host check, so declaring it there would claim a surface this cannot
-   * verify.
    */
-  if (!useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) {
+  if (firstPartyEndpoint) {
     llmConfig.firstPartyEndpoint = true;
   }
 
@@ -1020,10 +1031,13 @@ export function getOpenAILLMConfig({
   }
 
   const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
+  const model = llmConfig.model;
   const updatedAzure = { ...azure };
   updatedAzure.azureOpenAIApiDeploymentName = useModelName
     ? sanitizeModelName(llmConfig.model || '')
-    : azure.azureOpenAIApiDeploymentName;
+    : azure.azureOpenAIApiDeploymentName ||
+      getAzureDeploymentName(baseURL, azure) ||
+      (firstPartyAstra || llmConfig.useResponsesApi ? model : undefined);
 
   if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
     llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
@@ -1033,13 +1047,7 @@ export function getOpenAILLMConfig({
     if (!baseURL) {
       return;
     }
-    const azureURL = constructAzureURL({
-      baseURL,
-      azureOptions: updatedAzure,
-    });
-    updatedAzure.azureOpenAIBasePath = azureURL.split(
-      `/${updatedAzure.azureOpenAIApiDeploymentName}`,
-    )[0];
+    updatedAzure.azureOpenAIBasePath = constructAzureChatBasePath(baseURL, updatedAzure);
   };
 
   constructAzureOpenAIBasePath();
@@ -1060,6 +1068,15 @@ export function getOpenAILLMConfig({
 
   constructAzureResponsesApi();
 
-  llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
+  /** Keep Astra's identity for SDK constraints; only the wire model is a deployment alias. */
+  if (firstPartyAstra) {
+    llmConfig.model = model;
+    llmConfig.modelKwargs = {
+      ...llmConfig.modelKwargs,
+      model: updatedAzure.azureOpenAIApiDeploymentName,
+    };
+  } else {
+    llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
+  }
   return { llmConfig, tools, azure: updatedAzure };
 }

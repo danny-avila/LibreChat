@@ -11,6 +11,7 @@ import {
   extractEnvVariable,
   providerEndpointMap,
   normalizeEndpointName,
+  mapModelToAzureConfig,
 } from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
@@ -97,10 +98,10 @@ import {
 } from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
+import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
-import { resolveConfigHeaders, resolveModelHeaders } from '~/utils/headers';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -581,6 +582,38 @@ function mergeParameters(
   return merged;
 }
 
+/** `model_parameters` is the agent's resolved `llmConfig`, whose kwargs the schema type omits. */
+function agentModelKwargs(
+  modelParameters: AgentModelParameters | undefined,
+): Record<string, unknown> | undefined {
+  if (modelParameters == null || !('modelKwargs' in modelParameters)) {
+    return undefined;
+  }
+  return isPlainObject(modelParameters.modelKwargs) ? modelParameters.modelKwargs : undefined;
+}
+
+/**
+ * `getOpenAILLMConfig` carries an Azure Astra deployment alias in
+ * `modelKwargs.model`, which langchain spreads after `model`. The SDK's
+ * same-provider summarizer copies the agent's client options and overrides only
+ * `model`, so a summarizer on another model would still reach the agent's
+ * deployment. Hand it the agent's kwargs without the alias.
+ */
+function summarizationModelKwargs(
+  agentKwargs: Record<string, unknown> | undefined,
+  agentModel: string | undefined,
+  summarizationModel: string | undefined,
+): Record<string, unknown> | undefined {
+  if (agentKwargs == null || !('model' in agentKwargs)) {
+    return undefined;
+  }
+  if (!isNonEmptyString(summarizationModel) || summarizationModel === agentModel) {
+    return undefined;
+  }
+  const { model: _alias, ...kwargs } = agentKwargs;
+  return kwargs;
+}
+
 /**
  * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
  * assigned to `configuration`). Index signature covers fields that the
@@ -689,6 +722,74 @@ function resolveBuiltInClientOverrides(
     ...shaping
   } = llmConfig;
   return Object.keys(shaping).length > 0 ? shaping : undefined;
+}
+
+/** Resolve the summary model's deployment and transport before the SDK inherits agent options. */
+function resolveAzureSummarization(
+  model: string,
+  appConfig: AppConfig | undefined,
+  parameters: SummarizationConfig['parameters'],
+  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
+  const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!azureConfig) {
+    return undefined;
+  }
+  const { azureOptions, baseURL, headers, serverless } = mapModelToAzureConfig({
+    modelName: model,
+    modelGroupMap: azureConfig.modelGroupMap,
+    groupMap: azureConfig.groupMap,
+  });
+  const groupName = azureConfig.modelGroupMap[model]?.group;
+  const group = groupName ? azureConfig.groupMap[groupName] : undefined;
+  const resolvedBaseURL = baseURL ?? getBuiltInBaseURL(EModelEndpoint.azureOpenAI);
+  if (isUserProvided(resolvedBaseURL) || isUserProvided(azureOptions.azureOpenAIApiKey)) {
+    throw new Error(
+      'Azure summarization requires credentials and a base URL for its configured model.',
+    );
+  }
+  const resolvedHeaders = resolveModelHeaders({
+    headers: mergeHeaders(appConfig?.endpoints?.all?.headers, headers) ?? {},
+    user: createSafeUser(headerContext.user),
+    tenantId: headerContext.tenantId,
+    body: headerContext.requestBody,
+  });
+  const { llmConfig, configOptions } = getOpenAIConfig(
+    azureOptions.azureOpenAIApiKey,
+    {
+      azure: serverless ? undefined : azureOptions,
+      reverseProxyUrl: resolvedBaseURL,
+      proxy: process.env.PROXY ?? undefined,
+      headers: serverless
+        ? { ...resolvedHeaders, 'api-key': azureOptions.azureOpenAIApiKey }
+        : resolvedHeaders,
+      defaultQuery: serverless ? { 'api-version': azureOptions.azureOpenAIApiVersion } : undefined,
+      modelOptions: {
+        model,
+        reasoning_effort: summarizationReasoningEffort(parameters),
+        useResponsesApi:
+          typeof parameters?.useResponsesApi === 'boolean' ? parameters.useResponsesApi : undefined,
+      },
+      addParams: group?.addParams,
+      dropParams: group?.dropParams,
+    },
+    EModelEndpoint.azureOpenAI,
+  );
+  return {
+    provider: !serverless && !llmConfig.useResponsesApi ? Providers.AZURE : Providers.OPENAI,
+    clientOverrides: {
+      ...llmConfig,
+      apiKey: azureOptions.azureOpenAIApiKey,
+      useResponsesApi: llmConfig.useResponsesApi ?? false,
+      firstPartyEndpoint: llmConfig.firstPartyEndpoint ?? false,
+      reasoning: llmConfig.reasoning,
+      modelKwargs: {
+        ...llmConfig.modelKwargs,
+        model: llmConfig.modelKwargs?.model ?? llmConfig.model,
+      },
+      configuration: configOptions,
+    },
+  };
 }
 
 /**
@@ -872,6 +973,7 @@ function shapeSummarizationConfig(
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
   headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  agentKwargs?: Record<string, unknown>,
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
   /**
@@ -888,13 +990,25 @@ function shapeSummarizationConfig(
 
   const model = config?.model ?? fallbackModel;
 
-  const { provider, clientOverrides } = isSameEndpointAsAgent
-    ? { provider: fallbackProvider, clientOverrides: undefined }
-    : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
-        model,
-        parameters: config?.parameters,
-        agentProvider: fallbackProvider,
-      });
+  const targetsAzure =
+    rawProvider === EModelEndpoint.azureOpenAI ||
+    (agentEndpoint === EModelEndpoint.azureOpenAI && rawProvider === fallbackProvider);
+  const azureOverrides =
+    targetsAzure &&
+    isNonEmptyString(model) &&
+    config?.enabled !== false &&
+    (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel)
+      ? resolveAzureSummarization(model, appConfig, config?.parameters, headerContext)
+      : undefined;
+  const { provider, clientOverrides } =
+    azureOverrides ??
+    (isSameEndpointAsAgent
+      ? { provider: fallbackProvider, clientOverrides: undefined }
+      : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
+          model,
+          parameters: config?.parameters,
+          agentProvider: fallbackProvider,
+        }));
   const trigger =
     config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
@@ -918,13 +1032,22 @@ function shapeSummarizationConfig(
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+  /** Placed first so an explicit user `modelKwargs` still replaces the agent's wholesale. */
+  const modelKwargs =
+    provider === fallbackProvider
+      ? summarizationModelKwargs(agentKwargs, fallbackModel, model)
+      : undefined;
   /**
    * A scalar `reasoning_effort` — the only reasoning shape the yaml schema
    * accepts — is inert as a client option and leaves the summarizer running at
    * whatever effort the main agent resolved. Translate it the way the main
    * flow's `getOpenAIConfig` would for the summarization target.
    */
-  const parameters = resolveReasoningParams({ provider, model, parameters: mergedParameters });
+  const parameters = resolveReasoningParams({
+    provider,
+    model,
+    parameters: modelKwargs != null ? { modelKwargs, ...mergedParameters } : mergedParameters,
+  });
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
@@ -1769,6 +1892,7 @@ export async function createRun({
       appConfig,
       agent.endpoint ?? undefined,
       { user, tenantId, requestBody },
+      agentModelKwargs(agent.model_parameters),
     );
     const summarization = modelCallbacks?.length
       ? {

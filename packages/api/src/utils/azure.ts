@@ -1,5 +1,5 @@
-import { isEnabled } from './common';
 import type { AzureOptions, GenericClient } from '~/types';
+import { isEnabled } from './common';
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
@@ -123,4 +123,62 @@ export function constructAzureURL({
   }
 
   return finalURL;
+}
+
+export function isCanonicalAzureURL(baseURL: string): boolean {
+  try {
+    return /\.(?:openai|cognitiveservices|services\.ai)\.azure\.(?:com|us|cn)$/i.test(
+      new URL(baseURL).hostname,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isAzureRootPath(pathname: string): boolean {
+  return /^\/(?:openai\/?|v1\/?)?$/.test(pathname);
+}
+
+export function constructAzureChatBasePath(baseURL: string, azureOptions: AzureOptions): string {
+  const resolvedURL = constructAzureURL({ baseURL, azureOptions });
+  if (isCanonicalAzureURL(resolvedURL)) {
+    const url = new URL(resolvedURL);
+    if (isAzureRootPath(url.pathname)) {
+      return `${url.origin}/openai/deployments`;
+    }
+  }
+  return resolvedURL.split(`/${azureOptions.azureOpenAIApiDeploymentName}`)[0];
+}
+
+/** Azure permits the deployment to be supplied entirely by the configured base URL. */
+export function getAzureDeploymentName(
+  baseURL?: string | null,
+  azureOptions?: AzureOptions,
+): string | undefined {
+  if (!baseURL) {
+    return undefined;
+  }
+  try {
+    const url = new URL(constructAzureURL({ baseURL, azureOptions }));
+    const deployment = url.pathname.match(/\/deployments\/([^/]+)/)?.[1];
+    return deployment ? decodeURIComponent(deployment) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function constructAzureResponsesURL(
+  baseURL: string | null | undefined,
+  azureOptions: AzureOptions,
+): URL {
+  const resolvedURL = constructAzureURL({
+    baseURL: baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+    azureOptions,
+  });
+  const url = new URL(resolvedURL);
+  url.pathname = url.pathname.replace(/\/deployments(?:\/.*)?$/, '/v1');
+  if (isCanonicalAzureURL(resolvedURL) && isAzureRootPath(url.pathname)) {
+    url.pathname = '/openai/v1';
+  }
+  return url;
 }
