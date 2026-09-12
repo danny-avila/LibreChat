@@ -203,7 +203,7 @@ export default function useCodeWorkspace(
         : [];
     let stored = storedSelections?.find(({ environmentId }) => environmentId === environment.id);
     let conflictingDefaults = false;
-    if (storedSelections == null && isNewChat) {
+    if (stored == null && isNewChat) {
       const defaults = workspaceMetadata.defaults.get(environment.id) ?? new Set<string>();
       let preferred: string | undefined;
       if (defaults.size === 1) preferred = [...defaults][0];
@@ -222,7 +222,7 @@ export default function useCodeWorkspace(
       status: status?.data,
       workspaces,
       stored,
-      hasStoredSelections: storedSelections != null || stored != null || conflictingDefaults,
+      hasStoredSelections: stored != null || conflictingDefaults,
     });
     let state: CodeWorkspaceEnvironmentResult['state'] = 'choose';
     if (status == null || status.isLoading) state = 'loading';

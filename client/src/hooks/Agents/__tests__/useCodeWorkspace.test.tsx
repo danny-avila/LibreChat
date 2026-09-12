@@ -196,6 +196,73 @@ describe('useCodeWorkspace', () => {
     expect(mockRememberPreference).toHaveBeenCalledWith('added-vm', 'project-a', ['agent_added']);
   });
 
+  it('applies an added agent default after the primary workspace is already pinned', () => {
+    const primaryAgent = {
+      id: 'agent_primary',
+      stateful_code_sessions: true,
+      code_environment_id: 'primary-vm',
+      code_workspace_id: 'primary-project',
+      tools: [Tools.execute_code],
+    };
+    const addedAgent = {
+      id: 'agent_added',
+      stateful_code_sessions: true,
+      code_environment_id: 'added-vm',
+      code_workspace_id: 'added-project',
+      tools: [Tools.execute_code],
+    };
+    mockAgentPermissions.mockImplementation((agentId) => ({
+      tools: [Tools.execute_code],
+      agent: agentId === 'agent_added' ? addedAgent : primaryAgent,
+    }));
+    mockAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
+        statefulCodeSessions: {
+          environments: [
+            { id: 'primary-vm', type: 'attached' },
+            { id: 'added-vm', type: 'attached' },
+          ],
+        },
+      },
+    });
+    mockStatus.mockImplementation((environmentIds: string[]) =>
+      environmentIds.map((environmentId) => ({
+        data: {
+          environmentId,
+          status: 'ready',
+          workspaces: [
+            { id: environmentId === 'primary-vm' ? 'primary-project' : 'added-project' },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+      })),
+    );
+    const primarySelection = {
+      environmentId: 'primary-vm',
+      workspaceId: 'primary-project',
+    };
+    const addedConversation = {
+      ...conversation(),
+      conversationId: 'new',
+      agent_id: 'agent_added',
+    };
+
+    const { result } = renderHook(() =>
+      useCodeWorkspace(
+        { ...conversation([primarySelection]), conversationId: 'new' },
+        addedConversation,
+      ),
+    );
+
+    expect(result.current.selections).toEqual([
+      { environmentId: 'added-vm', workspaceId: 'added-project' },
+      primarySelection,
+    ]);
+    expect(result.current.canSubmit).toBe(true);
+  });
+
   it('ignores stale remembered choices but never silently replaces a missing agent default', () => {
     mockPreference.mockReturnValue('gone');
     const { result, rerender } = renderHook(() =>
