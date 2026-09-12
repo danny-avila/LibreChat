@@ -154,6 +154,32 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
   });
 
+  it.each([
+    { code_environment_mode: 'without_attached' },
+    { code_workspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }] },
+  ])('rejects code environment decision extensions it cannot persist: %o', async (extension) => {
+    const res = createMockRes();
+    const req = createMockReq(
+      { id: 'user-123' },
+      {
+        model: 'agent_test',
+        messages: [{ role: 'user', content: 'hi' }],
+        conversation_id: 'conversation-123',
+        ...extension,
+      },
+    );
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(getResponseMock(res, 'status')).toHaveBeenCalledWith(400);
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: expect.objectContaining({
+        message: expect.stringContaining('cannot enforce a persisted conversation decision'),
+      }),
+    });
+    expect(deps.initializeAgent).not.toHaveBeenCalled();
+  });
+
   it('adapts runtime tool loading to the request-backed public dependency', async () => {
     const req = createMockReq({ id: 'user-123', role: 'USER' });
     const res = createMockRes();

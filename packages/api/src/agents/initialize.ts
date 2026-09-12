@@ -642,7 +642,9 @@ export function optsOutOfAttachedCodeEnvironment(
   const configured = agent.code_environment_id
     ? environments?.find(({ id }) => id === agent.code_environment_id)
     : environments?.find(({ default: isDefault }) => isDefault === true);
-  return agent.stateful_code_sessions === true && configured?.type === 'attached';
+  return (
+    agent.stateful_code_sessions === true && (configured == null || configured.type === 'attached')
+  );
 }
 
 /**

@@ -2481,7 +2481,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
           },
         },
       },
-    } as NonNullable<typeof req.config>;
+    } as unknown as NonNullable<typeof req.config>;
 
     const result = await initializeAgent(
       {
@@ -2559,6 +2559,44 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.codeEnvAvailable).toBe(true);
     expect(result.toolDefinitions?.map(({ name }) => name)).toEqual(
       expect.arrayContaining(['bash_tool', 'read_file']),
+    );
+  });
+
+  it('honors without-attached when the configured environment is no longer visible', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    agent.stateful_code_sessions = true;
+    agent.code_environment_id = 'revoked-vm';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { environments: [] },
+        },
+      },
+    } as unknown as NonNullable<typeof req.config>;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'without_attached',
+        },
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        statefulSessionsAvailable: true,
+      },
+      db,
+    );
+
+    expect(result.codeEnvAvailable).toBe(false);
+    expect(result.toolDefinitions?.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining(['bash_tool', 'read_file', 'create_file', 'edit_file']),
     );
   });
 
