@@ -1,5 +1,11 @@
 import type { RoleMethods, RoleDeps } from './role';
 import {
+  createFileMethods,
+  type FileMethods,
+  type FileOwnerScope,
+  type UserStorageUsageParams,
+} from './file';
+import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
 } from './openidRefreshFlight';
@@ -13,7 +19,6 @@ import {
 } from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
-import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
 import { createKeyMethods, type KeyMethods } from './key';
@@ -504,6 +509,7 @@ export type {
   KeyMethods,
   FileMethods,
   FileOwnerScope,
+  UserStorageUsageParams,
   MemoryMethods,
   ToolFavoriteMethods,
   AgentCategoryMethods,

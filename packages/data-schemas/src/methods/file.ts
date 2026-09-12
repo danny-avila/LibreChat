@@ -1,9 +1,22 @@
+import { randomUUID } from 'crypto';
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { FilterQuery, SortOrder, Model } from 'mongoose';
+import type { FilterQuery, SortOrder, Model, Types } from 'mongoose';
 import type { CodeEnvRef } from 'librechat-data-provider';
+import type { ISkillFileDocument } from '~/types/skill';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { runAsSystem } from '~/config/tenantContext';
 import logger from '../config/winston';
+
+const quotaLockWaitMs = Math.max(Number(process.env.STORAGE_QUOTA_LOCK_WAIT_MS) || 300_000, 1_000);
+const quotaLockLeaseMs = Math.max(
+  Number(process.env.STORAGE_QUOTA_LOCK_LEASE_MS) || 120_000,
+  10_000,
+);
+const quotaLockHeartbeatMs = Math.min(
+  Math.max(Number(process.env.STORAGE_QUOTA_LOCK_HEARTBEAT_MS) || 30_000, 1_000),
+  Math.floor(quotaLockLeaseMs / 2),
+);
 
 export type FileOwnerScope = {
   userId: string;
@@ -37,6 +50,13 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   }
   return scopedFilter;
 }
+
+type ObjectIdInput = string | Types.ObjectId;
+
+export type UserStorageUsageParams = {
+  userId: ObjectIdInput;
+  tenantId?: string | null;
+};
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')): {
@@ -122,7 +142,167 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     owner: { user: string; tenantId?: string | null },
   ) => Promise<number>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
+  getUserStorageUsage: (params: UserStorageUsageParams) => Promise<number>;
 } {
+  function toObjectId(value: ObjectIdInput, label: string): Types.ObjectId {
+    if (value instanceof mongoose.Types.ObjectId) {
+      return value;
+    }
+
+    if (mongoose.Types.ObjectId.isValid(value)) {
+      return new mongoose.Types.ObjectId(value);
+    }
+
+    throw new Error(`Invalid ${label}`);
+  }
+
+  async function sumFileBytes(match: FilterQuery<IMongoFile>): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const [result] = await File.aggregate<{ total: number }>([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$bytes' } } },
+    ]).read('primary');
+    return result?.total ?? 0;
+  }
+
+  async function sumSkillFileBytes(match: FilterQuery<ISkillFileDocument>): Promise<number> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const [result] = await SkillFile.aggregate<{ total: number }>([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$bytes' } } },
+    ]).read('primary');
+    return result?.total ?? 0;
+  }
+
+  async function getUserStorageUsage({
+    userId,
+    tenantId,
+  }: UserStorageUsageParams): Promise<number> {
+    const userObjectId = toObjectId(userId, 'userId');
+    const tenantMatch = tenantId ? tenantId : { $in: [null, ''] };
+    const fileMatch: FilterQuery<IMongoFile> = {
+      user: userObjectId,
+      tenantId: tenantMatch,
+      bytes: { $gt: 0 },
+    };
+    const skillFileMatch: FilterQuery<ISkillFileDocument> = {
+      author: userObjectId,
+      tenantId: tenantMatch,
+      bytes: { $gt: 0 },
+    };
+
+    const [fileBytes, skillFileBytes] = await runAsSystem(() =>
+      Promise.all([sumFileBytes(fileMatch), sumSkillFileBytes(skillFileMatch)]),
+    );
+    return fileBytes + skillFileBytes;
+  }
+
+  type StorageUsageExtensions = {
+    withLock: <T>(
+      params: UserStorageUsageParams,
+      operation: (assertHeld: () => Promise<void>) => Promise<T>,
+    ) => Promise<T>;
+    getReplacementBytes: (
+      params: UserStorageUsageParams &
+        (
+          | { kind: 'file'; fileId: string }
+          | { kind: 'skill'; skillId: string; relativePath: string }
+        ),
+    ) => Promise<number | null>;
+  };
+  const storageUsage = getUserStorageUsage as typeof getUserStorageUsage & StorageUsageExtensions;
+
+  storageUsage.withLock = async <T>(
+    params: UserStorageUsageParams,
+    operation: (assertHeld: () => Promise<void>) => Promise<T>,
+  ): Promise<T> => {
+    const key = JSON.stringify([params.userId.toString(), params.tenantId || null]);
+    const token = randomUUID();
+    const collection = mongoose.connection.collection<{
+      _id: string;
+      token: string;
+      expiresAt: Date;
+    }>('storage_quota_locks');
+    const deadline = Date.now() + quotaLockWaitMs;
+    let acquired = false;
+    while (!acquired && Date.now() < deadline) {
+      const now = new Date();
+      try {
+        const lock = await collection.findOneAndUpdate(
+          { _id: key, $or: [{ expiresAt: { $lte: now } }, { token }] },
+          { $set: { token, expiresAt: new Date(now.getTime() + quotaLockLeaseMs) } },
+          { upsert: true, returnDocument: 'after', readPreference: 'primary' },
+        );
+        acquired = lock?.token === token;
+      } catch (error) {
+        if ((error as { code?: number }).code !== 11000) {
+          throw error;
+        }
+      }
+      if (!acquired) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    if (!acquired) {
+      throw new Error('Timed out waiting for the storage quota ledger lock');
+    }
+
+    let leaseError: unknown;
+    const renew = async (): Promise<void> => {
+      if (leaseError) {
+        throw leaseError;
+      }
+      const renewed = await collection.updateOne(
+        { _id: key, token },
+        { $set: { expiresAt: new Date(Date.now() + quotaLockLeaseMs) } },
+      );
+      if (renewed.matchedCount !== 1) {
+        leaseError = new Error('Storage quota ledger lock was lost');
+        throw leaseError;
+      }
+    };
+    const heartbeat = setInterval(() => {
+      void renew().catch((error) => {
+        leaseError = error;
+      });
+    }, quotaLockHeartbeatMs);
+    heartbeat.unref();
+    try {
+      return await operation(renew);
+    } finally {
+      clearInterval(heartbeat);
+      /** Do not turn a committed row into an apparent failure whose caller removes
+       * its blob. A failed release remains bounded by the renewed lease. */
+      await collection.deleteOne({ _id: key, token }).catch(() => undefined);
+    }
+  };
+
+  storageUsage.getReplacementBytes = async (params): Promise<number | null> => {
+    const owner = toObjectId(params.userId, 'userId');
+    const tenantId = params.tenantId ? params.tenantId : { $in: [null, ''] };
+    return runAsSystem(async () => {
+      if (params.kind === 'file') {
+        const File = mongoose.models.File as Model<IMongoFile>;
+        const row = await File.findOne({ file_id: params.fileId, user: owner, tenantId })
+          .read('primary')
+          .select({ bytes: 1 })
+          .lean<{ bytes?: number | null }>();
+        return row?.bytes ?? null;
+      }
+      const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+      const row = await SkillFile.findOne({
+        skillId: toObjectId(params.skillId, 'skillId'),
+        relativePath: params.relativePath,
+        author: owner,
+        tenantId,
+      })
+        .read('primary')
+        .select({ bytes: 1 })
+        .lean<{ bytes?: number | null }>();
+      return row?.bytes ?? null;
+    });
+  };
+
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -965,6 +1145,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
 
   return {
     findFileById,
+    getUserStorageUsage,
     getFiles,
     getExpiredFiles,
     incrementFileDeletionAttempts,

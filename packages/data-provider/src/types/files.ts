@@ -65,6 +65,7 @@ export type FileConfig = {
   fileContextSizeLimit?: number;
   /** Maximum aggregate extracted-text characters admitted into one agent turn. */
   fileContextCharLimit?: number;
+  storageLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -97,6 +98,7 @@ export type FileConfigInput = {
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;
+  storageLimit?: number;
   avatarSizeLimit?: number;
   fileContextSizeLimit?: number;
   fileContextCharLimit?: number;

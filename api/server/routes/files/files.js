@@ -12,6 +12,7 @@ const {
   startUploadSseStream,
   sendUploadPolicyError,
   resolveUploadErrorMessage,
+  resolveUploadErrorStatusCode,
   verifyAgentUploadPermission,
   createCodeExecutionRouteKey,
   getCodeExecutionBaseUrl,
@@ -898,13 +899,7 @@ const handleFileUpload = async (req, res) => {
       logger.error('[/files] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
 
-    const userErrorStatusCode = error?.userErrorStatusCode;
-    const errorStatusCode =
-      Number.isInteger(userErrorStatusCode) &&
-      userErrorStatusCode >= 400 &&
-      userErrorStatusCode <= 599
-        ? userErrorStatusCode
-        : 500;
+    const errorStatusCode = resolveUploadErrorStatusCode(error);
 
     if (sseStream) {
       sseStream.sendError({

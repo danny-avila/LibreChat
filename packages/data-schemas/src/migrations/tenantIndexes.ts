@@ -5,6 +5,7 @@ import skillSyncStatusSchema from '~/schema/skillSyncStatus';
 import agentCategorySchema from '~/schema/agentCategory';
 import { buildIndexWithRetry } from '~/utils/retry';
 import accessRoleSchema from '~/schema/accessRole';
+import skillFileSchema from '~/schema/skillFile';
 import mcpServerSchema from '~/schema/mcpServer';
 import messageSchema from '~/schema/message';
 import presetSchema from '~/schema/preset';
@@ -30,6 +31,7 @@ const TENANT_SCHEMAS = {
   files: fileSchema,
   groups: groupSchema,
   skillsyncstatuses: skillSyncStatusSchema,
+  skillfiles: skillFileSchema,
 };
 
 /**

@@ -369,6 +369,10 @@ describe('operator migration', () => {
     expect(indexes.find((index) => index.name === 'name_1')?.unique).toBeUndefined();
     expect(indexes.find((index) => index.name === 'name_1_tenantId_1')?.unique).toBe(true);
     expect(indexes.some((index) => index.name === 'operator_custom')).toBe(true);
+    const skillFileIndexes = await instance.connection.db!.collection('skillfiles').indexes();
+    expect(skillFileIndexes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: { author: 1, tenantId: 1 } })]),
+    );
     await expect(roles.insertOne({ name: 'USER' })).rejects.toThrow(/E11000/);
     await roles.insertOne({ name: 'USER', tenantId: 'another-tenant' });
     const rerun = await migrateTenantIndexes(instance.connection);

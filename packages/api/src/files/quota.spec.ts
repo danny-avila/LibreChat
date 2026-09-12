@@ -1,0 +1,1111 @@
+import type { UserStorageUsageParams } from '@librechat/data-schemas';
+import type { GetUserStorageUsage, StorageScope } from './quota';
+import {
+  FILE_STORAGE_LIMIT_ERROR_CODE,
+  FileStorageLimitError,
+  isFileStorageLimitError,
+  persistFileWithQuota,
+  persistSkillFileWithQuota,
+  resolveStorageScope,
+} from './quota';
+
+const megabyte = 1024 * 1024;
+const userId = '64f000000000000000000001';
+
+type TestRequest = {
+  tenantId?: string;
+  user?: { id?: string; tenantId?: string };
+  config: { fileConfig?: { storageLimit?: number } };
+};
+
+/** `storageLimit` is authored in MB and merged to bytes, matching librechat.yaml. */
+function makeReq({
+  storageLimitMb,
+  userTenantId,
+  requestTenantId,
+}: {
+  storageLimitMb?: number;
+  userTenantId?: string;
+  requestTenantId?: string;
+} = {}): TestRequest {
+  return {
+    tenantId: requestTenantId,
+    user: { id: userId, tenantId: userTenantId },
+    config: { fileConfig: storageLimitMb === undefined ? {} : { storageLimit: storageLimitMb } },
+  };
+}
+
+function usageOf(bytes: number) {
+  return jest.fn<Promise<number>, [UserStorageUsageParams]>(
+    async () => bytes,
+  ) as jest.MockedFunction<GetUserStorageUsage> & GetUserStorageUsage;
+}
+
+const noRollbackErrors = () => {
+  throw new Error('rollback should not have failed');
+};
+
+describe('resolveStorageScope', () => {
+  it('prefers the request tenant over the user tenant', () => {
+    const scope = resolveStorageScope(
+      makeReq({ userTenantId: 'user-tenant', requestTenantId: 'request-tenant' }),
+    );
+
+    expect(scope.tenantId).toBe('request-tenant');
+  });
+
+  it('falls back to the user tenant when the request carries none', () => {
+    expect(resolveStorageScope(makeReq({ userTenantId: 'user-tenant' })).tenantId).toBe(
+      'user-tenant',
+    );
+  });
+
+  /* Remote-agent auth authenticates users that hold no tenant of their own and
+   * supplies it per request; the row must still be charged to that tenant. */
+  it('resolves the request tenant for a user that carries none', () => {
+    expect(resolveStorageScope(makeReq({ requestTenantId: 'request-tenant' })).tenantId).toBe(
+      'request-tenant',
+    );
+  });
+
+  it('normalizes the legacy empty tenant ID into the no-tenant ledger', () => {
+    expect(resolveStorageScope(makeReq({ userTenantId: '' })).tenantId).toBeUndefined();
+    expect(resolveStorageScope(makeReq({ requestTenantId: '' })).tenantId).toBeUndefined();
+  });
+
+  it('memoizes per request so one request reads the ledger at most once per scope', () => {
+    const req = makeReq({ storageLimitMb: 1 });
+
+    expect(resolveStorageScope(req)).toBe(resolveStorageScope(req));
+  });
+
+  it('refuses to resolve without an authenticated user', () => {
+    expect(() => resolveStorageScope({ user: {}, config: {} })).toThrow(/authenticated user/i);
+  });
+
+  /* A stripped request structurally satisfies the rest of the shape. Resolving one would
+   * mint a scope with no tenant and no cap, which disables the quota silently — the
+   * failure has to happen at the boundary instead. */
+  it('refuses to resolve a request that carries no config', () => {
+    expect(() => {
+      // @ts-expect-error a full request config is required to resolve the quota scope
+      resolveStorageScope({ user: { id: userId } });
+    }).toThrow(/request config/i);
+  });
+});
+
+describe('persistFileWithQuota', () => {
+  it('writes without a ledger read when no limit is configured', async () => {
+    const getUserStorageUsage = usageOf(500 * megabyte);
+    const write = jest.fn(async (row: { bytes: number }) => row);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq()),
+        row: { bytes: 10 },
+        write,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+    expect(getUserStorageUsage).not.toHaveBeenCalled();
+  });
+
+  /* The charge is derived from the row that gets written, so a caller cannot charge a
+   * raw upload size while persisting a converted or extracted one — there is no second
+   * byte count to pass. Each serialized write refreshes the durable ledger. */
+  it('charges the byte count on the row it persists and accumulates within a request', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 4);
+    getUserStorageUsage.mockResolvedValueOnce(megabyte - 10);
+
+    await persistFileWithQuota(
+      { scope, row: { bytes: 6 }, write: async (row) => row, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 6 },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+  });
+
+  /* Query scope and write scope are the same value by construction — the defect
+   * class where rows landed in a tenant the usage query never counted. */
+  it('stamps the resolved tenant onto the row and queries that same tenant', async () => {
+    const getUserStorageUsage = usageOf(0);
+    const write = jest.fn(async (row: { bytes: number; tenantId?: string }) => row);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(
+          makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
+        ),
+        row: { bytes: 10, tenantId: 'stale-tenant' },
+        write,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'request-tenant' }));
+    expect(getUserStorageUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'request-tenant' }),
+    );
+  });
+
+  it('runs the rollback and skips the write when the row would exceed the limit', async () => {
+    const rollback = jest.fn();
+    const write = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 2 * megabyte },
+          write,
+          rollback,
+          getUserStorageUsage: usageOf(0),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ status: 413 });
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('reports a failing rollback without masking the quota error', async () => {
+    const onRollbackError = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 2 * megabyte },
+          write: jest.fn(),
+          rollback: () => {
+            throw new Error('blob delete failed');
+          },
+          getUserStorageUsage: usageOf(0),
+        },
+        onRollbackError,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+
+    expect(onRollbackError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.any(String) }),
+    );
+  });
+
+  it('does not roll back for failures that are not quota rejections', async () => {
+    const rollback = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 10 },
+          write: async () => {
+            throw new Error('mongo down');
+          },
+          rollback,
+          getUserStorageUsage: usageOf(0),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('mongo down');
+
+    expect(rollback).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the unexcluded ledger for repeated replacement checks', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 4);
+    getUserStorageUsage.mockResolvedValueOnce(megabyte - 10);
+    const params = {
+      scope,
+      row: { bytes: 6, file_id: 'file-1' },
+      rollback: null,
+      getUserStorageUsage,
+    };
+
+    await persistFileWithQuota({ ...params, write: async (row) => row }, noRollbackErrors);
+    const write = jest.fn(async (row: { bytes: number }) => row);
+    await persistFileWithQuota(
+      { ...params, replacing: { file_id: 'file-1', user: userId }, replacedBytes: 6, write },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the unexcluded total when replacing a file', async () => {
+    const getUserStorageUsage = usageOf(0);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { bytes: 10, file_id: 'file-being-replaced' },
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(getUserStorageUsage).toHaveBeenCalledWith({ userId, tenantId: undefined });
+  });
+
+  it('charges only the difference when replacing a row', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await persistFileWithQuota(
+      { scope, row: { bytes: 6 }, write: async (row) => row, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    await persistFileWithQuota(
+      {
+        scope,
+        row: { bytes: 8, file_id: 'file-1' },
+        replacing: { file_id: 'file-1', user: userId },
+        replacedBytes: 6,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    /* The request total grew by 2, not 8, so this last write still fits exactly. */
+    const write = jest.fn(async (row: { bytes: number }) => row);
+    await persistFileWithQuota(
+      { scope, row: { bytes: 2 }, write, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+  });
+
+  it('refreshes replacement bytes while holding the owner ledger lock', async () => {
+    const getUserStorageUsage = usageOf(megabyte - 5);
+    getUserStorageUsage.getReplacementBytes = jest.fn(async () => 2);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          replacing: { file_id: 'file-1', user: userId },
+          replacedBytes: 8,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+    expect(getUserStorageUsage.getReplacementBytes).toHaveBeenCalledWith({
+      userId,
+      tenantId: undefined,
+      kind: 'file',
+      fileId: 'file-1',
+    });
+  });
+
+  it('skips replacement refresh work when quotas are disabled', async () => {
+    const getUserStorageUsage = usageOf(0);
+    getUserStorageUsage.getReplacementBytes = jest.fn(async () => 2);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq()),
+        row: { bytes: 8, file_id: 'file-1' },
+        replacing: { file_id: 'file-1', user: userId },
+        replacedBytes: 2,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(getUserStorageUsage.getReplacementBytes).not.toHaveBeenCalled();
+  });
+
+  it('fences both sides of the metadata write', async () => {
+    const getUserStorageUsage = usageOf(0);
+    const assertHeld = jest.fn(async () => undefined);
+    getUserStorageUsage.withLock = async (_params, operation) => operation(assertHeld);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { bytes: 8, file_id: 'file-1' },
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(assertHeld).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts before metadata persistence when the pre-write fence is lost', async () => {
+    const getUserStorageUsage = usageOf(0);
+    getUserStorageUsage.withLock = async (_params, operation) =>
+      operation(async () => {
+        throw new Error('lease lost');
+      });
+    const write = jest.fn(async (row) => row);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('lease lost');
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('preserves a committed row when only the post-write fence is lost', async () => {
+    const getUserStorageUsage = usageOf(0);
+    const leaseError = new Error('lease lost after commit');
+    let assertion = 0;
+    getUserStorageUsage.withLock = async (_params, operation) =>
+      operation(async () => {
+        assertion += 1;
+        if (assertion === 2) {
+          throw leaseError;
+        }
+      });
+    const onCleanupError = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        onCleanupError,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ file_id: 'file-1' }));
+    expect(onCleanupError).toHaveBeenCalledWith(leaseError);
+  });
+
+  it('does not credit a replaced file outside the charged ledger', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 11, file_id: 'foreign-file' },
+          replacing: { file_id: 'foreign-file', user: '64f0000000000000000000ff' },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not credit a different owned file as the replacement', async () => {
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11, file_id: 'new-file' },
+          replacing: { file_id: 'large-existing-file', user: userId },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not grant replacement credit without concrete file IDs', async () => {
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11 },
+          replacing: { user: userId },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  /* Charging one ledger while writing to another leaves the written owner unenforced. */
+  it('writes the row to the owner it charged', async () => {
+    const write = jest.fn(async (row: { bytes: number; user?: string }) => row);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { bytes: 10, user: 'someone-else' },
+        write,
+        rollback: null,
+        getUserStorageUsage: usageOf(0),
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ user: userId }));
+  });
+
+  /* Distinct row identities used to produce separate exclusion-cache keys, allowing
+   * both reads to observe the same total and both writes to exceed the cap. */
+  it('reserves bytes across distinct concurrent file identities', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 2);
+    getUserStorageUsage.mockResolvedValueOnce(megabyte - 10);
+    const write = jest.fn(async (row: { bytes: number }) => row);
+
+    const results = await Promise.allSettled([
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 8, file_id: 'file-a' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 8, file_id: 'file-b' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('serializes separate request scopes for the same owner and tenant', async () => {
+    const getUserStorageUsage = usageOf(megabyte - 2);
+    getUserStorageUsage.mockResolvedValueOnce(megabyte - 10);
+    const write = jest.fn(async (row: { bytes: number }) => row);
+
+    const results = await Promise.allSettled([
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'request-a' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'request-b' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose replacement headroom until the replacement commits', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte);
+    let finishReplacement: (() => void) | undefined;
+    const replacementWrite = new Promise<void>((resolve) => {
+      finishReplacement = resolve;
+    });
+
+    const replacement = persistFileWithQuota(
+      {
+        scope,
+        row: { bytes: 4, file_id: 'file-a' },
+        replacing: { file_id: 'file-a', user: userId },
+        replacedBytes: 8,
+        write: async (row) => {
+          await replacementWrite;
+          return row;
+        },
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 1, file_id: 'file-b' },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+
+    finishReplacement?.();
+    await replacement;
+  });
+
+  it('credits an existing row only once across concurrent replacements', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte);
+
+    const replacements = await Promise.all([
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'same-file' },
+          replacing: { file_id: 'same-file', user: userId },
+          replacedBytes: 100,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'same-file' },
+          replacing: { file_id: 'same-file', user: userId },
+          replacedBytes: 100,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(replacements).toHaveLength(2);
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 41 },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('serializes concurrent replacements of a zero-byte row', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 60);
+
+    const results = await Promise.allSettled([
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'empty-file' },
+          replacing: { file_id: 'empty-file', user: userId },
+          replacedBytes: 0,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'empty-file' },
+          replacing: { file_id: 'empty-file', user: userId },
+          replacedBytes: 0,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+  });
+
+  it('releases the reservation when the write itself fails', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 8 },
+          write: async () => {
+            throw new Error('mongo down');
+          },
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('mongo down');
+
+    /* The failed row must not keep consuming the cap for the rest of the request. */
+    const write = jest.fn(async (row: { bytes: number }) => row);
+    await persistFileWithQuota(
+      { scope, row: { bytes: 8 }, write, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+  });
+
+  it('treats a no-op conditional write as a failed commit', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 5, file_id: 'replacement' },
+          replacing: { file_id: 'replacement', user: userId },
+          replacedBytes: 20,
+          write: async () => null,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow(/without committing a row/i);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 11, file_id: 'next-file' },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('rolls back a prewritten blob when the quota read fails', async () => {
+    const rollback = jest.fn();
+    const write = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 10 },
+          write,
+          rollback,
+          getUserStorageUsage: async () => {
+            throw new Error('usage query failed');
+          },
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('usage query failed');
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  /* Usage sums only rows with `bytes > 0`, so a negative count would persist a row that
+   * no later quota query can ever see. */
+  it('refuses to persist a row whose byte count cannot be charged', async () => {
+    const write = jest.fn();
+    const rollback = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: -5 },
+          write,
+          rollback,
+          getUserStorageUsage: usageOf(0),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow(/uncountable byte size/i);
+
+    expect(write).not.toHaveBeenCalled();
+    expect(rollback).toHaveBeenCalledTimes(1);
+  });
+
+  describe('when the user is already over the limit', () => {
+    /* Quotas get switched on, or lowered, for accounts already holding more than the
+     * new cap. Everything stops until they free space, and the error has to say by
+     * how much — otherwise "delete files" is unactionable. */
+    it('reports observed usage against the cap', async () => {
+      const error = await persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 1 },
+          write: jest.fn(),
+          rollback: null,
+          getUserStorageUsage: usageOf(5 * megabyte),
+        },
+        noRollbackErrors,
+      ).catch((caught: unknown) => caught);
+
+      if (!isFileStorageLimitError(error)) {
+        throw new Error('expected a storage limit rejection');
+      }
+      expect(error).toMatchObject({ storageLimit: megabyte, currentUsage: 5 * megabyte });
+      expect(error.message).toContain('5MB');
+      expect(error.message).toContain('1MB');
+    });
+
+    it('reports exact bytes when a sub-megabyte overage would round away', async () => {
+      const error = await persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 1 },
+          write: jest.fn(),
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte + 1),
+        },
+        noRollbackErrors,
+      ).catch((caught: unknown) => caught);
+
+      if (!isFileStorageLimitError(error)) {
+        throw new Error('expected a storage limit rejection');
+      }
+      expect(error.message).toContain(`${megabyte + 1} bytes`);
+    });
+
+    it('reports the unexcluded total when a replacement is rejected', async () => {
+      const error = await persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 4 * megabyte, file_id: 'file-1' },
+          replacing: { file_id: 'file-1', user: userId },
+          replacedBytes: 2 * megabyte,
+          write: jest.fn(),
+          rollback: null,
+          getUserStorageUsage: usageOf(5 * megabyte),
+        },
+        noRollbackErrors,
+      ).catch((caught: unknown) => caught);
+
+      if (!isFileStorageLimitError(error)) {
+        throw new Error('expected a storage limit rejection');
+      }
+      expect(error.currentUsage).toBe(5 * megabyte);
+      expect(error.message).toContain('5MB');
+    });
+
+    it('accepts writes again once deletions bring usage back under the cap', async () => {
+      await expect(
+        persistFileWithQuota(
+          {
+            scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+            row: { bytes: 1 },
+            write: jest.fn(),
+            rollback: null,
+            getUserStorageUsage: usageOf(5 * megabyte),
+          },
+          noRollbackErrors,
+        ),
+      ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+
+      const write = jest.fn(async (row: { bytes: number }) => row);
+      await persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 1 },
+          write,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte / 2),
+        },
+        noRollbackErrors,
+      );
+
+      expect(write).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('persistSkillFileWithQuota', () => {
+  const skillRow = { bytes: 10, skillId: '64f000000000000000000002', relativePath: 'scripts/a.sh' };
+
+  it('discounts a skill file the requester is replacing', async () => {
+    const getUserStorageUsage = usageOf(0);
+
+    await persistSkillFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: skillRow,
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: userId,
+        },
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(getUserStorageUsage).toHaveBeenCalledWith({ userId, tenantId: undefined });
+  });
+
+  /* A file authored by someone else stays on that author's ledger, so the requester
+   * gets no discount for overwriting it. */
+  it('does not discount a skill file authored by somebody else', async () => {
+    const getUserStorageUsage = usageOf(0);
+
+    await persistSkillFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: skillRow,
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: '64f0000000000000000000ff',
+        },
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(getUserStorageUsage).toHaveBeenCalledWith({ userId, tenantId: undefined });
+  });
+
+  it('writes the skill row to the author it charged', async () => {
+    const write = jest.fn(async (row: typeof skillRow & { author?: string }) => row);
+
+    await persistSkillFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { ...skillRow, author: 'someone-else' },
+        replacing: null,
+        write,
+        rollback: null,
+        getUserStorageUsage: usageOf(0),
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ author: userId }));
+  });
+
+  it('does not net off bytes owned by another skill author', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 4);
+    getUserStorageUsage.mockResolvedValueOnce(megabyte - 10);
+
+    await persistSkillFileWithQuota(
+      {
+        scope,
+        row: { ...skillRow, bytes: 6 },
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: '64f0000000000000000000ff',
+        },
+        replacedBytes: 6,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    /* The other author's 6 bytes stayed on their ledger, so this request has consumed
+     * the full 6 and the remaining headroom is 4 — not 10. */
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope,
+          row: { ...skillRow, bytes: 6, relativePath: 'scripts/b.sh' },
+          replacing: null,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not credit a different skill file from the same ledger', async () => {
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { ...skillRow, bytes: 11 },
+          replacing: {
+            skillId: skillRow.skillId,
+            relativePath: 'scripts/other.sh',
+            author: userId,
+          },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not grant skill replacement credit without a complete logical key', async () => {
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11, skillId: skillRow.skillId },
+          replacing: { skillId: skillRow.skillId, author: userId },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not net off bytes owned by the requester in another tenant', async () => {
+    const scope = resolveStorageScope(
+      makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
+    );
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope,
+          row: { ...skillRow, bytes: 11 },
+          replacing: {
+            skillId: skillRow.skillId,
+            relativePath: skillRow.relativePath,
+            author: userId,
+            tenantId: 'different-tenant',
+          },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('stamps the resolved tenant onto skill rows too', async () => {
+    const write = jest.fn(async (row: typeof skillRow & { tenantId?: string }) => row);
+
+    await persistSkillFileWithQuota(
+      {
+        scope: resolveStorageScope(
+          makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
+        ),
+        row: skillRow,
+        replacing: null,
+        write,
+        rollback: null,
+        getUserStorageUsage: usageOf(0),
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'request-tenant' }));
+  });
+});
+
+describe('isFileStorageLimitError', () => {
+  it('implements the upload and controller error response contracts', () => {
+    const error = new FileStorageLimitError(100, 101);
+    expect(error).toMatchObject({
+      status: 413,
+      statusCode: 413,
+      userErrorStatusCode: 413,
+      body: { message: error.message },
+    });
+  });
+
+  it('rejects errors that are not quota rejections', () => {
+    expect(isFileStorageLimitError(new Error('plain'))).toBe(false);
+    expect(isFileStorageLimitError(null)).toBe(false);
+    expect(isFileStorageLimitError({ code: FILE_STORAGE_LIMIT_ERROR_CODE })).toBe(false);
+  });
+});
+
+describe('StorageScope typing', () => {
+  it('cannot be assembled from a reduced request', () => {
+    /* The brand is the compile-time half of the fix: a stripped request that kept only
+     * `user` cannot fabricate a scope, so it must carry the real one and the tenant
+     * travels with it. This asserts the type, which is why it is a `@ts-expect-error`. */
+    // @ts-expect-error a StorageScope may only be produced by resolveStorageScope
+    const forged: StorageScope = {
+      userId,
+      tenantId: undefined,
+      storageLimit: undefined,
+    };
+
+    expect(forged.userId).toBe(userId);
+  });
+});
