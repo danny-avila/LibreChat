@@ -1,5 +1,8 @@
+import { FileSources } from 'librechat-data-provider';
+import type { ToolArtifactType } from '../artifacts';
 import {
   buildSandpackOptions,
+  getArtifactDownloadFilename,
   detectArtifactTypeFromFile,
   fileToArtifact,
   isCodeOnlyArtifact,
@@ -7,7 +10,6 @@ import {
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
-import type { ToolArtifactType } from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
 
@@ -65,6 +67,7 @@ describe('detectArtifactTypeFromFile', () => {
     ['legacy.xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['sheet.ods', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
+    ['template.potx', TOOL_ARTIFACT_TYPES.PRESENTATION],
   ])('classifies %s by extension', (filename, expected) => {
     /* Office types require `textFormat: 'html'` to route to their HTML
      * preview buckets — the security gate added for Codex P1 review on
@@ -152,6 +155,10 @@ describe('detectArtifactTypeFromFile', () => {
     ['application/x-xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     [
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      TOOL_ARTIFACT_TYPES.PRESENTATION,
+    ],
+    [
+      'application/vnd.openxmlformats-officedocument.presentationml.template',
       TOOL_ARTIFACT_TYPES.PRESENTATION,
     ],
   ])('routes office MIME %s to its preview bucket when extension is missing', (mime, expected) => {
@@ -691,6 +698,33 @@ describe('fileToArtifact', () => {
     expect(fileToArtifact({ ...baseFile, filename: 'flow.mmd', type: '', text: '' })).toBeNull();
   });
 
+  it('threads original-file download metadata onto the artifact', () => {
+    /* The panel download button needs the original-file coordinates to
+     * fetch the real binary (e.g. a pptx) instead of serializing the
+     * server-rendered HTML preview. `fileToArtifact` must carry them
+     * through from the attachment. */
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'deck.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: '<html><body>slides</body></html>',
+      textFormat: 'html',
+      filepath: '/api/files/code/output/deck.pptx',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
+    expect(artifact!.download).toEqual({
+      filename: 'deck.pptx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      filepath: '/api/files/code/output/deck.pptx',
+      file_id: 'fid-1',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
+  });
+
   it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
     /* Plain-text and markdown remain on the lenient empty-text gate so the
      * artifact card can render a "preparing preview…" placeholder while
@@ -942,4 +976,150 @@ describe('isCodeOnlyArtifact', () => {
       expect(isCodeOnlyArtifact(type)).toBe(false);
     },
   );
+});
+
+describe('getArtifactDownloadFilename', () => {
+  it.each([
+    ['# Migration Plan', 'Migration Plan.md'],
+    ['# ~~Deprecated~~ Plan', 'Deprecated Plan.md'],
+    ['# migrate_users.py', 'migrate_users.py.md'],
+    ['# The **Q3** [report](https://example.com)', 'The Q3 report.md'],
+    ['# Hello &amp; goodbye', 'Hello & goodbye.md'],
+    ['```bash\n# comment\n```\n# Actual heading', 'Actual heading.md'],
+    ['````\n```bash\n# Still code\n```\n````\n# Actual heading', 'Actual heading.md'],
+    ['~~~\n```\n# Still code\n~~~\n# Actual heading', 'Actual heading.md'],
+    ['---\n# Metadata comment\n---\n# Actual heading', 'Actual heading.md'],
+    ['<div>\n# Hidden heading\n</div>\n\n# Actual heading', 'Actual heading.md'],
+    ['A real setext heading\n===', 'A real setext heading.md'],
+    ['No heading', 'content.md'],
+  ])('derives a Markdown filename from %s', (content, expected) => {
+    expect(
+      getArtifactDownloadFilename(
+        { id: 'a', lastUpdateTime: 0, type: 'text/markdown', content },
+        'content.md',
+      ),
+    ).toBe(expected);
+  });
+
+  it.each([
+    ['Component.jsx', 'App.tsx'],
+    ['Component.tsx', 'App.tsx'],
+    ['index.htm', 'index.html'],
+    ['index.html', 'index.html'],
+    ['README.markdown', 'content.md'],
+    ['README.mdx', 'content.md'],
+    ['README.md', 'content.md'],
+    ['flow.mermaid', 'diagram.mmd'],
+    ['flow.mmd', 'diagram.mmd'],
+    ['script.pyi', 'content.md'],
+    ['Dockerfile', 'content.md'],
+    ['Makefile', 'content.md'],
+    ['notes.TXT', 'content.md'],
+  ])('preserves raw file extensions in preview exports: %s', (filename, fileKey) => {
+    const artifact = fileToArtifact({ file_id: 'file', filename, text: 'Raw content' });
+    expect(artifact).not.toBeNull();
+    const dot = filename.lastIndexOf('.');
+    const expected =
+      dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
+    expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(expected);
+  });
+
+  it.each(['untitled', 'Generated artifact'])(
+    'preserves the real attachment filename %s',
+    (filename) => {
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename,
+        type: 'text/markdown',
+        text: '# Heading',
+      });
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`${filename}.preview`);
+    },
+  );
+
+  it('uses the heading when an attachment supplied no filename', () => {
+    const artifact = fileToArtifact({ file_id: 'file', type: 'text/markdown', text: '# Heading' });
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('Heading.preview.md');
+  });
+
+  it('preserves sentinel filenames in older artifact metadata', () => {
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: 'text/markdown',
+          title: 'untitled',
+          content: '# Heading',
+          download: { file_id: 'file' },
+        },
+        'content.md',
+      ),
+    ).toBe('untitled.preview');
+  });
+
+  it.each(['script.py', 'notes.txt', 'README.md', 'Dockerfile'])(
+    'distinguishes cached preview exports of %s',
+    (filename) => {
+      const artifact = fileToArtifact({
+        file_id: 'file',
+        filename,
+        text: 'Prefix\n\n…[truncated]',
+      });
+      const expected = filename.includes('.')
+        ? filename.replace(/(\.[^.]+)$/, '.preview$1')
+        : `${filename}.preview`;
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(expected);
+      expect(getArtifactDownloadFilename(artifact!, 'content.md', 'Edited prefix')).toBe(expected);
+    },
+  );
+
+  it.each(['odt', 'docx', 'pptx'])('names extracted %s bytes as text after file routing', (ext) => {
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: `report.${ext}`,
+      text: 'Extracted text',
+    });
+    expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe(`report.${ext}.preview.txt`);
+  });
+
+  it.each(['Complete file', 'Complete file\n\n…[truncated]'])(
+    'does not infer truncation from cached file text: %s',
+    (content) => {
+      const artifact = fileToArtifact({ file_id: 'file', filename: 'notes.txt', text: content });
+      expect(getArtifactDownloadFilename(artifact!, 'content.md')).toBe('notes.preview.txt');
+    },
+  );
+
+  it('does not read source comments as document headings', () => {
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: TOOL_ARTIFACT_TYPES.CODE,
+          language: 'python',
+          content: '# Copyright',
+        },
+        'content.md',
+      ),
+    ).toBe('code.py');
+  });
+
+  it('preserves a long file-backed source extension during sanitization', () => {
+    const filename = `${'a'.repeat(200)}.py`;
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'a',
+          lastUpdateTime: 0,
+          type: TOOL_ARTIFACT_TYPES.CODE,
+          title: filename,
+          download: { file_id: 'file' },
+        },
+        'content.md',
+      ),
+    ).toBe(`${'a'.repeat(97)}.preview.py`);
+  });
 });

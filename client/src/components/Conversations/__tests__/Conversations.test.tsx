@@ -2,19 +2,22 @@ import React, { createRef } from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CellMeasurerCache, List } from 'react-virtualized';
+import type { TConversation } from 'librechat-data-provider';
+import Conversations from '../Conversations';
+import store from '~/store';
 
-let mockCapturedCache: CellMeasurerCache | null = null;
+/* The section resolves a conversation's project from the query cache, so the
+ * tree needs a client even though the data hooks themselves are mocked. */
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 jest.mock('react-virtualized', () => {
   const actual = jest.requireActual('react-virtualized');
   return {
     ...actual,
-    AutoSizer: ({
-      children,
-    }: {
-      children: (size: { width: number; height: number }) => React.ReactNode;
-    }) => children({ width: 300, height: 600 }),
     CellMeasurer: ({
       children,
     }: {
@@ -23,7 +26,7 @@ jest.mock('react-virtualized', () => {
     List: ({
       rowRenderer,
       rowCount,
-      deferredMeasurementCache,
+      _deferredMeasurementCache,
     }: {
       rowRenderer: (opts: {
         index: number;
@@ -35,7 +38,6 @@ jest.mock('react-virtualized', () => {
       deferredMeasurementCache: CellMeasurerCache;
       [key: string]: unknown;
     }) => {
-      mockCapturedCache = deferredMeasurementCache;
       return (
         <div data-testid="virtual-list" data-row-count={rowCount}>
           {Array.from({ length: Math.min(rowCount, 10) }, (_, i) =>
@@ -57,29 +59,23 @@ jest.mock('~/store', () => {
   };
 });
 
-type FavoriteEntry = { agentId?: string; model?: string; endpoint?: string };
-
-const mockFavoritesState: { favorites: FavoriteEntry[]; isLoading: boolean } = {
-  favorites: [],
-  isLoading: false,
-};
-
-let mockShowMarketplace = true;
-
 jest.mock('~/hooks', () => ({
-  useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
-  useShowMarketplace: () => mockShowMarketplace,
+  useElementSize: () => ({ ref: jest.fn(), width: 300, height: 600 }),
   TranslationKeys: {},
 }));
 
 jest.mock('@librechat/client', () => ({
+  /* The section headers compose through the shared variant recipe. */
+  buttonVariants: () => '',
   Spinner: () => <div data-testid="spinner" />,
   useMediaQuery: () => false,
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
 jest.mock('~/data-provider', () => ({
   useActiveJobs: () => ({ data: undefined }),
+  useAssignConversationToProjectMutation: () => ({ mutate: jest.fn() }),
 }));
 
 jest.mock('~/utils', () => ({
@@ -87,99 +83,170 @@ jest.mock('~/utils', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 
-jest.mock('~/components/Nav/Favorites/FavoritesList', () => ({
-  __esModule: true,
-  default: () => <div data-testid="favorites-list" />,
-}));
-
 jest.mock('../Convo', () => ({
   __esModule: true,
   default: () => <div data-testid="convo" />,
 }));
 
-import Conversations from '../Conversations';
+const pinnedConvo = {
+  conversationId: 'pinned-1',
+  title: 'Pinned Chat',
+  pinned: true,
+  endpoint: 'openAI',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} as TConversation;
 
-describe('Conversations – favorites CellMeasurerCache key invalidation', () => {
+describe('Conversations: pinned chats live in PinnedSection', () => {
   const containerRef = createRef<List>();
 
-  beforeEach(() => {
-    mockCapturedCache = null;
-    mockFavoritesState.favorites = [];
-    mockFavoritesState.isLoading = false;
-    mockShowMarketplace = true;
+  const renderConversations = (conversations: TConversation[], searchQuery = '') =>
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot
+            initializeState={({ set }) => {
+              set(store.search, {
+                query: searchQuery,
+                enabled: true,
+                debouncedQuery: searchQuery,
+                isSearching: true,
+                isTyping: false,
+              });
+            }}
+          >
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={jest.fn()}
+              isLoading={false}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
+    );
+
+  it('does not render a pinned header inside the chats list', () => {
+    const { queryByText } = renderConversations([pinnedConvo]);
+    expect(queryByText('com_ui_pinned')).not.toBeInTheDocument();
   });
 
-  const Wrapper = () => (
-    <RecoilRoot>
-      <Conversations
-        conversations={[]}
-        moveToTop={jest.fn()}
-        toggleNav={jest.fn()}
-        containerRef={containerRef}
-        loadMoreConversations={jest.fn()}
-        isLoading={false}
-        isSearchLoading={false}
-        isChatsExpanded={true}
-        setIsChatsExpanded={jest.fn()}
-      />
-    </RecoilRoot>
-  );
+  it('does not render a duplicate new chat button in the chats header', () => {
+    const { queryByRole } = renderConversations([]);
+    expect(queryByRole('button', { name: 'com_ui_new_chat' })).not.toBeInTheDocument();
+  });
+});
 
-  it('should invalidate the cached favorites height when favorites count changes', () => {
-    const { rerender } = render(<Wrapper />);
-    const cache = mockCapturedCache!;
-    expect(cache).toBeDefined();
+describe('Conversations: all-pin pages still paginate', () => {
+  const containerRef = createRef<List>();
 
-    cache.set(0, 0, 300, 48);
-    expect(cache.has(0, 0)).toBe(true);
-    expect(cache.getHeight(0, 0)).toBe(48);
+  const renderList = ({
+    conversations,
+    loadMoreConversations,
+    isChatsExpanded = true,
+    isLoading = false,
+  }: {
+    conversations: TConversation[];
+    loadMoreConversations: () => void;
+    isChatsExpanded?: boolean;
+    isLoading?: boolean;
+  }) =>
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={isLoading}
+              isSearchLoading={false}
+              isChatsExpanded={isChatsExpanded}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
+    );
 
-    mockFavoritesState.favorites = [{ model: 'gpt-4', endpoint: 'openAI' }];
-    rerender(<Wrapper />);
-
-    expect(cache.has(0, 0)).toBe(false);
+  it('requests another page when grouping leaves the chats list empty', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({ conversations: [pinnedConvo], loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalled();
   });
 
-  it('should invalidate the cached favorites height when loading state transitions', () => {
-    mockFavoritesState.isLoading = true;
-    const { rerender } = render(<Wrapper />);
-    const cache = mockCapturedCache!;
-
-    cache.set(0, 0, 300, 80);
-    expect(cache.has(0, 0)).toBe(true);
-
-    mockFavoritesState.isLoading = false;
-    rerender(<Wrapper />);
-
-    expect(cache.has(0, 0)).toBe(false);
+  it('does not request another page while chats are collapsed', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isChatsExpanded: false,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
   });
 
-  it('should invalidate the cached favorites height when marketplace visibility changes', () => {
-    mockFavoritesState.favorites = [{ model: 'gpt-4', endpoint: 'openAI' }];
-    const { rerender } = render(<Wrapper />);
-    const cache = mockCapturedCache!;
-
-    cache.set(0, 0, 300, 48);
-    expect(cache.has(0, 0)).toBe(true);
-
-    mockShowMarketplace = false;
-    rerender(<Wrapper />);
-
-    expect(cache.has(0, 0)).toBe(false);
+  it('does not request another page while a fetch is already in flight', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isLoading: true,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
   });
 
-  it('should retain the cached favorites height when content state is unchanged', () => {
-    mockFavoritesState.favorites = [{ model: 'gpt-4', endpoint: 'openAI' }];
-    const { rerender } = render(<Wrapper />);
-    const cache = mockCapturedCache!;
+  it('does not retry when an empty-page fetch fails without new data', () => {
+    const loadMoreConversations = jest.fn();
+    const conversations = [pinnedConvo];
+    const { rerender } = renderList({ conversations, loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
 
-    cache.set(0, 0, 300, 88);
-    expect(cache.has(0, 0)).toBe(true);
-    expect(cache.getHeight(0, 0)).toBe(88);
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={true}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
+    );
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={false}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
+    );
 
-    rerender(<Wrapper />);
-
-    expect(cache.has(0, 0)).toBe(true);
-    expect(cache.getHeight(0, 0)).toBe(88);
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
   });
 });

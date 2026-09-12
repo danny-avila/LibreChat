@@ -1,4 +1,6 @@
-export default function CodePaths() {
+import { JSX } from 'react/jsx-runtime';
+
+export default function CodePaths(): JSX.Element {
   return (
     <>
       <path

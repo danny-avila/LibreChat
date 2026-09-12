@@ -52,6 +52,7 @@ describe('createSetBalanceConfig', () => {
   });
 
   const createMockResponse = (): Partial<ServerResponse> => ({
+    locals: {},
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
   });
@@ -93,6 +94,8 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord?.refillIntervalUnit).toBe('days');
       expect(balanceRecord?.refillAmount).toBe(500);
       expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+      expect((res.locals as { balanceConfigEnabled?: boolean }).balanceConfigEnabled).toBe(true);
+      expect((res.locals as { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(1000);
     });
 
     test('should skip if balance config is not enabled', async () => {
@@ -115,6 +118,7 @@ describe('createSetBalanceConfig', () => {
       await middleware(req as ServerRequest, res as ServerResponse, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
+      expect((res.locals as { balanceConfigEnabled?: boolean }).balanceConfigEnabled).toBe(false);
 
       const balanceRecord = await Balance.findOne({ user: userId });
       expect(balanceRecord).toBeNull();
@@ -495,6 +499,7 @@ describe('createSetBalanceConfig', () => {
 
       expect(mockNext).toHaveBeenCalled();
       expect(upsertSpy).not.toHaveBeenCalled();
+      expect((res.locals as { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(1000);
     });
 
     test('should set tokenCredits for user with null tokenCredits', async () => {

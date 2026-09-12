@@ -1,5 +1,5 @@
+import type { AgentState, VersionRecord } from '../types';
 import { isActiveVersion } from '../isActiveVersion';
-import type { AgentState, VersionRecord } from '../VersionPanel';
 
 describe('isActiveVersion', () => {
   const createVersion = (overrides = {}): VersionRecord => ({
@@ -70,6 +70,36 @@ describe('isActiveVersion', () => {
     const versions = [version];
 
     expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+  });
+
+  test('returns false when handoff edges do not match', () => {
+    const version = createVersion({
+      edges: [{ from: 'router', to: 'researcher', edgeType: 'handoff' }],
+    });
+    const currentAgent = createAgentState({
+      edges: [{ from: 'router', to: 'writer', edgeType: 'handoff' }],
+    });
+    const versions = [version];
+
+    expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+  });
+
+  test('returns true when handoff edges match', () => {
+    const edges = [
+      {
+        from: 'router',
+        to: 'researcher',
+        edgeType: 'handoff',
+        description: 'Delegate research',
+        prompt: 'Provide the research brief',
+        promptKey: 'context',
+      },
+    ];
+    const version = createVersion({ edges });
+    const currentAgent = createAgentState({ edges: edges.map((edge) => ({ ...edge })) });
+    const versions = [version];
+
+    expect(isActiveVersion(version, currentAgent, versions)).toBe(true);
   });
 
   test('matches tools regardless of order', () => {
@@ -198,6 +228,14 @@ describe('isActiveVersion', () => {
     test('handles empty arrays for capabilities', () => {
       const version = createVersion({ capabilities: [] });
       const currentAgent = createAgentState({ capabilities: [] });
+      const versions = [version];
+
+      expect(isActiveVersion(version, currentAgent, versions)).toBe(true);
+    });
+
+    test('treats missing and empty handoff edges as equivalent', () => {
+      const version = createVersion({ edges: undefined });
+      const currentAgent = createAgentState({ edges: [] });
       const versions = [version];
 
       expect(isActiveVersion(version, currentAgent, versions)).toBe(true);

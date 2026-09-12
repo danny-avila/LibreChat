@@ -1,4 +1,12 @@
-import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
+import {
+  parseConvo,
+  parseTextParts,
+  parseCompactConvo,
+  replaceSpecialVars,
+  getEphemeralSender,
+  encodeEphemeralAgentId,
+  parseEphemeralAgentId,
+} from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint, Providers } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
@@ -669,5 +677,145 @@ describe('parseTextParts', () => {
       { type: ContentTypes.TEXT, text: 'World' },
     ];
     expect(parseTextParts(parts)).toBe('Hello World');
+  });
+
+  test('should exclude steer parts by default (generic extraction must not speak user words)', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'assistant output' },
+      { type: ContentTypes.STEER, steer: 'user mid-run words' },
+      { type: ContentTypes.TEXT, text: 'more output' },
+    ];
+    expect(parseTextParts(parts)).toBe('assistant output more output');
+  });
+
+  test('should include steer parts when includeSteer is set', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'assistant output' },
+      { type: ContentTypes.STEER, steer: 'user mid-run words' },
+    ];
+    expect(parseTextParts(parts, false, { includeSteer: true })).toBe(
+      'assistant output user mid-run words',
+    );
+  });
+
+  test('should combine includeSteer with skipReasoning', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.THINK, think: 'internal reasoning' },
+      { type: ContentTypes.TEXT, text: 'visible answer' },
+      { type: ContentTypes.STEER, steer: 'steered words' },
+    ];
+    expect(parseTextParts(parts, true, { includeSteer: true })).toBe(
+      'visible answer steered words',
+    );
+  });
+});
+
+describe('encodeEphemeralAgentId / parseEphemeralAgentId', () => {
+  test('round-trips endpoint and model without a sender', () => {
+    const id = encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o' });
+    expect(id).toBe('openAI__gpt-4o');
+    expect(parseEphemeralAgentId(id)).toEqual({
+      endpoint: 'openAI',
+      model: 'gpt-4o',
+      sender: undefined,
+      index: undefined,
+    });
+  });
+
+  test('round-trips a sender', () => {
+    const id = encodeEphemeralAgentId({
+      endpoint: 'Together AI',
+      model: 'Qwen/Qwen2.5-72B-Instruct',
+      sender: 'Fast Qwen',
+    });
+    expect(id).toBe('Together AI__Qwen/Qwen2.5-72B-Instruct___Fast Qwen');
+    expect(parseEphemeralAgentId(id)?.sender).toBe('Fast Qwen');
+    expect(parseEphemeralAgentId(id)?.model).toBe('Qwen/Qwen2.5-72B-Instruct');
+  });
+
+  test('round-trips a sender alongside an index suffix', () => {
+    const id = encodeEphemeralAgentId({
+      endpoint: 'openAI',
+      model: 'gpt-4o',
+      sender: 'GPT-4o',
+      index: 1,
+    });
+    expect(id).toBe('openAI__gpt-4o___GPT-4o____1');
+    expect(parseEphemeralAgentId(id)).toEqual({
+      endpoint: 'openAI',
+      model: 'gpt-4o',
+      sender: 'GPT-4o',
+      index: 1,
+    });
+  });
+
+  test('omits the sender segment for an empty sender, parsing back to undefined', () => {
+    const id = encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: '' });
+    expect(id).toBe('openAI__gpt-4o');
+    expect(parseEphemeralAgentId(id)?.sender).toBeUndefined();
+  });
+
+  test('restores colons in the endpoint, model, and sender', () => {
+    const id = encodeEphemeralAgentId({
+      endpoint: 'custom',
+      model: 'claude-3:opus',
+      sender: 'Label:With:Colons',
+    });
+    expect(parseEphemeralAgentId(id)).toEqual({
+      endpoint: 'custom',
+      model: 'claude-3:opus',
+      sender: 'Label:With:Colons',
+      index: undefined,
+    });
+  });
+
+  test('returns undefined for ids without the ephemeral format', () => {
+    expect(parseEphemeralAgentId('agent_abc123')).toBeUndefined();
+  });
+
+  /** Characterization of known format quirks (SiblingHeader and the persisted
+   *  sender both decode this format, so lock the behavior rather than change it):
+   *  the parser splits on the first `___` and keeps only the next segment, and
+   *  restores every `__` in the sender to `:`. */
+  test('truncates a sender containing a triple underscore (known quirk)', () => {
+    const id = encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: 'A___B' });
+    expect(parseEphemeralAgentId(id)?.sender).toBe('A');
+  });
+
+  test('decodes a literal double underscore in a sender to a colon (known quirk)', () => {
+    const id = encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: 'My__Bot' });
+    expect(parseEphemeralAgentId(id)?.sender).toBe('My:Bot');
+  });
+});
+
+describe('getEphemeralSender', () => {
+  test('prefers modelLabel over the spec and endpoint labels', () => {
+    expect(
+      getEphemeralSender({
+        modelLabel: 'My Label',
+        specLabel: 'Spec Label',
+        modelDisplayLabel: 'Endpoint Label',
+      }),
+    ).toBe('My Label');
+  });
+
+  test('falls back to the spec label, then the endpoint display label', () => {
+    expect(
+      getEphemeralSender({ specLabel: 'Spec Label', modelDisplayLabel: 'Endpoint Label' }),
+    ).toBe('Spec Label');
+    expect(getEphemeralSender({ modelDisplayLabel: 'Endpoint Label' })).toBe('Endpoint Label');
+  });
+
+  test('returns an empty string when no label is set', () => {
+    expect(getEphemeralSender({})).toBe('');
+    expect(getEphemeralSender({ modelLabel: null, specLabel: null, modelDisplayLabel: null })).toBe(
+      '',
+    );
+  });
+
+  /** `??` chain: an empty-string label short-circuits, preserving the exact
+   *  pre-consolidation behavior of every call site. */
+  test('an empty-string modelLabel short-circuits the chain', () => {
+    expect(getEphemeralSender({ modelLabel: '', specLabel: 'Spec Label' })).toBe('');
   });
 });

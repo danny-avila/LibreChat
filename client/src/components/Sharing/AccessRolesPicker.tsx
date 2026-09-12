@@ -6,11 +6,12 @@ import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
 import type * as t from '~/common';
-import { cn, getRoleLocalizationKeys } from '~/utils';
+import { cn, getRoleLocalizationKeys, RESOURCE_CONFIGS } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface AccessRolesPickerProps {
   id?: string;
+  ariaLabel?: string;
   resourceType?: ResourceType;
   selectedRoleId?: AccessRoleIds;
   onRoleChange: (roleId: AccessRoleIds) => void;
@@ -19,12 +20,14 @@ interface AccessRolesPickerProps {
 
 export default function AccessRolesPicker({
   id,
+  ariaLabel,
   resourceType = ResourceType.AGENT,
   selectedRoleId = AccessRoleIds.AGENT_VIEWER,
   onRoleChange,
   className = '',
 }: AccessRolesPickerProps) {
   const localize = useLocalize();
+  const menuId = React.useId();
   const [isOpen, setIsOpen] = React.useState(false);
   const { data: accessRoles, isLoading: rolesLoading } = useGetAccessRolesQuery(resourceType);
 
@@ -37,6 +40,12 @@ export default function AccessRolesPicker({
     };
   };
 
+  const ownerRoleId = RESOURCE_CONFIGS[resourceType]?.defaultOwnerRoleId;
+  const filteredRoles =
+    resourceType === ResourceType.SHARED_LINK
+      ? (accessRoles || []).filter((role) => role.accessRoleId !== ownerRoleId)
+      : accessRoles || [];
+
   const selectedRole = accessRoles?.find((role) => role.accessRoleId === selectedRoleId);
   const selectedRoleInfo = selectedRole ? getLocalizedRoleInfo(selectedRole.accessRoleId) : null;
 
@@ -44,7 +53,7 @@ export default function AccessRolesPicker({
     return <Skeleton className="h-10 w-24 rounded-lg" />;
   }
 
-  const dropdownItems: t.MenuItemProps[] = accessRoles.map((role: AccessRole) => {
+  const dropdownItems: t.MenuItemProps[] = filteredRoles.map((role: AccessRole) => {
     const localizedInfo = getLocalizedRoleInfo(role.accessRoleId);
     return {
       id: role.accessRoleId,
@@ -65,14 +74,17 @@ export default function AccessRolesPicker({
   });
 
   return (
-    <div className={className} id={id}>
+    <div className={className}>
       <DropdownPopup
-        menuId="access-roles-menu"
+        menuId={`access-roles-menu-${menuId}`}
         isOpen={isOpen}
         setIsOpen={setIsOpen}
         trigger={
           <Ariakit.MenuButton
-            aria-label={selectedRoleInfo?.description || 'Select role'}
+            id={id}
+            aria-label={
+              ariaLabel || selectedRoleInfo?.description || localize('com_ui_role_select')
+            }
             className={cn(
               'flex items-center justify-between gap-2 rounded-xl border border-border-light bg-transparent px-3 py-2 text-sm transition-colors hover:bg-surface-tertiary',
             )}

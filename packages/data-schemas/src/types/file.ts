@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { CodeEnvRef } from 'librechat-data-provider';
+import type { CodeEnvRef, CodeEnvRefMap } from 'librechat-data-provider';
 
 export interface IMongoFile extends Omit<Document, 'model'> {
   user: Types.ObjectId;
@@ -70,9 +70,33 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      * derive the sessionKey explicitly.
      */
     codeEnvRef?: CodeEnvRef;
+    codeEnvRefs?: CodeEnvRefMap;
+    /** Dispatch-order stamp for the current source artifact generation. */
+    sourceDispatchedAt?: number;
+    /** Vector namespaces this file has been embedded into. */
+    embeddedEntities?: string[];
+    /** The user named this destination, so absent ones were declined. */
+    destinationChosen?: boolean;
+    /** The type the delivery route was resolved against, when conversion changed it. */
+    routingMimeType?: string;
   };
+  /** Upload-time inference, not a durable contract. See the schema field for why. */
+  llmDeliveryPath?: string;
   expiresAt?: Date;
   expiredAt?: Date | null;
+  /**
+   * Consecutive failed retention-sweep deletions. The sweep backs off
+   * between attempts and parks the file once this reaches the configured
+   * cap, so a file whose backing storage refuses deletion cannot occupy
+   * the sweep's bounded queue. Absent until the first failure.
+   */
+  deletionAttempts?: number;
+  /**
+   * Earliest time the retention sweep may retry this file, and the only
+   * thing holding it back. Set alongside `deletionAttempts` on every
+   * failure; absent until the first one.
+   */
+  deletionRetryAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;

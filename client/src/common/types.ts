@@ -16,6 +16,8 @@ export function isEphemeralAgent(agentId: string | null | undefined): boolean {
 export interface ConfigFieldDetail {
   title: string;
   description: string;
+  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
+  sensitive?: boolean;
 }
 
 export type CodeBarProps = {
@@ -101,27 +103,6 @@ export enum IconContext {
   message = 'message',
 }
 
-export type IconMapProps = {
-  className?: string;
-  iconURL?: string;
-  context?: 'landing' | 'menu-item' | 'nav' | 'message';
-  endpoint?: string | null;
-  endpointType?: string;
-  assistantName?: string;
-  agentName?: string;
-  avatar?: string;
-  size?: number;
-};
-
-export type IconComponent = React.ComponentType<IconMapProps>;
-export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
-export type IconComponentTypes = IconComponent | AgentIconComponent;
-export type IconsRecord = {
-  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
-};
-
-export type AgentIconMapProps = IconMapProps & { agentName?: string };
-
 export type NavLink = {
   title: TranslationKeys;
   label?: string;
@@ -129,6 +110,7 @@ export type NavLink = {
   Component?: React.ComponentType;
   onClick?: (e?: React.MouseEvent) => void;
   variant?: 'default' | 'ghost';
+  disabled?: boolean;
   id: string;
 };
 
@@ -209,6 +191,10 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  /** True when the server can be attached to an agent, even if its transport is request-scoped. */
+  isReadyForAgent?: boolean;
+  /** True when tools can only be discovered with live chat request fields. */
+  requestScoped?: boolean;
   consumeOnly?: boolean;
   metadata: t.TPlugin;
 }
@@ -231,6 +217,9 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  /** True while the MCP tools list is being fetched and no data has arrived yet,
+   * so consumers can show a skeleton instead of an empty "no tools" state. */
+  mcpToolsLoading: boolean;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
@@ -239,6 +228,8 @@ export type AgentModelPanelProps = {
   agent_id?: string;
   providers: Option[];
   models: Record<string, string[] | undefined>;
+  modelsError: boolean;
+  modelsReady: boolean;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
@@ -340,15 +331,30 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedContent?: t.TEditedContent;
-  editedText?: string | null;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  /**
+   * Manual context compaction: a summarize-only turn hung off the branch's
+   * leaf (`messageId`). Shaped like a regenerate on the client — no new user
+   * bubble, the response placeholder parents onto the leaf — and sent with
+   * `compact: true` so the server runs the graph summarize-only.
+   */
+  compact?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
-  isResubmission?: boolean;
-  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  /**
+   * Authoritative attachment list for this submission: a rerun replays the edited
+   * message's stored files, and an auto-drained queued message replays the ones taken
+   * out of the composer when it was queued. Authoritative even when empty, so a drain
+   * never vacuums up attachments the user staged for their next send.
+   */
   overrideFiles?: t.TMessage['files'];
+  /**
+   * Assistant message being regenerated. Used to derive the optimistic response
+   * id for non-tail regenerations without accidentally keying the stream to the
+   * conversation tail.
+   */
+  targetResponseMessageId?: string | null;
   /**
    * Carry forward a user message's manually-invoked skills when the caller
    * is resubmitting / regenerating that same message — the compose-time
@@ -357,11 +363,26 @@ export type TOptions = {
    * pills are still visible on the user bubble.
    */
   overrideManualSkills?: string[];
+  /**
+   * Carry forward a user message's quoted excerpts when resubmitting /
+   * regenerating that same message — the compose-time atom is drained on the
+   * original submit, so without this the second turn would lose the quoted
+   * context even though the references still show on the user bubble.
+   */
+  overrideQuotes?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
+  /** Reuse a durable submission identity (terminal steer recovery). */
+  overrideClientRequestId?: string;
+  /** Exact parked steer source for a recovery attempt. */
+  overrideRecoverySteerId?: string;
+  /** Exact terminal generation observed before an automatic queued start. */
+  overrideExpectedPredecessorCreatedAt?: number;
+  /** Client-only exact queue position restored if admission is rejected. */
+  overrideQueuedMessageOrigin?: unknown;
 };
 
-export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
 
 /**
  * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)
@@ -374,13 +395,15 @@ export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
  * value at call-time (for callback guards) without being a reactive dependency.
  */
 export type TMessageChatContext = {
-  ask: (...args: Parameters<TAskFunction>) => void;
+  ask: TAskFunction;
   index: number;
   regenerate: (message: t.TMessage, options?: { addedConvo?: t.TConversation | null }) => void;
   conversation: t.TConversation | null;
   latestMessageId: string | undefined;
   latestMessageDepth: number | undefined;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Resolved once per chat from `interface.feedback`; false until the config loads */
+  feedbackEnabled: boolean;
   /** Should be a getter backed by a ref — reads current value without triggering re-renders */
   readonly isSubmitting: boolean;
 };
@@ -476,6 +499,7 @@ export type TAuthContext = {
   user: t.TUser | undefined;
   token: string | undefined;
   isAuthenticated: boolean;
+  isAuthReady: boolean;
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
   logout: (redirect?: string) => void;
@@ -493,6 +517,7 @@ export type TUserContext = {
 export type TAuthConfig = {
   loginRedirect: string;
   test?: boolean;
+  optional?: boolean;
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
@@ -505,6 +530,7 @@ export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
     iconClassName?: string;
     endpoint?: t.EModelEndpoint | string | null;
     endpointType?: t.EModelEndpoint | null;
+    endpointsConfig?: t.TEndpointsConfig | null;
     assistantName?: string;
     agentName?: string;
     error?: boolean;
@@ -650,5 +676,8 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    __LIBRECHAT_CONFIG__?: {
+      enableQueryDevtools?: boolean;
+    };
   }
 }

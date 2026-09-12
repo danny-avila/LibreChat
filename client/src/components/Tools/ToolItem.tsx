@@ -1,3 +1,4 @@
+import { Button } from '@librechat/client';
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
 import type { TPlugin, AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
@@ -36,14 +37,14 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
               <img
                 src={icon}
                 alt={localize('com_ui_logo', { 0: name })}
-                className="h-full w-full rounded-[5px] bg-white"
+                className="h-full w-full rounded-[5px] bg-surface-fixed"
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
                 <Wrench className="h-8 w-8 text-text-secondary" />
               </div>
             )}
-            <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
+            <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-border-light"></div>
           </div>
         </div>
         <div className="flex min-w-0 flex-col items-start justify-between">
@@ -51,8 +52,9 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
             {name}
           </div>
           {!isInstalled ? (
-            <button
-              className="btn btn-primary relative"
+            <Button
+              variant="submit"
+              className="relative"
               aria-label={`${localize('com_ui_add')} ${name}`}
               onClick={handleClick}
             >
@@ -60,10 +62,11 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
                 {localize('com_ui_add')}
                 <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
-            </button>
+            </Button>
           ) : (
-            <button
-              className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200"
+            <Button
+              variant="outline"
+              className="relative"
               onClick={handleClick}
               aria-label={`${localize('com_nav_tool_remove')} ${name}`}
             >
@@ -71,7 +74,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
                 {localize('com_nav_tool_remove')}
                 <XCircle className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
-            </button>
+            </Button>
           )}
         </div>
       </div>

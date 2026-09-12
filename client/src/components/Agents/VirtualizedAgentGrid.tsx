@@ -1,8 +1,8 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
-import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import { throttle } from 'lodash';
 import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
+import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
@@ -175,7 +175,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
               const globalIndex = index * cardsPerRow + cardIndex;
               return (
                 <div key={`${agent.id}-${globalIndex}`} role="gridcell">
-                  <AgentCard agent={agent} onClick={() => onSelectAgent(agent)} />
+                  <AgentCard agent={agent} onSelect={onSelectAgent} />
                 </div>
               );
             })}
@@ -188,7 +188,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
               aria-live="polite"
               aria-label={localize('com_agents_loading')}
             >
-              <Spinner className="h-6 w-6 text-primary" />
+              <Spinner className="h-6 w-6 text-text-primary" />
               <span className="sr-only">{localize('com_agents_loading')}</span>
             </div>
           )}
@@ -209,7 +209,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   // Simple loading spinner
   const loadingSpinner = (
     <div className="flex justify-center py-12">
-      <Spinner className="h-8 w-8 text-primary" />
+      <Spinner className="h-8 w-8 text-text-primary" />
     </div>
   );
 
@@ -225,7 +225,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   }
 
   // Handle loading state
-  if (isLoading || (isFetching && !isFetchingNextPage)) {
+  if ((isLoading || (isFetching && !isFetchingNextPage)) && !hasData) {
     return loadingSpinner;
   }
 
@@ -282,7 +282,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                   const rowCount = getRowCount(currentAgents.length, cardsPerRow);
 
                   return (
-                    <div ref={registerChild}>
+                    <div ref={registerChild as React.LegacyRef<HTMLDivElement>}>
                       <VirtualList
                         ref={listRef}
                         autoHeight

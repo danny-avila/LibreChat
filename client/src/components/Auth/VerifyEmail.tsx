@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Spinner, ThemeSelector } from '@librechat/client';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Button, Spinner, ThemeSelector } from '@librechat/client';
 import { useVerifyEmailMutation, useResendVerificationEmail } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -36,7 +36,7 @@ function RequestPasswordReset() {
       setVerificationStatus(true);
       countdownRedirect();
     },
-    onError: (error: unknown) => {
+    onError: (_error: unknown) => {
       setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
       setShowResendLink(true);
       setVerificationStatus(true);
@@ -74,28 +74,28 @@ function RequestPasswordReset() {
       setShowResendLink(true);
       setVerificationStatus(true);
     }
-  }, [token, email, verificationStatus, verifyEmailMutation]);
+  }, [token, email, verificationStatus, verifyEmailMutation, localize]);
 
   const VerificationSuccess = () => (
     <div className="flex flex-col items-center justify-center">
-      <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
-        {headerText}
-      </h1>
+      <h1 className="mb-4 text-center text-3xl font-semibold text-text-primary">{headerText}</h1>
       {countdown > 0 && (
-        <p className="text-center text-lg text-gray-600 dark:text-gray-400">
+        <p className="text-center text-lg text-text-secondary">
           {localize('com_auth_email_verification_redirecting', { 0: countdown.toString() })}
         </p>
       )}
       {showResendLink && countdown === 0 && (
-        <p className="text-center text-lg text-gray-600 dark:text-gray-400">
+        <p className="text-center text-lg text-text-secondary">
           {localize('com_auth_email_verification_resend_prompt')}
-          <button
-            className="ml-2 text-blue-600 hover:underline"
+          <Button
+            type="button"
+            variant="link"
+            className="ml-2 inline h-auto p-0 text-link"
             onClick={handleResendEmail}
             disabled={resendEmailMutation.isLoading}
           >
             {localize('com_auth_email_resend_link')}
-          </button>
+          </Button>
         </p>
       )}
     </div>
@@ -103,17 +103,17 @@ function RequestPasswordReset() {
 
   const VerificationInProgress = () => (
     <div className="flex flex-col items-center justify-center">
-      <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+      <h1 className="mb-4 text-center text-3xl font-semibold text-text-primary">
         {localize('com_auth_email_verification_in_progress')}
       </h1>
       <div className="mt-4 flex justify-center">
-        <Spinner className="h-8 w-8 text-green-500" />
+        <Spinner className="h-8 w-8 text-accent-primary" />
       </div>
     </div>
   );
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-surface-primary pt-6 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>

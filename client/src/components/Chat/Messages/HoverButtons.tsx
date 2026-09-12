@@ -1,9 +1,21 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
+import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
+import { findMessageById, isUserInitiatedCompaction } from 'librechat-data-provider';
+import {
+  Button,
+  EditIcon,
+  MorphIcon,
+  ContinueIcon,
+  TooltipAnchor,
+  RegenerateIcon,
+} from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useOptionalMessagesOperations } from '~/Providers';
+import { hasEditablePart } from './Content/editableParts';
 import { Fork } from '~/components/Conversations';
+import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
@@ -13,6 +25,7 @@ type THoverButtons = {
   isEditing: boolean;
   enterEdit: (cancel?: boolean) => void;
   copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
+  getCanCopy: () => boolean;
   conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
@@ -30,11 +43,11 @@ type HoverButtonProps = {
   title: string;
   icon: React.ReactNode;
   isActive?: boolean;
-  isVisible?: boolean;
-  isDisabled?: boolean;
   isLast?: boolean;
   className?: string;
   buttonStyle?: string;
+  dataTestId?: string;
+  disabled?: boolean;
 };
 
 const extractMessageContent = (message: TMessage): string => {
@@ -76,33 +89,31 @@ const HoverButton = memo(
     title,
     icon,
     isActive = false,
-    isVisible = true,
-    isDisabled = false,
     isLast = false,
     className = '',
+    dataTestId,
+    disabled = false,
   }: HoverButtonProps) => {
-    const buttonStyle = cn(
-      'hover-button rounded-lg p-1.5 text-text-secondary-alt',
-      'hover:text-text-primary hover:bg-surface-hover',
-      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
-      !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
-      !isVisible && 'opacity-0',
-      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
-      isActive && isVisible && 'active text-text-primary bg-surface-hover',
-      className,
-    );
+    const buttonStyle = hoverButtonClasses({ isActive, isLast, className });
 
     return (
-      <button
-        id={id}
-        className={buttonStyle}
-        onClick={onClick}
-        type="button"
-        title={title}
-        disabled={isDisabled}
-      >
-        {icon}
-      </button>
+      <TooltipAnchor
+        description={title}
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            id={id}
+            data-testid={dataTestId}
+            aria-label={title}
+            className={buttonStyle}
+            onClick={onClick}
+            disabled={disabled}
+          >
+            {icon}
+          </Button>
+        }
+      />
     );
   },
 );
@@ -114,6 +125,7 @@ const HoverButtons = ({
   isEditing,
   enterEdit,
   copyToClipboard,
+  getCanCopy,
   conversation,
   isSubmitting,
   message,
@@ -126,6 +138,7 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const { getMessages } = useOptionalMessagesOperations();
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -133,6 +146,24 @@ const HoverButtons = ({
     }
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
+
+  /** Which turn a rerun would replay, resolved for a model turn only. The lookup
+   *  goes through the messages array's memoized id index, so a conversation is
+   *  indexed once for all its rows rather than scanned once per row, and the memo
+   *  is keyed on the parent id: `getMessages` is a cache read, not a subscription,
+   *  and a parent's authorship never changes. Outside the messages view (a search
+   *  row) the thread is unavailable and the answer stays unknown. */
+  const parentIsUserMessage = useMemo(() => {
+    if (message.isCreatedByUser === true || message.parentMessageId == null) {
+      return undefined;
+    }
+    const parent = findMessageById(getMessages(), message.parentMessageId);
+    return parent == null ? undefined : parent.isCreatedByUser === true;
+  }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
+
+  /** Resolved only if the row has nothing to replay, because the artifact check
+   *  inside parses markdown. */
+  const getHasEditablePart = useCallback(() => hasEditablePart(message), [message]);
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
@@ -143,6 +174,9 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
+    getHasEditablePart,
+    parentIsUserMessage,
+    isUserInitiatedCompaction: isUserInitiatedCompaction(message),
     latestMessageId: latestMessageId,
   });
 
@@ -151,29 +185,21 @@ const HoverButtons = ({
     regenerateEnabled,
     continueSupported,
     forkingSupported,
+    isActiveStreamingMessage,
     isEditableEndpoint,
   } = generationCapabilities;
+
+  const canCopy = useMemo(
+    () => !isActiveStreamingMessage && getCanCopy(),
+    [isActiveStreamingMessage, getCanCopy],
+  );
 
   if (!conversation) {
     return null;
   }
 
   const { isCreatedByUser, error } = message;
-
-  if (error === true) {
-    return (
-      <div className="visible flex justify-center self-end lg:justify-start">
-        {regenerateEnabled && (
-          <HoverButton
-            onClick={regenerate}
-            title={localize('com_ui_regenerate')}
-            icon={<RegenerateIcon size="19" />}
-            isLast={isLast}
-          />
-        )}
-      </div>
-    );
-  }
+  const isSubagentThreadReadOnly = conversation.subagentThread != null;
 
   const onEdit = () => {
     if (isEditing) {
@@ -187,7 +213,7 @@ const HoverButtons = ({
   return (
     <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
       {/* Text to Speech */}
-      {TextToSpeech && (
+      {TextToSpeech && !error && !isActiveStreamingMessage && (
         <MessageAudio
           index={index}
           isLast={isLast}
@@ -200,72 +226,81 @@ const HoverButtons = ({
               icon={props.icon}
               isActive={props.isActive}
               isLast={isLast}
+              dataTestId={isLast && !isCreatedByUser ? 'read-aloud-button' : undefined}
             />
           )}
         />
       )}
 
       {/* Copy Button */}
-      <HoverButton
-        onClick={handleCopy}
-        title={
-          isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
-        }
-        icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
-        isLast={isLast}
-        className={cn(
-          'ml-0 flex items-center gap-1.5 text-xs',
-          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-        )}
-      />
+      {!isActiveStreamingMessage && (
+        <HoverButton
+          onClick={handleCopy}
+          title={
+            isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+          }
+          icon={<MorphIcon icon={isCopied ? Check : Copy} size={19} />}
+          isLast={isLast}
+          disabled={!canCopy}
+          className={cn(
+            'ml-0 flex items-center gap-1.5 text-xs',
+            isSubmitting && isCreatedByUser
+              ? 'group-hover:opacity-100 [@media(hover:hover)]:opacity-0'
+              : '',
+          )}
+          dataTestId={!isCreatedByUser ? 'copy-response-button' : undefined}
+        />
+      )}
 
       {/* Edit Button */}
-      {isEditableEndpoint && (
+      {!isSubagentThreadReadOnly && isEditableEndpoint && !hideEditButton && (
         <HoverButton
           id={`edit-${message.messageId}`}
           onClick={onEdit}
           title={localize('com_ui_edit')}
           icon={<EditIcon size="19" />}
           isActive={isEditing}
-          isVisible={!hideEditButton}
-          isDisabled={hideEditButton}
           isLast={isLast}
           className={isCreatedByUser ? '' : 'active'}
         />
       )}
 
       {/* Fork Button */}
-      <Fork
-        messageId={message.messageId}
-        conversationId={conversation.conversationId}
-        forkingSupported={forkingSupported}
-        latestMessageId={latestMessageId}
-        isLast={isLast}
-      />
+      {!error && !isActiveStreamingMessage && (
+        <Fork
+          messageId={message.messageId}
+          conversationId={conversation.conversationId}
+          forkingSupported={forkingSupported}
+          latestMessageId={latestMessageId}
+          isLast={isLast}
+        />
+      )}
 
       {/* Feedback Buttons */}
-      {!isCreatedByUser && handleFeedback != null && (
+      {!error && !isActiveStreamingMessage && !isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
       )}
 
       {/* Regenerate Button */}
-      {regenerateEnabled && (
+      {!isSubagentThreadReadOnly && regenerateEnabled && (
         <HoverButton
           onClick={regenerate}
           title={localize('com_ui_regenerate')}
           icon={<RegenerateIcon size="19" />}
           isLast={isLast}
+          dataTestId={isLast ? 'regenerate-generation-button' : undefined}
           className="active"
         />
       )}
 
       {/* Continue Button */}
-      {continueSupported && (
+      {!isSubagentThreadReadOnly && continueSupported && (
         <HoverButton
           onClick={(e) => e && handleContinue(e)}
           title={localize('com_ui_continue')}
           icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
           isLast={isLast}
+          dataTestId={isLast ? 'continue-generation-button' : undefined}
           className="active"
         />
       )}

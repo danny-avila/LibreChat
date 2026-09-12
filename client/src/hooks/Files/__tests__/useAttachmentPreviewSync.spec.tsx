@@ -16,11 +16,19 @@
  */
 
 import { useEffect } from 'react';
+import { Tools } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
+import type {
+  TAttachment,
+  TFile,
+  TAttachmentMetadata,
+  TFilePreview,
+} from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { TAttachment, TFilePreview } from 'librechat-data-provider';
 import store from '~/store';
+
+type AttachmentFixture = TFile & TAttachmentMetadata;
 
 const mockUseFilePreview = jest.fn();
 jest.mock('~/data-provider', () => ({
@@ -34,19 +42,24 @@ const wrapper = ({ children }: { children: ReactNode }) => <RecoilRoot>{children
 const messageId = 'msg-1';
 const fileId = 'fid-1';
 
-function makeAttachment(overrides: Partial<TAttachment> = {}): TAttachment {
+function makeAttachment(overrides: Partial<AttachmentFixture> = {}): AttachmentFixture {
   return {
+    user: 'user-1',
+    object: 'file',
+    bytes: 1024,
+    embedded: false,
+    usage: 0,
     file_id: fileId,
     filename: 'data.xlsx',
     filepath: '/uploads/data.xlsx',
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    type: Tools.execute_code,
     messageId,
     toolCallId: 'tc-1',
-    text: null,
-    textFormat: null,
+    text: undefined,
+    textFormat: undefined,
     status: 'pending',
     ...overrides,
-  } as unknown as TAttachment;
+  };
 }
 
 /** Read messageAttachmentsMap and bridge it out via a mutable ref. */
@@ -56,6 +69,7 @@ function setup({
   preview,
   isFetching = false,
   seedLiveMap = true,
+  seedEntries,
 }: {
   attachment: TAttachment;
   isSubmitting: boolean;
@@ -67,6 +81,9 @@ function setup({
    * upsert must INSERT (not just update) the resolved record into the
    * live map so the parent's `useAttachments` merge picks it up. */
   seedLiveMap?: boolean;
+  /* Overrides the seeded live entries (defaults to `[attachment]`) —
+   * used to simulate sibling tool calls sharing the same file_id. */
+  seedEntries?: TAttachment[];
 }) {
   mockUseFilePreview.mockReset();
   mockUseFilePreview.mockReturnValue({ data: preview, isFetching });
@@ -89,7 +106,7 @@ function setup({
     const setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
     useEffect(() => {
       if (seedLiveMap) {
-        setMap({ [messageId]: [attachment] });
+        setMap({ [messageId]: seedEntries ?? [attachment] });
       }
       setKeys([0]);
       setSubmitting(isSubmitting);
@@ -261,7 +278,7 @@ describe('useAttachmentPreviewSync', () => {
         textFormat: 'html',
       },
     });
-    const updated = ctx.map[messageId]?.[0] as TAttachment & { text?: string };
+    const updated = ctx.map[messageId]?.[0] as AttachmentFixture;
     expect(updated.status).toBe('ready');
     expect(updated.text).toBe('<table>final</table>');
     expect(ctx.result.current.status).toBe('ready');
@@ -277,11 +294,37 @@ describe('useAttachmentPreviewSync', () => {
         previewError: 'parser-error',
       },
     });
-    const updated = ctx.map[messageId]?.[0] as TAttachment & { previewError?: string };
+    const updated = ctx.map[messageId]?.[0] as AttachmentFixture;
     expect(updated.status).toBe('failed');
     expect(updated.previewError).toBe('parser-error');
     expect(ctx.result.current.status).toBe('failed');
     expect(ctx.result.current.previewError).toBe('parser-error');
+  });
+
+  it('fans the resolved preview out to EVERY sibling entry sharing the file_id', () => {
+    const first = makeAttachment({ status: 'pending', toolCallId: 'tc-1' });
+    const sibling = makeAttachment({ status: 'pending', toolCallId: 'tc-2' });
+    const other = makeAttachment({ file_id: 'fid-other', status: 'pending', toolCallId: 'tc-3' });
+    const ctx = setup({
+      attachment: first,
+      isSubmitting: true,
+      seedEntries: [first, sibling, other],
+      preview: {
+        file_id: fileId,
+        status: 'ready',
+        text: '<table>final</table>',
+        textFormat: 'html',
+      },
+    });
+    const list = (ctx.map[messageId] ?? []) as AttachmentFixture[];
+    expect(list).toHaveLength(3);
+    expect(list[0].status).toBe('ready');
+    expect(list[0].text).toBe('<table>final</table>');
+    expect(list[1].status).toBe('ready');
+    expect(list[1].text).toBe('<table>final</table>');
+    expect(list[1].toolCallId).toBe('tc-2');
+    expect(list[2].status).toBe('pending');
+    expect(list[2].text).toBeUndefined();
   });
 
   it('does NOT upsert while the polled status is still pending', () => {
@@ -293,7 +336,7 @@ describe('useAttachmentPreviewSync', () => {
     /* Map should be unchanged from the initial seed — no patch. */
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    expect((list[0] as TAttachment & { status?: string }).status).toBe('pending');
+    expect((list[0] as AttachmentFixture).status).toBe('pending');
   });
 
   it('reports isPolling true when the query is fetching and the gate is open', () => {
@@ -336,7 +379,7 @@ describe('useAttachmentPreviewSync', () => {
     });
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    const inserted = list[0] as TAttachment & { text?: string; textFormat?: string };
+    const inserted = list[0] as AttachmentFixture;
     expect(inserted.file_id).toBe(fileId);
     expect(inserted.status).toBe('ready');
     expect(inserted.text).toBe('<table>resolved-on-reload</table>');
@@ -361,7 +404,7 @@ describe('useAttachmentPreviewSync', () => {
     });
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    const inserted = list[0] as TAttachment & { previewError?: string };
+    const inserted = list[0] as AttachmentFixture;
     expect(inserted.status).toBe('failed');
     expect(inserted.previewError).toBe('render-timeout');
   });

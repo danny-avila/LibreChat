@@ -11,6 +11,7 @@ import {
   Progress,
 } from '@librechat/client';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
+import type { Variants } from 'framer-motion';
 import {
   useConfirmTwoFactorMutation,
   useDisableTwoFactorMutation,
@@ -24,7 +25,7 @@ import store from '~/store';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
-const phaseVariants = {
+const phaseVariants: Variants = {
   initial: { opacity: 0, scale: 0.95 },
   animate: { opacity: 1, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
   exit: { opacity: 0, scale: 0.95, transition: { duration: 0.3, ease: 'easeIn' } },
@@ -220,7 +221,7 @@ const TwoFactorAuthentication: React.FC = () => {
           >
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
-                <SmartphoneIcon className="h-6 w-6 text-primary" aria-hidden="true" />
+                <SmartphoneIcon className="h-6 w-6 text-text-primary" aria-hidden="true" />
                 {user?.twoFactorEnabled
                   ? localize('com_ui_2fa_disable')
                   : localize('com_ui_2fa_setup')}
@@ -237,7 +238,9 @@ const TwoFactorAuthentication: React.FC = () => {
                         key={step}
                         animate={{
                           color:
-                            currentStep >= index ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            currentStep >= index
+                              ? 'rgb(var(--text-primary))'
+                              : 'rgb(var(--text-tertiary))',
                         }}
                         className="font-medium"
                       >

@@ -1,5 +1,8 @@
 import fs from 'fs';
 import { Readable } from 'stream';
+import { logger } from '@librechat/data-schemas';
+import { FileSources } from 'librechat-data-provider';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   UploadPartCommand,
   PutObjectCommand,
@@ -10,16 +13,12 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type {
   CompletedPart,
   GetObjectCommandInput,
   PutObjectCommandInput,
 } from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types';
 import type {
   UploadFileParams,
   SaveBufferParams,
@@ -32,6 +31,21 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import type { StoredFileRef } from '~/storage/path';
+import type { ServerRequest } from '~/types';
+import {
+  assertRemoteFileURL,
+  getRemoteFileFetchMaxBytes,
+  getRemoteFileFetchTimeoutMs,
+  assertRemoteFileContentLength,
+  createRemoteFileByteLimitTransform,
+} from '~/storage/url';
+import {
+  AVATAR_BASE_PATH,
+  DEFAULT_BASE_PATH as defaultBasePath,
+  INLINE_AVATAR_PATH_PREFIX,
+  INLINE_IMAGE_PATH_PREFIX,
+} from '~/storage/constants';
 import {
   assertS3FileName,
   assertPathSegment,
@@ -39,12 +53,6 @@ import {
 } from '~/storage/validation';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
-import {
-  AVATAR_BASE_PATH,
-  DEFAULT_BASE_PATH as defaultBasePath,
-  INLINE_AVATAR_PATH_PREFIX,
-  INLINE_IMAGE_PATH_PREFIX,
-} from '~/storage/constants';
 import { s3Config } from './s3Config';
 
 const {
@@ -273,9 +281,7 @@ export function getStorageMetadataForKey(
   };
 }
 
-export function resolveStoredS3Key(
-  file: Pick<TFile, 'filepath'> & { storageKey?: string | null },
-): string {
+export function resolveStoredS3Key(file: StoredFileRef): string {
   return file.storageKey || extractKeyFromS3Url(file.filepath);
 }
 
@@ -551,15 +557,20 @@ export async function saveURLToS3WithMetadata({
   urlBuilder,
 }: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<SaveURLResult> {
   try {
-    const response = await fetch(URL);
+    const maxBytes = getRemoteFileFetchMaxBytes();
+    const response = await fetch(assertRemoteFileURL(URL), {
+      signal: AbortSignal.timeout(getRemoteFileFetchTimeoutMs()),
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
+    assertRemoteFileContentLength(response.headers, maxBytes);
+
     const contentType = response.headers.get('content-type') ?? '';
     if (response.body) {
       const source = Readable.fromWeb(
         response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
-      );
+      ).pipe(createRemoteFileByteLimitTransform(maxBytes));
       const result = await saveReadableToS3({
         userId,
         body: source,
@@ -582,6 +593,10 @@ export async function saveURLToS3WithMetadata({
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote file response too large: ${buffer.length} bytes`);
+    }
+
     const filepath = await saveBufferToS3({
       userId,
       buffer,
@@ -622,6 +637,27 @@ export async function saveURLToS3(
   return filepath;
 }
 
+/**
+ * Decodes a key taken from a URL path.
+ *
+ * `URL.pathname` is percent-encoded, but S3 object keys are raw UTF-8 and the AWS SDK encodes
+ * them again when it signs the request. Returning the encoded pathname therefore asks S3 for a
+ * literally different key (`%C3%81rsreikningur.pdf` instead of `Ársreikningur.pdf`) and every
+ * read of a file whose name contains a non-ASCII character fails with `NoSuchKey`. Keys made of
+ * ASCII are unaffected, which is why this only shows up for non-English filenames.
+ *
+ * Malformed sequences fall back to the raw value rather than throwing — a key that cannot be
+ * decoded is still worth attempting.
+ */
+function decodeKeyFromUrlPath(key: string): string {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    logger.warn(`[extractKeyFromS3Url] Could not decode key, using it as-is: ${key}`);
+    return key;
+  }
+}
+
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   if (!fileUrlOrKey) {
     throw new Error('Invalid input: URL or key is empty');
@@ -643,7 +679,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
         (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
         bucketName.length +
         1;
-      const key = url.pathname.substring(startPos);
+      const key = decodeKeyFromUrlPath(url.pathname.substring(startPos));
       if (!key) {
         logger.warn(
           `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
@@ -661,7 +697,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     ) {
       const firstSlashIndex = pathname.indexOf('/');
       if (firstSlashIndex > 0) {
-        const key = pathname.substring(firstSlashIndex + 1);
+        const key = decodeKeyFromUrlPath(pathname.substring(firstSlashIndex + 1));
         if (key === '') {
           logger.warn(
             `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
@@ -679,8 +715,9 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       return '';
     }
 
-    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
-    return pathname;
+    const key = decodeKeyFromUrlPath(pathname);
+    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+    return key;
   } catch (error) {
     if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
       logger.error(
@@ -840,7 +877,11 @@ export async function uploadFileToS3({
   }
 }
 
-export async function getS3FileStream(_req: ServerRequest, filePath: string): Promise<Readable> {
+export async function getS3FileStream(
+  _req: ServerRequest,
+  filePath: string,
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<Readable> {
   try {
     const Key = extractKeyFromS3Url(filePath);
     const params = { Bucket: bucketName, Key };
@@ -850,7 +891,7 @@ export async function getS3FileStream(_req: ServerRequest, filePath: string): Pr
       throw new Error('[getS3FileStream] S3 not initialized');
     }
 
-    const data = await s3.send(new GetObjectCommand(params));
+    const data = await s3.send(new GetObjectCommand(params), { abortSignal: signal });
     if (!data.Body) {
       throw new Error(`[getS3FileStream] S3 response body is empty for key: ${Key}`);
     }

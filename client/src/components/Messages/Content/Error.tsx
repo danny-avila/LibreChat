@@ -1,11 +1,35 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  alternateName,
+  ViolationTypes,
+  isCodeWorkspaceSelectionErrorReason,
+  parseLangChainErrorCode,
+  stripLangChainTroubleshootingUrl,
+} from 'librechat-data-provider';
+import type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
+
+/**
+ * The server converts classified LangChain failures into typed payloads, but messages persisted
+ * before it did still carry the docs URL, so the code is read back out of the text to localize
+ * those the same way. Codes without copy fall through to the provider text, stripped of the URL.
+ */
+const langChainErrorKeys: Record<string, TranslationKeys> = {
+  MODEL_NOT_FOUND: 'com_error_model_not_found',
+  MODEL_RATE_LIMIT: 'com_error_model_rate_limit',
+};
+
+function getLangChainErrorKey(text: string): TranslationKeys | undefined {
+  const code = parseLangChainErrorCode(text);
+  return code == null ? undefined : langChainErrorKeys[code];
+}
 
 type TConcurrent = {
   limit: number;
@@ -35,6 +59,45 @@ type TExpiredKey = {
 type TGenericError = {
   info: string;
 };
+
+type TContextOverflow = {
+  info?: string;
+  provider?: string;
+  projectedMessageTokens?: number;
+  availableMessageTokens?: number;
+};
+
+type TCompactionSkipped = {
+  reason?: string;
+};
+
+type TCodeWorkspaceError = {
+  reason?: string;
+};
+
+const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, TranslationKeys> = {
+  required: 'com_error_code_workspace_required',
+  invalid: 'com_error_code_workspace_invalid',
+  worker_unavailable: 'com_error_code_workspace_worker_unavailable',
+  unsupported: 'com_error_code_workspace_unsupported',
+  missing: 'com_error_code_workspace_missing',
+};
+
+/** Why a manual compaction could not run, keyed by the SDK's skip reason. */
+const compactionSkippedKeys: Record<string, TranslationKeys> = {
+  disabled: 'com_error_compaction_disabled',
+  instructions_exceed_budget: 'com_error_compaction_budget',
+  nothing_to_summarize: 'com_error_compaction_nothing',
+};
+
+/**
+ * SDK boilerplate already covered by the localized headline; whatever remains
+ * (specific guidance and the token budget breakdown) renders as details.
+ */
+const emptyMessagesBoilerplate = [
+  'Message pruning removed all messages as none fit in the context window.',
+  'Please increase the context window size or make your message shorter.',
+];
 
 const errorMessages = {
   [ErrorTypes.MODERATION]: 'com_error_moderation',
@@ -75,7 +138,56 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+  [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
+  [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
+  [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE]: (
+    json: TCodeWorkspaceError,
+    localize: LocalizeFunction,
+  ) => {
+    if (!isCodeWorkspaceSelectionErrorReason(json.reason)) {
+      return localize('com_error_code_workspace_unavailable');
+    }
+    return localize(codeWorkspaceErrorKeys[json.reason]);
+  },
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
+  [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
+  [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
+  [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
+  [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
+    localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),
+  [ErrorTypes.EMPTY_MESSAGES]: (json: TGenericError, localize: LocalizeFunction) => {
+    const detail = emptyMessagesBoilerplate
+      .reduce((info, sentence) => info.replace(sentence, ''), json.info ?? '')
+      .trim();
+    return (
+      <>
+        {localize('com_error_empty_messages')}
+        {detail && (
+          <>
+            <br />
+            <br />
+            <CodeBlock
+              lang={localize('com_ui_details')}
+              error={true}
+              allowExecution={false}
+              codeChildren={detail}
+            />
+          </>
+        )}
+      </>
+    );
+  },
+  [ErrorTypes.FINAL_CONTEXT_OVERFLOW]: (json: TContextOverflow, localize: LocalizeFunction) => {
+    const { projectedMessageTokens: projected, availableMessageTokens: available } = json;
+    const message = localize('com_error_final_context_overflow');
+    if (typeof projected !== 'number' || typeof available !== 'number') {
+      return message;
+    }
+    return `${message} ${localize('com_error_context_tokens_detail', {
+      0: projected,
+      1: available,
+    })}`;
+  },
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
@@ -100,9 +212,13 @@ const errorMessages = {
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
   },
-  token_balance: (json: TTokenBalance) => {
+  token_balance: (json: TTokenBalance, localize: LocalizeFunction) => {
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    const message = localize('com_error_token_balance', {
+      0: balance,
+      1: promptTokens,
+      2: tokenCost,
+    });
     return (
       <>
         {message}
@@ -127,8 +243,15 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
-  const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
+  const providerText = stripLangChainTroubleshootingUrl(text);
+  const errorMessage =
+    providerText.length > 512 && !jsonString ? providerText.slice(0, 512) + '...' : providerText;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+
+  const langChainErrorKey = getLangChainErrorKey(text);
+  if (langChainErrorKey != null) {
+    return localize(langChainErrorKey);
+  }
 
   if (!isJson(jsonString)) {
     return defaultResponse;
@@ -136,14 +259,14 @@ const Error = ({ text }: { text: string }) => {
 
   const json = JSON.parse(jsonString);
   const errorKey = json.code || json.type;
-  const keyExists = errorKey && errorMessages[errorKey];
+  const mappedError = errorKey && errorMessages[errorKey];
 
-  if (keyExists && typeof errorMessages[errorKey] === 'function') {
-    return errorMessages[errorKey](json, localize);
-  } else if (keyExists && keyExists.startsWith(localizedErrorPrefix)) {
-    return localize(errorMessages[errorKey]);
-  } else if (keyExists) {
-    return errorMessages[errorKey];
+  if (typeof mappedError === 'function') {
+    return mappedError(json, localize);
+  } else if (mappedError && mappedError.startsWith(localizedErrorPrefix)) {
+    return localize(mappedError);
+  } else if (mappedError) {
+    return mappedError;
   } else {
     return defaultResponse;
   }

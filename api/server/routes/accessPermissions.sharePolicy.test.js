@@ -30,6 +30,7 @@ jest.mock('~/server/controllers/PermissionsController', () => ({
 
 const express = require('express');
 const request = require('supertest');
+const mongoose = require('mongoose');
 const {
   SystemRoles,
   ResourceType,
@@ -48,6 +49,8 @@ const { getRoleByName } = require('~/models');
 
 describe('Access permissions share policy', () => {
   let app;
+  const mockSharedLinkFindById = jest.fn();
+  const originalSharedLinkModel = mongoose.models.SharedLink;
 
   const resourceId = '507f1f77bcf86cd799439011';
   const sharePolicyCases = [
@@ -116,8 +119,30 @@ describe('Access permissions share policy', () => {
     accessRoleId,
   });
 
+  const allowSharedLinkSharing = () => {
+    getRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SHARED_LINKS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: true,
+        },
+      },
+    });
+  };
+
+  const mockSharedLinkOwner = (ownerId = 'owner-user') => {
+    mockSharedLinkFindById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ user: ownerId }),
+    });
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
+    if (mongoose.models.SharedLink) {
+      mongoose.models.SharedLink.findById = mockSharedLinkFindById;
+    } else {
+      mongoose.models.SharedLink = { findById: mockSharedLinkFindById };
+    }
     hasCapability.mockResolvedValue(false);
 
     app = express();
@@ -127,6 +152,14 @@ describe('Access permissions share policy', () => {
       next();
     });
     app.use('/api/permissions', accessPermissionsRouter);
+  });
+
+  afterAll(() => {
+    if (originalSharedLinkModel) {
+      mongoose.models.SharedLink = originalSharedLinkModel;
+    } else {
+      delete mongoose.models.SharedLink;
+    }
   });
 
   it.each(sharePolicyCases)(
@@ -207,5 +240,81 @@ describe('Access permissions share policy', () => {
       message: `You do not have permission to share ${ResourceType.SKILL} resources publicly`,
     });
     expect(updateResourcePermissions).not.toHaveBeenCalled();
+  });
+
+  it('blocks granting shared-link owner through generic permission updates', async () => {
+    allowSharedLinkSharing();
+    mockSharedLinkOwner();
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SHARED_LINK}/${resourceId}`)
+      .send({
+        updated: [
+          {
+            type: PrincipalType.USER,
+            id: 'target-user',
+            accessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
+          },
+        ],
+        public: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Shared link owner permissions cannot be changed');
+    expect(updateResourcePermissions).not.toHaveBeenCalled();
+  });
+
+  it('blocks granting shared-link owner to the public principal', async () => {
+    allowSharedLinkSharing();
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SHARED_LINK}/${resourceId}`)
+      .send({
+        public: true,
+        publicAccessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Shared link owner permissions cannot be changed');
+    expect(updateResourcePermissions).not.toHaveBeenCalled();
+    expect(mockSharedLinkFindById).not.toHaveBeenCalled();
+  });
+
+  it('blocks removing the canonical shared-link owner', async () => {
+    allowSharedLinkSharing();
+    mockSharedLinkOwner('owner-user');
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SHARED_LINK}/${resourceId}`)
+      .send({
+        updated: [],
+        removed: [{ type: PrincipalType.USER, id: 'owner-user' }],
+        public: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Shared link owner permissions cannot be changed');
+    expect(updateResourcePermissions).not.toHaveBeenCalled();
+  });
+
+  it('allows viewer grants for non-owner shared-link users', async () => {
+    allowSharedLinkSharing();
+    mockSharedLinkOwner('owner-user');
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SHARED_LINK}/${resourceId}`)
+      .send({
+        updated: [
+          {
+            type: PrincipalType.USER,
+            id: 'target-user',
+            accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
+          },
+        ],
+        public: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(updateResourcePermissions).toHaveBeenCalledTimes(1);
   });
 });

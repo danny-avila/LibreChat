@@ -5,12 +5,13 @@ import type {
   AgentToolOptions,
   SupportContact,
   AgentProvider,
+  MemoryScope,
+  SkillsScope,
+  StatefulCodeEnvironment,
   GraphEdge,
   Agent,
 } from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
-
-export type AgentQueryResult = { found: true; agent: Agent } | { found: false };
 
 export type TAgentOption = OptionWithIcon &
   Agent & {
@@ -24,8 +25,10 @@ export type TAgentCapabilities = {
   [AgentCapabilities.web_search]: boolean;
   [AgentCapabilities.file_search]: boolean;
   [AgentCapabilities.execute_code]: boolean;
+  [AgentCapabilities.memory]?: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
+  [AgentCapabilities.stateful_code_sessions]?: boolean;
 };
 
 export type AgentForm = {
@@ -41,6 +44,16 @@ export type AgentForm = {
   tool_options?: AgentToolOptions;
   skills?: string[];
   skills_enabled?: boolean;
+  skill_authoring_enabled?: boolean;
+  skills_scope?: SkillsScope;
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
+  /** Sharing scope for stateful Code API workspaces. */
+  stateful_code_environment?: StatefulCodeEnvironment;
+  /** Operator-configured managed or attached execution environment. */
+  code_environment_id?: string | null;
+  /** Git authorship applied to sandboxed commands for this agent. */
+  git_identity?: Agent['git_identity'];
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];

@@ -88,6 +88,24 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     ).toEqual({});
   });
 
+  it('routes each config-source initialization through the supplied limiter', async () => {
+    let limitCalls = 0;
+    const limit = async <T>(task: () => Promise<T>): Promise<T> => {
+      limitCalls += 1;
+      return task();
+    };
+
+    const result = await registry.ensureConfigServers(
+      { first: sseConfig, second: altSseConfig },
+      limit,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({ first: expect.any(Object), second: expect.any(Object) }),
+    );
+    expect(limitCalls).toBe(2);
+  });
+
   it('should skip unchanged YAML-named servers but still process config-only servers', async () => {
     await registry.addServer('yaml_server', yamlConfig, 'CACHE');
     inspectSpy.mockClear();
@@ -102,7 +120,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
     expect(inspectSpy).toHaveBeenCalledWith(
       'config_server',
-      sseConfig,
+      { ...sseConfig, source: 'config' },
       undefined,
       undefined,
       undefined,
@@ -153,6 +171,23 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('should lazy-init YAML server when admin overrides only the OBO field', async () => {
+    await registry.addServer('yaml_remote', sseConfig, 'CACHE');
+    inspectSpy.mockClear();
+
+    const overrideConfig: t.MCPOptions = {
+      ...sseConfig,
+      obo: { scopes: 'api://mcp-server/Mcp.Tools.ReadWrite' },
+    };
+    const result = await registry.ensureConfigServers({
+      yaml_remote: overrideConfig,
+    });
+
+    expect(result).toHaveProperty('yaml_remote');
+    expect(result.yaml_remote.obo).toEqual({ scopes: 'api://mcp-server/Mcp.Tools.ReadWrite' });
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('should not re-init YAML server when only the difference is an inspector-derived field absent from rawConfig', async () => {
     const yamlWithInferred: t.MCPOptions = {
       ...sseConfig,
@@ -195,7 +230,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
     expect(inspectSpy).toHaveBeenCalledWith(
       'my_server',
-      sseConfig,
+      { ...sseConfig, source: 'config' },
       undefined,
       undefined,
       undefined,

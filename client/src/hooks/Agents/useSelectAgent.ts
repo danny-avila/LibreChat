@@ -11,8 +11,8 @@ import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
+import { logger, specDisplayFieldReset } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
-import { logger } from '~/utils';
 
 export default function useSelectAgent() {
   const queryClient = useQueryClient();
@@ -22,23 +22,31 @@ export default function useSelectAgent() {
   const getConversation = useGetConversation(0);
 
   const updateConversation = useCallback(
-    async (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
+    async (
+      agent: Partial<Agent>,
+      template: Partial<TPreset | TConversation>,
+      /** The passes that follow the first one only carry freshly fetched agent details into the
+       * composer the first pass opened, so a paste started meanwhile keeps its draft. */
+      keepComposerState = false,
+    ) => {
       const conversation = await getConversation();
       logger.log('conversation', 'Updating conversation with agent', agent);
       if (isAssistantsEndpoint(conversation?.endpoint)) {
         newConversation({
           template: { ...(template as Partial<TConversation>) },
           preset: template as Partial<TPreset>,
+          keepComposerState,
         });
         return;
       }
       const currentConvo = getDefaultConversation({
-        conversation: { ...(conversation ?? {}), agent_id: agent.id },
+        conversation: { ...(conversation ?? {}), agent_id: agent.id, ...specDisplayFieldReset },
         preset: template,
       });
       newConversation({
         template: currentConvo,
         preset: template as Partial<TPreset>,
+        keepComposerState,
       });
     },
     [getConversation, getDefaultConversation, newConversation],
@@ -55,6 +63,7 @@ export default function useSelectAgent() {
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         conversationId: Constants.NEW_CONVO as string,
+        ...specDisplayFieldReset,
       };
 
       await updateConversation({ id: agent.id }, template);
@@ -66,7 +75,7 @@ export default function useSelectAgent() {
           }),
         );
         if (fullAgent) {
-          await updateConversation(fullAgent, { ...template, agent_id: fullAgent.id });
+          await updateConversation(fullAgent, { ...template, agent_id: fullAgent.id }, true);
         }
       } catch (error) {
         if ((error as { silent: boolean } | undefined)?.silent) {
@@ -74,7 +83,7 @@ export default function useSelectAgent() {
           return;
         }
         console.error('Error fetching full agent data:', error);
-        await updateConversation({}, { ...template, agent_id: undefined });
+        await updateConversation({}, { ...template, agent_id: undefined }, true);
       }
     },
     [agentsMap, updateConversation, queryClient],

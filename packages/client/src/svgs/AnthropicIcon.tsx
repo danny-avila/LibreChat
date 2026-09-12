@@ -1,3 +1,4 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 export default function AnthropicIcon({
   size = 25,
@@ -5,14 +6,14 @@ export default function AnthropicIcon({
 }: {
   size?: number;
   className?: string;
-}) {
+}): JSX.Element {
   return (
     <svg
       viewBox="0 0 24 16"
       overflow="visible"
       width={size}
       height={size}
-      className={cn('fill-current text-black', className)}
+      className={cn('fill-current', className)}
       aria-hidden="true"
     >
       <g

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
+import { Button } from '@librechat/client';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -113,53 +114,57 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
   const structured = !isJson && isStructuredText(displayText);
 
   return (
-    <div className="relative">
-      {isJson ? (
-        <pre className="max-h-[300px] overflow-auto rounded text-xs">
-          <code className="hljs language-json !whitespace-pre-wrap !break-words">
+    <div>
+      <div className="relative pr-10">
+        {isJson ? (
+          <pre className="max-h-[300px] overflow-auto rounded text-xs">
+            <code className="hljs language-json !whitespace-pre-wrap !break-words">
+              {visibleText}
+            </code>
+          </pre>
+        ) : (
+          <pre
+            className={cn(
+              'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
+              error && 'font-mono text-status-error',
+              !error && structured && 'font-mono text-text-secondary',
+              !error && !structured && 'font-sans text-sm text-text-primary',
+            )}
+          >
             {visibleText}
-          </code>
-        </pre>
-      ) : (
-        <pre
-          className={cn(
-            'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
-            error && 'font-mono text-red-600 dark:text-red-400',
-            !error && structured && 'font-mono text-text-secondary',
-            !error && !structured && 'font-sans text-sm text-text-primary',
-          )}
-        >
-          {visibleText}
-        </pre>
-      )}
-      <div className="absolute bottom-0 right-0">
-        <CopyButton
-          isCopied={isCopied}
-          onClick={handleCopy}
-          iconOnly
-          label={localize('com_ui_copy')}
-        />
+          </pre>
+        )}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2">
+          <CopyButton
+            isCopied={isCopied}
+            onClick={handleCopy}
+            iconOnly
+            label={localize('com_ui_copy')}
+          />
+        </div>
       </div>
       {needsTruncation && (
-        <button
-          type="button"
-          className="mt-1 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        <Button
+          variant="link"
+          size="sm"
+          className="mt-1 h-auto p-0 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
-        </button>
+        </Button>
       )}
       {error && rawError && rawError !== displayText && (
-        <button
-          type="button"
-          className="mt-1 block text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        <Button
+          variant="link"
+          size="sm"
+          className="mt-1 block h-auto p-0 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}
-        </button>
+        </Button>
       )}
       {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-red-600 dark:text-red-400">
+        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
           {rawError}
         </pre>
       )}

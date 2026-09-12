@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
-import { Spinner, Button } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Spinner, Button, SecretInput, Alert } from '@librechat/client';
 import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
 import type { TResetPassword } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
@@ -20,6 +20,12 @@ function ResetPassword() {
   const password = watch('password');
   const resetPassword = useResetPasswordMutation();
   const { setError, setHeaderText, startupConfig } = useOutletContext<TLoginLayoutContext>();
+  const authInputClassName =
+    'webkit-dark-styles transition-color peer h-auto w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pr-12 pt-3 text-text-primary duration-200 hover:border-border-light focus:border-accent-primary focus:outline-none focus-visible:border-accent-primary';
+  const authLabelClassName =
+    'absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-accent-primary rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4';
+  const authSecretButtonClassName =
+    'size-9 rounded-xl text-text-secondary-alt hover:bg-transparent hover:text-text-primary';
 
   const onSubmit = (data: TResetPassword) => {
     resetPassword.mutate(data, {
@@ -35,10 +41,7 @@ function ResetPassword() {
   if (resetPassword.isSuccess) {
     return (
       <>
-        <div
-          className="relative mt-6 rounded-xl border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-sm transition-all dark:bg-green-950/30 dark:text-green-100"
-          role="alert"
-        >
+        <Alert variant="success" icon={false} className="mt-6 px-6 py-4 shadow-sm transition-all">
           <div className="flex flex-col space-y-4">
             <p>{localize('com_auth_login_with_new_password')}</p>
             <Button
@@ -49,7 +52,7 @@ function ResetPassword() {
               {localize('com_auth_continue')}
             </Button>
           </div>
-        </div>
+        </Alert>
       </>
     );
   }
@@ -75,8 +78,7 @@ function ResetPassword() {
             value={params.get('userId') ?? ''}
             {...register('userId', { required: 'Unable to process: No valid user id' })}
           />
-          <input
-            type="password"
+          <SecretInput
             id="password"
             autoComplete="current-password"
             aria-label={localize('com_auth_password')}
@@ -92,55 +94,50 @@ function ResetPassword() {
               },
             })}
             aria-invalid={!!errors.password}
-            className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
+            className={authInputClassName}
             placeholder=" "
+            label={localize('com_auth_password')}
+            labelClassName={authLabelClassName}
+            controlsClassName="right-2"
+            buttonClassName={authSecretButtonClassName}
           />
-          <label
-            htmlFor="password"
-            className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
-          >
-            {localize('com_auth_password')}
-          </label>
         </div>
 
         {errors.password && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.password.message}
           </span>
         )}
       </div>
       <div className="mb-2">
         <div className="relative">
-          <input
-            type="password"
+          <SecretInput
             id="confirm_password"
             aria-label={localize('com_auth_password_confirm')}
             {...register('confirm_password', {
               validate: (value) => value === password || localize('com_auth_password_not_match'),
             })}
             aria-invalid={!!errors.confirm_password}
-            className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
+            className={authInputClassName}
             placeholder=" "
+            label={localize('com_auth_password_confirm')}
+            labelClassName={authLabelClassName}
+            controlsClassName="right-2"
+            buttonClassName={authSecretButtonClassName}
           />
-          <label
-            htmlFor="confirm_password"
-            className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
-          >
-            {localize('com_auth_password_confirm')}
-          </label>
         </div>
         {errors.confirm_password && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.confirm_password.message}
           </span>
         )}
         {errors.token && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.token.message}
           </span>
         )}
         {errors.userId && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.userId.message}
           </span>
         )}

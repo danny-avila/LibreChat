@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import keyBy from 'lodash/keyBy';
 import { RotateCcw } from 'lucide-react';
+import { Button } from '@librechat/client';
 import {
   excludedKeys,
   paramSettings,
@@ -8,22 +9,29 @@ import {
   getEndpointField,
   SettingDefinition,
   tConvoUpdateSchema,
+  applyModelAwareDefaults,
+  normalizeEndpointName,
+  resolveDropParamsUIKeys,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { componentMapping } from './components';
-import { useChatContext } from '~/Providers';
-import { logger } from '~/utils';
+import { logger, cn } from '~/utils';
 
 export default function Parameters() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
   const { conversation, setConversation } = useChatContext();
+  const { announcePolite } = useLiveAnnouncer();
   const { setOption } = useSetIndexOptions();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [preset, setPreset] = useState<TPreset | null>(null);
+  /** Bumped on every reset; used as a key so the spin animation replays */
+  const [resetCount, setResetCount] = useState(0);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
@@ -42,13 +50,28 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const dropParamsMap = startupConfig?.endpointsDropParamsMap;
+    const dropParamsEntry =
+      dropParamsMap?.[provider] ?? dropParamsMap?.[normalizeEndpointName(provider)];
+    const resolvedDropParams = Array.isArray(dropParamsEntry)
+      ? dropParamsEntry
+      : dropParamsEntry?.[model];
+    const dropParamsSet = resolveDropParamsUIKeys(
+      Array.isArray(resolvedDropParams) ? resolvedDropParams : undefined,
+      overriddenEndpointKey,
+    );
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
-    return defaultParams
-      .filter((param) => param != null)
-      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
-  }, [endpointType, endpointsConfig, model, provider]);
+    const modelAwareParams = applyModelAwareDefaults(
+      defaultParams.filter((param) => param != null && !dropParamsSet.has(param.key)),
+      overriddenEndpointKey,
+      model,
+    );
+    return modelAwareParams.map(
+      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+    );
+  }, [endpointType, endpointsConfig, model, provider, startupConfig]);
 
   useEffect(() => {
     if (!parameters) {
@@ -98,6 +121,10 @@ export default function Parameters() {
         }
       });
 
+      if (updatedKeys.length === 0) {
+        return prev;
+      }
+
       logger.log('parameters', 'parameters effect, updated keys:', updatedKeys);
 
       return updatedConversation;
@@ -127,7 +154,11 @@ export default function Parameters() {
       logger.log('parameters', 'parameters reset, affected keys:', resetKeys);
       return updatedConversation;
     });
-  }, [setConversation]);
+
+    announcePolite({ message: localize('com_ui_model_parameters_reset'), isStatus: true });
+
+    setResetCount((count) => count + 1);
+  }, [setConversation, announcePolite, localize]);
 
   const openDialog = useCallback(() => {
     const newPreset = tConvoUpdateSchema.parse({
@@ -171,23 +202,32 @@ export default function Parameters() {
         })}
       </div>
       <div className="mt-4 flex justify-center">
-        <button
+        <Button
+          variant="outline"
           type="button"
           onClick={resetParameters}
-          className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 text-sm active:scale-[0.98] motion-reduce:transform-none"
         >
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          <RotateCcw
+            key={resetCount}
+            className={cn(
+              'h-4 w-4 motion-reduce:animate-none',
+              resetCount > 0 && 'animate-reset-spin',
+            )}
+            aria-hidden="true"
+          />
           {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-        </button>
+        </Button>
       </div>
       <div className="mt-2 flex justify-center">
-        <button
+        <Button
+          variant="default"
           onClick={openDialog}
-          className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+          className="flex w-full items-center justify-center px-4 py-2 font-semibold"
           type="button"
         >
           {localize('com_endpoint_save_as_preset')}
-        </button>
+        </Button>
       </div>
       {preset && (
         <SaveAsPresetDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} preset={preset} />

@@ -11,7 +11,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
@@ -33,10 +33,18 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ErrorTypes,
+  EModelEndpoint,
+  EToolResources,
+  Tools,
+} from 'librechat-data-provider';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
+import type { CodeExecutionContext } from '../execution';
 import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
 // Mock logger — `format` must be a callable factory so @librechat/data-schemas
@@ -89,6 +97,8 @@ jest.mock('~/endpoints', () => ({
 
 jest.mock('~/files', () => ({
   filterFilesByEndpointConfig: jest.fn(() => []),
+  filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
+  isLegacyFileUploadUX: jest.fn(() => false),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -102,7 +112,22 @@ jest.mock('../resources', () => ({
   }),
 }));
 
+jest.mock('../../middleware/modelBoundContent', () => {
+  const actual = jest.requireActual('../../middleware/modelBoundContent');
+  /* Real by default; a single test overrides it to stand in for a policy that started
+   * refusing a file after it was attached. */
+  return {
+    ...actual,
+    assertModelBoundContent: jest.fn((...args: unknown[]) =>
+      (actual as { assertModelBoundContent: (...a: unknown[]) => void }).assertModelBoundContent(
+        ...args,
+      ),
+    ),
+  };
+});
+
 import { initializeAgent } from '../initialize';
+import { isFatalAgentInitializationError } from '../errors';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -243,6 +268,496 @@ function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | un
   );
 }
 
+function countUrlContextTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => tool != null && typeof tool === 'object' && 'urlContext' in tool)
+      .length ?? 0
+  );
+}
+
+describe('initializeAgent — execution context', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('initializes without Express request or response objects', async () => {
+    const { agent, loadTools, db } = createMocks();
+    const previousReqDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'req');
+    Object.defineProperty(globalThis, 'req', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'request-free-stateful',
+                name: 'Request-free stateful',
+                type: 'attached',
+                baseURL: 'https://stateful.example.com/v1',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    try {
+      await expect(
+        initializeAgent(
+          {
+            runtime: {
+              user: { id: 'user-1' } as never,
+              appConfig: appConfig as never,
+              requestBody: { timezone: 'America/New_York' },
+              turnStartedAt: 1000,
+            },
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).resolves.toBeDefined();
+    } finally {
+      if (previousReqDescriptor == null) {
+        delete (globalThis as typeof globalThis & { req?: unknown }).req;
+      } else {
+        Object.defineProperty(globalThis, 'req', previousReqDescriptor);
+      }
+    }
+
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ req: expect.anything() }));
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ res: expect.anything() }));
+  });
+});
+
+describe('initializeAgent — current content policy preflight', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('rejects a blocked stored definition before file, resource, tool, or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    agent.instructions = 'Use PRIVATE-INSTRUCTIONS for every response';
+    req.config = {
+      filters: {
+        agentInstructions: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'agent_instruction',
+        field: 'instructions',
+      },
+    });
+
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not treat unresolved canonical file IDs as agent-definition text', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tool_resources = {
+      [EToolResources.context]: {
+        file_ids: ['canonical-file-1'],
+      },
+    };
+    req.config = {
+      filters: {
+        files: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+            uninspectable: 'block',
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects a blocked resolved skill before resource or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'private-skill',
+      body: 'Follow PRIVATE-SKILL before answering',
+      author: {
+        toString: () => req.user?.id,
+      } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['private-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'skill',
+        field: 'instructions',
+      },
+    });
+
+    expect(getSkillByName).toHaveBeenCalled();
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('inspects only the deduped model-bound skill definition when manual invocation wins', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'shared-skill',
+      body: 'Safe manually selected instructions',
+      author,
+    });
+    const listAlwaysApplySkills: InitializeAgentDbMethods['listAlwaysApplySkills'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'shared-skill',
+            body: 'Discarded PRIVATE-SKILL definition',
+            author,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['shared-skill'],
+      },
+      {
+        ...db,
+        getSkillByName,
+        listAlwaysApplySkills,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([
+      expect.objectContaining({
+        name: 'shared-skill',
+        body: 'Safe manually selected instructions',
+      }),
+    ]);
+    expect(result.alwaysApplySkillPrimes).toEqual([]);
+  });
+
+  it('does not traverse resolved skill metadata when skill policy is inactive', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const broadFrontmatter = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+    );
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: broadFrontmatter,
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        messages: { pii: { starterPatterns: ['sk_prefix'] } },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('fails closed on traversal only when the affected skill field is selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: Object.fromEntries(
+        Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+      ),
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+  });
+
+  it('rejects blocked active skill-catalog metadata before resource or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'catalog-skill',
+            description: 'Use PRIVATE-CATALOG data',
+            author: {
+              toString: () => req.user?.id,
+            } as unknown as import('mongoose').Types.ObjectId,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+        },
+        { ...db, listSkillsByAccess },
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'skill',
+        field: 'description',
+      },
+    });
+
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(1);
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('reuses a safe inspected skill-catalog snapshot during initialization', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'safe-skill',
+            description: 'Safe catalog description',
+            author: {
+              toString: () => req.user?.id,
+            } as unknown as import('mongoose').Types.ObjectId,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      { ...db, listSkillsByAccess },
+    );
+
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('initializeAgent — custom provider token lookup', () => {
   const CUSTOM_PROVIDER = 'EduGPT';
 
@@ -337,6 +852,29 @@ describe('initializeAgent — provider web_search precedence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
+
+  async function initializeGoogleMixedToolAgent(model: string, provider = Providers.GOOGLE) {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider,
+      model,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    return initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([provider]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+  }
 
   it('keeps Anthropic native web_search when LibreChat search is not selected', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
@@ -438,31 +976,126 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(result.tools).toEqual([nativeGoogleSearchTool]);
     expect(countGoogleSearchTools(result.tools)).toBe(1);
     expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
   });
 
-  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+  it('includes the mixed-tool flag for Vertex AI native search with external tools', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
-      provider: Providers.GOOGLE,
-      model: 'gemini-2.5-flash',
+      provider: Providers.VERTEXAI,
+      model: 'gemini-3.5-flash',
       providerTools: [nativeGoogleSearchTool],
       loadedToolDefinitions: [mcpToolDefinition],
     });
     agent.tools = ['mcp_lookup'];
 
-    await expect(
-      initializeAgent(
-        {
-          req,
-          res,
-          agent,
-          loadTools,
-          endpointOption: { endpoint: EModelEndpoint.agents },
-          allowedProviders: new Set([Providers.GOOGLE]),
-          isInitialAgent: true,
-        },
-        db,
-      ),
-    ).rejects.toThrow(/google_tool_conflict/);
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.VERTEXAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it.each([
+    'gemini-3-flash-preview',
+    'gemini-3-pro-preview',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.5-flash',
+    'google/gemini-3.5-flash-latest',
+    'models/gemini-3.10-pro-preview',
+    'gemini-4-pro-preview',
+  ])('allows Google mixed tools for supported Gemini text model %s', async (model) => {
+    const result = await initializeGoogleMixedToolAgent(model);
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it('sets the mixed-tool flag when the skill catalog adds the external tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+    });
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'research-helper',
+              description: 'Research current information.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions?.map((toolDefinition) => toolDefinition.name)).toContain('skill');
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it.each([
+    'gemini-2.5-flash',
+    'gemini-3',
+    'gemini-3.1',
+    'gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image',
+    'gemini-3.5-flash-live',
+    'gemini-4-pro-tts',
+  ])('rejects Google mixed tools for unsupported Gemini model %s', async (model) => {
+    await expect(initializeGoogleMixedToolAgent(model)).rejects.toThrow(/google_tool_conflict/);
   });
 
   it('prefers LibreChat web_search when Google native search is also enabled', async () => {
@@ -516,6 +1149,62 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(countNamedWebSearchTools(result.tools)).toBe(1);
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
+
+  it('treats the Google urlContext tool as a native provider tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-1.5-flash',
+      providerTools: [{ urlContext: {} }],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+  });
+
+  it('preserves the Google urlContext tool when LibreChat web_search is also enabled', async () => {
+    /**
+     * url_context is unrelated to web search, so the LibreChat web_search conflict
+     * resolver must not strip the native urlContext tool. The combination of a
+     * provider tool with an agent tool requires a combination-capable Gemini model.
+     */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [{ urlContext: {} }],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
 });
 
 describe('initializeAgent — stable and dynamic instruction fields', () => {
@@ -523,10 +1212,13 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     jest.clearAllMocks();
   });
 
-  it('moves instructions with temporal special vars into the dynamic tail using the conversation anchor', async () => {
+  it('moves instructions with temporal special vars into the dynamic tail using the turn start', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
-    agent.instructions = 'Conversation opened at {{iso_datetime}}';
-    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
+    agent.instructions =
+      'Today is {{current_date}}. The turn began at {{current_datetime}} ({{iso_datetime}}).';
+    req.conversationCreatedAt = '2026-08-25T10:00:00.000Z';
+    req.turnStartedAt = new Date('2026-08-31T06:20:00.000Z').getTime();
+    req.body = { timezone: 'UTC' };
 
     const result = await initializeAgent(
       {
@@ -542,14 +1234,40 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.instructions).toBeUndefined();
-    expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+    expect(result.additional_instructions).toBe(
+      'Today is 2026-08-31 (Monday). The turn began at 2026-08-31 06:20:00 +00:00 (Monday) (2026-08-31T06:20:00.000Z).',
+    );
+  });
+
+  it('resolves temporal special vars in the request timezone', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'It is currently {{current_datetime}}.';
+    req.turnStartedAt = new Date('2024-01-15T18:30:00.000Z').getTime();
+    req.body = { timezone: 'America/New_York' };
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe(
+      'It is currently 2024-01-15 13:30:00 -05:00 (Monday).',
+    );
   });
 
   it('keeps non-temporal special vars in stable instructions', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.instructions = 'You are helping {{current_user}}.';
     req.user = { id: 'user-1', name: 'Test User' } as never;
-    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
 
     const result = await initializeAgent(
       {
@@ -631,6 +1349,267 @@ describe('initializeAgent — attachment scoping', () => {
     expect(result.attachments).toEqual([agentContextFile, requestFile]);
     expect(result.requestAttachments).toEqual([requestFile]);
     expect(result.agentContextAttachments).toEqual([agentContextFile]);
+  });
+
+  it('applies aggregate limits only to endpoint-compatible file survivors', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const incompatibleFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `incompatible-${index}`,
+      filename: `incompatible-${index}.bin`,
+      type: 'application/x-incompatible',
+      bytes: 1024,
+    })) as IMongoFile[];
+    const { agent, req, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce(incompatibleFiles);
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce([]);
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: incompatibleFiles,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      req.config,
+      expect.objectContaining({ files: incompatibleFiles }),
+    );
+  });
+
+  it('does not apply model attachment limits to tool-only workspace files', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const toolFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `tool-${index}`,
+      filename: `tool-${index}.txt`,
+      type: 'text/plain',
+      bytes: 1024,
+    })) as IMongoFile[];
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [EToolResources.file_search];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce(toolFiles.map((file) => file.file_id));
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce(toolFiles);
+    (db.getFiles as jest.Mock).mockResolvedValueOnce(toolFiles);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          conversationId: 'conversation-1',
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('does not apply model attachment limits to a tool-only current request file', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const toolOnlyRequestFile = {
+      file_id: 'request-tool-only',
+      filename: 'workspace.bin',
+      type: 'application/octet-stream',
+      bytes: 200 * 1024 * 1024,
+      embedded: true,
+    } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([toolOnlyRequestFile]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [toolOnlyRequestFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('owner-scopes request file usage updates while preserving trusted tool files', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' } as IMongoFile;
+    const toolFile = { file_id: 'tool-file', filename: 'tool.txt' } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    agent.tools = [EToolResources.file_search];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([requestFile, toolFile]);
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([toolFile.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([toolFile]);
+    (db.updateFilesUsage as jest.Mock)
+      .mockResolvedValueOnce([{ ...requestFile, filename: 'post-mutation-request.txt' }])
+      .mockResolvedValueOnce([{ ...toolFile, filename: 'post-mutation-tool.txt' }]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [requestFile],
+        conversationId: 'conversation-1',
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(db.getToolFilesByIds).toHaveBeenCalledWith(
+      [toolFile.file_id],
+      new Set([EToolResources.file_search]),
+      { userId: 'user-1', tenantId: undefined },
+    );
+    expect(db.getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: [requestFile.file_id, toolFile.file_id] },
+        user: 'user-1',
+      },
+      {},
+      {},
+    );
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
+      user: 'user-1',
+      tenantId: undefined,
+    });
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile], undefined, {
+      user: 'user-1',
+      tenantId: undefined,
+    });
+    await expect(primeResources.mock.calls[0][0].attachments).resolves.toEqual([
+      requestFile,
+      toolFile,
+    ]);
+  });
+
+  it('rejects blocked resent file content before usage mutation or resource priming', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const blockedFile = {
+      file_id: 'blocked-file',
+      filename: 'stored.txt',
+      text: 'PRIVATE-FILE',
+    } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [EToolResources.file_search];
+    req.config = {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([blockedFile.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([blockedFile]);
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([blockedFile]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          conversationId: 'conversation-1',
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -1251,13 +2230,98 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
-  it('falls through to empty toolDefinitions when BOTH the union and base-only loadTools calls return undefined', async () => {
+  it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadTools.mockRejectedValue(resourceRecoveryError);
+
+    const getSkillByName = buildGetSkillByName(
+      'code-skill',
+      [Tools.execute_code],
+      skillId,
+      req.user!.id,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['code-skill'],
+        },
+        { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+      ),
+    ).rejects.toBe(resourceRecoveryError);
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', Tools.execute_code]);
+  });
+
+  it('still retries when only skill-added tools expect unavailable MCP tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const expectedMCPError = Object.assign(new Error('expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadTools.mockRejectedValueOnce(expectedMCPError).mockResolvedValueOnce({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [{ name: 'web_search', description: '', parameters: {} }],
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'mcp-skill',
+      ['mcp__warehouse__query'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['mcp-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__warehouse__query']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+    expect(result.toolDefinitions?.map((definition) => definition.name)).toContain('web_search');
+  });
+
+  it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
-       the retry without extras also fails, we have nothing to give the
-       LLM. The current behavior is to fall through to the `?? {}`
-       fallback rather than throw — pinning that contract here so the
-       turn doesn't crash hard but the agent simply has no tools. */
+       the retry without extras also fails, loaded registry tools drop out,
+       but host-provided file authoring remains available for skill access. */
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];
     const { Types } = await import('mongoose');
@@ -1283,16 +2347,18 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
         allowedProviders: new Set([Providers.OPENAI]),
         isInitialAgent: true,
         accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: true,
         manualSkills: ['broken-skill'],
       },
       { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
     );
 
-    /* Two attempts (initial + retry), both undefined → empty fallback.
-       The agent gets no tool definitions for the turn but does NOT
-       crash; downstream code handles the empty case. */
+    /* Two attempts (initial + retry), both undefined. Registry-backed tools
+       fall away, but read/create/edit_file are registered by the initializer
+       so skill authoring still works. */
     expect(loadTools).toHaveBeenCalledTimes(2);
-    expect(result.toolDefinitions).toEqual([]);
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file']);
   });
 
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
@@ -1374,6 +2440,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).toContain('bash_tool');
     expect(names).toContain('read_file');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
     /* The legacy `execute_code` tool def is no longer registered by this
        path — the string stays in `agent.tools` as the capability trigger
        but never appears in the tool definitions the LLM sees. */
@@ -1382,6 +2450,216 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(readFile?.description).toContain('code-execution sandbox');
     expect(readFile?.description).not.toContain('{skillName}');
     expect(readFile?.description).not.toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(false);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
+  });
+
+  it('routes code-file priming through the stateful profile before tools load', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'agent-user';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+
+    try {
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(loadTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://stateful-code.example.com/v1',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          }),
+        }),
+      );
+      expect(result.codeExecutionContext).toEqual(
+        expect.objectContaining({
+          baseUrl: 'https://stateful-code.example.com/v1',
+          executionProfile: 'stateful',
+        }),
+      );
+    } finally {
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
+  it.each([false, true])(
+    'uses the validated attached workspace operation ceiling: protectedEdit=%s',
+    async (protectedEdit) => {
+      const { agent, req, res, loadTools, db } = createMocks();
+      agent.tools = ['execute_code'];
+      agent.stateful_code_sessions = true;
+      agent.code_environment_id = 'personal-vm';
+      req.config = {
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'personal-vm',
+                  name: 'Personal VM',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  owner: 'deployment',
+                  workerId: 'worker-a',
+                  configSchema: {
+                    limits: { maxCommandTimeoutMs: 120_000 },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as NonNullable<typeof req.config>;
+      if (protectedEdit)
+        req.config.filters = {
+          files: {
+            pii: {
+              customPatterns: [{ id: 'test', label: 'test', regex: 'secret' }],
+              fields: ['content'],
+            },
+          },
+        };
+      const codeExecutionContext: CodeExecutionContext = {
+        baseUrl: 'https://code.example.com/v1',
+        codeSessionKey: 'execute_code:stateful:route:session',
+        executionProfile: 'stateful',
+        statefulSessions: true,
+        environmentId: 'personal-vm',
+        environmentType: 'attached',
+        bridgeWorkerId: 'worker-a',
+        codeEnvironmentConfigSchema: {
+          limits: { maxCommandTimeoutMs: 120_000 },
+        },
+        codeWorkspace: {
+          environmentId: 'personal-vm',
+          workspaceId: 'project-a',
+          operations: ['read_file', 'list_files', 'execute_command'],
+        },
+      };
+      if (protectedEdit) codeExecutionContext.codeWorkspace!.operations.push('edit_file');
+      loadTools.mockResolvedValue({
+        tools: [],
+        toolContextMap: {},
+        dynamicToolContextMap: {},
+        toolDefinitions: [],
+        hasDeferredTools: false,
+        codeExecutionContext,
+      });
+
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(result.codeExecutionContext).toBe(codeExecutionContext);
+      expect(result.toolDefinitions?.map(({ name }) => name).sort()).toEqual([
+        'bash_tool',
+        'list_workspace_files',
+        'read_file',
+      ]);
+      const bashTool = result.toolDefinitions?.find(({ name }) => name === 'bash_tool');
+      expect(
+        (bashTool?.parameters as { properties?: { timeoutMs?: { maximum?: number } } })?.properties
+          ?.timeoutMs?.maximum,
+      ).toBe(120_000);
+    },
+  );
+
+  it('rejects a stateful environment excluded by deployment policy', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'] },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    let error;
+    try {
+      await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      message: 'Stateful code environment is not allowed by this deployment: conversation',
+    });
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
+  it('uses an explicit stateful environment allowlist when req.config is unavailable', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = undefined;
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+          allowedStatefulCodeEnvironments: ['user'],
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({ code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED });
+    expect(loadTools).not.toHaveBeenCalled();
   });
 
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
@@ -1422,8 +2700,92 @@ describe('initializeAgent — execute_code capability expansion', () => {
 
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
     expect(readFile?.description).toContain('{skillName}/{filePath}');
+    expect(readFile?.description).toContain('skills/{skillName}/');
     expect(readFile?.description).toContain('SKILL.md');
-    expect(result.toolDefinitions?.map((d) => d.name)).toContain('skill');
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+  });
+
+  it('keeps skill authoring tools hidden for read-only skill access', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+        accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: false,
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'read-only-skill',
+              description: 'Read-only skill.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+    expect(names).not.toContain('bash_tool');
+    expect(result.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('registers skill authoring tools for first-time skill creators', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        skillAuthoringAvailable: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('bash_tool');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('skills/{skillName}/');
+    expect(readFile?.description).toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(true);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
@@ -1447,6 +2809,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
@@ -1470,6 +2834,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {
@@ -1585,6 +2951,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [{ googleSearch: {} }],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
         toolDefinitions: expect.arrayContaining([
           expect.objectContaining({ name: 'bash_tool' }),
           expect.objectContaining({ name: 'read_file' }),
@@ -1626,6 +2995,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [structuredTool, providerTool],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
       }),
     );
   });
@@ -1666,6 +3038,52 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
 
     return { agent, req, res, loadTools, db };
   }
+
+  it('provisions code files for a skill tool that never names execute_code', async () => {
+    /**
+     * `bash_tool` reads the code environment but is not an `EToolResources` key, so an
+     * agent that gets it only through a skill built no provisioning state and invoked
+     * the tool against an empty sandbox. Execution-time eligibility already counted it.
+     */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'sandbox-skill',
+      body: 'body of sandbox-skill',
+      author: { toString: () => req.user!.id } as unknown as import('mongoose').Types.ObjectId,
+      allowedTools: ['bash_tool'],
+    });
+    mockGetThreadData.mockReturnValue({ messageIds: ['msgN'], fileIds: ['file-1'] });
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['sandbox-skill'],
+      },
+      {
+        ...db,
+        getCodeGeneratedFiles,
+        getSkillByName,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
+  });
 
   it('passes threadFileIds (not threadMessageIds) to getCodeGeneratedFiles', async () => {
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
@@ -1708,13 +3126,17 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     );
 
     expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [
-      'file-pptx-skill',
-      'file-output-csv',
-    ]);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith(
+      'conv-1',
+      ['file-pptx-skill', 'file-output-csv'],
+      { userId: 'user-1', tenantId: undefined },
+    );
     /* Both functions now share the same primary anchor — symmetric
      * design that closes the sibling-branch hole. */
-    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
+    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv'], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
   });
 
   it('selects messages.attachments alongside messages.files (regression)', async () => {
@@ -1802,10 +3224,468 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
     );
 
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', []);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
     /* `getUserCodeFiles` is gated on a non-empty array at the call site,
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+
+  it('charges a file appearing in both sets against the allowance once', async () => {
+    /* An embedded attachment still missing the active code route is hydrated for delivery
+     * and returned as a provisioning candidate. Charging its bytes twice would spend an
+     * allowance the request never uses and drop a different candidate that fits. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const shared = { file_id: 'shared', filename: 'a.csv', bytes: 400 };
+    const deferredOnly = { file_id: 'deferred', filename: 'b.csv', bytes: 100 };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    /* Delivery keeps the shared file; the deferred pass keeps both. */
+    filterFilesByEndpointRuntimeConfig
+      .mockReturnValueOnce([shared])
+      .mockReturnValueOnce([shared, deferredOnly]);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([shared, deferredOnly]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['shared', 'deferred']);
+    const getToolFilesByIds = jest.fn().mockResolvedValue([shared]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      {
+        ...db,
+        getDeferredProvisionFiles,
+        getConvoFiles,
+        getToolFilesByIds,
+        getFiles: jest.fn().mockResolvedValue([shared, deferredOnly]),
+      },
+    );
+
+    const chargedToDeferred = filterFilesByEndpointRuntimeConfig.mock.calls
+      .map(([, params]) => (params as { consumedBytes?: number }).consumedBytes)
+      .find((bytes) => bytes !== undefined);
+    /* The only delivered file is also the shared one, and the deferred pass charges its
+     * own list as it walks it, so nothing is carried in. */
+    expect(chargedToDeferred).toBe(0);
+
+    /* The persistent screening runs inside the callback, and must see the two unique
+     * files rather than three. */
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const lastCall = primeResources.mock.calls[primeResources.mock.calls.length - 1];
+    const screen = lastCall?.[0].screenPersistentFiles as (files: unknown[]) => unknown[];
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce([]);
+    screen([]);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: 500 }),
+    );
+  });
+
+  it('screens persistent agent files under the remaining size allowance and content policy', async () => {
+    /* These are read inside primeResources, so the caller never sees them. Both checks it
+     * applied to this turn's other files have to reach them through the callback. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    expect(typeof screen).toBe('function');
+
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    const persistent = [{ file_id: 'persistent-1', filename: 'notes.csv', bytes: 10 }];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+
+    expect(screen(persistent)).toEqual(persistent);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: expect.any(Number) }),
+    );
+  });
+
+  it('drops a persistent agent file the content policy now refuses', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { assertModelBoundContent } = jest.requireMock('../../middleware/modelBoundContent') as {
+      assertModelBoundContent: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    const persistent = [
+      {
+        file_id: 'blocked-1',
+        filename: 'secrets.bin',
+        bytes: 10,
+        type: 'application/octet-stream',
+      },
+    ];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+    assertModelBoundContent.mockImplementationOnce(() => {
+      throw new Error('content policy');
+    });
+
+    expect(screen(persistent)).toEqual([]);
+  });
+
+  it('finds deferred files from the conversation when no anchor is supplied', async () => {
+    /* The Responses API always continues via `previous_response_id` and passes a null
+     * parentMessageId, and chat completions may omit it. Without an anchor there is no
+     * thread walk, so the conversation's own file refs are the only available scope. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: null,
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['convo-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
+  });
+
+  it('keeps an anchored branch scoped to itself when it references no files', async () => {
+    /* Widening an empty branch to the conversation would provision a sibling branch's
+     * attachments, sending files this branch never mentioned to the Code API or RAG. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['sibling-branch-file']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: [] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).not.toHaveBeenCalled();
+  });
+
+  it('prefers the thread scope for deferred files when an anchor is supplied', async () => {
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: ['thread-file-1'] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['thread-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
+  });
+
+  it('skips the thread walk when parentMessageId is an empty string', async () => {
+    /* An empty anchor can never match a parent chain, so walking the
+     * conversation only buys an unbounded read whose result is discarded.
+     * `req.body.parentMessageId` reaches this layer unnormalized. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: '',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(mockGetThreadData).not.toHaveBeenCalled();
+    /* The conversation read is unconditional and must survive the guard. */
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches the convo-file read and the thread walk concurrently', async () => {
+    /* Both reads gate the model call, so serializing them costs
+     * time-to-first-token on every turn. Holding BOTH unresolved is what
+     * makes this fail under either ordering: whichever runs first blocks,
+     * and the second is never dispatched.
+     *
+     * DELETE this test, do not repair it, if the thread walk ever gains a
+     * data dependency on the convo file ids — serializing becomes correct. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    let releaseConvoFiles!: (fileIds: string[]) => void;
+    let releaseMessages!: (messages: Array<{ messageId: string }>) => void;
+    const getConvoFiles = jest
+      .fn()
+      .mockReturnValue(new Promise<string[]>((resolve) => (releaseConvoFiles = resolve)));
+    const getMessages = jest
+      .fn()
+      .mockReturnValue(
+        new Promise<Array<{ messageId: string }>>((resolve) => (releaseMessages = resolve)),
+      );
+
+    const initialized = initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getConvoFiles, getMessages },
+    );
+
+    /* Drain pending microtasks so the mocked chain runs up to the first
+     * genuinely-pending await. */
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    releaseConvoFiles([]);
+    releaseMessages([]);
+    await initialized;
+  });
+});
+
+describe('initializeAgent — run-scoped MCP tool definitions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('carries mcpAvailableTools from the loadTools result onto the initialized agent', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: dropping this
+     *  field at the destructure boundary forces per-call reinitialization
+     *  downstream and can storm the MCP circuit breaker. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function' as const,
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object' as const, properties: {} },
+          },
+        },
+      },
+    };
+    loadTools.mockResolvedValue({
+      tools: [],
+      toolContextMap: {},
+      dynamicToolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      hasDeferredTools: false,
+      mcpAvailableTools,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
+  });
+
+  it('retains the resolved collision audit on the initialized agent', async () => {
+    /** Deferred/event-driven execution reuses this snapshot instead of
+     *  repeating the merged-registry read — a transient failure there
+     *  would fail-closed a tool the turn already advertised. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    const accessibleNames = [rawServerName, 'plain_server'];
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => accessibleNames);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(accessibleNames);
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
+    );
+  });
+
+  it('threads the normalized MCP request body into tool discovery', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['custom_tool'];
+    const requestBody = {
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(loadTools).toHaveBeenCalledWith(expect.objectContaining({ requestBody }));
+  });
+
+  it('unions snapshot config names into the audit when the merged read omits them', async () => {
+    /** The registry's merged read tolerates config-server init failures and
+     *  can silently drop config-only servers — the heal audit must restore
+     *  them from the request's config snapshot or a collision goes unseen
+     *  while the audit still claims completeness. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => ['db_only_server']);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
 });

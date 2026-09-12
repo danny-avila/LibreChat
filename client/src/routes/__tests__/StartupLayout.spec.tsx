@@ -5,15 +5,6 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import StartupLayout from '~/routes/Layouts/Startup';
 import { SESSION_KEY } from '~/utils';
 
-if (typeof Request === 'undefined') {
-  global.Request = class Request {
-    constructor(
-      public url: string,
-      public init?: RequestInit,
-    ) {}
-  } as any;
-}
-
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(() => ({
     data: null,

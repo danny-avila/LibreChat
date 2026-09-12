@@ -1,6 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
+import { codeEnvRefMapSchema, codeEnvRefSchema } from './codeEnvRef';
 
 const file: Schema<IMongoFile> = new Schema(
   {
@@ -119,22 +120,49 @@ const file: Schema<IMongoFile> = new Schema(
     height: Number,
     metadata: {
       codeEnvRef: {
-        type: new Schema(
-          {
-            kind: {
-              type: String,
-              enum: ['skill', 'agent', 'user'],
-              required: true,
-            },
-            id: { type: String, required: true },
-            storage_session_id: { type: String, required: true },
-            file_id: { type: String, required: true },
-            version: { type: Number },
-          },
-          { _id: false },
-        ),
+        type: codeEnvRefSchema,
         default: undefined,
       },
+      codeEnvRefs: {
+        type: codeEnvRefMapSchema,
+        default: undefined,
+      },
+      /** Dispatch-order stamp of the last writer (or claimant, on insert):
+       *  the background harvest's stale-output guard compares writer
+       *  dispatch order so an older task settling late cannot overwrite a
+       *  newer task's same-named output. */
+      sourceDispatchedAt: {
+        type: Number,
+        default: undefined,
+      },
+      /** Vector namespaces this file has been embedded into. Vectors are stored per
+       *  entity, so a duplicated agent needs its own embedding even though the record
+       *  is shared. */
+      embeddedEntities: {
+        type: [String],
+        default: undefined,
+      },
+      /** The user named this file's destination, through the chooser or by requesting a
+       *  tool resource, so the destinations absent from the record were declined rather
+       *  than deferred. Unlike the endpoint setting, which the next turn may resolve
+       *  differently, the choice belongs to the file. */
+      destinationChosen: {
+        type: Boolean,
+        default: undefined,
+      },
+      /** The type the delivery route was resolved against, kept when conversion changes
+       *  the stored type so a later resolution asks the same question. */
+      routingMimeType: {
+        type: String,
+        default: undefined,
+      },
+    },
+    llmDeliveryPath: {
+      /* What upload time inferred about delivery, from the endpoint and MIME type it saw.
+       * Not a contract: the executing agent, its provider and its tools are all decided
+       * per turn, so a reader that needs the real destination resolves it there. */
+      type: String,
+      enum: ['provider', 'text', 'none'],
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from
@@ -150,6 +178,18 @@ const file: Schema<IMongoFile> = new Schema(
     expiredAt: {
       /* Retention deadline for persisted files. The file sweep deletes the
        * backing storage first, then removes this metadata record. */
+      type: Date,
+    },
+    deletionAttempts: {
+      /* Consecutive failed sweep deletions, driving the backoff below. A
+       * file at or past `FILE_RETENTION_SWEEP_MAX_ATTEMPTS` is parked
+       * rather than retried on the ordinary ladder. */
+      type: Number,
+    },
+    deletionRetryAt: {
+      /* Earliest next sweep attempt, backed off from `deletionAttempts`.
+       * The sweep's only hold: a deadline, never a flag, so a record reused
+       * for different content can be delayed but not stranded. */
       type: Date,
     },
   },

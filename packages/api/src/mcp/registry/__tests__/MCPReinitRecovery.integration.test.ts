@@ -16,8 +16,8 @@
  */
 
 import * as net from 'net';
-import * as http from 'http';
 import { Keyv } from 'keyv';
+import * as http from 'http';
 import { Agent } from 'undici';
 import { Types } from 'mongoose';
 import { randomUUID } from 'crypto';
@@ -56,7 +56,13 @@ jest.mock('~/cluster', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({

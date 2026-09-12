@@ -129,13 +129,13 @@ export default function RouteErrorBoundary() {
       role="alert"
       className="flex min-h-screen flex-col items-center justify-center bg-surface-primary bg-gradient-to-br"
     >
-      <div className="bg-surface-primary/60 mx-4 w-11/12 max-w-4xl rounded-2xl border border-border-light p-8 shadow-2xl backdrop-blur-xl">
+      <div className="mx-4 w-11/12 max-w-4xl rounded-2xl border border-border-light bg-surface-primary/60 p-8 shadow-2xl backdrop-blur-xl">
         <h2 className="mb-6 text-center text-3xl font-medium tracking-tight text-text-primary">
           {localize('com_ui_error_unexpected')}
         </h2>
 
         {/* Error Message */}
-        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-gray-600 dark:text-gray-200">
+        <div className="mb-4 rounded-xl border border-status-error-border bg-status-error-subtle p-4 text-sm text-text-secondary">
           <h3 className="mb-2 font-medium">{localize('com_ui_error_message_prefix')}</h3>
           <pre className="whitespace-pre-wrap text-sm font-light leading-relaxed text-text-primary">
             {errorDetails.message}
@@ -145,7 +145,7 @@ export default function RouteErrorBoundary() {
         {/* Status Information */}
         {(typeof errorDetails.status === 'number' ||
           typeof errorDetails.statusText === 'string') && (
-          <div className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4 text-sm text-text-primary">
+          <div className="mb-4 rounded-xl border border-status-warning-border bg-status-warning-subtle p-4 text-sm text-text-primary">
             <h3 className="mb-2 font-medium">{localize('com_ui_status_prefix')}:</h3>
             <p className="text-text-primary">
               {typeof errorDetails.status === 'number' && `${errorDetails.status} `}
@@ -171,7 +171,7 @@ export default function RouteErrorBoundary() {
                 </Button>
               </div>
             </summary>
-            <div className="overflow-x-auto rounded-lg bg-black/5 p-4 dark:bg-white/5">
+            <div className="overflow-x-auto rounded-lg bg-surface-tertiary p-4">
               {formatStackTrace(errorDetails.stack).map(({ number, content }) => (
                 <div key={number} className="flex">
                   <span className="select-none pr-4 font-mono text-xs text-text-secondary">

@@ -31,7 +31,6 @@ const DeleteConfirmDialog = ({
             <Button
               variant="destructive"
               size="icon"
-              className="size-9"
               aria-label={localize('com_ui_delete')}
               disabled={disabled}
               onClick={(e) => {
@@ -59,7 +58,7 @@ const DeleteConfirmDialog = ({
         selection={{
           selectHandler,
           selectClasses:
-            'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-white',
+            'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-text-on-status',
           selectText: localize('com_ui_delete'),
         }}
       />

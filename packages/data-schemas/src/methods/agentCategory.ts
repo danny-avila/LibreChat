@@ -2,7 +2,30 @@ import type { Model, Types } from 'mongoose';
 import type { IAgentCategory } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
-export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) {
+export function createAgentCategoryMethods(mongoose: typeof import('mongoose')): {
+  getActiveCategories: () => Promise<IAgentCategory[]>;
+  getCategoriesWithCounts: () => Promise<(IAgentCategory & { agentCount: number })[]>;
+  getValidCategoryValues: () => Promise<string[]>;
+  seedCategories: (
+    categories: Array<{
+      value: string;
+      label?: string;
+      description?: string;
+      order?: number;
+      custom?: boolean;
+    }>,
+  ) => Promise<import('mongoose').mongo.BulkWriteResult>;
+  findCategoryByValue: (value: string) => Promise<IAgentCategory | null>;
+  createCategory: (categoryData: Partial<IAgentCategory>) => Promise<IAgentCategory>;
+  updateCategory: (
+    value: string,
+    updateData: Partial<IAgentCategory>,
+  ) => Promise<IAgentCategory | null>;
+  deleteCategory: (value: string) => Promise<boolean>;
+  findCategoryById: (id: string | Types.ObjectId) => Promise<IAgentCategory | null>;
+  getAllCategories: () => Promise<IAgentCategory[]>;
+  ensureDefaultCategories: () => Promise<boolean>;
+} {
   /**
    * Get all active categories sorted by order
    * @returns Array of active categories

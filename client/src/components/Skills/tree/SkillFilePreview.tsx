@@ -1,5 +1,5 @@
-import { Download, FileImage, File } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
+import { Download, FileImage, File } from 'lucide-react';
 import { useGetSkillNodeContentQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -65,7 +65,7 @@ export default function SkillFilePreview({ skillId, nodeId, fileName }: SkillFil
         className={cn(
           'flex flex-1 items-center justify-center overflow-auto p-8',
           isImage &&
-            'bg-[repeating-conic-gradient(var(--surface-tertiary)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]',
+            'bg-[repeating-conic-gradient(rgb(var(--surface-tertiary))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]',
         )}
       >
         {isImage && downloadUrl ? (

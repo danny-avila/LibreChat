@@ -6,7 +6,6 @@ import {
   FileSources,
   Capabilities,
   EModelEndpoint,
-  LocalStorageKeys,
   isImageVisionTool,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
@@ -17,19 +16,13 @@ import type {
   AssistantsEndpoint,
   AssistantCreateParams,
 } from 'librechat-data-provider';
-import type {
-  Actions,
-  ExtendedFile,
-  AssistantForm,
-  TAssistantOption,
-  LastSelectedModels,
-} from '~/common';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UseFormReset } from 'react-hook-form';
+import type { Actions, ExtendedFile, AssistantForm, TAssistantOption } from '~/common';
 import { useListAssistantsQuery } from '~/data-provider';
-import { useLocalize, useLocalStorage } from '~/hooks';
 import { cn, createDropdownSetter } from '~/utils';
 import { useFileMapContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 const keys = new Set([
   'name',
@@ -63,10 +56,6 @@ export default function AssistantSelect({
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
-  const [lastSelectedModels] = useLocalStorage<LastSelectedModels | undefined>(
-    LocalStorageKeys.LAST_MODEL,
-    {} as LastSelectedModels,
-  );
 
   const toolkits = useMemo(
     () => new Set(allTools?.filter((tool) => tool.toolkit === true).map((tool) => tool.pluginKey)),
@@ -152,10 +141,7 @@ export default function AssistantSelect({
       createMutation.reset();
       if (!assistant) {
         setCurrentAssistantId(undefined);
-        return reset({
-          ...defaultAssistantFormValues,
-          model: lastSelectedModels?.[endpoint] ?? '',
-        });
+        return reset(defaultAssistantFormValues);
       }
 
       const update = {
@@ -231,15 +217,7 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant.id);
     },
-    [
-      query.data,
-      reset,
-      setCurrentAssistantId,
-      createMutation,
-      endpoint,
-      lastSelectedModels,
-      toolkits,
-    ],
+    [query.data, reset, setCurrentAssistantId, createMutation, toolkits],
   );
 
   useEffect(() => {
@@ -286,7 +264,7 @@ export default function AssistantSelect({
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
       optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
-        'text-md font-semibold text-gray-900 dark:text-white',
+        'text-base font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(

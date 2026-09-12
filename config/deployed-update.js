@@ -61,6 +61,15 @@ const shouldRebase = process.argv.includes('--rebase');
   console.orange(pullCommand);
   execSync(pullCommand, { stdio: 'inherit' });
 
+  /* The tag-removal above only covers the stock repositories; any overridden
+   * `api` image (or other freshly pulled service) leaves its previous version
+   * dangling — ~1.7GB per update that nothing reclaimed. Prune AFTER the pull
+   * so the just-superseded layers are already untagged, mirroring update.js. */
+  console.purple('Removing all unused dangling Docker images...');
+  const pruneCommand = 'sudo docker image prune -f';
+  console.orange(pruneCommand);
+  execSync(pruneCommand, { stdio: 'inherit' });
+
   const startCommand = 'sudo docker compose -f ./deploy-compose.yml up -d';
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);

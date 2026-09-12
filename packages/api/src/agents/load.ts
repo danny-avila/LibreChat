@@ -1,18 +1,30 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
   isAgentsEndpoint,
   isEphemeralAgentId,
+  getEphemeralSender,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentToolOptions,
   TEphemeralAgent,
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { ParsedServerConfig } from '~/mcp/types';
+import {
+  requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
+  validateMCPServerConfig,
+} from '~/mcp/utils';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { mergeSynthesizedToolOptions } from '~/agents/selection';
+import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -23,12 +35,20 @@ export interface LoadAgentDeps {
   getMCPServerTools: (
     userId: string,
     serverName: string,
+    serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  /** The MCP servers this user can reach, with the registry's tier precedence
+   *  already applied — the resolution behind the client's catalog. Omitted, the
+   *  chat selection is used as sent. */
+  getAccessibleMCPServers?: (
+    userId: string,
+    role?: string,
+  ) => Promise<Record<string, ParsedServerConfig>>;
 }
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string };
+    user?: { id?: string; role?: string };
     config?: AppConfig;
     body?: {
       promptPrefix?: string;
@@ -55,12 +75,28 @@ export async function loadEphemeralAgent(
     modelSpec = modelSpecs?.list?.find((s) => s.name === spec) ?? null;
   }
   const ephemeralAgent: TEphemeralAgent | undefined = req.body?.ephemeralAgent;
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
+  /** The picker's own selection is narrowed to what the picker may offer; a
+   *  spec's servers are the operator's choice and are added after, so pinning a
+   *  chat-hidden server to a spec keeps working. */
+  const mcpServers = new Set<string>(
+    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+      userId,
+      role: req.user?.role,
+      getAccessibleMCPServers: deps.getAccessibleMCPServers,
+    }),
+  );
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);
     }
+  }
+  /** Publish the servers this request will actually use back onto the body. The
+   *  instruction path reads `req.body.ephemeralAgent.mcp` directly and prefers
+   *  it over the agent's tools, so it would otherwise both inject a hidden
+   *  server's `serverInstructions` and omit a spec-pinned server's. */
+  if (ephemeralAgent != null && Array.isArray(ephemeralAgent.mcp)) {
+    ephemeralAgent.mcp = [...mcpServers];
   }
   const tools: string[] = [];
   if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
@@ -72,6 +108,15 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
+  }
+  /** Same downstream gating as persisted agents applies: `createRun` only
+   *  equips the tool when the request is HITL-capable, the agent is not a
+   *  subagent, and the admin hasn't excluded it (filteredTools/includedTools). */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
+  }
 
   const addedServers = new Set<string>();
   if (mcpServers.size > 0) {
@@ -79,7 +124,16 @@ export async function loadEphemeralAgent(
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      const serverTools = await deps.getMCPServerTools(userId, mcpServer);
+      /** Address durable catalogs by the effective request overlay; request-scoped
+       *  overlays still expand fresh through `mcp_all`. */
+      const rawOverlayConfig = req.config?.mcpConfig?.[mcpServer];
+      const overlayConfig = rawOverlayConfig
+        ? validateMCPServerConfig(rawOverlayConfig)
+        : undefined;
+      const serverTools =
+        overlayConfig && requiresEphemeralUserConnection(overlayConfig)
+          ? null
+          : await deps.getMCPServerTools(userId, mcpServer, overlayConfig);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
@@ -108,19 +162,18 @@ export async function loadEphemeralAgent(
     }
   }
 
-  // For ephemeral agents, use modelLabel if provided, then model spec's label,
-  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-  const sender =
-    (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel ??
-    modelSpec?.label ??
-    (endpointConfig as { modelDisplayLabel?: string } | undefined)?.modelDisplayLabel ??
-    '';
+  const sender = getEphemeralSender({
+    modelLabel: (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel,
+    specLabel: modelSpec?.label,
+    modelDisplayLabel: (endpointConfig as { modelDisplayLabel?: string } | undefined)
+      ?.modelDisplayLabel,
+  });
 
   // Encode ephemeral agent ID with endpoint, model, and computed sender for display
   const ephemeralId = encodeEphemeralAgentId({
     endpoint,
     model: model as string,
-    sender: sender as string,
+    sender,
   });
 
   const result: Partial<Agent> = {
@@ -132,8 +185,37 @@ export async function loadEphemeralAgent(
     tools,
   };
 
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
+  const intentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (intentToolOptions) {
+    result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
+  }
+
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
+  }
+  if (modelSpec?.subagents) {
+    result.subagents = modelSpec.subagents;
+  }
+  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    if (modelSpec.skills === true) {
+      result.skills_enabled = true;
+    } else if (modelSpec.skills === false) {
+      result.skills_enabled = false;
+      result.skills = [];
+    } else if (Array.isArray(modelSpec.skills)) {
+      result.skills_enabled = true;
+      result.skills = [];
+    }
   }
   return result as Agent;
 }

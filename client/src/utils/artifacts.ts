@@ -1,11 +1,22 @@
 import dedent from 'dedent';
-import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
+import filenamify from 'filenamify';
+import { gfm } from 'micromark-extension-gfm';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import {
+  excelMimeTypes,
+  shadcnComponents,
+  getDocumentFileExtension,
+} from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
+import type { PhrasingContent } from 'mdast';
 import type { Artifact } from '~/common';
+import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
+import { getCodeBlockFilename } from './downloadFile';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -71,6 +82,101 @@ export function getKey(type: string, language?: string): string {
 export function getArtifactFilename(type: string, language?: string): string {
   const key = getKey(type, language);
   return artifactFilename[key] ?? artifactFilename.default;
+}
+
+/** Extract visible heading text without removing literal Markdown punctuation. */
+function headingText(nodes: PhrasingContent[]): string {
+  return nodes
+    .map((node) => {
+      if ('children' in node) {
+        return headingText(node.children);
+      }
+      if (node.type === 'text' || node.type === 'inlineCode') {
+        return node.value;
+      }
+      if (node.type === 'image' || node.type === 'imageReference') {
+        return node.alt ?? '';
+      }
+      return '';
+    })
+    .join('');
+}
+
+/** Name for bytes fetched from the original attachment, rather than its cached preview. */
+export function getOriginalArtifactFilename(artifact: Artifact, fileKey: string): string {
+  if (artifact.download?.filename) {
+    return artifact.download.filename;
+  }
+  if (artifact.download?.filename === undefined) {
+    return artifact.title || fileKey;
+  }
+  const extension = getDocumentFileExtension(artifact.download.mimeType);
+  if (extension) {
+    return `content${extension}`;
+  }
+  if (isPreviewOnlyArtifact(artifact.type) || artifact.type === TOOL_ARTIFACT_TYPES.PLAIN_TEXT) {
+    return 'content.bin';
+  }
+  return getArtifactDownloadFilename(
+    { ...artifact, title: undefined, download: undefined },
+    fileKey,
+    '',
+  );
+}
+
+/** Names the downloaded bytes independently of the Sandpack preview file. */
+export function getArtifactDownloadFilename(
+  artifact: Artifact,
+  fileKey: string,
+  content = artifact.content,
+): string {
+  const isCode = artifact.type === TOOL_ARTIFACT_TYPES.CODE;
+  const isMarkdown = artifact.type === TOOL_ARTIFACT_TYPES.MARKDOWN || artifact.type === 'text/md';
+  let fallback = fileKey;
+  if (isCode) {
+    fallback = getCodeBlockFilename(
+      artifact.language || lookupOwn(CODE_EXTENSION_TO_LANGUAGE, extensionOf(artifact.title)),
+    );
+  } else if (artifact.type === TOOL_ARTIFACT_TYPES.PLAIN_TEXT) {
+    fallback = 'content.txt';
+  }
+  let title = (artifact.download?.filename ?? artifact.title)?.trim() ?? '';
+  const hasOriginalName = artifact.download != null && artifact.download.filename !== null;
+  if (!hasOriginalName && (title === 'Generated artifact' || title === 'untitled')) {
+    title = '';
+  }
+  const hasSourceFilename =
+    hasOriginalName &&
+    title !== '' &&
+    artifact.type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    !isPreviewOnlyArtifact(artifact.type);
+  if (!title && isMarkdown) {
+    const markdown = (content ?? '').replace(
+      /^\uFEFF?---[^\S\r\n]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[^\S\r\n]*(?:\r?\n|$)/,
+      '',
+    );
+    const heading = fromMarkdown(markdown, {
+      extensions: [gfm()],
+      mdastExtensions: [gfmFromMarkdown()],
+    }).children.find((node) => node.type === 'heading');
+    if (heading?.type === 'heading') {
+      title = headingText(heading.children).trim();
+    }
+  }
+  const extension = fallback.slice(fallback.lastIndexOf('.'));
+  const hasMatchingExtension = title.toLowerCase().endsWith(extension);
+  let filename = fallback;
+  if (title) {
+    filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
+  }
+  filename = filenamify(filename, { replacement: '_' });
+  /* File-backed blobs export cached preview content, not the original file. */
+  if (artifact.download) {
+    const dot = filename.lastIndexOf('.');
+    filename =
+      dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
+  }
+  return filename;
 }
 
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
@@ -178,9 +284,14 @@ export const sharedOptions: SandpackProviderProps['options'] = {
   externalResources: [TAILWIND_CDN],
 };
 
+export type SandpackStartupConfig = Pick<
+  Partial<TStartupConfig>,
+  'bundlerURL' | 'staticBundlerURL'
+>;
+
 export function buildSandpackOptions(
   template: SandpackProviderProps['template'],
-  startupConfig?: TStartupConfig,
+  startupConfig?: SandpackStartupConfig,
 ): SandpackProviderProps['options'] {
   if (!startupConfig) {
     return sharedOptions;
@@ -279,7 +390,7 @@ export const TOOL_ARTIFACT_TYPES = {
   HTML: 'text/html',
   REACT: 'application/vnd.react',
   MARKDOWN: 'text/markdown',
-  MERMAID: 'application/vnd.mermaid',
+  MERMAID: MERMAID_ARTIFACT_TYPE,
   PLAIN_TEXT: 'text/plain',
   CODE: 'application/vnd.code',
   /* Office-format rich previews. The backend renders the binary file as a
@@ -584,6 +695,7 @@ const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   xls: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   ods: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   pptx: TOOL_ARTIFACT_TYPES.PRESENTATION,
+  potx: TOOL_ARTIFACT_TYPES.PRESENTATION,
 };
 
 /* Append every entry in `CODE_EXTENSION_TO_LANGUAGE` to the routing map
@@ -660,6 +772,8 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
    * backend has already produced full HTML for it. */
   'text/comma-separated-values': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    TOOL_ARTIFACT_TYPES.PRESENTATION,
+  'application/vnd.openxmlformats-officedocument.presentationml.template':
     TOOL_ARTIFACT_TYPES.PRESENTATION,
   // Note: bare `text/plain` is NOT mapped here. The extension map handles
   // `.txt` explicitly; routing every unrecognized-extension `text/plain`
@@ -837,6 +951,8 @@ export function fileToArtifact(
         | 'textFormat'
         | 'updatedAt'
         | 'createdAt'
+        | 'source'
+        | 'user'
       >
   >,
   options?: FileToArtifactOptions,
@@ -889,6 +1005,20 @@ export function fileToArtifact(
     language,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
+    /* Preserve the original-file download coordinates so the panel's
+     * download button can fetch the real file (matching the inline
+     * card's `useAttachmentLink` path). Critical for office buckets
+     * whose `content` is a server-rendered HTML preview, not the
+     * binary — serializing `content` would hand the user the preview
+     * instead of the .pptx/.xlsx/.docx. */
+    download: {
+      filename: attachment.filename || null,
+      mimeType: attachment.type,
+      filepath: attachment.filepath,
+      file_id: attachment.file_id,
+      source: attachment.source,
+      user: attachment.user,
+    },
   };
 }
 

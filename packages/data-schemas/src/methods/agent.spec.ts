@@ -8,15 +8,26 @@ import {
   PrincipalModel,
   PermissionBits,
   EToolResources,
+  SkillsScope,
+  Constants,
+  actionDelimiter,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
   RootFilterQuery,
   QueryOptions,
   UpdateQuery,
+  Model,
 } from 'mongoose';
-import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
-import { createAgentMethods, type AgentMethods } from './agent';
+import type { IAgent, IAclEntry, IUser, IAccessRole, CodeEnvironmentDocument } from '..';
+import {
+  createAgentMethods,
+  EDGE_CLEANUP_BATCH,
+  EDGE_CLEANUP_MAX_SWEEPS,
+  type AgentMethods,
+} from './agent';
+import { withCodeEnvironmentReference } from './codeEnvironment';
+import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
 
@@ -45,6 +56,8 @@ let methods: ReturnType<typeof createAgentMethods>;
 
 let createAgent: AgentMethods['createAgent'];
 let getAgent: AgentMethods['getAgent'];
+let getAgentVersions: AgentMethods['getAgentVersions'];
+let getAgentWithVersionCount: AgentMethods['getAgentWithVersionCount'];
 let updateAgent: AgentMethods['updateAgent'];
 let deleteAgent: AgentMethods['deleteAgent'];
 let deleteUserAgents: AgentMethods['deleteUserAgents'];
@@ -53,9 +66,11 @@ let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
 let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
 let removeAgentResourceFilesFromAllAgents: AgentMethods['removeAgentResourceFilesFromAllAgents'];
 let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
+let getAgentManagementListByAccess: AgentMethods['getAgentManagementListByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
 const getActions = jest.fn().mockResolvedValue([]);
+const externalSkillIds = new Set<string>();
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -79,15 +94,22 @@ beforeAll(async () => {
   };
 
   const aclEntryMethods = createAclEntryMethods(mongoose);
-  const { getSoleOwnedResourceIds } = aclEntryMethods;
+  const { getSoleOwnedResourceIds, findAccessibleResources } = aclEntryMethods;
 
   methods = createAgentMethods(mongoose, {
     removeAllPermissions,
     getActions,
     getSoleOwnedResourceIds,
+    getUserPrincipals: async ({ userId }) => [
+      { principalType: 'user', principalId: new mongoose.Types.ObjectId(userId) },
+    ],
+    findAccessibleResources,
+    isExternalSkillId: (id) => externalSkillIds.has(id),
   });
   createAgent = methods.createAgent;
   getAgent = methods.getAgent;
+  getAgentVersions = methods.getAgentVersions;
+  getAgentWithVersionCount = methods.getAgentWithVersionCount;
   updateAgent = methods.updateAgent;
   deleteAgent = methods.deleteAgent;
   deleteUserAgents = methods.deleteUserAgents;
@@ -96,6 +118,7 @@ beforeAll(async () => {
   removeAgentResourceFiles = methods.removeAgentResourceFiles;
   removeAgentResourceFilesFromAllAgents = methods.removeAgentResourceFilesFromAllAgents;
   getListAgentsByAccess = methods.getListAgentsByAccess;
+  getAgentManagementListByAccess = methods.getAgentManagementListByAccess;
   generateActionMetadataHash = methods.generateActionMetadataHash;
 
   await mongoose.connect(mongoUri);
@@ -124,6 +147,10 @@ afterAll(async () => {
 });
 
 describe('Agent Methods', () => {
+  beforeEach(() => {
+    externalSkillIds.clear();
+  });
+
   describe('Agent Resource File Operations', () => {
     beforeEach(async () => {
       await Agent.deleteMany({});
@@ -520,6 +547,536 @@ describe('Agent Methods', () => {
       expect(retrievedAgent!.description).toBe('Test description');
     });
 
+    test('should derive mcpServerNames only from MCP tools on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [actionTool, mcpTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('loads ACL-visible graph nodes by logical ID without exposing storage IDs', async () => {
+      const { agentId, authorId } = createTestIds();
+      const visible = await createAgent({
+        id: agentId,
+        name: 'Visible graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [`search${Constants.mcp_delimiter}docs`],
+      });
+      const privateAgent = await createAgent({
+        id: `private-${agentId}`,
+        name: 'Private graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: visible._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: authorId,
+      });
+
+      const access = await methods.resolveAgentGraphAccess({
+        userId: authorId.toString(),
+      });
+      const nodes = await methods.getAgentGraphNodes([visible.id, privateAgent.id], access);
+
+      expect(nodes).toEqual([
+        expect.objectContaining({ id: visible.id, mcpServerNames: ['docs'] }),
+      ]);
+      expect(nodes[0]).not.toHaveProperty('_id');
+    });
+
+    describe('MCP server name candidate lookups', () => {
+      test('getAgentsWithMCPServerNames returns only agents with a non-empty list, projected', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'MCP Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['server-a', 'server-b'],
+        });
+        await createAgent({
+          id: `no-mcp-${agentId}`,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        const candidates = await methods.getAgentsWithMCPServerNames();
+
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0].mcpServerNames).toEqual(['server-a', 'server-b']);
+        expect(Object.keys(candidates[0]).sort()).toEqual(['_id', 'mcpServerNames']);
+      });
+
+      test('getAgentsWithMCPServerNames returns empty when no agent references MCP servers', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        expect(await methods.getAgentsWithMCPServerNames()).toEqual([]);
+      });
+
+      test('getAgentsWithMCPServerNames stays within the active tenant', async () => {
+        const tenantA = `tenant-a-${uuidv4()}`;
+        const tenantB = `tenant-b-${uuidv4()}`;
+        const { agentId, authorId } = createTestIds();
+        const agentA = await tenantStorage.run({ tenantId: tenantA }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant A MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-a'],
+          }),
+        );
+        const agentB = await tenantStorage.run({ tenantId: tenantB }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant B MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-b'],
+          }),
+        );
+
+        const inA = await tenantStorage.run({ tenantId: tenantA }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+        const inB = await tenantStorage.run({ tenantId: tenantB }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+
+        expect(inA.map((agent) => agent._id.toString())).toEqual([agentA._id.toString()]);
+        expect(inB.map((agent) => agent._id.toString())).toEqual([agentB._id.toString()]);
+      });
+
+      test('getAgentIdsByMCPServerName returns ids of agents referencing the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        const withServer = await createAgent({
+          id: agentId,
+          name: 'Gitlab Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab', 'other'],
+        });
+        await createAgent({
+          id: `second-${agentId}`,
+          name: 'Second Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab'],
+        });
+        await createAgent({
+          id: `unrelated-${agentId}`,
+          name: 'Unrelated Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['not-gitlab'],
+        });
+
+        const ids = (await methods.getAgentIdsByMCPServerName('gitlab')).map((id) => id.toString());
+
+        expect(ids).toHaveLength(2);
+        expect(ids).toContain(withServer._id.toString());
+      });
+
+      test('getAgentIdsByMCPServerName returns empty when no agent references the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['other-server'],
+        });
+
+        expect(await methods.getAgentIdsByMCPServerName('gitlab')).toEqual([]);
+      });
+    });
+
+    test('should derive the server from a key whose raw tool name contains the delimiter', async () => {
+      const { agentId, authorId } = createTestIds();
+      /** DB server names are slugs and cannot contain the delimiter, so the trailing
+       *  segment is the real server even when the raw tool name carries one. Shared-agent
+       *  access is keyed off this field, so it must not be dropped. */
+      const gatewayTool = `get${Constants.mcp_delimiter}server_version${Constants.mcp_delimiter}gitlab`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Gateway MCP Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [gatewayTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['gitlab']);
+    });
+
+    test('should preserve a resolved server name across an update that omits it', async () => {
+      const { agentId, authorId } = createTestIds();
+      /** Any caller that writes `tools` without `mcpServerNames` — the Action edit
+       *  path, for one — must not have a configured `Google_mcp_Workspace` reduced to
+       *  `Workspace`, which ServerConfigsDB would resolve as an unrelated DB server. */
+      const mcpTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}Workspace`;
+      await createAgent({
+        id: agentId,
+        name: 'Provenance Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [mcpTool],
+        mcpServerNames: [`Google${Constants.mcp_delimiter}Workspace`],
+      });
+
+      const updated = await updateAgent({ id: agentId }, { tools: [mcpTool, 'web_search'] });
+
+      expect(updated!.mcpServerNames).toEqual([`Google${Constants.mcp_delimiter}Workspace`]);
+      expect(updated!.mcpServerNames).not.toContain('Workspace');
+    });
+
+    test('should drop a resolved name once its last tool is gone', async () => {
+      const { agentId, authorId } = createTestIds();
+      const mcpTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}Workspace`;
+      await createAgent({
+        id: agentId,
+        name: 'Provenance Agent 2',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [mcpTool],
+        mcpServerNames: [`Google${Constants.mcp_delimiter}Workspace`],
+      });
+
+      const updated = await updateAgent({ id: agentId }, { tools: ['web_search'] });
+
+      expect(updated!.mcpServerNames).toEqual([]);
+    });
+
+    test('should derive mcpServerNames only from MCP tools on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { tools: [actionTool, mcpTool] });
+
+      expect(updatedAgent!.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('should prune nonexistent skill ids from the allowlist on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'create-prune-skill',
+        description: 'Skill backing the create-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [realSkill._id.toString(), danglingId],
+        skills_enabled: true,
+      });
+
+      expect(newAgent.skills).toEqual([realSkill._id.toString()]);
+    });
+    test('should preserve skills enabled when pruning empties the allowlist on create with all scope', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'All Scope Create Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [danglingId],
+        skills_enabled: true,
+        skills_scope: SkillsScope.all,
+      });
+
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(newAgent.skills).toEqual([]);
+      expect(newAgent.skills_enabled).toBe(true);
+      expect(newAgent.skills_scope).toBe(SkillsScope.all);
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(true);
+      expect(reloadedAgent!.skills_scope).toBe(SkillsScope.all);
+    });
+
+    test('should fail closed when pruning empties the allowlist on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Legacy Create Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [danglingId],
+        skills_enabled: true,
+      });
+
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(newAgent.skills).toEqual([]);
+      expect(newAgent.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(false);
+    });
+
+    test('should fail closed when pruning empties the allowlist on create with none scope', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'None Scope Create Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [danglingId],
+        skills_enabled: true,
+        skills_scope: SkillsScope.none,
+      });
+
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(newAgent.skills).toEqual([]);
+      expect(newAgent.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills_scope).toBe(SkillsScope.none);
+    });
+
+    test('should preserve external skill ids on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'create-external-skill',
+        description: 'Skill backing the external create-time allowlist test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [externalSkillId, realSkill._id.toString(), danglingId, externalSkillId],
+        skills_enabled: true,
+      });
+
+      expect(newAgent.skills).toEqual([externalSkillId, realSkill._id.toString()]);
+      expect(newAgent.skills_enabled).toBe(true);
+    });
+
+    test('should prune nonexistent skill ids from the allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'update-prune-skill',
+        description: 'Skill backing the update-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId, realSkill._id.toString()], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([realSkill._id.toString()]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should preserve external skill ids on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      await createAgent({
+        id: agentId,
+        name: 'External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId, externalSkillId], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([externalSkillId]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should fail closed when pruning empties the allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(false);
+    });
+
+    test('should preserve skills when pruning empties the allowlist for an agent with all scope', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'All Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+        skills_scope: SkillsScope.all,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [danglingId] });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+      expect(updatedAgent!.skills_scope).toBe(SkillsScope.all);
+    });
+
+    test('should preserve skills when pruning empties the allowlist for an update-scoped legacy agent', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Selected Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId], skills_scope: SkillsScope.selected },
+      );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should fail closed when pruning empties the allowlist for a none-scoped agent', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      /** An explicit `none` carrying a true master flag is contradictory: it
+       *  renders as Off while `skillDeps` still exposes the authoring tools,
+       *  so it must not opt out of the fail-closed branch. */
+      await createAgent({
+        id: agentId,
+        name: 'None Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+        skills_scope: SkillsScope.none,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [danglingId] });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(false);
+      expect(updatedAgent!.skills_scope).toBe(SkillsScope.none);
+    });
+
+    test('should keep full-catalog semantics for an explicit empty allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+
+      await createAgent({
+        id: agentId,
+        name: 'Explicit Empty Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [], skills_enabled: true });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
     test('should delete an agent', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -587,47 +1144,373 @@ describe('Agent Methods', () => {
       expect(aclEntriesAfter).toHaveLength(0);
     });
 
-    test('should remove handoff edges referencing deleted agent from other agents', async () => {
+    test('should remove a deleted agent from scalar and array edge endpoints', async () => {
       const authorId = new mongoose.Types.ObjectId();
-      const targetAgentId = `agent_${uuidv4()}`;
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
       const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
 
-      // Create target agent (handoff destination)
       await createAgent({
-        id: targetAgentId,
-        name: 'Target Agent',
+        id: deletedAgentId,
+        name: 'Agent To Delete',
         provider: 'test',
         model: 'test-model',
         author: authorId,
       });
 
-      // Create source agent with handoff edge to target
       await createAgent({
-        id: sourceAgentId,
-        name: 'Source Agent',
+        id: graphAgentId,
+        name: 'Agent With Connected Edges',
         provider: 'test',
         model: 'test-model',
         author: authorId,
         edges: [
           {
+            from: deletedAgentId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: deletedAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId, sourceAgentId],
+            to: targetAgentId,
+            edgeType: 'direct',
+          },
+          {
+            from: sourceAgentId,
+            to: [deletedAgentId, targetAgentId],
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId],
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: [deletedAgentId],
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId, sourceAgentId],
+            to: [deletedAgentId, targetAgentId],
+            edgeType: 'direct',
+          },
+          {
             from: sourceAgentId,
             to: targetAgentId,
             edgeType: 'handoff',
+            description: 'Unrelated edge',
           },
         ],
       });
 
-      // Verify edge exists before deletion
-      const sourceAgentBefore = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentBefore!.edges).toHaveLength(1);
-      expect(sourceAgentBefore!.edges![0].to).toBe(targetAgentId);
+      await deleteAgent({ id: deletedAgentId });
 
-      // Delete the target agent
-      await deleteAgent({ id: targetAgentId });
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        {
+          from: [sourceAgentId],
+          to: targetAgentId,
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: [targetAgentId],
+          edgeType: 'handoff',
+        },
+        {
+          from: [sourceAgentId],
+          to: [targetAgentId],
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: targetAgentId,
+          edgeType: 'handoff',
+          description: 'Unrelated edge',
+        },
+      ]);
+    });
 
-      // Verify the edge is removed from source agent
-      const sourceAgentAfter = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentAfter!.edges).toHaveLength(0);
+    test('should remove every bulk-deleted agent while preserving surviving edge members', async () => {
+      const deletingAuthorId = new mongoose.Types.ObjectId();
+      const graphAuthorId = new mongoose.Types.ObjectId();
+      const firstDeletedId = `agent_${uuidv4()}`;
+      const secondDeletedId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: firstDeletedId,
+        name: 'First Bulk-Deleted Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingAuthorId,
+      });
+      await createAgent({
+        id: secondDeletedId,
+        name: 'Second Bulk-Deleted Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingAuthorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Bulk Edge Graph',
+        provider: 'test',
+        model: 'test-model',
+        author: graphAuthorId,
+        edges: [
+          {
+            from: [firstDeletedId, sourceAgentId],
+            to: [secondDeletedId, targetAgentId],
+            edgeType: 'direct',
+          },
+          {
+            from: firstDeletedId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: [firstDeletedId, secondDeletedId],
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+            description: 'Unrelated bulk edge',
+          },
+        ],
+      });
+
+      await deleteUserAgents(deletingAuthorId.toString());
+
+      expect(await getAgent({ id: firstDeletedId })).toBeNull();
+      expect(await getAgent({ id: secondDeletedId })).toBeNull();
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        {
+          from: [sourceAgentId],
+          to: [targetAgentId],
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: targetAgentId,
+          edgeType: 'handoff',
+          description: 'Unrelated bulk edge',
+        },
+      ]);
+    });
+
+    test('keeps an edge added to the graph while the cleanup was running', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const addedAgentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Agent Edited During Cleanup',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [
+          { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+          { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        ],
+      });
+      /** Lands a concurrent edit between the cleanup's read and its first write,
+       * through the driver so the cleanup's own compare-and-set is what must
+       * notice it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let edited = false;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        if (!edited && this.collectionName === 'agents') {
+          edited = true;
+          await Agent.updateOne(
+            { id: graphAgentId },
+            { $push: { edges: { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return bulkWrite.call(this, operations, options);
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(edited).toBe(true);
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' },
+      ]);
+    });
+
+    test('cleans every graph when the references span more than one page', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const graphCount = EDGE_CLEANUP_BATCH + 1;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Popular Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await Agent.insertMany(
+        Array.from({ length: graphCount }, (_, index) => ({
+          id: `agent_${uuidv4()}`,
+          name: `Paged Graph ${index}`,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          edges: [
+            { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+            { from: targetAgentId, to: [deletedAgentId, targetAgentId], edgeType: 'direct' },
+          ],
+        })),
+      );
+
+      await deleteAgent({ id: deletedAgentId });
+
+      const graphs = await Agent.find({ name: /^Paged Graph / })
+        .select('edges')
+        .lean<Pick<IAgent, 'edges'>[]>();
+      expect(graphs).toHaveLength(graphCount);
+      const expectedEdges = [{ from: targetAgentId, to: [targetAgentId], edgeType: 'direct' }];
+      graphs.forEach((graph) => expect(graph.edges).toEqual(expectedEdges));
+    });
+
+    test('retries a compare-and-set miss the cursor has already passed', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const addedAgentId = `agent_${uuidv4()}`;
+      const graphCount = EDGE_CLEANUP_BATCH + 1;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Popular Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      const graphIds = Array.from({ length: graphCount }, () => `agent_${uuidv4()}`);
+      await Agent.insertMany(
+        graphIds.map((id, index) => ({
+          id,
+          name: `Cursor Graph ${index}`,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          edges: [
+            { from: deletedAgentId, to: [deletedAgentId, targetAgentId], edgeType: 'direct' },
+          ],
+        })),
+      );
+      const [editedGraphId] = graphIds;
+      /** Lands a concurrent edit on a first-page graph between the cleanup's read
+       * and its first write, so that graph's compare-and-set misses while the
+       * cursor moves on past it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let edited = false;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        if (!edited && this.collectionName === 'agents') {
+          edited = true;
+          await Agent.updateOne(
+            { id: editedGraphId },
+            { $push: { edges: { from: targetAgentId, to: addedAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return bulkWrite.call(this, operations, options);
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(edited).toBe(true);
+      expect(
+        await Agent.countDocuments({
+          $or: [{ 'edges.from': deletedAgentId }, { 'edges.to': deletedAgentId }],
+        }),
+      ).toBe(0);
+      const editedGraph = await getAgent({ id: editedGraphId });
+      expect(editedGraph!.edges).toEqual([
+        { from: targetAgentId, to: addedAgentId, edgeType: 'handoff' },
+      ]);
+    });
+
+    test('gives up after a bounded number of sweeps when references keep being added', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Graph That Keeps Referencing',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [{ from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' }],
+      });
+      /** Re-adds a reference AFTER every successful write, so every sweep makes
+       * progress and the stall bound never trips; only the sweep bound ends it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let writes = 0;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        const result = await bulkWrite.call(this, operations, options);
+        if (this.collectionName === 'agents') {
+          writes += 1;
+          await Agent.updateOne(
+            { id: graphAgentId },
+            { $push: { edges: { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return result;
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(await getAgent({ id: deletedAgentId })).toBeNull();
+      expect(writes).toBeLessThanOrEqual(EDGE_CLEANUP_MAX_SWEEPS);
     });
 
     test('should remove agent from user favorites when agent is deleted', async () => {
@@ -1350,6 +2233,55 @@ describe('Agent Methods', () => {
       expect(agent!.versions![0].model).toBe('test-model');
     });
 
+    test('getAgentVersions returns only the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+
+      const versions = await getAgentVersions({ id: agentId });
+
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions).toHaveLength(2);
+      expect(versions![0].name).toBe('First Name');
+      expect(versions![1].name).toBe('Second Name');
+    });
+
+    test('getAgentVersions returns null for a non-existent agent', async () => {
+      const versions = await getAgentVersions({ id: `agent_${uuidv4()}` });
+      expect(versions).toBeNull();
+    });
+
+    test('getAgentWithVersionCount returns the count without the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+      await updateAgent({ id: agentId }, { name: 'Third Name' });
+
+      const agent = await getAgentWithVersionCount({ id: agentId });
+
+      expect(agent).not.toBeNull();
+      expect(agent!.name).toBe('Third Name');
+      expect(agent!.version).toBe(3);
+      expect(agent!.versions).toBeUndefined();
+    });
+
+    test('getAgentWithVersionCount returns null for a non-existent agent', async () => {
+      const agent = await getAgentWithVersionCount({ id: `agent_${uuidv4()}` });
+      expect(agent).toBeNull();
+    });
+
     test('should accumulate version history across multiple updates', async () => {
       const agentId = `agent_${uuidv4()}`;
       const author = new mongoose.Types.ObjectId();
@@ -1491,6 +2423,23 @@ describe('Agent Methods', () => {
       expect(thirdUpdate!.versions).toHaveLength(4);
     });
 
+    test('should unset a field and omit it from the recorded version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        code_environment_id: 'attached-vm',
+      });
+
+      const updated = await updateAgent({ id: agentId }, { $unset: { code_environment_id: 1 } });
+
+      expect(updated!.code_environment_id).toBeUndefined();
+      expect(updated!.versions).toHaveLength(2);
+      expect(updated!.versions![1].code_environment_id).toBeUndefined();
+    });
+
     test('should handle parameter objects correctly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -1560,6 +2509,289 @@ describe('Agent Methods', () => {
         const agent = await getAgent({ id: testAgentId });
         expect(agent!.versions).toHaveLength(2);
       }
+    });
+
+    test('should persist an update matching the newest version when the document has diverged from it', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      /** Atomic-operator updates snapshot the pre-update state as the new version, so the
+       *  document and `versions[versions.length - 1]` legitimately diverge. This is the
+       *  same shape `addAgentResourceFile` produces when it attaches a file. */
+      await updateAgent({ id: agentId }, { $addToSet: { tools: 'file_search' } });
+
+      const afterAdd = await getAgent({ id: agentId });
+      expect(afterAdd!.tools).toEqual(['file_search']);
+      expect(afterAdd!.versions).toHaveLength(2);
+      expect((afterAdd!.versions![1] as VersionEntry).tools).toEqual([]);
+
+      /** Removing the tool lands the document back on the newest version's content. That
+       *  adds no history, but the removal itself must still be written. */
+      const removed = await updateAgent({ id: agentId }, { tools: [] });
+
+      expect(removed!.tools).toEqual([]);
+      expect(removed!.versions).toHaveLength(2);
+
+      const reloaded = await getAgent({ id: agentId });
+      expect(reloaded!.tools).toEqual([]);
+      expect(reloaded!.versions).toHaveLength(2);
+    });
+
+    test('should persist a resource file attached to an agent carrying actions', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const fileIdsOf = (agent: IAgent | null) =>
+        (agent?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
+          ?.file_ids;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      /** `isDuplicateVersion` only skips operator-only updates while `actionsHash` is
+       *  falsy, so an agent with actions reaches the comparison on every file attach. */
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      /** The re-attach snapshots the current state, so the document now equals the newest
+       *  version and the next attach is judged a duplicate. */
+      const settled = await getAgent({ id: agentId });
+      const newestVersion = settled!.versions![settled!.versions!.length - 1] as VersionEntry;
+      expect(fileIdsOf(settled)).toEqual(['f1']);
+      expect(newestVersion.tool_resources).toEqual(settled!.tool_resources);
+
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f2',
+      });
+
+      expect(fileIdsOf(await getAgent({ id: agentId }))).toEqual(['f1', 'f2']);
+    });
+
+    test('should not record a version when an atomic operator changes nothing', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      /** The document now equals its newest version, so the snapshot is a duplicate and
+       *  only the operator can justify recording an entry. */
+      const settled = await getAgent({ id: agentId });
+      const versionCount = settled!.versions!.length;
+
+      /** Re-attaching an id the agent already holds makes `$addToSet` a Mongo no-op. An
+       *  entry here would record a change the document never took. */
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const after = await getAgent({ id: agentId });
+      expect(after!.versions).toHaveLength(versionCount);
+      expect(
+        (after?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
+          ?.file_ids,
+      ).toEqual(['f1']);
+    });
+
+    test('should send no mutating operator once it has suppressed the version entry', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const settled = await getAgent({ id: agentId });
+      const versionCount = settled!.versions!.length;
+
+      /** The no-op reading comes from a document fetched before the write, so a `$pull`
+       *  landing in between would leave a surviving `$addToSet` re-adding the value with
+       *  no version entry recording it. Suppressing means the operator is gone, not that
+       *  it is expected to stay harmless. */
+      const Agent = mongoose.models.Agent as Model<IAgent>;
+      const spy = jest.spyOn(Agent, 'findOneAndUpdate');
+
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const suppressedUpdate = spy.mock.calls[spy.mock.calls.length - 1][1] as UpdateQuery<IAgent>;
+      spy.mockRestore();
+
+      expect(suppressedUpdate.$addToSet).toBeUndefined();
+      expect(suppressedUpdate.$push).toBeUndefined();
+      expect(suppressedUpdate.$pull).toBeUndefined();
+      expect((await getAgent({ id: agentId }))!.versions).toHaveLength(versionCount);
+    });
+
+    test('should record a version when a duplicate direct update carries an atomic operator', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Operator agent',
+        tools: [],
+      });
+      await updateAgent({ id: agentId }, { name: 'Renamed' });
+
+      /** The direct half matches the newest version while the operator half really changes
+       *  the document. Suppressing here would apply a change no version entry records, and
+       *  the document would diverge from every entry in its own history. */
+      const updated = await updateAgent(
+        { id: agentId },
+        { name: 'Renamed', $push: { tools: 'appended_tool' } },
+      );
+
+      expect(updated!.tools).toEqual(['appended_tool']);
+      expect(updated!.versions).toHaveLength(3);
+
+      const reloaded = await getAgent({ id: agentId });
+      expect(reloaded!.tools).toEqual(['appended_tool']);
+      expect(reloaded!.versions).toHaveLength(3);
+    });
+
+    test('should persist an update that repairs drift left by a skipVersioning write', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        description: 'original',
+      });
+      await updateAgent({ id: agentId }, { name: 'Versioned' });
+
+      /** `skipVersioning` writes snapshot nothing, so the document drifts from the newest
+       *  version without any entry recording it. */
+      await updateAgent({ id: agentId }, { description: 'drifted' }, { skipVersioning: true });
+      expect((await getAgent({ id: agentId }))!.description).toBe('drifted');
+
+      const repaired = await updateAgent({ id: agentId }, { description: 'original' });
+
+      expect(repaired!.description).toBe('original');
+      expect(repaired!.versions).toHaveLength(2);
+      expect((await getAgent({ id: agentId }))!.description).toBe('original');
+    });
+
+    test('should clear an avatar the newest version never recorded without adding a version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Avatar agent',
+      });
+      await updateAgent({ id: agentId }, { name: 'Avatar agent' });
+
+      /** Avatar writes go through `skipVersioning`, so the newest version can carry no
+       *  avatar at all while the document has one. */
+      await updateAgent(
+        { id: agentId },
+        { avatar: { filepath: '/images/a.png', source: 'local' } },
+        { skipVersioning: true },
+      );
+      const withAvatar = await getAgent({ id: agentId });
+      expect(withAvatar!.avatar).toBeTruthy();
+      expect((withAvatar!.versions![1] as VersionEntry).avatar).toBeUndefined();
+
+      /** `isDuplicateVersion` skips a field when both sides are falsy, so clearing the
+       *  avatar reads as a duplicate: the write lands and the count stays put. */
+      const cleared = await updateAgent({ id: agentId }, { avatar: null });
+
+      expect(cleared!.avatar).toBeNull();
+      expect(cleared!.versions).toHaveLength(2);
+      expect((await getAgent({ id: agentId }))!.avatar).toBeNull();
+    });
+
+    test('should leave the document untouched when a duplicate update changes nothing', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Idempotent',
+        tools: ['a', 'b'],
+      });
+      await updateAgent({ id: agentId }, { name: 'Idempotent' });
+
+      const before = await getAgent({ id: agentId });
+      const duplicate = await updateAgent({ id: agentId }, { name: 'Idempotent' });
+
+      /** The suppressed path reports the unchanged version count as `version`. */
+      expect((duplicate as IAgent & { version?: number }).version).toBe(before!.versions!.length);
+
+      const after = await getAgent({ id: agentId });
+      expect(after!.name).toBe(before!.name);
+      expect(after!.tools).toEqual(before!.tools);
+      expect(after!.versions).toHaveLength(before!.versions!.length);
     });
 
     test('should track updatedBy when a different user updates an agent', async () => {
@@ -1701,6 +2933,349 @@ describe('Agent Methods', () => {
       expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
       expect(revertedAgent.name).toBe('Original Agent');
       expect(revertedAgent.description).toBe('Original description');
+    });
+
+    test('should clear an explicit code environment when the restored version used the default', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Default Environment Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await updateAgent({ id: agentId }, { code_environment_id: 'replacement-environment' });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.code_environment_id).toBeUndefined();
+    });
+
+    test('should clear a Git identity absent from the restored version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Legacy Git Identity Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await updateAgent(
+        { id: agentId },
+        { git_identity: { name: 'Coding Agent', email: 'agent@example.com' } },
+      );
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.git_identity).toBeUndefined();
+    });
+
+    test('should clear skill fields absent from a restored legacy version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Legacy Skill Scope Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [],
+        skills_enabled: true,
+      });
+      await updateAgent(
+        { id: agentId },
+        {
+          skills_enabled: false,
+          skill_authoring_enabled: true,
+          skills_scope: SkillsScope.none,
+        },
+      );
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.skills_enabled).toBe(true);
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_scope).toBeUndefined();
+      expect(revertedAgent.skill_authoring_enabled).toBeUndefined();
+    });
+
+    test('renews a code environment reference until the guarded write settles', async () => {
+      const environmentId = `environment_${uuidv4()}`;
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Slow writer environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: new mongoose.Types.ObjectId(),
+      });
+      let settleWrite: (() => void) | undefined;
+      const guardedWrite = withCodeEnvironmentReference(
+        mongoose,
+        environmentId,
+        async () =>
+          await new Promise<void>((resolve) => {
+            settleWrite = resolve;
+          }),
+        10,
+      );
+      let initial: CodeEnvironmentDocument | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        initial = await mongoose.models.CodeEnvironment.findOne({
+          environmentId,
+        }).lean<CodeEnvironmentDocument>();
+        if (initial?.pendingAgentReferences?.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const initialExpiry = initial?.pendingAgentReferences?.[0]?.expiresAt;
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const renewed = await mongoose.models.CodeEnvironment.findOne({
+        environmentId,
+      }).lean<CodeEnvironmentDocument>();
+      expect(initialExpiry).toBeInstanceOf(Date);
+      expect(renewed?.pendingAgentReferences?.[0]?.expiresAt.getTime()).toBeGreaterThan(
+        initialExpiry?.getTime() ?? 0,
+      );
+      settleWrite?.();
+      await guardedWrite;
+      await expect(
+        mongoose.models.CodeEnvironment.findOne({ environmentId }).lean(),
+      ).resolves.toMatchObject({ pendingAgentReferences: [] });
+    });
+
+    test('rejects a guarded write when its code environment reference lease is lost', async () => {
+      const environmentId = `environment_${uuidv4()}`;
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Lost lease environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: new mongoose.Types.ObjectId(),
+      });
+      let settleWrite: (() => void) | undefined;
+      const compensate = jest.fn().mockResolvedValue(undefined);
+      const guardedWrite = withCodeEnvironmentReference(
+        mongoose,
+        environmentId,
+        async () =>
+          await new Promise<void>((resolve) => {
+            settleWrite = resolve;
+          }),
+        10,
+        compensate,
+      );
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const environment = await mongoose.models.CodeEnvironment.findOne({
+          environmentId,
+          pendingAgentReferences: { $exists: true },
+        });
+        if (environment != null) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await mongoose.models.CodeEnvironment.updateOne(
+        { environmentId },
+        { $set: { deletionStartedAt: new Date() } },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      settleWrite?.();
+
+      await expect(guardedWrite).rejects.toMatchObject({
+        name: 'CodeEnvironmentReferenceError',
+      });
+      expect(compensate).toHaveBeenCalledWith(undefined);
+    });
+
+    test('does not overwrite an intervening Agent update when acquiring an environment reference', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const environmentId = `environment_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      await createAgent({
+        id: agentId,
+        name: 'Original agent name',
+        author: authorId,
+        model: 'test-model',
+        provider: 'test-provider',
+      });
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Concurrent update environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: authorId,
+      });
+      const CodeEnvironment = mongoose.models.CodeEnvironment;
+      const reserve = CodeEnvironment.findOneAndUpdate.bind(CodeEnvironment);
+      let enteredReserve!: () => void;
+      let releaseReserve!: () => void;
+      const entered = new Promise<void>((resolve) => (enteredReserve = resolve));
+      const release = new Promise<void>((resolve) => (releaseReserve = resolve));
+      const reserveSpy = jest.spyOn(CodeEnvironment, 'findOneAndUpdate').mockImplementationOnce(
+        (...args: Parameters<typeof CodeEnvironment.findOneAndUpdate>) =>
+          ({
+            lean: async () => {
+              enteredReserve();
+              await release;
+              return await reserve(...args).lean();
+            },
+          }) as ReturnType<typeof CodeEnvironment.findOneAndUpdate>,
+      );
+      const guardedUpdate = updateAgent(
+        { id: agentId },
+        { name: 'Guarded update name', code_environment_id: environmentId },
+      );
+      await entered;
+      await Agent.updateOne(
+        { id: agentId },
+        { $set: { description: 'Intervening update survived' } },
+      );
+      releaseReserve();
+
+      await expect(guardedUpdate).resolves.toBeNull();
+      await expect(Agent.findOne({ id: agentId }).lean()).resolves.toMatchObject({
+        name: 'Original agent name',
+        description: 'Intervening update survived',
+      });
+      await expect(Agent.findOne({ id: agentId }).lean()).resolves.not.toHaveProperty(
+        'code_environment_id',
+      );
+      reserveSpy.mockRestore();
+    });
+    test('should preserve skills enabled when pruning deleted ids on an all-scoped revert', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const Skill = mongoose.models.Skill;
+      const skill = await Skill.create({
+        name: 'revert-all-scope-prune-skill',
+        description: 'Skill backing the all-scoped revert pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const skillId = skill._id.toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'All Scope Revert Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [skillId],
+        skills_enabled: true,
+        skills_scope: SkillsScope.all,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      await Skill.deleteOne({ _id: skill._id });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_enabled).toBe(true);
+      expect(revertedAgent.skills_scope).toBe(SkillsScope.all);
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(true);
+      expect(reloadedAgent!.skills_scope).toBe(SkillsScope.all);
+    });
+
+    test('should fail closed when pruning deleted ids on a legacy revert', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const Skill = mongoose.models.Skill;
+      const skill = await Skill.create({
+        name: 'revert-legacy-prune-skill',
+        description: 'Skill backing the legacy revert pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const skillId = skill._id.toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Legacy Revert Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [skillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      await Skill.deleteOne({ _id: skill._id });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_enabled).toBe(false);
+      expect(revertedAgent.skills_scope).toBeUndefined();
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills_scope).toBeUndefined();
+    });
+
+    test('should prune deleted skill ids when reverting to an older version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const Skill = mongoose.models.Skill;
+      const skill = await Skill.create({
+        name: 'revert-prune-skill',
+        description: 'Skill backing the revert pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const skillId = skill._id.toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Revert Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [skillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      await Skill.deleteOne({ _id: skill._id });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.name).toBe('Revert Skill Agent');
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_enabled).toBe(false);
+    });
+
+    test('should preserve external skill ids when reverting to an older version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      await createAgent({
+        id: agentId,
+        name: 'Revert External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [externalSkillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.name).toBe('Revert External Skill Agent');
+      expect(revertedAgent.skills).toEqual([externalSkillId]);
+      expect(revertedAgent.skills_enabled).toBe(true);
     });
 
     test('should detect action metadata changes and force version update', async () => {
@@ -3335,10 +4910,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should omit skill configuration from the default list projection', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'projection-skill-a',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'projection-skill-b',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',
@@ -3361,10 +4947,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should include skill configuration only when explicitly requested', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'scoped-skill-a',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'scoped-skill-b',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',
@@ -3385,6 +4982,27 @@ describe('Support Contact Field', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0].skills).toEqual(targetSkillIds);
       expect(result.data[0].skills_enabled).toBe(true);
+    });
+
+    test('should include conversation_starters in the default list projection', async () => {
+      const starters = ['Summarize this page', 'What can you do?'];
+      const scopedAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent With Starters',
+        description: 'Agent exposing conversation starters',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        conversation_starters: starters,
+      });
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [scopedAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].conversation_starters).toEqual(starters);
     });
 
     test('should return multiple accessible agents when provided', async () => {
@@ -3513,6 +5131,232 @@ describe('Support Contact Field', () => {
       expect(result.data[0].id).toBe(agentB1.id);
       expect(result.data[0].author).toBe(userB.toString());
     });
+
+    test('should cap results at the default page size when limit is omitted', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(100);
+      expect(result.has_more).toBe(true);
+      expect(result.after).toBeTruthy();
+    });
+
+    test('should return all agents when limit is explicitly null', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: null,
+      });
+
+      expect(result.data).toHaveLength(102);
+      expect(result.has_more).toBe(false);
+      expect(result.after).toBeNull();
+    });
+
+    test('should honor explicit limits above the legacy 100 cap', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 105; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 500,
+      });
+
+      expect(result.data).toHaveLength(105);
+      expect(result.has_more).toBe(false);
+    });
+  });
+});
+
+describe('getAgentManagementListByAccess', () => {
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  it('returns full configuration with version counts without changing updatedAt', async () => {
+    const tenantId = `tenant-${uuidv4()}`;
+    const created = await tenantStorage.run({ tenantId }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'Managed Agent',
+        instructions: 'Keep this configuration',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        tools: ['web_search'],
+      }),
+    );
+    await tenantStorage.run({ tenantId }, () =>
+      updateAgent({ id: created.id }, { instructions: 'Updated configuration' }),
+    );
+    const before = await Agent.findById(created._id)
+      .select({ updatedAt: 1 })
+      .lean<{ updatedAt?: Date }>();
+    const beforeUpdatedAt = before?.updatedAt;
+
+    const result = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: [created._id],
+        tenantId,
+        limit: 20,
+      }),
+    );
+    const after = await Agent.findById(created._id)
+      .select({ updatedAt: 1 })
+      .lean<{ updatedAt?: Date }>();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: created.id,
+      instructions: 'Updated configuration',
+      tools: ['web_search'],
+      version: 2,
+    });
+    expect(result.data[0].versions).toBeUndefined();
+    expect(after?.updatedAt).toEqual(beforeUpdatedAt);
+  });
+
+  it('enforces tenant scope even when accessible IDs contain another tenant record', async () => {
+    const tenantA = `tenant-a-${uuidv4()}`;
+    const tenantB = `tenant-b-${uuidv4()}`;
+    const publicId = `agent_${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    const agentA = await tenantStorage.run({ tenantId: tenantA }, () =>
+      createAgent({ id: publicId, name: 'A', provider: 'openai', model: 'gpt-4', author }),
+    );
+    const agentB = await tenantStorage.run({ tenantId: tenantB }, () =>
+      createAgent({ id: publicId, name: 'B', provider: 'openai', model: 'gpt-4', author }),
+    );
+
+    const result = await tenantStorage.run({ tenantId: tenantA }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: [agentA._id, agentB._id],
+        tenantId: tenantA,
+        limit: 20,
+      }),
+    );
+
+    expect(result.data.map(({ name }) => name)).toEqual(['A']);
+  });
+
+  it('keeps an unrestricted capability listing inside the authenticated tenant', async () => {
+    const tenantA = `tenant-a-${uuidv4()}`;
+    const tenantB = `tenant-b-${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    await tenantStorage.run({ tenantId: tenantA }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'A',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      }),
+    );
+    await tenantStorage.run({ tenantId: tenantB }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'B',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      }),
+    );
+
+    const result = await tenantStorage.run({ tenantId: tenantA }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: null,
+        tenantId: tenantA,
+        limit: 20,
+      }),
+    );
+
+    expect(result.data.map(({ name }) => name)).toEqual(['A']);
+  });
+
+  it('paginates deterministically without overlap', async () => {
+    const tenantId = `tenant-${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    const agents = await tenantStorage.run({ tenantId }, () =>
+      Promise.all(
+        ['A', 'B', 'C'].map((name) =>
+          createAgent({
+            id: `agent_${uuidv4()}`,
+            name,
+            provider: 'openai',
+            model: 'gpt-4',
+            author,
+          }),
+        ),
+      ),
+    );
+
+    const first = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: agents.map(({ _id }) => _id),
+        tenantId,
+        limit: 2,
+      }),
+    );
+    const second = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: agents.map(({ _id }) => _id),
+        tenantId,
+        limit: 2,
+        after: first.after,
+      }),
+    );
+
+    expect(first.data).toHaveLength(2);
+    expect(first.has_more).toBe(true);
+    expect(first.after).toBeTruthy();
+    expect(second.data).toHaveLength(1);
+    expect(second.has_more).toBe(false);
+    expect(first.data.map(({ id }) => id)).not.toContain(second.data[0].id);
   });
 });
 

@@ -11,7 +11,7 @@ jest.mock('librechat-data-provider', () => {
     paramSettings: {
       foo: {},
       bar: {},
-      custom: {},
+      custom: [],
       openrouter: [
         {
           key: 'promptCache',
@@ -59,6 +59,7 @@ jest.mock('@librechat/data-schemas', () => {
 const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { ReasoningParameterFormat, ReasoningResponseKey } = require('librechat-data-provider');
 const loadCustomConfig = require('./loadCustomConfig');
 
 describe('loadCustomConfig', () => {
@@ -233,6 +234,33 @@ describe('loadCustomConfig', () => {
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
   });
 
+  it('masks literal Langfuse header credentials in the startup log', async () => {
+    const mockConfig = {
+      version: '1.0',
+      cache: true,
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-lf-1',
+        headers: {
+          'CF-Access-Client-Id': 'client-id',
+          'CF-Access-Client-Secret': 'gateway-credential',
+        },
+      },
+    };
+    process.env.CONFIG_PATH = 'validConfig.yaml';
+    loadYaml.mockReturnValueOnce(mockConfig);
+
+    const result = await loadCustomConfig();
+
+    const logged = logger.info.mock.calls.map(([value]) => value).join('\n');
+    const debugged = JSON.stringify(logger.debug.mock.calls);
+    expect(logged).not.toContain('gateway-credential');
+    expect(debugged).not.toContain('gateway-credential');
+    expect(logged).toContain('***');
+    // The masking is for logging only — the live config keeps real values.
+    expect(result.langfuse.headers['CF-Access-Client-Secret']).toBe('gateway-credential');
+  });
+
   describe('parseCustomParams', () => {
     const mockConfig = {
       version: '1.0',
@@ -307,11 +335,28 @@ describe('loadCustomConfig', () => {
       );
     });
 
-    it('throws an error when defaultParamsEndpoint is not provided', async () => {
-      const malformedCustomParams = { defaultParamsEndpoint: undefined };
-      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
-        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, openrouter, google',
-      );
+    it('defaults defaultParamsEndpoint when only reasoningFormat is provided', async () => {
+      const parsedConfig = await loadCustomParams({
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+      });
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        paramDefinitions: [],
+      });
+    });
+
+    it('defaults defaultParamsEndpoint when only reasoningKey is provided', async () => {
+      const parsedConfig = await loadCustomParams({
+        reasoningKey: ReasoningResponseKey.reasoning,
+      });
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'custom',
+        reasoningKey: ReasoningResponseKey.reasoning,
+        paramDefinitions: [],
+      });
     });
 
     it('fills the paramDefinitions with missing values', async () => {

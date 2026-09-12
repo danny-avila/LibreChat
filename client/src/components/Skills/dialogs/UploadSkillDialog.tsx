@@ -27,7 +27,9 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const { data: skillFileConfig = { fileConfig: defaultFileConfig } } = useGetFileConfig({
+  const {
+    data: skillFileConfig = { configuredSizeLimitMb: undefined, fileConfig: defaultFileConfig },
+  } = useGetFileConfig({
     select: (data) => ({
       configuredSizeLimitMb: data?.skills?.fileSizeLimit,
       fileConfig: mergeFileConfig(data),

@@ -1,10 +1,10 @@
-import { useState, useId, useMemo, useCallback } from 'react';
+import { useState, useId, useMemo, useCallback, memo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
-import { DropdownPopup, TooltipAnchor } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import type * as t from '~/common';
+import { DropdownPopup, TooltipAnchor, buttonVariants } from '@librechat/client';
 import type { FC } from 'react';
+import type * as t from '~/common';
 import { useGetConversationTags } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -12,9 +12,12 @@ import { cn } from '~/utils';
 type BookmarkNavProps = {
   tags: string[];
   setTags: (tags: string[]) => void;
+  /** Sizes the trigger to the search bar it shares a row with; otherwise it keeps
+   *  the compact section-heading size used beside the Chats heading on mobile. */
+  matchSearchBar?: boolean;
 };
 
-const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) => {
+const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, matchSearchBar }: BookmarkNavProps) => {
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -106,19 +109,22 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
               id="bookmark-nav-menu-button"
               aria-label={buttonAriaLabel}
               aria-pressed={tags.length > 0}
+              /** Matches the Projects heading's actions: it sits beside a section heading too. */
               className={cn(
-                'flex items-center justify-center',
-                'size-9 border-none text-text-primary hover:bg-accent hover:text-accent-foreground',
-                'rounded-lg border-none p-2 hover:bg-surface-active-alt',
-                'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
-                isMenuOpen ? 'bg-surface-hover' : '',
+                buttonVariants({
+                  variant: 'section-action',
+                  size: matchSearchBar ? null : 'icon-xs',
+                }),
+                'shrink-0',
+                matchSearchBar && 'h-9 w-9 rounded-lg',
+                isMenuOpen && 'bg-surface-active-alt text-text-primary',
               )}
               data-testid="bookmark-menu"
             >
               {tags.length > 0 ? (
-                <BookmarkFilledIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkFilledIcon aria-hidden="true" className="size-4" />
               ) : (
-                <BookmarkIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkIcon aria-hidden="true" className="size-4" />
               )}
             </Ariakit.MenuButton>
           }
@@ -129,4 +135,4 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   );
 };
 
-export default BookmarkNav;
+export default memo(BookmarkNav);

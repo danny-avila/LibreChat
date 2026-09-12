@@ -1,4 +1,5 @@
 import type { RedisStore } from 'rate-limit-redis';
+import { closeRedisClients } from '../redisClients.helper';
 
 describe('limiterCache', () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -20,6 +21,7 @@ describe('limiterCache', () => {
   });
 
   afterEach(async () => {
+    await closeRedisClients();
     process.env = originalEnv;
     jest.resetModules();
   });

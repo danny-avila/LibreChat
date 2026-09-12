@@ -23,8 +23,8 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { Socket } from 'net';
-import { MCPConnection } from '~/mcp/connection';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { MCPConnection } from '~/mcp/connection';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
 type LookupAddress = string | Array<{ address: string; family: number }>;
@@ -71,7 +71,13 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
@@ -312,6 +318,43 @@ async function createOversizedToolResultStreamableServer(
     },
   };
 }
+
+describe('direct bearer HTTP rejection', () => {
+  it.each([
+    ['sse', 401],
+    ['sse', 403],
+    ['streamable-http', 401],
+    ['streamable-http', 403],
+  ] as const)('preserves a structured %s POST status %s', async (type, status) => {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(status);
+      res.end('credential rejected');
+    });
+    const close = trackSockets(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}/mcp`;
+    const connection = new MCPConnection({
+      serverName: 'direct-bearer',
+      serverConfig: { type, url },
+      useSSRFProtection: false,
+      directBearerRecoveryEnabled: true,
+    });
+    const createFetch = Reflect.get(connection, 'createFetchFunction') as (
+      getHeaders: () => Record<string, string>,
+    ) => CustomFetch;
+    try {
+      await expect(
+        createFetch.call(connection, () => ({ Authorization: 'Bearer token' }))(url, {
+          method: 'POST',
+          body: '{}',
+        }),
+      ).rejects.toMatchObject({ name: 'MCPTransportAuthenticationError', status });
+    } finally {
+      await connection.dispose();
+      await close();
+    }
+  });
+});
 
 describe('MCP SSRF protection – redirect blocking', () => {
   let redirectServer: TestServer;
@@ -950,6 +993,68 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
   let conn: MCPConnection | null;
   const originalMaxResponseBytes = process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES;
   const originalMaxLineBytes = process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
+
+  it.each([true, false])(
+    'uses the live bearer on SSE stream reconnect only in direct mode: %s',
+    async (directBearerRecoveryEnabled) => {
+      const requests: http.IncomingHttpHeaders[] = [];
+      let stream: http.ServerResponse | undefined;
+      let reconnected!: () => void;
+      const reconnect = new Promise<void>((resolve) => {
+        reconnected = resolve;
+      });
+      const server = http.createServer((req, res) => {
+        requests.push(req.headers);
+        stream = res;
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('retry: 10\nevent: endpoint\ndata: /messages\n\n');
+        if (requests.length === 2) {
+          reconnected();
+        }
+      });
+      const close = trackSockets(server);
+      const port = await getFreePort();
+      await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+      const config = {
+        type: 'sse' as const,
+        url: `http://127.0.0.1:${port}/sse`,
+        headers: {
+          Authorization: 'Bearer old-token',
+          'X-Access-Token': 'old-token',
+          'X-Operator': 'configured',
+        },
+      };
+      conn = new MCPConnection({
+        serverName: 'sse-live-bearer',
+        serverConfig: config,
+        useSSRFProtection: false,
+        directBearerRecoveryEnabled,
+      });
+      const transport = await conn['constructTransport'](config);
+      try {
+        await transport.start();
+        conn.setRequestHeaders({
+          AUTHORIZATION: 'Bearer fresh-token',
+          'X-Access-Token': 'fresh-token',
+          'X-Request': 'private',
+        });
+        stream?.end();
+        await reconnect;
+        expect(requests[0].authorization).toBe('Bearer old-token');
+        expect(requests[1].authorization).toBe(
+          directBearerRecoveryEnabled ? 'Bearer fresh-token' : 'Bearer old-token',
+        );
+        expect(requests[1]['x-operator']).toBe('configured');
+        expect(requests[1]['x-access-token']).toBe(
+          directBearerRecoveryEnabled ? 'fresh-token' : 'old-token',
+        );
+        expect(requests[1]['x-request']).toBeUndefined();
+      } finally {
+        await transport.close();
+        await close();
+      }
+    },
+  );
 
   afterEach(async () => {
     if (originalMaxResponseBytes == null) {
@@ -2039,6 +2144,68 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
 
       await expect(response.text()).rejects.toThrow(
         /MCP response exceeded byte limit.*limit=8 bytes/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  /**
+   * A `Content-Type` whose parameters mention the SSE type is not an SSE response. Classifying
+   * it by substring made the guard hand the caller a synthetic SSE error frame — parsed as a
+   * successful response body — instead of throwing, so an oversized body arrived looking well
+   * formed.
+   */
+  it('should not treat a content type that merely mentions the SSE type as an event stream', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain; boundary=text/event-stream' });
+      res.end('{"jsonrpc":"2.0","id":1,"result":{"too":"large"}}');
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-deceptive-content-type',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).rejects.toThrow(
+        /MCP response exceeded byte limit.*limit=8 bytes/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should still guard a genuine event stream whose content type carries parameters', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '16';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'TEXT/EVENT-STREAM; charset=utf-8' });
+      res.end(`data: ${'x'.repeat(256)}\n\n`);
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-parameterized-sse',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).resolves.toContain(
+        'MCP response contained an oversized SSE line',
       );
     } finally {
       await server.close();

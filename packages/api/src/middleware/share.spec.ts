@@ -6,7 +6,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-import { Permissions, PermissionTypes, ResourceType } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, PrincipalType, ResourceType } from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
 import type { IRole } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types/http';
@@ -19,6 +19,9 @@ type ShareTestRequest = ServerRequest & {
   };
   body: ServerRequest['body'] & {
     public?: boolean;
+    updated?: Array<{
+      type?: string;
+    }>;
   };
 };
 
@@ -164,6 +167,41 @@ describe('createSharePolicyMiddleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       error: 'Forbidden',
       message: `You do not have permission to share ${ResourceType.SKILL} resources publicly`,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('requires SHARE_PUBLIC when PUBLIC is granted through updated principals', async () => {
+    const { checkSharePublicAccess } = createSharePolicyMiddleware({
+      getRoleByName,
+      hasCapability,
+    });
+    getRoleByName.mockResolvedValue(
+      createRole({
+        [PermissionTypes.SHARED_LINKS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      }),
+    );
+    const req = createRequest({
+      params: { resourceType: ResourceType.SHARED_LINK },
+      body: {
+        updated: [
+          {
+            type: PrincipalType.PUBLIC,
+          },
+        ],
+      },
+    });
+    const res = createResponse();
+
+    await checkSharePublicAccess(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Forbidden',
+      message: `You do not have permission to share ${ResourceType.SHARED_LINK} resources publicly`,
     });
     expect(next).not.toHaveBeenCalled();
   });

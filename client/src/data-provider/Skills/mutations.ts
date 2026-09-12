@@ -1,6 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { InfiniteData, QueryKey, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   TSkill,
   TSkillFile,
@@ -21,6 +20,7 @@ import type {
   ImportSkillOptions,
   DeleteSkillFileOptions,
 } from 'librechat-data-provider';
+import type { InfiniteData, QueryKey, UseMutationResult } from '@tanstack/react-query';
 
 function isInfiniteSkillData(
   data: TSkillListResponse | InfiniteData<TSkillListResponse>,
@@ -49,14 +49,21 @@ function addSkillToCachedLists(
   queryClient.setQueriesData<TSkillCacheEntry>([QueryKeys.skills], (data) => {
     if (!data) return data;
     if (isInfiniteSkillData(data)) {
+      const pages = data.pages.map((page) => ({
+        ...page,
+        skills: page.skills.filter((existing) => existing._id !== skill._id),
+      }));
       return {
         ...data,
-        pages: data.pages.map((page, i) =>
+        pages: pages.map((page, i) =>
           i === 0 ? { ...page, skills: [skill, ...page.skills] } : page,
         ),
       };
     }
-    return { ...data, skills: [skill, ...data.skills] };
+    return {
+      ...data,
+      skills: [skill, ...data.skills.filter((existing) => existing._id !== skill._id)],
+    };
   });
 }
 
@@ -119,9 +126,16 @@ export const useCreateSkillMutation = (
   return useMutation({
     mutationFn: (payload: TCreateSkill) => dataService.createSkill(payload),
     ...rest,
-    onSuccess: (skill, variables, context) => {
+    onSuccess: async (skill, variables, context) => {
+      /**
+       * An infinite skill query may have captured its pre-create pages before
+       * this mutation completed. Cancel it before the cache write so a late
+       * cursor response cannot replace the newly-created row.
+       */
+      await queryClient.cancelQueries([QueryKeys.skills]);
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
       addSkillToCachedLists(queryClient, skill);
+      void queryClient.invalidateQueries([QueryKeys.skills]);
       if (onSuccess) onSuccess(skill, variables, context);
     },
   });
@@ -139,9 +153,11 @@ export const useImportSkillMutation = (
   return useMutation({
     mutationFn: (formData: FormData) => dataService.importSkill(formData),
     ...rest,
-    onSuccess: (skill, variables, context) => {
+    onSuccess: async (skill, variables, context) => {
+      await queryClient.cancelQueries([QueryKeys.skills]);
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
       addSkillToCachedLists(queryClient, skill);
+      void queryClient.invalidateQueries([QueryKeys.skills]);
       if (onSuccess) onSuccess(skill, variables, context);
     },
   });

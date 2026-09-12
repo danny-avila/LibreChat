@@ -1,9 +1,16 @@
+import { ForwardRefExoticComponent, RefAttributes } from 'react';
 import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
 
-const Collapsible = CollapsiblePrimitive.Root;
+const Collapsible: ForwardRefExoticComponent<
+  CollapsiblePrimitive.CollapsibleProps & RefAttributes<HTMLDivElement>
+> = CollapsiblePrimitive.Root;
 
-const CollapsibleTrigger = CollapsiblePrimitive.CollapsibleTrigger;
+const CollapsibleTrigger: ForwardRefExoticComponent<
+  CollapsiblePrimitive.CollapsibleTriggerProps & RefAttributes<HTMLButtonElement>
+> = CollapsiblePrimitive.CollapsibleTrigger;
 
-const CollapsibleContent = CollapsiblePrimitive.CollapsibleContent;
+const CollapsibleContent: ForwardRefExoticComponent<
+  CollapsiblePrimitive.CollapsibleContentProps & RefAttributes<HTMLDivElement>
+> = CollapsiblePrimitive.CollapsibleContent;
 
 export { Collapsible, CollapsibleTrigger, CollapsibleContent };

@@ -1,7 +1,15 @@
 import React, { useRef } from 'react';
-import { Link, Pin, PinOff } from 'lucide-react';
+import { Link } from 'lucide-react';
+import { Pin, PinOff } from 'lucide';
 import { useQueryClient } from '@tanstack/react-query';
-import { OGDialog, OGDialogContent, Button, useToastContext } from '@librechat/client';
+import {
+  OGDialog,
+  OGDialogContent,
+  Button,
+  MorphIcon,
+  TooltipAnchor,
+  useToastContext,
+} from '@librechat/client';
 import {
   QueryKeys,
   Constants,
@@ -11,8 +19,8 @@ import {
   AgentListResponse,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import { renderAgentAvatar, clearMessagesCache, specDisplayFieldReset } from '~/utils';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
-import { renderAgentAvatar, clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';
 
 interface SupportContact {
@@ -73,6 +81,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         title: localize('com_agents_chat_with', { name: agent.name || localize('com_ui_agent') }),
+        ...specDisplayFieldReset,
       };
 
       const currentConvo = getDefaultConversation({
@@ -117,7 +126,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
     if (name && email) {
       return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
+        <a href={`mailto:${email}`} className="text-text-primary hover:underline">
           {name}
         </a>
       );
@@ -125,7 +134,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
     if (email) {
       return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
+        <a href={`mailto:${email}`} className="text-text-primary hover:underline">
           {email}
         </a>
       );
@@ -165,24 +174,32 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
         {/* Action button */}
         <div className="mb-4 mt-6 flex justify-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleFavoriteClick}
-            title={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
-            aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
-          >
-            {isFavorite ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleCopyLink}
-            title={localize('com_agents_copy_link')}
-            aria-label={localize('com_agents_copy_link')}
-          >
-            <Link className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          <TooltipAnchor
+            description={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleFavoriteClick}
+                aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+              >
+                <MorphIcon icon={isFavorite ? PinOff : Pin} className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipAnchor
+            description={localize('com_agents_copy_link')}
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleCopyLink}
+                aria-label={localize('com_agents_copy_link')}
+              >
+                <Link className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            }
+          />
           <Button
             variant="submit"
             className="w-full max-w-xs"

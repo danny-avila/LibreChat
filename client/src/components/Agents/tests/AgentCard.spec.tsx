@@ -1,9 +1,25 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import AgentCard from '../AgentCard';
-import type t from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
+import AgentCard from '../AgentCard';
+
+jest.mock('~/utils', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  return {
+    cn: (...classes: string[]) => classes.filter(Boolean).join(' '),
+    renderAgentAvatar: (agent: any) => {
+      const avatar = agent.avatar;
+      const src = typeof avatar === 'string' ? avatar : avatar?.filepath;
+      if (src) {
+        return <img src={src} alt={`${agent.name} avatar`} />;
+      }
+      return <svg className="lucide-feather" />;
+    },
+  };
+});
 
 // Mock useLocalize hook
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
@@ -12,7 +28,8 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
     com_agents_agent_card_label: '{{name}} agent. {{description}}',
     com_agents_category_general: 'General',
     com_agents_category_hr: 'Human Resources',
-    com_ui_by_author: 'by {{0}}',
+    com_agents_contact: 'Contact',
+    com_agents_no_contact_available: 'No contact available',
     com_agents_description_card: '{{description}}',
   };
   return mockTranslations[key] || key;
@@ -26,7 +43,8 @@ jest.mock('~/hooks', () => ({
       com_agents_agent_card_label: '{{name}} agent. {{description}}',
       com_agents_category_general: 'General',
       com_agents_category_hr: 'Human Resources',
-      com_ui_by_author: 'by {{0}}',
+      com_agents_contact: 'Contact',
+      com_agents_no_contact_available: 'No contact available',
       com_agents_description_card: '{{description}}',
     };
     let translation = mockTranslations[key] || key;
@@ -77,7 +95,6 @@ jest.mock('@librechat/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
   return {
-    ...jest.requireActual('@librechat/client'),
     useToastContext: jest.fn(() => ({
       showToast: jest.fn(),
     })),
@@ -290,13 +307,17 @@ describe('AgentCard', () => {
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
+    expect(screen.getByText('No contact available')).toBeInTheDocument();
   });
 
-  it('displays authorName when support_contact is missing', () => {
+  it('falls back to owner contact when support_contact is missing', () => {
     const agentWithAuthorName = {
       ...mockAgent,
       support_contact: undefined,
       authorName: 'John Doe',
+      owner_contact: {
+        name: 'Owner User',
+      },
     };
 
     render(
@@ -305,7 +326,10 @@ describe('AgentCard', () => {
       </Wrapper>,
     );
 
-    expect(screen.getByText('by John Doe')).toBeInTheDocument();
+    expect(screen.getByText('Contact:')).toBeInTheDocument();
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
+    expect(screen.queryByText('by John Doe')).not.toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {

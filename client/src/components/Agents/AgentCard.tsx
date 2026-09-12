@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
-import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 import AgentDetailContent from './AgentDetailContent';
+import { cn, renderAgentAvatar } from '~/utils';
+import AgentContact from './AgentContact';
 
 interface AgentCardProps {
   agent: t.Agent;
@@ -32,8 +33,6 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
 
     return agent.category.charAt(0).toUpperCase() + agent.category.slice(1);
   }, [agent.category, categories, localize]);
-
-  const displayName = getContactDisplayName(agent);
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
@@ -102,14 +101,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
               </p>
             )}
 
-            {/* Author */}
-            {displayName && (
-              <div className="mt-1 text-xs text-text-tertiary">
-                <span className="truncate">
-                  {localize('com_ui_by_author', { 0: displayName || '' })}
-                </span>
-              </div>
-            )}
+            <AgentContact
+              agent={agent}
+              className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
+            />
           </div>
         </div>
       </OGDialogTrigger>

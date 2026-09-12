@@ -26,7 +26,7 @@ export default function ResultSwitcher({
   return (
     <nav
       aria-label={localize('com_ui_navigate_results')}
-      className="flex items-center justify-center gap-1.5 border-t border-border-light px-3 py-1.5 text-xs"
+      className="flex items-center justify-center gap-1.5 border-t border-border-light px-3 py-1.5 text-xs [.user-turn_&]:bg-surface-code"
     >
       <button
         type="button"

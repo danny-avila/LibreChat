@@ -7,14 +7,25 @@ import type {
   TAttachment,
   TMessage,
   TBanner,
+  ReasoningResponseKey,
+  ReasoningParameterFormat,
 } from './schemas';
+import type {
+  CodeWorkspaceDescriptor,
+  CodeWorkspaceOperation,
+  CodeWorkspaceSelection,
+} from './code/workspace';
+import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
+import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
+import type { CodeApprovalMode } from './code/approval';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
-import type { Agent } from './types/assistants';
+import type { ProviderId } from './providers';
 
 export * from './schemas';
+export * from './types/subagents';
 
 export type TMessages = TMessage[];
 
@@ -51,6 +62,7 @@ export type TEndpointOption = Pick<
   | 'additionalModelRequestFields'
   // Anthropic-specific
   | 'promptCache'
+  | 'promptCacheTtl'
   | 'thinking'
   | 'thinkingBudget'
   | 'thinkingLevel'
@@ -69,6 +81,7 @@ export type TEndpointOption = Pick<
   | 'file_ids'
   // System field
   | 'system'
+  | 'chatProjectId'
   // Google examples
   | 'examples'
   // Context
@@ -104,12 +117,30 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
+  memory?: boolean;
+  /** Equip the ephemeral agent with the `ask_user_question` HITL tool. */
+  ask_user_question?: boolean;
+  /**
+   * Let the model dispatch this ephemeral agent's eligible tool calls in the
+   * background (poll results via `check_background_task`). Requires the
+   * `run_in_background` agent capability to be enabled by the admin.
+   */
+  run_in_background?: boolean;
+  /**
+   * Inject the `intent` label param into this ephemeral agent's eligible
+   * tools so each call streams a live status label. Requires the
+   * `tool_intents` agent capability to be enabled by the admin.
+   */
+  describe_intent?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
     isRegenerate?: boolean;
+    /** Manual context compaction: summarize the branch up to `parentMessageId`
+     *  and end without a reply. No user message is created. */
+    compact?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -124,6 +155,27 @@ export type TPayload = Partial<TMessage> &
      * before the LLM turn runs.
      */
     manualSkills?: string[];
+    /** Conversation-scoped preference for code tool approval behavior. */
+    codeApprovalMode?: CodeApprovalMode;
+    /** Conversation-selected workspaces, with at most one binding per environment. */
+    codeWorkspaces?: CodeWorkspaceSelection[];
+    /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
+    timezone?: string;
+    /**
+     * Stable per-submission idempotency key (uuid) generated once per `ask()`. Identical
+     * across the client's start-generation network retries, unique per user action (including
+     * regenerate). The server dedups retried start requests on it so a lost/reset response
+     * cannot trigger a second billed generation.
+     */
+    clientRequestId?: string;
+    /** Parked steer source consumed only after this new turn's user message is
+     * durably saved. Separate from `clientRequestId`, which identifies one
+     * generation attempt and must rotate after a failed recovery. */
+    recoverySteerId?: string;
+    /** Optional optimistic-serialization fence for a queued follow-up. The
+     * server may create only if this observed predecessor is still current or
+     * the conversation is still idle after its cleanup. */
+    expectedPredecessorCreatedAt?: number;
   };
 
 export type TEditedContent =
@@ -144,17 +196,60 @@ export type TSubmission = {
   isContinued?: boolean;
   isTemporary: boolean;
   messages: TMessage[];
+  /** Client-only full message context used to restore branch siblings after scoped regenerate. */
+  regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
+  /** Manual context compaction; shaped like a regenerate on the client (no new
+   *  user bubble) and sent to the server as a summarize-only turn. */
+  compact?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
   editedContent?: TEditedContent | null;
+  /**
+   * Length of the retained content prefix for an edited resubmission, captured
+   * when the submission is built.
+   *
+   * The server indexes only NEW content, so the client offsets incoming
+   * indices by the prefix it kept. `initialResponse.content` cannot be used
+   * for that after a reconnect: the resume sync overwrites it with the
+   * server's completion-local snapshot, whose length is unrelated to the
+   * prefix. Recording the length up front keeps the offset stable across
+   * resumes for run steps and activity labels alike.
+   */
+  editPrefixLength?: number;
+  /** True once server index 0 text/reasoning actually merged into the retained tail. */
+  editPrefixFirstPartFolded?: boolean;
+  /**
+   * Set once a resume SYNC has replaced the response's retained prefix with
+   * the server's completion-local snapshot. From that point the prefix is
+   * gone from the rendered message and server indices are absolute in the
+   * new space, so {@link editPrefixLength} must NOT be applied — by run
+   * steps or by activity labels. Both event paths read this flag so a
+   * batch's tool cards and its header always land in one index space.
+   *
+   * Stamped per event by the resumable transport, which owns the SYNC
+   * boundary; the non-resumable path never sets it.
+   */
+  editPrefixCleared?: boolean;
   /** Added conversation for multi-convo feature */
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
   manualSkills?: string[];
+  /** Conversation-scoped preference for code tool approval behavior. */
+  codeApprovalMode?: CodeApprovalMode;
+  /** Conversation-selected workspaces, with at most one binding per environment. */
+  codeWorkspaces?: CodeWorkspaceSelection[];
+  /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
+  clientRequestId?: string;
+  /** Client-only carry-through for a receipt-bound queued recovery. */
+  recoverySteerId?: string;
+  expectedPredecessorCreatedAt?: number;
+  /** Opaque client-only queue restoration metadata; intentionally omitted by
+   * `createPayload`. */
+  queuedMessageOrigin?: unknown;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -191,6 +286,8 @@ export type TMarketplaceCategory = TCategory & {
 export type TError = {
   message: string;
   code?: number | string;
+  file_id?: string;
+  tool_resource?: EToolResources;
   response?: {
     data?: {
       message?: string;
@@ -213,14 +310,25 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
+  tenantId?: string;
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   createdAt: string;
   updatedAt: string;
+};
+
+export type TUpdateUserPreferencesRequest = {
+  statefulCodeEnvironment: StatefulCodeEnvironment;
+};
+
+export type TUpdateUserPreferencesResponse = {
+  updated: boolean;
+  preferences: TUpdateUserPreferencesRequest;
 };
 
 export type TGetConversationsResponse = {
@@ -284,6 +392,43 @@ export type TUpdateConversationRequest = {
 
 export type TUpdateConversationResponse = TConversation;
 
+export type TChatProject = {
+  _id: string;
+  name: string;
+  description?: string;
+  user?: string;
+  conversationCount: number;
+  lastConversationAt?: string | null;
+  lastConversationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TCreateChatProjectRequest = {
+  name: string;
+  description?: string;
+};
+
+export type TUpdateChatProjectRequest = Partial<TCreateChatProjectRequest> & {
+  projectId: string;
+};
+
+export type TDeleteChatProjectResponse = {
+  deletedCount: number;
+  modifiedCount: number;
+};
+
+export type TAssignConversationToProjectRequest = {
+  conversationId: string;
+  projectId: string | null;
+};
+
+export type TAssignConversationToProjectResponse = {
+  conversation: TConversation;
+  previousProjectId: string | null;
+  projectId: string | null;
+};
+
 export type TDeleteConversationRequest = {
   conversationId?: string;
   thread_id?: string;
@@ -307,8 +452,20 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TArchiveAllConversationsResponse = {
+  archivedCount: number;
+};
+
+export type TPinConversationRequest = {
+  conversationId: string;
+  pinned: boolean;
+};
+
+export type TPinConversationResponse = TConversation;
+
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
+  langfuseSessionUrl?: string;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -317,11 +474,15 @@ export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId' | 'targetMessa
 
 export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
   Pick<TSharedLink, 'targetMessageId'> &
-  Pick<TConversation, 'conversationId'>;
+  Pick<TConversation, 'conversationId'> & {
+    _id?: string;
+  };
 
 export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
   shareId: string | null;
   success: boolean;
+  /** Per-link "share files" choice; absent on legacy links (treated as enabled). */
+  snapshotFiles?: boolean;
 };
 
 // type for getting conversation tags
@@ -365,6 +526,18 @@ export type TForkConvoResponse = {
   messages: TMessage[];
 };
 
+export type TForkSharedConvoRequest = {
+  shareId: string;
+  /** Index of the viewer's active message within the shared payload; reduces the
+   *  fork to that branch. An index is used because shared ids are re-anonymized
+   *  per request and `createdAt` can collide, while the payload order is stable. */
+  targetMessageIndex?: number;
+  /** `updatedAt` of the shared payload being forked. The shareId survives an
+   *  owner update, so the server rejects a fork whose payload has since moved
+   *  instead of resolving the index against different messages. */
+  shareRevision?: string;
+};
+
 export type TSearchResults = {
   conversations: TConversation[];
   messages: TMessage[];
@@ -372,6 +545,59 @@ export type TSearchResults = {
   pageSize: string | number;
   pages: string | number;
   filter: object;
+};
+
+export type TPublicCodeEnvironment = {
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  default?: boolean;
+  pairingAvailable?: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeEnvironmentSummary = {
+  resourceId: string;
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  canEdit?: boolean;
+  canDelete: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeControlPlane = {
+  id: string;
+  name: string;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+};
+
+export type TCodeEnvironmentsResponse = {
+  environments: TCodeEnvironmentSummary[];
+  controlPlanes: TCodeControlPlane[];
+};
+
+export type TCodeEnvironmentPairingResponse = {
+  environment: TCodeEnvironmentSummary;
+  pairing: {
+    workerId: string;
+    code: string;
+    expiresAt: string;
+    endpoint: string;
+  };
+};
+
+export type TCodeEnvironmentStatusResponse = {
+  environmentId: string;
+  status: 'offline' | 'starting' | 'ready';
+  statefulWorkspace?: boolean;
+  leaseExpiresInMs?: number;
+  sandboxProfile?: string;
+  runtimes?: string[];
+  operations?: CodeWorkspaceOperation[];
+  workspaces?: CodeWorkspaceDescriptor[];
 };
 
 export type TConfig = {
@@ -384,6 +610,8 @@ export type TConfig = {
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;
+  /** Canonical provider identity resolved at config load, used for branding. */
+  providerId?: ProviderId;
   version?: string;
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
@@ -395,8 +623,25 @@ export type TConfig = {
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
+  statefulCodeSessions?: {
+    allowedEnvironments: StatefulCodeEnvironment[];
+    environments?: TPublicCodeEnvironment[];
+    approvalsEnabled?: boolean;
+    /** Approval modes the endpoint policy permits the client to offer. */
+    approvalModes?: CodeApprovalMode[];
+  };
+  /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
+  maxSubagents?: number;
+  /** Concurrent Code API uploads allowed per route and authenticated principal. */
+  codeApiUploadConcurrency?: number;
+  /** Milliseconds one operation may spend waiting on Code API rate limits. */
+  codeApiMaxRetryWaitMs?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
+    reasoningFormat?: ReasoningParameterFormat;
+    reasoningKey?: ReasoningResponseKey;
+    includeReasoningContent?: boolean;
+    includeReasoningHistory?: boolean;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };
@@ -406,6 +651,18 @@ export type TEndpointsConfig =
   | undefined;
 
 export type TModelsConfig = Record<string, string[]>;
+
+/** Server-resolved context window and pricing for one model. Rates are USD per 1M tokens. */
+export type TModelTokenomics = {
+  context?: number;
+  prompt?: number;
+  completion?: number;
+  cacheWrite?: number;
+  cacheRead?: number;
+};
+
+/** endpoint → model → resolved tokenomics, from GET /api/endpoints/token-config */
+export type TTokenConfigMap = Record<string, Record<string, TModelTokenomics>>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
@@ -667,10 +924,12 @@ export type TCustomConfigSpeechResponse = { [key: string]: string };
 
 export type TUserTermsResponse = {
   termsAccepted: boolean;
+  termsAcceptedAt: Date | string | null;
 };
 
 export type TAcceptTermsResponse = {
-  success: boolean;
+  message: string;
+  termsAcceptedAt: Date | string;
 };
 
 export type TBannerResponse = TBanner | null;
@@ -745,4 +1004,51 @@ export type TUpdateSkillNodeRequest = {
   name?: string;
   parentId?: string | null;
   order?: number;
+};
+
+export type TLangfuseConnectionStatus = {
+  configured: boolean;
+  enabled: boolean;
+  destinations: TLangfuseDestinationOption[];
+  destination?: string;
+  publicKey?: string;
+  secretKeyPreview?: string;
+  updatedAt?: string;
+};
+
+export type TLangfuseDestinationOption = {
+  key: string;
+  baseUrl: string;
+};
+
+export type TUpdateLangfuseConnectionRequest = {
+  enabled: boolean;
+  destination: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestRequest = {
+  destination: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestErrorCode =
+  | 'invalid_credentials'
+  | 'access_denied'
+  | 'rate_limited'
+  | 'server_error'
+  | 'timeout'
+  | 'unreachable'
+  | 'missing_secret'
+  | 'stored_secret_unavailable'
+  | 'unexpected_response';
+
+export type TLangfuseConnectionTestResponse =
+  | { success: true }
+  | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+
+export type TLangfuseSessionLinkResponse = {
+  url: string | null;
 };

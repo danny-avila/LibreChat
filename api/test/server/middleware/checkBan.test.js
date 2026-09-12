@@ -41,6 +41,8 @@ jest.mock('@librechat/api', () => ({
   },
   keyvMongo: {},
   removePorts: jest.fn((req) => req.ip),
+  redirectToAuthFailure: (res, { clientDomain, authFailedError }) =>
+    res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
 }));
 
 jest.mock('~/models', () => ({
@@ -53,11 +55,15 @@ jest.mock('ua-parser-js', () => jest.fn(() => ({ browser: { name: 'Chrome' } }))
 
 const checkBan = require('~/server/middleware/checkBan');
 const { logger } = require('@librechat/data-schemas');
+const { ViolationTypes } = require('librechat-data-provider');
 const { findUser } = require('~/models');
+const denyRequest = require('~/server/middleware/denyRequest');
+const uap = require('ua-parser-js');
 
 const createReq = (overrides = {}) => ({
   ip: '192.168.1.1',
   user: { id: 'user123' },
+  method: 'GET',
   headers: { 'user-agent': 'Mozilla/5.0' },
   body: {},
   baseUrl: '/api',
@@ -68,6 +74,7 @@ const createReq = (overrides = {}) => ({
 const createRes = () => ({
   status: jest.fn().mockReturnThis(),
   json: jest.fn().mockReturnThis(),
+  redirect: jest.fn().mockReturnThis(),
 });
 
 describe('checkBan middleware', () => {
@@ -148,6 +155,26 @@ describe('checkBan middleware', () => {
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
+    it('redirects instead of sending JSON when the ban hits an OAuth navigation', async () => {
+      process.env.DOMAIN_CLIENT = 'http://client.test';
+      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+      const next = jest.fn();
+      const req = createReq({
+        isOAuthNavigation: true,
+        baseUrl: '/oauth',
+        originalUrl: '/oauth/openid/callback',
+      });
+      const res = createRes();
+
+      await checkBan(req, res, next);
+
+      expect(req.banned).toBe(true);
+      expect(res.json).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith(
+        'http://client.test/login?redirect=false&error=auth_banned',
+      );
+    });
+
     it('returns 403 when user ban is cached (IP miss)', async () => {
       mockBanCacheGet
         .mockResolvedValueOnce(undefined)
@@ -169,6 +196,110 @@ describe('checkBan middleware', () => {
       await checkBan(createReq(), createRes(), jest.fn());
 
       expect(mockBanLogsGet).not.toHaveBeenCalled();
+    });
+
+    it.each(['/api/agents/chat/stream/stream-123', '/api/agents/chat/status/conversation-1'])(
+      'returns JSON for a banned browser GET without a request body: %s',
+      async (originalUrl) => {
+        mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+        const req = createReq({
+          body: undefined,
+          baseUrl: '/api/agents',
+          originalUrl,
+        });
+        const res = createRes();
+
+        await checkBan(req, res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith({
+          message: 'Your account has been temporarily banned due to violations of our service.',
+        });
+        expect(denyRequest).not.toHaveBeenCalled();
+      },
+    );
+
+    it('preserves SSE denial for a banned browser interactive chat request', async () => {
+      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+      const req = createReq({
+        method: 'POST',
+        baseUrl: '/api/agents',
+        originalUrl: '/api/agents/chat/agents',
+      });
+      const res = createRes();
+
+      await checkBan(req, res, jest.fn());
+
+      expect(denyRequest).toHaveBeenCalledWith(req, res, { type: ViolationTypes.BAN });
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it.each(['active', 'status', 'stream'])(
+      'preserves SSE denial when a custom endpoint uses the POST-only name %s',
+      async (endpoint) => {
+        mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+        const req = createReq({
+          method: 'POST',
+          baseUrl: '/api/agents',
+          originalUrl: `/api/agents/chat/${endpoint}`,
+        });
+        const res = createRes();
+
+        await checkBan(req, res, jest.fn());
+
+        expect(denyRequest).toHaveBeenCalledWith(req, res, { type: ViolationTypes.BAN });
+        expect(res.status).not.toHaveBeenCalled();
+      },
+    );
+
+    it('returns JSON for a bodyless browser POST to an interactive chat path', async () => {
+      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+      const req = createReq({
+        body: undefined,
+        method: 'POST',
+        baseUrl: '/api/agents',
+        originalUrl: '/api/agents/chat/agents',
+      });
+      const res = createRes();
+
+      await checkBan(req, res, jest.fn());
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(denyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each(['abort', 'Abort', 'STEER', 'sTeEr'])(
+      'returns JSON for a banned browser agent control request: %s',
+      async (route) => {
+        mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+        const req = createReq({
+          method: 'POST',
+          baseUrl: '/api/agents',
+          originalUrl: `/api/agents/chat/${route}`,
+        });
+        const res = createRes();
+
+        await checkBan(req, res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(denyRequest).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps non-browser agent chat denial as JSON', async () => {
+      uap.mockReturnValueOnce({ browser: {} });
+      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+      const req = createReq({
+        method: 'POST',
+        baseUrl: '/api/agents',
+        originalUrl: '/api/agents/chat/agents',
+      });
+      const res = createRes();
+
+      await checkBan(req, res, jest.fn());
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(denyRequest).not.toHaveBeenCalled();
     });
   });
 

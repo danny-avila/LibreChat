@@ -73,6 +73,8 @@ export interface ChatCompletionRequest {
   user?: string;
   /** Conversation ID (LibreChat extension) */
   conversation_id?: string;
+  /** Explicit registered workspaces for attached agents (LibreChat extension). */
+  code_workspaces?: import('librechat-data-provider').CodeWorkspaceSelection[];
   /** Parent message ID (LibreChat extension) */
   parent_message_id?: string;
 }
@@ -80,6 +82,12 @@ export interface ChatCompletionRequest {
 /**
  * Token usage information
  */
+export interface CompletionUsageTotals {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 export interface CompletionUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -88,6 +96,10 @@ export interface CompletionUsage {
   completion_tokens_details?: {
     reasoning_tokens?: number;
   };
+  /** LibreChat extension for parent, handoff, and summarization model calls. */
+  primary?: CompletionUsageTotals;
+  /** LibreChat extension for isolated subagent child model calls. */
+  subagent?: CompletionUsageTotals;
 }
 
 /**

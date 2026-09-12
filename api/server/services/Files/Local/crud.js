@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { deleteRagFile } = require('@librechat/api');
+const {
+  deleteRagFile,
+  assertRemoteFileURL,
+  getRemoteFileFetchMaxBytes,
+  getRemoteFileFetchTimeoutMs,
+  assertRemoteFileContentLength,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
@@ -115,12 +121,21 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
  */
 async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
   try {
+    const maxBytes = getRemoteFileFetchMaxBytes();
     const response = await axios({
-      url: URL,
+      url: assertRemoteFileURL(URL),
       responseType: 'arraybuffer',
+      timeout: getRemoteFileFetchTimeoutMs(),
+      maxContentLength: maxBytes,
+      maxBodyLength: maxBytes,
     });
+    assertRemoteFileContentLength(response.headers, maxBytes);
 
     const buffer = Buffer.from(response.data, 'binary');
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote file response too large: ${buffer.length} bytes`);
+    }
+
     const { bytes, type, dimensions, extension } = await getBufferMetadata(buffer);
 
     // Construct the outputPath based on the basePath and userId

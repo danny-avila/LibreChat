@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
-import type * as t from '~/mcp/types';
 import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
+import type * as t from '~/mcp/types';
+import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 // Mock ServerConfigsDB to avoid needing MongoDB for cache integration tests
 jest.mock('../db/ServerConfigsDB', () => ({
@@ -66,6 +67,10 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     process.env.REDIS_KEY_PREFIX =
       process.env.REDIS_KEY_PREFIX ??
       `MCPServersRegistry-IntegrationTest-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    // The read-through caches encrypt entries before they reach the shared store
+    process.env.CREDS_KEY =
+      process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.CREDS_IV = process.env.CREDS_IV ?? '0123456789abcdef0123456789abcdef';
 
     // Import modules after setting env vars
     const registryModule = await import('../MCPServersRegistry');
@@ -120,8 +125,8 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       const keysToDelete: string[] = [];
 
       // Collect all keys first
-      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-        keysToDelete.push(key);
+      for await (const page of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(...page);
       }
 
       // Delete in parallel for cluster mode efficiency
@@ -137,8 +142,8 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     // Resign as leader
     if (leaderInstance) await leaderInstance.resign();
 
-    // Close Redis connection
-    if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
+    // Close both Redis clients created by the module import
+    await closeRedisClients();
   });
 
   // Tests for the old privateServersCache API have been removed
@@ -243,7 +248,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       await registry.addServer('server2', testRawConfig, 'CACHE');
       await registry.addServer('server3', testRawConfig, 'CACHE');
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
 
@@ -267,7 +272,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     it('should handle different userIds independently', async () => {
       await registry.addServer('shared_server', testRawConfig, 'CACHE');
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
 
@@ -289,7 +294,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         await registry.addServer(`stress_server_${i}`, testRawConfig, 'CACHE');
       }
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const concurrentCalls = 50;
       const startTime = Date.now();
@@ -319,7 +324,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         'CACHE',
       );
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const results = await Promise.all([
         registry.getAllServerConfigs(),

@@ -2,6 +2,10 @@ import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import { getMessageCacheIds, getMessagesConversationId } from '../cache';
 
+/** `Constants` is a heterogeneous enum (`string | number`); annotate as
+ *  `string` so the member is usable where a `string` field is expected. */
+const NEW_CONVO: string = Constants.NEW_CONVO;
+
 const message = (conversationId?: string | null): TMessage =>
   ({
     messageId: 'message-id',
@@ -22,8 +26,8 @@ describe('chat message cache helpers', () => {
   it('mirrors new-chat messages into the generated conversation cache', () => {
     expect(
       getMessageCacheIds({
-        queryParam: Constants.NEW_CONVO,
-        conversationId: Constants.NEW_CONVO,
+        queryParam: NEW_CONVO,
+        conversationId: NEW_CONVO,
         messages: [message('generated-convo-id')],
       }),
     ).toEqual([Constants.NEW_CONVO, 'generated-convo-id']);

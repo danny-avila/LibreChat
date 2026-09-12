@@ -3,14 +3,14 @@ const crypto = require('crypto');
 const multer = require('multer');
 const express = require('express');
 const {
-  createSkillsHandlers,
   createImportHandler,
+  blockFilteredSkillFile,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
-const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   PermissionBits,
   PermissionTypes,
@@ -21,25 +21,16 @@ const {
 const {
   createSkill,
   getSkillById,
-  listSkillsByAccess,
-  updateSkill,
   deleteSkill,
-  listSkillFiles,
   upsertSkillFile,
-  deleteSkillFile,
   getSkillFileByPath,
-  updateSkillFileContent,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
-const {
-  findAccessibleResources,
-  findPubliclyAccessibleResources,
-  hasPublicPermission,
-  grantPermission,
-} = require('~/server/services/PermissionService');
+const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
+const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
@@ -108,23 +99,8 @@ router.use(checkSkillAccess);
 // ---------------------------------------------------------------------------
 // CRUD handlers
 // ---------------------------------------------------------------------------
-const handlers = createSkillsHandlers({
-  createSkill,
-  getSkillById,
-  listSkillsByAccess,
-  updateSkill,
-  deleteSkill,
-  listSkillFiles,
-  deleteSkillFile,
-  getSkillFileByPath,
-  updateSkillFileContent,
-  getStrategyFunctions,
-  findAccessibleResources,
-  findPubliclyAccessibleResources,
-  hasPublicPermission,
-  grantPermission,
-  isValidObjectIdString,
-});
+const { getSkillsHandlers } = require('~/server/services/Skills/handlers');
+const handlers = getSkillsHandlers();
 
 // ---------------------------------------------------------------------------
 // File storage helper: resolve the active strategy's saveBuffer
@@ -196,6 +172,15 @@ async function uploadFileHandler(req, res) {
       relativePath.split('/').some((s) => s === '' || s === '.' || s === '..')
     ) {
       return res.status(400).json({ error: 'Invalid file path' });
+    }
+    if (
+      blockFilteredSkillFile(req.config?.filters, res, {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        relativePath,
+      })
+    ) {
+      return res;
     }
 
     const tenantId = resolveRequestTenantId(req);
@@ -272,6 +257,14 @@ async function uploadFileHandler(req, res) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+async function maybeStartRequestSkillSync(req, _res, next) {
+  try {
+    await maybeRunGitHubSkillSyncForRequest(req);
+  } catch (error) {
+    logger.error('[GET /skills] Failed to start request-scoped skill sync:', error);
+  }
+  next();
+}
 
 // Import: accepts .md / .zip / .skill via multipart
 router.post(
@@ -284,7 +277,7 @@ router.post(
   importHandler,
 );
 
-router.get('/', handlers.list);
+router.get('/', maybeStartRequestSkillSync, handlers.list);
 router.post('/', checkSkillCreate, handlers.create);
 
 router.get(
@@ -324,14 +317,18 @@ router.post(
   uploadFileHandler,
 );
 
+// Wildcard splat (`*relativePath`) captures nested skill paths (e.g.
+// `references/guide.md`) whether the client sends an encoded `%2F` or a proxy
+// has already decoded it to a literal slash. A single `:relativePath` segment
+// 404s in the latter case, which is why nested files failed behind proxies.
 router.get(
-  '/:id/files/:relativePath',
+  '/:id/files/*relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.VIEW }),
   handlers.downloadFile,
 );
 
 router.delete(
-  '/:id/files/:relativePath',
+  '/:id/files/*relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.deleteFile,
 );

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
+import {
+  useConversationsInfiniteQuery,
+  usePinnedConversationsQuery,
+  useTitleGeneration,
+} from '~/data-provider';
 import {
   useLocalize,
   useHasAccess,
@@ -12,8 +17,11 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
+import ProjectsSection from '~/components/Conversations/ProjectsSection';
+import PinnedSection from '~/components/Conversations/PinnedSection';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
+import { collectPinnedConversations } from '~/utils';
 import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
@@ -22,14 +30,12 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
+  const { setSidebarOpen } = useSidebarToggle();
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
-  const [showLoading, setShowLoading] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
-
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
@@ -37,7 +43,7 @@ const ConversationsSection = memo(() => {
 
   const search = useRecoilValue(store.search);
 
-  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
+  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, isPreviousData } =
     useConversationsInfiniteQuery(
       {
         tags: tags.length === 0 ? undefined : tags,
@@ -61,7 +67,6 @@ const ConversationsSection = memo(() => {
   const conversationsRef = useRef<List | null>(null);
 
   const { moveToTop } = useNavScrolling<ConversationListResponse>({
-    setShowLoading,
     fetchNextPage: async (options?) => {
       if (computedHasNextPage) {
         return fetchNextPage(options);
@@ -75,11 +80,46 @@ const ConversationsSection = memo(() => {
     return data ? data.pages.flatMap((page) => page.conversations) : [];
   }, [data]);
 
-  const toggleNav = useCallback(() => {
-    if (isSmallScreen) {
-      setSidebarExpanded(false);
-    }
-  }, [isSmallScreen, setSidebarExpanded]);
+  /** Pins are fetched on their own so one older than the first page of the chats list
+   * still shows on first paint, instead of appearing only once that list scrolls to it.
+   * The bookmark filter still applies, matching the chats list beside it. */
+  const {
+    data: pinnedData,
+    isSuccess: isPinnedFetched,
+    isFetching: isPinnedFetching,
+    dataUpdatedAt: pinnedUpdatedAt,
+  } = usePinnedConversationsQuery(
+    { tags: tags.length === 0 ? undefined : tags },
+    { enabled: isAuthenticated },
+  );
+  const isPinnedComplete = isPinnedFetched && !isPinnedFetching;
+
+  /* `groupConversationsByDate` strips pins from the chats groups. A failed
+     refetch keeps the previous dedicated result, so merge in pins from the
+     live chats cache rather than hiding a newly pinned row. */
+  const pinnedConversations = useMemo(
+    () => collectPinnedConversations(pinnedData?.conversations, conversations),
+    [pinnedData?.conversations, conversations],
+  );
+
+  /**
+   * Selecting a conversation is the most common close path — it must take
+   * the animated route or the drawer stalls on the new conversation's
+   * commit before it starts sliding. `afterSlide` carries that navigation:
+   * run synchronously it would flush the conversation switch in the tap's
+   * task and stall the slide anyway; deferred, it lands mid-slide. Desktop
+   * runs it immediately (nothing slides).
+   */
+  const toggleNav = useCallback(
+    (afterSlide?: () => void) => {
+      if (isSmallScreen) {
+        setSidebarOpen(false, afterSlide);
+        return;
+      }
+      afterSlide?.();
+    },
+    [isSmallScreen, setSidebarOpen],
+  );
 
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {
@@ -104,18 +144,37 @@ const ConversationsSection = memo(() => {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-hidden pb-3"
+      className="flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-2"
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      <div className="flex items-center gap-0.5 px-3">
-        {hasAccessToBookmarks && (
-          <Suspense fallback={null}>
-            <BookmarkNav tags={tags} setTags={setTags} />
-          </Suspense>
-        )}
-        {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
-      </div>
+      {/* On mobile the search field lives in the drawer's bottom bar, within thumb reach,
+          which would leave the bookmark filter alone on a row of its own — so it moves
+          beside the Chats heading, where the Projects heading already keeps its actions. */}
+      {!isSmallScreen && (
+        <div className="flex items-center gap-0.5 px-3">
+          {hasAccessToBookmarks && (
+            <Suspense fallback={null}>
+              <BookmarkNav tags={tags} setTags={setTags} matchSearchBar />
+            </Suspense>
+          )}
+          {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
+        </div>
+      )}
+      {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
+      {!search.query && (
+        <PinnedSection
+          conversations={pinnedConversations}
+          toggleNav={toggleNav}
+          isSmallScreen={isSmallScreen}
+          /* Only a successful drain proves the list is whole: a failed later
+             page still publishes partial data and stops fetching. */
+          membershipComplete={tags.length === 0 && isPinnedComplete}
+          /* When that drain last ran, which decides whether it is current
+             enough to prune the stored order against. */
+          membershipUpdatedAt={pinnedUpdatedAt}
+        />
+      )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}
@@ -123,10 +182,17 @@ const ConversationsSection = memo(() => {
           toggleNav={toggleNav}
           containerRef={conversationsRef}
           loadMoreConversations={loadMoreConversations}
-          isLoading={isFetchingNextPage || showLoading || isLoading}
-          isSearchLoading={isSearchLoading}
+          isLoading={isFetchingNextPage || isLoading}
+          isSearchLoading={isSearchLoading || isPreviousData}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
+          chatsHeaderTrailing={
+            isSmallScreen && hasAccessToBookmarks ? (
+              <Suspense fallback={null}>
+                <BookmarkNav tags={tags} setTags={setTags} />
+              </Suspense>
+            ) : undefined
+          }
         />
       </div>
     </div>

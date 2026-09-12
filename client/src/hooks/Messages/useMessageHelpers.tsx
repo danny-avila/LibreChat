@@ -1,13 +1,17 @@
 import { useCallback, useMemo } from 'react';
 import throttle from 'lodash/throttle';
 import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import type { SearchResultData } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useCopyToClipboard from './useCopyToClipboard';
+import { useCopyMessageToClipboard, hasCopyableText } from './useCopyToClipboard';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { logger } from '~/utils';
 
-export default function useMessageHelpers(props: TMessageProps) {
+export default function useMessageHelpers(
+  props: TMessageProps,
+  searchResults?: { [key: string]: SearchResultData },
+) {
   const { message, currentEditId, setCurrentEditId } = props;
 
   const {
@@ -81,7 +85,18 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message, { addedConvo: getAddedConvo() });
   };
 
-  const copyToClipboard = useCopyToClipboard({ text, content });
+  const copyToClipboard = useCopyMessageToClipboard({
+    text,
+    content,
+    searchResults,
+    isCreatedByUser,
+    error: message?.error,
+  });
+
+  const getCanCopy = useCallback(
+    () => hasCopyableText({ text, content, searchResults }),
+    [text, content, searchResults],
+  );
 
   return {
     ask,
@@ -90,6 +105,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     index,
     isLast,
     assistant,
+    getCanCopy,
     enterEdit,
     conversation,
     isSubmitting,

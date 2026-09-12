@@ -26,7 +26,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 1. Development Setup
 
-1. Use Node.js v20.19.0+ or ^22.12.0 or >= 23.0.0.
+1. Use Node.js v24.16.0.
 2. Run `npm run smart-reinstall` to install dependencies (uses Turborepo). Use `npm run reinstall` for a clean install, or `npm ci` for a fresh lockfile-based install.
 3. Build all compiled code: `npm run build`.
 4. Setup and run unit tests:
@@ -43,8 +43,16 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 2. Development Notes
 
-1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
+1. Before starting work, sync `dev` from this repository. You are working in a fork, so `origin` is
+   your fork — add the canonical remote once and sync from it:
+    - `git remote add upstream https://github.com/danny-avila/LibreChat.git`
+    - `git fetch upstream dev && git checkout -B dev upstream/dev`
+    - `npm run update` is the self-host deployment updater — it checks out `main` and rebuilds your
+      containers. Do not use it to refresh a development branch.
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+    - `npm install` sets the hooks up for you; set `HUSKY=0` to opt out.
+    - The pre-commit hook runs the Static Checks CI job locally, scoped to the files in the commit. Run it by hand with `npm run static-checks`, against a base ref with `npm run static-checks -- --against origin/dev`, or with the slow gates (TypeScript, config migration tests, unused i18n keys, unused npm packages) via `npm run static-checks:full`.
+    - Every commit gets ESLint, Prettier, import order and circular-dependency detection; the slower gates stay opt-in so commits stay fast.
 3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
     - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
@@ -57,11 +65,11 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 We utilize a GitFlow workflow to manage changes to this project's codebase. Follow these general steps when contributing code:
 
-1. Fork the repository and create a new branch with a descriptive slash-based name (e.g., `new/feature/x`).
+1. Fork the repository and branch off `dev` with a descriptive slash-based name (e.g., `new/feature/x`). All contributions target `dev`; `main` only moves at release time, and pull requests opened against it are retargeted automatically.
 2. Implement your changes and ensure that all tests pass.
 3. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
-4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
-5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
+4. Submit a pull request against `dev` with a clear and concise description of your changes and the reasons behind them.
+5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the `dev` branch.
 
 ## 4. Commit Message Format
 
