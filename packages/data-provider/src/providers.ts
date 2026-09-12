@@ -12,6 +12,7 @@ export enum ProviderId {
   moonshot = 'moonshot',
   anyscale = 'anyscale',
   apipie = 'apipie',
+  apiroute = 'apiroute',
   cohere = 'cohere',
   deepseek = 'deepseek',
   fireworks = 'fireworks',
@@ -42,6 +43,7 @@ export const endpointToProvider: Partial<Record<EModelEndpoint, ProviderId>> = {
 export const knownEndpointToProvider: Record<KnownEndpoints, ProviderId> = {
   [KnownEndpoints.anyscale]: ProviderId.anyscale,
   [KnownEndpoints.apipie]: ProviderId.apipie,
+  [KnownEndpoints.apiroute]: ProviderId.apiroute,
   [KnownEndpoints.cohere]: ProviderId.cohere,
   [KnownEndpoints.fireworks]: ProviderId.fireworks,
   [KnownEndpoints.deepseek]: ProviderId.deepseek,
@@ -78,6 +80,8 @@ const providerAliases: Record<string, ProviderId> = {
   moonshotai: ProviderId.moonshot,
   amdlemonade: ProviderId.lemonade,
   lemonadeserver: ProviderId.lemonade,
+  apiroute: ProviderId.apiroute,
+  apiroutecom: ProviderId.apiroute,
   mistralai: ProviderId.mistral,
   togetherai: ProviderId.together,
 };

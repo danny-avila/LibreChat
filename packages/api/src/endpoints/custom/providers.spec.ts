@@ -100,6 +100,7 @@ describe('resolveEndpointProviderId', () => {
     ['https://team.cognitiveservices.azure.com/openai/v1', ProviderId.azure],
     ['https://generativelanguage.googleapis.com/v1beta', ProviderId.google],
     ['https://aiplatform.googleapis.com/v1', ProviderId.google],
+    ['https://global.api-route.com/v1', ProviderId.apiroute],
   ])('brands %s from its host alone', (baseURL, expected) => {
     expect(resolveEndpointProviderId({ name: 'Team Gateway', baseURL })).toBe(expected);
   });

@@ -2838,6 +2838,7 @@ export type TProviderSchema =
 export enum KnownEndpoints {
   anyscale = 'anyscale',
   apipie = 'apipie',
+  apiroute = 'apiroute',
   cohere = 'cohere',
   fireworks = 'fireworks',
   deepseek = 'deepseek',
@@ -2885,6 +2886,7 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
+  [KnownEndpoints.apiroute]: 'API Route',
   [KnownEndpoints.lemonade]: 'AMD Lemonade',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',

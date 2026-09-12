@@ -18,6 +18,7 @@ export const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['api-inference.huggingface.co', ProviderId.huggingface],
   ['api.endpoints.anyscale.com', ProviderId.anyscale],
   ['apipie.ai', ProviderId.apipie],
+  ['api-route.com', ProviderId.apiroute],
   ['api.shuttleai.app', ProviderId.shuttleai],
   ['api.unify.ai', ProviderId.unify],
   ['helicone.ai', ProviderId.helicone],
