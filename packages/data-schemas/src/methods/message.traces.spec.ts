@@ -152,10 +152,53 @@ describe('getConversationTraceRefs', () => {
     );
 
     const refs = await tenantStorage.run({ tenantId: TENANT_B }, () =>
-      methods.getConversationTraceRefs({ user: 'owner', conversationId: 'convo' }),
+      methods.getConversationTraceRefs({
+        user: 'owner',
+        conversationId: 'convo',
+        tenantId: TENANT_B,
+      }),
     );
 
     expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['tenant-b-response']);
+  });
+
+  it('scopes to the given tenant even without request tenant context', async () => {
+    await seed([
+      { messageId: 'tenantless', conversationId: 'convo', user: 'owner', langfuseSampled: true },
+      {
+        messageId: 'tenant-a',
+        conversationId: 'convo',
+        user: 'owner',
+        tenantId: TENANT_A,
+        langfuseSampled: true,
+      },
+    ]);
+
+    const tenantless = await methods.getConversationTraceRefs({
+      user: 'owner',
+      conversationId: 'convo',
+    });
+    const scoped = await methods.getConversationTraceRefs({
+      user: 'owner',
+      conversationId: 'convo',
+      tenantId: TENANT_A,
+    });
+    const tenantlessExists = await methods.hasSampledTraceMessage({
+      user: 'owner',
+      conversationId: 'convo',
+      destinationIds: [],
+    });
+    await Message.deleteMany({ tenantId: { $exists: false } });
+    const tenantlessAfter = await methods.hasSampledTraceMessage({
+      user: 'owner',
+      conversationId: 'convo',
+      destinationIds: [],
+    });
+
+    expect(tenantless.sampledMessages.map(({ messageId }) => messageId)).toEqual(['tenantless']);
+    expect(scoped.sampledMessages.map(({ messageId }) => messageId)).toEqual(['tenant-a']);
+    expect(tenantlessExists).toBe(true);
+    expect(tenantlessAfter).toBe(false);
   });
 });
 

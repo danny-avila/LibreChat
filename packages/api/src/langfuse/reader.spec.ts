@@ -280,6 +280,73 @@ describe('createLangfuseTraceReader', () => {
       expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'legacy' }] });
     });
 
+    it('reaches a project holding legacy turns after the one that holds the newest', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'legacy-response' },
+          { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
+        ],
+      });
+      const first = setup({
+        refs,
+        responses: [jsonResponse({ data: [observation({ id: 'newest' })] })],
+      });
+
+      const page = await first.reader.listRecords(createQuery());
+
+      expect(page).toMatchObject({ sourceId: 'connection-id', records: [{ id: 'newest' }] });
+      expect(page.nextCursor).toBeDefined();
+
+      const later = setup({
+        refs,
+        responses: [
+          jsonResponse({
+            data: [observation({ id: 'legacy', traceId: traceIdForMessage('legacy-response') })],
+          }),
+        ],
+      });
+      const older = await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
+
+      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
+      expect(requestedUrl(later.fetchMock).searchParams.has('cursor')).toBe(false);
+      expect(older).toEqual({
+        sourceId: 'central-id',
+        records: [expect.objectContaining({ id: 'legacy', messageId: 'legacy-response' })],
+      });
+    });
+
+    it('does not visit a project whose turns an earlier project provably holds', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+          ],
+        }),
+        responses: [jsonResponse({ data: [observation()] })],
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(page.nextCursor).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the tenant scope to both conversation reads', async () => {
+      const { reader, getConversationTraceRefs, hasSampledTraceMessage } = setup({
+        responses: [jsonResponse({ data: [observation()] })],
+      });
+
+      await reader.isAvailable(createQuery({ tenantId: 'tenant-a' }));
+      await reader.listRecords(createQuery({ tenantId: 'tenant-a' }));
+
+      expect(hasSampledTraceMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
+      expect(getConversationTraceRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
+    });
+
     it('normalizes owned observations and drops traces the user does not own', async () => {
       const { reader } = setup({
         responses: [

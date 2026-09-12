@@ -425,6 +425,10 @@ const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
  * imports stamp `isUserSubmitted: true`) never count, even if one was persisted
  * with forged fields before those writes stripped them.
  */
+/** An explicit tenant scope, so a read without request tenant context still cannot span tenants. */
+const traceTenantScope = (tenantId?: string) =>
+  tenantId == null ? { tenantId: { $exists: false } } : { tenantId };
+
 const SERVER_AUTHORED_SAMPLED_RESPONSE = {
   langfuseSampled: true,
   isCreatedByUser: false,
@@ -620,6 +624,7 @@ export interface MessageMethods {
   getConversationTraceRefs(input: {
     user: string;
     conversationId: string;
+    tenantId?: string;
   }): Promise<ConversationTraceRefs>;
   /**
    * Whether any of the user's responses in the conversation was sampled into a
@@ -629,6 +634,7 @@ export interface MessageMethods {
   hasSampledTraceMessage(input: {
     user: string;
     conversationId: string;
+    tenantId?: string;
     destinationIds: string[];
   }): Promise<boolean>;
   recordSubagentTaskControlReceipt(input: {
@@ -3361,18 +3367,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function getConversationTraceRefs({
     user,
     conversationId,
+    tenantId,
   }: {
     user: string;
     conversationId: string;
+    tenantId?: string;
   }): Promise<ConversationTraceRefs> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const scope = { user, conversationId, ...traceTenantScope(tenantId) };
       const [first, sampled] = await Promise.all([
-        Message.findOne({ user, conversationId })
+        Message.findOne(scope)
           .select('createdAt -_id')
           .sort({ createdAt: 1 })
           .lean<Pick<IMessage, 'createdAt'>>(),
-        Message.find({ user, conversationId, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
+        Message.find({ ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
           .select('messageId createdAt langfuseDestinationIds -_id')
           .sort({ createdAt: 1 })
           .lean<Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>>(),
@@ -3396,10 +3405,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function hasSampledTraceMessage({
     user,
     conversationId,
+    tenantId,
     destinationIds,
   }: {
     user: string;
     conversationId: string;
+    tenantId?: string;
     destinationIds: string[];
   }): Promise<boolean> {
     try {
@@ -3407,6 +3418,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const match = await Message.findOne({
         user,
         conversationId,
+        ...traceTenantScope(tenantId),
         ...SERVER_AUTHORED_SAMPLED_RESPONSE,
         $or: [
           { langfuseDestinationIds: null },

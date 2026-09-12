@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   createTraceHandlers,
+  limiterCache,
   createTraceReadLimiter,
   createLangfuseTraceReader,
   resolveLangfuseReadDestinations,
@@ -20,7 +21,9 @@ const handlers = createTraceHandlers({
   }),
   getConvoOwnership: db.getConvoOwnership,
 });
-const traceReadLimiter = createTraceReadLimiter();
+const traceReadLimiter = createTraceReadLimiter({
+  store: limiterCache('trace_viewer_user_limiter'),
+});
 
 router.use(requireJwtAuth, configMiddleware);
 router.get('/:conversationId/availability', handlers.availability);

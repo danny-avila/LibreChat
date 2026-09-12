@@ -24,6 +24,7 @@ export type TraceRequest = ServerRequest & Request<{ conversationId?: string; re
 
 type ConversationOwnership = {
   user?: string | null;
+  tenantId?: string | null;
   subagentThread?: object | null;
 } | null;
 
@@ -46,7 +47,12 @@ export interface TraceHandlers {
 
 export interface TraceHandlerDeps {
   reader: TraceReader;
-  getConvoOwnership: (userId: string, conversationId: string) => Promise<ConversationOwnership>;
+  /** `tenantId: null` is the tenantless scope, as the subagent thread views pass it. */
+  getConvoOwnership: (
+    userId: string,
+    conversationId: string,
+    tenantId: string | null,
+  ) => Promise<ConversationOwnership>;
 }
 
 const ERROR_STATUS: Record<TTraceErrorCode, number> = {
@@ -125,6 +131,7 @@ export function createTraceHandlers({
     }
 
     const userId = req.user?.id ?? req.user?._id?.toString();
+    const tenantId = req.user?.tenantId || undefined;
     const { conversationId } = req.params;
     if (!userId) {
       return { errorCode: 'not_found' };
@@ -139,6 +146,7 @@ export function createTraceHandlers({
     return {
       query: {
         userId,
+        tenantId,
         conversationId,
         appConfig: req.config,
         settings,
@@ -149,10 +157,13 @@ export function createTraceHandlers({
 
   /** Child threads share their parent's session, and reads of them already
    *  answer as missing (see message validation), so they do too here. */
-  async function isOwned({ userId, conversationId }: TraceQuery): Promise<boolean> {
-    const conversation = await getConvoOwnership(userId, conversationId);
+  async function isOwned({ userId, tenantId, conversationId }: TraceQuery): Promise<boolean> {
+    const conversation = await getConvoOwnership(userId, conversationId, tenantId ?? null);
     return (
-      conversation != null && conversation.user === userId && conversation.subagentThread == null
+      conversation != null &&
+      conversation.user === userId &&
+      (conversation.tenantId || undefined) === tenantId &&
+      conversation.subagentThread == null
     );
   }
 

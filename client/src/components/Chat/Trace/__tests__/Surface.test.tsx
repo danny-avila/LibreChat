@@ -177,6 +177,31 @@ describe('trace entry point and surface', () => {
     await waitFor(() => expect(client.getQueryState(detailKey)?.isInvalidated).toBe(true));
   });
 
+  it('retries a transient availability failure instead of hiding the control for good', async () => {
+    availability
+      .mockRejectedValueOnce(
+        Object.assign(new Error('unavailable'), {
+          isAxiosError: true,
+          response: { status: 503 },
+        }),
+      )
+      .mockResolvedValue({ available: true });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retryDelay: 1 } },
+      logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <IsolatedAtomStore>
+          <Host conversationId="convo-1" />
+        </IsolatedAtomStore>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTestId('header-trace-button')).toBeInTheDocument();
+    expect(availability).toHaveBeenCalledTimes(2);
+  });
+
   it('checks availability again when the server cannot decide yet', async () => {
     availability
       .mockResolvedValueOnce({ available: false, retryAfterMs: 20 })

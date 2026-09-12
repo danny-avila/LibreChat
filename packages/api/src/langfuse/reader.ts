@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type {
-  TTracePage,
   TTraceUsage,
   TTraceRecord,
   TTraceStatus,
@@ -72,10 +71,12 @@ export interface LangfuseTraceReaderDeps {
   getConversationTraceRefs: (input: {
     user: string;
     conversationId: string;
+    tenantId?: string;
   }) => Promise<ConversationTraceRefs>;
   hasSampledTraceMessage: (input: {
     user: string;
     conversationId: string;
+    tenantId?: string;
     destinationIds: string[];
   }) => Promise<boolean>;
   /** The projects a read may use; production passes {@link resolveLangfuseReadDestinations}. */
@@ -260,11 +261,44 @@ function isSource(destination: LangfuseScoreDestination, sourceId?: string): boo
   );
 }
 
-const cursorSchema = z.object({ s: z.string().min(1), c: z.string().min(1) });
+const cursorSchema = z.object({ s: z.string().min(1), c: z.string().min(1).optional() });
 
-/** Binds a Langfuse cursor to the project that issued it, so every page of a read comes from one project. */
-function encodeCursor(sourceId: string, cursor: string): string {
-  return Buffer.from(JSON.stringify({ s: sourceId, c: cursor }), 'utf8').toString('base64url');
+/**
+ * Binds a continuation to one project, so every page of a read comes from one
+ * project: `c` resumes that project's Langfuse cursor, and its absence starts it.
+ */
+function encodeCursor(sourceId: string, cursor?: string): string {
+  return Buffer.from(
+    JSON.stringify({ s: sourceId, ...(cursor ? { c: cursor } : {}) }),
+    'utf8',
+  ).toString('base64url');
+}
+
+/**
+ * The projects a full read must visit, in rank order: the first, then each one
+ * that could hold a turn no earlier project provably holds. A response recorded
+ * against several projects is provably in the first of them; one recorded before
+ * destinations were tracked could be in any, so it keeps every project in play.
+ */
+function readPlan(
+  ranked: LangfuseScoreDestination[],
+  messages: SampledTraceMessage[],
+): LangfuseScoreDestination[] {
+  const plan: LangfuseScoreDestination[] = [];
+  for (const destination of ranked) {
+    const addsTurns = messages.some(({ langfuseDestinationIds: ids }) => {
+      if (ids == null) {
+        return true;
+      }
+      const couldHold = destination.id != null && ids.includes(destination.id);
+      const heldEarlier = plan.some(({ id }) => id != null && ids.includes(id));
+      return couldHold && !heldEarlier;
+    });
+    if (plan.length === 0 || addsTurns) {
+      plan.push(destination);
+    }
+  }
+  return plan;
 }
 
 function decodeCursor(value: string): z.infer<typeof cursorSchema> {
@@ -335,7 +369,11 @@ export function createLangfuseTraceReader({
 
   async function loadConversation(query: TraceQuery) {
     const [refs, destinations] = await Promise.all([
-      getConversationTraceRefs({ user: query.userId, conversationId: query.conversationId }),
+      getConversationTraceRefs({
+        user: query.userId,
+        conversationId: query.conversationId,
+        tenantId: query.tenantId,
+      }),
       readableDestinations(query.appConfig),
     ]);
     return { refs, ranked: rankDestinations(destinations, refs.sampledMessages) };
@@ -435,6 +473,7 @@ export function createLangfuseTraceReader({
       const available = await hasSampledTraceMessage({
         user: query.userId,
         conversationId: query.conversationId,
+        tenantId: query.tenantId,
         destinationIds: destinations.flatMap(({ id }) => (id != null ? [id] : [])),
       });
       if (available) {
@@ -450,11 +489,12 @@ export function createLangfuseTraceReader({
     async listRecords(query) {
       const continuation = query.cursor != null ? decodeCursor(query.cursor) : undefined;
       const { refs, ranked } = await loadConversation(query);
+      const plan = readPlan(ranked, refs.sampledMessages);
       const owners = buildTraceOwners(refs.sampledMessages);
       const window = timeWindow(refs);
 
+      /** Reads one project until its records or this request's record budget run out. */
       async function readFrom(destination: LangfuseScoreDestination, startCursor?: string) {
-        const sourceId = sourceIdOf(destination);
         const records: TTraceRecord[] = [];
         let cursor = startCursor;
         let remaining = query.settings.maxRecords;
@@ -479,40 +519,48 @@ export function createLangfuseTraceReader({
           remaining -= page.data.length;
           const next = page.meta?.cursor || undefined;
           if (!next || page.data.length === 0) {
-            return { records, sourceId };
+            return { records };
           }
           if (remaining <= 0) {
-            return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
+            return { records, next };
           }
           cursor = next;
         }
       }
 
+      let index = 0;
       if (continuation != null) {
-        const pinned = ranked.find((candidate) => isSource(candidate, continuation.s));
-        if (!pinned) {
+        index = plan.findIndex((candidate) => isSource(candidate, continuation.s));
+        if (index === -1) {
           throw new TraceReadError(
             'invalid_request',
             'The page cursor names a source this conversation cannot read',
           );
         }
-        return readFrom(pinned, continuation.c);
-      }
-
-      if (ranked.length === 0) {
+      } else if (plan.length === 0) {
         throw new TraceReadError('not_found', 'No sampled trace for this conversation');
       }
-      /** Responses recorded before destinations were tracked rank every project equally,
-       *  so an empty first choice is not proof the trace lives nowhere. */
-      let first: TTracePage | undefined;
-      for (const destination of ranked) {
-        const page = await readFrom(destination);
-        first ??= page;
-        if (page.records.length > 0 || page.nextCursor != null) {
-          return page;
+
+      let startCursor = continuation?.c;
+      let firstSourceId: string | undefined;
+      for (; index < plan.length; index++) {
+        const destination = plan[index];
+        const sourceId = sourceIdOf(destination);
+        firstSourceId ??= sourceId;
+        const { records, next } = await readFrom(destination, startCursor);
+        startCursor = undefined;
+        if (next) {
+          return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
+        }
+        const following = plan[index + 1];
+        /** An empty project moves straight on, so a legacy trace in a later one is not shown as missing. */
+        if (records.length > 0 || following == null) {
+          return following
+            ? { records, sourceId, nextCursor: encodeCursor(sourceIdOf(following)) }
+            : { records, sourceId };
         }
       }
-      return first ?? { records: [] };
+      return { records: [], ...(firstSourceId ? { sourceId: firstSourceId } : {}) };
     },
 
     async getRecord(query) {

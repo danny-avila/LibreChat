@@ -10,6 +10,8 @@ import type { AppConfig } from '@librechat/data-schemas';
 /** One authorized read: the caller has already proven `userId` owns `conversationId`. */
 export interface TraceQuery {
   userId: string;
+  /** The requester's tenant; `undefined` is the tenantless scope, never "any tenant". */
+  tenantId?: string;
   conversationId: string;
   appConfig?: AppConfig;
   settings: TResolvedTraceViewerConfig;

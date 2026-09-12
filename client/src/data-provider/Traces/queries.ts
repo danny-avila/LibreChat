@@ -11,8 +11,10 @@ import type {
   QueryObserverResult,
   UseQueryOptions,
 } from '@tanstack/react-query';
+import { getResponseStatus } from '~/utils/errors';
 
 const MAX_AVAILABILITY_RETRIES = 10;
+const MAX_AVAILABILITY_RETRIES_ON_ERROR = 3;
 
 /** Availability flips only when a response is sampled, so callers re-enable it after a turn. */
 export const useConversationTraceAvailabilityQuery = (
@@ -23,7 +25,13 @@ export const useConversationTraceAvailabilityQuery = (
     [QueryKeys.conversationTraceAvailability, conversationId],
     () => dataService.getConversationTraceAvailability(conversationId),
     {
-      retry: false,
+      /** A hidden control has no error to show, so a transient failure retries on its own. */
+      retry: (failureCount, error) => {
+        const status = getResponseStatus(error);
+        return (
+          failureCount < MAX_AVAILABILITY_RETRIES_ON_ERROR && (status == null || status >= 500)
+        );
+      },
       refetchOnWindowFocus: false,
       /** The server asks again only while it cannot decide yet, and only a few times. */
       refetchInterval: (data, query) =>

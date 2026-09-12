@@ -1,9 +1,9 @@
 import { rateLimit } from 'express-rate-limit';
 import { resolveTraceViewerConfig } from 'librechat-data-provider';
 import type { TTraceErrorResponse } from 'librechat-data-provider';
+import type { Store } from 'express-rate-limit';
 import type { RequestHandler } from 'express';
 import type { ServerRequest } from '~/types/http';
-import { limiterCache } from '~/cache/cacheFactory';
 
 const WINDOW_MS = 60 * 1000;
 
@@ -12,7 +12,12 @@ const WINDOW_MS = 60 * 1000;
  * quota. The ceiling is read per request from `interface.traceViewer`, so a
  * config override applies without a restart; must run after config middleware.
  */
-export function createTraceReadLimiter(): RequestHandler {
+export function createTraceReadLimiter({
+  store,
+}: {
+  /** Shared counter store (e.g. Redis) from the caller; omitted, counts stay in this process. */
+  store?: Store;
+} = {}): RequestHandler {
   return rateLimit({
     windowMs: WINDOW_MS,
     max: (req) =>
@@ -29,6 +34,6 @@ export function createTraceReadLimiter(): RequestHandler {
       const user = (req as ServerRequest).user;
       return String(user?.id ?? user?._id?.toString() ?? '');
     },
-    store: limiterCache('trace_viewer_user_limiter'),
+    store,
   });
 }

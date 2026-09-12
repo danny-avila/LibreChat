@@ -117,10 +117,11 @@ describe('trace routes', () => {
     expect(response.status).toBe(200);
     expect(response.body.records.map(({ id }) => id)).toEqual(['obs-root']);
     expect(response.body.records[0]).toMatchObject({ messageId: 'response-1', kind: 'agent' });
-    expect(mockGetConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1');
+    expect(mockGetConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1', null);
     expect(mockHasSampledTraceMessage).toHaveBeenCalledWith({
       user: 'owner',
       conversationId: 'convo-1',
+      tenantId: undefined,
       destinationIds: [
         createHash('sha256').update('https://langfuse.route.test\nroute-project').digest('hex'),
       ],
@@ -128,6 +129,7 @@ describe('trace routes', () => {
     expect(mockGetConversationTraceRefs).toHaveBeenCalledWith({
       user: 'owner',
       conversationId: 'convo-1',
+      tenantId: undefined,
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(new URL(url).origin).toBe('https://langfuse.route.test');

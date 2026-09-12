@@ -42,11 +42,13 @@ function createApp({
   reader = createReader(),
   traceViewer = { enabled: true },
   userId = 'owner',
+  tenantId,
   contextCost,
-  getConvoOwnership = jest.fn(async () => ({ user: userId })),
+  getConvoOwnership = jest.fn(async () => ({ user: userId, tenantId })),
 }: {
   reader?: TraceReader;
   traceViewer?: TTraceViewerConfig;
+  tenantId?: string;
   contextCost?: boolean;
   getConvoOwnership?: TraceHandlerDeps['getConvoOwnership'];
   userId?: string;
@@ -55,7 +57,7 @@ function createApp({
   const app = express();
   app.use((req, _res, next) => {
     Object.assign(req, {
-      user: { id: userId, role: 'USER' },
+      user: { id: userId, role: 'USER', tenantId },
       config: { interfaceConfig: { traceViewer, contextCost } } as AppConfig,
     });
     next();
@@ -84,7 +86,7 @@ describe('trace handlers', () => {
     expect(response.status).toBe(200);
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(response.body).toEqual({ records: [record] });
-    expect(getConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1');
+    expect(getConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1', null);
     expect(reader.listRecords).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'owner',
@@ -127,6 +129,25 @@ describe('trace handlers', () => {
     expect(detail.status).toBe(404);
     expect(reader.listRecords).not.toHaveBeenCalled();
     expect(reader.getRecord).not.toHaveBeenCalled();
+  });
+
+  it("scopes ownership and reads to the requester's tenant", async () => {
+    const reader = createReader();
+    const { app, getConvoOwnership } = createApp({ reader, tenantId: 'tenant-a' });
+    const crossTenant = createApp({
+      reader: createReader(),
+      tenantId: 'tenant-a',
+      getConvoOwnership: jest.fn(async () => ({ user: 'owner', tenantId: 'tenant-b' })),
+    });
+
+    await request(app).get('/api/traces/convo-1/records');
+    const refused = await request(crossTenant.app).get('/api/traces/convo-1/records');
+
+    expect(getConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1', 'tenant-a');
+    expect(reader.listRecords).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner', tenantId: 'tenant-a' }),
+    );
+    expect(refused.status).toBe(404);
   });
 
   it('starts the availability lookup alongside the ownership check', async () => {
