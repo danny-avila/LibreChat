@@ -5636,7 +5636,7 @@ describe('assertModelBoundProviderContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
-  it('shares aggregate nested extraction work across callback batches', () => {
+  it('inspects individually bounded nested messages across callback batches', () => {
     const callbackFilters: FiltersConfig = {
       messages: {
         pii: {
@@ -5682,7 +5682,7 @@ describe('assertModelBoundProviderContent', () => {
 
     expect(() =>
       callback.handleChatModelStart(undefined, [createBatch(0), createBatch(1), createBatch(2)]),
-    ).toThrow('Submitted content could not be completely inspected before processing.');
+    ).not.toThrow();
   });
 
   it('keeps the model callback usable after caller-owned state is released', () => {
