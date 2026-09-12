@@ -8,6 +8,13 @@ unique indexes (for example `email_1` or `name_1`) conflict with current non-uni
 indexes of the same name. Tenant-scoped compound indexes now enforce uniqueness.
 This also affects single-tenant deployments. See #15759 (successor to #14826).
 
+Until the migration runs, the superseded unique indexes remain in place and keep
+enforcing global uniqueness. On a multi-tenant deployment this rejects writes that
+should be valid — for example, a second tenant registering a user whose email
+already exists under another tenant — as a duplicate key error that does not name
+the stale index as the cause. Treat the startup errors as a signal to schedule the
+migration, not as cosmetic log noise.
+
 The tenant-index migration is an explicit maintenance command; startup does not
 run it automatically. Use the updated code/image containing this command. For a
 source checkout, install dependencies and build the packages first (`npm run
