@@ -3,7 +3,7 @@ import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './t
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
 import { userSubmittedMessageFieldPathSchema } from './filters';
-import { CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
+import { CODE_ENVIRONMENT_MODES, CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
 import { Tools } from './types/assistants';
@@ -1120,6 +1120,7 @@ export const tConversationSchema = z.object({
   /** Server-derived: an active shared link exists for this conversation. Not persisted. */
   isShared: z.boolean().optional(),
   codeApprovalMode: z.enum(CODE_APPROVAL_MODES).optional(),
+  codeEnvironmentMode: z.enum(CODE_ENVIRONMENT_MODES).optional(),
   codeWorkspaces: z
     .array(
       z

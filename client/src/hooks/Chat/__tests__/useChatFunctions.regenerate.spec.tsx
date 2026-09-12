@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
 import type {
+  CodeEnvironmentMode,
   CodeWorkspaceSelection,
   TConversation,
   TMessage,
@@ -20,8 +21,9 @@ const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
 const mockResolveCodeWorkspaceSubmission = jest.fn<
-  { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined,
-  [CodeWorkspaceSelection[]?]
+  | { codeEnvironmentMode?: CodeEnvironmentMode; codeWorkspaces?: CodeWorkspaceSelection[] }
+  | undefined,
+  [CodeWorkspaceSelection[]?, CodeEnvironmentMode?]
 >(() => ({}));
 const mockCodeWorkspace = {
   resolveSubmission: mockResolveCodeWorkspaceSubmission,
@@ -191,6 +193,7 @@ describe('useChatFunctions ask', () => {
     mockResolveCodeWorkspaceSubmission.mockReturnValue({ codeWorkspaces: [selection] });
     mockGetLatestConversation.mockReturnValue({
       ...conversation('conversation-1'),
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [selection],
     });
     const { result, setSubmission } = renderAsk([]);
@@ -200,7 +203,7 @@ describe('useChatFunctions ask', () => {
     });
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
-    expect(mockResolveCodeWorkspaceSubmission).toHaveBeenCalledWith([selection]);
+    expect(mockResolveCodeWorkspaceSubmission).toHaveBeenCalledWith([selection], 'attached');
     expect(submission.codeWorkspaces).toEqual([selection]);
   });
 

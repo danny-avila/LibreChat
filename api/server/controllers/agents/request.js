@@ -1487,6 +1487,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
+    codeEnvironmentMode: req.body.codeEnvironmentMode,
     codeWorkspaces: resolveRunCodeWorkspaces({
       conversationId: effectiveConversationId,
       requestedSelections: req.body.codeWorkspaces,
@@ -1920,6 +1921,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
     startupTelemetry?.mark('client_initialized');
     client = result.client;
+    const normalizedMCPRequestBody = createMCPRuntimeRequestBody({
+      messageId: mcpRequestBody.messageId,
+      conversationId: mcpRequestBody.conversationId,
+      codeEnvironmentMode: req.body.codeEnvironmentMode,
+      codeWorkspaces: req.body.codeWorkspaces,
+      ...(Object.prototype.hasOwnProperty.call(mcpRequestBody, 'parentMessageId') && {
+        parentMessageId: mcpRequestBody.parentMessageId,
+      }),
+    });
+    if (JSON.stringify(normalizedMCPRequestBody) !== JSON.stringify(mcpRequestBody)) {
+      await GenerationJobManager.updateMetadata(
+        streamId,
+        { mcpRequestBody: normalizedMCPRequestBody },
+        jobCreatedAt,
+      );
+    }
     if (
       typeof client?.options?.agent?.id === 'string' &&
       !isEphemeralAgentId(client.options.agent.id)

@@ -16,11 +16,14 @@ export const CODE_WORKSPACE_SELECTION_ERROR_REASONS = [
   'worker_unavailable',
   'unsupported',
   'missing',
+  'locked',
 ] as const;
+export const CODE_ENVIRONMENT_MODES = ['attached', 'without_attached'] as const;
 
 export type CodeWorkspaceOperation = (typeof CODE_WORKSPACE_OPERATIONS)[number];
 export type CodeWorkspaceSelectionErrorReason =
   (typeof CODE_WORKSPACE_SELECTION_ERROR_REASONS)[number];
+export type CodeEnvironmentMode = (typeof CODE_ENVIRONMENT_MODES)[number];
 
 /** Public, path-free description of one root registered by an attached worker. */
 export interface CodeWorkspaceDescriptor {
@@ -34,6 +37,10 @@ export interface CodeWorkspaceDescriptor {
 export interface CodeWorkspaceSelection {
   environmentId: string;
   workspaceId: string;
+}
+
+export function isCodeEnvironmentMode(value: unknown): value is CodeEnvironmentMode {
+  return CODE_ENVIRONMENT_MODES.some((mode) => mode === value);
 }
 
 export function isCodeWorkspaceSelectionErrorReason(

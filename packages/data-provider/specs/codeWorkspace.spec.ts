@@ -1,4 +1,18 @@
-import { isCodeWorkspaceSelection, isCodeWorkspaceSelections } from '../src/code/workspace';
+import {
+  isCodeEnvironmentMode,
+  isCodeWorkspaceSelection,
+  isCodeWorkspaceSelections,
+} from '../src/code/workspace';
+
+describe('isCodeEnvironmentMode', () => {
+  it.each(['attached', 'without_attached'])('accepts %s', (mode) => {
+    expect(isCodeEnvironmentMode(mode)).toBe(true);
+  });
+
+  it.each(['managed', 'none', '', null])('rejects %p', (mode) => {
+    expect(isCodeEnvironmentMode(mode)).toBe(false);
+  });
+});
 
 describe('isCodeWorkspaceSelection', () => {
   it('accepts an exact environment/workspace binding', () => {

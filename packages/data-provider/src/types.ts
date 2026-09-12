@@ -12,6 +12,7 @@ import type {
 } from './schemas';
 import type {
   CodeWorkspaceDescriptor,
+  CodeEnvironmentMode,
   CodeWorkspaceOperation,
   CodeWorkspaceSelection,
 } from './code/workspace';
@@ -157,6 +158,8 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Conversation-scoped preference for code tool approval behavior. */
     codeApprovalMode?: CodeApprovalMode;
+    /** Immutable conversation choice for attached code execution. */
+    codeEnvironmentMode?: CodeEnvironmentMode;
     /** Conversation-selected workspaces, with at most one binding per environment. */
     codeWorkspaces?: CodeWorkspaceSelection[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
@@ -240,6 +243,8 @@ export type TSubmission = {
   manualSkills?: string[];
   /** Conversation-scoped preference for code tool approval behavior. */
   codeApprovalMode?: CodeApprovalMode;
+  /** Immutable conversation choice for attached code execution. */
+  codeEnvironmentMode?: CodeEnvironmentMode;
   /** Conversation-selected workspaces, with at most one binding per environment. */
   codeWorkspaces?: CodeWorkspaceSelection[];
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */

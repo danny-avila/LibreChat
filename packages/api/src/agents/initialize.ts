@@ -94,6 +94,7 @@ import {
 import {
   normalizeStatefulCodeEnvironment,
   resolveCodeExecutionContext,
+  type CodeEnvironmentConfig,
   type CodeExecutionContext,
 } from './execution';
 import {
@@ -631,6 +632,18 @@ export type InitializedAgent = Agent & {
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
 
+function optsOutOfAttachedCodeEnvironment(
+  agent: Agent,
+  requestBody: RequestBody | undefined,
+  environments: readonly CodeEnvironmentConfig[] | undefined,
+): boolean {
+  if (requestBody?.codeEnvironmentMode !== 'without_attached') return false;
+  const configured = agent.code_environment_id
+    ? environments?.find(({ id }) => id === agent.code_environment_id)
+    : environments?.find(({ default: isDefault }) => isDefault === true);
+  return agent.stateful_code_sessions === true && configured?.type === 'attached';
+}
+
 /**
  * Parameters for initializing an agent
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
@@ -1112,7 +1125,15 @@ export async function initializeAgent(
    * stateful agent must perform freshness checks and recovery uploads against
    * the same isolated deployment its eventual `/exec` request will use. */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const configuredCodeEnvironments =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+  const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+    agent,
+    requestBody,
+    configuredCodeEnvironments,
+  );
+  const effectiveCodeEnvAvailable =
+    params.codeEnvAvailable === true && agentRequestsCodeExec && !attachedEnvironmentOptOut;
   const effectiveStatefulSessions =
     effectiveCodeEnvAvailable &&
     params.statefulSessionsAvailable === true &&
@@ -1131,7 +1152,7 @@ export async function initializeAgent(
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,
     environmentId: agent.code_environment_id,
-    environments: appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments,
+    environments: configuredCodeEnvironments,
     userId: requestFileOwnerId,
     agentId: agent.id,
     conversationId,

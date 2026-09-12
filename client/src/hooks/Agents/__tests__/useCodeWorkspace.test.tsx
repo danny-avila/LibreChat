@@ -29,7 +29,7 @@ jest.mock('~/data-provider', () => ({
 
 const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConversation =>
   ({
-    conversationId: 'conversation-1',
+    conversationId: 'new',
     endpoint: EModelEndpoint.agents,
     agent_id: 'agent_primary',
     codeWorkspaces,
@@ -101,6 +101,8 @@ describe('useCodeWorkspace', () => {
 
     expect(result.current.state).toBe('ready');
     expect(result.current.canSubmit).toBe(true);
+    expect(result.current.locked).toBe(false);
+    expect(result.current.mode).toBe('attached');
     expect(result.current.selections).toEqual([
       { environmentId: 'personal-vm', workspaceId: 'project-a' },
     ]);
@@ -119,7 +121,8 @@ describe('useCodeWorkspace', () => {
     );
     expect(result.current.selections?.[0].workspaceId).toBe('project-b');
     rerender({ id: 'existing' });
-    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.mode).toBe('without_attached');
+    expect(result.current.canSubmit).toBe(true);
   });
 
   it('uses a valid last choice and preserves an explicit conversation binding', () => {
@@ -275,7 +278,10 @@ describe('useCodeWorkspace', () => {
     });
     rerender();
     expect(result.current.state).toBe('missing');
-    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission()).toEqual({
+      codeEnvironmentMode: 'without_attached',
+    });
   });
 
   it.each(['ephemeral', 'openAI__gpt-4o'])('does not block ephemeral agent %s', (agent_id) => {
@@ -334,7 +340,7 @@ describe('useCodeWorkspace', () => {
     expect(result.current.selections).toBeUndefined();
   });
 
-  it('requires a workspace in full access mode and enables submission after explicit selection', () => {
+  it('allows ordinary chat without a workspace and uses one after explicit selection', () => {
     mockStatus.mockReturnValue([
       {
         data: {
@@ -357,16 +363,21 @@ describe('useCodeWorkspace', () => {
     });
 
     expect(result.current.state).toBe('choose');
-    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.canSubmit).toBe(true);
     expect(result.current.selections).toBeUndefined();
-    expect(result.current.resolveSubmission()).toBeUndefined();
+    expect(result.current.resolveSubmission()).toEqual({
+      codeEnvironmentMode: 'without_attached',
+    });
 
     const selection = { environmentId: 'personal-vm', workspaceId: 'canary-a' };
     rerender({ current: { ...initialConversation, codeWorkspaces: [selection] } });
 
     expect(result.current.state).toBe('ready');
     expect(result.current.canSubmit).toBe(true);
-    expect(result.current.resolveSubmission([selection])).toEqual({ codeWorkspaces: [selection] });
+    expect(result.current.resolveSubmission([selection])).toEqual({
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [selection],
+    });
   });
 
   it('submits an explicit selection from several advertised workspaces', () => {
@@ -387,30 +398,35 @@ describe('useCodeWorkspace', () => {
 
     expect(result.current.canSubmit).toBe(true);
     expect(result.current.resolveSubmission([selection])).toEqual({
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [selection],
     });
   });
 
-  it('blocks submission while the required worker status is loading', () => {
+  it('allows ordinary chat while the attached worker status is loading', () => {
     mockStatus.mockReturnValue([{ data: undefined, isLoading: true, isError: false }]);
 
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
     expect(result.current.required).toBe(true);
     expect(result.current.state).toBe('loading');
-    expect(result.current.canSubmit).toBe(false);
-    expect(result.current.resolveSubmission()).toBeUndefined();
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission()).toEqual({
+      codeEnvironmentMode: 'without_attached',
+    });
   });
 
-  it('blocks submission while endpoint capabilities are loading', () => {
+  it('allows ordinary chat while endpoint capabilities are loading', () => {
     mockAgentsConfig.mockReturnValue({ agentsConfig: null, endpointsConfig: undefined });
 
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
     expect(result.current.required).toBe(true);
     expect(result.current.state).toBe('loading');
-    expect(result.current.canSubmit).toBe(false);
-    expect(result.current.resolveSubmission()).toBeUndefined();
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission()).toEqual({
+      codeEnvironmentMode: 'without_attached',
+    });
     expect(mockStatus).toHaveBeenLastCalledWith([], false);
   });
 
@@ -551,12 +567,14 @@ describe('useCodeWorkspace', () => {
       useCodeWorkspace({ ...conversation(), conversationId: 'new' }),
     );
     expect(result.current.state).toBe('choose');
-    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.canSubmit).toBe(true);
     expect(
-      result.current.resolveSubmission([
-        { environmentId: 'personal-vm', workspaceId: 'project-a' },
-      ]),
+      result.current.resolveSubmission(
+        [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+        'attached',
+      ),
     ).toEqual({
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
   });

@@ -67,7 +67,9 @@ export function clearInheritedAgentWorkspace(
     conversation.agent_id != null &&
     conversation.agent_id !== previousConversation?.agent_id;
 
-  return startsNewAgentConversation ? { ...conversation, codeWorkspaces: undefined } : conversation;
+  return startsNewAgentConversation
+    ? { ...conversation, codeEnvironmentMode: undefined, codeWorkspaces: undefined }
+    : conversation;
 }
 
 const useNewConvo = (index = 0) => {

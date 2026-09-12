@@ -214,14 +214,27 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  resolveConversationCodeEnvironmentDecision: ({
+    requestedMode,
+    requestedSelections,
+    conversation,
+  }) => {
+    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
+    return {
+      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
+      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+    };
+  },
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
     parentMessageId,
+    codeEnvironmentMode,
     codeWorkspaces,
   }) => ({
     messageId,
     conversationId,
+    ...(codeEnvironmentMode !== undefined && { codeEnvironmentMode }),
     ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
@@ -1553,6 +1566,7 @@ describe('OpenAIChatCompletionController', () => {
             messageId: 'chatcmpl-mock-nanoid-123',
             conversationId: 'conversation-123',
             parentMessageId: 'parent-123',
+            codeEnvironmentMode: 'without_attached',
           },
         }),
         expect.anything(),
@@ -1563,6 +1577,7 @@ describe('OpenAIChatCompletionController', () => {
             messageId: 'chatcmpl-mock-nanoid-123',
             conversationId: 'conversation-123',
             parentMessageId: 'parent-123',
+            codeEnvironmentMode: 'without_attached',
           },
         }),
       );
@@ -1574,6 +1589,7 @@ describe('OpenAIChatCompletionController', () => {
               messageId: 'chatcmpl-mock-nanoid-123',
               conversationId: 'conversation-123',
               parentMessageId: 'parent-123',
+              codeEnvironmentMode: 'without_attached',
             },
           }),
         }),
@@ -1600,6 +1616,7 @@ describe('OpenAIChatCompletionController', () => {
       expect(requestBody).toEqual({
         messageId: 'chatcmpl-mock-nanoid-123',
         conversationId: 'conversation-123',
+        codeEnvironmentMode: 'without_attached',
       });
       expect(requestBody).not.toHaveProperty('parentMessageId');
     });

@@ -896,12 +896,17 @@ describe('initializeClient — subagent loading', () => {
       requestBody,
     });
 
-    expect(mockInitializeAgent.mock.calls[0][0].requestBody).toBe(requestBody);
-    expect(agentClientArgs.mcpRequestBody).toBe(requestBody);
+    const normalizedRequestBody = mockInitializeAgent.mock.calls[0][0].requestBody;
+    expect(normalizedRequestBody).toEqual({
+      ...requestBody,
+      codeEnvironmentMode: 'without_attached',
+      codeWorkspaces: undefined,
+    });
+    expect(agentClientArgs.mcpRequestBody).toBe(normalizedRequestBody);
 
     await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
     expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ requestBody }),
+      expect.objectContaining({ requestBody: normalizedRequestBody }),
     );
   });
 
@@ -1582,7 +1587,8 @@ describe('initializeClient — subagent loading', () => {
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
         });
-        if (!registered) {
+        const defaultsWithoutAttached = source === 'resolved-null' || source === 'other-owner';
+        if (!registered && !defaultsWithoutAttached) {
           await expect(initialization).rejects.toMatchObject({
             code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
           });
@@ -1590,6 +1596,13 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
+        if (defaultsWithoutAttached) {
+          expect(fetchSpy).not.toHaveBeenCalled();
+          expect(agentClientArgs.mcpRequestBody).toEqual(
+            expect.objectContaining({ codeEnvironmentMode: 'without_attached' }),
+          );
+          return;
+        }
         if (source === 'fallback' || source.startsWith('override')) {
           mockInitializeAgent.mockImplementationOnce(async (params) => {
             expect(params.req.resolvedConversation.codeWorkspaces).toEqual([

@@ -2011,6 +2011,7 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
+          codeEnvironmentMode: this.options.req.body.codeEnvironmentMode,
           codeWorkspaces: getCodeWorkspaceSelections(
             collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
           ),
@@ -4508,6 +4509,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -5284,6 +5288,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,

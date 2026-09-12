@@ -67,6 +67,7 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  resolveConversationCodeEnvironmentDecision,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -448,6 +449,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         req.resolvedConversation = conversation;
       }
 
+      const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+        conversationId,
+        requestedMode: request.code_environment_mode,
+        requestedSelections: request.code_workspaces,
+        conversation: req.resolvedConversation,
+      });
       const parentMessageId = request.parent_message_id ?? null;
       let mcpParentMessageId;
       if (
@@ -461,7 +468,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
-        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
+        codeEnvironmentMode: codeEnvironmentDecision.mode,
+        codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
         parentMessageId: mcpParentMessageId,
       });
 

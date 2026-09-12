@@ -361,6 +361,7 @@ export interface AgentRequestFingerprintFields {
   promptPrefix?: string | null;
   ephemeralAgent?: Record<string, unknown> | null;
   codeApprovalMode?: string | null;
+  codeEnvironmentMode?: string | null;
   codeWorkspaces?: unknown;
 }
 
@@ -400,6 +401,7 @@ export const RESUME_CONTEXT_KEYS = [
   'promptPrefix',
   'ephemeralAgent',
   'codeApprovalMode',
+  'codeEnvironmentMode',
   // The selected attached workspace determines the code tools' execution root and
   // operation ceiling. Pin it across every pause type so a reload or crafted resume
   // cannot rebuild the graph against a different directory.
@@ -740,6 +742,9 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
     ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
       ? { codeApprovalMode: fields.codeApprovalMode ?? null }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeEnvironmentMode')
+      ? { codeEnvironmentMode: fields.codeEnvironmentMode ?? null }
       : {}),
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspaces')
       ? { codeWorkspaces: fields.codeWorkspaces ?? null }

@@ -663,6 +663,9 @@ describe('computeAgentRequestFingerprint', () => {
       computeAgentRequestFingerprint({ ...base, codeApprovalMode: null }),
     );
     expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeEnvironmentMode: 'without_attached' }),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({
         ...base,
         codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
@@ -733,6 +736,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
       conversationId: 'c',
       decisions: [],
@@ -749,6 +753,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       manualSkills: ['code-reviewer'],
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
     });
   });
@@ -786,6 +791,25 @@ describe('pickResumeContext / applyResumeContext', () => {
     };
     applyResumeContext(injected, { endpoint: 'agents' });
     expect('codeWorkspaces' in injected).toBe(false);
+  });
+
+  it('pins the code-environment decision across resume and removes a forged mode', () => {
+    const restored: Record<string, unknown> = {
+      conversationId: 'c',
+      codeEnvironmentMode: 'attached',
+    };
+    applyResumeContext(restored, {
+      endpoint: 'agents',
+      codeEnvironmentMode: 'without_attached',
+    });
+    expect(restored.codeEnvironmentMode).toBe('without_attached');
+
+    const injected: Record<string, unknown> = {
+      conversationId: 'c',
+      codeEnvironmentMode: 'attached',
+    };
+    applyResumeContext(injected, { endpoint: 'agents' });
+    expect('codeEnvironmentMode' in injected).toBe(false);
   });
 
   it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {

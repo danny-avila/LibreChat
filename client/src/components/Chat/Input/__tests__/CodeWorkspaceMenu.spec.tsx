@@ -23,7 +23,7 @@ jest.mock('@librechat/client', () => {
 });
 
 const conversation = {
-  conversationId: 'conversation-1',
+  conversationId: 'new',
   endpoint: 'agents',
   agent_id: 'agent-1',
   title: 'Code',
@@ -39,6 +39,8 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
   const selected = { environmentId: environment.id, workspaceId: 'project-a' };
   return {
     required: true,
+    locked: false,
+    mode: 'attached',
     state: 'ready',
     canSubmit: true,
     environments: [
@@ -51,77 +53,95 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
     ],
     selections: [selected],
     resolveSelections: () => [selected],
-    resolveSubmission: () => ({ codeWorkspaces: [selected] }),
+    resolveSubmission: () => ({ codeEnvironmentMode: 'attached', codeWorkspaces: [selected] }),
     rememberSelection: jest.fn(),
     ...overrides,
   };
 }
 
 describe('CodeWorkspaceMenu', () => {
-  test('stores one unambiguous initial workspace on the conversation', () => {
+  test('shows a suggested workspace without committing the conversation decision', () => {
     const setConversation = jest.fn();
     render(
       <CodeWorkspaceMenu
-        conversation={conversation}
         setConversation={setConversation}
         workspace={workspace()}
         disabled={false}
       />,
     );
 
-    const update = setConversation.mock.calls[0][0];
-    expect(update(conversation)).toEqual({
-      ...conversation,
-      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
-    });
-    const navigated = { ...conversation, agent_id: 'different-agent' };
-    expect(update(navigated)).toBe(navigated);
-    const differentChat = { ...conversation, conversationId: 'different-chat' };
-    expect(update(differentChat)).toBe(differentChat);
+    expect(setConversation).not.toHaveBeenCalled();
     expect(screen.getByTestId('code-workspace')).toHaveTextContent('Project A');
   });
 
-  test('keeps a missing binding until the user explicitly selects a replacement', async () => {
-    const savedConversation = {
-      ...conversation,
-      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'removed-project' }],
-    };
+  test('allows working without an attached workspace even while the worker is unavailable', async () => {
     const setConversation = jest.fn();
-    const rememberSelection = jest.fn();
     render(
       <CodeWorkspaceMenu
-        conversation={savedConversation}
         setConversation={setConversation}
         workspace={workspace({
-          state: 'missing',
+          mode: undefined,
+          state: 'unavailable',
           selections: undefined,
           environments: [
             {
               environment,
-              state: 'missing',
-              workspaces: [{ id: 'project-a', name: 'Project A' }],
+              state: 'unavailable',
+              workspaces: [],
               selected: undefined,
             },
           ],
-          rememberSelection,
         })}
         disabled={false}
       />,
     );
 
-    expect(setConversation).not.toHaveBeenCalled();
-    expect(screen.getByTestId('code-workspace')).toHaveTextContent('com_ui_code_workspace_missing');
     await userEvent.click(screen.getByTestId('code-workspace'));
-    await userEvent.click(await screen.findByText('Project A'));
+    await userEvent.click(await screen.findByText('com_ui_code_workspace_without_attached'));
+
+    const update = setConversation.mock.calls[0][0];
+    expect(update(conversation)).toEqual({
+      ...conversation,
+      codeEnvironmentMode: 'without_attached',
+      codeWorkspaces: undefined,
+    });
+  });
+
+  test('commits an explicit attached-workspace choice only when the user selects it', async () => {
+    const setConversation = jest.fn();
+    const rememberSelection = jest.fn();
+    render(
+      <CodeWorkspaceMenu
+        setConversation={setConversation}
+        workspace={workspace({ mode: undefined, state: 'choose', rememberSelection })}
+        disabled={false}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('code-workspace'));
+    await userEvent.click((await screen.findAllByText('Project A'))[1]);
 
     expect(rememberSelection).toHaveBeenCalledWith({
       environmentId: 'personal-vm',
       workspaceId: 'project-a',
     });
     const update = setConversation.mock.calls[0][0];
-    expect(update(savedConversation)).toEqual({
-      ...savedConversation,
+    expect(update(conversation)).toEqual({
+      ...conversation,
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
+  });
+
+  test('hides the chooser after the conversation decision is locked', () => {
+    render(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({ locked: true })}
+        disabled={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('code-workspace')).not.toBeInTheDocument();
   });
 });

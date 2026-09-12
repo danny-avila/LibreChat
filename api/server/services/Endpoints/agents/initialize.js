@@ -3,6 +3,7 @@ const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   resolveSender,
   resolveRunConversation,
+  resolveConversationCodeEnvironmentDecision,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
@@ -192,7 +193,7 @@ const initializeClient = async ({
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
-  const runtimeRequestBody = requestBody ?? req.body;
+  let runtimeRequestBody = requestBody ?? req.body;
   const conversationId = runtimeRequestBody?.conversationId;
   const requestConversationPromise = resolveRunConversation({
     request: req,
@@ -558,6 +559,23 @@ const initializeClient = async ({
   ]);
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
+  const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+    conversationId,
+    requestedMode: runtimeRequestBody?.codeEnvironmentMode,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    conversation: requestConversation,
+  });
+  runtimeRequestBody = {
+    ...runtimeRequestBody,
+    codeEnvironmentMode: codeEnvironmentDecision.mode,
+    codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
+  };
+  req.body.codeEnvironmentMode = codeEnvironmentDecision.mode;
+  if (codeEnvironmentDecision.codeWorkspaces == null) {
+    delete req.body.codeWorkspaces;
+  } else {
+    req.body.codeWorkspaces = codeEnvironmentDecision.codeWorkspaces;
+  }
   delete endpointOption.agent;
 
   /** The deployment switch AND the role grant. `initializeAgent` rebuilds
@@ -1006,8 +1024,19 @@ const initializeClient = async ({
   });
 
   const toLazySubagentMetadata = async (agent) => {
+    const configuredCodeEnvironments =
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const configuredCodeEnvironment = agent.code_environment_id
+      ? configuredCodeEnvironments?.find(({ id }) => id === agent.code_environment_id)
+      : configuredCodeEnvironments?.find(({ default: isDefault }) => isDefault === true);
+    const attachedEnvironmentOptOut =
+      runtimeRequestBody?.codeEnvironmentMode === 'without_attached' &&
+      agent.stateful_code_sessions === true &&
+      configuredCodeEnvironment?.type === 'attached';
     const lazyCodeEnvAvailable =
-      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true;
+      codeEnvAvailable === true &&
+      agent.tools?.includes(Tools.execute_code) === true &&
+      !attachedEnvironmentOptOut;
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       lazyCodeEnvAvailable &&
@@ -1020,8 +1049,6 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
-    const configuredCodeEnvironments =
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
     const hasConfiguredCodeEnvironment =
       agent.code_environment_id != null ||
       configuredCodeEnvironments?.some((environment) => environment.default === true) === true;

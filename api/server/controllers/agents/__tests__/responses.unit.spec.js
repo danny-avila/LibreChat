@@ -233,15 +233,28 @@ jest.mock('@librechat/api', () => ({
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  resolveConversationCodeEnvironmentDecision: ({
+    requestedMode,
+    requestedSelections,
+    conversation,
+  }) => {
+    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
+    return {
+      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
+      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+    };
+  },
   getCodeWorkspaceSelections: jest.fn(),
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
     parentMessageId,
+    codeEnvironmentMode,
     codeWorkspaces,
   }) => ({
     messageId,
     conversationId,
+    ...(codeEnvironmentMode !== undefined && { codeEnvironmentMode }),
     ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
@@ -902,6 +915,7 @@ describe('createResponse controller', () => {
           requestBody: {
             messageId: 'resp_mock-123',
             conversationId: expect.any(String),
+            codeEnvironmentMode: 'without_attached',
           },
         }),
         expect.anything(),
