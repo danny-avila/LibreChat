@@ -33,14 +33,13 @@ jest.mock('~/server/services/Config', () => ({
 
 const mockBulkUpdateResourcePermissions = jest.fn();
 const mockRestoreInsightsPermissionChanges = jest.fn();
-const mockEnsurePrincipalExists = jest.fn();
 
 jest.mock('~/server/services/PermissionService', () => ({
   bulkUpdateResourcePermissions: (...args) => mockBulkUpdateResourcePermissions(...args),
   restoreInsightsPermissionChanges: (...args) => mockRestoreInsightsPermissionChanges(...args),
   ensureGroupPrincipalExists: jest.fn(),
   getEffectivePermissions: jest.fn(),
-  ensurePrincipalExists: (...args) => mockEnsurePrincipalExists(...args),
+  ensurePrincipalExists: jest.fn(),
   getAvailableRoles: jest.fn(),
   findAccessibleResources: jest.fn(),
   getResourcePermissionsMap: jest.fn(),
@@ -65,7 +64,6 @@ jest.mock('~/server/services/GraphApiService', () => ({
 }));
 
 const db = require('~/models');
-const { DirectoryPrincipalConflictError } = require('@librechat/api');
 const {
   updateResourcePermissions,
   searchPrincipals,
@@ -287,41 +285,6 @@ describe('PermissionsController', () => {
       db.getAgent.mockResolvedValue({ _id: agentObjectId, id: 'agent-a', name: 'Agent A' });
       mockRecordAuditEntry.mockResolvedValue({});
       mockRestoreInsightsPermissionChanges.mockResolvedValue(undefined);
-      mockEnsurePrincipalExists.mockResolvedValue(new mongoose.Types.ObjectId().toString());
-    });
-
-    it('fails the update before applying removals when directory identity linking is required', async () => {
-      mockEnsurePrincipalExists.mockRejectedValue(
-        new DirectoryPrincipalConflictError(
-          'Existing user must link their directory identity during sign-in',
-        ),
-      );
-      const req = createMockReq({
-        params: { resourceType: ResourceType.AGENT, resourceId: agentObjectId },
-        body: {
-          updated: [
-            {
-              type: PrincipalType.USER,
-              name: 'Existing User',
-              email: 'existing-user@example.com',
-              source: 'entra',
-              idOnTheSource: 'directory-user-id',
-              accessRoleId: AccessRoleIds.AGENT_VIEWER,
-            },
-          ],
-          removed: [{ type: PrincipalType.USER, id: revokedUserId }],
-        },
-      });
-      const res = createMockRes();
-
-      await updateResourcePermissions(req, res);
-
-      expect(mockBulkUpdateResourcePermissions).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(409);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Failed to update permissions',
-        details: 'Existing user must link their directory identity during sign-in',
-      });
     });
 
     it('rejects Insights permission changes from non-admin users', async () => {

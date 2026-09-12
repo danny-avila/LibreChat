@@ -1,4 +1,4 @@
-import { DirectoryPrincipalConflictError, ensureDirectoryPrincipalUser } from './principals';
+import { ensureDirectoryPrincipalUser } from './principals';
 
 const createMethods = () => ({
   findUserBySourceId: jest.fn().mockResolvedValue(null),
@@ -22,13 +22,11 @@ describe('ensureDirectoryPrincipalUser', () => {
     expect(methods.createUser).not.toHaveBeenCalled();
   });
 
-  it('rejects linking an existing user found only by email', async () => {
+  it('returns an existing user found by email without creating a placeholder', async () => {
     const methods = createMethods();
     methods.findUserByEmail.mockResolvedValue({ id: 'email-user' });
 
-    await expect(ensureDirectoryPrincipalUser(principal, methods)).rejects.toBeInstanceOf(
-      DirectoryPrincipalConflictError,
-    );
+    await expect(ensureDirectoryPrincipalUser(principal, methods)).resolves.toBe('email-user');
     expect(methods.createUser).not.toHaveBeenCalled();
   });
 

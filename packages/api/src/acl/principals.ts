@@ -20,10 +20,6 @@ export interface DirectoryPrincipalUserMethods {
 
 type DirectoryPrincipal = Pick<TPrincipal, 'name' | 'email' | 'idOnTheSource'>;
 
-export class DirectoryPrincipalConflictError extends Error {
-  readonly statusCode = 409;
-}
-
 export const ensureDirectoryPrincipalUser = async (
   principal: DirectoryPrincipal,
   methods: DirectoryPrincipalUserMethods,
@@ -39,9 +35,7 @@ export const ensureDirectoryPrincipalUser = async (
 
   const userByEmail = await methods.findUserByEmail(principal.email);
   if (userByEmail) {
-    throw new DirectoryPrincipalConflictError(
-      'Existing user must link their directory identity during sign-in',
-    );
+    return userByEmail.id;
   }
 
   return methods.createUser({
