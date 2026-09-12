@@ -374,10 +374,11 @@ describe('toClientPendingAction', () => {
     ],
   };
 
-  test('omits server-only replay state, keeping the fields the client renders from', () => {
+  test('omits server-only replay and project context state', () => {
     const full = buildPendingAction(payload, {
       streamId: 'stream-1',
       conversationId: 'conv-1',
+      projectContextKey: 'project:p1:r2',
       requestFingerprint: 'fp-hash',
       resumeContext: {
         endpoint: 'agents',
@@ -394,6 +395,7 @@ describe('toClientPendingAction', () => {
     expect(clientSafe?.resumeContext).toBeUndefined();
     expect(clientSafe?.requestFingerprint).toBeUndefined();
     expect(clientSafe?.codeExecutionBinding).toBeUndefined();
+    expect(clientSafe?.projectContextKey).toBeUndefined();
     expect(clientSafe?.actionId).toBe(full.actionId);
     expect(clientSafe?.streamId).toBe('stream-1');
     expect(clientSafe?.payload).toBe(full.payload);
@@ -404,6 +406,7 @@ describe('toClientPendingAction', () => {
       version: 1,
       targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
     });
+    expect(full.projectContextKey).toBe('project:p1:r2');
   });
 
   test('passes through nullish input', () => {

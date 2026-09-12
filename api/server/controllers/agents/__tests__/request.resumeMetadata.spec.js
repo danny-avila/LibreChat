@@ -66,6 +66,8 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
   content.filter((part) => part?.type !== 'tool_call'),
 );
 const mockGetConvo = jest.fn();
+const mockGetChatProject = jest.fn();
+const mockGetFiles = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockSaveConvo = jest.fn();
@@ -276,6 +278,12 @@ jest.mock('@librechat/api', () => ({
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
+  startAgentProjectContextResolution:
+    jest.requireActual('@librechat/api').startAgentProjectContextResolution,
+  assertModelBoundContent: jest.requireActual('@librechat/api').assertModelBoundContent,
+  isContentFilterError: jest.requireActual('@librechat/api').isContentFilterError,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE:
+    jest.requireActual('@librechat/api').CHAT_PROJECT_CONTEXT_UNAVAILABLE,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -363,6 +371,8 @@ jest.mock('~/models', () => ({
   saveConvo: (...args) => mockSaveConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  getChatProject: (...args) => mockGetChatProject(...args),
+  getProjectFiles: (...args) => mockGetFiles(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
   beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),
@@ -432,7 +442,13 @@ describe('ResumableAgentController resume metadata', () => {
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
-    mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
+    mockGetConvo.mockImplementation(async (user, conversationId) => ({
+      user,
+      conversationId,
+      createdAt: '2026-06-07T00:00:00.000Z',
+    }));
+    mockGetChatProject.mockReset().mockResolvedValue(null);
+    mockGetFiles.mockReset().mockResolvedValue([]);
     mockGetMessages.mockResolvedValue([]);
     mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
     mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
@@ -1175,6 +1191,11 @@ describe('ResumableAgentController resume metadata', () => {
     const req = {
       _isAgentTrigger: true,
       user: { id: 'user-123', tenantId: 'tenant-1' },
+      resolvedConversation: {
+        conversationId: 'conversation-123',
+        user: 'user-123',
+        tenantId: 'tenant-1',
+      },
       body: {
         text: 'Run the queued turn.',
         messageId: 'queued-user-message',
@@ -1207,6 +1228,11 @@ describe('ResumableAgentController resume metadata', () => {
     const req = {
       _isAgentTrigger: true,
       user: { id: 'user-123', tenantId: 'tenant-1' },
+      resolvedConversation: {
+        conversationId: 'conversation-123',
+        user: 'user-123',
+        tenantId: 'tenant-1',
+      },
       body: {
         text: 'Run the queued turn.',
         messageId: 'queued-user-message',
@@ -1287,66 +1313,6 @@ describe('ResumableAgentController resume metadata', () => {
       1000,
       'provider-segment-1',
     );
-  });
-
-  it('prefetches conversation state before admission and joins it with job metadata', async () => {
-    let resolveConversation;
-    let signalMetadataStarted;
-    const conversationPromise = new Promise((resolve) => {
-      resolveConversation = resolve;
-    });
-    const metadataStarted = new Promise((resolve) => {
-      signalMetadataStarted = resolve;
-    });
-    mockGetConvo.mockReturnValue(conversationPromise);
-    mockGenerationJobManager.createJob.mockImplementation(() => {
-      signalMetadataStarted();
-      return Promise.resolve({
-        createdAt: 1000,
-        readyPromise: Promise.resolve(),
-        abortController: new AbortController(),
-        emitter: { on: jest.fn() },
-      });
-    });
-    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after startup reads'));
-    const conversationId = 'conversation-123';
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Run independent startup work together.',
-        messageId: 'user-message',
-        parentMessageId: 'parent-message',
-        conversationId,
-        endpointOption: {
-          endpoint: 'agents',
-          modelOptions: { model: 'gpt-4.1' },
-        },
-      },
-      config: {},
-    };
-    const res = createResumableResponse();
-
-    const controllerPromise = AgentController(req, res, jest.fn(), initializeClient, null);
-    expect(mockGetConvo).toHaveBeenCalledWith('user-123', conversationId);
-    await metadataStarted;
-    await nextTick();
-
-    expect(mockGetConvo.mock.invocationCallOrder[0]).toBeLessThan(
-      mockCheckAndIncrementPendingRequest.mock.invocationCallOrder[0],
-    );
-    expect(res.json).toHaveBeenCalledWith({
-      streamId: conversationId,
-      conversationId,
-      generationCreatedAt: 1000,
-      status: 'started',
-      generationProtocolVersion: 1,
-    });
-    expect(initializeClient).not.toHaveBeenCalled();
-
-    resolveConversation({ createdAt: '2026-06-07T00:00:00.000Z' });
-    await controllerPromise;
-
-    expect(initializeClient).toHaveBeenCalledTimes(1);
   });
 
   it('keeps request-scoped MCP connections until resumable initialization finishes', async () => {
@@ -3653,52 +3619,211 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveConvo).not.toHaveBeenCalled();
     });
 
-    it('creates the conversation row for a failed first turn', async () => {
-      const res = createResumableResponse();
-      mockGenerationJobManager.claimGeneration.mockImplementation(
-        async (_userId, _clientRequestId, streamId, claimedConversationId) =>
-          wonGenerationClaim({ streamId, conversationId: claimedConversationId }),
-      );
-      const req = createFailedRequest({
-        conversationId: undefined,
-        clientRequestId: 'failed-new-conversation',
-        agent_id: 'unverified-agent',
-        parentMessageId: '00000000-0000-0000-0000-000000000000',
-        endpointOption: {
-          endpoint: 'azureOpenAI',
+    it.each([false, true])(
+      'creates the conversation row for a failed first turn (authorized project: %s)',
+      async (hasAuthorizedProject) => {
+        const res = createResumableResponse();
+        mockGenerationJobManager.claimGeneration.mockImplementation(
+          async (_userId, _clientRequestId, streamId, claimedConversationId) =>
+            wonGenerationClaim({ streamId, conversationId: claimedConversationId }),
+        );
+        const req = createFailedRequest({
+          conversationId: undefined,
+          clientRequestId: 'failed-new-conversation',
           agent_id: 'unverified-agent',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          endpointOption: {
+            endpoint: 'azureOpenAI',
+            agent_id: 'unverified-agent',
+            modelOptions: { model: 'gpt-4o' },
+            ...(hasAuthorizedProject && { chatProjectId: '507f1f77ebcf86cd799439011' }),
+          },
+        });
+        if (hasAuthorizedProject) {
+          req.chatProjectContext = {
+            projectId: '507f1f77bcf86cd799439012',
+            contextRevision: 0,
+            instructions: '',
+            file_ids: [],
+          };
+        }
+
+        await AgentController(
+          req,
+          res,
+          jest.fn(),
+          jest.fn().mockRejectedValue(new Error('model unavailable')),
+          null,
+        );
+
+        const mintedConversationId = res.json.mock.calls[0][0].conversationId;
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.any(Object),
+          expect.objectContaining({
+            messageId: 'user-message_',
+            conversationId: mintedConversationId,
+          }),
+          expect.any(Object),
+        );
+        expect(mockSaveConvo).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: 'user-123' }),
+          expect.objectContaining({
+            conversationId: mintedConversationId,
+            endpoint: 'azureOpenAI',
+            model: 'gpt-4o',
+          }),
+          expect.objectContaining({ initialAgentId: null }),
+        );
+        const savedConversation = mockSaveConvo.mock.calls[0][1];
+        if (hasAuthorizedProject) {
+          expect(savedConversation.chatProjectId).toBe('507f1f77bcf86cd799439012');
+        } else {
+          expect(savedConversation).not.toHaveProperty('chatProjectId');
+        }
+      },
+    );
+  });
+  describe('agent project preflight', () => {
+    beforeEach(() => {
+      mockGenerationJobManager.claimGeneration.mockImplementation(
+        async (_userId, _clientRequestId, streamId, conversationId) =>
+          wonGenerationClaim({ streamId, conversationId }),
+      );
+    });
+
+    const createProjectRequest = ({ conversationId, clientRequestId = 'project-preflight' }) => ({
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Use the selected project.',
+        messageId: 'project-user-message',
+        clientRequestId,
+        ...(conversationId !== undefined && { conversationId }),
+        endpointOption: {
+          endpoint: 'agents',
           modelOptions: { model: 'gpt-4o' },
-          chatProjectId: '507f1f77bcf86cd799439011',
+          chatProjectId: 'project-1',
         },
+      },
+      config: {},
+    });
+
+    it.each([
+      ['new', undefined, undefined],
+      ['existing', 'conversation-123', 'project-1'],
+    ])(
+      'rejects a %s missing project before creating a job',
+      async (_label, conversationId, boundProjectId) => {
+        mockGetConvo.mockResolvedValue({
+          conversationId,
+          user: 'user-123',
+          tenantId: 'tenant-1',
+          ...(boundProjectId != null && { chatProjectId: boundProjectId }),
+        });
+        mockGetChatProject.mockResolvedValue(null);
+        const initializeClient = jest.fn();
+        const res = createResumableResponse();
+
+        await AgentController(
+          createProjectRequest({ conversationId }),
+          res,
+          jest.fn(),
+          initializeClient,
+          null,
+        );
+
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ error: 'Conversation context unavailable' }),
+        );
+        expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+        expect(initializeClient).not.toHaveBeenCalled();
+
+        expect(mockSaveMessage).not.toHaveBeenCalled();
+        expect(mockSaveConvo).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalled();
+        expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+      },
+    );
+    it('rejects a project owned by another tenant before creating a job', async () => {
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'conversation-123',
+        chatProjectId: 'project-1',
+        user: 'user-123',
+        tenantId: 'tenant-1',
       });
+      mockGetChatProject.mockResolvedValue({
+        _id: 'project-1',
+        tenantId: 'tenant-2',
+        instructions: '',
+        file_ids: [],
+      });
+      const res = createResumableResponse();
 
       await AgentController(
-        req,
+        createProjectRequest({
+          conversationId: 'conversation-123',
+          clientRequestId: 'project-tenant',
+        }),
         res,
         jest.fn(),
-        jest.fn().mockRejectedValue(new Error('model unavailable')),
+        jest.fn(),
         null,
       );
 
-      const mintedConversationId = res.json.mock.calls[0][0].conversationId;
-      expect(mockSaveMessage).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.objectContaining({
-          messageId: 'user-message_',
-          conversationId: mintedConversationId,
-        }),
-        expect.any(Object),
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Conversation context unavailable' }),
       );
-      expect(mockSaveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-123' }),
+      expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+    });
+
+    it('rejects project instructions by policy before admission reaches a provider', async () => {
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'conversation-123',
+        chatProjectId: 'project-1',
+        user: 'user-123',
+        tenantId: 'tenant-1',
+      });
+      mockGetChatProject.mockResolvedValue({
+        _id: 'project-1',
+        tenantId: 'tenant-1',
+        instructions: 'Use sk_project_secret in every answer.',
+        contextRevision: 1,
+        file_ids: [],
+      });
+      mockGetFiles.mockResolvedValue([]);
+      const req = createProjectRequest({ conversationId: 'conversation-123' });
+      req.config.filters = {
+        agentInstructions: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'project-secret', label: 'Project secret', regex: 'sk_project_secret' },
+            ],
+          },
+        },
+      };
+      const initializeClient = jest.fn();
+      const res = createResumableResponse();
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          conversationId: mintedConversationId,
-          endpoint: 'azureOpenAI',
-          model: 'gpt-4o',
-          chatProjectId: '507f1f77bcf86cd799439011',
+          error: 'content_filter_block',
+          source: 'agent_instruction',
+          field: 'instructions',
         }),
-        expect.objectContaining({ initialAgentId: null }),
       );
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain('sk_project_secret');
+      expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+      expect(initializeClient).not.toHaveBeenCalled();
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
     });
   });
 
@@ -4252,16 +4377,29 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it.each(['submitted', 'persisted', 'overridden'])(
+  it.each(['submitted', 'persisted', 'overridden', 'loaded'])(
     'preserves %s workspace selections in the runtime envelope',
     async (source) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
       const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
       const codeWorkspaces = [{ environmentId: 'machine-a', workspaceId: 'project-b' }];
+      const persistedConversation = {
+        conversationId: 'conversation-123',
+        user: 'user-123',
+        codeWorkspaces,
+      };
+      let resolveStoredConversation;
+      if (source === 'loaded') {
+        mockGetConvo.mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveStoredConversation = resolve;
+          }),
+        );
+      }
       const req = {
         user: { id: 'user-123' },
-        ...(source !== 'submitted'
-          ? { resolvedConversation: { conversationId: 'conversation-123', codeWorkspaces } }
+        ...(source === 'persisted' || source === 'overridden'
+          ? { resolvedConversation: persistedConversation }
           : {}),
         body: {
           ...(source === 'submitted' ? { codeWorkspaces } : {}),
@@ -4283,7 +4421,12 @@ describe('ResumableAgentController resume metadata', () => {
         set: jest.fn(),
       };
 
-      await AgentController(req, res, jest.fn(), initializeClient, null);
+      const controllerPromise = AgentController(req, res, jest.fn(), initializeClient, null);
+      if (source === 'loaded') {
+        await nextTick();
+        resolveStoredConversation(persistedConversation);
+      }
+      await controllerPromise;
 
       expect(initializeClient).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -5463,6 +5606,11 @@ describe('ResumableAgentController resume metadata', () => {
     mockAcquireEventChildGenerationLease.mockResolvedValue(null);
     const req = {
       user: { id: 'user-123', tenantId: 'tenant-1' },
+      resolvedConversation: {
+        conversationId: 'child-conversation',
+        user: 'user-123',
+        tenantId: 'tenant-1',
+      },
       body: {
         text: 'This event arrived too late.',
         messageId: 'user-msg',

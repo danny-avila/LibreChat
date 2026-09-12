@@ -14,7 +14,19 @@ const chatProjectSchema: Schema<IChatProjectDocument> = new Schema<IChatProjectD
       type: String,
       default: '',
       trim: true,
-      maxlength: 1000,
+    },
+    instructions: {
+      type: String,
+      default: '',
+    },
+    contextRevision: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    file_ids: {
+      type: [String],
+      default: [],
     },
     user: {
       type: String,

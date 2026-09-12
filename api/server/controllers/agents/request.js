@@ -21,6 +21,10 @@ const {
   exemptFromConcurrencyLimiter,
   isScheduleFireRequest,
   isUnpersistedPreliminaryParent,
+  startAgentProjectContextResolution,
+  assertModelBoundContent,
+  isContentFilterError,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE,
   resolveConversationAnchor,
   getAgentStartupTelemetry,
   acceptAgentStartupTelemetry,
@@ -56,6 +60,8 @@ const {
   saveConvo,
   getMessages,
   getConvo,
+  getChatProject,
+  getProjectFiles,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
   storeAgentEventActorSuspension,
@@ -103,6 +109,17 @@ function getInitializationFailure(error) {
       code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
       error: error.message || 'Attached resources must be restored before retrying.',
     };
+  }
+
+  if (error?.message === CHAT_PROJECT_CONTEXT_UNAVAILABLE) {
+    return {
+      status: 404,
+      error: 'Conversation context unavailable',
+    };
+  }
+
+  if (isContentFilterError(error)) {
+    return { status: error.statusCode, ...error.body };
   }
 
   const candidateStatus = error?.status ?? error?.statusCode;
@@ -488,7 +505,7 @@ async function saveErrorTurn(
     }
 
     const agentId = endpointOption?.agent_id ?? req.body?.agent_id;
-    const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
+    const chatProjectId = req.chatProjectContext?.projectId;
     const seedConvo = isNewConvo || req.resolvedConversation === null;
     const convoFields = seedConvo
       ? {
@@ -500,7 +517,7 @@ async function saveErrorTurn(
           ...(iconURL != null && { iconURL }),
           ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
           ...(agentId != null && { agent_id: agentId }),
-          ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+          ...(chatProjectId != null && { chatProjectId }),
         }
       : {};
     await saveConvo(
@@ -862,6 +879,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     conversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
       ? req.resolvedConversation
       : undefined,
+  });
+  // Resolve the authoritative project context while idempotency and admission
+  // gates proceed below. The promise is awaited before createJob, so rejected
+  // project policy never receives an HTTP generation ACK.
+  const chatProjectContextPromise = startAgentProjectContextResolution({
+    req,
+    endpointOption,
+    conversationId,
+    isNewConvo,
+    conversationAnchorPromise,
+    getConvo,
+    getChatProject,
+    getProjectFiles,
   });
 
   /** A newly bound actor conversation has no child messages yet, so its first
@@ -1483,17 +1513,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   ) {
     preallocatedResponseMessageId = crypto.randomUUID();
   }
-  const mcpRequestBody = createMCPRuntimeRequestBody({
-    messageId: preallocatedResponseMessageId,
-    conversationId: effectiveConversationId,
-    codeWorkspaces: resolveRunCodeWorkspaces({
-      conversationId: effectiveConversationId,
-      requestedSelections: req.body.codeWorkspaces,
-      conversation: req.resolvedConversation,
-    }),
-    parentMessageId:
-      editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
-  });
 
   let client = null;
   let verifiedInitialAgentId = null;
@@ -1550,6 +1569,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
   try {
+    const chatProjectContext = await chatProjectContextPromise;
+    if (chatProjectContext?.instructions.trim()) {
+      assertModelBoundContent({
+        filters: req.config?.filters,
+        agents: [{ instructions: chatProjectContext.instructions }],
+      });
+    }
+    const mcpRequestBody = createMCPRuntimeRequestBody({
+      messageId: preallocatedResponseMessageId,
+      conversationId: effectiveConversationId,
+      codeWorkspaces: resolveRunCodeWorkspaces({
+        conversationId: effectiveConversationId,
+        requestedSelections: req.body.codeWorkspaces,
+        conversation: req.resolvedConversation,
+      }),
+      parentMessageId:
+        editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
+    });
     logger.debug(`[ResumableAgentController] Creating job`, {
       streamId,
       conversationId,

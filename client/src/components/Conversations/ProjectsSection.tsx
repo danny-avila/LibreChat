@@ -41,7 +41,6 @@ import {
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
-import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import { Collapse } from '~/components/ui';
@@ -171,7 +170,6 @@ const ProjectItem = memo(
     const menuId = useId();
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isRenameOpen, setIsRenameOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const projectChatPath = `/c/${Constants.NEW_CONVO}?projectId=${encodeURIComponent(project._id)}`;
 
@@ -250,7 +248,10 @@ const ProjectItem = memo(
           id: `${menuId}-rename`,
           label: localize('com_ui_edit_project'),
           icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
-          onClick: () => setIsRenameOpen(true),
+          onClick: () => {
+            navigate(`/projects/${encodeURIComponent(project._id)}?edit=1`);
+            toggleNav();
+          },
         },
         {
           id: `${menuId}-delete`,
@@ -259,14 +260,14 @@ const ProjectItem = memo(
           onClick: () => setIsDeleteOpen(true),
         },
       ],
-      [localize, menuId, openProject],
+      [localize, menuId, navigate, openProject, project._id, toggleNav],
     );
 
     return (
-      <li className="list-none" ref={projectRowRef}>
+      <li className="min-w-0 max-w-full list-none" ref={projectRowRef}>
         <div
           className={cn(
-            'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary hover:bg-surface-hover',
+            'group/project-row relative flex h-9 min-w-0 max-w-full items-center rounded-lg text-sm text-text-primary hover:bg-surface-hover',
             isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
             !isActive && isMenuOpen && 'bg-surface-hover',
             isDropOver && canDrop && 'bg-surface-active-alt ring-1 ring-inset ring-border-medium',
@@ -278,7 +279,7 @@ const ProjectItem = memo(
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             aria-label={project.name}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-16 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+            className="flex w-full min-w-0 max-w-full flex-1 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-16 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           >
             <ChevronRight
               className={cn(
@@ -288,7 +289,9 @@ const ProjectItem = memo(
               aria-hidden="true"
             />
             <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-            <span className="min-w-0 truncate">{project.name}</span>
+            <span className="min-w-0 max-w-full truncate [overflow-wrap:anywhere]">
+              {project.name}
+            </span>
           </button>
           <div
             className={cn(
@@ -344,7 +347,6 @@ const ProjectItem = memo(
             onShowAll={openProject}
           />
         </Collapse>
-        <ProjectEditDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
         <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
       </li>
     );

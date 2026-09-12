@@ -20,6 +20,31 @@ const endpointsConfig: TEndpointsConfig = {
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
+describe('Chat Projects config', () => {
+  it('defaults project limits and accepts operator overrides', () => {
+    const defaults = configSchema.parse({ version: '1.2.1' });
+    expect(defaults.projects).toEqual({
+      maxFiles: 50,
+      maxInstructionsLength: 16000,
+      maxDescriptionLength: 1000,
+    });
+
+    const configured = configSchema.parse({
+      version: '1.2.1',
+      projects: {
+        maxFiles: 75,
+        maxInstructionsLength: 24000,
+        maxDescriptionLength: 2000,
+      },
+    });
+    expect(configured.projects).toEqual({
+      maxFiles: 75,
+      maxInstructionsLength: 24000,
+      maxDescriptionLength: 2000,
+    });
+  });
+});
+
 describe('scheduled MCP preflight config', () => {
   it('bounds the separate readiness admission pool', () => {
     expect(
