@@ -36,7 +36,7 @@ export type MCPAppFrameState = {
   status: MCPAppFrameStatus;
   kind: MCPAppFrameKind;
   height: number;
-  sandboxUrl: string;
+  sandboxUrl?: string;
   inlineHtml?: string;
   toolArgs?: Record<string, unknown>;
   toolResult?: AppToolResult;
@@ -50,7 +50,7 @@ export type MCPAppFrameState = {
 /**
  * Budget for the whole reveal path: the `resources/read`, the sandbox document, and the App Bridge
  * handshake. The read moved ahead of the document load so the per-resource CSP can be delivered as a
- * response header, which put server latency inside this window.
+ * sandbox request, which put server latency inside this window.
  */
 export const APP_REVEAL_TIMEOUT_MS = 20_000;
 
@@ -109,12 +109,18 @@ export function useMCPAppFrame(
   }, [resource, inlineHtml, readOnly]);
 
   useEffect(() => {
-    if (kind !== 'app' || status !== 'loading') {
+    if (kind === 'app' && !sandboxUrl) {
+      setStatus('failed');
+    }
+  }, [kind, sandboxUrl]);
+
+  useEffect(() => {
+    if (kind !== 'app' || status !== 'loading' || !sandboxUrl) {
       return;
     }
     const timer = setTimeout(() => setStatus('timedOut'), APP_REVEAL_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [kind, status]);
+  }, [kind, sandboxUrl, status]);
 
   const onSizeChanged = useCallback(
     (params: { height?: number; width?: number }) => {

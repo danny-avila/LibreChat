@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { MAX_CSP_PARAM_LENGTH, buildSandboxResponse } from '../sandbox';
+import { MCP_APP_CSP_MAX_LENGTH } from 'librechat-data-provider';
+import { buildSandboxResponse } from '../sandbox';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
@@ -8,12 +9,19 @@ jest.mock('@librechat/data-schemas', () => ({
 
 const SANDBOX_PATH = path.resolve(__dirname, '../../../../../client/public/mcp-sandbox.html');
 
-const serve = (query: { csp?: string | string[]; strictCsp?: string | string[] } = {}) =>
+const serve = (query: { csp?: string | string[] } = {}) =>
   buildSandboxResponse({ sandboxPath: SANDBOX_PATH, ...query });
 
 const policies = (query?: Parameters<typeof serve>[0]): string[] =>
   serve(query).headers['Content-Security-Policy'] as string[];
 const resourcePolicy = (query?: Parameters<typeof serve>[0]): string => policies(query)[1];
+const viewPolicy = (query?: Parameters<typeof serve>[0]): string => {
+  const match = serve(query).body.match(/window\.__MCP_VIEW_CSP = ("(?:[^"\\]|\\.)*");/);
+  if (!match) {
+    throw new Error('View CSP was not embedded');
+  }
+  return JSON.parse(match[1]) as string;
+};
 
 describe('buildSandboxResponse frame-ancestors', () => {
   const original = process.env.MCP_SANDBOX_FRAME_ANCESTORS;
@@ -29,15 +37,15 @@ describe('buildSandboxResponse frame-ancestors', () => {
     delete process.env.MCP_SANDBOX_FRAME_ANCESTORS;
     const emitted = policies({ csp: JSON.stringify({ frameDomains: ['https://a.example.com'] }) });
     expect(emitted).toHaveLength(2);
-    expect(emitted[0]).toBe("frame-ancestors 'self'");
+    expect(emitted[0]).toBe("frame-ancestors 'none'");
     expect(emitted[1]).not.toContain('frame-ancestors');
   });
 
   it('reads the configured ancestors per call rather than at module load', () => {
     process.env.MCP_SANDBOX_FRAME_ANCESTORS = 'https://host.example.com';
-    expect(policies()[0]).toBe("frame-ancestors 'self' https://host.example.com");
+    expect(policies()[0]).toBe('frame-ancestors https://host.example.com');
     delete process.env.MCP_SANDBOX_FRAME_ANCESTORS;
-    expect(policies()[0]).toBe("frame-ancestors 'self'");
+    expect(policies()[0]).toBe("frame-ancestors 'none'");
   });
 
   it('omits X-Frame-Options only when a cross-origin ancestor is configured', () => {
@@ -49,31 +57,34 @@ describe('buildSandboxResponse frame-ancestors', () => {
     delete process.env.MCP_SANDBOX_FRAME_ANCESTORS;
     const sameOrigin = serve().headers;
     expect(sameOrigin['Cross-Origin-Resource-Policy']).toBe('same-origin');
-    expect(sameOrigin['X-Frame-Options']).toBe('SAMEORIGIN');
+    expect(sameOrigin['X-Frame-Options']).toBe('DENY');
   });
 
   it('drops a token that tries to inject an extra directive', () => {
     process.env.MCP_SANDBOX_FRAME_ANCESTORS = 'https://ok.com; script-src *';
-    expect(policies()[0]).toBe("frame-ancestors 'self'");
+    expect(policies()[0]).toBe("frame-ancestors 'none'");
   });
 });
 
 describe('buildSandboxResponse resource policy', () => {
-  it('allows the blob install with no csp declared and never emits a bare frame-src none', () => {
+  it('allows the proxy blob install while the View gets the restrictive frame default', () => {
     const policy = resourcePolicy();
     expect(policy).toContain('frame-src blob:');
     expect(policy).not.toContain("frame-src 'none'");
+    expect(viewPolicy()).toContain("frame-src 'none'");
+    expect(viewPolicy()).not.toContain('frame-src blob:');
     expect(policy).toContain("default-src 'none'");
     expect(policy).toContain("connect-src 'none'");
     expect(policy).toContain("form-action 'none'");
-    expect(policy).toContain('worker-src blob:');
+    expect(policy).toContain("worker-src 'self'");
     expect(policy).toContain("base-uri 'self'");
   });
 
   it('widens frame-src to declared frameDomains only', () => {
-    expect(
-      resourcePolicy({ csp: JSON.stringify({ frameDomains: ['https://embed.example.com'] }) }),
-    ).toContain('frame-src blob: https://embed.example.com');
+    const query = { csp: JSON.stringify({ frameDomains: ['https://embed.example.com'] }) };
+    expect(resourcePolicy(query)).toContain('frame-src blob: https://embed.example.com');
+    expect(viewPolicy(query)).toContain('frame-src https://embed.example.com');
+    expect(viewPolicy(query)).not.toContain('blob:');
   });
 
   it('bounds form-action and connect-src to the declared egress allowlist', () => {
@@ -84,23 +95,19 @@ describe('buildSandboxResponse resource policy', () => {
     expect(policy).toContain('form-action https://api.example.com');
   });
 
-  it('keeps the proxy script and styles running in both modes', () => {
-    for (const query of [{}, { strictCsp: '1' }]) {
-      expect(resourcePolicy(query)).toContain("script-src 'unsafe-inline'");
-      expect(resourcePolicy(query)).toContain("style-src 'unsafe-inline'");
-    }
+  it('keeps the proxy script and styles running under the stable policy', () => {
+    expect(resourcePolicy()).toContain("script-src 'self' 'unsafe-inline'");
+    expect(resourcePolicy()).toContain("style-src 'self' 'unsafe-inline'");
   });
 
-  it('drops unsafe-eval, wasm, blob and data script sources under strictCsp', () => {
-    expect(resourcePolicy()).toContain(
-      "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data:",
-    );
-    expect(resourcePolicy({ strictCsp: '1' })).not.toContain("'unsafe-eval'");
-  });
-
-  it('only treats the literal "1" as strict mode', () => {
-    expect(resourcePolicy({ strictCsp: 'true' })).toContain("'unsafe-eval'");
-    expect(resourcePolicy({ strictCsp: ['1', '1'] })).toContain("'unsafe-eval'");
+  it('uses the stable restrictive default without undeclared script capabilities', () => {
+    const policy = resourcePolicy();
+    expect(policy).toContain("script-src 'self' 'unsafe-inline'");
+    expect(policy).toContain("style-src 'self' 'unsafe-inline'");
+    expect(policy).toContain("img-src 'self' data:");
+    expect(policy).toContain("media-src 'self' data:");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).not.toContain('wasm-unsafe-eval');
   });
 
   it.each([
@@ -170,10 +177,10 @@ describe('buildSandboxResponse resource policy', () => {
 
   it('accepts a declaration exactly at the length the client mirrors', () => {
     const pad = 'a'.repeat(
-      MAX_CSP_PARAM_LENGTH - '{"connectDomains":["https://a.com"],"pad":""}'.length,
+      MCP_APP_CSP_MAX_LENGTH - '{"connectDomains":["https://a.com"],"pad":""}'.length,
     );
     const csp = `{"connectDomains":["https://a.com"],"pad":"${pad}"}`;
-    expect(csp).toHaveLength(MAX_CSP_PARAM_LENGTH);
+    expect(csp).toHaveLength(MCP_APP_CSP_MAX_LENGTH);
     expect(resourcePolicy({ csp })).toContain('connect-src https://a.com');
   });
 });
@@ -181,17 +188,25 @@ describe('buildSandboxResponse resource policy', () => {
 describe('buildSandboxResponse document', () => {
   it('substitutes the fail-closed csp marker on every response and never caches', () => {
     const raw = fs.readFileSync(SANDBOX_PATH, 'utf8');
-    const expected = raw.replace('/*__CSP_APPLIED__*/', 'window.__MCP_SANDBOX_CSP_APPLIED = true;');
     expect(raw).toContain('/*__CSP_APPLIED__*/');
+    expect(raw).toContain('/*__VIEW_CSP__*/');
 
-    for (const query of [{}, { strictCsp: '1' }]) {
-      const { headers, body } = serve(query);
-      expect(body).toBe(expected);
-      expect(body).not.toContain('/*__CSP_APPLIED__*/');
-      expect(headers['Cache-Control']).toContain('no-store');
-      expect(headers['Content-Type']).toBe('text/html; charset=utf-8');
-      expect(headers['X-Content-Type-Options']).toBe('nosniff');
-      expect(headers['Referrer-Policy']).toBe('same-origin');
-    }
+    const { headers, body } = serve();
+    expect(body).not.toContain('/*__CSP_APPLIED__*/');
+    expect(body).not.toContain('/*__VIEW_CSP__*/');
+    expect(body).toContain('window.__MCP_SANDBOX_CSP_APPLIED = true;');
+    expect(body).toContain('window.__MCP_VIEW_CSP = ');
+    expect(headers['Cache-Control']).toContain('no-store');
+    expect(headers['Content-Type']).toBe('text/html; charset=utf-8');
+    expect(headers['X-Content-Type-Options']).toBe('nosniff');
+    expect(headers['Referrer-Policy']).toBe('same-origin');
+  });
+
+  it('serializes the trusted View policy without creating an inline script boundary', () => {
+    const { body } = serve({ csp: JSON.stringify({ resourceDomains: ['https://x.test/path'] }) });
+    expect(body).not.toContain('</script><script-src');
+    expect(
+      viewPolicy({ csp: JSON.stringify({ resourceDomains: ['https://x.test/path'] }) }),
+    ).toContain('https://x.test/path');
   });
 });

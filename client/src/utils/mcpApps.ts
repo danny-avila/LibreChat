@@ -1,4 +1,17 @@
-import { Tools, request, apiBaseUrl, isMcpAppMimeType } from 'librechat-data-provider';
+import {
+  Tools,
+  request,
+  apiBaseUrl,
+  isMcpAppMimeType,
+  MCP_APP_CSP_MAX_LENGTH,
+  normalizeMCPAppCspDeclaration,
+} from 'librechat-data-provider';
+import type {
+  CallToolResult,
+  ListResourcesResult,
+  ReadResourceResult,
+  ListResourceTemplatesResult,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 
 export type AppToolResult = {
@@ -47,35 +60,37 @@ export function buildAppToolResult(resource: UIResource): AppToolResult | undefi
   };
 }
 
-export function getMCPSandboxUrl(): string {
+export function getMCPSandboxUrl(): string | undefined {
   const env = import.meta.env as Record<string, string | undefined>;
-  const base = env.VITE_MCP_SANDBOX_URL ?? `${apiBaseUrl()}/api/mcp/sandbox`;
-  const strictCsp =
-    env.VITE_MCP_SANDBOX_STRICT_CSP === 'true' || env.VITE_MCP_SANDBOX_STRICT_CSP === '1';
+  const base = env.VITE_MCP_SANDBOX_URL?.trim();
+  if (!base) {
+    return undefined;
+  }
   try {
-    const url = new URL(base, window.location.origin);
-    url.searchParams.set('parentOrigin', window.location.origin);
-    if (strictCsp) {
-      url.searchParams.set('strictCsp', '1');
+    const url = new URL(base);
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      url.origin === window.location.origin
+    ) {
+      return undefined;
     }
+    url.searchParams.set('parentOrigin', window.location.origin);
     return url.toString();
   } catch {
-    return base;
+    return undefined;
   }
 }
 
 /**
- * Must match `MAX_CSP_PARAM_LENGTH` in `packages/api/src/mcp/sandbox.ts`, which
- * falls back to the restrictive default policy for anything longer.
+ * Shared with the sandbox route; an effective declaration longer than this falls back to the
+ * restrictive default policy.
  */
-export const MAX_SANDBOX_CSP_PARAM_LENGTH = 4096;
+export const MAX_SANDBOX_CSP_PARAM_LENGTH = MCP_APP_CSP_MAX_LENGTH;
 
 /**
- * The sandbox document's per-resource CSP is delivered as a response header on the sandbox URL, so
- * the declared domains have to be on the URL before the document loads; the blob app document
- * inherits that policy. Returns the csp that actually reached the response boundary, which is what
- * bounds the app: a declaration the route would reject is dropped here too, so the host cannot
- * authorize a link against domains the enforced policy never received.
+ * The declaration travels on the sandbox URL before load. The route uses the same normalized value
+ * for its proxy response policy and the View policy it installs ahead of App content. Returning that
+ * normalized value keeps host link decisions within the policy the View actually received.
  */
 export function withSandboxCsp(
   sandboxUrl: string,
@@ -85,13 +100,14 @@ export function withSandboxCsp(
     return { url: sandboxUrl, applied: undefined };
   }
   try {
-    const serialized = JSON.stringify(csp);
+    const normalized = normalizeMCPAppCspDeclaration(csp);
+    const serialized = JSON.stringify(normalized);
     if (serialized.length > MAX_SANDBOX_CSP_PARAM_LENGTH) {
       return { url: sandboxUrl, applied: undefined };
     }
     const url = new URL(sandboxUrl, window.location.origin);
     url.searchParams.set('csp', serialized);
-    return { url: url.toString(), applied: csp };
+    return { url: url.toString(), applied: normalized };
   } catch {
     return { url: sandboxUrl, applied: undefined };
   }
@@ -106,42 +122,71 @@ export function getResourceKey(resource: UIResource): string {
   return resource.resourceId || resource.uri;
 }
 
-/** UI resources on a tool call that this host can render: app-backed views, plus inert static HTML. */
+/** MCP Apps owned by the settled tool-call surface. Legacy HTML remains marker-owned. */
 export function selectToolCallUIResources(attachments?: TAttachment[]): UIResource[] {
   const uiResources: UIResource[] =
     attachments
       ?.filter((attachment) => attachment.type === Tools.ui_resources)
       .flatMap((attachment) => (attachment[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
-  return uiResources.filter(
-    (resource) =>
-      isMcpAppResource(resource) ||
-      (getInlineResourceHtml(resource) != null &&
-        (resource.mimeType ?? 'text/html').includes('html')),
-  );
+  return uiResources.filter(isMcpAppResource);
+}
+
+async function postMCPAppRequest<T>(
+  path: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await request.authenticatedFetch(`${apiBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`MCP App request failed (${response.status})`);
+  }
+  return (await response.json()) as T;
 }
 
 export async function callMCPAppTool(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
-) {
-  return request.post(`${apiBaseUrl()}/api/mcp/app-tool-call`, {
-    serverName,
-    toolName,
-    arguments: args,
-  });
+  signal?: AbortSignal,
+): Promise<CallToolResult> {
+  return postMCPAppRequest(
+    '/api/mcp/app-tool-call',
+    {
+      serverName,
+      toolName,
+      arguments: args,
+    },
+    signal,
+  );
 }
 
-export async function readMCPResource(serverName: string, uri: string) {
-  return request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
+export async function readMCPResource(
+  serverName: string,
+  uri: string,
+  signal?: AbortSignal,
+): Promise<ReadResourceResult> {
+  return postMCPAppRequest('/api/mcp/resources/read', { serverName, uri }, signal);
 }
 
-export async function listMCPResources(serverName: string, cursor?: string) {
-  return request.post(`${apiBaseUrl()}/api/mcp/resources/list`, { serverName, cursor });
+export async function listMCPResources(
+  serverName: string,
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<ListResourcesResult> {
+  return postMCPAppRequest('/api/mcp/resources/list', { serverName, cursor }, signal);
 }
 
-export async function listMCPResourceTemplates(serverName: string, cursor?: string) {
-  return request.post(`${apiBaseUrl()}/api/mcp/resources/templates/list`, { serverName, cursor });
+export async function listMCPResourceTemplates(
+  serverName: string,
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<ListResourceTemplatesResult> {
+  return postMCPAppRequest('/api/mcp/resources/templates/list', { serverName, cursor }, signal);
 }
 
 type ResourceUiMeta = {
@@ -199,9 +244,8 @@ export function clampAppViewHeight(
  * has no stable answer; `path-part` is rejected because the sandbox filter drops path-bearing
  * entries, so accepting one here would authorize a link the sandbox policy never granted.
  *
- * Keep in sync with `SAFE_HOST_RE` in `packages/api/src/mcp/sandbox.ts`:
- * `isAllowedAppLink` must authorize a strict subset of what the browser grants the same declared
- * source list inside the sandbox, and every deviation from CSP3 here narrows.
+ * `isAllowedAppLink` consumes the shared normalized source list, then authorizes a strict subset of
+ * what the browser grants inside the sandbox. Every deviation from CSP3 here narrows.
  */
 const APP_LINK_HOST_PATTERN =
   /^(https?|wss?):\/\/(\*\.)?([a-zA-Z0-9](?:[a-zA-Z0-9\-.]*[a-zA-Z0-9])?)(?::(\d{1,5}|\*))?$/i;
@@ -277,10 +321,11 @@ export function isAllowedAppLink(url: string, csp: UIResource['csp']): boolean {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return false;
   }
+  const effective = normalizeMCPAppCspDeclaration(csp);
   const declared = [
-    ...(csp?.connectDomains ?? []),
-    ...(csp?.resourceDomains ?? []),
-    ...(csp?.frameDomains ?? []),
+    ...(effective.connectDomains ?? []),
+    ...(effective.resourceDomains ?? []),
+    ...(effective.frameDomains ?? []),
   ];
   return declared.some(
     (entry) => typeof entry === 'string' && urlMatchesDeclaredSource(parsed, entry),
@@ -309,12 +354,13 @@ export function getInlineResourceHtml(resource: UIResource): string | undefined 
 export async function fetchMCPResourceHtml(
   serverName: string,
   uri: string,
+  signal?: AbortSignal,
 ): Promise<{
   html: string;
   csp?: ResourceUiMeta['csp'];
   permissions?: ResourceUiMeta['permissions'];
 }> {
-  const result = (await readMCPResource(serverName, uri)) as {
+  const result = (await readMCPResource(serverName, uri, signal)) as {
     contents?: Array<{
       uri?: string;
       mimeType?: string;
@@ -323,15 +369,9 @@ export async function fetchMCPResourceHtml(
       _meta?: { ui?: ResourceUiMeta };
     }>;
   };
-  const contents = result?.contents ?? [];
-  // A server may return auxiliary items alongside the app document, in any order, so pick the entry
-  // for the requested URI (preferring the MCP App profile) rather than trusting response order;
-  // otherwise the wrong document renders under the wrong CSP and permissions.
-  const item =
-    contents.find((c) => c.uri === uri && isMcpAppMimeType(c.mimeType)) ??
-    contents.find((c) => c.uri === uri) ??
-    contents.find((c) => isMcpAppMimeType(c.mimeType)) ??
-    contents[0];
+  const item = result?.contents?.find(
+    (content) => content.uri === uri && isMcpAppMimeType(content.mimeType),
+  );
   const uiMeta = item?._meta?.ui;
   let html = item?.text ?? '';
   if (!html && typeof item?.blob === 'string' && item.blob) {
@@ -340,6 +380,9 @@ export async function fetchMCPResourceHtml(
     } catch {
       html = '';
     }
+  }
+  if (!html) {
+    throw new Error('MCP App resource returned no matching HTML document');
   }
   return {
     html,

@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
-import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js';
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
@@ -950,6 +949,212 @@ describe('MCPManager', () => {
         expect.stringContaining('Tool call failed'),
         expect.anything(),
       );
+    });
+  });
+
+  describe('callTool - declared App document acquisition', () => {
+    const user = { id: 'app-user' } as IUser;
+    const flowManager = {} as Parameters<MCPManager['callTool']>[0]['flowManager'];
+    const serverConfig: t.SSEOptions = {
+      type: 'sse',
+      url: 'https://api.example.com',
+    };
+    const resourceUri = 'ui://app';
+    const toolResult = {
+      content: [
+        { type: 'text' as const, text: 'ordinary output' },
+        {
+          type: 'resource' as const,
+          resource: {
+            uri: resourceUri,
+            mimeType: 'text/html;profile=mcp-app',
+            text: '<p>embedded result</p>',
+          },
+        },
+      ],
+      structuredContent: { count: 1 },
+      _meta: { result: 'meta' },
+      isError: false,
+    };
+
+    function connectionFor(request: jest.Mock): MCPConnection {
+      return {
+        createdAt: 1,
+        toolListVersion: 0,
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 1234,
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [
+            {
+              name: 'app_tool',
+              inputSchema: { type: 'object' },
+              _meta: { ui: { resourceUri } },
+            },
+          ],
+          complete: true,
+        }),
+        client: fakeClient(request),
+      } as unknown as MCPConnection;
+    }
+
+    async function callWith(connection: MCPConnection, signal?: AbortSignal) {
+      const manager = new MCPManager();
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+      return manager.callTool({
+        user,
+        serverName,
+        serverConfig,
+        toolName: 'app_tool',
+        provider: 'openai',
+        flowManager,
+        options: { signal },
+      });
+    }
+
+    it('reads the exact declared document once and preserves the original result separately', async () => {
+      const request = jest.fn(async ({ method }: { method: string }) => {
+        if (method === 'tools/call') {
+          return toolResult;
+        }
+        return {
+          contents: [
+            { uri: 'ui://other', mimeType: 'text/html;profile=mcp-app', text: '<p>other</p>' },
+            { uri: resourceUri, mimeType: 'text/plain', text: 'wrong mime' },
+            {
+              uri: resourceUri,
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>resources/read document</p>',
+              _meta: { ui: { csp: { connectDomains: ['https://content.example'] } } },
+            },
+          ],
+        };
+      });
+
+      const [, artifacts] = await callWith(connectionFor(request));
+      const app = artifacts?.ui_resources?.data?.[0];
+      const calls = request.mock.calls as unknown as Array<
+        [{ method: string; params?: unknown }, unknown, { timeout?: number }]
+      >;
+
+      expect(calls.map(([request]) => request.method)).toEqual(['tools/call', 'resources/read']);
+      expect(calls[1][0].params).toEqual({ uri: resourceUri });
+      expect(calls[1][2]).toMatchObject({ timeout: 1234 });
+      expect(app).toMatchObject({
+        uri: resourceUri,
+        text: '<p>resources/read document</p>',
+        csp: { connectDomains: ['https://content.example'] },
+        structuredContent: { count: 1 },
+        resultMeta: { result: 'meta' },
+      });
+      expect(app?.content).toBe(toolResult.content);
+    });
+
+    it('keeps the successful tool output and URI-only descriptor when document reading fails', async () => {
+      const request = jest.fn(async ({ method }: { method: string }) => {
+        if (method === 'tools/call') {
+          return toolResult;
+        }
+        throw new Error('resource unavailable');
+      });
+
+      const [text, artifacts] = await callWith(connectionFor(request));
+
+      expect(text).toContain('ordinary output');
+      expect(artifacts?.ui_resources?.data).toMatchObject([{ uri: resourceUri }]);
+      expect(artifacts?.ui_resources?.data?.[0]).not.toHaveProperty('text');
+      expect(artifacts?.ui_resources?.data?.[0]).not.toHaveProperty('blob');
+      expect(
+        request.mock.calls.filter(([request]) => request.method === 'tools/call'),
+      ).toHaveLength(1);
+    });
+
+    it('does not read or attach the App when Apps policy denies it', async () => {
+      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockResolvedValueOnce({
+        appsEnabled: false,
+      });
+      const request = jest.fn().mockResolvedValue(toolResult);
+
+      const [, artifacts] = await callWith(connectionFor(request));
+
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(artifacts?.ui_resources).toBeUndefined();
+    });
+
+    it('propagates a user abort during the declared resource read', async () => {
+      let readStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        readStarted = resolve;
+      });
+      const request = jest.fn(
+        ({ method }: { method: string }, _schema: unknown, options: { signal?: AbortSignal }) => {
+          if (method === 'tools/call') {
+            return Promise.resolve(toolResult);
+          }
+          readStarted?.();
+          return new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+              once: true,
+            });
+          });
+        },
+      );
+      const controller = new AbortController();
+      const call = callWith(connectionFor(request), controller.signal);
+      await started;
+      controller.abort(new DOMException('stopped', 'AbortError'));
+
+      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      expect(
+        request.mock.calls.filter(([request]) => request.method === 'tools/call'),
+      ).toHaveLength(1);
+    });
+
+    it('does not publish a late result when metadata discovery is aborted', async () => {
+      let snapshotStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        snapshotStarted = resolve;
+      });
+      const request = jest.fn().mockResolvedValue(toolResult);
+      const connection = connectionFor(request);
+      (connection.fetchToolsSnapshot as jest.Mock).mockImplementation(
+        (_deadline: unknown, signal?: AbortSignal) => {
+          snapshotStarted?.();
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
+        },
+      );
+      const controller = new AbortController();
+      const call = callWith(connection, controller.signal);
+      await started;
+      controller.abort(new DOMException('stopped', 'AbortError'));
+
+      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read or publish a late result when policy resolution is aborted', async () => {
+      let resolvePolicy: ((value: { appsEnabled: boolean }) => void) | undefined;
+      let policyStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        policyStarted = resolve;
+      });
+      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockImplementationOnce(() => {
+        policyStarted?.();
+        return new Promise<{ appsEnabled: boolean }>((resolve) => {
+          resolvePolicy = resolve;
+        });
+      });
+      const request = jest.fn().mockResolvedValue(toolResult);
+      const controller = new AbortController();
+      const call = callWith(connectionFor(request), controller.signal);
+      await started;
+      controller.abort(new DOMException('stopped', 'AbortError'));
+      resolvePolicy?.({ appsEnabled: true });
+
+      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      expect(request).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -3886,1177 +4091,382 @@ describe('MCPManager', () => {
     });
   });
 
-  describe('appToolCall - app request context', () => {
-    const mockUser: Partial<IUser> = { id: 'user-123' };
+  describe('MCP App operations', () => {
+    const user = { id: 'user-123', role: 'ADMIN' } as IUser & { id: string };
+    const flowManager = {} as Parameters<MCPManager['readResource']>[0]['flowManager'];
 
-    it('rejects when the server config needs request body placeholders unavailable to app calls', async () => {
-      const config = {
-        source: 'yaml',
-        type: 'sse',
-        url: 'https://example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
-      };
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
-      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
-        'body-server': config,
-      });
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-
-      await expect(
-        manager.appToolCall({
-          userId: 'user-123',
-          serverName: 'body-server',
-          toolName: 'do_thing',
-          toolArguments: {},
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/request body field/);
+    const context = (
+      serverName: string,
+      config: t.ParsedServerConfig,
+      extra: Partial<Parameters<MCPManager['readResource']>[0]> = {},
+    ) => ({
+      serverName,
+      user,
+      configServers: { [serverName]: config },
+      flowManager,
+      ...extra,
     });
 
-    it('preserves resolved headers for customUserVars servers when the route supplies no vars', async () => {
-      const config = {
-        source: 'yaml',
-        type: 'sse',
-        url: 'https://example.com/mcp',
-        headers: { Authorization: 'Bearer {{API_KEY}}' },
-        customUserVars: { API_KEY: { title: 'API Key' } },
-      };
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
-      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
-        'cuv-server': config,
-      });
-
-      const mockConnection = {
-        isConnected: jest.fn().mockResolvedValue(true),
-        setRequestHeaders: jest.fn(),
-        fetchToolsSnapshot: jest
-          .fn()
-          .mockResolvedValue({ tools: [{ name: 'do_thing', _meta: {} }], complete: true }),
-        timeout: 30000,
-        client: fakeClient(jest.fn().mockResolvedValue({ content: [] })),
-      } as unknown as MCPConnection;
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(mockConnection);
-
-      await manager.appToolCall({
-        userId: 'user-123',
-        serverName: 'cuv-server',
-        toolName: 'do_thing',
-        toolArguments: {},
-        user: mockUser as IUser,
-      });
-
-      expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
-      expect(mockConnection.client.request).toHaveBeenCalled();
-    });
-
-    it('resolves headers with customUserVars when the app route supplies them', async () => {
-      const config = {
-        source: 'yaml',
-        type: 'sse',
-        url: 'https://example.com/mcp',
-        headers: { Authorization: 'Bearer {{API_KEY}}' },
-        customUserVars: { API_KEY: { title: 'API Key' } },
-      };
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
-      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
-        'cuv-server': config,
-      });
-      mockProcessMCPEnv.mockImplementation((params) => ({
-        ...params.options,
-        headers: {
-          Authorization: `Bearer ${(params.customUserVars as Record<string, string>)?.API_KEY ?? '{{API_KEY}}'}`,
-        },
-      }));
-
-      const mockConnection = {
-        isConnected: jest.fn().mockResolvedValue(true),
-        setRequestHeaders: jest.fn(),
-        fetchToolsSnapshot: jest
-          .fn()
-          .mockResolvedValue({ tools: [{ name: 'do_thing', _meta: {} }], complete: true }),
-        timeout: 30000,
-        client: fakeClient(jest.fn().mockResolvedValue({ content: [] })),
-      } as unknown as MCPConnection;
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(mockConnection);
-
-      await manager.appToolCall({
-        userId: 'user-123',
-        serverName: 'cuv-server',
-        toolName: 'do_thing',
-        toolArguments: {},
-        user: mockUser as IUser,
-        customUserVars: { API_KEY: 'secret' },
-      });
-
-      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith({
-        Authorization: 'Bearer secret',
-      });
-    });
-
-    it('resolves the config with the user role and forwards flowManager/tokenMethods to getConnection', async () => {
-      const config = {
-        source: 'yaml',
-        type: 'sse',
-        url: 'https://example.com/mcp',
-      };
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
-      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
-        'cfg-server': config,
-      });
-
-      const mockConnection = {
-        isConnected: jest.fn().mockResolvedValue(true),
-        setRequestHeaders: jest.fn(),
-        fetchToolsSnapshot: jest
-          .fn()
-          .mockResolvedValue({ tools: [{ name: 'do_thing', _meta: {} }], complete: true }),
-        timeout: 30000,
-        client: fakeClient(jest.fn().mockResolvedValue({ content: [] })),
-      } as unknown as MCPConnection;
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const getConnectionSpy = jest
-        .spyOn(manager, 'getConnection')
-        .mockResolvedValue(mockConnection);
-
-      const flowManager = {} as never;
-      const tokenMethods = {} as never;
-      const configServers = { 'cfg-server': { type: 'sse', url: 'https://x' } } as never;
-
-      await manager.appToolCall({
-        userId: 'user-123',
-        serverName: 'cfg-server',
-        toolName: 'do_thing',
-        toolArguments: {},
-        user: { ...mockUser, role: 'ADMIN' } as IUser,
-        configServers,
-        flowManager,
-        tokenMethods,
-      });
-
-      // Role-aware lookup: a server shared to the user's role must resolve for app follow-ups.
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
-        'user-123',
-        configServers,
-        'ADMIN',
-      );
-      expect(getConnectionSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ flowManager, tokenMethods }),
-      );
-    });
-
-    it('proxies resources/list through the app connection', async () => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
-        source: 'yaml',
-        type: 'sse',
-        url: 'https://example.com/mcp',
-      });
-
-      const request = jest.fn().mockResolvedValue({ resources: [{ uri: 'file://a' }] });
-      const mockConnection = {
-        isConnected: jest.fn().mockResolvedValue(true),
-        setRequestHeaders: jest.fn(),
-        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
-        timeout: 30000,
-        client: fakeClient(request),
-      } as unknown as MCPConnection;
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(mockConnection);
-
-      const result = await manager.listResources({
-        userId: 'user-123',
-        serverName: 'srv',
-        user: mockUser as IUser,
-        cursor: 'next',
-      });
-
-      expect(request).toHaveBeenCalledWith(
-        expect.objectContaining({ method: 'resources/list', params: { cursor: 'next' } }),
-        expect.anything(),
-        expect.anything(),
-      );
-      expect(result).toEqual({ resources: [{ uri: 'file://a' }] });
-    });
-  });
-
-  describe('readResource - app resource authorization', () => {
-    const mockUser: Partial<IUser> = { id: 'user-123' };
-
-    const buildConnection = (request: jest.Mock, fetchToolsSnapshot?: jest.Mock) =>
+    const connection = (request: jest.Mock, tools = [{ name: 'do_thing', _meta: {} }]) =>
       ({
+        createdAt: 1,
+        toolListVersion: 1,
         isConnected: jest.fn().mockResolvedValue(true),
+        getLastConnectionCheckError: jest.fn(),
         setRequestHeaders: jest.fn(),
-        fetchToolsSnapshot:
-          fetchToolsSnapshot ?? jest.fn().mockResolvedValue({ tools: [], complete: true }),
-        timeout: 30000,
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools, complete: true }),
+        timeout: 30_000,
         client: fakeClient(request),
       }) as unknown as MCPConnection;
 
-    const uiTool = (name: string, resourceUri: string) => ({
-      name,
-      _meta: { ui: { resourceUri } },
+    it.each([
+      {
+        name: 'OBO',
+        config: {
+          source: 'yaml',
+          type: 'sse',
+          url: 'https://example.com/mcp',
+          obo: { audience: 'api://mcp' },
+        },
+        message: /OBO token resolution/,
+      },
+      {
+        name: 'Graph',
+        config: {
+          source: 'yaml',
+          type: 'sse',
+          url: 'https://example.com/mcp',
+          headers: { Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}' },
+        },
+        message: /Graph API token resolution/,
+      },
+      {
+        name: 'BODY',
+        config: {
+          source: 'yaml',
+          type: 'sse',
+          url: 'https://example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+        },
+        message: /request body field/,
+      },
+    ])(
+      'rejects unsupported $name configuration before connection checkout',
+      async ({ config, message }) => {
+        (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const getConnection = jest.spyOn(manager, 'getConnection');
+
+        await expect(
+          manager.readResource({
+            ...context('srv', config as t.ParsedServerConfig),
+            uri: 'data://catalog/42',
+          }),
+        ).rejects.toThrow(message);
+        expect(getConnection).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a server outside the authenticated user and role config set before checkout', async () => {
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getConnection = jest.spyOn(manager, 'getConnection');
+
+      await expect(
+        manager.listResources({
+          ...context('srv', { type: 'sse', url: 'https://example.com/mcp' }),
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.InvalidRequest });
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
+        user.id,
+        expect.any(Object),
+        user.role,
+      );
+      expect(getConnection).not.toHaveBeenCalled();
     });
 
-    const advertisingRequest = (readResult: unknown) =>
-      jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [{ uri: 'file://allowed.txt' }] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'db://items/{id}' }] });
-        }
-        return Promise.resolve(readResult);
-      });
-
-    beforeEach(() => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+    it('uses the normal checkout path for an existing standard OAuth connection', async () => {
+      const config = {
         source: 'yaml',
         type: 'sse',
         url: 'https://example.com/mcp',
-      });
+        requiresOAuth: true,
+        oauth: { client_id: 'client' },
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const request = jest.fn().mockResolvedValue({ resources: [] });
+      const appConnection = connection(request);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getConnection = jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+
+      await manager.listResources(context('srv', config));
+
+      expect(getConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user,
+          serverConfig: config,
+          flowManager,
+        }),
+      );
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'resources/list' }),
+        ListResourcesResultSchema,
+        expect.any(Object),
+      );
     });
 
-    it('proxies a tool-declared ui:// resource without consulting the advertised list', async () => {
-      // Servers MAY omit UI-only resources from resources/list, so the tool declaration alone has to
-      // authorize the read; consulting the advertised list would break the mainline app shape.
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [{ uri: 'file://other' }] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [{ uri: 'ui://app/main' }] });
+    it('forwards an opaque auxiliary URI to the same authenticated server without local template inference', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const request = jest.fn().mockResolvedValue({
+        contents: [{ uri: 'data://catalog/part%2Fleaf', text: 'leaf' }],
       });
+      const appConnection = connection(request);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+
+      await manager.readResource({
+        ...context('srv', config),
+        uri: 'data://catalog/part%2Fleaf',
+      });
+
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith(
+        {
+          method: 'resources/read',
+          params: { uri: 'data://catalog/part%2Fleaf' },
+        },
+        ReadResourceResultSchema,
+        expect.objectContaining({ timeout: 30_000 }),
+      );
+    });
+
+    it('binds the authenticated user and role, forwards cancellation, and awaits activity renewal', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        headers: { 'X-User': '{{LIBRECHAT_USER_ID}}' },
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const request = jest.fn().mockResolvedValue({ resources: [] });
+      const appConnection = connection(request);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const activity = jest
+        .spyOn(
+          manager as unknown as { updateUserLastActivity: (userId: string) => Promise<void> },
+          'updateUserLastActivity',
+        )
+        .mockResolvedValue();
+      (
+        manager as unknown as {
+          userConnections: Map<string, Map<string, MCPConnection>>;
+        }
+      ).userConnections.set(user.id, new Map([['srv', appConnection]]));
+      const signal = new AbortController().signal;
+
+      await manager.listResources({ ...context('srv', config, { signal }), cursor: 'next' });
+
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
+        user.id,
+        { srv: config },
+        user.role,
+      );
+      expect(manager.getConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ user, serverConfig: config, signal }),
+      );
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'resources/list', params: { cursor: 'next' } }),
+        ListResourcesResultSchema,
+        expect.objectContaining({ signal }),
+      );
+      expect(activity).toHaveBeenCalledWith(user.id);
+    });
+
+    it('releases the connection lease when an SDK operation fails', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const failure = new Error('provider unavailable');
+      const appConnection = connection(jest.fn().mockRejectedValue(failure));
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const retain = jest.spyOn(
+        manager as unknown as { retainConnection: (value: MCPConnection) => void },
+        'retainConnection',
+      );
+      const release = jest.spyOn(
+        manager as unknown as { releaseConnection: (value: MCPConnection) => Promise<void> },
+        'releaseConnection',
+      );
+
+      await expect(
+        manager.readResource({ ...context('srv', config), uri: 'data://catalog/42' }),
+      ).rejects.toBe(failure);
+      expect(retain).toHaveBeenCalledWith(appConnection);
+      expect(release).toHaveBeenCalledWith(appConnection);
+    });
+
+    it('uses the existing direct OpenID recovery coordinator and retries once after releasing', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const request = jest
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error('Unauthorized'), { status: 401 }))
+        .mockResolvedValueOnce({ resources: [] });
+      const appConnection = connection(request);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const release = jest.spyOn(
+        manager as unknown as { releaseConnection: (value: MCPConnection) => Promise<void> },
+        'releaseConnection',
+      );
+      const recover = jest
+        .spyOn(
+          manager as unknown as {
+            recoverDirectOpenIDBearerConnection: (args: object) => Promise<void>;
+          },
+          'recoverDirectOpenIDBearerConnection',
+        )
+        .mockResolvedValue();
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'current-token' });
+
+      await manager.listResources({
+        ...context('srv', config, { upstreamTokenProvider }),
+      });
+
+      expect(recover).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: appConnection,
+          serverName: 'srv',
+          serverConfig: config,
+          user,
+          upstreamTokenProvider,
+        }),
+      );
+      expect(release.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[1]);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('reacquires after lifecycle eviction while direct OpenID refresh is in flight', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const stale = Object.assign(
+        connection(
+          jest.fn().mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 })),
+        ),
+        {
+          dispose: jest.fn().mockResolvedValue(undefined),
+          removeAllListeners: jest.fn(),
+          stopReconnecting: jest.fn(),
+        },
+      );
+      const replacementRequest = jest.fn().mockResolvedValue({ resources: [] });
+      const replacement = connection(replacementRequest);
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       jest
         .spyOn(manager, 'getConnection')
+        .mockResolvedValueOnce(stale)
+        .mockResolvedValueOnce(replacement);
+      const createReplacement = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(replacement);
+      (
+        manager as unknown as {
+          userConnections: Map<string, Map<string, MCPConnection>>;
+        }
+      ).userConnections.set(user.id, new Map([['srv', stale]]));
+      let refreshStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        refreshStarted = resolve;
+      });
+      let finishRefresh!: (tokens: { access_token: string }) => void;
+      const refresh = new Promise<{ access_token: string }>((resolve) => {
+        finishRefresh = resolve;
+      });
+      const upstreamTokenProvider = jest
+        .fn()
+        .mockResolvedValueOnce({ access_token: 'stale-token' })
+        .mockImplementationOnce(() => {
+          refreshStarted();
+          return refresh;
+        });
+
+      const result = manager.listResources({
+        ...context('srv', config, { upstreamTokenProvider }),
+      });
+      await started;
+      await manager.disconnectUserConnection(user.id, 'srv', { reason: 'lifecycle' });
+      expect(stale.dispose).toHaveBeenCalledTimes(1);
+      finishRefresh({ access_token: 'fresh-token' });
+
+      await expect(result).resolves.toEqual({ resources: [] });
+      expect(createReplacement).toHaveBeenCalledWith(
+        expect.objectContaining({ forceNew: true, serverName: 'srv', user }),
+      );
+      expect(replacementRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('enforces app tool visibility and returns the standard raw call result', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      } as t.ParsedServerConfig;
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({ srv: config });
+      const visibleRequest = jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'done' }],
+      });
+      const visibleConnection = connection(visibleRequest);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(visibleConnection);
+      const signal = new AbortController().signal;
+
+      await expect(
+        manager.appToolCall({
+          ...context('srv', config, { signal }),
+          toolName: 'do_thing',
+          toolArguments: { value: 1 },
+        }),
+      ).resolves.toEqual({ content: [{ type: 'text', text: 'done' }] });
+      expect(visibleConnection.fetchToolsSnapshot).toHaveBeenCalledWith(undefined, signal);
+
+      (MCPManager as unknown as { instance: null }).instance = null;
+      const hiddenRequest = jest.fn();
+      const hiddenManager = await MCPManager.createInstance(newMCPServersConfig());
+      jest
+        .spyOn(hiddenManager, 'getConnection')
         .mockResolvedValue(
-          buildConnection(
-            request,
-            jest
-              .fn()
-              .mockResolvedValue({ tools: [uiTool('show', 'ui://app/main')], complete: true }),
-          ),
+          connection(hiddenRequest, [
+            { name: 'do_thing', _meta: { ui: { visibility: ['model'] } } },
+          ]),
         );
 
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://app/main',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toEqual(['resources/read']);
-    });
-
-    it('allows a ui:// resource declared by a different tool on the same connection', async () => {
-      // apps.mdx scopes app privileges to the server connection, not to the originating tool.
-      const request = jest.fn().mockResolvedValue({ contents: [] });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(
-        buildConnection(
-          request,
-          jest.fn().mockResolvedValue({
-            tools: [uiTool('a', 'ui://app/other'), uiTool('b', 'ui://app/main')],
-            complete: true,
-          }),
-        ),
-      );
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://app/main',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it.each([
-      'ui://admin/private',
-      'ui://app/main/../../admin',
-      'ui://app/%2e%2e/admin',
-      'ui://app/%252e%252e/admin',
-      'ui://app/main?x=1',
-      'ui://app/main#f',
-      'ui://',
-      'UI://app/main',
-    ])('denies the undeclared and unadvertised ui:// resource %s', async (uri) => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest
-        .spyOn(manager, 'getConnection')
-        .mockResolvedValue(
-          buildConnection(
-            request,
-            jest
-              .fn()
-              .mockResolvedValue({ tools: [uiTool('show', 'ui://app/main')], complete: true }),
-          ),
-        );
-
       await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri,
-          user: mockUser as IUser,
+        hiddenManager.appToolCall({
+          ...context('srv', config),
+          toolName: 'do_thing',
+          toolArguments: {},
         }),
-      ).rejects.toThrow(/not advertised/);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).not.toContain('resources/read');
-    });
-
-    it('allows a ui:// resource that only resources/list advertises', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [{ uri: 'ui://listed/view' }] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://listed/view',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('allows a ui:// resource that only an advertised template matches', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'ui://app/{view}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://app/dashboard',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('denies on a transient tools/list failure and allows once it recovers', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const fetchToolsSnapshot = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('tools/list unavailable'))
-        .mockResolvedValue({ tools: [uiTool('show', 'ui://app/main')], complete: true });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest
-        .spyOn(manager, 'getConnection')
-        .mockResolvedValue(buildConnection(request, fetchToolsSnapshot));
-
-      const args = {
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://app/main',
-        user: mockUser as IUser,
-      };
-      await expect(manager.readResource(args)).rejects.toMatchObject({
-        code: ErrorCode.InvalidRequest,
-      });
-      // The empty tool cache is never cached as authoritative, so the denial is not sticky.
-      await manager.readResource(args);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('does not cache a partial tool snapshot as authoritative', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const fetchToolsSnapshot = jest
-        .fn()
-        .mockResolvedValueOnce({ tools: [uiTool('first', 'ui://app/first')], complete: false })
-        .mockResolvedValue({
-          tools: [uiTool('first', 'ui://app/first'), uiTool('show', 'ui://app/main')],
-          complete: true,
-        });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest
-        .spyOn(manager, 'getConnection')
-        .mockResolvedValue(buildConnection(request, fetchToolsSnapshot));
-
-      const args = {
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'ui://app/main',
-        user: mockUser as IUser,
-      };
-      await expect(manager.readResource(args)).rejects.toMatchObject({
-        code: ErrorCode.InvalidRequest,
-      });
-      await manager.readResource(args);
-
-      expect(fetchToolsSnapshot).toHaveBeenCalledTimes(2);
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('allows an advertised uri containing a bare percent sign', async () => {
-      // The exact-match check must stay above canonicalization: `db://100%` cannot be decoded.
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [{ uri: 'db://100%' }] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'db://100%',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('proxies a non-ui:// resource the server advertises', async () => {
-      const request = advertisingRequest({ contents: [{ uri: 'file://allowed.txt' }] });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'file://allowed.txt',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('allows a resource matching an advertised URI template', async () => {
-      const request = advertisingRequest({ contents: [] });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'db://items/42',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('rejects a non-ui:// resource the server does not advertise', async () => {
-      const request = advertisingRequest({ contents: [] });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file:///etc/passwd',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/not advertised/);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).not.toContain('resources/read');
-    });
-
-    it('rejects a percent-encoded path traversal even when a broad template would match', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'file://docs{+path}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://docs/%2e%2e%2fsecret',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/not advertised/);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).not.toContain('resources/read');
-    });
-
-    it('rejects traversal encoded more deeply than the decode cap rather than treating it as canonical', async () => {
-      let traversal = '%2e%2e%2f';
-      for (let i = 0; i < 6; i++) {
-        traversal = traversal.replace(/%/g, '%25');
-      }
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'file://docs{+path}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: `file://docs/${traversal}secret`,
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/not advertised/);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).not.toContain('resources/read');
-    });
-
-    it('rejects a query value that smuggles an undeclared parameter past a simple-variable template', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'search://items?q={q}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'search://items?q=foo&admin=true',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/not advertised/);
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).not.toContain('resources/read');
-    });
-
-    it('allows a single query value that matches a simple-variable template', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'search://items?q={q}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'search://items?q=foo',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('authorizes a template match when the server does not implement resources/list', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.reject(new Error('Method not found'));
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'db://items/{id}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'db://items/42',
-        user: mockUser as IUser,
-      });
-
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    const templateOnlyRequest = (uriTemplate: string) =>
-      jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({ resources: [] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-
-    const templateCases: Array<{ uriTemplate: string; uri: string; allowed: boolean }> = [
-      { uriTemplate: 'files://root{/id}', uri: 'files://root/private/secret', allowed: false },
-      { uriTemplate: 'files://root{/id}', uri: 'files://root/42', allowed: true },
-      { uriTemplate: 'files://root{/id}', uri: 'files://root/a,b', allowed: true },
-      { uriTemplate: 'files://root{/id*}', uri: 'files://root/a/b/c', allowed: true },
-      { uriTemplate: 'files://root{/a,b}', uri: 'files://root/x/y', allowed: true },
-      { uriTemplate: 'files://root{/a,b}', uri: 'files://root/x/y/z', allowed: false },
-      { uriTemplate: 'files://root{/id}/meta', uri: 'files://root/a/meta', allowed: true },
-      { uriTemplate: 'files://root{/id}/meta', uri: 'files://root/a/b/meta', allowed: false },
-      { uriTemplate: 'file://docs{+path}', uri: 'file://docs/deep/nested/x', allowed: true },
-      { uriTemplate: 'file://docs{+path}', uri: 'file://docs/%2e%2e%2fsecret', allowed: false },
-      { uriTemplate: 'x://a{.fmt}', uri: 'x://a.json', allowed: true },
-      { uriTemplate: 'x://a{.fmt}', uri: 'x://a.json.bak', allowed: true },
-      { uriTemplate: 'search://items?q={q}', uri: 'search://items?q=foo', allowed: true },
-      {
-        uriTemplate: 'search://items?q={q}',
-        uri: 'search://items?q=foo&admin=true',
-        allowed: false,
-      },
-      { uriTemplate: 'db://items/{id}', uri: 'db://items/42', allowed: true },
-      // `;` is pinned to the declared names and bounded by their count, so a path-style parameter
-      // template cannot authorize an undeclared one.
-      { uriTemplate: 'db://items{;id}', uri: 'db://items;id=1', allowed: true },
-      { uriTemplate: 'db://items{;id}', uri: 'db://items;id', allowed: true },
-      { uriTemplate: 'db://items{;id}', uri: 'db://items;admin=true', allowed: false },
-      { uriTemplate: 'db://items{;id}', uri: 'db://items;id=1;admin=true', allowed: false },
-      { uriTemplate: 'db://items{;id}', uri: 'db://items;id=a;b', allowed: false },
-      { uriTemplate: 'db://items{;id}', uri: 'db://items?admin=true', allowed: false },
-      { uriTemplate: 'api://x{;a,b}', uri: 'api://x;a=1;b=2', allowed: true },
-      { uriTemplate: 'api://x{;a,b}', uri: 'api://x;a=1;b=2;c=3', allowed: false },
-      { uriTemplate: 'api://x{;p*}', uri: 'api://x;p=1;p=2', allowed: true },
-      { uriTemplate: 'db://items{;id,identity}', uri: 'db://items;identity=x', allowed: true },
-      // RFC 6570 3.2.8/3.2.9: a non-exploded query variable contributes one `key=value` pair, in
-      // declared order, so duplicates, reordering and undeclared keys are all unproducible.
-      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=42', allowed: true },
-      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=public&id=admin', allowed: false },
-      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=1&admin=true', allowed: false },
-      { uriTemplate: 'db://items{?id}', uri: 'db://items', allowed: false },
-      { uriTemplate: 'db://items{?id*}', uri: 'db://items?id=1&id=2', allowed: true },
-      { uriTemplate: 'db://items{?id*}', uri: 'db://items?id=1&other=2', allowed: false },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&b=2', allowed: true },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1', allowed: true },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?b=2', allowed: true },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?b=2&a=1', allowed: false },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&a=2', allowed: false },
-      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&b=2&c=3', allowed: false },
-      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&a=1&b=2', allowed: true },
-      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&b=2', allowed: true },
-      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&b=2&a=1', allowed: false },
-      { uriTemplate: 'api://x?f=1{&a}', uri: 'api://x?f=1&a=1&a=2', allowed: false },
-      // The bound is per varspec, not per key name: a literal pair the template already carries plus
-      // one expansion of the same name is a URI the template does produce.
-      { uriTemplate: 'api://x?a=1{&a}', uri: 'api://x?a=1&a=2', allowed: true },
-      // A `:max-length` prefix bounds each key's own value inside that bounded sequence.
-      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=ab&b=anything', allowed: true },
-      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=abc&b=anything', allowed: false },
-      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?b=anything', allowed: true },
-      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=ab&a=cd', allowed: false },
-      { uriTemplate: 'api://x{?a:3*}', uri: 'api://x?a=foo', allowed: false },
-      // Same conservative ceiling as the other ordered chains.
-      {
-        uriTemplate: `api://x{?${Array.from({ length: 9 }, (_, i) => `v${i}`).join(',')}}`,
-        uri: 'api://x?v0=1',
-        allowed: false,
-      },
-      // Malformed expressions authorize nothing rather than falling back to an open query string.
-      { uriTemplate: 'db://x{?}', uri: 'db://x?a=1', allowed: false },
-      { uriTemplate: 'db://x{&}', uri: 'db://x&a=1', allowed: false },
-      { uriTemplate: 'db://x{}', uri: 'db://x', allowed: false },
-      { uriTemplate: 'db://x{*}', uri: 'db://xy', allowed: false },
-      { uriTemplate: 'db://x{?:3}', uri: 'db://x?a=1', allowed: false },
-      // RFC 6570 §2.2 reserved operators have no defined expansion.
-      { uriTemplate: 'db://x{=v}', uri: 'db://xv', allowed: false },
-      { uriTemplate: 'db://x{,v}', uri: 'db://xv', allowed: false },
-      { uriTemplate: 'db://x{!v}', uri: 'db://xv', allowed: false },
-      { uriTemplate: 'db://x{@v}', uri: 'db://xv', allowed: false },
-      { uriTemplate: 'db://x{|v}', uri: 'db://xv', allowed: false },
-      // An exploded label repeats a dot-excluded unit, which still spans multiple labels.
-      { uriTemplate: 'x://a{.fmt*}', uri: 'x://a.json.bak', allowed: true },
-      // RFC 6570 2.4.1: a `:max-length` prefix caps the expanded value's character count, so a
-      // longer value is not something the advertised template can produce.
-      { uriTemplate: 'db://items/{id:3}', uri: 'db://items/42', allowed: true },
-      { uriTemplate: 'db://items/{id:3}', uri: 'db://items/abc', allowed: true },
-      { uriTemplate: 'db://items/{id:3}', uri: 'db://items/admin', allowed: false },
-      { uriTemplate: 'db://items/{id:1}', uri: 'db://items/4', allowed: true },
-      { uriTemplate: 'db://items/{id:1}', uri: 'db://items/42', allowed: false },
-      { uriTemplate: 'file://docs{+path:5}', uri: 'file://docs/a/b', allowed: true },
-      { uriTemplate: 'file://docs{+path:5}', uri: 'file://docs/deep/nested', allowed: false },
-      { uriTemplate: 'files://root{/seg:2}', uri: 'files://root/ab', allowed: true },
-      { uriTemplate: 'files://root{/seg:2}', uri: 'files://root/private', allowed: false },
-      { uriTemplate: 'x://a{.x:4}', uri: 'x://a.json', allowed: true },
-      { uriTemplate: 'x://a{.x:4}', uri: 'x://a.jsonnet', allowed: false },
-      { uriTemplate: 'db://items{;k:3}', uri: 'db://items;k=1', allowed: true },
-      { uriTemplate: 'db://items{;k:3}', uri: 'db://items;k', allowed: true },
-      { uriTemplate: 'db://items{;k:3}', uri: 'db://items;k=admin', allowed: false },
-      { uriTemplate: 'search://items?q={q:3}', uri: 'search://items?q=foo', allowed: true },
-      { uriTemplate: 'search://items{?q:3}', uri: 'search://items?q=foo', allowed: true },
-      { uriTemplate: 'search://items{?q:3}', uri: 'search://items?q=foobar', allowed: false },
-      { uriTemplate: 'search://items?a=1{&q:3}', uri: 'search://items?a=1&q=foo', allowed: true },
-      {
-        uriTemplate: 'search://items?a=1{&q:3}',
-        uri: 'search://items?a=1&q=foobar',
-        allowed: false,
-      },
-      // A prefixed variable and an unprefixed one keep their own bounds, and an undefined leading
-      // variable lets a later one supply the only component.
-      { uriTemplate: 'files://root{/a:2,b}', uri: 'files://root/admin', allowed: true },
-      { uriTemplate: 'files://root{/a:2,b}', uri: 'files://root/ab/admin', allowed: true },
-      { uriTemplate: 'files://root{/a:2,b}', uri: 'files://root/toolong/admin', allowed: false },
-      { uriTemplate: 'search://x{?a:2,b}', uri: 'search://x?a=ab&b=anything', allowed: true },
-      { uriTemplate: 'search://x{?a:2,b}', uri: 'search://x?a=toolong', allowed: false },
-      // A prefix larger than any plausible value cannot deny a legitimate expansion.
-      { uriTemplate: 'db://items/{id:9999}', uri: `db://items/${'x'.repeat(2000)}`, allowed: true },
-      // RFC 6570 2.4 allows one modifier per varspec, so a prefixed explode is not a valid varspec,
-      // and neither is a zero, oversized, or non-numeric max-length.
-      { uriTemplate: 'db://items/{id:3*}', uri: 'db://items/42', allowed: false },
-      { uriTemplate: 'db://items/{id:0}', uri: 'db://items/42', allowed: false },
-      { uriTemplate: 'db://items/{id:10000}', uri: 'db://items/42', allowed: false },
-      { uriTemplate: 'db://items/{id:abc}', uri: 'db://items/42', allowed: false },
-      { uriTemplate: 'db://items/{:3}', uri: 'db://items/42', allowed: false },
-      // The ordered chain is quadratic in the declared variables, so an oversized prefixed list
-      // authorizes nothing instead of being compiled on every read.
-      {
-        uriTemplate: `files://root{/${Array.from({ length: 9 }, (_, i) => `v${i}:2`).join(',')}}`,
-        uri: 'files://root/ab',
-        allowed: false,
-      },
-    ];
-
-    it.each(templateCases)(
-      'template $uriTemplate authorizes $uri: $allowed',
-      async ({ uriTemplate, uri, allowed }) => {
-        const request = templateOnlyRequest(uriTemplate);
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
-        jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-        const read = manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri,
-          user: mockUser as IUser,
-        });
-
-        if (allowed) {
-          await read;
-        } else {
-          await expect(read).rejects.toThrow(/not advertised/);
-        }
-
-        const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-        expect(methods.includes('resources/read')).toBe(allowed);
-      },
-    );
-
-    it('fails closed on a template RE2 cannot compile', async () => {
-      const names = Array.from({ length: 2000 }, (_, index) => `v${index}`).join(',');
-      const request = templateOnlyRequest(`x://a{/${names}}`);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'x://a/1',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/not advertised/);
-    });
-
-    it.each([
-      { uriTemplate: 'x://a{.fmt*}', uri: `x://a${'.a'.repeat(28)}/` },
-      { uriTemplate: `a://b${'{v}'.repeat(12)}`, uri: `a://b${'x'.repeat(40)}/` },
-    ])(
-      'denies $uriTemplate against a catastrophic input within the time budget',
-      async ({ uriTemplate, uri }) => {
-        const request = templateOnlyRequest(uriTemplate);
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
-        jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-        const started = Date.now();
-        await expect(
-          manager.readResource({
-            userId: 'user-123',
-            serverName: 'srv',
-            uri,
-            user: mockUser as IUser,
-          }),
-        ).rejects.toThrow(/not advertised/);
-        // Both halves are attacker-supplied, so evaluation has to be linear-time; the same shapes take
-        // seconds to tens of seconds on a backtracking engine.
-        expect(Date.now() - started).toBeLessThan(200);
-      },
-    );
-
-    it('does not adopt the SDK UriTemplate, which authorizes undeclared query and fragment parts', () => {
-      // Locks the decision: the SDK matcher recovers variables from a URI the server already routed,
-      // so it over-allows where this guard must deny. Adopting it would reopen both cases below.
-      expect(
-        new UriTemplate('search://items?q={q}').match('search://items?q=foo&admin=true'),
-      ).not.toBeNull();
-      expect(new UriTemplate('files://root{+path}').match('files://root/x?y=z#f')).not.toBeNull();
-    });
-
-    const cacheKeys = (manager: MCPManager): string[][] => {
-      const caches = manager as unknown as {
-        resourceUriCache: Map<string, unknown>;
-        appHiddenToolCache: Map<string, unknown>;
-        knownToolNamesCache: Map<string, unknown>;
-        toolCacheConnStamp: Map<string, unknown>;
-        advertisedResourceCache: Map<string, unknown>;
-        advertisedResourceConnStamp: Map<string, unknown>;
-      };
-      return [
-        [...caches.resourceUriCache.keys()],
-        [...caches.appHiddenToolCache.keys()],
-        [...caches.knownToolNamesCache.keys()],
-        [...caches.toolCacheConnStamp.keys()],
-        [...caches.advertisedResourceCache.keys()],
-        [...caches.advertisedResourceConnStamp.keys()],
-      ];
-    };
-
-    const readBoth = async (manager: MCPManager, userId: string) => {
-      for (const uri of ['ui://app/main', 'db://items/42']) {
-        await manager.readResource({
-          userId,
-          serverName: 'srv',
-          uri,
-          user: { id: userId } as IUser,
-        });
-      }
-    };
-
-    it('does not grow the metadata caches per user on a shared app-level connection', async () => {
-      const request = templateOnlyRequest('db://items/{id}');
-      const snapshot = jest
-        .fn()
-        .mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
-      const shared = buildConnection(request, snapshot);
-      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(shared) });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(shared);
-
-      for (const userId of ['u1', 'u2', 'u3', 'u4', 'u5']) {
-        await readBoth(manager, userId);
-      }
-
-      for (const keys of cacheKeys(manager)) {
-        expect(keys).toEqual(['srv:']);
-      }
-      expect(snapshot).toHaveBeenCalledTimes(1);
-      expect(
-        request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'resources/list'),
-      ).toHaveLength(1);
-    });
-
-    it('scopes by connection identity when one user falls back to its own connection', async () => {
-      // getConnection hands an app-level server's connection to most users but falls back to a
-      // user connection when the app one is unavailable, so the scope has to follow the instance.
-      const snapshot = () =>
-        jest.fn().mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
-      const shared = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
-      const ownConnection = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
-      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(shared) });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest
-        .spyOn(manager, 'getConnection')
-        .mockImplementation(async ({ user }) => (user?.id === 'u2' ? ownConnection : shared));
-
-      await readBoth(manager, 'u1');
-      await readBoth(manager, 'u2');
-      await readBoth(manager, 'u3');
-
-      for (const keys of cacheKeys(manager)) {
-        expect(keys).toEqual(['srv:', 'srv:u2']);
-      }
-    });
-
-    it('keeps per-user cache entries for user-scoped connections', async () => {
-      const snapshot = () =>
-        jest.fn().mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
-      const first = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
-      const second = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
-      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(undefined) });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest
-        .spyOn(manager, 'getConnection')
-        .mockImplementation(async ({ user }) => (user?.id === 'u1' ? first : second));
-
-      await readBoth(manager, 'u1');
-      await readBoth(manager, 'u2');
-
-      for (const keys of cacheKeys(manager)) {
-        expect(keys).toEqual(['srv:u1', 'srv:u2']);
-      }
-    });
-
-    const pagedListRequest = (pages: number, pageSize = 1, nextCursor: () => string = () => 'c') =>
-      jest.fn().mockImplementation((req: { method: string; params?: { cursor?: string } }) => {
-        if (req.method === 'resources/list') {
-          const page = Number(req.params?.cursor ?? '0');
-          return Promise.resolve({
-            resources: Array.from({ length: pageSize }, (_, index) => ({
-              uri: `file://p${page}-${index}`,
-            })),
-            nextCursor: page + 1 < pages ? String(page + 1) : nextCursor(),
-          });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-
-    it('reports a truncated snapshot in the denial and warns once', async () => {
-      const request = pagedListRequest(25);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-      (logger.warn as jest.Mock).mockClear();
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://missing',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/could not be fully enumerated/);
-
-      const listCalls = request.mock.calls.filter(
-        (c) => (c[0] as { method: string }).method === 'resources/list',
-      );
-      expect(listCalls).toHaveLength(20);
-      expect(
-        (logger.warn as jest.Mock).mock.calls.filter((c) =>
-          String(c[0]).includes('snapshot is incomplete'),
-        ),
-      ).toHaveLength(1);
-    });
-
-    it('treats an empty nextCursor as the end of pagination', async () => {
-      const request = pagedListRequest(1, 1, () => '');
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://missing',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/is not advertised by the server and cannot be read by an app\.$/);
-
-      const listCalls = request.mock.calls.filter(
-        (c) => (c[0] as { method: string }).method === 'resources/list',
-      );
-      expect(listCalls).toHaveLength(1);
-    });
-
-    it('stops collecting advertised uris at the entry cap', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.resolve({
-            resources: Array.from({ length: 6000 }, (_, index) => ({ uri: `file://e${index}` })),
-          });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://e5999',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/could not be fully enumerated/);
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'file://e0',
-        user: mockUser as IUser,
-      });
-    });
-
-    it('re-lists advertised resources only after the resources/list_changed counter moves', async () => {
-      const request = advertisingRequest({ contents: [] });
-      const connection = buildConnection(request);
-      (connection as { resourceListVersion?: number }).resourceListVersion = 0;
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
-
-      const read = () =>
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://allowed.txt',
-          user: mockUser as IUser,
-        });
-      const listCallCount = () =>
-        request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'resources/list')
-          .length;
-
-      await read();
-      expect(listCallCount()).toBe(1);
-      await read();
-      expect(listCallCount()).toBe(1);
-
-      (connection as { resourceListVersion: number }).resourceListVersion += 1;
-      await read();
-      expect(listCallCount()).toBe(2);
-    });
-
-    it('re-lists after a transient resources/list failure instead of caching the partial snapshot', async () => {
-      let listCalls = 0;
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          listCalls += 1;
-          if (listCalls === 1) {
-            return Promise.reject(new Error('transport reset'));
-          }
-          return Promise.resolve({ resources: [{ uri: 'file://allowed.txt' }] });
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      const args = {
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'file://allowed.txt',
-        user: mockUser as IUser,
-      };
-      await expect(manager.readResource(args)).rejects.toMatchObject({
-        code: ErrorCode.InvalidRequest,
-      });
-      await manager.readResource(args);
-
-      expect(listCalls).toBe(2);
-      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toContain('resources/read');
-    });
-
-    it('caches a template-only server that does not implement resources/list', async () => {
-      const request = jest.fn().mockImplementation((req: { method: string }) => {
-        if (req.method === 'resources/list') {
-          return Promise.reject(new McpError(ErrorCode.MethodNotFound, 'Method not found'));
-        }
-        if (req.method === 'resources/templates/list') {
-          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'db://items/{id}' }] });
-        }
-        return Promise.resolve({ contents: [] });
-      });
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
-
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'db://items/42',
-        user: mockUser as IUser,
-      });
-      await manager.readResource({
-        userId: 'user-123',
-        serverName: 'srv',
-        uri: 'db://items/43',
-        user: mockUser as IUser,
-      });
-      // An unimplemented method is not a failure to enumerate, so the denial carries no truncation
-      // caveat and the snapshot is reused.
-      await expect(
-        manager.readResource({
-          userId: 'user-123',
-          serverName: 'srv',
-          uri: 'file://secret',
-          user: mockUser as IUser,
-        }),
-      ).rejects.toThrow(/is not advertised by the server and cannot be read by an app\.$/);
-
-      const listCalls = request.mock.calls.filter(
-        (c) => (c[0] as { method: string }).method === 'resources/list',
-      );
-      expect(listCalls).toHaveLength(1);
+      ).rejects.toMatchObject({ code: ErrorCode.InvalidRequest });
+      expect(hiddenRequest).not.toHaveBeenCalled();
     });
   });
 

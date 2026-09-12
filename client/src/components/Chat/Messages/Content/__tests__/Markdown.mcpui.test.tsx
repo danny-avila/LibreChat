@@ -11,31 +11,10 @@ jest.mock('~/hooks/Messages/useConversationUIResources', () => ({
   useConversationUIResources: jest.fn(),
 }));
 
-jest.mock('~/Providers', () => ({
-  ...jest.requireActual('~/Providers'),
-  useIsMessagesViewReadOnly: jest.fn(() => false),
-}));
-
-jest.mock('~/utils/mcpApps', () => ({
-  getInlineResourceHtml: (resource: { text?: string }) => resource?.text,
-  isMcpAppResource: (resource: { toolName?: string; serverName?: string; mimeType?: string }) =>
-    !!(resource?.toolName && resource?.serverName) &&
-    jest.requireActual('librechat-data-provider').isMcpAppMimeType(resource.mimeType),
-  buildAppToolResult: jest.fn(),
-  getMCPSandboxUrl: () => 'http://localhost/sandbox',
-  getResourceKey: (resource: { resourceId?: string; uri?: string }) =>
-    resource?.resourceId || resource?.uri || '',
-  clampAppViewHeight: (height?: number) => height,
-  MAX_CAROUSEL_VIEW_HEIGHT: 720,
-  callMCPAppTool: jest.fn(),
-  readMCPResource: jest.fn(),
-  fetchMCPResourceHtml: jest.fn(),
-}));
-
-jest.mock('~/hooks/MCP', () => ({
-  useAppBridge: jest.fn(),
-  useMCPAppFrame: jest.requireActual('~/hooks/MCP/useMCPAppFrame').useMCPAppFrame,
-  useMCPIconMap: () => new Map(),
+jest.mock('@mcp-ui/client', () => ({
+  UIResourceRenderer: ({ resource }: any) => (
+    <span data-testid="ui-resource-renderer" data-resource-uri={resource?.uri} />
+  ),
 }));
 
 const mockUseConversationUIResources = useConversationUIResources as jest.MockedFunction<
@@ -47,21 +26,19 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
     jest.clearAllMocks();
   });
 
-  it('renders two UIResourceRenderer components for markers with resource IDs across separate attachments', () => {
+  it('renders two legacy UI resources for markers with resource IDs across separate attachments', () => {
     // Two tool responses, each produced one ui_resources attachment
     const paris = {
       resourceId: 'abc123',
       uri: 'ui://weather/paris',
-      mimeType: 'text/html;profile=mcp-app',
-      toolName: 'get_weather',
-      serverName: 'weather-server',
+      mimeType: 'text/html',
+      text: '<div>Paris Weather</div>',
     };
     const nyc = {
       resourceId: 'def456',
       uri: 'ui://weather/nyc',
-      mimeType: 'text/html;profile=mcp-app',
-      toolName: 'get_weather',
-      serverName: 'weather-server',
+      mimeType: 'text/html',
+      text: '<div>NYC Weather</div>',
     };
 
     const resourceMap = new Map<string, any>([
@@ -85,7 +62,40 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       </RecoilRoot>,
     );
 
-    expect(document.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
+    const renderers = screen.getAllByTestId('ui-resource-renderer');
+    expect(renderers).toHaveLength(2);
+    expect(renderers[0]).toHaveAttribute('data-resource-uri', 'ui://weather/paris');
+    expect(renderers[1]).toHaveAttribute('data-resource-uri', 'ui://weather/nyc');
+  });
+
+  it('does not mount an App View from a legacy Markdown marker', () => {
+    mockUseConversationUIResources.mockReturnValue(
+      new Map([
+        [
+          'app-resource',
+          {
+            resourceId: 'app-resource',
+            uri: 'ui://weather/app',
+            mimeType: 'text/html;profile=mcp-app',
+            text: '<div>App View</div>',
+            toolName: 'get_weather',
+            serverName: 'weather-server',
+          },
+        ],
+      ]) as any,
+    );
+
+    render(
+      <RecoilRoot>
+        <Markdown
+          content={`App resources are rendered with their tool call ${UI_RESOURCE_MARKER}{app-resource}`}
+          isLatestMessage={false}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.queryByTestId('ui-resource-renderer')).not.toBeInTheDocument();
+    expect(document.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
   });
 });
 

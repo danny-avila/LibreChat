@@ -7,10 +7,13 @@ import { logger } from '@librechat/data-schemas';
 import { MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { PluginAuthMethods, TokenMethods, IUser } from '@librechat/data-schemas';
+import type { UpstreamTokenProvider } from './oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type * as t from './types';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from './errors';
 import { getServerCustomUserVars, getUserMCPAuthMap } from './auth';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 export interface ToolWithMeta {
   _meta?: Record<string, unknown> | null;
@@ -26,6 +29,19 @@ interface McpUiToolMeta {
 export const RESOURCE_URI_META_KEY = 'ui/resourceUri';
 
 export const RESOURCE_MIME_TYPE: string = MCP_APP_MIME_TYPE;
+
+export type AuthenticatedMCPAppUser = IUser & { id: string };
+
+export interface MCPAppOperationContext {
+  serverName: string;
+  user: AuthenticatedMCPAppUser;
+  configServers: Record<string, t.ParsedServerConfig>;
+  customUserVars?: Record<string, string>;
+  flowManager: FlowStateManager<MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  signal?: AbortSignal;
+}
 
 export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
   const uiMeta = tool._meta?.ui as McpUiToolMeta | undefined;
@@ -60,58 +76,18 @@ export function isToolHiddenFromModel(tool: ToolWithMeta): boolean {
 
 /** Declared here rather than importing MCPManager to avoid a circular import. */
 export interface MCPAppsProxyManager {
-  readResource(args: {
-    userId: string;
-    serverName: string;
-    uri: string;
-    user?: IUser;
-    configServers?: Record<string, t.ParsedServerConfig>;
-    customUserVars?: Record<string, string>;
-    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
-    tokenMethods?: TokenMethods;
-  }): Promise<unknown>;
-  listResources(args: {
-    userId: string;
-    serverName: string;
-    user?: IUser;
-    cursor?: string;
-    configServers?: Record<string, t.ParsedServerConfig>;
-    customUserVars?: Record<string, string>;
-    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
-    tokenMethods?: TokenMethods;
-  }): Promise<unknown>;
-  listResourceTemplates(args: {
-    userId: string;
-    serverName: string;
-    user?: IUser;
-    cursor?: string;
-    configServers?: Record<string, t.ParsedServerConfig>;
-    customUserVars?: Record<string, string>;
-    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
-    tokenMethods?: TokenMethods;
-  }): Promise<unknown>;
-  appToolCall(args: {
-    userId: string;
-    serverName: string;
-    toolName: string;
-    toolArguments: Record<string, unknown>;
-    user?: IUser;
-    configServers?: Record<string, t.ParsedServerConfig>;
-    customUserVars?: Record<string, string>;
-    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
-    tokenMethods?: TokenMethods;
-  }): Promise<unknown>;
+  readResource(args: MCPAppOperationContext & { uri: string }): Promise<unknown>;
+  listResources(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
+  listResourceTemplates(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
+  appToolCall(
+    args: MCPAppOperationContext & {
+      toolName: string;
+      toolArguments: Record<string, unknown>;
+    },
+  ): Promise<unknown>;
 }
 
-export interface MCPAppRequestContext {
-  userId: string;
-  serverName: string;
-  user?: IUser;
-  configServers?: Record<string, t.ParsedServerConfig>;
-  customUserVars?: Record<string, string>;
-  flowManager?: FlowStateManager<MCPOAuthTokens | null>;
-  tokenMethods?: TokenMethods;
-}
+export type MCPAppRequestContext = MCPAppOperationContext;
 
 /**
  * Resolves the request-scoped config and auth context so app follow-up requests can reconnect to
@@ -123,22 +99,25 @@ export interface MCPAppRequestContext {
  * `resolveConfigServers` is supplied by the caller because it is bound to the HTTP request.
  */
 export async function resolveAppRequestContext({
-  userId,
   serverName,
   user,
   resolveConfigServers,
   findPluginAuthsByKeys,
   flowManager,
   tokenMethods,
+  upstreamTokenProvider,
+  signal,
 }: {
-  userId: string;
+  user: AuthenticatedMCPAppUser;
   serverName: string;
-  user?: IUser;
   resolveConfigServers: () => Promise<Record<string, t.ParsedServerConfig>>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
-  flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+  flowManager: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  signal?: AbortSignal;
 }): Promise<MCPAppRequestContext> {
+  const userId = user.id;
   const [configServers, userMCPAuthMap] = await Promise.all([
     resolveConfigServers(),
     getUserMCPAuthMap({
@@ -155,31 +134,63 @@ export async function resolveAppRequestContext({
     }),
   ]);
   return {
-    userId,
     serverName,
     user,
     configServers,
     customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
     flowManager,
     tokenMethods,
+    upstreamTokenProvider,
+    signal,
   };
 }
 
 /** A denied app request is an expected client error, not a host fault. */
 export function isDeniedAppRequest(error: unknown): boolean {
   return (
-    error != null &&
-    typeof error === 'object' &&
-    (error as { code?: unknown }).code === ErrorCode.InvalidRequest
+    error instanceof OpenIDReauthRequiredError ||
+    error instanceof MCPAuthenticationRejectedError ||
+    error instanceof MCPAuthenticationRefreshError ||
+    (error != null &&
+      typeof error === 'object' &&
+      (error as { code?: unknown }).code === ErrorCode.InvalidRequest)
   );
 }
 
 export function buildAppProxyErrorResponse(
   error: unknown,
   fallbackMessage: string,
-): { status: number; body: { error: string } } {
-  if (isDeniedAppRequest(error)) {
+): { status: number; body: Record<string, unknown> } {
+  if (
+    error != null &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === ErrorCode.InvalidRequest
+  ) {
     return { status: 400, body: { error: (error as Error).message } };
+  }
+  if (error instanceof OpenIDReauthRequiredError) {
+    return {
+      status: error.statusCode,
+      body: { error: 'invalid_token', message: error.message },
+    };
+  }
+  if (error instanceof MCPAuthenticationRejectedError) {
+    return {
+      status: error.statusCode,
+      body: {
+        error: 'invalid_token',
+        code: error.code,
+        message: error.message,
+        retryable: error.retryable,
+        connectionRefreshed: error.connectionRefreshed,
+      },
+    };
+  }
+  if (error instanceof MCPAuthenticationRefreshError) {
+    return {
+      status: error.statusCode,
+      body: { code: error.code, message: error.message, retryable: error.retryable },
+    };
   }
   return { status: 500, body: { error: fallbackMessage } };
 }
@@ -196,14 +207,8 @@ export async function readAppResource(
     throw new McpError(ErrorCode.InvalidRequest, 'uri must be a non-empty string');
   }
   return manager.readResource({
-    userId: ctx.userId,
-    serverName: ctx.serverName,
+    ...ctx,
     uri,
-    user: ctx.user,
-    configServers: ctx.configServers,
-    customUserVars: ctx.customUserVars,
-    flowManager: ctx.flowManager,
-    tokenMethods: ctx.tokenMethods,
   });
 }
 
@@ -219,14 +224,8 @@ export async function listAppResources(
     throw new McpError(ErrorCode.InvalidRequest, 'cursor must be a string');
   }
   return manager.listResources({
-    userId: ctx.userId,
-    serverName: ctx.serverName,
-    user: ctx.user,
+    ...ctx,
     cursor,
-    configServers: ctx.configServers,
-    customUserVars: ctx.customUserVars,
-    flowManager: ctx.flowManager,
-    tokenMethods: ctx.tokenMethods,
   });
 }
 
@@ -242,14 +241,8 @@ export async function listAppResourceTemplates(
     throw new McpError(ErrorCode.InvalidRequest, 'cursor must be a string');
   }
   return manager.listResourceTemplates({
-    userId: ctx.userId,
-    serverName: ctx.serverName,
-    user: ctx.user,
+    ...ctx,
     cursor,
-    configServers: ctx.configServers,
-    customUserVars: ctx.customUserVars,
-    flowManager: ctx.flowManager,
-    tokenMethods: ctx.tokenMethods,
   });
 }
 
@@ -259,7 +252,7 @@ export async function callAppTool(
   toolName: unknown,
   toolArguments: unknown,
 ): Promise<unknown> {
-  if (!ctx.serverName || !toolName) {
+  if (!ctx.serverName || typeof toolName !== 'string' || toolName.length === 0) {
     throw new McpError(ErrorCode.InvalidRequest, 'serverName and toolName are required');
   }
   if (
@@ -270,14 +263,8 @@ export async function callAppTool(
     throw new McpError(ErrorCode.InvalidRequest, 'arguments must be an object');
   }
   return manager.appToolCall({
-    userId: ctx.userId,
-    serverName: ctx.serverName,
-    toolName: toolName as string,
+    ...ctx,
+    toolName,
     toolArguments: (toolArguments as Record<string, unknown>) || {},
-    user: ctx.user,
-    configServers: ctx.configServers,
-    customUserVars: ctx.customUserVars,
-    flowManager: ctx.flowManager,
-    tokenMethods: ctx.tokenMethods,
   });
 }

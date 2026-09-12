@@ -4,6 +4,11 @@ import { useMCPAppFrame, APP_REVEAL_TIMEOUT_MS } from '~/hooks/MCP/useMCPAppFram
 import { MAX_CAROUSEL_VIEW_HEIGHT, MIN_APP_VIEW_HEIGHT } from '~/utils/mcpApps';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 
+jest.mock('~/utils/mcpApps', () => ({
+  ...jest.requireActual('~/utils/mcpApps'),
+  getMCPSandboxUrl: jest.fn(() => 'http://sandbox.localhost:3081/api/mcp/sandbox'),
+}));
+
 jest.mock('~/Providers', () => ({
   useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
@@ -46,6 +51,17 @@ describe('useMCPAppFrame', () => {
 
       const missing = renderHook(() => useMCPAppFrame(undefined, { defaultHeight: 100 }));
       expect(missing.result.current.kind).toBe('empty');
+    });
+
+    it('fails closed when a distinct sandbox origin is not configured', () => {
+      const { getMCPSandboxUrl } = jest.requireMock('~/utils/mcpApps') as {
+        getMCPSandboxUrl: jest.Mock;
+      };
+      getMCPSandboxUrl.mockReturnValueOnce(undefined);
+      const { result } = renderHook(() => useMCPAppFrame(appResource(), { defaultHeight: 100 }));
+
+      expect(result.current.status).toBe('failed');
+      expect(result.current.sandboxUrl).toBeUndefined();
     });
   });
 

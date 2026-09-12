@@ -3,14 +3,27 @@ import { RecoilRoot } from 'recoil';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UIResource } from 'librechat-data-provider';
+import {
+  callMCPAppTool,
+  fetchMCPResourceHtml,
+  listMCPResources,
+  listMCPResourceTemplates,
+  readMCPResource,
+} from '~/utils/mcpApps';
 import { useAppBridge } from '~/hooks/MCP/useAppBridge';
 import { useIsMessagesViewReadOnly } from '~/Providers';
-import { fetchMCPResourceHtml } from '~/utils/mcpApps';
 
 type Listener = (params: unknown) => void;
+const requestExtra = () => ({ signal: new AbortController().signal });
+type RequestHandler = (
+  params: Record<string, unknown>,
+  extra: ReturnType<typeof requestExtra>,
+) => Promise<unknown>;
+const mockAsk = jest.fn();
 
 class FakeAppBridge {
   static instances: FakeAppBridge[] = [];
+
   capabilities: Record<string, unknown>;
   listeners = new Map<string, Listener[]>();
   connected: unknown = null;
@@ -20,13 +33,17 @@ class FakeAppBridge {
   toolResults: unknown[] = [];
   hostContextChanges: unknown[] = [];
   teardowns = 0;
-  onopenlink?: (params: { url: string }) => Promise<unknown>;
+  onopenlink?: (
+    params: { url: string },
+    extra: ReturnType<typeof requestExtra>,
+  ) => Promise<unknown>;
+
   oninitialized?: () => Promise<void>;
-  oncalltool?: unknown;
-  onreadresource?: unknown;
-  onlistresources?: unknown;
-  onlistresourcetemplates?: unknown;
-  onmessage?: unknown;
+  oncalltool?: RequestHandler;
+  onreadresource?: RequestHandler;
+  onlistresources?: RequestHandler;
+  onlistresourcetemplates?: RequestHandler;
+  onmessage?: RequestHandler;
 
   constructor(
     _transport: unknown,
@@ -99,7 +116,7 @@ jest.mock('~/utils/mcpApps', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
-  useOptionalMessagesOperations: () => ({ ask: jest.fn() }),
+  useOptionalMessagesOperations: () => ({ ask: mockAsk }),
   useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 
@@ -107,6 +124,12 @@ const { AppBridge } = jest.requireMock('@modelcontextprotocol/ext-apps/app-bridg
   AppBridge: jest.Mock;
 };
 const mockFetchHtml = fetchMCPResourceHtml as jest.MockedFunction<typeof fetchMCPResourceHtml>;
+const mockCallTool = callMCPAppTool as jest.MockedFunction<typeof callMCPAppTool>;
+const mockReadResource = readMCPResource as jest.MockedFunction<typeof readMCPResource>;
+const mockListResources = listMCPResources as jest.MockedFunction<typeof listMCPResources>;
+const mockListTemplates = listMCPResourceTemplates as jest.MockedFunction<
+  typeof listMCPResourceTemplates
+>;
 const mockReadOnly = useIsMessagesViewReadOnly as jest.MockedFunction<
   typeof useIsMessagesViewReadOnly
 >;
@@ -124,7 +147,11 @@ const makeResource = (overrides: Partial<UIResource> = {}): UIResource =>
     ...overrides,
   }) as UIResource;
 
-function mountBridge(resource: UIResource, client: QueryClient) {
+function mountBridge(
+  resource: UIResource,
+  client: QueryClient,
+  callbacks: { onTeardown?: () => void } = {},
+) {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('data-sandbox-url', SANDBOX_URL);
   document.body.appendChild(iframe);
@@ -143,7 +170,7 @@ function mountBridge(resource: UIResource, client: QueryClient) {
         toolResult: { content: [] },
         onSizeChanged: jest.fn(),
         onLoaded: jest.fn(),
-        onTeardown: jest.fn(),
+        onTeardown: callbacks.onTeardown ?? jest.fn(),
         onFailed: jest.fn(),
       }),
     { wrapper },
@@ -171,6 +198,7 @@ describe('useAppBridge', () => {
         new FakeAppBridge(t, i, c, o),
     );
     mockReadOnly.mockReturnValue(false);
+    mockAsk.mockReset();
     mockFetchHtml.mockResolvedValue({ html: '<p>app</p>' });
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     document.body.innerHTML = '';
@@ -233,8 +261,11 @@ describe('useAppBridge', () => {
       );
       const { iframe, view } = mountBridge(makeResource(), client);
       await flush();
-      view.unmount();
+      const requestSignal = mockFetchHtml.mock.calls[0][2];
+      act(() => view.unmount());
+      await flush();
 
+      expect(requestSignal?.aborted).toBe(true);
       await act(async () => {
         resolveHtml({ html: '<p>app</p>' });
         await Promise.resolve();
@@ -264,11 +295,80 @@ describe('useAppBridge', () => {
       expect(latest().resourceReady[0].html).toBe('<p>v2</p>');
     });
 
-    it('collapses concurrent mounts of one resource into a single read', async () => {
-      mountBridge(makeResource(), client);
-      mountBridge(makeResource(), client);
+    it('cancels only the leaving View when peers read the same resource', async () => {
+      const requests: Array<{
+        signal?: AbortSignal;
+        resolve: (value: { html: string }) => void;
+      }> = [];
+      mockFetchHtml.mockImplementation(
+        (_server, _uri, signal) =>
+          new Promise((resolve) => requests.push({ signal, resolve })) as ReturnType<
+            typeof fetchMCPResourceHtml
+          >,
+      );
+      const first = mountBridge(makeResource(), client);
+      const second = mountBridge(makeResource(), client);
       await flush();
-      expect(mockFetchHtml).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveLength(2);
+
+      act(() => first.view.unmount());
+      await flush();
+      expect(requests[0].signal?.aborted).toBe(true);
+      expect(requests[1].signal?.aborted).toBe(false);
+
+      await act(async () => requests[1].resolve({ html: '<p>peer survives</p>' }));
+      await flush();
+      expect(second.iframe.src).toContain('/api/mcp/sandbox');
+    });
+
+    it('does not report an old read failure into a replacement View', async () => {
+      let rejectFirst: (reason: Error) => void = () => {};
+      mockFetchHtml
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirst = reject;
+            }) as ReturnType<typeof fetchMCPResourceHtml>,
+        )
+        .mockResolvedValueOnce({ html: '<p>replacement</p>' });
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('data-sandbox-url', SANDBOX_URL);
+      document.body.appendChild(iframe);
+      const firstFailed = jest.fn();
+      const replacementFailed = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot>
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        </RecoilRoot>
+      );
+      const view = renderHook(
+        ({ resource, onFailed }: { resource: UIResource; onFailed: () => void }) =>
+          useAppBridge({
+            iframeRef: { current: iframe },
+            resource,
+            toolArgs: undefined,
+            toolResult: undefined,
+            onSizeChanged: jest.fn(),
+            onFailed,
+          }),
+        {
+          wrapper,
+          initialProps: { resource: makeResource(), onFailed: firstFailed },
+        },
+      );
+      await flush();
+
+      view.rerender({
+        resource: makeResource({ resourceId: 'r2', uri: 'ui://app/replacement' }),
+        onFailed: replacementFailed,
+      });
+      await flush();
+      rejectFirst(new Error('old read failed'));
+      await flush();
+
+      expect(firstFailed).not.toHaveBeenCalled();
+      expect(replacementFailed).not.toHaveBeenCalled();
+      expect(iframe.src).toContain('/api/mcp/sandbox');
     });
   });
 
@@ -371,7 +471,7 @@ describe('useAppBridge', () => {
       await flush();
 
       await act(async () => {
-        await latest().onopenlink?.({ url: 'https://api.example.com/x' });
+        await latest().onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra());
       });
       expect(openSpy).not.toHaveBeenCalled();
       await act(async () => {
@@ -393,14 +493,17 @@ describe('useAppBridge', () => {
       );
       await flush();
 
+      let result: unknown;
       await act(async () => {
-        await latest().onopenlink?.({ url: 'https://api.example.com/x' });
+        result = await latest().onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra());
       });
+      expect(result).toEqual({ isError: true });
       expect(openSpy).not.toHaveBeenCalled();
 
       await act(async () => {
-        await latest().onopenlink?.({ url: 'https://other.example/x' });
+        result = await latest().onopenlink?.({ url: 'https://other.example/x' }, requestExtra());
       });
+      expect(result).toEqual({});
       expect(openSpy).toHaveBeenCalledTimes(1);
       expect(openSpy).toHaveBeenCalledWith(
         'https://other.example/x',
@@ -409,7 +512,7 @@ describe('useAppBridge', () => {
       );
     });
 
-    it('denies every link when the declaration was too large to reach the response', async () => {
+    it('uses the same capped declaration for the sandbox and host link decisions', async () => {
       const connectDomains = Array.from(
         { length: 400 },
         (_unused, index) => `https://host${index}.example.com`,
@@ -418,11 +521,16 @@ describe('useAppBridge', () => {
       const { iframe } = mountBridge(makeResource(), client);
       await flush();
 
-      expect(new URL(iframe.src).searchParams.get('csp')).toBeNull();
+      const csp = JSON.parse(new URL(iframe.src).searchParams.get('csp') as string);
+      expect(csp.connectDomains).toHaveLength(32);
       await act(async () => {
-        await latest().onopenlink?.({ url: 'https://host0.example.com/x' });
+        await latest().onopenlink?.({ url: 'https://host0.example.com/x' }, requestExtra());
       });
-      expect(openSpy).not.toHaveBeenCalled();
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await latest().onopenlink?.({ url: 'https://host399.example.com/x' }, requestExtra());
+      });
+      expect(openSpy).toHaveBeenCalledTimes(1);
     });
 
     it('denies every link after a failed read', async () => {
@@ -436,13 +544,89 @@ describe('useAppBridge', () => {
       await flush();
 
       await act(async () => {
-        await latest().onopenlink?.({ url: 'https://api.example.com/x' });
+        await latest().onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra());
       });
       expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('reports cancellation and thrown browser failures', async () => {
+      mockFetchHtml.mockResolvedValue({
+        html: '<p>app</p>',
+        csp: { connectDomains: ['https://api.example.com'] },
+      });
+      mountBridge(makeResource(), client);
+      await flush();
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        latest().onopenlink?.({ url: 'https://api.example.com/x' }, { signal: controller.signal }),
+      ).resolves.toEqual({ isError: true });
+      openSpy.mockImplementationOnce(() => {
+        throw new Error('browser failure');
+      });
+      await expect(
+        latest().onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra()),
+      ).resolves.toEqual({ isError: true });
+    });
+  });
+
+  describe('host request forwarding', () => {
+    it('propagates each SDK request signal to the matching server operation', async () => {
+      mockCallTool.mockResolvedValue({ content: [] });
+      mockReadResource.mockResolvedValue({ contents: [] });
+      mockListResources.mockResolvedValue({ resources: [] });
+      mockListTemplates.mockResolvedValue({ resourceTemplates: [] });
+      mountBridge(makeResource(), client);
+      await flush();
+      const extra = requestExtra();
+
+      await latest().oncalltool?.({ name: 'next', arguments: { q: 2 } }, extra);
+      await latest().onreadresource?.({ uri: 'ui://detail' }, extra);
+      await latest().onlistresources?.({ cursor: 'a' }, extra);
+      await latest().onlistresourcetemplates?.({ cursor: 'b' }, extra);
+
+      expect(mockCallTool).toHaveBeenCalledWith('demo', 'next', { q: 2 }, extra.signal);
+      expect(mockReadResource).toHaveBeenCalledWith('demo', 'ui://detail', extra.signal);
+      expect(mockListResources).toHaveBeenCalledWith('demo', 'a', extra.signal);
+      expect(mockListTemplates).toHaveBeenCalledWith('demo', 'b', extra.signal);
+    });
+
+    it('reports unsupported or rejected message delivery as an error', async () => {
+      mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+
+      await expect(
+        bridge.onmessage?.({ content: [{ type: 'image' }] }, requestExtra()),
+      ).resolves.toEqual({ isError: true });
+      mockAsk.mockReturnValueOnce(false);
+      await expect(
+        bridge.onmessage?.({ content: [{ type: 'text', text: 'hello' }] }, requestExtra()),
+      ).resolves.toEqual({ isError: true });
     });
   });
 
   describe('teardown', () => {
+    it('does not deliver an awaited teardown completion after the View was disposed', async () => {
+      const onTeardown = jest.fn();
+      const mounted = mountBridge(makeResource(), client, { onTeardown });
+      await flush();
+      const bridge = latest();
+      await bridge.oninitialized?.();
+      let finishTeardown: () => void = () => {};
+      bridge.teardownResource = jest.fn(
+        () => new Promise<Record<string, never>>((resolve) => (finishTeardown = () => resolve({}))),
+      );
+
+      act(() => bridge.emit('requestteardown'));
+      act(() => mounted.view.unmount());
+      finishTeardown();
+      await flush();
+
+      expect(onTeardown).not.toHaveBeenCalled();
+    });
+
     it('disposes the bridge and the theme observer on requestteardown', async () => {
       const onTeardown = jest.fn();
       const iframe = document.createElement('iframe');
@@ -468,6 +652,7 @@ describe('useAppBridge', () => {
       await flush();
 
       const bridge = latest();
+      await act(async () => bridge.oninitialized?.());
       await act(async () => bridge.emit('requestteardown'));
       await flush();
 
@@ -503,6 +688,15 @@ describe('useAppBridge', () => {
       });
       expect(latest().toolInput).toEqual([{ arguments: { q: 1 } }]);
       expect(latest().toolResults).toEqual([{ content: [] }]);
+    });
+
+    it('sends tool lifecycle data only once if initialized repeats', async () => {
+      mountBridge(makeResource(), client);
+      await flush();
+      await latest().oninitialized?.();
+      await latest().oninitialized?.();
+      expect(latest().toolInput).toHaveLength(1);
+      expect(latest().toolResults).toHaveLength(1);
     });
   });
 });

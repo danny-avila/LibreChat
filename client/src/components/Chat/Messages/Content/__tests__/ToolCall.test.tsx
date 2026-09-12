@@ -92,6 +92,7 @@ jest.mock('@librechat/client', () => ({
       {children}
     </button>
   ),
+  Spinner: (props: React.HTMLAttributes<HTMLSpanElement>) => <span {...props} />,
 }));
 
 jest.mock('lucide-react', () => ({
@@ -110,6 +111,7 @@ jest.mock('~/utils', () => ({
 }));
 
 describe('ToolCall', () => {
+  const originalSandboxUrl = process.env.VITE_MCP_SANDBOX_URL;
   const mockProps = {
     args: '{"test": "input"}',
     name: 'testFunction',
@@ -124,6 +126,15 @@ describe('ToolCall', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.VITE_MCP_SANDBOX_URL = 'http://sandbox.localhost:3081/api/mcp/sandbox';
+  });
+
+  afterAll(() => {
+    if (originalSandboxUrl == null) {
+      delete process.env.VITE_MCP_SANDBOX_URL;
+    } else {
+      process.env.VITE_MCP_SANDBOX_URL = originalSandboxUrl;
+    }
   });
 
   describe('intent label', () => {

@@ -30,9 +30,11 @@ const DEFAULT_APP_VIEW_HEIGHT = 320;
 const MCPAppView = React.memo(function MCPAppView({
   app,
   args,
+  userId,
 }: {
   app: UIResource;
   args: string | Record<string, unknown>;
+  userId?: string;
 }) {
   const localize = useLocalize();
   const frame = useMCPAppFrame(app, {
@@ -45,6 +47,7 @@ const MCPAppView = React.memo(function MCPAppView({
     resource: app,
     toolArgs: frame.toolArgs,
     toolResult: frame.toolResult,
+    userId,
     active: frame.active,
     onSizeChanged: frame.onSizeChanged,
     onLoaded: frame.onLoaded,
@@ -64,19 +67,6 @@ const MCPAppView = React.memo(function MCPAppView({
       </div>
     );
   }
-  if (frame.kind === 'static') {
-    return (
-      <div className="my-2">
-        <iframe
-          srcDoc={frame.inlineHtml}
-          sandbox=""
-          style={{ width: '100%', minHeight: '200px', border: 'none' }}
-          title={app.uri}
-        />
-      </div>
-    );
-  }
-
   return (
     <div
       className="relative my-2 overflow-hidden"
@@ -119,6 +109,7 @@ export default function ToolCall({
   const localize = useLocalize();
   const [oauthError, setOAuthError] = useState<string | null>(null);
   const autoExpand = useRecoilValue(store.autoExpandTools);
+  const user = useRecoilValue(store.user);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
@@ -420,7 +411,12 @@ export default function ToolCall({
       )}
       {mcpApps.length > 0 &&
         mcpApps.map((app) => (
-          <MCPAppView key={app.resourceId} app={app} args={app.toolArgs ?? _args} />
+          <MCPAppView
+            key={app.resourceId}
+            app={app}
+            args={app.toolArgs ?? _args}
+            userId={user?.id}
+          />
         ))}
     </>
   );

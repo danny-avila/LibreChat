@@ -1079,12 +1079,6 @@ export class MCPConnection extends EventEmitter {
    */
   public toolListVersion = 0;
 
-  /**
-   * Bumped on every resources/list_changed notification so consumers caching a server's advertised
-   * resources refresh their authorization data when resources are added or removed.
-   */
-  public resourceListVersion = 0;
-
   private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
 
   public static clearCooldown(serverName: string): void {
@@ -1849,7 +1843,6 @@ export class MCPConnection extends EventEmitter {
 
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
-      this.resourceListVersion += 1;
       this.emit('resourcesChanged');
     });
   }

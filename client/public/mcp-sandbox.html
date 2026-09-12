@@ -30,10 +30,11 @@
       'use strict';
 
       // Replaced by the sandbox route with `window.__MCP_SANDBOX_CSP_APPLIED = true;`. The
-      // per-resource policy is delivered as a response header on this document (the blob app
-      // document inherits it), so a deployment that serves this file statically would leave the app
-      // with no policy at all; createInnerFrame refuses to build a frame without the marker.
+      // proxy policy is delivered as a response header, while the separately generated View policy
+      // is installed before App content. A static copy has neither trusted value, so createInnerFrame
+      // refuses to build a frame unless both markers were replaced by the route.
       /*__CSP_APPLIED__*/
+      /*__VIEW_CSP__*/
 
       const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
       const ATTEST_METHOD = 'ui/notifications/sandbox-frame-attest';
@@ -60,10 +61,8 @@
       let pendingToInner = [];
       let pendingToParent = [];
 
-      // The parent passes its origin so the handshake targets LibreChat. There is no same-origin
-      // fallback: this document is framed sandboxed without allow-same-origin, so its own origin
-      // serializes to "null" and postMessage(msg, "null") throws. Without the param, refuse to
-      // bridge rather than post to "*".
+      // The parent passes its origin so the dedicated-origin proxy targets only its LibreChat host.
+      // Without the parameter, refuse to bridge rather than post host messages to "*".
       const trustedOrigin = (function () {
         try {
           const param = new URLSearchParams(window.location.search).get('parentOrigin');
@@ -245,8 +244,18 @@
         );
       }
 
+      function buildViewInjection(nonce) {
+        const meta = document.createElement('meta');
+        meta.httpEquiv = 'Content-Security-Policy';
+        meta.content = window.__MCP_VIEW_CSP;
+        return meta.outerHTML + buildBootstrap(nonce);
+      }
+
       function createInnerFrame(params) {
-        if (window.__MCP_SANDBOX_CSP_APPLIED !== true) {
+        if (
+          window.__MCP_SANDBOX_CSP_APPLIED !== true ||
+          typeof window.__MCP_VIEW_CSP !== 'string'
+        ) {
           console.error(
             '[MCP Sandbox] This document was served without a per-resource CSP: refusing to render',
           );
@@ -278,12 +287,9 @@
           releaseInnerFrame();
         });
 
-        // allow-same-origin is never granted, on any origin: the default deployment serves this
-        // sandbox from LibreChat's own origin (VITE_MCP_SANDBOX_URL unset), which would hand the app
-        // LibreChat's localStorage, cookies and authenticated /api/*; and one shared sandbox origin
-        // would pool storage across every app from every server, which the spec answers with the
-        // per-view _meta.ui.domain this host does not implement yet. Grant only from an allowlist so
-        // a new spec token cannot arrive as a silent capability.
+        // The inner View remains opaque even though its outer proxy has a dedicated origin. This
+        // preserves per-View storage isolation and the heartbeat's navigation freshness guarantee.
+        // Grant only from an allowlist so a new spec token cannot arrive as a silent capability.
         const requested = new Set(
           String(params.sandbox || DEFAULT_SANDBOX)
             .split(/\s+/)
@@ -308,7 +314,7 @@
 
         // The bootstrap sits ahead of the app's own <meta charset>, so declare the encoding here
         // rather than let the parser guess from bytes our prefix now precedes.
-        const blob = new Blob([injectIntoHead(html, buildBootstrap(attestNonce))], {
+        const blob = new Blob([injectIntoHead(html, buildViewInjection(attestNonce))], {
           type: 'text/html;charset=utf-8',
         });
         innerFrameBlobUrl = URL.createObjectURL(blob);

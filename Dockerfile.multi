@@ -84,6 +84,7 @@ COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/d
 COPY --from=client-package-build /app/packages/client/dist /app/packages/client/dist
 COPY --from=client-package-build /app/packages/client/src /app/packages/client/src
 COPY --from=client-package-build /app/packages/client/tailwind.preset.cjs /app/packages/client/tailwind.preset.cjs
+ARG VITE_MCP_SANDBOX_URL=
 ARG NODE_MAX_OLD_SPACE_SIZE
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 RUN npm run build

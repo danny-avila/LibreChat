@@ -1,6 +1,9 @@
+import { normalizeMCPAppCspDeclaration, request } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import {
   isAllowedAppLink,
+  getMCPSandboxUrl,
+  fetchMCPResourceHtml,
   clampAppViewHeight,
   withSandboxCsp,
   getResourceKey,
@@ -10,23 +13,38 @@ import {
   MAX_SANDBOX_CSP_PARAM_LENGTH,
 } from '~/utils/mcpApps';
 
-/**
- * Ported copy of the sandbox route's declared-domain filter (`SAFE_HOST_RE` / `toDomainList` in
- * `serveMCPSandbox`), which cannot be imported: it lives in a CommonJS controller that pulls the
- * whole server graph. The containment test below is what keeps the two sites honest.
- */
-const SAFE_HOST_RE =
-  /^(?:(?:https?|wss?):\/\/)?(?:\*\.)?[a-zA-Z0-9](?:[a-zA-Z0-9\-.]*[a-zA-Z0-9])?(?::(?:\d{1,5}|\*))?(?:\/[^\s;,'"?#]*)?$/i;
+describe('getMCPSandboxUrl', () => {
+  const original = process.env.VITE_MCP_SANDBOX_URL;
 
-function toDomainList(value: unknown): string {
-  if (!Array.isArray(value)) {
-    return '';
-  }
-  return value
-    .filter((entry) => typeof entry === 'string' && SAFE_HOST_RE.test(entry.trim()))
-    .map((entry) => (entry as string).trim())
-    .join(' ');
-}
+  afterEach(() => {
+    if (original == null) {
+      delete process.env.VITE_MCP_SANDBOX_URL;
+      return;
+    }
+    process.env.VITE_MCP_SANDBOX_URL = original;
+  });
+
+  it.each([undefined, '', '/api/mcp/sandbox', 'javascript:alert(1)', window.location.origin])(
+    'fails closed for missing or non-dedicated configuration %s',
+    (value) => {
+      if (value == null) {
+        delete process.env.VITE_MCP_SANDBOX_URL;
+      } else {
+        process.env.VITE_MCP_SANDBOX_URL = value;
+      }
+      expect(getMCPSandboxUrl()).toBeUndefined();
+    },
+  );
+
+  it('returns an explicit different-origin HTTP URL bound to this host origin', () => {
+    process.env.VITE_MCP_SANDBOX_URL = 'http://sandbox.localhost:3081/api/mcp/sandbox?fixed=1';
+    const url = new URL(getMCPSandboxUrl() as string);
+
+    expect(url.origin).toBe('http://sandbox.localhost:3081');
+    expect(url.searchParams.get('parentOrigin')).toBe(window.location.origin);
+    expect(url.searchParams.get('fixed')).toBe('1');
+  });
+});
 
 describe('isAllowedAppLink', () => {
   it('refuses everything when the resource declares no egress domains', () => {
@@ -183,21 +201,29 @@ describe('isAllowedAppLink', () => {
   });
 });
 
-describe('sandbox declared-domain filter (ported)', () => {
-  it('emits legal host-sources, trimmed', () => {
+describe('normalizeMCPAppCspDeclaration', () => {
+  it('keeps legal host sources, trimmed', () => {
     expect(
-      toDomainList([
-        'https://api.example.com',
-        'https://*.example.com',
-        'http://localhost:3000',
-        'wss://stream.example.com',
-        'https://a.example.com:*',
-        'HTTPS://API.EXAMPLE.COM',
-        '\n  https://trimmed.example.com  ',
-      ]),
-    ).toBe(
-      'https://api.example.com https://*.example.com http://localhost:3000 wss://stream.example.com https://a.example.com:* HTTPS://API.EXAMPLE.COM https://trimmed.example.com',
-    );
+      normalizeMCPAppCspDeclaration({
+        connectDomains: [
+          'https://api.example.com',
+          'https://*.example.com',
+          'http://localhost:3000',
+          'wss://stream.example.com',
+          'https://a.example.com:*',
+          'HTTPS://API.EXAMPLE.COM',
+          '\n  https://trimmed.example.com  ',
+        ],
+      }).connectDomains,
+    ).toEqual([
+      'https://api.example.com',
+      'https://*.example.com',
+      'http://localhost:3000',
+      'wss://stream.example.com',
+      'https://a.example.com:*',
+      'HTTPS://API.EXAMPLE.COM',
+      'https://trimmed.example.com',
+    ]);
   });
 
   it('drops keywords, blankets and injection-shaped entries', () => {
@@ -223,10 +249,10 @@ describe('sandbox declared-domain filter (ported)', () => {
       'https://exämple.com',
     ];
     for (const entry of dropped) {
-      expect(toDomainList([entry])).toBe('');
+      expect(normalizeMCPAppCspDeclaration({ connectDomains: [entry] })).toEqual({});
     }
-    expect(toDomainList(undefined)).toBe('');
-    expect(toDomainList('https://a.com')).toBe('');
+    expect(normalizeMCPAppCspDeclaration(undefined)).toEqual({});
+    expect(normalizeMCPAppCspDeclaration({ connectDomains: 'https://a.com' })).toEqual({});
   });
 
   it('contains every entry the link matcher accepts', () => {
@@ -240,8 +266,18 @@ describe('sandbox declared-domain filter (ported)', () => {
     ];
     for (const [entry, url] of accepted) {
       expect(isAllowedAppLink(url, { connectDomains: [entry] })).toBe(true);
-      expect(toDomainList([entry])).not.toBe('');
+      expect(normalizeMCPAppCspDeclaration({ connectDomains: [entry] })).toEqual({
+        connectDomains: [entry],
+      });
     }
+  });
+
+  it('caps each directive at the shared effective-policy limit', () => {
+    const connectDomains = Array.from(
+      { length: 40 },
+      (_unused, index) => `https://host${index}.example.com`,
+    );
+    expect(normalizeMCPAppCspDeclaration({ connectDomains }).connectDomains).toHaveLength(32);
   });
 });
 
@@ -286,7 +322,7 @@ describe('withSandboxCsp', () => {
     });
   });
 
-  it('reports nothing applied when the declaration exceeds what the route accepts', () => {
+  it('serializes and returns the same capped effective policy', () => {
     const connectDomains = Array.from(
       { length: 400 },
       (_unused, index) => `https://host${index}.example.com`,
@@ -295,8 +331,123 @@ describe('withSandboxCsp', () => {
     const { url, applied } = withSandboxCsp('http://localhost:3080/api/mcp/sandbox', {
       connectDomains,
     });
+    const expected = normalizeMCPAppCspDeclaration({ connectDomains });
+    expect(JSON.parse(new URL(url).searchParams.get('csp') as string)).toEqual(expected);
+    expect(applied).toEqual(expected);
+  });
+
+  it('reports nothing applied when the normalized declaration exceeds the route bound', () => {
+    const connectDomains = Array.from(
+      { length: 32 },
+      (_unused, index) => `https://host${index}.example.com/${'a'.repeat(160)}`,
+    );
+    const { url, applied } = withSandboxCsp('http://localhost:3080/api/mcp/sandbox', {
+      connectDomains,
+    });
     expect(url).toBe('http://localhost:3080/api/mcp/sandbox');
     expect(applied).toBeUndefined();
+  });
+});
+
+describe('fetchMCPResourceHtml', () => {
+  let fetchSpy: jest.SpyInstance;
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+  });
+
+  it('selects only the exact URI with the App MIME and uses only that item metadata', async () => {
+    fetchSpy = jest.spyOn(request, 'authenticatedFetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        contents: [
+          {
+            uri: 'ui://app/main',
+            mimeType: 'text/plain',
+            text: 'wrong type',
+            _meta: { ui: { csp: { connectDomains: ['https://wrong.example'] } } },
+          },
+          {
+            uri: 'ui://app/other',
+            mimeType: 'text/html;profile=mcp-app',
+            text: '<p>wrong uri</p>',
+            _meta: { ui: { permissions: { camera: {} } } },
+          },
+          {
+            uri: 'ui://app/main',
+            mimeType: 'text/html; charset=utf-8; profile="mcp-app"',
+            text: '<p>selected</p>',
+            _meta: {
+              ui: {
+                csp: { connectDomains: ['https://api.example'] },
+                permissions: { clipboardWrite: {} },
+              },
+            },
+          },
+        ],
+      }),
+    } as Response);
+    const controller = new AbortController();
+
+    await expect(fetchMCPResourceHtml('demo', 'ui://app/main', controller.signal)).resolves.toEqual(
+      {
+        html: '<p>selected</p>',
+        csp: { connectDomains: ['https://api.example'] },
+        permissions: { clipboardWrite: {} },
+      },
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/mcp/resources/read'),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
+  it('decodes a matching base64 App document', async () => {
+    fetchSpy = jest.spyOn(request, 'authenticatedFetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        contents: [
+          {
+            uri: 'ui://app/main',
+            mimeType: 'text/html;profile=mcp-app',
+            blob: btoa('<p>cafÃ©</p>'),
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).resolves.toEqual({
+      html: '<p>café</p>',
+      csp: undefined,
+      permissions: undefined,
+    });
+  });
+
+  it('rejects a response with no exact URI and App MIME match', async () => {
+    fetchSpy = jest.spyOn(request, 'authenticatedFetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        contents: [
+          { uri: 'ui://app/other', mimeType: 'text/html;profile=mcp-app', text: '<p>x</p>' },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).rejects.toThrow(
+      'no matching HTML document',
+    );
+  });
+
+  it('rejects a non-successful proxy response', async () => {
+    fetchSpy = jest.spyOn(request, 'authenticatedFetch').mockResolvedValue({
+      ok: false,
+      status: 403,
+    } as Response);
+
+    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).rejects.toThrow('(403)');
   });
 });
 

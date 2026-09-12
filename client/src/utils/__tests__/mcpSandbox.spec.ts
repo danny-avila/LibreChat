@@ -80,12 +80,22 @@ function installStubs(): () => void {
 }
 
 function loadSandbox(
-  options: { parentOrigin?: string | null; cspApplied?: boolean } = {},
+  options: {
+    parentOrigin?: string | null;
+    cspApplied?: boolean;
+    viewCspApplied?: boolean;
+  } = {},
 ): Harness {
-  const { parentOrigin = PARENT_ORIGIN, cspApplied = true } = options;
+  const { parentOrigin = PARENT_ORIGIN, cspApplied = true, viewCspApplied = true } = options;
   let source = extractScript(SANDBOX_HTML);
   if (cspApplied) {
     source = source.replace('/*__CSP_APPLIED__*/', 'window.__MCP_SANDBOX_CSP_APPLIED = true;');
+  }
+  if (viewCspApplied) {
+    source = source.replace(
+      '/*__VIEW_CSP__*/',
+      "window.__MCP_VIEW_CSP = \"default-src 'none'; frame-src 'none'\";",
+    );
   }
 
   const listeners = new Map<string, Array<(event: FakeEvent) => void>>();
@@ -202,7 +212,9 @@ describe('mcp-sandbox.html source', () => {
 
   it('carries the fail-closed marker the sandbox route substitutes', () => {
     expect(SANDBOX_HTML).toContain('/*__CSP_APPLIED__*/');
+    expect(SANDBOX_HTML).toContain('/*__VIEW_CSP__*/');
     expect(SANDBOX_HTML).toContain('window.__MCP_SANDBOX_CSP_APPLIED !== true');
+    expect(SANDBOX_HTML).toContain("typeof window.__MCP_VIEW_CSP !== 'string'");
   });
 });
 
@@ -270,6 +282,13 @@ describe('mcp-sandbox proxy', () => {
       expect(sandbox.errors).toHaveLength(1);
     });
 
+    it('builds no frame when the route did not embed the View policy', () => {
+      const sandbox = loadSandbox({ viewCspApplied: false });
+      sandbox.deliverResource();
+      expect(sandbox.frame()).toBeNull();
+      expect(sandbox.errors).toHaveLength(1);
+    });
+
     it('builds the frame when the route applied the policy', () => {
       const sandbox = loadSandbox();
       sandbox.deliverResource();
@@ -319,11 +338,17 @@ describe('mcp-sandbox proxy', () => {
       const sandbox = loadSandbox();
       sandbox.deliverResource({ html });
       const blob = sandbox.blobs[0];
-      const bootstrap = blob.match(/<script>\(function\(\)\{var N=[\s\S]*?<\/script>/)?.[0] ?? '';
-      expect(bootstrap).not.toBe('');
-      expect(blob.replace(bootstrap, '')).toBe(html);
+      const injection =
+        blob.match(
+          /<meta http-equiv="Content-Security-Policy"[^>]*><script>\(function\(\)\{var N=[\s\S]*?<\/script>/,
+        )?.[0] ?? '';
+      expect(injection).not.toBe('');
+      expect(injection).toContain("frame-src 'none'");
+      expect(blob.replace(injection, '')).toBe(html);
       if (/<head/i.test(html)) {
-        expect(blob).toMatch(/<head[^>]*><script>\(function\(\)\{var N=/);
+        expect(blob).toMatch(
+          /<head[^>]*><meta http-equiv="Content-Security-Policy"[^>]*><script>\(function\(\)\{var N=/,
+        );
       }
       if (/^\s*<!doctype/i.test(html)) {
         expect(blob.toLowerCase().indexOf('<!doctype')).toBe(0);
@@ -353,10 +378,13 @@ describe('mcp-sandbox proxy', () => {
       const sandbox = loadSandbox();
       sandbox.deliverResource({ html });
       const blob = sandbox.blobs[0];
-      const bootstrap = blob.match(/<script>\(function\(\)\{var N=[\s\S]*?<\/script>/)?.[0] ?? '';
-      expect(bootstrap).not.toBe('');
+      const injection =
+        blob.match(
+          /<meta http-equiv="Content-Security-Policy"[^>]*><script>\(function\(\)\{var N=[\s\S]*?<\/script>/,
+        )?.[0] ?? '';
+      expect(injection).not.toBe('');
       const at = marker === '' ? 0 : html.indexOf(marker) + marker.length;
-      expect(blob).toBe(html.slice(0, at) + bootstrap + html.slice(at));
+      expect(blob).toBe(html.slice(0, at) + injection + html.slice(at));
     });
 
     it('mints a distinct nonce per document', () => {

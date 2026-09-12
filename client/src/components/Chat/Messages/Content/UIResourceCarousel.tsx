@@ -1,73 +1,14 @@
 import React, { useState } from 'react';
 import { Button } from '@librechat/client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { isHtmlMediaType } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
-import { getResourceKey, MAX_CAROUSEL_VIEW_HEIGHT } from '~/utils/mcpApps';
-import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
-import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
+import UIResourceRenderer, { isSupportedUIResource } from '~/components/MCPUIResource/Renderer';
+import { useOptionalMessagesOperations } from '~/Providers';
+import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
-}
-
-const DEFAULT_CARD_HEIGHT = 360;
-const CARD_WIDTH = 230;
-
-function MCPAppCard({
-  resource,
-  onHeightChange,
-  onTornDown,
-}: {
-  resource: UIResource;
-  onHeightChange?: (height: number) => void;
-  onTornDown?: () => void;
-}) {
-  const localize = useLocalize();
-  const frame = useMCPAppFrame(resource, {
-    defaultHeight: DEFAULT_CARD_HEIGHT,
-    maxHeight: MAX_CAROUSEL_VIEW_HEIGHT,
-    onHeightChange,
-    onTornDown,
-  });
-
-  useAppBridge({
-    iframeRef: frame.iframeRef,
-    resource,
-    toolArgs: frame.toolArgs,
-    toolResult: frame.toolResult,
-    active: frame.active,
-    onSizeChanged: frame.onSizeChanged,
-    onLoaded: frame.onLoaded,
-    onTeardown: frame.onTeardown,
-    onFailed: frame.onFailed,
-  });
-
-  if (frame.kind === 'unavailable') {
-    return (
-      <div className="flex h-full w-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-center text-sm text-text-secondary">
-        {localize('com_ui_mcp_app_shared_unavailable')}
-      </div>
-    );
-  }
-
-  if (frame.kind === 'app') {
-    return <MCPAppFrame frame={frame} resource={resource} centered />;
-  }
-
-  if (frame.kind === 'static') {
-    return (
-      <iframe
-        srcDoc={frame.inlineHtml}
-        sandbox=""
-        style={{ width: '100%', height: '100%', border: 'none' }}
-        title={resource.uri}
-      />
-    );
-  }
-
-  return null;
 }
 
 const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiResources }) => {
@@ -75,46 +16,12 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
-  // Keyed by resource identity, never by index: a removed resource would otherwise hand its measured
-  // height and its render state to whichever resource reconciles onto its index.
-  const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
-  const [tornDownKeys, setTornDownKeys] = useState<ReadonlySet<string>>(() => new Set());
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const { ask } = useOptionalMessagesOperations();
   const supportedUIResources = React.useMemo(
-    () => uiResources.filter((resource) => isHtmlMediaType(resource.mimeType)),
+    () => uiResources.filter(isSupportedUIResource),
     [uiResources],
   );
-
-  const handleCardHeightChange = React.useCallback((key: string, newHeight: number) => {
-    setCardHeights((prev) => (prev[key] === newHeight ? prev : { ...prev, [key]: newHeight }));
-  }, []);
-
-  const handleCardTornDown = React.useCallback((key: string) => {
-    setTornDownKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-  }, []);
-
-  const visibleResources = React.useMemo(
-    () => supportedUIResources.filter((resource) => !tornDownKeys.has(getResourceKey(resource))),
-    [supportedUIResources, tornDownKeys],
-  );
-
-  React.useEffect(() => {
-    const live = new Set(supportedUIResources.map(getResourceKey));
-    setCardHeights((prev) => {
-      const kept = Object.keys(prev).filter((key) => live.has(key));
-      if (kept.length === Object.keys(prev).length) {
-        return prev;
-      }
-      return Object.fromEntries(kept.map((key) => [key, prev[key]]));
-    });
-    setTornDownKeys((prev) => {
-      if (prev.size === 0) {
-        return prev;
-      }
-      const kept = new Set([...prev].filter((key) => live.has(key)));
-      return kept.size === prev.size ? prev : kept;
-    });
-  }, [supportedUIResources]);
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -139,8 +46,6 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
     });
   }, []);
 
-  // The visible set is a dependency: the arrows are computed from scroll geometry, so a card that
-  // was torn down (or added) leaves showRightArrow stale-true with nothing left to scroll to.
   React.useEffect(() => {
     const container = scrollContainerRef.current;
     if (container) {
@@ -148,10 +53,22 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       handleScroll();
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [handleScroll, visibleResources]);
+  }, [handleScroll, supportedUIResources.length]);
 
-  if (visibleResources.length === 0) {
+  if (supportedUIResources.length === 0) {
     return null;
+  }
+
+  if (supportedUIResources.length === 1) {
+    return (
+      <UIResourceRenderer
+        resource={supportedUIResources[0]}
+        onUIAction={async (result) => handleUIAction(result, ask)}
+        htmlProps={{
+          autoResizeIframe: { width: true, height: true },
+        }}
+      />
+    );
   }
 
   return (
@@ -190,29 +107,27 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
         ref={scrollContainerRef}
         className="hide-scrollbar flex gap-4 overflow-x-auto scroll-smooth"
       >
-        {visibleResources.map((uiResource, index) => {
-          const key = getResourceKey(uiResource);
-          const cardHeight = cardHeights[key] ?? DEFAULT_CARD_HEIGHT;
+        {supportedUIResources.map((uiResource, index) => {
+          const height = 360;
+          const width = 230;
 
           return (
             <div
-              key={key}
+              key={index}
               className="flex-shrink-0 transform-gpu transition-all duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-5"
               style={{
-                width: `${CARD_WIDTH}px`,
-                // Definite so the iframe's height:100% resolves, with a floor so a card that never
-                // reports a size is not revealed at the 150px iframe default.
-                height: `${cardHeight}px`,
-                minHeight: `${DEFAULT_CARD_HEIGHT}px`,
-                overflow: 'hidden',
+                width: `${width}px`,
+                minHeight: `${height}px`,
                 animationDelay: `${index * 100}ms`,
               }}
             >
-              <div className="relative flex h-full flex-col">
-                <MCPAppCard
+              <div className="flex h-full flex-col">
+                <UIResourceRenderer
                   resource={uiResource}
-                  onHeightChange={(height) => handleCardHeightChange(key, height)}
-                  onTornDown={() => handleCardTornDown(key)}
+                  onUIAction={async (result) => handleUIAction(result, ask)}
+                  htmlProps={{
+                    autoResizeIframe: { width: true, height: true },
+                  }}
                 />
               </div>
             </div>

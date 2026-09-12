@@ -1,14 +1,20 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { PluginAuthMethods } from '@librechat/data-schemas';
-import type { ToolWithMeta } from '../apps';
+import type { MCPAppRequestContext, MCPAppsProxyManager, ToolWithMeta } from '../apps';
 import {
   buildAppProxyErrorResponse,
+  callAppTool,
   isDeniedAppRequest,
   isToolHiddenFromApp,
   isToolHiddenFromModel,
+  listAppResources,
+  listAppResourceTemplates,
+  readAppResource,
   resolveAppRequestContext,
 } from '../apps';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '../errors';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 import { getPluginAuthMap } from '~/agents/auth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -65,6 +71,8 @@ describe('tool visibility', () => {
 describe('resolveAppRequestContext', () => {
   const findPluginAuthsByKeys = jest.fn() as unknown as PluginAuthMethods['findPluginAuthsByKeys'];
   const mockGetPluginAuthMap = getPluginAuthMap as jest.MockedFunction<typeof getPluginAuthMap>;
+  const user = { id: 'user-1' } as Parameters<typeof resolveAppRequestContext>[0]['user'];
+  const flowManager = {} as Parameters<typeof resolveAppRequestContext>[0]['flowManager'];
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -72,26 +80,28 @@ describe('resolveAppRequestContext', () => {
     mockGetPluginAuthMap.mockResolvedValue({ mcp_srv: { API_KEY: 'secret' } });
 
     const ctx = await resolveAppRequestContext({
-      userId: 'user-1',
+      user,
       serverName: 'srv',
       resolveConfigServers: () =>
         Promise.resolve({ srv: { type: 'sse', url: 'https://a.example.com' } }),
       findPluginAuthsByKeys,
+      flowManager,
     });
 
     expect(ctx.configServers).toEqual({ srv: { type: 'sse', url: 'https://a.example.com' } });
     expect(ctx.customUserVars).toEqual({ API_KEY: 'secret' });
-    expect(ctx.userId).toBe('user-1');
+    expect(ctx.user).toBe(user);
     expect(ctx.serverName).toBe('srv');
   });
 
   it('fails closed when config resolution fails', async () => {
     await expect(
       resolveAppRequestContext({
-        userId: 'user-1',
+        user,
         serverName: 'srv',
         resolveConfigServers: () => Promise.reject(new Error('config unavailable')),
         findPluginAuthsByKeys,
+        flowManager,
       }),
     ).rejects.toThrow('config unavailable');
   });
@@ -101,10 +111,11 @@ describe('resolveAppRequestContext', () => {
 
     await expect(
       resolveAppRequestContext({
-        userId: 'user-1',
+        user,
         serverName: 'srv',
         resolveConfigServers: () => Promise.resolve({}),
         findPluginAuthsByKeys,
+        flowManager,
       }),
     ).rejects.toThrow('db down');
     expect(logger.error).toHaveBeenCalled();
@@ -114,10 +125,11 @@ describe('resolveAppRequestContext', () => {
     mockGetPluginAuthMap.mockResolvedValue({});
 
     const ctx = await resolveAppRequestContext({
-      userId: 'user-1',
+      user,
       serverName: 'srv',
       resolveConfigServers: () => Promise.resolve({}),
       findPluginAuthsByKeys,
+      flowManager,
     });
 
     expect(ctx.customUserVars).toBeUndefined();
@@ -145,4 +157,74 @@ describe('app proxy error mapping', () => {
       });
     },
   );
+
+  it('returns the established actionable response for expired OpenID sessions', () => {
+    const error = new OpenIDReauthRequiredError('Please sign in again.');
+
+    expect(buildAppProxyErrorResponse(error, 'Failed to read resource')).toEqual({
+      status: 401,
+      body: { error: 'invalid_token', message: 'Please sign in again.' },
+    });
+    expect(isDeniedAppRequest(error)).toBe(true);
+  });
+
+  it('returns bounded authentication rejection and refresh responses', () => {
+    const rejected = new MCPAuthenticationRejectedError('srv', true);
+    const refresh = new MCPAuthenticationRefreshError();
+
+    expect(buildAppProxyErrorResponse(rejected, 'Failed to read resource')).toEqual({
+      status: 403,
+      body: {
+        error: 'invalid_token',
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        message:
+          'MCP server "srv" rejected the bearer credential. The connection was refreshed; retry the tool deliberately.',
+        retryable: true,
+        connectionRefreshed: true,
+      },
+    });
+    expect(buildAppProxyErrorResponse(refresh, 'Failed to read resource')).toEqual({
+      status: 503,
+      body: {
+        code: 'MCP_AUTHENTICATION_REFRESH_FAILED',
+        message: 'The OpenID session could not refresh the MCP bearer credential temporarily.',
+        retryable: true,
+      },
+    });
+  });
+});
+
+describe('app proxy input validation', () => {
+  const manager = {
+    readResource: jest.fn(),
+    listResources: jest.fn(),
+    listResourceTemplates: jest.fn(),
+    appToolCall: jest.fn(),
+  } as jest.Mocked<MCPAppsProxyManager>;
+  const context = { serverName: 'srv' } as MCPAppRequestContext;
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('rejects malformed values before calling the manager', async () => {
+    await expect(readAppResource(manager, context, 42)).rejects.toMatchObject({
+      code: ErrorCode.InvalidRequest,
+    });
+    await expect(listAppResources(manager, context, 42)).rejects.toMatchObject({
+      code: ErrorCode.InvalidRequest,
+    });
+    await expect(listAppResourceTemplates(manager, context, null)).rejects.toMatchObject({
+      code: ErrorCode.InvalidRequest,
+    });
+    await expect(callAppTool(manager, context, 42, {})).rejects.toMatchObject({
+      code: ErrorCode.InvalidRequest,
+    });
+    await expect(callAppTool(manager, context, 'tool', [])).rejects.toMatchObject({
+      code: ErrorCode.InvalidRequest,
+    });
+
+    expect(manager.readResource).not.toHaveBeenCalled();
+    expect(manager.listResources).not.toHaveBeenCalled();
+    expect(manager.listResourceTemplates).not.toHaveBeenCalled();
+    expect(manager.appToolCall).not.toHaveBeenCalled();
+  });
 });
