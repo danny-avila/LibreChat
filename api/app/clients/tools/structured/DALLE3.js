@@ -236,7 +236,6 @@ Error Message: ${error.message}`);
         fileName: imageName,
         fileStrategy: this.fileStrategy,
         context: FileContext.image_generation,
-        tenantId: this.tenantId,
         req: this.retentionRequest,
       });
 

@@ -41,6 +41,8 @@ const {
   hasActiveFileFieldPolicy,
   sendUploadSuccess,
   getStorageMetadata,
+  resolveStorageScope,
+  createFileQuotaPersistence,
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -62,9 +64,19 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
+
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
+
+const { deleteStoredFile: deleteStoredBlob, persistFile } = createFileQuotaPersistence({
+  resolveScope: resolveStorageScope,
+  createFile: db.createFile,
+  getUserStorageUsage: db.getUserStorageUsage,
+  getDeleteFile: (source) => getStrategyFunctions(source ?? FileSources.local).deleteFile,
+  onCleanupError: (error) =>
+    logger.error('[persistFile] Cleanup after a quota rejection failed:', error),
+});
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -392,25 +404,25 @@ function startExpiredFileSweep(options = {}) {
  * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
- * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
- * @param {ServerRequest} [params.req] - Request context used to apply data retention metadata.
+ * @param {ServerRequest} params.req - Authenticated request context used for quota and retention.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
-const processFileURL = async ({
-  fileStrategy,
-  userId,
-  URL,
-  fileName,
-  basePath,
-  context,
-  tenantId,
-  req,
-}) => {
+const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, context, req }) => {
+  if (!req) {
+    throw new Error('processFileURL requires an authenticated request');
+  }
   const retentionExpiryPromise = getRetentionExpiry(req);
+  const effectiveTenantId = resolveStorageScope(req).tenantId;
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
-    const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
+    const savedFile = await saveURL({
+      userId,
+      URL,
+      fileName,
+      basePath,
+      tenantId: effectiveTenantId,
+    });
     if (!savedFile) {
       throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
     }
@@ -428,7 +440,12 @@ const processFileURL = async ({
       typeof savedFile === 'string'
         ? savedFile
         : (savedFile.filepath ??
-          (await getFileURL({ userId, fileName: fallbackFileName, basePath, tenantId })));
+          (await getFileURL({
+            userId,
+            fileName: fallbackFileName,
+            basePath,
+            tenantId: effectiveTenantId,
+          })));
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }
@@ -439,23 +456,28 @@ const processFileURL = async ({
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
 
-    return await db.createFile(
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
+    const fileInfo = {
+      user: userId,
+      file_id: v4(),
+      bytes,
+      filepath,
+      ...storageMetadata,
+      filename: fileName,
+      source: fileStrategy,
+      type,
+      context,
+      ...(await retentionExpiryPromise),
+      tenantId: effectiveTenantId,
+      width: dimensions.width,
+      height: dimensions.height,
+    };
+    return await persistFile(req, fileInfo, () =>
+      deleteStoredBlob(req, {
+        source: fileStrategy,
         filepath,
         ...storageMetadata,
-        filename: fileName,
-        source: fileStrategy,
-        type,
-        context,
-        ...(await retentionExpiryPromise),
-        tenantId,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
-      true,
+        tenantId: effectiveTenantId,
+      }),
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -538,7 +560,9 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     return fileInfo;
   }
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await persistFile(req, fileInfo, () =>
+    deleteStoredBlob(req, { source, filepath, storageKey, storageRegion }),
+  );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
@@ -554,6 +578,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
+  const storageScope = resolveStorageScope(req);
   const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -575,10 +600,11 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     userId: req.user.id,
     fileName,
     buffer,
-    tenantId: req.user.tenantId,
+    tenantId: storageScope.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await persistFile(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -592,9 +618,9 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       width,
       ...(await retentionExpiryPromise),
       height,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
-    true,
+    () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
 };
 
@@ -636,7 +662,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
-    bytes,
+    bytes: providerBytes,
     filename,
     filepath: _filepath,
     storageKey: _storageKey,
@@ -650,6 +676,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     file_id,
     openai,
   });
+  let bytes = providerBytes;
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     /** Authorized at the route before any bytes are sent — see
@@ -668,6 +695,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   }
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  let secondaryStoredFile;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -681,6 +709,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       metadata: { file_id: v4() },
       returnFile: true,
     });
+    secondaryStoredFile = result;
+    bytes = providerBytes + (result.bytes ?? 0);
     filepath = result.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
@@ -690,7 +720,14 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     });
   }
 
-  const result = await db.createFile(
+  let rollbackStoredFile = null;
+  if (secondaryStoredFile) {
+    rollbackStoredFile = () => deleteStoredBlob(req, secondaryStoredFile);
+  } else if (!isAssistantUpload) {
+    rollbackStoredFile = () => deleteStoredBlob(req, { source, filepath, ...storageMetadata });
+  }
+  const result = await persistFile(
+    req,
     {
       user: req.user.id,
       file_id: id ?? file_id,
@@ -709,7 +746,10 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       width,
       tenantId: req.user.tenantId,
     },
-    true,
+    /* The converted image is a distinct app-storage object. The provider-side
+     * cleanup is completed by the final enforcement PR, while this scoped write
+     * owns and removes the converted copy when admission rejects it. */
+    rollbackStoredFile,
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -777,6 +817,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+  const storageScope = resolveStorageScope(req);
 
   let messageAttachment = isMessageFileUpload(metadata.message_file);
 
@@ -977,6 +1018,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         file_id,
         basePath,
         entity_id,
+        tenantId: storageScope.tenantId,
       });
       const { bytes, filename, filepath, embedded, height, width } = storageResult;
 
@@ -1004,7 +1046,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      if (!messageAttachment && effectiveToolResource) {
+      const addedAgentResource = !messageAttachment && effectiveToolResource;
+      if (addedAgentResource) {
         await db.addAgentResourceFile({
           file_id,
           agent_id,
@@ -1012,7 +1055,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           updatingUserId: req?.user?.id,
         });
       }
-      const result = await db.createFile(fileInfo, true);
+      const result = await persistFile(req, fileInfo, async () => {
+        await Promise.all([
+          deleteStoredBlob(req, { source, filepath }),
+          addedAgentResource
+            ? db.removeAgentResourceFiles({
+                agent_id,
+                files: [{ file_id, tool_resource: effectiveToolResource }],
+              })
+            : Promise.resolve(),
+        ]);
+      });
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1166,6 +1219,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       file_id,
       basePath,
       entity_id,
+      tenantId: storageScope.tenantId,
     });
 
     // SECOND: Upload to Vector DB
@@ -1201,6 +1255,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       storageRegion: converted.storageRegion,
       height: converted.height,
       width: converted.width,
+      source: converted.source,
     };
   } else {
     // Standard single storage for non-RAG files
@@ -1212,6 +1267,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       file_id,
       basePath,
       entity_id,
+      tenantId: storageScope.tenantId,
     });
   }
 
@@ -1300,9 +1356,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   }
 
   let filepath = _filepath;
+  const storedSource = storageResult.source ?? source;
   let storageMetadata = getStorageMetadata({
     filepath,
-    source,
+    source: storedSource,
     storageKey: _storageKey,
     storageRegion: _storageRegion,
   });
@@ -1338,7 +1395,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       },
       type: storedType,
       embedded,
-      source,
+      source: storedSource,
       height,
       width,
       tenantId: req.user.tenantId,
@@ -1347,7 +1404,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await persistFile(req, fileInfo, () =>
+    deleteStoredBlob(req, { source: storedSource, filepath, ...storageMetadata }),
+  );
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
@@ -1396,7 +1455,18 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await db.createFile(file, true);
+    /* The bytes live on the provider and were not written by this request, so a
+     * rejection just declines to record them — there is nothing local to undo. */
+    const [existing] =
+      (await db.getFiles({
+        file_id,
+        user: userId,
+        tenantId: resolveStorageScope(openai.req).tenantId ?? null,
+      })) ?? [];
+    await persistFile(openai.req, file, null, {
+      replacedBytes: existing?.bytes,
+      replacing: existing,
+    });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({
@@ -1444,11 +1514,9 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     ...(await retentionExpiryPromise),
     tenantId: req.user.tenantId,
   };
-  try {
-    await db.createFile(file, true);
-  } catch (error) {
-    logger.warn('Error saving OpenAI image output file metadata', error);
-  }
+  await persistFile(req, file, () =>
+    deleteStoredBlob(req, { source: file.source, filepath: file.filepath }),
+  );
   return file;
 };
 
@@ -1576,6 +1644,7 @@ async function saveBase64Image(
   url,
   { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
 ) {
+  const storageScope = resolveStorageScope(req);
   const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
@@ -1603,10 +1672,11 @@ async function saveBase64Image(
     userId: req.user.id,
     fileName: filename,
     buffer: image.buffer,
-    tenantId: req.user.tenantId,
+    tenantId: storageScope.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await persistFile(
+    req,
     {
       type,
       source,
@@ -1620,9 +1690,9 @@ async function saveBase64Image(
       width: image.width,
       ...(await retentionExpiryPromise),
       height: image.height,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
-    true,
+    () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
 }
 

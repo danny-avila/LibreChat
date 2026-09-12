@@ -150,6 +150,39 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    /* Seam stand-in. It keeps the two properties these upload paths are asserted on —
+     * the row is written with the scope's tenant, and a rejection runs the caller's
+     * rollback — while the quota arithmetic itself is covered against the real module
+     * in `packages/api/src/files/quota.spec.ts`. */
+    resolveStorageScope: (req) => ({
+      userId: req.user?.id,
+      tenantId: req.tenantId ?? req.user?.tenantId,
+    }),
+    createFileQuotaPersistence: ({ resolveScope, createFile, getDeleteFile, onCleanupError }) => ({
+      deleteStoredFile: async (req, row) => {
+        const scope = resolveScope(req);
+        return getDeleteFile(row.source)?.(req, {
+          ...row,
+          user: scope.userId,
+          tenantId: row.tenantId ?? scope.tenantId,
+        });
+      },
+      persistFile: async (req, row, rollback, options = {}) => {
+        const scopedRow = { ...row, tenantId: resolveScope(req).tenantId };
+        global.__captureQuotaRow?.(scopedRow);
+        if (!global.__mockQuotaRejection) {
+          return createFile(scopedRow, options.disableTTL ?? true);
+        }
+        if (rollback) {
+          try {
+            await rollback();
+          } catch (error) {
+            onCleanupError(error);
+          }
+        }
+        throw global.__mockQuotaRejection;
+      },
+    }),
     getRetentionExpiry,
     createCodeApiRateLimitBudget,
     getCodeApiUploadOptions,
@@ -192,6 +225,7 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
+  getFiles: jest.fn().mockResolvedValue([]),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
   findFileById: jest.fn(),
@@ -451,6 +485,68 @@ describe('upload retention scheduling', () => {
       await pending;
     },
   );
+
+  it('charges and rolls back an assistant image secondary copy on quota rejection', async () => {
+    const quotaError = new Error('quota exceeded');
+    const capturedRows = [];
+    global.__mockQuotaRejection = quotaError;
+    global.__captureQuotaRow = (row) => capturedRows.push(row);
+    const providerUpload = jest.fn().mockResolvedValue({
+      id: 'provider-file-id',
+      bytes: 42,
+      filename: 'upload.png',
+      filepath: 'https://api.openai.test/files/provider-file-id',
+    });
+    const imageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/upload.webp',
+      source: FileSources.local,
+      bytes: 58,
+      width: 10,
+      height: 10,
+    });
+    const deleteImage = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.openai
+        ? { handleFileUpload: providerUpload }
+        : { handleImageUpload: imageUpload, deleteFile: deleteImage },
+    );
+    const req = makeReq({ mimetype: 'image/png', body: { endpoint: 'assistants' } });
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: { del: jest.fn() },
+      beta: { assistants: { files: { create: jest.fn() } } },
+    };
+
+    try {
+      await expect(
+        processFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            endpoint: 'assistants',
+            assistant_id: 'assistant-1',
+            file_id: 'temp-file-id',
+          },
+          openai,
+        }),
+      ).rejects.toBe(quotaError);
+    } finally {
+      delete global.__mockQuotaRejection;
+      delete global.__captureQuotaRow;
+    }
+
+    expect(capturedRows).toEqual([
+      expect.objectContaining({
+        file_id: 'provider-file-id',
+        bytes: 100,
+        filepath: '/images/user-123/upload.webp',
+      }),
+    ]);
+    expect(deleteImage).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({ filepath: '/images/user-123/upload.webp' }),
+    );
+  });
 });
 
 describe('processAgentFileUpload', () => {
@@ -2055,6 +2151,106 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('passes the resolved request tenant to durable context storage', async () => {
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'tenant text', bytes: 11 });
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/t/request-tenant/uploads/user-123/upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.tenantId = 'request-tenant';
+      req.user.tenantId = null;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), message_file: 'true' },
+      });
+
+      expect(storageUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'request-tenant' }),
+      );
+    });
+
+    test('removes durable text storage and its agent reference when quota rejects it', async () => {
+      const quotaError = new Error('quota exceeded');
+      global.__mockQuotaRejection = quotaError;
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'stored text', bytes: 11 });
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload, deleteFile });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      try {
+        await expect(
+          processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+        ).rejects.toBe(quotaError);
+      } finally {
+        delete global.__mockQuotaRejection;
+      }
+
+      expect(deleteFile).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ filepath: '/uploads/user-123/upload.bin' }),
+      );
+      expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
+        agent_id: 'agent-abc',
+        files: [{ file_id: 'file-uuid-123', tool_resource: 'context' }],
+      });
+    });
+
+    test('removes a converted agent image when quota rejects its only row', async () => {
+      const quotaError = new Error('quota exceeded');
+      global.__mockQuotaRejection = quotaError;
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const handleImageUpload = jest.fn().mockResolvedValue({
+        filepath: '/images/user-123/upload.webp',
+        source: FileSources.local,
+        bytes: 64,
+        type: 'image/webp',
+      });
+      getStrategyFunctions.mockReturnValue({ handleImageUpload, deleteFile });
+      const req = makeReq({ mimetype: 'image/png' });
+
+      try {
+        await expect(
+          processAgentFileUpload({
+            req,
+            res: mockRes,
+            metadata: {
+              agent_id: 'agent-abc',
+              message_file: 'true',
+              file_id: 'file-uuid-123',
+            },
+          }),
+        ).rejects.toBe(quotaError);
+      } finally {
+        delete global.__mockQuotaRejection;
+      }
+
+      expect(deleteFile).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          source: FileSources.local,
+          filepath: '/images/user-123/upload.webp',
+        }),
+      );
+    });
+
     test('normalizes explicit ocr uploads to context text delivery', async () => {
       const { parseText } = require('@librechat/api');
       const { createFile, addAgentResourceFile } = require('~/models');
@@ -2251,10 +2447,35 @@ describe('processFileURL', () => {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: 'tenant-a',
+        req: makeReq(),
       }),
     ).rejects.toThrow('Strategy "local" did not save "image.png"');
 
     expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing request before writing storage', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL: jest.fn() });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('processFileURL requires an authenticated request');
+
+    expect(saveURL).not.toHaveBeenCalled();
     expect(db.createFile).not.toHaveBeenCalled();
   });
 
@@ -2276,6 +2497,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).not.toHaveBeenCalled();
@@ -2418,6 +2640,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).toHaveBeenCalledWith({
@@ -2451,6 +2674,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).toHaveBeenCalledWith({

@@ -63,19 +63,32 @@ export type StorageScope = {
   replacementLocks?: Map<string, Promise<void>>;
 };
 
-type ScopeSource = {
+type ScopeIdentity = {
   tenantId?: string;
   user?: { id?: string; tenantId?: string };
-  /**
-   * Resolved app config. Required, because it is what distinguishes a real request
-   * from a reduced copy of one: without it there is no way to tell "no cap is
-   * configured" from "this object never carried the cap", and the second silently
-   * disables the quota.
-   */
-  config: {
-    fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
-  };
 };
+
+type ScopeSource = ScopeIdentity &
+  (
+    | {
+        storageScope: StorageScope;
+        config?: {
+          fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
+        };
+      }
+    | {
+        storageScope?: never;
+        /**
+         * Resolved app config. Required, because it is what distinguishes a real request
+         * from a reduced copy of one: without it there is no way to tell "no cap is
+         * configured" from "this object never carried the cap", and the second silently
+         * disables the quota.
+         */
+        config: {
+          fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
+        };
+      }
+  );
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
 const scopesByRequest: WeakMap<ScopeSource, StorageScope> = new WeakMap();
@@ -155,6 +168,10 @@ function assertChargeableBytes(bytes: number | null | undefined, label: string):
  * authenticates users that carry no tenant of their own and supplies it per request.
  */
 export function resolveStorageScope(req: ScopeSource): StorageScope {
+  if (req.storageScope) {
+    return req.storageScope;
+  }
+
   const cached = scopesByRequest.get(req);
   if (cached) {
     return cached;
@@ -424,6 +441,84 @@ export type FileRow = LedgerRow & {
   file_id?: string;
   user?: string;
 };
+
+type StoredFileRow = FileRow & {
+  source?: string;
+  filepath?: string;
+  storageKey?: string;
+  storageRegion?: string;
+};
+
+export type FileQuotaPersistenceDependencies<TRequest, TResult> = {
+  resolveScope: (req: TRequest) => StorageScope;
+  createFile: (row: FileRow, disableTTL?: boolean) => Promise<TResult>;
+  getUserStorageUsage: GetUserStorageUsage;
+  getDeleteFile: (
+    source?: string,
+  ) => ((req: TRequest, row: StoredFileRow) => Promise<void>) | undefined;
+  onCleanupError: (error: unknown) => void;
+};
+
+export type FileQuotaPersistence<TRequest, TResult> = {
+  deleteStoredFile: (req: TRequest, row: StoredFileRow) => Promise<void>;
+  persistFile: <TRow extends FileRow>(
+    req: TRequest,
+    row: TRow,
+    rollback: StorageRollback,
+    options?: {
+      disableTTL?: boolean;
+      replacedBytes?: number | null;
+      replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null;
+    },
+  ) => Promise<TResult>;
+};
+
+/**
+ * Builds the application-facing File persistence boundary. The legacy service only
+ * supplies database and storage-strategy dependencies; tenant stamping, quota
+ * accounting, and cleanup behavior stay owned by this package.
+ */
+export function createFileQuotaPersistence<TRequest, TResult>(
+  dependencies: FileQuotaPersistenceDependencies<TRequest, TResult>,
+): FileQuotaPersistence<TRequest, TResult> {
+  const deleteStoredFile = async (req: TRequest, row: StoredFileRow): Promise<void> => {
+    const scope = dependencies.resolveScope(req);
+    const deleteFile = dependencies.getDeleteFile(row.source);
+    if (!deleteFile) {
+      return;
+    }
+    await deleteFile(req, {
+      ...row,
+      user: scope.userId,
+      tenantId: row.tenantId ?? scope.tenantId,
+    });
+  };
+
+  const persistFile = <TRow extends FileRow>(
+    req: TRequest,
+    row: TRow,
+    rollback: StorageRollback,
+    options: {
+      disableTTL?: boolean;
+      replacedBytes?: number | null;
+      replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null;
+    } = {},
+  ): Promise<TResult> =>
+    persistFileWithQuota(
+      {
+        scope: dependencies.resolveScope(req),
+        row,
+        write: (scopedRow) => dependencies.createFile(scopedRow, options.disableTTL ?? true),
+        rollback,
+        getUserStorageUsage: dependencies.getUserStorageUsage,
+        replacedBytes: options.replacedBytes,
+        replacing: options.replacing,
+      },
+      dependencies.onCleanupError,
+    );
+
+  return { deleteStoredFile, persistFile };
+}
 
 export type SkillFileRow = LedgerRow & {
   skillId?: { toString(): string } | string;
