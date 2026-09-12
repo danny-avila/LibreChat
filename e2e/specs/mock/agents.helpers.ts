@@ -11,6 +11,8 @@ const NARROW_MAX_WIDTH = 768;
 /** Playwright reports no viewport only for a full-page context, which the mock
  *  projects never use; treat that as the desktop layout. */
 const DESKTOP_WIDTH = 1280;
+/** `MOBILE_DRAWER_ID` in `client/src/components/UnifiedSidebar/constants.ts`. */
+const MOBILE_DRAWER_ID = 'mobile-drawer';
 
 export type AgentSummary = {
   _id: string;
@@ -104,18 +106,17 @@ export async function openAgentBuilder(page: Page) {
      *  rail instead would turn a slow first paint into the wrong branch. */
     const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) <= NARROW_MAX_WIDTH;
     if (narrow) {
-      const openSidebarButton = page.getByRole('button', { name: 'Open sidebar' });
-      /** The switcher lives inside the sidebar, so a closed drawer takes the
-       *  control with it. Whichever of the two the shell paints first says
-       *  which state it is in — waiting for that, rather than asking an
-       *  unpainted page, is what keeps a slow start from reading as "open". */
-      const panelSwitcher = page.getByTestId('panel-switcher-button');
-      await expect(openSidebarButton.or(panelSwitcher).first()).toBeVisible();
-      if (await openSidebarButton.isVisible()) {
-        await openSidebarButton.click();
+      /** The drawer stays mounted while closed — translated off-canvas and
+       *  marked `inert` — so the switcher inside it is "visible" either way and
+       *  says nothing about the state. `inert` is the state, and the drawer
+       *  element is where it is written (`UnifiedSidebar.tsx`). */
+      const drawer = page.locator(`#${MOBILE_DRAWER_ID}`);
+      await expect(drawer).toBeAttached();
+      if (await drawer.evaluate((element) => element.hasAttribute('inert'))) {
+        await page.getByRole('button', { name: 'Open sidebar' }).click();
+        await expect(drawer).not.toHaveAttribute('inert', /.*/);
       }
-      await expect(panelSwitcher).toBeVisible();
-      await panelSwitcher.click();
+      await page.getByTestId('panel-switcher-button').click();
       await page.getByRole('menuitemcheckbox', { name: 'Agent Builder' }).click();
     } else {
       const agentBuilderButton = page.getByRole('button', { name: 'Agent Builder' });
