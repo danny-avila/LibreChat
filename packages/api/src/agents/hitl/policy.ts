@@ -344,6 +344,8 @@ export interface PendingActionContext {
   threadId?: string;
   /** Fingerprint of the graph-determining request fields; see {@link computeAgentRequestFingerprint}. */
   requestFingerprint?: string;
+  /** Current fingerprint; the legacy field remains populated for rolling-deploy compatibility. */
+  requestFingerprintV2?: string;
   /** Graph-determining fields to replay on resume; see {@link RESUME_CONTEXT_KEYS}. */
   resumeContext?: Record<string, unknown>;
   /** Opaque server-only binding to the stateful code targets selected at pause time. */
@@ -754,6 +756,29 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
 }
 
 /**
+ * Fingerprint understood by replicas predating conversation-owned code environments.
+ * Writers retain it in `requestFingerprint` while also storing the stricter current
+ * fingerprint, allowing either replica generation to resume safely during a rollout.
+ */
+export function computeLegacyAgentRequestFingerprint(
+  fields: AgentRequestFingerprintFields,
+): string {
+  const canonical = JSON.stringify({
+    endpoint: fields.endpoint ?? null,
+    endpointType: fields.endpointType ?? null,
+    agent_id: fields.agent_id ?? null,
+    model: fields.model ?? null,
+    spec: fields.spec ?? null,
+    promptPrefix: fields.promptPrefix ?? null,
+    ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
+      ? { codeApprovalMode: fields.codeApprovalMode ?? null }
+      : {}),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+/**
  * Wrap a HumanInterruptPayload (from the SDK or synthesized locally) as a
  * {@link Agents.PendingAction} record persisted with the job.
  *
@@ -796,6 +821,7 @@ export function buildPendingAction(
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,
+    requestFingerprintV2: ctx.requestFingerprintV2,
     resumeContext: ctx.resumeContext,
     codeExecutionBinding: ctx.codeExecutionBinding,
   };
@@ -816,6 +842,7 @@ export function toClientPendingAction(
   }
   const {
     requestFingerprint: _requestFingerprint,
+    requestFingerprintV2: _requestFingerprintV2,
     resumeContext: _resumeContext,
     codeExecutionBinding: _codeExecutionBinding,
     ...clientSafe

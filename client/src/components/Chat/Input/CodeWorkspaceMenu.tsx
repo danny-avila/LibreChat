@@ -29,7 +29,7 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
 
-  if (!workspace.required || workspace.locked) return null;
+  if (!workspace.required) return null;
 
   const environmentIds = new Set(workspace.environments.map(({ environment }) => environment.id));
   const selectWorkspace = (selection: CodeWorkspaceSelection) => {
@@ -82,6 +82,27 @@ export default function CodeWorkspaceMenu({
     workspace.state === 'unavailable'
       ? FolderX
       : Folder;
+
+  if (workspace.locked) {
+    if (workspace.canSubmit) return null;
+    const recovery = localize('com_ui_code_workspace_locked_recovery');
+    return (
+      <TooltipAnchor
+        description={recovery}
+        render={
+          <div
+            data-testid="code-workspace-locked-status"
+            role="status"
+            aria-label={`${label}. ${recovery}`}
+            className={cn(composerControlClasses(), 'min-w-0 max-w-full cursor-default px-2.5')}
+          />
+        }
+      >
+        <Icon className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+        <span className="min-w-0 max-w-[16rem] truncate">{label}</span>
+      </TooltipAnchor>
+    );
+  }
 
   return (
     <Ariakit.MenuProvider store={menuStore}>
@@ -170,7 +191,8 @@ export default function CodeWorkspaceMenu({
               </div>
             )}
             {workspaces.map((descriptor) => {
-              const isSelected = descriptor.id === selected?.workspaceId;
+              const isSelected =
+                workspace.mode === 'attached' && descriptor.id === selected?.workspaceId;
               return (
                 <Ariakit.MenuItemRadio
                   key={descriptor.id}

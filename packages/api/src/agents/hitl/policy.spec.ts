@@ -11,6 +11,7 @@ import {
   buildPendingAction,
   toClientPendingAction,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   captureResumeModelParameters,
   sanitizeResumeModelParameters,
   pickResumeContext,
@@ -379,6 +380,7 @@ describe('toClientPendingAction', () => {
       streamId: 'stream-1',
       conversationId: 'conv-1',
       requestFingerprint: 'fp-hash',
+      requestFingerprintV2: 'fp-v2-hash',
       resumeContext: {
         endpoint: 'agents',
         model_parameters: { temperature: 0.5 },
@@ -393,6 +395,7 @@ describe('toClientPendingAction', () => {
     expect(clientSafe).toBeDefined();
     expect(clientSafe?.resumeContext).toBeUndefined();
     expect(clientSafe?.requestFingerprint).toBeUndefined();
+    expect(clientSafe?.requestFingerprintV2).toBeUndefined();
     expect(clientSafe?.codeExecutionBinding).toBeUndefined();
     expect(clientSafe?.actionId).toBe(full.actionId);
     expect(clientSafe?.streamId).toBe('stream-1');
@@ -400,6 +403,7 @@ describe('toClientPendingAction', () => {
     // Non-mutating: the stored record keeps its replay state for the resume route.
     expect(full.resumeContext).toBeDefined();
     expect(full.requestFingerprint).toBe('fp-hash');
+    expect(full.requestFingerprintV2).toBe('fp-v2-hash');
     expect(full.codeExecutionBinding).toEqual({
       version: 1,
       targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
@@ -681,6 +685,22 @@ describe('computeAgentRequestFingerprint', () => {
         ...base,
         codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-b' }],
       }),
+    );
+  });
+
+  it('keeps a legacy-compatible digest while the current digest pins code environments', () => {
+    const base = { endpoint: 'agents', agent_id: 'agent-1' };
+    const withAttachedWorkspace = {
+      ...base,
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
+    };
+
+    expect(computeLegacyAgentRequestFingerprint(base)).toBe(
+      computeLegacyAgentRequestFingerprint(withAttachedWorkspace),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint(withAttachedWorkspace),
     );
   });
 

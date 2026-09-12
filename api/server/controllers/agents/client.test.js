@@ -78,12 +78,20 @@ describe('AgentClient code approval persistence', () => {
       },
       req: {
         body: { codeApprovalMode: 'acceptEdits' },
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [
+            { environmentId: 'attached-vm', workspaceId: 'project-a' },
+            { environmentId: 'team-vm', workspaceId: 'project-b' },
+          ],
+        },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
       },
     };
 
     expect(client.getSaveOptions()).toMatchObject({
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [
         { environmentId: 'attached-vm', workspaceId: 'project-a' },
         { environmentId: 'team-vm', workspaceId: 'project-b' },

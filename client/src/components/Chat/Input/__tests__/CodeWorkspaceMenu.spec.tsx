@@ -133,6 +133,26 @@ describe('CodeWorkspaceMenu', () => {
     });
   });
 
+  test('does not mark a suggested workspace selected in no-attached mode', async () => {
+    render(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({ mode: 'without_attached', state: 'without_attached' })}
+        disabled={false}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('code-workspace'));
+
+    expect(
+      screen.getByRole('menuitemradio', { name: /com_ui_code_workspace_without_attached/ }),
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('menuitemradio', { name: /Project A/ })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
+
   test('hides the chooser after the conversation decision is locked', () => {
     render(
       <CodeWorkspaceMenu
@@ -143,5 +163,27 @@ describe('CodeWorkspaceMenu', () => {
     );
 
     expect(screen.queryByTestId('code-workspace')).not.toBeInTheDocument();
+  });
+
+  test('shows recovery status when a locked workspace is unavailable', () => {
+    render(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({
+          locked: true,
+          canSubmit: false,
+          state: 'unavailable',
+          selections: undefined,
+          environments: [
+            { environment, state: 'unavailable', workspaces: [], selected: undefined },
+          ],
+        })}
+        disabled={false}
+      />,
+    );
+
+    expect(screen.getByTestId('code-workspace-locked-status')).toHaveAccessibleName(
+      'com_ui_code_workspace_unavailable. com_ui_code_workspace_locked_recovery',
+    );
   });
 });

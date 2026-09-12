@@ -20,6 +20,7 @@
   "com_ui_code_workspace_unsupported": "Update worker for workspaces",
   "com_ui_code_workspace_without_attached": "No attached workspace",
   "com_ui_code_workspace_without_attached_info": "Chat without using files or commands on an attached machine.",
+  "com_ui_code_workspace_locked_recovery": "Reconnect or restore this workspace, or start a new chat.",
   "com_ui_code_workspaces_selected": "{{0}} code workspaces",
   "com_ui_code_approval_ask": "Ask before changes",
   "com_ui_code_approval_ask_description": "Ask before editing files or running commands",

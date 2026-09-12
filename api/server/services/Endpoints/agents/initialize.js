@@ -24,6 +24,7 @@ const {
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  optsOutOfAttachedCodeEnvironment,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -565,6 +566,8 @@ const initializeClient = async ({
     requestedSelections: runtimeRequestBody?.codeWorkspaces,
     conversation: requestConversation,
   });
+  /** Trusted, normalized pair used by every persistence path, including init failures. */
+  req._codeEnvironmentDecision = codeEnvironmentDecision;
   runtimeRequestBody = {
     ...runtimeRequestBody,
     codeEnvironmentMode: codeEnvironmentDecision.mode,
@@ -1026,13 +1029,11 @@ const initializeClient = async ({
   const toLazySubagentMetadata = async (agent) => {
     const configuredCodeEnvironments =
       appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
-    const configuredCodeEnvironment = agent.code_environment_id
-      ? configuredCodeEnvironments?.find(({ id }) => id === agent.code_environment_id)
-      : configuredCodeEnvironments?.find(({ default: isDefault }) => isDefault === true);
-    const attachedEnvironmentOptOut =
-      runtimeRequestBody?.codeEnvironmentMode === 'without_attached' &&
-      agent.stateful_code_sessions === true &&
-      configuredCodeEnvironment?.type === 'attached';
+    const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+      agent,
+      runtimeRequestBody,
+      configuredCodeEnvironments,
+    );
     const lazyCodeEnvAvailable =
       codeEnvAvailable === true &&
       agent.tools?.includes(Tools.execute_code) === true &&

@@ -632,7 +632,8 @@ export type InitializedAgent = Agent & {
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
 
-function optsOutOfAttachedCodeEnvironment(
+/** Returns true when a conversation-level choice disables an attached environment. */
+export function optsOutOfAttachedCodeEnvironment(
   agent: Agent,
   requestBody: RequestBody | undefined,
   environments: readonly CodeEnvironmentConfig[] | undefined,
