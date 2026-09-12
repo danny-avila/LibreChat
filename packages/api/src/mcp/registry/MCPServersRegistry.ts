@@ -197,11 +197,6 @@ interface ResolvedMCPAllowlists {
   allowedAddresses?: string[] | null;
 }
 
-/** Whether `current` was stored after `stub`, the order that flights may wait in. */
-function isNewerStub(current: t.ParsedServerConfig, stub: t.ParsedServerConfig): boolean {
-  return current.updatedAt != null && stub.updatedAt != null && current.updatedAt > stub.updatedAt;
-}
-
 /** The stored entry a reinspection reads and writes back to. */
 interface ReinspectionTarget {
   configRepo: IServerConfigsRepositoryInterface;
@@ -251,6 +246,9 @@ export class MCPServersRegistry {
   /** In-flight reinspections, shared by callers that would inspect the same stored entry
    *  under the same allowlists. */
   private readonly pendingReinspections = new Map<string, Promise<t.AddServerResult>>();
+
+  /** The in-flight reinspection each settling flight waits on, by key, so waits never form a cycle. */
+  private readonly reinspectionWaits = new Map<string, string>();
 
   /** Memoized YAML server names — set once after boot-time init, never changes. */
   private yamlServerNames: Set<string> | null = null;
@@ -741,33 +739,60 @@ export class MCPServersRegistry {
     return this.joinReinspection(target, { allowedDomains, allowedAddresses }, entry);
   }
 
-  /** Shares one inspection and write of `stub` among callers judged against the same allowlists. */
+  /**
+   * Shares one inspection and write of `stub` among callers judged against the same allowlists.
+   * A flight settling against another stub passes its own key as `waiter` and joins that stub's
+   * flight, unless the flight already waits on the waiter; then the waiter inspects it itself.
+   */
   private async joinReinspection(
     target: ReinspectionTarget,
     allowlists: ResolvedMCPAllowlists,
     stub: t.ParsedServerConfig,
+    waiter?: string,
   ): Promise<t.AddServerResult> {
     const key = this.reinspectionKey(target, allowlists, stub);
-    const pending = this.pendingReinspections.get(key);
-    if (pending) {
-      return pending;
+    if (waiter != null && this.waitsOn(key, waiter)) {
+      return this.reinspectStub(target, allowlists, stub, waiter);
     }
-
-    const reinspection = this.reinspectStub(target, allowlists, stub);
-    this.pendingReinspections.set(key, reinspection);
+    const pending = this.pendingReinspections.get(key);
+    const reinspection = pending ?? this.reinspectStub(target, allowlists, stub, key);
+    if (!pending) {
+      this.pendingReinspections.set(key, reinspection);
+    }
+    if (waiter != null) {
+      this.reinspectionWaits.set(waiter, key);
+    }
     try {
       return await reinspection;
     } finally {
-      if (this.pendingReinspections.get(key) === reinspection) {
+      if (waiter != null && this.reinspectionWaits.get(waiter) === key) {
+        this.reinspectionWaits.delete(waiter);
+      }
+      if (!pending && this.pendingReinspections.get(key) === reinspection) {
         this.pendingReinspections.delete(key);
       }
     }
+  }
+
+  /** Whether the flight for `key` is `waiter` or waits on it, directly or through other flights. */
+  private waitsOn(key: string, waiter: string): boolean {
+    for (
+      let next: string | undefined = key;
+      next != null;
+      next = this.reinspectionWaits.get(next)
+    ) {
+      if (next === waiter) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async reinspectStub(
     target: ReinspectionTarget,
     allowlists: ResolvedMCPAllowlists,
     stub: t.ParsedServerConfig,
+    flightKey: string,
   ): Promise<t.AddServerResult> {
     const { serverName, storageLocation, userId } = target;
     const { inspectionFailed: _, ...configForInspection } = stub;
@@ -789,6 +814,7 @@ export class MCPServersRegistry {
         target,
         allowlists,
         stub,
+        flightKey,
         new MCPInspectionFailedError(serverName, error as Error),
       );
     }
@@ -802,6 +828,7 @@ export class MCPServersRegistry {
       target,
       allowlists,
       stub,
+      flightKey,
       new MCPInspectionFailedError(
         serverName,
         new Error('Storage did not replace the inspected stub'),
@@ -812,7 +839,7 @@ export class MCPServersRegistry {
   /**
    * Settles a reinspection whose own inspection did not replace `stub` against the entry stored
    * now. A recovery another writer stored is the outcome, and this replica's read caches drop
-   * the stub they may still memoize from before it. A newer stub from a registry
+   * the stub they may still memoize from before it. A different stub from a registry
    * re-initialization is settled through its own flight, which this one joins when another
    * request already started it. A stub still in place rejects with `failure`.
    */
@@ -820,6 +847,7 @@ export class MCPServersRegistry {
     target: ReinspectionTarget,
     allowlists: ResolvedMCPAllowlists,
     stub: t.ParsedServerConfig,
+    flightKey: string,
     failure: MCPInspectionFailedError,
   ): Promise<t.AddServerResult> {
     const { serverName, storageLocation, userId } = target;
@@ -831,12 +859,7 @@ export class MCPServersRegistry {
     if (current.updatedAt === stub.updatedAt) {
       throw failure;
     }
-    /** Joining only a flight for a strictly newer stub keeps flights acyclic: every wait points
-     *  forward in `updatedAt`. A replacement that is not newer (clock skew) is inspected here. */
-    if (isNewerStub(current, stub)) {
-      return this.joinReinspection(target, allowlists, current);
-    }
-    return this.reinspectStub(target, allowlists, current);
+    return this.joinReinspection(target, allowlists, current, flightKey);
   }
 
   private async getReinspectionEntry({

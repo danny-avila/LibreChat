@@ -1061,18 +1061,18 @@ describe('MCPServersRegistry', () => {
       expect(replacedResult).toEqual(newerResult);
     });
 
-    it('inspects a replacement stub stored with an older timestamp itself instead of joining its flight', async () => {
+    it('adopts the outcome of the flight for a replacement stored with an older timestamp', async () => {
       jest.setSystemTime(new Date(FIXED_TIME + 1000));
       await registry.addServerStub('stub_server', stubOptions, 'CACHE');
       const skewedOptions: t.MCPOptions = { ...stubOptions, url: 'https://skewed.example.com/mcp' };
       const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
-      let releaseNewer!: () => void;
-      const newerHeld = new Promise<void>((resolve) => {
-        releaseNewer = resolve;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
       });
-      let markNewerInspecting!: () => void;
-      const newerInspecting = new Promise<void>((resolve) => {
-        markNewerInspecting = resolve;
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
       });
       let releaseSkewed!: () => void;
       const skewedHeld = new Promise<void>((resolve) => {
@@ -1085,18 +1085,19 @@ describe('MCPServersRegistry', () => {
       const inspectSpy = jest
         .spyOn(MCPServerInspector, 'inspect')
         .mockImplementationOnce(async (...args) => {
-          markNewerInspecting();
-          await newerHeld;
+          markReplacedInspecting();
+          await replacedHeld;
           return inspect(...args);
         })
         .mockImplementationOnce(async (...args) => {
           markSkewedInspecting();
           await skewedHeld;
           return inspect(...args);
-        });
+        })
+        .mockRejectedValue(new Error('connect ECONNREFUSED'));
 
-      const newer = registry.reinspectServer('stub_server', 'CACHE');
-      await newerInspecting;
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
       jest.setSystemTime(new Date(FIXED_TIME));
       await registry['cacheConfigsRepo'].update('stub_server', {
         ...skewedOptions,
@@ -1106,15 +1107,87 @@ describe('MCPServersRegistry', () => {
       const skewed = registry.reinspectServer('stub_server', 'CACHE');
       await skewedInspecting;
 
-      releaseNewer();
-      const newerResult = await newer;
-      expect(inspectSpy).toHaveBeenCalledTimes(3);
-      expect(inspectSpy.mock.calls[2][1]).toMatchObject(skewedOptions);
-      expect(newerResult.config).toMatchObject(skewedOptions);
-
+      releaseReplaced();
+      /** The store is promise-only, so one real macrotask lets the replaced flight settle as far
+       *  as it can while the skewed flight is still held. */
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
       releaseSkewed();
-      await expect(skewed).resolves.toEqual(newerResult);
+      const [replacedResult, skewedResult] = await Promise.all([replaced, skewed]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(skewedResult.config).toMatchObject(skewedOptions);
+      expect(skewedResult.config.inspectionFailed).toBeUndefined();
+      expect(replacedResult).toEqual(skewedResult);
+    });
+
+    it('breaks a mutual wait by inspecting within the flight that would close it', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const restoredOptions: t.MCPOptions = {
+        ...stubOptions,
+        url: 'https://restored.example.com/mcp',
+      };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseFirst!: () => void;
+      const firstHeld = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let markFirstInspecting!: () => void;
+      const firstInspecting = new Promise<void>((resolve) => {
+        markFirstInspecting = resolve;
+      });
+      let releaseMoved!: () => void;
+      const movedHeld = new Promise<void>((resolve) => {
+        releaseMoved = resolve;
+      });
+      let markMovedInspecting!: () => void;
+      const movedInspecting = new Promise<void>((resolve) => {
+        markMovedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markFirstInspecting();
+          await firstHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markMovedInspecting();
+          await movedHeld;
+          return inspect(...args);
+        });
+
+      const first = registry.reinspectServer('stub_server', 'CACHE');
+      await firstInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const moved = registry.reinspectServer('stub_server', 'CACHE');
+      await movedInspecting;
+
+      releaseFirst();
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
+      /** A stub carrying the first flight's `updatedAt` again, which only clock skew can write,
+       *  makes the flight the first one now waits on settle into the first one's key. */
+      jest.setSystemTime(new Date(FIXED_TIME));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...restoredOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      releaseMoved();
+      const [firstResult, movedResult] = await Promise.all([first, moved]);
+
       expect(inspectSpy).toHaveBeenCalledTimes(3);
+      expect(inspectSpy.mock.calls[2][1]).toMatchObject(restoredOptions);
+      expect(movedResult.config).toMatchObject(restoredOptions);
+      expect(firstResult).toEqual(movedResult);
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(
+        movedResult.config,
+      );
     });
 
     it('rejects instead of waiting on itself when storage leaves the inspected stub in place', async () => {
