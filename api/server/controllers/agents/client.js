@@ -4912,6 +4912,7 @@ class AgentClient extends BaseClient {
             this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
           ),
           subagentTasks: this.options.subagentTasks,
+          runFiles: this.options.runFiles,
         }).then((createdRun) => {
           if (!createdRun) {
             throw new Error('Failed to create run');
@@ -5123,6 +5124,7 @@ class AgentClient extends BaseClient {
     } finally {
       /** An aborted/erroring run can still have completed compaction before
        * the failure; retain that model-visible state for actor reconciliation. */
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the
@@ -5664,6 +5666,7 @@ class AgentClient extends BaseClient {
           this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
         ),
         subagentTasks: this.options.subagentTasks,
+        runFiles: this.options.runFiles,
       });
 
       if (!run) {
@@ -5787,6 +5790,7 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the

@@ -93,7 +93,7 @@ async function handleEmbed(req, res) {
 async function handleQuery(req, res) {
   const body = await readJson(req);
   queries.push({ file_id: body.file_id || '', query: body.query || '' });
-  sendJson(res, 200, { data: [] });
+  sendJson(res, 200, []);
 }
 
 async function handleDeleteDocuments(req, res) {

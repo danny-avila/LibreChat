@@ -32,6 +32,8 @@ const sessions = new Map();
 const uploads = [];
 /** @type {Array<{ lang: string; codeLength: number; fileCount: number }>} */
 const execs = [];
+/** @type {Map<string, { name: string; content: Buffer }>} */
+const generated = new Map();
 
 function sessionIdFor(kind, id) {
   return `sess-${kind || 'user'}-${id || 'anon'}`;
@@ -155,6 +157,42 @@ async function handleUploadBatch(req, res) {
   });
 }
 
+function handleRunFileVersion(body, res, label, operation) {
+  const sessionId = `e2e-run-file-versions-${label}`;
+  const fileId = `e2e-versioned-${label}`;
+  const name = 'analysis.csv';
+  const key = `${sessionId}/${fileId}`;
+  const files = Array.isArray(body.files) ? body.files : [];
+  const inputNames = [`e2e-run-file-versions-${label}.pdf`, `e2e-run-file-versions-${label}.csv`];
+  if (!inputNames.every((filename) => files.some((file) => file.name === filename))) {
+    sendJson(res, 400, { message: 'version scenario requires both current uploaded inputs' });
+    return;
+  }
+  if (
+    operation !== 'write-v1' &&
+    (!generated.has(key) ||
+      !files.some((file) => file.id === fileId && file.storage_session_id === sessionId))
+  ) {
+    sendJson(res, 400, { message: 'version scenario lost the previous sandbox output' });
+    return;
+  }
+  if (operation !== 'inspect') {
+    const content = Buffer.from(
+      operation === 'write-v1' ? 'version,total\n1,30\n' : 'version,total\n2,35\n',
+    );
+    /** Reuse the storage identity so only LibreChat's capture can preserve earlier bytes. */
+    generated.set(key, { name, content });
+    sessions.set(sessionId, [{ fileId, filename: name }]);
+  }
+  const file = generated.get(key);
+  sendJson(res, 200, {
+    session_id: sessionId,
+    stdout: `${operation} ${name}\n${file.content.toString('utf8')}`,
+    stderr: '',
+    files: [{ id: fileId, name }],
+  });
+}
+
 async function handleExec(req, res) {
   const body = await readJson(req);
   execs.push({
@@ -162,6 +200,29 @@ async function handleExec(req, res) {
     codeLength: typeof body.code === 'string' ? body.code.length : 0,
     fileCount: Array.isArray(body.files) ? body.files.length : 0,
   });
+  const versionMarker = body.code?.match(
+    /E2E_RUN_FILE_VERSION:([A-Za-z0-9-]+):(write-v1|inspect|write-v2)/,
+  );
+  if (versionMarker) {
+    handleRunFileVersion(body, res, versionMarker[1], versionMarker[2]);
+    return;
+  }
+  const runFileLabel = body.code?.match(/E2E_RUN_FILE_ARTIFACT:([A-Za-z0-9-]+)/)?.[1];
+  if (runFileLabel) {
+    const sessionId = `e2e-run-files-${runFileLabel}`;
+    const fileId = `e2e-generated-${runFileLabel}`;
+    const name = `e2e-run-files-${runFileLabel}.csv`;
+    const content = Buffer.from('source,count\npdf,1\n');
+    generated.set(`${sessionId}/${fileId}`, { name, content });
+    sessions.set(sessionId, [{ fileId, filename: name }]);
+    sendJson(res, 200, {
+      session_id: sessionId,
+      stdout: `Created ${name}\n`,
+      stderr: '',
+      files: [{ id: fileId, name }],
+    });
+    return;
+  }
   sendJson(res, 200, { stdout: 'E2E code exec ok\n', stderr: '', files: [] });
 }
 
@@ -183,6 +244,7 @@ const server = http.createServer((req, res) => {
 
     if (pathname === '/__debug/reset' && req.method === 'POST') {
       sessions.clear();
+      generated.clear();
       uploads.length = 0;
       execs.length = 0;
       sendJson(res, 200, { ok: true });
@@ -201,6 +263,24 @@ const server = http.createServer((req, res) => {
 
     if (pathname === '/v1/exec' && req.method === 'POST') {
       await handleExec(req, res);
+      return;
+    }
+
+    const downloadMatch = pathname.match(/^\/v1\/download\/([^/]+)\/([^/]+)$/);
+    if (downloadMatch && req.method === 'GET') {
+      const key = `${decodeURIComponent(downloadMatch[1])}/${decodeURIComponent(downloadMatch[2])}`;
+      const file = generated.get(key);
+      if (!file) {
+        sendJson(res, 404, { message: 'file not found' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/csv',
+        'Content-Length': file.content.length,
+        'Content-Disposition': `attachment; filename="${file.name}"`,
+        'X-Original-Filename': file.name,
+      });
+      res.end(file.content);
       return;
     }
 

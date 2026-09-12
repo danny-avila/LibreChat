@@ -26,6 +26,7 @@ const {
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  isCodeArtifactToolOutput,
   getModelRefusalInfo,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
@@ -38,10 +39,6 @@ const { saveBase64Image } = require('~/server/services/Files/process');
 
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
-}
-
-function isCodeArtifactToolOutput(output) {
-  return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
 }
 
 function getAttachmentOwnership(metadata) {
