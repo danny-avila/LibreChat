@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
-const { AccessControlService, isEnabled } = require('@librechat/api');
+const {
+  AccessControlService,
+  isEnabled,
+  resolveDirectoryPrincipalUser,
+} = require('@librechat/api');
 const {
   tenantStorage,
   getTenantId,
@@ -341,20 +345,15 @@ const ensurePrincipalExists = async function (principal) {
       throw new Error('Entra ID user principals must have email and idOnTheSource');
     }
 
-    let existingUser = await db.findUser({ idOnTheSource: principal.idOnTheSource });
+    const userBySourceId = await db.findUser({ idOnTheSource: principal.idOnTheSource });
+    const userByEmail = userBySourceId ? null : await db.findUser({ email: principal.email });
+    const existingUserId = resolveDirectoryPrincipalUser({
+      userBySourceId: userBySourceId ? { id: userBySourceId._id.toString() } : null,
+      userByEmail: userByEmail ? { id: userByEmail._id.toString() } : null,
+    });
 
-    if (!existingUser) {
-      existingUser = await db.findUser({ email: principal.email });
-    }
-
-    if (existingUser) {
-      if (!existingUser.idOnTheSource && principal.idOnTheSource) {
-        await db.updateUser(existingUser._id, {
-          idOnTheSource: principal.idOnTheSource,
-          provider: 'openid',
-        });
-      }
-      return existingUser._id.toString();
+    if (existingUserId) {
+      return existingUserId;
     }
 
     const userData = {
