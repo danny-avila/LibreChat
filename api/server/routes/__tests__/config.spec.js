@@ -176,6 +176,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('sharePointPickerSharePointScope');
       expect(response.body).not.toHaveProperty('conversationImportMaxFileSize');
       expect(response.body).not.toHaveProperty('insightsEnabled');
+      expect(response.body).not.toHaveProperty('mcpApps');
     });
 
     it('should strip authenticated-only informational fields from unauthenticated response (#12688)', async () => {
@@ -321,6 +322,7 @@ describe('GET /api/config', () => {
         userId: 'user123',
         idOnTheSource: undefined,
         tenantId: 'fallback-tenant',
+        failClosed: true,
       });
     });
 
@@ -336,7 +338,25 @@ describe('GET /api/config', () => {
         userId: 'user123',
         idOnTheSource: undefined,
         tenantId: 'user-tenant',
+        failClosed: true,
       });
+    });
+
+    it.each([
+      [undefined, { enabled: false, legacyHtmlEnabled: true }],
+      [true, { enabled: true, legacyHtmlEnabled: true }],
+      [false, { enabled: false, legacyHtmlEnabled: false }],
+    ])('publishes the authenticated MCP Apps policy for raw apps=%s', async (apps, expected) => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        mcpSettings: apps === undefined ? {} : { apps },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.mcpApps).toEqual(expected);
     });
 
     it('should include modelSpecs, balance, and webSearch', async () => {
@@ -700,6 +720,9 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+      expect(mockGetAppConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user123', failClosed: true }),
+      );
     });
   });
 

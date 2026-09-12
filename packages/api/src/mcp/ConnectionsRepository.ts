@@ -71,6 +71,11 @@ export class ConnectionsRepository {
     return canConnect;
   }
 
+  /** The connection currently pooled for a server, without loading, validating or creating one. */
+  public getPooledConnection(serverName: string): MCPConnection | undefined {
+    return this.connections.get(serverName);
+  }
+
   /** Gets or creates a connection for the specified server with lazy loading */
   async get(
     serverName: string,

@@ -391,6 +391,10 @@ registration:
 #     - '127.0.0.1:8080'
 
 # rateLimits:
+#   # Per-user MCP App browser-route limits. Each limit uses a fixed one-minute window.
+#   mcpApps:
+#     resourcesPerMinute: 120
+#     toolCallsPerMinute: 60
 #   # Authenticated agent-event admission has its own API-key-principal bucket.
 #   agentEvents:
 #     userMax: 40
@@ -463,6 +467,9 @@ actions:
 # Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
 # Supports protocol/port restrictions: 'https://api.example.com:8443' restricts to specific protocol/port.
 # mcpSettings:
+#   # New MCP Apps require explicit opt-in. If omitted, legacy inline HTML remains enabled;
+#   # false disables both MCP Apps and legacy inline HTML.
+#   apps: true
 #   allowedDomains:
 #     - 'host.docker.internal'    # Docker host access (required for Docker setups)
 #     - 'localhost'               # Local development

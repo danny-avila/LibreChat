@@ -1,6 +1,6 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, resolveMCPAppsPolicy } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
@@ -8,6 +8,7 @@ import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
+import type { MCPAppOperationContext } from './apps';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
@@ -23,11 +24,14 @@ import {
   resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
+import { formatToolContent, isRenderableUiResource, selectResolvedAppResource } from './parsers';
+import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
+import { getToolUiResourceUri, isToolHiddenFromApp } from './apps';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
@@ -35,9 +39,7 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
-import { preProcessGraphTokens } from '~/utils/graph';
 import { isAbortError } from '~/utils/errors';
-import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -116,6 +118,16 @@ export class MCPManager extends UserConnectionManager {
       catalogRecoveryMaxStateEntries,
     );
   }
+
+  private readonly resourceUriCache = new Map<string, Map<string, { uri: string }>>();
+
+  private readonly appHiddenToolCache = new Map<string, Set<string>>();
+  private readonly knownToolNamesCache = new Map<string, Set<string>>();
+  /**
+   * Stamp of the connection each cache entry was built from, to detect reconnects (createdAt) and
+   * live tools/list_changed notifications (toolListVersion) that createdAt alone would miss.
+   */
+  private readonly toolCacheConnStamp = new Map<string, string>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(
@@ -1054,6 +1066,145 @@ Please follow these instructions when using tools from the respective MCP server
     });
   }
 
+  public clearResourceUriCache(serverName?: string, userId?: string): void {
+    if (serverName && userId != null) {
+      const cacheKey = `${serverName}:${userId}`;
+      this.resourceUriCache.delete(cacheKey);
+      this.appHiddenToolCache.delete(cacheKey);
+      this.knownToolNamesCache.delete(cacheKey);
+      this.toolCacheConnStamp.delete(cacheKey);
+      return;
+    }
+    if (serverName) {
+      for (const key of this.resourceUriCache.keys()) {
+        if (key === serverName || key.startsWith(`${serverName}:`)) {
+          this.resourceUriCache.delete(key);
+          this.appHiddenToolCache.delete(key);
+          this.knownToolNamesCache.delete(key);
+          this.toolCacheConnStamp.delete(key);
+        }
+      }
+    } else {
+      this.resourceUriCache.clear();
+      this.appHiddenToolCache.clear();
+      this.knownToolNamesCache.clear();
+      this.toolCacheConnStamp.clear();
+    }
+  }
+
+  /**
+   * App-level connections can be recreated when a server config changes, so cached tool metadata
+   * is only valid while it was built from the current connection instance.
+   */
+  private connStamp(connection: MCPConnection): string {
+    return `${connection.createdAt}:${connection.toolListVersion}`;
+  }
+
+  /**
+   * Scope for the tool-metadata caches. An app-level connection is shared
+   * by every user, and nothing clears its entries (`removeUserConnection` only runs for user-scoped
+   * connections), so keying it per user would retain one entry set per user for the process lifetime.
+   * User-scoped connections (OAuth/OBO/customUserVars/runtime placeholders) are distinct connections
+   * that can expose different tools and different visibility per user, so those keep their per-user
+   * key. Decided by connection identity rather than by re-deriving the config's connection scope.
+   */
+  private cacheScope(serverName: string, connection: MCPConnection, userId?: string): string {
+    if (this.appConnections?.getPooledConnection(serverName) === connection) {
+      return `${serverName}:`;
+    }
+    return `${serverName}:${userId ?? ''}`;
+  }
+
+  private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
+    return (
+      this.knownToolNamesCache.has(cacheKey) &&
+      this.toolCacheConnStamp.get(cacheKey) === this.connStamp(connection)
+    );
+  }
+
+  protected override removeUserConnection(userId: string, serverName: string): void {
+    this.clearResourceUriCache(serverName, userId);
+    super.removeUserConnection(userId, serverName);
+  }
+
+  private async buildToolCaches(
+    connection: MCPConnection,
+    signal?: AbortSignal,
+  ): Promise<{
+    serverMap: Map<string, { uri: string }>;
+    appHidden: Set<string>;
+    knownNames: Set<string>;
+    complete: boolean;
+  }> {
+    const { tools, complete } = await connection.fetchToolsSnapshot(undefined, signal);
+    const serverMap = new Map<string, { uri: string }>();
+    const appHidden = new Set<string>();
+    const knownNames = new Set<string>();
+    for (const tool of tools) {
+      knownNames.add(tool.name);
+      if (isToolHiddenFromApp(tool)) {
+        appHidden.add(tool.name);
+      }
+      // A malformed `_meta.ui.resourceUri` on one tool only disables that tool's UI metadata,
+      // never aborting discovery for the whole server.
+      try {
+        const uri = getToolUiResourceUri(tool);
+        if (uri) {
+          serverMap.set(tool.name, { uri });
+        }
+      } catch (error) {
+        logger.warn(`[MCP] Ignoring invalid UI resource metadata on tool "${tool.name}":`, error);
+      }
+    }
+    return { serverMap, appHidden, knownNames, complete };
+  }
+
+  private async populateToolCaches(
+    connection: MCPConnection,
+    cacheKey: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const { serverMap, appHidden, knownNames, complete } = await this.buildToolCaches(
+      connection,
+      signal,
+    );
+    // These caches validate app tool calls and associate tools with their declared UI resource, so
+    // a page missing from a partial `tools/list` is a false denial rather than a missing feature. An incomplete
+    // snapshot (and an empty one, which a transient failure and a genuinely tool-less server both
+    // produce) is left unpublished so the next call re-fetches instead of denying until reconnect.
+    // A snapshot truncated by a tools/list budget cap reports complete and is cached, for the same
+    // reason the advertisement snapshot caches its cap-truncated form: it is reproducible, so
+    // re-fetching it on every call pays the full listing cost without widening the result.
+    if (!complete || knownNames.size === 0) {
+      return;
+    }
+    this.resourceUriCache.set(cacheKey, serverMap);
+    this.appHiddenToolCache.set(cacheKey, appHidden);
+    this.knownToolNamesCache.set(cacheKey, knownNames);
+    this.toolCacheConnStamp.set(cacheKey, this.connStamp(connection));
+  }
+
+  private async getResourceMeta(
+    connection: MCPConnection,
+    serverName: string,
+    toolName: string,
+    userId?: string,
+    requestScoped = false,
+    signal?: AbortSignal,
+  ): Promise<{ uri: string } | undefined> {
+    // Request-scoped servers may expose different tool metadata per request, so their
+    // resourceUri/visibility must not be reused from the serverName:userId cache.
+    if (requestScoped) {
+      const { serverMap } = await this.buildToolCaches(connection, signal);
+      return serverMap.get(toolName);
+    }
+    const cacheKey = this.cacheScope(serverName, connection, userId);
+    if (!this.isToolCacheFresh(cacheKey, connection)) {
+      await this.populateToolCaches(connection, cacheKey, signal);
+    }
+    return this.resourceUriCache.get(cacheKey)?.get(toolName);
+  }
+
   /**
    * Calls a tool on an MCP server, using either a user-specific connection
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
@@ -1481,6 +1632,8 @@ Please follow these instructions when using tools from the respective MCP server
             },
           );
 
+        // Deliberately use `request`: the typed wrapper also enforces the tool's output schema and
+        // rejects task-required tools, which would turn a server response into a host-side failure.
         let result: Awaited<ReturnType<typeof requestTool>>;
         try {
           result = await requestTool();
@@ -1573,7 +1726,86 @@ Please follow these instructions when using tools from the respective MCP server
           await this.updateUserLastActivity(userId);
         }
         this.checkIdleConnections();
-        return formatToolContent(result as t.MCPToolCallResponse, provider);
+        // The app routes reject OBO, Graph-token, and runtime body-placeholder configs, so do not
+        // advertise an app bridge for a tool whose follow-up requests cannot be served.
+        const appCompatible =
+          !rawConfig ||
+          (!rawConfig.obo &&
+            !(!isDbSourced && mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions)) &&
+            getMissingRuntimeBodyPlaceholderFields(rawConfig).length === 0);
+
+        let resourceMeta: { uri: string } | undefined;
+        if (appCompatible) {
+          try {
+            resourceMeta = await this.getResourceMeta(
+              connection,
+              serverName,
+              toolName,
+              userId,
+              requiresEphemeralUserConnection(rawConfig),
+              options?.signal,
+            );
+          } catch {
+            /* empty */
+          }
+        }
+
+        let mcpApps = resolveMCPAppsPolicy();
+        const toolResult = result as t.MCPToolCallResponse;
+        if (resourceMeta || toolResult?.content?.some(isRenderableUiResource)) {
+          ({ mcpApps } = await registry.resolveAllowlists({
+            userId,
+            role: user?.role,
+          }));
+          if (!mcpApps.enabled) {
+            resourceMeta = undefined;
+          } else if (resourceMeta) {
+            logger.debug(
+              `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
+            );
+          }
+        }
+        options?.signal?.throwIfAborted();
+
+        let resolvedAppResource: t.ResourceContents | undefined;
+        if (resourceMeta && mcpApps.enabled) {
+          try {
+            const readResult = await connection.client.readResource(
+              { uri: resourceMeta.uri },
+              { timeout: connection.timeout, signal: options?.signal },
+            );
+            options?.signal?.throwIfAborted();
+            resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceMeta.uri);
+            if (!resolvedAppResource) {
+              logger.warn(
+                `[MCP][${serverName}][${toolName}] App resource "${resourceMeta.uri}" did not return usable App content; preserving tool result`,
+              );
+            }
+          } catch (error) {
+            if (options?.signal?.aborted) {
+              throw error;
+            }
+            logger.warn(
+              `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceMeta.uri}"; preserving tool result`,
+              error,
+            );
+          }
+        }
+
+        return formatToolContent(
+          toolResult,
+          provider,
+          appCompatible
+            ? {
+                serverName,
+                toolName,
+                resourceUri: resourceMeta?.uri,
+                resolvedAppResource,
+                toolArgs: toolArguments,
+                mcpApps,
+              }
+            : { mcpApps },
+        );
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
@@ -1604,5 +1836,254 @@ Please follow these instructions when using tools from the respective MCP server
         }
       }
     }
+  }
+
+  private async getAppServerConfig(context: MCPAppOperationContext): Promise<t.ParsedServerConfig> {
+    const { serverName, user, configServers } = context;
+    const logPrefix = `[MCP][User: ${user.id}][${serverName}]`;
+    const allConfigs = await MCPServersRegistry.getInstance().getAllServerConfigs(
+      user.id,
+      configServers,
+      user.role,
+    );
+    const config = allConfigs[serverName];
+    if (!config) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Configuration for server "${serverName}" not found.`,
+      );
+    }
+    if (config.obo) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Server "${serverName}" requires per-call OBO token resolution which is not supported for app requests.`,
+      );
+    }
+    if (!isUserSourced(config) && mcpOptionsContainGraphTokenPlaceholder(config as t.MCPOptions)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Server "${serverName}" requires Graph API token resolution which is not supported for app requests.`,
+      );
+    }
+    const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(config);
+    if (missingBodyFields.length > 0) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Server "${serverName}" requires request body field(s) (${missingBodyFields.join(', ')}) that are not available for app requests.`,
+      );
+    }
+    return config;
+  }
+
+  /** Runs every View callback through the existing connection lease and direct-bearer recovery owner. */
+  private async runAppOperation<TResult>(
+    context: MCPAppOperationContext,
+    operation: (connection: MCPConnection, options: RequestOptions) => Promise<TResult>,
+  ): Promise<TResult> {
+    const {
+      serverName,
+      user,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+      upstreamTokenProvider,
+      onOAuthCredentialsChanging,
+    } = context;
+    const { signal } = context;
+    const logPrefix = `[MCP][User: ${user.id}][${serverName}]`;
+    const config = await this.getAppServerConfig(context);
+    const directBearerRecovery = usesDirectOpenIDBearerRecovery(config);
+    const directBearerRecoveryState: t.DirectBearerRecoveryState = { attempted: false };
+
+    while (true) {
+      signal?.throwIfAborted();
+      let connection: MCPConnection | undefined;
+      let retained = false;
+      const release = async () => {
+        if (!connection || !retained) {
+          return;
+        }
+        retained = false;
+        await this.releaseConnection(connection);
+      };
+
+      try {
+        connection = await this.getConnection({
+          serverName,
+          user,
+          serverConfig: config,
+          customUserVars,
+          flowManager,
+          tokenMethods,
+          upstreamTokenProvider,
+          onOAuthCredentialsChanging,
+          directBearerRecoveryState,
+          signal,
+        });
+        this.retainConnection(connection);
+        retained = true;
+
+        const activeRecovery = this.oauthRecoveries.get(connection);
+        if (activeRecovery) {
+          if (activeRecovery.directBearerRecoveryConsumed) {
+            directBearerRecoveryState.attempted = true;
+          }
+          await release();
+          await this.waitForConnectionRecovery(activeRecovery.promise, signal);
+          if (activeRecovery.directBearerRecoveryState) {
+            Object.assign(directBearerRecoveryState, activeRecovery.directBearerRecoveryState);
+          }
+          continue;
+        }
+
+        const bearerConfig = await resolveDirectOpenIDBearerConfig({
+          config: config as t.MCPOptions,
+          upstreamTokenProvider,
+          resolvedConfig: directBearerRecoveryState.resolvedConfig,
+          signal,
+        });
+        const currentOptions = processMCPEnv({
+          user,
+          dbSourced: isUserSourced(config),
+          options: bearerConfig,
+          customUserVars,
+        });
+        const headers: Record<string, string> =
+          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+        connection.setRequestHeaders(headers);
+
+        const recover = async (error: unknown): Promise<void> => {
+          if (directBearerRecoveryState.attempted) {
+            throw new MCPAuthenticationRejectedError(serverName, false, error);
+          }
+          directBearerRecoveryState.attempted = true;
+          const recovery = this.recoverDirectOpenIDBearerConnection({
+            connection: connection!,
+            serverName,
+            serverConfig: config,
+            user,
+            flowManager,
+            tokenMethods,
+            customUserVars,
+            upstreamTokenProvider,
+            onOAuthCredentialsChanging,
+            signal,
+            directBearerRecoveryState,
+          });
+          await release();
+          await recovery;
+        };
+
+        const connected = await connection.isConnected(signal);
+        if (!connected) {
+          const connectionError = connection.getLastConnectionCheckError();
+          if (directBearerRecovery && isMCPTransportAuthenticationError(connectionError)) {
+            await recover(connectionError);
+            continue;
+          }
+          throw new McpError(ErrorCode.InternalError, `${logPrefix} Connection is not active.`);
+        }
+
+        let result: TResult;
+        try {
+          result = await operation(connection, {
+            timeout: connection.timeout,
+            ...(signal ? { signal } : {}),
+          });
+        } catch (error) {
+          if (directBearerRecovery && isMCPTransportAuthenticationError(error)) {
+            await recover(error);
+            continue;
+          }
+          throw error;
+        }
+
+        if ((this.userConnections.get(user.id)?.size ?? 0) > 0) {
+          await this.updateUserLastActivity(user.id);
+        }
+        this.checkIdleConnections();
+        return result;
+      } finally {
+        await release();
+      }
+    }
+  }
+
+  async readResource({
+    uri,
+    ...context
+  }: MCPAppOperationContext & {
+    uri: string;
+  }): Promise<unknown> {
+    // The authenticated server remains the authority for its opaque resource URI. LibreChat does
+    // not try to invert URI templates or infer a broader client-side authorization namespace.
+    return this.runAppOperation(context, (connection, options) =>
+      connection.client.readResource({ uri }, options),
+    );
+  }
+
+  async listResources({
+    cursor,
+    ...context
+  }: MCPAppOperationContext & {
+    cursor?: string;
+  }): Promise<unknown> {
+    return this.runAppOperation(context, (connection, options) =>
+      connection.client.listResources(cursor != null ? { cursor } : {}, options),
+    );
+  }
+
+  async listResourceTemplates({
+    cursor,
+    ...context
+  }: MCPAppOperationContext & {
+    cursor?: string;
+  }): Promise<unknown> {
+    return this.runAppOperation(context, (connection, options) =>
+      connection.client.listResourceTemplates(cursor != null ? { cursor } : {}, options),
+    );
+  }
+
+  /**
+   * Proxies a tool call from an MCP App iframe to the MCP server.
+   * Unlike callTool, this is a lightweight proxy without provider formatting.
+   */
+  async appToolCall({
+    serverName,
+    toolName,
+    toolArguments,
+    ...context
+  }: MCPAppOperationContext & {
+    toolName: string;
+    toolArguments: Record<string, unknown>;
+  }): Promise<unknown> {
+    const userId = context.user.id;
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    return this.runAppOperation({ serverName, ...context }, async (connection, options) => {
+      const cacheKey = this.cacheScope(serverName, connection, userId);
+      if (!this.isToolCacheFresh(cacheKey, connection)) {
+        await this.populateToolCaches(connection, cacheKey, options.signal);
+      }
+      if (!this.knownToolNamesCache.get(cacheKey)?.has(toolName)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Tool "${toolName}" is not available on server "${serverName}".`,
+        );
+      }
+      if (this.appHiddenToolCache.get(cacheKey)?.has(toolName)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Tool "${toolName}" is not available to apps (visibility excludes "app").`,
+        );
+      }
+      return connection.client.request(
+        {
+          method: 'tools/call',
+          params: { name: toolName, arguments: toolArguments },
+        },
+        CallToolResultSchema,
+        { ...options, resetTimeoutOnProgress: true },
+      );
+    });
   }
 }

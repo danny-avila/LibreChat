@@ -33,6 +33,10 @@ const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
+const MCP_APP_MARKER = 'E2E_MCP_APP:';
+const MCP_LINK_APP_MARKER = 'E2E_MCP_LINK_APP:';
+const MCP_LEGACY_MARKER = 'E2E_MCP_LEGACY:';
+const MCP_LEGACY_ACTION_MARKER = 'E2E_LEGACY_ACTION';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
@@ -78,6 +82,7 @@ const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
+const MCP_APP_TOOL_NAME_PREFIX = 'show_app';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const ORDERED_CHUNK_DELAY_MS = 2;
@@ -1081,6 +1086,83 @@ function steerToolReplyResponses(label, toolNames) {
       }
       return { response: `${STEER_TOOL_FINAL_TEXT} ${label} ${steerEchoSuffix(messages)}` };
     },
+  };
+}
+
+function mcpAppResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(MCP_APP_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return { responses: ['E2E MCP App unavailable: show_app was not advertised.'] };
+  }
+  return {
+    responses: ['', `E2E MCP App complete: ${label}`],
+    toolCalls: [
+      {
+        id: `call_e2e_mcp_app_${label}`,
+        name: toolName,
+        args: { label },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function mcpLinkAppResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith('show_link_app'));
+  if (!toolName) {
+    return { responses: ['E2E MCP link App unavailable: show_link_app was not advertised.'] };
+  }
+  return {
+    responses: ['', `E2E MCP link App complete: ${label}`],
+    toolCalls: [
+      {
+        id: `call_e2e_mcp_link_app_${label}`,
+        name: toolName,
+        args: { label },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function mcpLegacyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith('show_legacy'));
+  if (!toolName) {
+    return { responses: ['E2E legacy MCP-UI unavailable: show_legacy was not advertised.'] };
+  }
+  return {
+    responses: [''],
+    toolCalls: [
+      {
+        id: `call_e2e_mcp_legacy_${label}`,
+        name: toolName,
+        args: { label },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolResult = findLastToolMessageText(streamMessages, 'UI Resource ID:');
+      const resourceId = toolResult.match(/UI Resource ID: ([a-f0-9]+)/)?.[1];
+      return resourceId ? { responses: [`Legacy MCP-UI: \\ui{${resourceId}}`] } : null;
+    },
+  };
+}
+
+function mcpLegacyActionResponses(toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith('legacy_action'));
+  if (!toolName) {
+    return { responses: ['E2E legacy action unavailable: legacy_action was not advertised.'] };
+  }
+  return {
+    responses: ['', 'E2E legacy action complete'],
+    toolCalls: [
+      {
+        id: 'call_e2e_mcp_legacy_action',
+        name: toolName,
+        args: { label: 'legacy-view' },
+        type: 'tool_call',
+      },
+    ],
   };
 }
 
@@ -2462,6 +2544,25 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
   if (steerToolLabel) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  const mcpAppLabel = getMarkerValue(text, MCP_APP_MARKER);
+  if (mcpAppLabel) {
+    return mcpAppResponses(mcpAppLabel, toolNames);
+  }
+
+  const mcpLinkAppLabel = getMarkerValue(text, MCP_LINK_APP_MARKER);
+  if (mcpLinkAppLabel) {
+    return mcpLinkAppResponses(mcpLinkAppLabel, toolNames);
+  }
+
+  const mcpLegacyLabel = getMarkerValue(text, MCP_LEGACY_MARKER);
+  if (mcpLegacyLabel) {
+    return mcpLegacyResponses(mcpLegacyLabel, toolNames);
+  }
+
+  if (text.includes(MCP_LEGACY_ACTION_MARKER)) {
+    return mcpLegacyActionResponses(toolNames);
   }
 
   const provisioningTool = provisioningToolResponses({ text, toolNames });

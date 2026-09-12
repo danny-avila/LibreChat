@@ -37,10 +37,12 @@ const mockRegistryInstance = {
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
   getAllowedDomains: mockGetAllowedDomains,
   getAllowedAddresses: mockGetAllowedAddresses,
+  getMCPAppsPolicy: jest.fn().mockReturnValue({ enabled: true, legacyHtmlEnabled: true }),
   resolveAllowlists: jest.fn(async () => ({
     allowedDomains: mockGetAllowedDomains(),
     allowedAddresses: mockGetAllowedAddresses(),
     useSSRFProtection: mockShouldEnableSSRFProtection(),
+    mcpApps: { enabled: true, legacyHtmlEnabled: true },
   })),
 };
 
