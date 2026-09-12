@@ -32,6 +32,7 @@ DJANGO_API_BASE_URL = os.getenv("DJANGO_API_BASE_URL", "https://api-dev.juristai
 MCP_SERVER_SECRET = os.getenv("MCP_SERVER_SECRET", "")
 _CONNECT_TIMEOUT = float(os.getenv("MCP_DJANGO_CONNECT_TIMEOUT", "5"))
 _READ_TIMEOUT = float(os.getenv("MCP_DJANGO_READ_TIMEOUT", "60"))
+_SERIESAI_APP_IDS = frozenset({"3", "4"})
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,16 @@ async def _post(ctx: Context, path: str, body: dict) -> dict[str, Any]:
         r = await c.post(_resolve_path(path), content=json.dumps(body))
         r.raise_for_status()
         return r.json()
+
+
+def _seriesai_litigation_block(app_id: str | None, operation: str) -> dict[str, str] | None:
+    if str(app_id or "").strip() not in _SERIESAI_APP_IDS:
+        return None
+    return {
+        "error": "This litigation workflow is not available for SeriesAI.",
+        "code": "SERIESAI_LITIGATION_WORKFLOW_UNAVAILABLE",
+        "operation": operation,
+    }
 
 
 async def _patch(ctx: Context, path: str, body: dict) -> dict[str, Any]:
@@ -343,6 +354,9 @@ async def retrieve_case_summary(ctx: Context, case_id: str) -> dict:
 
 @mcp.tool(description="Search precedents and case authorities for an authenticated case.")
 async def precedent_query(ctx: Context, query: str, case_id: str, app_id: str) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "precedent_search")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/man-search-precs/",
@@ -415,11 +429,17 @@ async def search_documents_for_excerpts(
 
 @mcp.tool(description="Recommend the next filings to prepare for a case.")
 async def recommended_filings(ctx: Context, case_id: str, app_id: str | None = None) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "recommended_motion")
+    if blocked is not None:
+        return blocked
     return await _post(ctx, "/api/generate-recommended-motion/", {"caseId": case_id, "appId": app_id})
 
 
 @mcp.tool(description="Determine the current procedural posture for a case.")
 async def procedural_posture(ctx: Context, case_id: str, app_id: str | None = None) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "procedural_posture")
+    if blocked is not None:
+        return blocked
     return await _post(ctx, "/api/classify-docket/", {"caseId": case_id, "appId": app_id})
 
 
@@ -430,6 +450,9 @@ async def check_docket_updates(
     docket_id: str | None = None,
     app_id: str | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "docket_updates")
+    if blocked is not None:
+        return blocked
     payload: dict[str, object] = {"caseId": case_id}
     if docket_id is not None:
         payload["docketId"] = docket_id
@@ -496,6 +519,9 @@ async def templatize_motion_template(  # noqa: PLR0913
     overrides: dict | None = None,
     legal_team_ids: list[str] | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "templatize_motion")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/templates/templatize/",
@@ -520,6 +546,9 @@ async def delete_motion_template(  # noqa: PLR0913
     confirm_delete: bool | None = None,
     max_items_per_bucket: int | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "delete_motion_template")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/templates/delete/",
@@ -980,7 +1009,16 @@ async def void_signature_request(ctx: Context, signature_id: str) -> dict:
 
 
 @mcp.tool(description="Start an async motion-generation workflow for a case.")
-async def generate_motion(ctx: Context, case_id: str, motion_type: str, support: str | None = None) -> dict:
+async def generate_motion(
+    ctx: Context,
+    case_id: str,
+    motion_type: str,
+    support: str | None = None,
+    app_id: str | None = None,
+) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "motion_generation")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/generate-motion/",
@@ -988,6 +1026,7 @@ async def generate_motion(ctx: Context, case_id: str, motion_type: str, support:
             "caseId": case_id,
             "motionType": motion_type,
             "support": support,
+            "appId": app_id,
         },
     )
 
@@ -1020,7 +1059,11 @@ async def demand_letter(  # noqa: PLR0913 - MCP tool schema is intentionally fla
     recipient_email: str | None = None,
     subject_line: str | None = None,
     support: str | None = None,
+    app_id: str | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "demand_letter")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/demand-letter/",
@@ -1030,13 +1073,22 @@ async def demand_letter(  # noqa: PLR0913 - MCP tool schema is intentionally fla
             "recipientEmail": recipient_email,
             "subjectLine": subject_line,
             "support": support,
+            "appId": app_id,
         },
     )
 
 
 @mcp.tool(description="Start an async lawsuit-generation workflow.")
-async def generate_lawsuit(ctx: Context, case_id: str, support: str | None = None) -> dict:
-    return await _post(ctx, "/api/generate-lawsuit/", {"caseId": case_id, "support": support})
+async def generate_lawsuit(
+    ctx: Context,
+    case_id: str,
+    support: str | None = None,
+    app_id: str | None = None,
+) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "lawsuit_generation")
+    if blocked is not None:
+        return blocked
+    return await _post(ctx, "/api/generate-lawsuit/", {"caseId": case_id, "support": support, "appId": app_id})
 
 
 @mcp.tool(description="Start an async adversarial motion workflow.")
@@ -1048,6 +1100,9 @@ async def adversarial(  # noqa: PLR0913 - MCP tool schema is intentionally flat
     motion_type: str | None = None,
     motion_name: str | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "adversarial_generation")
+    if blocked is not None:
+        return blocked
     payload: dict[str, object] = {"caseId": case_id}
     if support is not None:
         payload["support"] = support
@@ -1062,6 +1117,9 @@ async def adversarial(  # noqa: PLR0913 - MCP tool schema is intentionally flat
 
 @mcp.tool(description="Start an async deep-research workflow for a case.")
 async def deep_research(ctx: Context, case_id: str, app_id: str | None = None) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "deep_research")
+    if blocked is not None:
+        return blocked
     return await _post(ctx, "/api/deep-research/", {"caseId": case_id, "appId": app_id})
 
 
@@ -1113,6 +1171,9 @@ async def send_engagement_letter_for_signature(  # noqa: PLR0913 - MCP tool sche
     document_name: str | None = None,
     custom_message: str | None = None,
 ) -> dict:
+    blocked = _seriesai_litigation_block(app_id, "engagement_letter_signature")
+    if blocked is not None:
+        return blocked
     return await _post(
         ctx,
         "/api/core/engagement-letter-signature/",

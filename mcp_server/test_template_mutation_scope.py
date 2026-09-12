@@ -25,17 +25,17 @@ def test_templatize_requires_and_forwards_explicit_product_scope(monkeypatch):
     calls = _capture_post(monkeypatch)
     result = asyncio.run(
         server.templatize_motion_template(
-            object(), "case-1", {"fileKey": "doc-1"}, "4"
+            object(), "case-1", {"fileKey": "doc-1"}, "2"
         )
     )
 
-    assert result["appId"] == "4"
-    assert calls[0][2]["appId"] == "4"
+    assert result["appId"] == "2"
+    assert calls[0][2]["appId"] == "2"
 
 
 def test_delete_template_requires_and_forwards_explicit_product_scope(monkeypatch):
     calls = _capture_post(monkeypatch)
-    result = asyncio.run(server.delete_motion_template(object(), "plaintiff", "pleading", "motion-1", "4"))
+    result = asyncio.run(server.delete_motion_template(object(), "plaintiff", "pleading", "motion-1", "2"))
 
-    assert result["appId"] == "4"
-    assert calls[0][2]["appId"] == "4"
+    assert result["appId"] == "2"
+    assert calls[0][2]["appId"] == "2"

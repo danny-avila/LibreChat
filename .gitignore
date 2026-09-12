@@ -186,3 +186,7 @@ claude-flow
 hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
+/api/qa-temp-2
+/api/qa-temp-chat-token3
+/api/qa-temp-juristai3
+/api/qa-temp-juristai4
