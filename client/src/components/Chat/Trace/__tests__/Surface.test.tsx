@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import userEvent from '@testing-library/user-event';
-import { dataService } from 'librechat-data-provider';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TStartupConfig, TTraceViewerConfig } from 'librechat-data-provider';
@@ -84,6 +84,7 @@ function renderHost(props: React.ComponentProps<typeof Host>) {
   const utils = render(wrap(props));
   return {
     ...utils,
+    client,
     rerenderHost: (next: React.ComponentProps<typeof Host>) => utils.rerender(wrap(next)),
   };
 }
@@ -163,6 +164,24 @@ describe('trace entry point and surface', () => {
     expect(screen.getByLabelText('composer')).toHaveValue('unsent draft');
     expect(mounts.count).toBe(1);
     expect(screen.getByTestId('header-trace-button')).toHaveFocus();
+  });
+
+  it('leaves focus where a navigation put it when that navigation closes the trace', async () => {
+    const outside = document.createElement('button');
+    outside.textContent = 'sidebar link';
+    document.body.appendChild(outside);
+    const { rerenderHost, client } = renderHost({ conversationId: 'convo-1' });
+    /** The next chat also has a trace, so the opener stays mounted and could steal focus back. */
+    client.setQueryData([QueryKeys.conversationTraceAvailability, 'convo-2'], { available: true });
+    await userEvent.click(await screen.findByTestId('header-trace-button'));
+    expect(await screen.findByTestId('trace-viewer')).toBeInTheDocument();
+
+    outside.focus();
+    rerenderHost({ conversationId: 'convo-2' });
+
+    expect(screen.queryByTestId('trace-viewer')).not.toBeInTheDocument();
+    expect(outside).toHaveFocus();
+    outside.remove();
   });
 
   it('does not carry an open trace into another conversation', async () => {

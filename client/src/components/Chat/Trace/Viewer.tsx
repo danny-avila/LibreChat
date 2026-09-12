@@ -103,6 +103,12 @@ export default function Viewer({
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     return () => {
+      /** Only reclaim focus the trace took with it; a close caused by navigating
+       *  elsewhere leaves focus wherever that navigation put it. */
+      const active = document.activeElement;
+      if (active != null && active !== document.body) {
+        return;
+      }
       const target = opener?.isConnected ? opener : document.getElementById('header-menu-button');
       target?.focus();
     };
