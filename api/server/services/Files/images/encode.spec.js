@@ -1,12 +1,12 @@
 const mockRunGuardedEncode = jest.fn((_bytes, task) => task());
-const mockGetFileStream = jest.fn();
+const mockTryEncodeImageFromStorage = jest.fn();
 
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(({ message }) => message),
   validateImage: jest.fn().mockResolvedValue({ isValid: true }),
-  getFileStream: (...args) => mockGetFileStream(...args),
   runGuardedEncode: (...args) => mockRunGuardedEncode(...args),
+  tryEncodeImageFromStorage: (...args) => mockTryEncodeImageFromStorage(...args),
 }));
 const mockPrepareImagePayload = jest.fn();
 const mockGetDownloadStream = jest.fn();
@@ -26,45 +26,39 @@ const makeReq = () => ({ body: {}, config: {} });
 beforeEach(() => {
   jest.clearAllMocks();
   mockRunGuardedEncode.mockImplementation((_bytes, task) => task());
+  mockTryEncodeImageFromStorage.mockResolvedValue(null);
 });
 
 describe('encodeAndFormat - request memory guard', () => {
-  it.each([FileSources.s3, FileSources.cloudfront, FileSources.azure_blob, FileSources.firebase])(
-    'gates %s byte pulls and returns a base64 data URL',
-    async (source) => {
-      const expectedBase64 = Buffer.from('blob-image-bytes').toString('base64');
-      mockGetFileStream.mockResolvedValue({ content: expectedBase64 });
-      const file = {
-        source,
-        height: 10,
-        width: 10,
-        type: 'image/png',
-        file_id: 'f-blob',
-        filepath: 'bucket/a.png',
-        filename: 'a.png',
-        bytes: 4321,
-      };
+  it('formats the storage image returned by the package module', async () => {
+    const expectedBase64 = Buffer.from('blob-image-bytes').toString('base64');
+    const file = {
+      source: FileSources.s3,
+      height: 10,
+      width: 10,
+      type: 'image/png',
+      file_id: 'f-blob',
+      filepath: 'bucket/a.png',
+      filename: 'a.png',
+      bytes: 4321,
+    };
+    mockTryEncodeImageFromStorage.mockResolvedValue([file, expectedBase64]);
 
-      const result = await encodeAndFormat(makeReq(), [file], { endpoint: 'openai' });
+    const result = await encodeAndFormat(makeReq(), [file], { endpoint: 'openai' });
 
-      expect(mockRunGuardedEncode).toHaveBeenCalledTimes(1);
-      expect(mockRunGuardedEncode.mock.calls[0][0]).toBe(4321);
-      expect(mockGetFileStream).toHaveBeenCalledWith(
-        expect.anything(),
-        file,
-        expect.anything(),
-        expect.any(Function),
-        { sanitizeStorageErrors: true },
-      );
-
-      expect(result.image_urls).toHaveLength(1);
-      expect(result.image_urls[0].image_url.url).toBe(`data:image/png;base64,${expectedBase64}`);
-    },
-  );
+    expect(mockTryEncodeImageFromStorage).toHaveBeenCalledWith(
+      expect.anything(),
+      file,
+      expect.anything(),
+      expect.any(Function),
+    );
+    expect(mockRunGuardedEncode).not.toHaveBeenCalled();
+    expect(result.image_urls[0].image_url.url).toBe(`data:image/png;base64,${expectedBase64}`);
+  });
 
   it('does not fall back to an external URL when blob storage cannot be read', async () => {
     const failure = new Error('An attached file is no longer available');
-    mockGetFileStream.mockRejectedValue(failure);
+    mockTryEncodeImageFromStorage.mockRejectedValue(failure);
     const file = {
       source: FileSources.s3,
       height: 10,
@@ -148,9 +142,10 @@ describe('encodeAndFormat - image detail', () => {
   });
 
   beforeEach(() => {
-    mockGetFileStream.mockResolvedValue({
-      content: Buffer.from('image-bytes').toString('base64'),
-    });
+    mockTryEncodeImageFromStorage.mockImplementation(async (_req, file) => [
+      file,
+      Buffer.from('image-bytes').toString('base64'),
+    ]);
   });
 
   it('falls back to auto when no detail is configured anywhere', async () => {

@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
-import { AttachmentObjectNotFoundError, AttachmentStorageError, getFileStream } from './utils';
+import { AttachmentObjectNotFoundError, getFileStream } from './utils';
 
 const file = {
   file_id: 'file-1',
@@ -62,28 +62,6 @@ describe('getFileStream', () => {
         () => ({ getDownloadStream }) as StrategyFunctions,
       ),
     ).rejects.toBe(failure);
-  });
-
-  it('discards image bytes buffered before a stream failure', async () => {
-    const failure = new Error('stream failed');
-    const stream = new Readable({
-      read() {
-        this.push(Buffer.from('private-image-bytes'));
-        this.destroy(failure);
-      },
-    });
-    const getDownloadStream = jest.fn().mockResolvedValue(stream);
-
-    await expect(
-      getFileStream(
-        {} as ServerRequest,
-        file,
-        {},
-        () => ({ getDownloadStream }) as StrategyFunctions,
-        { sanitizeStorageErrors: true },
-      ),
-    ).rejects.toEqual(expect.any(AttachmentStorageError));
-    expect(failure).not.toHaveProperty('bufferedData');
   });
 
   it('encodes available storage content', async () => {

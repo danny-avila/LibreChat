@@ -14,15 +14,6 @@ export class AttachmentObjectNotFoundError extends Error {
   }
 }
 
-export class AttachmentStorageError extends Error {
-  readonly code = 'ATTACHMENT_STORAGE_ERROR';
-
-  constructor() {
-    super('An attached file could not be read from storage. Try again or upload it again.');
-    this.name = 'AttachmentStorageError';
-  }
-}
-
 export function isAttachmentObjectNotFoundError(
   error: unknown,
 ): error is AttachmentObjectNotFoundError {
@@ -85,7 +76,6 @@ export const getConfiguredFileSizeLimit = (
  * @param file - File object to process
  * @param encodingMethods - Cache of encoding methods by source
  * @param getStrategyFunctions - Function to get strategy functions for a source
- * @param options - Optional stream error handling
  * @returns Processed file with content and metadata, or null if no download reference exists
  */
 export async function getFileStream(
@@ -93,7 +83,6 @@ export async function getFileStream(
   file: IMongoFile,
   encodingMethods: Record<string, StrategyFunctions>,
   getStrategyFunctions: (source: string) => StrategyFunctions,
-  options: { sanitizeStorageErrors?: boolean } = {},
 ): Promise<ProcessedFile | null> {
   if (!file?.filepath && !file?.storageKey) {
     return null;
@@ -124,19 +113,8 @@ export async function getFileStream(
       },
     };
   } catch (error) {
-    if (
-      options.sanitizeStorageErrors === true &&
-      typeof error === 'object' &&
-      error != null &&
-      'bufferedData' in error
-    ) {
-      delete (error as { bufferedData?: unknown }).bufferedData;
-    }
     if (isStorageNotFoundError(error)) {
       throw new AttachmentObjectNotFoundError(file.file_id);
-    }
-    if (options.sanitizeStorageErrors === true) {
-      throw new AttachmentStorageError();
     }
     throw error;
   }

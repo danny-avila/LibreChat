@@ -1,5 +1,10 @@
 const axios = require('axios');
-const { logAxiosError, validateImage, getFileStream, runGuardedEncode } = require('@librechat/api');
+const {
+  logAxiosError,
+  validateImage,
+  runGuardedEncode,
+  tryEncodeImageFromStorage,
+} = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
@@ -41,13 +46,6 @@ const base64Only = new Set([
   EModelEndpoint.bedrock,
 ]);
 
-const blobStorageSources = new Set([
-  FileSources.azure_blob,
-  FileSources.s3,
-  FileSources.firebase,
-  FileSources.cloudfront,
-]);
-
 /**
  * Encodes and formats the given files.
  * @param {ServerRequest} req - The request object.
@@ -85,6 +83,17 @@ async function encodeAndFormat(req, files, params, mode) {
       continue;
     }
 
+    const storedImage = await tryEncodeImageFromStorage(
+      req,
+      file,
+      encodingMethods,
+      getStrategyFunctions,
+    );
+    if (storedImage) {
+      promises.push(storedImage);
+      continue;
+    }
+
     if (!encodingMethods[source]) {
       const { prepareImagePayload, getDownloadStream } = getStrategyFunctions(source);
       if (!prepareImagePayload) {
@@ -95,16 +104,6 @@ async function encodeAndFormat(req, files, params, mode) {
     }
 
     const preparePayload = encodingMethods[source].prepareImagePayload;
-    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob/Firebase storage. */
-    if (blobStorageSources.has(source)) {
-      const processedFile = await runGuardedEncode(file.bytes ?? 0, () =>
-        getFileStream(req, file, encodingMethods, getStrategyFunctions, {
-          sanitizeStorageErrors: true,
-        }),
-      );
-      promises.push([file, processedFile?.content ?? null]);
-      continue;
-    }
     if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
         const [_file, imageURL] = await preparePayload(req, file);

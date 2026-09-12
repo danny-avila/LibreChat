@@ -275,7 +275,7 @@ jest.mock('@librechat/api', () => ({
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   AttachmentStorageError: jest.requireActual('@librechat/api').AttachmentStorageError,
-  getFileStream: jest.requireActual('@librechat/api').getFileStream,
+  tryEncodeImageFromStorage: jest.requireActual('@librechat/api').tryEncodeImageFromStorage,
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
@@ -403,7 +403,7 @@ jest.mock('~/server/services/Agents/triggers', () => ({
 }));
 
 const AgentController = require('../request');
-const { AttachmentStorageError, getFileStream } = require('@librechat/api');
+const { AttachmentStorageError, tryEncodeImageFromStorage } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
@@ -2615,7 +2615,7 @@ describe('ResumableAgentController resume metadata', () => {
     });
     let attachmentError;
     try {
-      await getFileStream(
+      await tryEncodeImageFromStorage(
         {},
         {
           file_id: 'image-1',
@@ -2625,7 +2625,6 @@ describe('ResumableAgentController resume metadata', () => {
         },
         {},
         () => ({ getDownloadStream: jest.fn().mockRejectedValue(storageError) }),
-        { sanitizeStorageErrors: true },
       );
     } catch (error) {
       attachmentError = error;
