@@ -1,11 +1,14 @@
 import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
+import { setImmediate as realSetImmediate } from 'timers';
 import type * as t from '~/mcp/types';
 import {
   MCPServersRegistry,
   MCPConfigInitializationCanceledError,
 } from '~/mcp/registry/MCPServersRegistry';
+import { ServerConfigsCacheInMemory } from '~/mcp/registry/cache/ServerConfigsCacheInMemory';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
+import { MCPInspectionFailedError } from '~/mcp/errors';
 import { processMCPEnv } from '~/utils/env';
 
 // Mock MCPServerInspector to avoid actual server connections
@@ -730,18 +733,579 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('reinspectServer', () => {
-    it('should throw when called on a healthy (non-stub) server', async () => {
-      await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+    const stubOptions: t.MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://recovering.example.com/mcp',
+    };
 
-      await expect(registry.reinspectServer('healthy_server', 'CACHE')).rejects.toThrow(
-        'is not in a failed state',
-      );
+    beforeEach(() => {
+      /** The inspector is a module automock, so its recorded calls outlive each test. */
+      jest.mocked(MCPServerInspector.inspect).mockClear();
+    });
+
+    afterEach(() => {
+      jest.setSystemTime(new Date(FIXED_TIME));
+    });
+
+    it('resolves a server that is no longer failed to its stored config without inspecting', async () => {
+      const { config } = await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      await expect(registry.reinspectServer('healthy_server', 'CACHE')).resolves.toEqual({
+        serverName: 'healthy_server',
+        config,
+      });
+      expect(inspectSpy).not.toHaveBeenCalled();
     });
 
     it('should throw when the server does not exist', async () => {
       await expect(registry.reinspectServer('ghost_server', 'CACHE')).rejects.toThrow(
         'not found in CACHE',
       );
+    });
+
+    it('shares one inspection and one write among concurrent callers', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      const replaceSpy = jest.spyOn(ServerConfigsCacheInMemory.prototype, 'replaceStub');
+
+      const [first, ...joined] = await Promise.all(
+        Array.from({ length: 3 }, () => registry.reinspectServer('stub_server', 'CACHE')),
+      );
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(replaceSpy).toHaveBeenCalledTimes(1);
+      expect(joined).toEqual([first, first]);
+      expect(first.config.inspectionFailed).toBeUndefined();
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(first.config);
+    });
+
+    it('inspects separately under different allowlists and keeps the recovery that landed first', async () => {
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      const tenantRegistry = MCPServersRegistry.createInstance(
+        mockMongoose,
+        null,
+        null,
+        async (ctx) => ({ allowedDomains: [`${ctx?.userId}.example.com`], allowedAddresses: null }),
+      );
+      await tenantRegistry.reset();
+      await tenantRegistry.addServerStub('stub_server', stubOptions, 'CACHE');
+
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseTenantA!: () => void;
+      const tenantAHeld = new Promise<void>((resolve) => {
+        releaseTenantA = resolve;
+      });
+      let markTenantAInspecting!: () => void;
+      const tenantAInspecting = new Promise<void>((resolve) => {
+        markTenantAInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementation(async (serverName, rawConfig, connection, domains, addresses) => {
+          const tenant = domains?.[0];
+          if (tenant === 'tenant-a.example.com') {
+            markTenantAInspecting();
+            await tenantAHeld;
+          } else {
+            await tenantAInspecting;
+          }
+          const parsed = await inspect(serverName, rawConfig, connection, domains, addresses);
+          return { ...parsed, description: tenant };
+        });
+
+      const tenantA = tenantRegistry.reinspectServer('stub_server', 'CACHE', 'tenant-a');
+      const tenantB = await tenantRegistry.reinspectServer('stub_server', 'CACHE', 'tenant-b');
+      releaseTenantA();
+      const tenantAResult = await tenantA;
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(tenantB.config.description).toBe('tenant-b.example.com');
+      expect(tenantAResult.config).toEqual(tenantB.config);
+      await expect(tenantRegistry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(
+        tenantB.config,
+      );
+    });
+
+    it('does not share a DB reinspection across users', async () => {
+      jest.spyOn(registry['dbConfigsRepo'], 'get').mockResolvedValue({
+        ...stubOptions,
+        source: 'user',
+        dbId: 'db-server-id',
+        inspectionFailed: true,
+        updatedAt: FIXED_TIME,
+      });
+      const updateSpy = jest.spyOn(registry['dbConfigsRepo'], 'update');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const [userOne, userOneAgain, userTwo] = await Promise.all([
+        registry.reinspectServer('db_server', 'DB', 'user-1'),
+        registry.reinspectServer('db_server', 'DB', 'user-1'),
+        registry.reinspectServer('db_server', 'DB', 'user-2'),
+      ]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(userOneAgain).toBe(userOne);
+      expect(userTwo).not.toBe(userOne);
+      expect(updateSpy.mock.calls.map(([, , userId]) => userId).sort()).toEqual([
+        'user-1',
+        'user-2',
+      ]);
+    });
+
+    it('writes nothing when another replica recovered the stub during inspection', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const memoized = await registry.getAllServerConfigs();
+      const recoveredElsewhere: t.ParsedServerConfig = {
+        ...stubOptions,
+        description: 'recovered elsewhere',
+      };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      jest.spyOn(MCPServerInspector, 'inspect').mockImplementationOnce(async (...args) => {
+        await registry['cacheConfigsRepo'].update('stub_server', recoveredElsewhere);
+        return inspect(...args);
+      });
+      const replaceSpy = jest.spyOn(ServerConfigsCacheInMemory.prototype, 'replaceStub');
+
+      const result = await registry.reinspectServer('stub_server', 'CACHE');
+
+      await expect(replaceSpy.mock.results[0].value).resolves.toBeUndefined();
+      expect(result.config).toMatchObject(recoveredElsewhere);
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(result.config);
+      expect(memoized.stub_server.inspectionFailed).toBe(true);
+      await expect(registry.getAllServerConfigs()).resolves.toMatchObject({
+        stub_server: { description: 'recovered elsewhere' },
+      });
+    });
+
+    it('resolves to a recovery stored elsewhere when its own inspection fails', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const memoized = await registry.getAllServerConfigs();
+      const recoveredElsewhere: t.ParsedServerConfig = {
+        ...stubOptions,
+        description: 'recovered elsewhere',
+      };
+      jest.spyOn(MCPServerInspector, 'inspect').mockImplementationOnce(async () => {
+        await registry['cacheConfigsRepo'].update('stub_server', recoveredElsewhere);
+        throw new Error('connect ECONNREFUSED');
+      });
+
+      const result = await registry.reinspectServer('stub_server', 'CACHE');
+
+      expect(result.config).toMatchObject(recoveredElsewhere);
+      expect(result.config.inspectionFailed).toBeUndefined();
+      expect(memoized.stub_server.inspectionFailed).toBe(true);
+      await expect(registry.getAllServerConfigs()).resolves.toMatchObject({
+        stub_server: { description: 'recovered elsewhere' },
+      });
+    });
+
+    it('does not inspect again when a recovery lands while its allowlists resolve', async () => {
+      let releaseResolver!: () => void;
+      const resolverHeld = new Promise<void>((resolve) => {
+        releaseResolver = resolve;
+      });
+      let markResolving!: () => void;
+      const resolving = new Promise<void>((resolve) => {
+        markResolving = resolve;
+      });
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      const slowRegistry = MCPServersRegistry.createInstance(
+        mockMongoose,
+        null,
+        null,
+        async (ctx) => {
+          if (ctx?.userId === 'slow-user') {
+            markResolving();
+            await resolverHeld;
+          }
+          return { allowedDomains: null, allowedAddresses: null };
+        },
+      );
+      await slowRegistry.reset();
+      await slowRegistry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const slow = slowRegistry.reinspectServer('stub_server', 'CACHE', 'slow-user');
+      await resolving;
+      const recovered = await slowRegistry.reinspectServer('stub_server', 'CACHE', 'fast-user');
+      releaseResolver();
+
+      await expect(slow).resolves.toEqual(recovered);
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('inspects the newer stub when a registry re-initialization replaced the inspected one', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          jest.setSystemTime(new Date(FIXED_TIME + 1000));
+          await registry['cacheConfigsRepo'].update('stub_server', {
+            ...movedOptions,
+            source: 'yaml',
+            inspectionFailed: true,
+          });
+          return inspect(...args);
+        });
+
+      const result = await registry.reinspectServer('stub_server', 'CACHE');
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(inspectSpy.mock.calls[1][1]).toMatchObject(movedOptions);
+      expect(result.config).toMatchObject(movedOptions);
+      expect(result.config.inspectionFailed).toBeUndefined();
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(result.config);
+    });
+
+    it('does not answer a caller that read a newer stub with the inspection of the one it replaced', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
+      });
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markReplacedInspecting();
+          await replacedHeld;
+          return inspect(...args);
+        });
+
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+
+      const current = await registry.reinspectServer('stub_server', 'CACHE');
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(inspectSpy.mock.calls[1][1]).toMatchObject(movedOptions);
+      expect(current.config).toMatchObject(movedOptions);
+
+      releaseReplaced();
+      await expect(replaced).resolves.toEqual(current);
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(
+        current.config,
+      );
+    });
+
+    it('adopts the outcome of the flight another request started for a newer stub', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
+      });
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
+      });
+      let releaseNewer!: () => void;
+      const newerHeld = new Promise<void>((resolve) => {
+        releaseNewer = resolve;
+      });
+      let markNewerInspecting!: () => void;
+      const newerInspecting = new Promise<void>((resolve) => {
+        markNewerInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markReplacedInspecting();
+          await replacedHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markNewerInspecting();
+          await newerHeld;
+          return inspect(...args);
+        })
+        .mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const newer = registry.reinspectServer('stub_server', 'CACHE');
+      await newerInspecting;
+
+      releaseReplaced();
+      /** The store is promise-only, so one real macrotask lets the replaced flight settle as far
+       *  as it can while the newer flight is still held. */
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
+      releaseNewer();
+      const [replacedResult, newerResult] = await Promise.all([replaced, newer]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(newerResult.config).toMatchObject(movedOptions);
+      expect(newerResult.config.inspectionFailed).toBeUndefined();
+      expect(replacedResult).toEqual(newerResult);
+    });
+
+    it('adopts the outcome of the flight for a replacement stored with an older timestamp', async () => {
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const skewedOptions: t.MCPOptions = { ...stubOptions, url: 'https://skewed.example.com/mcp' };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplaced!: () => void;
+      const replacedHeld = new Promise<void>((resolve) => {
+        releaseReplaced = resolve;
+      });
+      let markReplacedInspecting!: () => void;
+      const replacedInspecting = new Promise<void>((resolve) => {
+        markReplacedInspecting = resolve;
+      });
+      let releaseSkewed!: () => void;
+      const skewedHeld = new Promise<void>((resolve) => {
+        releaseSkewed = resolve;
+      });
+      let markSkewedInspecting!: () => void;
+      const skewedInspecting = new Promise<void>((resolve) => {
+        markSkewedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markReplacedInspecting();
+          await replacedHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markSkewedInspecting();
+          await skewedHeld;
+          return inspect(...args);
+        })
+        .mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+      const replaced = registry.reinspectServer('stub_server', 'CACHE');
+      await replacedInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...skewedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const skewed = registry.reinspectServer('stub_server', 'CACHE');
+      await skewedInspecting;
+
+      releaseReplaced();
+      /** The store is promise-only, so one real macrotask lets the replaced flight settle as far
+       *  as it can while the skewed flight is still held. */
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
+      releaseSkewed();
+      const [replacedResult, skewedResult] = await Promise.all([replaced, skewed]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(skewedResult.config).toMatchObject(skewedOptions);
+      expect(skewedResult.config.inspectionFailed).toBeUndefined();
+      expect(replacedResult).toEqual(skewedResult);
+    });
+
+    it('breaks a mutual wait by inspecting within the flight that would close it', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const movedOptions: t.MCPOptions = { ...stubOptions, url: 'https://moved.example.com/mcp' };
+      const restoredOptions: t.MCPOptions = {
+        ...stubOptions,
+        url: 'https://restored.example.com/mcp',
+      };
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseFirst!: () => void;
+      const firstHeld = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let markFirstInspecting!: () => void;
+      const firstInspecting = new Promise<void>((resolve) => {
+        markFirstInspecting = resolve;
+      });
+      let releaseMoved!: () => void;
+      const movedHeld = new Promise<void>((resolve) => {
+        releaseMoved = resolve;
+      });
+      let markMovedInspecting!: () => void;
+      const movedInspecting = new Promise<void>((resolve) => {
+        markMovedInspecting = resolve;
+      });
+      const inspectSpy = jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementationOnce(async (...args) => {
+          markFirstInspecting();
+          await firstHeld;
+          return inspect(...args);
+        })
+        .mockImplementationOnce(async (...args) => {
+          markMovedInspecting();
+          await movedHeld;
+          return inspect(...args);
+        });
+
+      const first = registry.reinspectServer('stub_server', 'CACHE');
+      await firstInspecting;
+      jest.setSystemTime(new Date(FIXED_TIME + 1000));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...movedOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      const moved = registry.reinspectServer('stub_server', 'CACHE');
+      await movedInspecting;
+
+      releaseFirst();
+      await new Promise<void>((resolve) => realSetImmediate(resolve));
+      /** A stub carrying the first flight's `updatedAt` again, which only clock skew can write,
+       *  makes the flight the first one now waits on settle into the first one's key. */
+      jest.setSystemTime(new Date(FIXED_TIME));
+      await registry['cacheConfigsRepo'].update('stub_server', {
+        ...restoredOptions,
+        source: 'yaml',
+        inspectionFailed: true,
+      });
+      releaseMoved();
+      const [firstResult, movedResult] = await Promise.all([first, moved]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(3);
+      expect(inspectSpy.mock.calls[2][1]).toMatchObject(restoredOptions);
+      expect(movedResult.config).toMatchObject(restoredOptions);
+      expect(firstResult).toEqual(movedResult);
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(
+        movedResult.config,
+      );
+    });
+
+    it('rejects instead of waiting on itself when storage leaves the inspected stub in place', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      jest
+        .spyOn(ServerConfigsCacheInMemory.prototype, 'replaceStub')
+        .mockResolvedValueOnce(undefined);
+
+      await expect(registry.reinspectServer('stub_server', 'CACHE')).rejects.toThrow(
+        MCPInspectionFailedError,
+      );
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toMatchObject({
+        inspectionFailed: true,
+      });
+
+      const retried = await registry.reinspectServer('stub_server', 'CACHE');
+      expect(retried.config.inspectionFailed).toBeUndefined();
+    });
+
+    it('rejects every concurrent caller while the server is unreachable, then retries on the next call', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+      const outcomes = await Promise.allSettled([
+        registry.reinspectServer('stub_server', 'CACHE'),
+        registry.reinspectServer('stub_server', 'CACHE'),
+      ]);
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      for (const outcome of outcomes) {
+        expect(outcome).toMatchObject({
+          status: 'rejected',
+          reason: expect.any(MCPInspectionFailedError),
+        });
+      }
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toMatchObject({
+        inspectionFailed: true,
+      });
+
+      const retried = await registry.reinspectServer('stub_server', 'CACHE');
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+      expect(retried.config.inspectionFailed).toBeUndefined();
+    });
+  });
+
+  describe('recoverServerConfig', () => {
+    const stubOptions: t.MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://recovering.example.com/mcp',
+    };
+
+    it('returns a config that did not fail inspection as is', async () => {
+      const config: t.ParsedServerConfig = { ...stubOptions, source: 'yaml' };
+      const reinspectSpy = jest.spyOn(registry, 'reinspectServer');
+
+      await expect(registry.recoverServerConfig('healthy_server', config)).resolves.toBe(config);
+      expect(reinspectSpy).not.toHaveBeenCalled();
+    });
+
+    it('leaves a config-tier stub to the config cache retry', async () => {
+      const reinspectSpy = jest.spyOn(registry, 'reinspectServer');
+
+      await expect(
+        registry.recoverServerConfig('config_server', {
+          ...stubOptions,
+          source: 'config',
+          inspectionFailed: true,
+        }),
+      ).resolves.toBeUndefined();
+      expect(reinspectSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns the recovered config for a stub', async () => {
+      const { config: stub } = await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+
+      const recovered = await registry.recoverServerConfig('stub_server', stub, 'user-1');
+
+      expect(recovered?.inspectionFailed).toBeUndefined();
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(recovered);
+    });
+
+    it('returns the stored config when another request already recovered the server', async () => {
+      const { config: stub } = await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const { config: recoveredElsewhere } = await registry.reinspectServer('stub_server', 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      await expect(registry.recoverServerConfig('stub_server', stub, 'user-1')).resolves.toEqual(
+        recoveredElsewhere,
+      );
+      expect(inspectSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns undefined while the server is still unreachable', async () => {
+      const { config: stub } = await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+      await expect(
+        registry.recoverServerConfig('stub_server', stub, 'user-1'),
+      ).resolves.toBeUndefined();
+      await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toMatchObject({
+        inspectionFailed: true,
+      });
+    });
+
+    it('reinspects a user-sourced stub in DB storage for that user', async () => {
+      const reinspectSpy = jest.spyOn(registry, 'reinspectServer');
+
+      await registry.recoverServerConfig(
+        'db_server',
+        { ...stubOptions, source: 'user', inspectionFailed: true },
+        'user-1',
+      );
+
+      expect(reinspectSpy).toHaveBeenCalledWith('db_server', 'DB', 'user-1');
     });
   });
 
