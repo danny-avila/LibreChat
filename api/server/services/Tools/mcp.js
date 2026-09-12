@@ -168,12 +168,9 @@ async function reinitMCPServer({
     const registry = getMCPServersRegistry();
     serverConfig =
       serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
-    ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
     if (serverConfig?.inspectionFailed) {
-      if (serverConfig.source === 'config') {
-        logger.info(
-          '[MCP Reinitialize] Config-source server inspection failed; retry handled by config cache',
-        );
+      serverConfig = await registry.recoverServerConfig(serverName, serverConfig, user?.id);
+      if (!serverConfig) {
         return {
           availableTools: null,
           success: false,
@@ -184,27 +181,9 @@ async function reinitMCPServer({
           oauthUrl: null,
           tools: null,
         };
-      } else {
-        logger.info('[MCP Reinitialize] Server inspection failed; attempting reinspection');
-        try {
-          const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
-          await registry.reinspectServer(serverName, storageLocation, user?.id);
-          logger.info('[MCP Reinitialize] Server reinspection succeeded');
-        } catch {
-          logger.error('[MCP Reinitialize] Server reinspection failed');
-          return {
-            availableTools: null,
-            success: false,
-            message: `MCP server '${serverName}' is still unreachable`,
-            failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
-            oauthRequired: false,
-            serverName,
-            oauthUrl: null,
-            tools: null,
-          };
-        }
       }
     }
+    ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
 
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 

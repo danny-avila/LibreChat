@@ -28,6 +28,22 @@ export interface IServerConfigsRepositoryInterface {
     expectedUpdatedAt?: number,
   ): Promise<boolean>;
 
+  /**
+   * Replaces a failed-inspection stub with the config inspected from it, stamping a
+   * new `updatedAt` as `update` does. The write lands only while the stored entry is
+   * still that stub — `inspectionFailed` and carrying `stubUpdatedAt` — so an
+   * inspection that raced another replica's recovery or a registry re-initialization
+   * never overwrites the newer entry, and never bumps `updatedAt` past connections
+   * made from it. Returns the stored config, or undefined when the entry is no longer
+   * that stub. Optional: the in-memory and Redis aggregate-key stores behind the YAML
+   * tier, the only tier that holds startup stubs, implement it.
+   */
+  replaceStub?(
+    serverName: string,
+    config: ParsedServerConfig,
+    stubUpdatedAt: number | undefined,
+  ): Promise<ParsedServerConfig | undefined>;
+
   //ACL Entry check if remove is possible
   remove(serverName: string, userId?: string): Promise<void>;
 

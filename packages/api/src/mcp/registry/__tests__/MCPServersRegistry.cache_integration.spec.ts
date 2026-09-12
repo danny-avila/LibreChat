@@ -343,4 +343,42 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       }
     });
   });
+
+  describe('reinspection across replicas', () => {
+    it('lands one recovery when two replicas reinspect the same stub', async () => {
+      const replica = new MCPServersRegistry({} as typeof import('mongoose'), [
+        'replica.example.com',
+      ]);
+      await registry.addServerStub('recovering_server', testRawConfig, 'CACHE');
+
+      const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
+      let releaseReplica!: () => void;
+      const replicaHeld = new Promise<void>((resolve) => {
+        releaseReplica = resolve;
+      });
+      let markReplicaInspecting!: () => void;
+      const replicaInspecting = new Promise<void>((resolve) => {
+        markReplicaInspecting = resolve;
+      });
+      jest
+        .spyOn(MCPServerInspector, 'inspect')
+        .mockImplementation(async (serverName, rawConfig, connection, domains, addresses) => {
+          if (domains?.includes('replica.example.com')) {
+            markReplicaInspecting();
+            await replicaHeld;
+          }
+          return inspect(serverName, rawConfig, connection, domains, addresses);
+        });
+
+      const replicaReinspection = replica.reinspectServer('recovering_server', 'CACHE');
+      await replicaInspecting;
+      const { config: recovered } = await registry.reinspectServer('recovering_server', 'CACHE');
+      releaseReplica();
+      const { config: replicaConfig } = await replicaReinspection;
+
+      expect(recovered.inspectionFailed).toBeUndefined();
+      expect(replicaConfig).toEqual(recovered);
+      expect(await registry['cacheConfigsRepo'].get('recovering_server')).toEqual(recovered);
+    });
+  });
 });

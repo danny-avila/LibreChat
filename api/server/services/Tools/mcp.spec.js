@@ -445,6 +445,58 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 });
 
+describe('reinitMCPServer — recovery of a server that failed inspection', () => {
+  const user = { id: 'user-123' };
+  const serverName = 'Recovering';
+  const stub = {
+    type: 'streamable-http',
+    url: 'https://recovering.example.com/mcp',
+    source: 'yaml',
+    inspectionFailed: true,
+  };
+  const { getMCPServersRegistry } = require('~/config');
+
+  beforeEach(() => {
+    mockUpdateMCPServerTools.mockResolvedValue({});
+  });
+
+  it('connects with the recovered config instead of the stub it read', async () => {
+    const recovered = {
+      type: 'streamable-http',
+      url: 'https://recovering.example.com/mcp',
+      source: 'yaml',
+      requiresOAuth: false,
+    };
+    const recoverServerConfig = jest.fn().mockResolvedValue(recovered);
+    getMCPServersRegistry.mockReturnValueOnce({ recoverServerConfig });
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: stub });
+
+    expect(recoverServerConfig).toHaveBeenCalledWith(serverName, stub, user.id);
+    expect(mockGetConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, serverConfig: recovered }),
+    );
+    expect(result).toMatchObject({ success: true, serverName });
+  });
+
+  it('reports the server unreachable without connecting while it cannot be recovered', async () => {
+    const recoverServerConfig = jest.fn().mockResolvedValue(undefined);
+    getMCPServersRegistry.mockReturnValueOnce({ recoverServerConfig });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: stub });
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      availableTools: null,
+      success: false,
+      message: `MCP server '${serverName}' is still unreachable`,
+      failureReason: 'unreachable',
+      tools: null,
+    });
+  });
+});
+
 describe('reinitMCPServer — direct bearer authentication outcomes', () => {
   it('preserves a typed rejection instead of reducing it to a generic result', async () => {
     const { MCPAuthenticationRejectedError } = require('@librechat/api');

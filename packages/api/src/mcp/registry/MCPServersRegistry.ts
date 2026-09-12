@@ -10,8 +10,8 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { canBackfillSharedServerInstructions, isUserSourced } from '~/mcp/utils';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
-import { canBackfillSharedServerInstructions } from '~/mcp/utils';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
@@ -234,6 +234,10 @@ export class MCPServersRegistry {
     string,
     Promise<t.ParsedServerConfig | undefined>
   >();
+
+  /** In-flight reinspections, shared by callers that would inspect the same stored entry
+   *  under the same allowlists. */
+  private readonly pendingReinspections = new Map<string, Promise<t.AddServerResult>>();
 
   /** Memoized YAML server names — set once after boot-time init, never changes. */
   private yamlServerNames: Set<string> | null = null;
@@ -652,8 +656,55 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Re-inspects a server that previously failed initialization.
-   * Uses the stored stub config to attempt a full inspection and replaces the stub on success.
+   * Resolves a config that failed inspection to the config a connection should be made with.
+   *
+   * Once the server is reachable this is the stored, inspected config — whether this call
+   * recovered it or a concurrent request did, on this replica or another — so a caller that
+   * read the stub connects with what inspection found rather than the stub. Resolves undefined
+   * while the server is still unreachable. Config-tier stubs are left to `ensureConfigServers`,
+   * which retries them on its own schedule.
+   */
+  public async recoverServerConfig(
+    serverName: string,
+    config: t.ParsedServerConfig,
+    userId?: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    if (!config.inspectionFailed) {
+      return config;
+    }
+    if (config.source === 'config') {
+      logger.info(
+        '[MCPServersRegistry] Config-source server inspection failed; retry handled by config cache',
+      );
+      return undefined;
+    }
+    try {
+      const result = await this.reinspectServer(
+        serverName,
+        isUserSourced(config) ? 'DB' : 'CACHE',
+        userId,
+      );
+      return result.config;
+    } catch {
+      logger.info('[MCPServersRegistry] Server is still unreachable after reinspection');
+      return undefined;
+    }
+  }
+
+  /**
+   * Re-inspects a server whose stored config failed inspection and replaces that stub with the
+   * inspected config.
+   *
+   * Inspection is a network round trip, and every caller that read the stub before a recovery
+   * was written would otherwise inspect and write again. Each write bumps `updatedAt`, which
+   * marks connections made after the previous write stale, so a caller already holding one
+   * reads an empty tool list. Callers in this process that would inspect the same entry under
+   * the same allowlists therefore share one inspection and one write, and the write replaces
+   * only the stub that was inspected, so a replica that lost the race writes nothing.
+   *
+   * An entry that is no longer failed was already recovered and resolves to the stored config
+   * without another inspection. A server that is still unreachable rejects with
+   * `MCPInspectionFailedError`; an allowlist rejection is rethrown as is.
    */
   public async reinspectServer(
     serverName: string,
@@ -661,26 +712,57 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const existing = await configRepo.get(serverName, userId);
-    if (!existing) {
-      throw new Error(`Server "${serverName}" not found in ${storageLocation} for reinspection.`);
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
+    const allowlists: ResolvedMCPAllowlists = { allowedDomains, allowedAddresses };
+    const key = this.reinspectionKey(serverName, storageLocation, userId, allowlists);
+    const pending = this.pendingReinspections.get(key);
+    if (pending) {
+      return pending;
     }
+
+    const reinspection = this.reinspectStoredServer(
+      configRepo,
+      serverName,
+      storageLocation,
+      userId,
+      allowlists,
+    );
+    this.pendingReinspections.set(key, reinspection);
+    try {
+      return await reinspection;
+    } finally {
+      if (this.pendingReinspections.get(key) === reinspection) {
+        this.pendingReinspections.delete(key);
+      }
+    }
+  }
+
+  private async reinspectStoredServer(
+    configRepo: IServerConfigsRepositoryInterface,
+    serverName: string,
+    storageLocation: 'CACHE' | 'DB',
+    userId: string | undefined,
+    allowlists: ResolvedMCPAllowlists,
+  ): Promise<t.AddServerResult> {
+    const existing = await this.getReinspectionEntry(
+      configRepo,
+      serverName,
+      storageLocation,
+      userId,
+    );
     if (!existing.inspectionFailed) {
-      throw new Error(
-        `Server "${serverName}" is not in a failed state. Use updateServer() instead.`,
-      );
+      return { serverName, config: existing };
     }
 
     const { inspectionFailed: _, ...configForInspection } = existing;
-    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
         configForInspection,
         undefined,
-        allowedDomains,
-        allowedAddresses,
+        allowlists.allowedDomains,
+        allowlists.allowedAddresses,
       );
     } catch (error) {
       logger.error('[MCPServersRegistry] Server reinspection failed');
@@ -690,10 +772,76 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
 
+    const stored = await this.replaceStub(configRepo, serverName, existing, parsedConfig, userId);
+    if (stored) {
+      await this.invalidateServerReadCaches(serverName, userId, storageLocation);
+      return { serverName, config: stored };
+    }
+
+    /** Another writer replaced the stub while this call inspected it. Its entry is the
+     *  outcome: the recovery it stored, or a newer failure from a registry re-initialization. */
+    const current = await this.getReinspectionEntry(
+      configRepo,
+      serverName,
+      storageLocation,
+      userId,
+    );
+    if (current.inspectionFailed) {
+      throw new MCPInspectionFailedError(
+        serverName,
+        new Error('Stub was replaced by a newer failed inspection'),
+      );
+    }
+    return { serverName, config: current };
+  }
+
+  private async getReinspectionEntry(
+    configRepo: IServerConfigsRepositoryInterface,
+    serverName: string,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const entry = await configRepo.get(serverName, userId);
+    if (!entry) {
+      throw new Error(`Server "${serverName}" not found in ${storageLocation} for reinspection.`);
+    }
+    return entry;
+  }
+
+  /** Writes an inspected config over the stub it came from; undefined when another writer
+   *  replaced the stub first. DB storage holds no startup stubs, so it keeps a plain update. */
+  private async replaceStub(
+    configRepo: IServerConfigsRepositoryInterface,
+    serverName: string,
+    stub: t.ParsedServerConfig,
+    parsedConfig: t.ParsedServerConfig,
+    userId?: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    if (configRepo.replaceStub) {
+      return configRepo.replaceStub(serverName, parsedConfig, stub.updatedAt);
+    }
     const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
     await configRepo.update(serverName, updatedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
-    return { serverName, config: updatedConfig };
+    return updatedConfig;
+  }
+
+  /**
+   * Identity of a reinspection: the stored entry it reads — a DB entry is visible per user and
+   * tenant — and the allowlists it is judged against, so neither a user's DB visibility nor a
+   * tenant's allowlist decision reaches another caller through a shared inspection.
+   */
+  private reinspectionKey(
+    serverName: string,
+    storageLocation: 'CACHE' | 'DB',
+    userId: string | undefined,
+    allowlists: ResolvedMCPAllowlists,
+  ): string {
+    return JSON.stringify([
+      storageLocation,
+      storageLocation === 'DB' ? this.getReadThroughCacheKey(serverName, userId) : serverName,
+      allowlists.allowedDomains ?? null,
+      allowlists.allowedAddresses ?? null,
+    ]);
   }
 
   /**
