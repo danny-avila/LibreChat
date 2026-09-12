@@ -1,5 +1,5 @@
-import { CodeWorkspaceSelectionError } from './capabilities';
 import { resolveConversationCodeEnvironmentDecision } from './decision';
+import { CodeWorkspaceSelectionError } from './capabilities';
 
 const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
 
