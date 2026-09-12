@@ -97,7 +97,7 @@ describe('Trace Viewer', () => {
     mockStartupConfig = { interface: { traceViewer: { enabled: true } } };
     jest
       .spyOn(dataService, 'getConversationTraceRecords')
-      .mockResolvedValue({ records } satisfies TTracePage);
+      .mockResolvedValue({ records, sourceId: 'tenant-project' } satisfies TTracePage);
     jest.spyOn(dataService, 'getConversationTraceRecord').mockResolvedValue({
       record: records[1],
       contentAvailable: true,
@@ -106,6 +106,7 @@ describe('Trace Viewer', () => {
     });
     jest.spyOn(dataService, 'getLangfuseSessionLink').mockResolvedValue({
       url: 'https://langfuse.test/project/p/sessions/convo-1',
+      destinationId: 'tenant-project',
     });
   });
 
@@ -132,10 +133,10 @@ describe('Trace Viewer', () => {
     );
     expect(within(summary).queryByText('com_ui_trace_summary_cost')).not.toBeInTheDocument();
     expect(screen.getByTestId('trace-overview')).toBeInTheDocument();
-    expect(dataService.getConversationTraceRecords).toHaveBeenCalledWith({
-      conversationId: 'convo-1',
-      cursor: undefined,
-    });
+    expect(dataService.getConversationTraceRecords).toHaveBeenCalledWith(
+      { conversationId: 'convo-1', cursor: undefined },
+      expect.any(AbortSignal),
+    );
   });
 
   it('shows cost only when the deployment shows context cost', async () => {
@@ -206,7 +207,10 @@ describe('Trace Viewer', () => {
     expect(await within(inspector).findByText(/"content": "hi"/)).toBeInTheDocument();
     expect(within(inspector).getByText('partial outp')).toBeInTheDocument();
     expect(within(inspector).getByText('com_ui_trace_truncated')).toBeInTheDocument();
-    expect(dataService.getConversationTraceRecord).toHaveBeenCalledWith('convo-1', 'llm');
+    expect(dataService.getConversationTraceRecord).toHaveBeenCalledWith(
+      { conversationId: 'convo-1', recordId: 'llm', sourceId: 'tenant-project' },
+      expect.any(AbortSignal),
+    );
   });
 
   it('shows the error message for a failed record', async () => {
@@ -304,7 +308,10 @@ describe('Trace Viewer', () => {
     await waitFor(() =>
       expect(screen.getByRole('treeitem', { name: /llm/ })).toHaveAttribute('aria-level', '3'),
     );
-    expect(list).toHaveBeenLastCalledWith({ conversationId: 'convo-1', cursor: 'older' });
+    expect(list).toHaveBeenLastCalledWith(
+      { conversationId: 'convo-1', cursor: 'older' },
+      expect.any(AbortSignal),
+    );
     expect(
       screen.queryByRole('button', { name: 'com_ui_trace_load_older' }),
     ).not.toBeInTheDocument();
@@ -340,6 +347,39 @@ describe('Trace Viewer', () => {
     const link = await screen.findByRole('link', { name: /com_ui_trace_open_langfuse/ });
     expect(link).toHaveAttribute('href', 'https://langfuse.test/project/p/sessions/convo-1');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('does not link to a Langfuse project other than the one that served the trace', async () => {
+    mockStartupConfig = {
+      interface: { traceViewer: { enabled: true } },
+      langfuseConnectionAccess: true,
+    };
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockResolvedValue({ records, sourceId: 'central-project' });
+    renderViewer();
+
+    await treeItem(/AgentGraph/);
+    await waitFor(() => expect(dataService.getLangfuseSessionLink).toHaveBeenCalled());
+    expect(
+      screen.queryByRole('link', { name: /com_ui_trace_open_langfuse/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('cancels an in-flight trace read when the viewer closes', async () => {
+    let signal: AbortSignal | undefined;
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation((_params, requestSignal) => {
+        signal = requestSignal;
+        return new Promise(() => undefined);
+      });
+    const { unmount } = renderViewer();
+    await waitFor(() => expect(signal).toBeDefined());
+
+    unmount();
+
+    await waitFor(() => expect(signal?.aborted).toBe(true));
   });
 
   it('moves focus into the trace when it opens', async () => {

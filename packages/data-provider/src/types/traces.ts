@@ -64,10 +64,19 @@ export type TTracePageParams = {
   cursor?: string;
 };
 
-/** Newest records first; `nextCursor` loads the next older page. */
+export type TTraceRecordParams = {
+  conversationId: string;
+  recordId: string;
+  /** The `sourceId` of the page that listed the record, so its detail reads the same project. */
+  sourceId?: string;
+};
+
+/** Newest records first; `nextCursor` loads the next older page from the same source. */
 export type TTracePage = {
   records: TTraceRecord[];
   nextCursor?: string;
+  /** Opaque identity of the backend project that served the page. */
+  sourceId?: string;
 };
 
 export type TTraceContent = {
@@ -85,4 +94,5 @@ export type TTraceRecordDetail = {
 };
 
 export const TRACE_CURSOR_MAX_LENGTH = 4096;
+export const TRACE_SOURCE_ID_MAX_LENGTH = 128;
 export const TRACE_RECORD_ID_MAX_LENGTH = 256;

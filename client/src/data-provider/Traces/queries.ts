@@ -1,11 +1,16 @@
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type {
+  TTracePage,
+  TTraceAvailability,
+  TTraceRecordParams,
+  TTraceRecordDetail,
+} from 'librechat-data-provider';
+import type {
   UseInfiniteQueryResult,
   QueryObserverResult,
   UseQueryOptions,
 } from '@tanstack/react-query';
-import type { TTracePage, TTraceAvailability, TTraceRecordDetail } from 'librechat-data-provider';
 
 /** Availability flips only when a response is sampled, so callers re-enable it after a turn. */
 export const useConversationTraceAvailabilityQuery = (
@@ -28,11 +33,11 @@ export const useConversationTraceRecordsQuery = (
 ): UseInfiniteQueryResult<TTracePage> =>
   useInfiniteQuery<TTracePage>({
     queryKey: [QueryKeys.conversationTraceRecords, conversationId],
-    queryFn: ({ pageParam }) =>
-      dataService.getConversationTraceRecords({
-        conversationId,
-        cursor: typeof pageParam === 'string' ? pageParam : undefined,
-      }),
+    queryFn: ({ pageParam, signal }) =>
+      dataService.getConversationTraceRecords(
+        { conversationId, cursor: typeof pageParam === 'string' ? pageParam : undefined },
+        signal,
+      ),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     enabled,
     retry: false,
@@ -40,14 +45,24 @@ export const useConversationTraceRecordsQuery = (
     refetchOnWindowFocus: false,
   });
 
+/** `sourceId` is the page that listed the record, so the detail reads the same project. */
 export const useConversationTraceRecordQuery = (
-  conversationId: string,
-  recordId: string | null,
+  {
+    conversationId,
+    recordId,
+    sourceId,
+  }: Omit<TTraceRecordParams, 'recordId'> & {
+    recordId: string | null;
+  },
   enabled: boolean,
 ): QueryObserverResult<TTraceRecordDetail> =>
   useQuery<TTraceRecordDetail>(
-    [QueryKeys.conversationTraceRecord, conversationId, recordId],
-    () => dataService.getConversationTraceRecord(conversationId, recordId ?? ''),
+    [QueryKeys.conversationTraceRecord, conversationId, recordId, sourceId ?? null],
+    ({ signal }) =>
+      dataService.getConversationTraceRecord(
+        { conversationId, recordId: recordId ?? '', sourceId },
+        signal,
+      ),
     {
       enabled: enabled && recordId != null,
       retry: false,

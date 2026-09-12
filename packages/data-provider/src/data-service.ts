@@ -3,6 +3,7 @@ import type {
   TTracePage,
   TTracePageParams,
   TTraceAvailability,
+  TTraceRecordParams,
   TTraceRecordDetail,
 } from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
@@ -48,18 +49,24 @@ export function getConversationTraceAvailability(
   return request.get(endpoints.conversationTraceAvailability(conversationId));
 }
 
-export function getConversationTraceRecords({
-  conversationId,
-  cursor,
-}: TTracePageParams): Promise<TTracePage> {
-  return request.get(endpoints.conversationTraceRecords(conversationId, cursor));
+export function getConversationTraceRecords(
+  { conversationId, cursor }: TTracePageParams,
+  signal?: AbortSignal,
+): Promise<TTracePage> {
+  return request.get(
+    endpoints.conversationTraceRecords(conversationId, cursor),
+    signal ? { signal } : undefined,
+  );
 }
 
 export function getConversationTraceRecord(
-  conversationId: string,
-  recordId: string,
+  { conversationId, recordId, sourceId }: TTraceRecordParams,
+  signal?: AbortSignal,
 ): Promise<TTraceRecordDetail> {
-  return request.get(endpoints.conversationTraceRecord(conversationId, recordId));
+  return request.get(
+    endpoints.conversationTraceRecord(conversationId, recordId, sourceId),
+    signal ? { signal } : undefined,
+  );
 }
 
 export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {

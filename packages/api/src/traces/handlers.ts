@@ -3,6 +3,7 @@ import {
   Constants,
   TRACE_CURSOR_MAX_LENGTH,
   TRACE_RECORD_ID_MAX_LENGTH,
+  TRACE_SOURCE_ID_MAX_LENGTH,
   resolveTraceViewerConfig,
 } from 'librechat-data-provider';
 import type { TTraceRecord, TTraceErrorCode, TTraceErrorResponse } from 'librechat-data-provider';
@@ -70,6 +71,17 @@ function sendTraceError(res: Response, errorCode: TTraceErrorCode): Response {
   return res.status(ERROR_STATUS[errorCode]).json(body);
 }
 
+/** Aborts once the client disconnects before the response finished. */
+function abortOnDisconnect(res: Response): AbortSignal {
+  const controller = new AbortController();
+  res.once('close', () => {
+    if (!res.writableFinished) {
+      controller.abort();
+    }
+  });
+  return controller.signal;
+}
+
 function isValidId(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }
@@ -101,7 +113,7 @@ export function createTraceHandlers({
   reader,
   getConvoOwnership,
 }: TraceHandlerDeps): TraceHandlers {
-  function prepareScope(req: TraceRequest): ScopeResult {
+  function prepareScope(req: TraceRequest, res: Response): ScopeResult {
     const settings = resolveTraceViewerConfig(req.config?.interfaceConfig?.traceViewer);
     if (!settings.enabled) {
       return { errorCode: 'disabled' };
@@ -120,7 +132,13 @@ export function createTraceHandlers({
     }
 
     return {
-      query: { userId, conversationId, appConfig: req.config, settings },
+      query: {
+        userId,
+        conversationId,
+        appConfig: req.config,
+        settings,
+        signal: abortOnDisconnect(res),
+      },
     };
   }
 
@@ -133,8 +151,8 @@ export function createTraceHandlers({
     );
   }
 
-  async function resolveScope(req: TraceRequest): Promise<ScopeResult> {
-    const scope = prepareScope(req);
+  async function resolveScope(req: TraceRequest, res: Response): Promise<ScopeResult> {
+    const scope = prepareScope(req, res);
     if ('errorCode' in scope) {
       return scope;
     }
@@ -142,6 +160,9 @@ export function createTraceHandlers({
   }
 
   function handleFailure(res: Response, error: unknown, action: string): Response {
+    if (res.writableEnded || res.destroyed) {
+      return res;
+    }
     if (error instanceof TraceReadError) {
       if (error.code !== 'not_found') {
         logger.warn(`[traces] ${action} failed (${error.code}): ${error.message}`);
@@ -157,7 +178,7 @@ export function createTraceHandlers({
   async function availability(req: TraceRequest, res: Response): Promise<Response> {
     res.set('Cache-Control', 'private, no-store');
     try {
-      const scope = prepareScope(req);
+      const scope = prepareScope(req, res);
       if ('errorCode' in scope) {
         return res.status(200).json({ available: false });
       }
@@ -183,7 +204,7 @@ export function createTraceHandlers({
   async function records(req: TraceRequest, res: Response): Promise<Response> {
     res.set('Cache-Control', 'private, no-store');
     try {
-      const scope = await resolveScope(req);
+      const scope = await resolveScope(req, res);
       if ('errorCode' in scope) {
         return sendTraceError(res, scope.errorCode);
       }
@@ -210,15 +231,19 @@ export function createTraceHandlers({
   async function record(req: TraceRequest, res: Response): Promise<Response> {
     res.set('Cache-Control', 'private, no-store');
     try {
-      const scope = await resolveScope(req);
+      const scope = await resolveScope(req, res);
       if ('errorCode' in scope) {
         return sendTraceError(res, scope.errorCode);
       }
       const { recordId } = req.params;
-      if (!isValidId(recordId, TRACE_RECORD_ID_MAX_LENGTH)) {
+      const sourceId = firstQueryValue(req.query.source);
+      if (
+        !isValidId(recordId, TRACE_RECORD_ID_MAX_LENGTH) ||
+        (sourceId != null && !isValidId(sourceId, TRACE_SOURCE_ID_MAX_LENGTH))
+      ) {
         return sendTraceError(res, 'invalid_request');
       }
-      const detail = await reader.getRecord({ ...scope.query, recordId });
+      const detail = await reader.getRecord({ ...scope.query, recordId, sourceId });
       if (!detail) {
         return sendTraceError(res, 'not_found');
       }

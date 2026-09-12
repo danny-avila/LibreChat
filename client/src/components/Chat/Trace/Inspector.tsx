@@ -60,11 +60,18 @@ function ContentBlock({ label, content }: { label: TranslationKeys; content?: TT
   );
 }
 
-function RecordContent({ conversationId, recordId }: { conversationId: string; recordId: string }) {
+function RecordContent({
+  conversationId,
+  recordId,
+  sourceId,
+}: {
+  conversationId: string;
+  recordId: string;
+  sourceId?: string;
+}) {
   const localize = useLocalize();
   const { data, isLoading, isError, refetch } = useConversationTraceRecordQuery(
-    conversationId,
-    recordId,
+    { conversationId, recordId, sourceId },
     true,
   );
 
@@ -105,6 +112,7 @@ function RecordContent({ conversationId, recordId }: { conversationId: string; r
 function Inspector({
   node,
   turnStart,
+  sourceId,
   conversationId,
   showContent,
   showCost,
@@ -113,6 +121,8 @@ function Inspector({
 }: {
   node: TraceNode;
   turnStart: number;
+  /** The page source that listed this record. */
+  sourceId?: string;
   conversationId: string;
   showContent: boolean;
   showCost: boolean;
@@ -244,7 +254,11 @@ function Inspector({
             <h4 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
               {localize('com_ui_trace_content')}
             </h4>
-            <RecordContent conversationId={conversationId} recordId={record.id} />
+            <RecordContent
+              conversationId={conversationId}
+              recordId={record.id}
+              sourceId={sourceId}
+            />
           </section>
         )}
       </div>

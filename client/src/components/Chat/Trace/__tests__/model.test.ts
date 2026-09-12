@@ -142,6 +142,7 @@ describe('buildTraceModel', () => {
         parentId: 'root',
         kind: 'generation',
         usage: { input: 10, output: 5 },
+        cost: 0.005,
       }),
       record({ id: 'tool', parentId: 'root', kind: 'tool', status: 'error' }),
     ]);
@@ -156,9 +157,19 @@ describe('buildTraceModel', () => {
       inputTokens: 110,
       outputTokens: 25,
       totalTokens: 135,
-      cost: 0.01,
+      cost: expect.closeTo(0.015),
     });
     expect(model.turns[0].errorCount).toBe(1);
+  });
+
+  it('withholds the cost total when any model call with usage has no price', () => {
+    const model = buildTraceModel([
+      record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 }),
+      record({ id: 'unpriced', kind: 'generation', usage: { total: 50 } }),
+    ]);
+
+    expect(model.summary.cost).toBeUndefined();
+    expect(model.summary.totalTokens).toBe(150);
   });
 
   it('keeps the last copy of a record loaded twice', () => {

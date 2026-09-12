@@ -202,36 +202,67 @@ function buildTraceOwners(messages: SampledTraceMessage[]): Map<string, string> 
 }
 
 /**
- * Picks the one project to read: the destination that received the most of the
- * conversation's sampled responses, then the tenant's own project over central.
- * A connection enabled mid-conversation holds only the later turns, so
- * preference alone would hide every turn exported before it. A message with no
- * recorded destinations predates the record and could be in any of them.
+ * Orders the projects a conversation can be read from: the destination that
+ * received the most of its sampled responses first, then the tenant's own
+ * project over central. A connection enabled mid-conversation holds only the
+ * later turns, so preference alone would hide every turn exported before it. A
+ * message with no recorded destinations predates the record and could be in
+ * any of them; a destination no message could be in is dropped.
  */
-function selectDestination(
+function rankDestinations(
   destinations: LangfuseScoreDestination[],
   messages: SampledTraceMessage[],
-): LangfuseScoreDestination | undefined {
-  let selected: LangfuseScoreDestination | undefined;
-  let selectedCoverage = 0;
-  for (const destination of destinations) {
-    const coverage = messages.filter(
-      ({ langfuseDestinationIds }) =>
-        langfuseDestinationIds == null ||
-        (destination.id != null && langfuseDestinationIds.includes(destination.id)),
-    ).length;
-    const better =
-      coverage > selectedCoverage ||
-      (coverage > 0 &&
-        coverage === selectedCoverage &&
-        selected != null &&
-        DESTINATION_PREFERENCE[destination.name] < DESTINATION_PREFERENCE[selected.name]);
-    if (better) {
-      selected = destination;
-      selectedCoverage = coverage;
+): LangfuseScoreDestination[] {
+  return destinations
+    .map((destination) => ({
+      destination,
+      coverage: messages.filter(
+        ({ langfuseDestinationIds }) =>
+          langfuseDestinationIds == null ||
+          (destination.id != null && langfuseDestinationIds.includes(destination.id)),
+      ).length,
+    }))
+    .filter(({ coverage }) => coverage > 0)
+    .sort(
+      (a, b) =>
+        b.coverage - a.coverage ||
+        DESTINATION_PREFERENCE[a.destination.name] - DESTINATION_PREFERENCE[b.destination.name],
+    )
+    .map(({ destination }) => destination);
+}
+
+/** Stable, opaque identity of a destination; its project hash when Langfuse gave one. */
+function sourceIdOf(destination: LangfuseScoreDestination): string {
+  return destination.id ?? `name:${destination.name}`;
+}
+
+/** A destination named before its project id resolved still matches once the id arrives. */
+function isSource(destination: LangfuseScoreDestination, sourceId?: string): boolean {
+  return (
+    sourceId != null &&
+    (sourceIdOf(destination) === sourceId || `name:${destination.name}` === sourceId)
+  );
+}
+
+const cursorSchema = z.object({ s: z.string().min(1), c: z.string().min(1) });
+
+/** Binds a Langfuse cursor to the project that issued it, so every page of a read comes from one project. */
+function encodeCursor(sourceId: string, cursor: string): string {
+  return Buffer.from(JSON.stringify({ s: sourceId, c: cursor }), 'utf8').toString('base64url');
+}
+
+function decodeCursor(value: string): z.infer<typeof cursorSchema> {
+  try {
+    const parsed = cursorSchema.safeParse(
+      JSON.parse(Buffer.from(value, 'base64url').toString('utf8')),
+    );
+    if (parsed.success) {
+      return parsed.data;
     }
+  } catch {
+    /* falls through to the rejection below */
   }
-  return selected;
+  throw new TraceReadError('invalid_request', 'The page cursor is not one this server issued');
 }
 
 function statusError(status: number, hasCursor: boolean): TraceReadError {
@@ -271,8 +302,12 @@ function isTimeout(error: unknown): boolean {
 export function createLangfuseTraceReader({
   getConversationTraceRefs,
   hasSampledTraceMessage,
+  /** Never waits on the central project lookup: the process starts it at boot,
+   *  and a read must not stall behind a slow `/api/public/projects` call that
+   *  `requestTimeoutMs` does not govern. Until it resolves, central reads only
+   *  responses recorded without destination ids. */
   resolveDestinations = (appConfig) =>
-    getScoreDestinations(appConfig, '', true, { waitForCentralProjectId: true }),
+    getScoreDestinations(appConfig, '', true, { waitForCentralProjectId: false }),
   fetch: fetchImpl = (input, init) => fetch(input, init),
   now = Date.now,
 }: LangfuseTraceReaderDeps): TraceReader {
@@ -287,13 +322,12 @@ export function createLangfuseTraceReader({
     return destinations;
   }
 
-  async function resolveTarget(query: TraceQuery) {
+  async function loadConversation(query: TraceQuery) {
     const [refs, destinations] = await Promise.all([
       getConversationTraceRefs({ user: query.userId, conversationId: query.conversationId }),
       readableDestinations(query.appConfig),
     ]);
-    const destination = selectDestination(destinations, refs.sampledMessages);
-    return destination ? { refs, destination } : undefined;
+    return { refs, ranked: rankDestinations(destinations, refs.sampledMessages) };
   }
 
   function timeWindow(refs: ConversationTraceRefs): { from?: string; to: string } {
@@ -311,23 +345,35 @@ export function createLangfuseTraceReader({
   async function requestPage(
     destination: LangfuseScoreDestination,
     params: URLSearchParams,
-    { hasCursor, timeoutMs }: { hasCursor: boolean; timeoutMs: number },
+    query: TraceQuery,
+    hasCursor: boolean,
   ): Promise<z.infer<typeof pageSchema>> {
     const url = `${destination.baseUrl.replace(/\/+$/, '')}${OBSERVATIONS_PATH}?${params.toString()}`;
+    const timeout = AbortSignal.timeout(query.settings.requestTimeoutMs);
+    const signal = query.signal ? AbortSignal.any([query.signal, timeout]) : timeout;
+    const failed = (error: unknown, fallback: TraceReadError): TraceReadError => {
+      if (query.signal?.aborted) {
+        return new TraceReadError('upstream_error', 'The trace read was cancelled');
+      }
+      return isTimeout(error)
+        ? new TraceReadError('timeout', 'Langfuse did not respond in time')
+        : fallback;
+    };
+
     let response: Response;
     try {
       response = await fetchImpl(url, {
         headers: mergeHeaders(destination.headers, { Authorization: destination.authorization }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
         ...redirectPolicyFor(destination.headers),
       });
     } catch (error) {
-      if (isTimeout(error)) {
-        throw new TraceReadError('timeout', 'Langfuse did not respond in time');
-      }
-      throw new TraceReadError(
-        'upstream_error',
-        `Langfuse request failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      throw failed(
+        error,
+        new TraceReadError(
+          'upstream_error',
+          `Langfuse request failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+        ),
       );
     }
     if (!response.ok) {
@@ -337,10 +383,10 @@ export function createLangfuseTraceReader({
     try {
       body = await response.json();
     } catch (error) {
-      if (isTimeout(error)) {
-        throw new TraceReadError('timeout', 'Langfuse did not respond in time');
-      }
-      throw new TraceReadError('upstream_error', 'Langfuse returned an invalid response');
+      throw failed(
+        error,
+        new TraceReadError('upstream_error', 'Langfuse returned an invalid response'),
+      );
     }
     const parsed = pageSchema.safeParse(body);
     if (!parsed.success) {
@@ -383,14 +429,25 @@ export function createLangfuseTraceReader({
     },
 
     async listRecords(query) {
-      const target = await resolveTarget(query);
-      if (!target) {
-        throw new TraceReadError('not_found', 'No sampled trace for this conversation');
+      const continuation = query.cursor != null ? decodeCursor(query.cursor) : undefined;
+      const { refs, ranked } = await loadConversation(query);
+      const destination =
+        continuation != null
+          ? ranked.find((candidate) => isSource(candidate, continuation.s))
+          : ranked[0];
+      if (!destination) {
+        throw continuation != null
+          ? new TraceReadError(
+              'invalid_request',
+              'The page cursor names a source this conversation cannot read',
+            )
+          : new TraceReadError('not_found', 'No sampled trace for this conversation');
       }
-      const owners = buildTraceOwners(target.refs.sampledMessages);
-      const window = timeWindow(target.refs);
+      const sourceId = sourceIdOf(destination);
+      const owners = buildTraceOwners(refs.sampledMessages);
+      const window = timeWindow(refs);
       const records: TTraceRecord[] = [];
-      let cursor = query.cursor;
+      let cursor = continuation?.c;
       let remaining = query.settings.maxRecords;
 
       for (;;) {
@@ -406,32 +463,31 @@ export function createLangfuseTraceReader({
         if (cursor) {
           params.set('cursor', cursor);
         }
-        const page = await requestPage(target.destination, params, {
-          hasCursor: cursor != null,
-          timeoutMs: query.settings.requestTimeoutMs,
-        });
+        const page = await requestPage(destination, params, query, cursor != null);
         for (const { observation, messageId } of parseRows(page.data, owners)) {
           records.push(toRecord(observation, messageId));
         }
         remaining -= page.data.length;
         const next = page.meta?.cursor || undefined;
         if (!next || page.data.length === 0) {
-          return { records };
+          return { records, sourceId };
         }
         if (remaining <= 0) {
-          return { records, nextCursor: next };
+          return { records, sourceId, nextCursor: encodeCursor(sourceId, next) };
         }
         cursor = next;
       }
     },
 
     async getRecord(query) {
-      const target = await resolveTarget(query);
-      if (!target) {
+      const { refs, ranked } = await loadConversation(query);
+      const destination =
+        ranked.find((candidate) => isSource(candidate, query.sourceId)) ?? ranked[0];
+      if (!destination) {
         return null;
       }
-      const owners = buildTraceOwners(target.refs.sampledMessages);
-      const window = timeWindow(target.refs);
+      const owners = buildTraceOwners(refs.sampledMessages);
+      const window = timeWindow(refs);
       const includeContent = query.settings.showInputOutput;
       const filter = [
         { type: 'string', column: 'id', operator: '=', value: query.recordId },
@@ -446,10 +502,7 @@ export function createLangfuseTraceReader({
         limit: '1',
         filter: JSON.stringify(filter),
       });
-      const page = await requestPage(target.destination, params, {
-        hasCursor: false,
-        timeoutMs: query.settings.requestTimeoutMs,
-      });
+      const page = await requestPage(destination, params, query, false);
       const match = parseRows(page.data, owners).find(
         ({ observation }) => observation.id === query.recordId,
       );

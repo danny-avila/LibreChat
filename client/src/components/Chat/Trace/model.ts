@@ -150,8 +150,9 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
   const summary: TraceSummary = { ...EMPTY_SUMMARY };
   let start = Number.POSITIVE_INFINITY;
   let end = Number.NEGATIVE_INFINITY;
-  let hasCost = false;
   let cost = 0;
+  let pricedRecords = 0;
+  let unpricedRecords = 0;
 
   for (const [id, node] of nodes) {
     const { record } = node;
@@ -197,12 +198,16 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
       summary.generations++;
       const input = record.usage?.input ?? 0;
       const output = record.usage?.output ?? 0;
+      const total = record.usage?.total ?? input + output;
       summary.inputTokens += input;
       summary.outputTokens += output;
-      summary.totalTokens += record.usage?.total ?? input + output;
+      summary.totalTokens += total;
+      if (record.cost == null && total > 0) {
+        unpricedRecords++;
+      }
     }
     if (record.cost != null) {
-      hasCost = true;
+      pricedRecords++;
       cost += record.cost;
     }
   }
@@ -228,7 +233,8 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
 
   summary.turns = turns.length;
   summary.duration = end - start;
-  if (hasCost) {
+  /** A total that silently skips unpriced model calls would under-report spend, so there is none. */
+  if (pricedRecords > 0 && unpricedRecords === 0) {
     summary.cost = cost;
   }
   return { nodes, turns, start, end, summary };

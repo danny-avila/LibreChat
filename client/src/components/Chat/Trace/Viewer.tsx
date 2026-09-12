@@ -89,6 +89,26 @@ export default function Viewer({
 
   const pages = recordsQuery.data?.pages;
   const records = useMemo(() => pages?.flatMap((page) => page.records) ?? [], [pages]);
+  const recordSources = useMemo(() => {
+    const sources = new Map<string, string>();
+    for (const page of pages ?? []) {
+      for (const record of page.records) {
+        if (page.sourceId != null) {
+          sources.set(record.id, page.sourceId);
+        }
+      }
+    }
+    return sources;
+  }, [pages]);
+  /** The session link opens one project; offer it only when that project served every loaded page. */
+  const langfuseUrl =
+    langfuseSession?.url != null &&
+    langfuseSession.destinationId != null &&
+    pages != null &&
+    pages.length > 0 &&
+    pages.every((page) => page.sourceId === langfuseSession.destinationId)
+      ? langfuseSession.url
+      : undefined;
   const model = useMemo(() => buildTraceModel(records), [records]);
   const rows = useMemo(
     () => flattenRows(model, { collapsed, query: deferredQuery, window: view }),
@@ -325,6 +345,7 @@ export default function Viewer({
             <Inspector
               node={selectedNode}
               turnStart={selectedTurnStart}
+              sourceId={recordSources.get(selectedNode.record.id)}
               conversationId={conversationId}
               showContent={settings.showInputOutput}
               showCost={showCost}
@@ -349,9 +370,9 @@ export default function Viewer({
           {localize('com_ui_trace_title')}
         </h2>
         <div className="ml-auto flex items-center gap-2">
-          {langfuseSession?.url != null && (
+          {langfuseUrl != null && (
             <a
-              href={langfuseSession.url}
+              href={langfuseUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={buttonVariants({ variant: 'outline', size: 'sm' })}

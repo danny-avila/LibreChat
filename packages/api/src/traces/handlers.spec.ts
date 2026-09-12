@@ -1,8 +1,10 @@
+import http from 'http';
 import express from 'express';
 import request from 'supertest';
 import type { TTracePage, TTraceRecordDetail, TTraceViewerConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
+import type { AddressInfo } from 'net';
 import type { TraceHandlerDeps, TraceRequest, TraceRouteHandler } from './handlers';
 import type { TraceReader } from './types';
 import { createTraceReadLimiter } from './limiter';
@@ -256,6 +258,56 @@ describe('trace handlers', () => {
     expect(reader.getRecord).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo-1', recordId: 'obs-missing' }),
     );
+  });
+
+  it('pins a detail read to the source of the page that listed it and rejects a malformed one', async () => {
+    const reader = createReader();
+    const { app } = createApp({ reader });
+
+    await request(app).get('/api/traces/convo-1/records/obs-1?source=central-id');
+    const oversized = await request(app).get(
+      `/api/traces/convo-1/records/obs-1?source=${'s'.repeat(200)}`,
+    );
+
+    expect(reader.getRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ recordId: 'obs-1', sourceId: 'central-id' }),
+    );
+    expect(oversized.status).toBe(400);
+    expect(reader.getRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the read when the client disconnects before the response', async () => {
+    let signal: AbortSignal | undefined;
+    let readerStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      readerStarted = resolve;
+    });
+    const reader = createReader({
+      listRecords: jest.fn(
+        (query) =>
+          new Promise<TTracePage>((_resolve, reject) => {
+            signal = query.signal;
+            readerStarted();
+            query.signal?.addEventListener('abort', () =>
+              reject(new TraceReadError('upstream_error', 'The trace read was cancelled')),
+            );
+          }),
+      ),
+    });
+    const { app } = createApp({ reader });
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+
+    const clientRequest = http.get(`http://127.0.0.1:${port}/api/traces/convo-1/records`);
+    clientRequest.on('error', () => undefined);
+    await started;
+    clientRequest.destroy();
+    await new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve()));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    expect(signal?.aborted).toBe(true);
+    const { logger } = jest.requireMock<{ logger: { warn: jest.Mock } }>('@librechat/data-schemas');
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('cancelled'));
   });
 
   it('limits trace reads per user with the configured ceiling', async () => {

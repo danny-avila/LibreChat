@@ -201,7 +201,10 @@ describe('createLangfuseTraceReader', () => {
     it('reads the session from the recorded destination with its credentials and window', async () => {
       const { reader, fetchMock } = setup({ responses: [jsonResponse({ data: [], meta: {} })] });
 
-      await expect(reader.listRecords(createQuery())).resolves.toEqual({ records: [] });
+      await expect(reader.listRecords(createQuery())).resolves.toEqual({
+        records: [],
+        sourceId: 'connection-id',
+      });
 
       const url = requestedUrl(fetchMock);
       expect(url.origin + url.pathname).toBe(
@@ -402,22 +405,82 @@ describe('createLangfuseTraceReader', () => {
       );
 
       expect(page.records.map(({ id }) => id)).toEqual(['a', 'b', 'c']);
-      expect(page.nextCursor).toBe('cursor-2');
+      expect(page.nextCursor).toBe(
+        Buffer.from(JSON.stringify({ s: 'connection-id', c: 'cursor-2' })).toString('base64url'),
+      );
       expect(requestedUrl(fetchMock, 0).searchParams.get('limit')).toBe('3');
       expect(requestedUrl(fetchMock, 0).searchParams.has('cursor')).toBe(false);
       expect(requestedUrl(fetchMock, 1).searchParams.get('limit')).toBe('1');
       expect(requestedUrl(fetchMock, 1).searchParams.get('cursor')).toBe('cursor-1');
     });
 
-    it('continues from a caller cursor and stops when Langfuse has no more pages', async () => {
-      const { reader, fetchMock } = setup({
-        responses: [jsonResponse({ data: [observation()], meta: { cursor: null } })],
+    it('continues a cursor from the project that issued it, even after the ranking changed', async () => {
+      const first = setup({
+        responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'next' } })],
+        refs: createRefs({
+          sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['central-id'] }],
+        }),
+      });
+      const { nextCursor, sourceId } = await first.reader.listRecords(
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+      );
+      expect(sourceId).toBe('central-id');
+
+      const later = setup({
+        responses: [jsonResponse({ data: [observation({ id: 'b' })], meta: { cursor: null } })],
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-1', langfuseDestinationIds: ['central-id'] },
+            { messageId: 'response-2', langfuseDestinationIds: ['connection-id'] },
+            { messageId: 'response-3', langfuseDestinationIds: ['connection-id'] },
+          ],
+        }),
+      });
+      const page = await later.reader.listRecords({ ...createQuery(), cursor: nextCursor });
+
+      expect(page).toMatchObject({ sourceId: 'central-id' });
+      expect(page.nextCursor).toBeUndefined();
+      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
+      expect(requestedUrl(later.fetchMock).searchParams.get('cursor')).toBe('next');
+    });
+
+    it('keeps paging a project whose id resolved after the first page', async () => {
+      const unresolvedCentral = { ...central, id: undefined };
+      const first = setup({
+        destinations: [unresolvedCentral],
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'next' } })],
+      });
+      const { nextCursor, sourceId } = await first.reader.listRecords(
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+      );
+      const later = setup({
+        destinations: [central],
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [jsonResponse({ data: [observation({ id: 'b' })] })],
       });
 
-      const page = await reader.listRecords({ ...createQuery(), cursor: 'cursor-2' });
+      const page = await later.reader.listRecords({ ...createQuery(), cursor: nextCursor });
 
-      expect(page.nextCursor).toBeUndefined();
-      expect(requestedUrl(fetchMock).searchParams.get('cursor')).toBe('cursor-2');
+      expect(sourceId).toBe('name:central');
+      expect(page.records.map(({ id }) => id)).toEqual(['b']);
+    });
+
+    it('rejects a forged cursor and one for a project the conversation can no longer read', async () => {
+      const { reader, fetchMock } = setup();
+      const retired = Buffer.from(JSON.stringify({ s: 'retired-id', c: 'next' })).toString(
+        'base64url',
+      );
+
+      await expect(
+        reader.listRecords({ ...createQuery(), cursor: 'bm90IGpzb24' }),
+      ).rejects.toMatchObject({ code: 'invalid_request' });
+      await expect(reader.listRecords({ ...createQuery(), cursor: retired })).rejects.toMatchObject(
+        {
+          code: 'invalid_request',
+        },
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('reports a conversation without an eligible trace as not found', async () => {
@@ -443,12 +506,38 @@ describe('createLangfuseTraceReader', () => {
       expect(error).toMatchObject({ code });
     });
 
-    it('treats a rejected caller cursor as an invalid request', async () => {
+    it('treats a cursor Langfuse rejects as an invalid request', async () => {
       const { reader } = setup({ responses: [jsonResponse({ message: 'bad cursor' }, 400)] });
+      const cursor = Buffer.from(JSON.stringify({ s: 'connection-id', c: 'expired' })).toString(
+        'base64url',
+      );
+
+      await expect(reader.listRecords({ ...createQuery(), cursor })).rejects.toMatchObject({
+        code: 'invalid_request',
+      });
+    });
+
+    it('stops the Langfuse request when the client goes away', async () => {
+      const controller = new AbortController();
+      const fetchMock = jest.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+            controller.abort();
+          }),
+      );
+      const reader = createLangfuseTraceReader({
+        getConversationTraceRefs: async () => createRefs(),
+        hasSampledTraceMessage: async () => true,
+        resolveDestinations: async () => [connection],
+        fetch: fetchMock,
+        now: () => NOW,
+      });
 
       await expect(
-        reader.listRecords({ ...createQuery(), cursor: 'tampered' }),
-      ).rejects.toMatchObject({ code: 'invalid_request' });
+        reader.listRecords(createQuery({ signal: controller.signal })),
+      ).rejects.toMatchObject({ code: 'upstream_error', message: 'The trace read was cancelled' });
+      expect(fetchMock.mock.calls[0][1].signal?.aborted).toBe(true);
     });
 
     it('bounds each Langfuse request by the configured timeout', async () => {
@@ -566,6 +655,22 @@ describe('createLangfuseTraceReader', () => {
       });
     });
 
+    it('reads the detail from the project that listed the record', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [
+          jsonResponse({ data: [observation()] }),
+          jsonResponse({ data: [observation()] }),
+        ],
+      });
+
+      await reader.getRecord({ ...createQuery(), recordId: 'obs-root', sourceId: 'central-id' });
+      await reader.getRecord({ ...createQuery(), recordId: 'obs-root', sourceId: 'retired-id' });
+
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://central.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://tenant.langfuse.test');
+    });
+
     it('returns null for an observation outside the user-owned traces', async () => {
       const { reader } = setup({
         responses: [jsonResponse({ data: [observation({ traceId: FOREIGN_TRACE })] })],
@@ -625,6 +730,29 @@ describe('createLangfuseTraceReader', () => {
       expect(new Headers(init.headers).get('Authorization')).toBe(
         `Basic ${Buffer.from('pk:sk').toString('base64')}`,
       );
+    });
+
+    it('never waits on the central project lookup, whatever the configured timeout', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-slow';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-slow';
+      process.env.LANGFUSE_BASE_URL = 'https://slow.langfuse.test';
+      const lookup = jest.spyOn(global, 'fetch').mockImplementation(() => new Promise(() => {}));
+      const hasSampledTraceMessage = jest.fn(async () => true);
+      const reader = createLangfuseTraceReader({
+        getConversationTraceRefs: async () => createRefs(),
+        hasSampledTraceMessage,
+      });
+
+      await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
+
+      expect(lookup).toHaveBeenCalledWith(
+        'https://slow.langfuse.test/api/public/projects',
+        expect.anything(),
+      );
+      expect(hasSampledTraceMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationIds: [] }),
+      );
+      lookup.mockRestore();
     });
 
     it('is unavailable while tracing is disabled', async () => {

@@ -12,6 +12,8 @@ export interface TraceQuery {
   conversationId: string;
   appConfig?: AppConfig;
   settings: TResolvedTraceViewerConfig;
+  /** Aborts when the client goes away, so an abandoned read stops spending backend quota. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -27,7 +29,10 @@ export interface TraceReader {
   isAvailable(query: TraceQuery): Promise<boolean>;
   listRecords(query: TraceQuery & { cursor?: string }): Promise<TTracePage>;
   /** `null` when the record is absent or outside the conversation's traces. */
-  getRecord(query: TraceQuery & { recordId: string }): Promise<TTraceRecordDetail | null>;
+  /** `sourceId` pins the read to the page that listed the record when that source is still readable. */
+  getRecord(
+    query: TraceQuery & { recordId: string; sourceId?: string },
+  ): Promise<TTraceRecordDetail | null>;
 }
 
 export class TraceReadError extends Error {
