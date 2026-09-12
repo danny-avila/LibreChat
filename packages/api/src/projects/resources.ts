@@ -140,7 +140,19 @@ export async function resolveChatProjectPolicyFiles(params: {
     .filter((file): file is ProjectFileRecord => getChatProjectFileAvailability(file) === 'ready');
 }
 
-export function toRuntimeFile(file: ProjectFileRecord): TFile {
+type RuntimeFileSource = {
+  file_id: string;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  bytes: number;
+  usage: number;
+  user: string | { toString(): string };
+  tenantId?: string;
+};
+
+export function toRuntimeFile(file: RuntimeFileSource): TFile {
   return {
     file_id: file.file_id,
     filename: file.filename,
