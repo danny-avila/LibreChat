@@ -20,7 +20,15 @@ export type AgentParameterConfig = {
 };
 
 export type ResolvedAgentParameterSettings = {
+  /**
+   * Every parameter the endpoint schema defines for this model. Pruning reads
+   * this, so a value the role may not *see* is still recognised and preserved:
+   * dropping it here would delete another user's configuration on an unrelated
+   * save by someone without the permission.
+   */
   parameters: SettingDefinition[];
+  /** The subset that gets a control. Role-gated parameters are absent. */
+  visibleParameters: SettingDefinition[];
   schemaResolved: boolean;
 };
 
@@ -31,9 +39,14 @@ export function resolveAgentParameterSettings({
   model,
   provider,
   startupConfig,
+  webSearchAllowed,
 }: AgentParameterConfig & {
   model: string;
   provider: string;
+  /** `WEB_SEARCH.USE`. `web_search` is a default model parameter for the OpenAI,
+   *  Anthropic and Google column sets, so without this the builder offers a
+   *  switch the server will refuse. Narrows `visibleParameters` only. */
+  webSearchAllowed: boolean;
 }): ResolvedAgentParameterSettings {
   const resolvedEndpointsConfig = endpointsConfig ?? {};
   const endpointType = getEndpointField(resolvedEndpointsConfig, provider, 'type');
@@ -59,12 +72,14 @@ export function resolveAgentParameterSettings({
     overriddenEndpointKey,
     model,
   );
+  const parameters = modelAwareParams.map(
+    (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+  );
 
   return {
     schemaResolved: defaultParams != null || overriddenParams != null,
-    parameters: modelAwareParams.map(
-      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
-    ),
+    parameters,
+    visibleParameters: parameters.filter((param) => param.key !== 'web_search' || webSearchAllowed),
   };
 }
 

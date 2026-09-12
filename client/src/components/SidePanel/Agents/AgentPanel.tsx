@@ -117,8 +117,17 @@ export function composeAgentUpdatePayload(
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  /** Pruning reads the complete schema, not the rendered subset, so a role-gated
+   *  parameter is preserved rather than deleted when someone without the
+   *  permission saves an unrelated edit. `webSearchAllowed` narrows only
+   *  `visibleParameters`, which this path does not use. */
   const modelParameterSettings = parameterConfig
-    ? resolveAgentParameterSettings({ ...parameterConfig, model, provider })
+    ? resolveAgentParameterSettings({
+        ...parameterConfig,
+        model,
+        provider,
+        webSearchAllowed: true,
+      })
     : undefined;
   const model_parameters = modelParameterSettings
     ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)

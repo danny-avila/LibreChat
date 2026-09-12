@@ -28,7 +28,7 @@ import type {
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
-import type { Response as ServerResponse } from 'express';
+import type { Request, Response as ServerResponse } from 'express';
 import type {
   TFileUpdate,
   ProvisionState,
@@ -56,6 +56,7 @@ import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/t
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
+import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { AgentExecutionContext } from './runtime';
 import {
@@ -108,6 +109,7 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
@@ -356,6 +358,55 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+/**
+ * Whether a provider-built tool is that provider's own web search.
+ *
+ * Each provider spells it differently — OpenAI `{ type: 'web_search' }`, Anthropic
+ * `{ type: 'web_search_20250305', name: 'web_search' }`, Google `{ googleSearch: {} }` —
+ * and the tool is already built by the time it reaches here, so the shape is what
+ * identifies it rather than the parameter that asked for it.
+ */
+function isProviderWebSearchTool(tool: unknown): boolean {
+  if (tool == null || typeof tool !== 'object') {
+    return false;
+  }
+  if (hasGoogleSearchTool(tool)) {
+    return true;
+  }
+  if (getToolName(tool) === Tools.web_search) {
+    return true;
+  }
+  const { type } = tool as { type?: unknown };
+  return typeof type === 'string' && type.startsWith(Tools.web_search);
+}
+
+/**
+ * Removes OpenRouter's web-search plugin from a built LLM config.
+ *
+ * OpenRouter does not receive web search as a tool — `getOpenAIConfig` encodes it
+ * as `modelKwargs.plugins: [{ id: 'web' }]` and pushes no tool at all — so the
+ * provider-tool filter has nothing to strip on that path and the plugin would
+ * still reach the provider for a role that was denied.
+ */
+function stripWebSearchPlugin(llmConfig: Record<string, unknown>): number {
+  const modelKwargs = llmConfig.modelKwargs as { plugins?: unknown } | undefined;
+  if (modelKwargs == null || !Array.isArray(modelKwargs.plugins)) {
+    return 0;
+  }
+  const plugins = modelKwargs.plugins as Array<{ id?: unknown }>;
+  const remaining = plugins.filter((plugin) => plugin?.id !== 'web');
+  const removed = plugins.length - remaining.length;
+  if (removed === 0) {
+    return 0;
+  }
+  if (remaining.length > 0) {
+    modelKwargs.plugins = remaining;
+  } else {
+    delete modelKwargs.plugins;
+  }
+  return removed;
+}
+
 function normalizeGoogleModelName(model: string): string {
   const normalized = model.trim().toLowerCase();
   return normalized.split('/').pop() ?? normalized;
@@ -427,20 +478,31 @@ function resolveProviderToolConflicts({
   provider,
   tools,
   toolDefinitions,
+  webSearchDenied = false,
 }: {
   provider?: string;
   tools?: unknown[];
   toolDefinitions?: LCTool[];
+  /**
+   * Whether the role denies `WEB_SEARCH.USE`. Pinning `model_parameters.web_search`
+   * to `false` is not sufficient on its own: an endpoint's `addParams` is applied
+   * after the model options and turns the provider's native search back on. The
+   * tool is stripped here instead, which holds however it was enabled.
+   */
+  webSearchDenied?: boolean;
 }): unknown[] | undefined {
   if (!tools?.length) {
     return tools;
   }
 
-  if (!hasToolDefinition(toolDefinitions, Tools.web_search)) {
+  if (!webSearchDenied && !hasToolDefinition(toolDefinitions, Tools.web_search)) {
     return tools;
   }
 
   const shouldRemoveTool = (tool: unknown): boolean => {
+    if (webSearchDenied) {
+      return isProviderWebSearchTool(tool);
+    }
     if (provider === Providers.ANTHROPIC) {
       return getToolName(tool) === Tools.web_search;
     }
@@ -461,7 +523,9 @@ function resolveProviderToolConflicts({
 
   if (removed > 0) {
     logger.debug(
-      `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
+      webSearchDenied
+        ? `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); role denies WEB_SEARCH.`
+        : `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
     );
   }
 
@@ -715,6 +779,15 @@ export interface InitializeAgentParams {
    */
   fileSearchAvailable?: boolean;
   /**
+   * Whether `web_search` is available to this caller — the capability AND the
+   * `WEB_SEARCH` role grant. For callers that reach `initializeAgent` without a
+   * `db` (the embedder surface in `agents/openai/service.ts`), this is the only
+   * way to gate provider-native web search, since `model_parameters.web_search`
+   * never passes through the agent tool loader. `false` strips the parameter;
+   * absent falls back to the grant resolved from `db.getRoleByName`.
+   */
+  webSearchAvailable?: boolean;
+  /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
    * (plus the background-native code pair, unless explicitly opted out) get a
@@ -851,6 +924,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Optional: persist file metadata updates after provisioning */
   updateFile?: (data: TFileUpdate) => Promise<unknown>;
+  /** Resolves a role by name for the tool role-permission grants. Optional: when
+   *  absent the role half of the web-search gate is not applied. */
+  getRoleByName?: CheckAccessParams['getRoleByName'];
 }
 
 /**
@@ -1104,6 +1180,54 @@ export async function initializeAgent(
   const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
     _modelOptions as Record<string, unknown>,
   );
+
+  /** `model_parameters.web_search` turns on provider-native web search, bypassing
+   *  `agent.tools` entirely, so it needs its own role check here rather than
+   *  relying on the tool-loader gate.
+   *
+   *  An absent value has to be resolved too, not just an explicit `true`: an
+   *  endpoint's `customParams.paramDefinitions` can default `web_search` to
+   *  `true`, and every provider builder applies that default precisely when the
+   *  field is `undefined`. Leaving it unset for a denied role is therefore the
+   *  state that lets the endpoint switch search on. An explicit `false` is
+   *  already off and no default can revive it, so that case skips the read. */
+  let webSearchDenied = false;
+  if (modelOptions.web_search !== false) {
+    /** A caller that already resolved the grant against its request passes it as
+     *  `webSearchAvailable`; trusting it is what keeps the OpenAI-compatible and
+     *  Responses routes to one role read, since they reach here with `runtime`
+     *  and no `req` to share a cache with. */
+    const denied =
+      params.webSearchAvailable != null
+        ? params.webSearchAvailable === false
+        : db.getRoleByName != null &&
+          !(
+            await resolveToolRoleGrants({
+              /** Only the memoization handle; `user` below is what is authorized,
+               *  because `runtime` is the user source and two routes pass no `req`. */
+              req: params.req as Request | undefined,
+              user,
+              getRoleByName: db.getRoleByName,
+              context: 'initializeAgent',
+            })
+          ).webSearch;
+    webSearchDenied = denied;
+    if (denied) {
+      const wasRequested = modelOptions.web_search === true;
+      /** Explicit `false`, never `delete` and never merely left absent: the
+       *  builders read `undefined` as "no opinion" and fall through to the
+       *  endpoint default. */
+      modelOptions.web_search = false;
+      /** Only when the agent actually asked. Pinning `false` for an agent that
+       *  never set the parameter denies nothing the user tried to use, and
+       *  warning on it would log every denied role's every request. */
+      if (wasRequested) {
+        logger.warn(
+          `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; disabled model_parameters.web_search`,
+        );
+      }
+    }
+  }
 
   const provider = agent.provider;
   agent.endpoint = provider;
@@ -1943,10 +2067,16 @@ export async function initializeAgent(
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
+    logger.debug(
+      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
+    );
+  }
   const providerTools = resolveProviderToolConflicts({
     provider: agent.provider,
     tools: options.tools,
     toolDefinitions,
+    webSearchDenied,
   });
   const hasProviderTools = (providerTools?.length ?? 0) > 0;
 

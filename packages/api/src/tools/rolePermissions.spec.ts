@@ -18,6 +18,7 @@ const buildRole = (overrides: Record<string, unknown> = {}) =>
     permissions: {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       ...overrides,
     },
   }) as unknown as IRole;
@@ -25,9 +26,10 @@ const buildRole = (overrides: Record<string, unknown> = {}) =>
 const buildReq = () => ({ user: { id: 'user_1', role: 'USER' } }) as unknown as ServerRequest;
 
 describe('tool role permission maps', () => {
-  it('covers both role-gated agent tools', () => {
+  it('covers every role-gated agent tool', () => {
     expect(toolRolePermissions[Tools.file_search]).toBe(PermissionTypes.FILE_SEARCH);
     expect(toolRolePermissions[Tools.execute_code]).toBe(PermissionTypes.RUN_CODE);
+    expect(toolRolePermissions[Tools.web_search]).toBe(PermissionTypes.WEB_SEARCH);
   });
 
   /** The Assistants builder uploads under `code_interpreter`, not `execute_code`,
@@ -295,12 +297,13 @@ describe('resolveAssistantToolPermissions', () => {
 });
 
 describe('resolveToolRoleGrants', () => {
-  it('reports both grants from one role read', async () => {
+  it('reports all three grants from one role read', async () => {
     const getRoleByName = jest.fn().mockResolvedValue(buildRole());
 
     await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
       runCode: true,
       fileSearch: true,
+      webSearch: true,
     });
     expect(getRoleByName).toHaveBeenCalledTimes(1);
   });
@@ -313,6 +316,19 @@ describe('resolveToolRoleGrants', () => {
     await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
       runCode: false,
       fileSearch: true,
+      webSearch: true,
+    });
+  });
+
+  it('denies web search independently of the other two grants', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } }));
+
+    await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
+      runCode: true,
+      fileSearch: true,
+      webSearch: false,
     });
   });
 
@@ -332,12 +348,13 @@ describe('resolveToolRoleGrants', () => {
     expect(getRoleByName).toHaveBeenCalledTimes(1);
   });
 
-  it('fails both grants closed when the role lookup throws', async () => {
+  it('fails all three grants closed when the role lookup throws', async () => {
     const getRoleByName = jest.fn().mockRejectedValue(new Error('unreachable'));
 
     await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
       runCode: false,
       fileSearch: false,
+      webSearch: false,
     });
   });
 });

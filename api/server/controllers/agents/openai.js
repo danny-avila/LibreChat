@@ -498,6 +498,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        getRoleByName: db.getRoleByName,
       };
 
       const enabledCapabilities = new Set(agentsEConfig?.capabilities);
@@ -508,10 +509,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        *  when the deployment has both capabilities off — both flags are false
        *  either way, so the read would be pure load on every request. One
        *  lookup answers both. */
-      const toolRoleGrants =
-        codeCapabilityEnabled || fileSearchCapabilityEnabled
-          ? resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName })
-          : null;
+      /** Always resolved: `initializeAgent` gates `model_parameters.web_search` for
+       *  every agent whose value is not explicitly `false`, and it reaches here with
+       *  `runtime` and no `req`, so without this it would issue its own read. */
+      const toolRoleGrants = resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName });
       const memoryAvailable = await resolveMemoryAvailability({
         enabledCapabilities,
         memoryConfig: appConfig?.memory,
@@ -527,6 +528,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        *  a tool the loader is about to drop. */
       const fileSearchAvailable =
         fileSearchCapabilityEnabled && (await toolRoleGrants)?.fileSearch === true;
+      /** Threaded so the initializer authorizes from this request's already-resolved
+       *  grant instead of reading the role again without a cache to share. */
+      const webSearchAvailable = (await toolRoleGrants)?.webSearch === true;
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
@@ -593,6 +597,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           }),
           codeEnvAvailable,
           fileSearchAvailable,
+          webSearchAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -673,6 +678,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           defaultActiveOnShare,
           codeEnvAvailable,
           fileSearchAvailable,
+          webSearchAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
