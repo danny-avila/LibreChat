@@ -11,8 +11,8 @@ import type {
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { enqueue, invalidateConversationLists } from '~/utils';
 import { getSessionPrincipal } from '~/utils/session';
-import { enqueue } from '~/utils';
 import store from '~/store';
 
 export const useCreateProjectMutation = (): UseMutationResult<
@@ -75,9 +75,8 @@ export const useDeleteProjectMutation = (): UseMutationResult<
       // refetches (→ not-found) rather than rendering stale cache within `cacheTime`.
       queryClient.removeQueries([QueryKeys.project, projectId], { type: 'inactive' });
       queryClient.invalidateQueries([QueryKeys.projects]);
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
       /** Archived rows carry the same project field and menu state. */
-      queryClient.invalidateQueries([QueryKeys.archivedConversations]);
+      invalidateConversationLists(queryClient);
       /** Deleting a project unsets chatProjectId on its chats, pinned ones included. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
     },
@@ -208,9 +207,8 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
           }
         });
         queryClient.invalidateQueries([QueryKeys.projects]);
-        queryClient.invalidateQueries([QueryKeys.allConversations]);
         /** Archived rows carry the same project field and menu state. */
-        queryClient.invalidateQueries([QueryKeys.archivedConversations]);
+        invalidateConversationLists(queryClient);
         /** The pinned row carries `chatProjectId` for its options menu. */
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);

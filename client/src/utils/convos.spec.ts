@@ -16,6 +16,7 @@ import {
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
+  invalidateConversationLists,
 } from './convos';
 import { normalizeData } from './collection';
 
@@ -1120,6 +1121,22 @@ describe('Conversation Utilities', () => {
         ]);
         expect(mainData!.pages[0].conversations[0].conversationId).toBe('b');
         expect(otherData!.pages[0].conversations[0].conversationId).toBe('b');
+      });
+
+      /** Callers that cannot say what changed — a recovered stream, a schedule that moved,
+       *  a deleted project — reach both prefixes through this, or the archive keeps a row
+       *  the server has already changed. */
+      it('invalidateConversationLists reaches the archived prefix too', async () => {
+        const archivedKey = ['archivedConversations', { isArchived: true }];
+        queryClient.setQueryData(archivedKey, {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        await invalidateConversationLists(queryClient);
+
+        expect(queryClient.getQueryState(['allConversations'])?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(archivedKey)?.isInvalidated).toBe(true);
       });
     });
   });

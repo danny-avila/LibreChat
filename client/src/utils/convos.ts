@@ -11,6 +11,7 @@ import {
   isWithinInterval,
 } from 'date-fns';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
+import type { InvalidateQueryFilters } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
 
@@ -262,11 +263,31 @@ function queryListsNewestFirst(queryKey: readonly unknown[]): boolean {
  * one prefix leaves the other rendering the row it just changed: the sidebar lists the
  * archive from the same components, so both are live caches now.
  */
+export const CONVERSATION_LIST_KEYS = [
+  QueryKeys.allConversations,
+  QueryKeys.archivedConversations,
+] as const;
+
 function findConversationListQueries(queryClient: QueryClient) {
-  return [
-    ...queryClient.getQueryCache().findAll([QueryKeys.allConversations], { exact: false }),
-    ...queryClient.getQueryCache().findAll([QueryKeys.archivedConversations], { exact: false }),
-  ];
+  return CONVERSATION_LIST_KEYS.flatMap((listKey) =>
+    queryClient.getQueryCache().findAll([listKey], { exact: false }),
+  );
+}
+
+/**
+ * Reconciles both list prefixes against the server. For callers that cannot say what
+ * changed — a recovered stream, a schedule that moved, a project that took its chats'
+ * fields with it — and so cannot write the row themselves.
+ */
+export function invalidateConversationLists(
+  queryClient: QueryClient,
+  filters?: Omit<InvalidateQueryFilters, 'queryKey'>,
+): Promise<void> {
+  return Promise.all(
+    CONVERSATION_LIST_KEYS.map((listKey) =>
+      queryClient.invalidateQueries({ queryKey: [listKey], ...filters }),
+    ),
+  ).then(() => undefined);
 }
 
 /** Whether a list variant shows archived chats, which its key states and its root implies. */
