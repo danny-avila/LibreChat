@@ -2,6 +2,7 @@ import type {
   CodeApprovalMode,
   CodeWorkspaceSelection,
   TEndpointOption,
+  Agents,
 } from 'librechat-data-provider';
 import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
 import type { Request } from 'express';
@@ -18,6 +19,7 @@ export type RequestBody = {
   endpoint?: string;
   endpointType?: string;
   model?: string;
+  imageDetail?: Agents.ImageDetail;
   key?: string;
   endpointOption?: Partial<TEndpointOption>;
   /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */

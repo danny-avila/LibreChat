@@ -1,8 +1,8 @@
 import getStream from 'get-stream';
 import { Providers } from '@librechat/agents';
 import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
+import type { StoredFileRef } from '~/storage/path';
 import { resolveDownloadPath } from '~/storage/path';
 
 export class AttachmentObjectNotFoundError extends Error {
@@ -78,12 +78,12 @@ export const getConfiguredFileSizeLimit = (
  * @param getStrategyFunctions - Function to get strategy functions for a source
  * @returns Processed file with content and metadata, or null if no download reference exists
  */
-export async function getFileStream(
+export async function getFileStream<T extends ProcessedFile['metadata'] & StoredFileRef>(
   req: ServerRequest,
-  file: IMongoFile,
+  file: T,
   encodingMethods: Record<string, StrategyFunctions>,
   getStrategyFunctions: (source: string) => StrategyFunctions,
-): Promise<ProcessedFile | null> {
+): Promise<ProcessedFile<T> | null> {
   if (!file?.filepath && !file?.storageKey) {
     return null;
   }

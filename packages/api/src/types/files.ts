@@ -159,8 +159,8 @@ export interface AudioResult {
   }>;
 }
 
-export interface ProcessedFile {
-  file: IMongoFile;
+export interface ProcessedFile<T = IMongoFile> {
+  file: T;
   content: string;
   metadata: {
     file_id: string;

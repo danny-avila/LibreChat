@@ -1,6 +1,5 @@
 import { Readable } from 'node:stream';
-import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest, StrategyFunctions } from '~/types';
+import type { ServerRequest } from '~/types';
 import { AttachmentObjectNotFoundError, getFileStream } from './utils';
 
 const file = {
@@ -10,7 +9,7 @@ const file = {
   type: 'application/pdf',
   bytes: 4,
   source: 's3',
-} as IMongoFile;
+};
 
 describe('getFileStream', () => {
   it('maps a missing storage object to a user-actionable attachment error', async () => {
@@ -20,12 +19,7 @@ describe('getFileStream', () => {
     });
 
     await expect(
-      getFileStream(
-        {} as ServerRequest,
-        file,
-        {},
-        () => ({ getDownloadStream }) as StrategyFunctions,
-      ),
+      getFileStream({} as ServerRequest, file, {}, () => ({ getDownloadStream })),
     ).rejects.toEqual(
       expect.objectContaining<Partial<AttachmentObjectNotFoundError>>({
         code: 'ATTACHMENT_OBJECT_NOT_FOUND',
@@ -40,27 +34,17 @@ describe('getFileStream', () => {
       const getDownloadStream = jest.fn().mockRejectedValue(storageError);
 
       await expect(
-        getFileStream(
-          {} as ServerRequest,
-          file,
-          {},
-          () => ({ getDownloadStream }) as StrategyFunctions,
-        ),
+        getFileStream({} as ServerRequest, file, {}, () => ({ getDownloadStream })),
       ).rejects.toMatchObject({ code: 'ATTACHMENT_OBJECT_NOT_FOUND', fileId: 'file-1' });
     },
   );
 
-  it('preserves non-missing storage failures by default', async () => {
+  it('preserves non-missing storage failures', async () => {
     const failure = new Error('storage unavailable');
     const getDownloadStream = jest.fn().mockRejectedValue(failure);
 
     await expect(
-      getFileStream(
-        {} as ServerRequest,
-        file,
-        {},
-        () => ({ getDownloadStream }) as StrategyFunctions,
-      ),
+      getFileStream({} as ServerRequest, file, {}, () => ({ getDownloadStream })),
     ).rejects.toBe(failure);
   });
 
@@ -68,26 +52,23 @@ describe('getFileStream', () => {
     const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(Buffer.from('data')));
 
     await expect(
-      getFileStream(
-        {} as ServerRequest,
-        file,
-        {},
-        () => ({ getDownloadStream }) as StrategyFunctions,
-      ),
+      getFileStream({} as ServerRequest, file, {}, () => ({ getDownloadStream })),
     ).resolves.toMatchObject({ content: Buffer.from('data').toString('base64') });
   });
 
-  it('prefers the canonical storage key over a path-style presigned URL', async () => {
+  it.each([
+    '',
+    'https://minio.example.com/librechat/uploads/user%201/image%20one.png?X-Amz-Credential=secret&X-Amz-Signature=signed',
+  ])('reads the canonical storage key with filepath %s', async (filepath) => {
     const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(Buffer.from('image')));
     const storedFile = {
       ...file,
-      filepath:
-        'https://minio.example.com/librechat/uploads/user%201/image%20one.png?X-Amz-Credential=secret&X-Amz-Signature=signed',
+      filepath,
       storageKey: 'uploads/user 1/image one.png',
-    } as IMongoFile;
+    };
     const req = {} as ServerRequest;
 
-    await getFileStream(req, storedFile, {}, () => ({ getDownloadStream }) as StrategyFunctions);
+    await getFileStream(req, storedFile, {}, () => ({ getDownloadStream }));
 
     expect(getDownloadStream).toHaveBeenCalledWith(req, storedFile.storageKey);
   });
@@ -98,15 +79,7 @@ describe('getFileStream', () => {
       'https://minio.example.com/librechat/uploads/user%201/image.png?X-Amz-Signature=signed';
     const req = {} as ServerRequest;
 
-    await getFileStream(
-      req,
-      { ...file, filepath: legacyUrl },
-      {},
-      () =>
-        ({
-          getDownloadStream,
-        }) as StrategyFunctions,
-    );
+    await getFileStream(req, { ...file, filepath: legacyUrl }, {}, () => ({ getDownloadStream }));
 
     expect(getDownloadStream).toHaveBeenCalledWith(req, legacyUrl);
   });
