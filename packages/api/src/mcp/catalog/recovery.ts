@@ -64,11 +64,31 @@ export type MCPRecoveryGenerationReader = (
 
 const AUTHORIZATION_FENCE_RETRY_DELAYS_MS = [0, 50, 200] as const;
 
+/** Rejects with `message` when `operation` has not settled within `timeoutMs`. */
+async function withinTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId != null) clearTimeout(timeoutId);
+  }
+}
+
 export async function publishMCPAuthorizationMutation(
   scope: MCPRecoveryGenerationScope,
   deps: {
     invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-    clearLocalRecovery?: (userId: string, serverName: string) => void;
+    /** Receives the generation the publication wrote, when it reports one. */
+    clearLocalRecovery?: (userId: string, serverName: string, generation?: string) => void;
     persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
     clearPublicationRetry?: (
       scope: MCPRecoveryGenerationScope,
@@ -82,42 +102,39 @@ export async function publishMCPAuthorizationMutation(
    * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
    * durable path to fence other replicas. */
   const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
+  const attemptTimeoutMs =
+    deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
   let lastError: unknown;
   for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
-      const attemptTimeoutMs =
-        deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      let published: unknown;
+      const published = await withinTimeout(
+        deps.invalidateRecoveryGeneration(scope),
+        attemptTimeoutMs,
+        'MCP authorization generation publication timed out',
+      );
+      const generation =
+        typeof published === 'string' && published.length > 0 ? published : undefined;
       try {
-        published = await Promise.race([
-          deps.invalidateRecoveryGeneration(scope),
-          new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new Error('MCP authorization generation publication timed out')),
-              attemptTimeoutMs,
-            );
-          }),
-        ]);
-      } finally {
-        if (timeoutId != null) clearTimeout(timeoutId);
-      }
-      try {
-        if (publicationRetryVersion != null) {
-          await deps.clearPublicationRetry?.(scope, publicationRetryVersion);
+        if (publicationRetryVersion != null && deps.clearPublicationRetry != null) {
+          await withinTimeout(
+            deps.clearPublicationRetry(scope, publicationRetryVersion),
+            attemptTimeoutMs,
+            'MCP authorization retry intent cleanup timed out',
+          );
         }
       } catch (error) {
-        /** A leftover retry only advances the opaque generation again and is therefore safe. */
+        /** A leftover retry only advances the opaque generation again and is therefore safe, so
+         *  cleanup is bounded rather than allowed to hold every waiter on this publication. */
         logger.warn(
           `[MCP authorization] Published generation for ${scope.serverName} but could not clear its retry intent`,
           error,
         );
       }
-      deps.clearLocalRecovery?.(scope.userId, scope.serverName);
-      return typeof published === 'string' && published.length > 0 ? published : undefined;
+      deps.clearLocalRecovery?.(scope.userId, scope.serverName, generation);
+      return generation;
     } catch (error) {
       lastError = error;
       logger.warn(
@@ -207,18 +224,16 @@ interface RecoveryStateEntry {
   lastTouchedAt: number;
   outcome?: RecoveryOutcome;
   inFlight?: Promise<RecoveryOutcome>;
-  /** The credential publication this flight's own discovery has open, if any. */
-  publication?: OwnPublication;
+  /**
+   * Present while this flight's own credential publication is open: the generation each clear
+   * received meanwhile carried, or `undefined` for a clear that carried none.
+   */
+  heldClears?: Array<string | undefined>;
 }
 
-/**
- * Until `heldUntil`, an open publication keeps its flight joinable and holds the clears its key
- * receives. The fence clears local recovery once when it completes; any other held clear came from
- * another writer.
- */
-interface OwnPublication {
-  heldUntil: number;
-  heldClears: number;
+/** A clear that carries the generation its publication wrote spares state recorded under it. */
+function isClearedBy(entry: RecoveryStateEntry, generation: string | undefined): boolean {
+  return generation == null || entry.recoveryGeneration !== generation;
 }
 
 /** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
@@ -335,40 +350,44 @@ export class MCPServerCatalogRecoveryTracker {
     this.states.set(key, entry);
   }
 
-  /** Clears suppression after a credential/config mutation commits. */
-  public clear(userId: string, serverName?: string): void {
+  /**
+   * Clears suppression after a credential/config mutation commits. A clear from a publication
+   * carries the generation it wrote, which spares state already recorded under that generation.
+   */
+  public clear(userId: string, serverName?: string, generation?: string): void {
     if (serverName != null) {
-      this.clearState(getRecoveryKey(userId, serverName));
+      this.clearState(getRecoveryKey(userId, serverName), generation);
       return;
     }
     const prefix = `${userId}\u0000`;
     for (const key of this.states.keys()) {
       if (key.startsWith(prefix)) {
-        this.clearState(key);
+        this.clearState(key, generation);
       }
     }
   }
 
-  /** Holds a clear for a flight still in flight whose own publication is within its window. */
-  private clearState(key: string): void {
+  /** A flight still publishing its own credential change decides a clear once that ends. */
+  private clearState(key: string, generation: string | undefined): void {
     const entry = this.states.get(key);
-    const publication = entry?.inFlight != null ? entry.publication : undefined;
-    if (publication != null && Date.now() < publication.heldUntil) {
-      publication.heldClears += 1;
+    if (entry == null) {
       return;
     }
-    this.states.delete(key);
+    if (entry.inFlight != null && entry.heldClears != null) {
+      entry.heldClears.push(generation);
+      return;
+    }
+    if (isClearedBy(entry, generation)) {
+      this.states.delete(key);
+    }
   }
 
-  /**
-   * Settles a flight's own publication. A generation it completed is adopted along with the one
-   * clear the fence performs itself; every other clear held meanwhile still applies.
-   */
+  /** Adopts the generation a flight's publication wrote, then applies every clear held meanwhile. */
   private finishPublication(
     key: string,
     entry: RecoveryStateEntry,
-    { heldClears }: OwnPublication,
-    published?: string,
+    heldClears: ReadonlyArray<string | undefined>,
+    published: string | undefined,
   ): void {
     if (this.states.get(key) !== entry) {
       return;
@@ -376,7 +395,7 @@ export class MCPServerCatalogRecoveryTracker {
     if (published != null) {
       entry.recoveryGeneration = published;
     }
-    if (heldClears > (published != null ? 1 : 0)) {
+    if (heldClears.some((generation) => isClearedBy(entry, generation))) {
       this.states.delete(key);
     }
   }
@@ -396,9 +415,7 @@ export class MCPServerCatalogRecoveryTracker {
       existing?.configFingerprint === configFingerprint &&
       (recoveryGeneration == null ||
         existing.recoveryGeneration === recoveryGeneration ||
-        (existing.inFlight != null &&
-          existing.publication != null &&
-          now < existing.publication.heldUntil));
+        (existing.inFlight != null && existing.heldClears != null));
     if (sameObservedState) {
       existing.lastTouchedAt = now;
       this.touch(key, existing);
@@ -421,28 +438,25 @@ export class MCPServerCatalogRecoveryTracker {
     let settled = false;
     /**
      * A credential refresh inside discovery writes a new shared generation, then clears local
-     * recovery state, and only then reports what it wrote. For up to one discovery budget while that
-     * publication is open, requests for the same server join this flight and its clears are held,
-     * so neither the refresh's own clear nor a request that already reads the new generation
-     * supersedes it. The flight then adopts that generation; a held clear from another writer, and
-     * any later rotation or clear, still supersedes it.
+     * recovery state with it, and only then reports what it wrote. While that bounded publication is
+     * open, requests for the same server join this flight and its clears are held, so neither the
+     * refresh's own clear nor a request that already reads the new generation supersedes it. The
+     * flight then adopts the generation and applies each held clear against it: its own clear
+     * carries that generation, while a teardown or another publication's clear does not.
      */
     const trackPublication: PublicationTracker = async (publish) => {
-      if (settled || entry.publication != null || this.states.get(key) !== entry) {
+      if (settled || entry.heldClears != null || this.states.get(key) !== entry) {
         return publish();
       }
-      const publication: OwnPublication = {
-        heldUntil: Date.now() + resolveBudget(candidate.serverConfig, policy),
-        heldClears: 0,
-      };
-      entry.publication = publication;
+      const heldClears: Array<string | undefined> = [];
+      entry.heldClears = heldClears;
       let published: string | undefined;
       try {
         published = await publish();
         return published;
       } finally {
-        entry.publication = undefined;
-        this.finishPublication(key, entry, publication, settled ? undefined : published);
+        entry.heldClears = undefined;
+        this.finishPublication(key, entry, heldClears, settled ? undefined : published);
       }
     };
     const flight = Promise.resolve()

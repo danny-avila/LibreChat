@@ -144,8 +144,8 @@ export class MCPManager extends UserConnectionManager {
     return this.catalogRecoveryTracker;
   }
 
-  public clearCatalogRecoveryState(userId: string, serverName?: string): void {
-    this.catalogRecoveryTracker.clear(userId, serverName);
+  public clearCatalogRecoveryState(userId: string, serverName?: string, generation?: string): void {
+    this.catalogRecoveryTracker.clear(userId, serverName, generation);
   }
 
   public override async disconnectUserConnection(
