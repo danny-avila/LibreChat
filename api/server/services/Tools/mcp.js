@@ -4,6 +4,7 @@ const {
   getUserMCPAuthMap,
   getMissingCustomUserVars,
   loadMCPServerCatalogs: loadCatalogs,
+  resolveMCPReinitializeConfig,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
   MCPAuthenticationRejectedError,
@@ -37,7 +38,6 @@ const {
 } = require('~/server/services/MCPAuthorizationFenceRetry');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
-  UNREACHABLE: 'unreachable',
   MISSING_CUSTOM_USER_VARS: 'missing_custom_user_vars',
   OAUTH_REQUIRED: 'oauth_required',
   INITIALIZATION_FAILED: 'initialization_failed',
@@ -166,23 +166,16 @@ async function reinitMCPServer({
 
   try {
     const registry = getMCPServersRegistry();
-    serverConfig =
-      serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
-    if (serverConfig?.inspectionFailed) {
-      serverConfig = await registry.recoverServerConfig(serverName, serverConfig, user?.id);
-      if (!serverConfig) {
-        return {
-          availableTools: null,
-          success: false,
-          message: `MCP server '${serverName}' is still unreachable`,
-          failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
-          oauthRequired: false,
-          serverName,
-          oauthUrl: null,
-          tools: null,
-        };
-      }
+    const resolution = await resolveMCPReinitializeConfig(
+      registry,
+      serverName,
+      serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers)),
+      user?.id,
+    );
+    if (resolution.result) {
+      return resolution.result;
     }
+    serverConfig = resolution.serverConfig;
     ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
 
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
