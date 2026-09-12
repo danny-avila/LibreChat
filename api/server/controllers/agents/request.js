@@ -30,6 +30,7 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   resolveRunCodeWorkspaces,
+  getSafeErrorMetadata,
   isAgentEventRetentionActive,
   createAgentEventActorTurn,
   createAgentEventActorDetachedActionLifecycle,
@@ -3288,7 +3289,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
       });
   } catch (error) {
-    logger.error('[ResumableAgentController] Initialization error:', error);
+    logger.error('[ResumableAgentController] Initialization error:', getSafeErrorMetadata(error));
     const initializationFailure = getInitializationFailure(error);
     const streamStarted = res.headersSent;
     try {

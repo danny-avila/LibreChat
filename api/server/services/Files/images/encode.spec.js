@@ -8,10 +8,6 @@ jest.mock('@librechat/api', () => ({
   getFileStream: (...args) => mockGetFileStream(...args),
   runGuardedEncode: (...args) => mockRunGuardedEncode(...args),
 }));
-jest.mock('@librechat/data-schemas', () => ({
-  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
 const mockPrepareImagePayload = jest.fn();
 const mockGetDownloadStream = jest.fn();
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -58,6 +54,7 @@ describe('encodeAndFormat - request memory guard', () => {
         file,
         expect.anything(),
         expect.any(Function),
+        { sanitizeStorageErrors: true },
       );
 
       expect(result.image_urls).toHaveLength(1);

@@ -274,8 +274,11 @@ jest.mock('@librechat/api', () => ({
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
+  AttachmentStorageError: jest.requireActual('@librechat/api').AttachmentStorageError,
+  getFileStream: jest.requireActual('@librechat/api').getFileStream,
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
+  getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -400,6 +403,7 @@ jest.mock('~/server/services/Agents/triggers', () => ({
 }));
 
 const AgentController = require('../request');
+const { AttachmentStorageError, getFileStream } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
@@ -2600,6 +2604,63 @@ describe('ResumableAgentController resume metadata', () => {
       DEFAULT_OWNED_CLAIM,
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
+  it('sanitizes an image storage failure at the initialization boundary', async () => {
+    const signedUrl =
+      'https://minio.example.com/bucket/image.png?X-Amz-Credential=secret&X-Amz-Signature=signed';
+    const storageError = Object.assign(new Error(`Access denied for ${signedUrl}`), {
+      code: 'AccessDenied',
+      statusCode: 403,
+    });
+    let attachmentError;
+    try {
+      await getFileStream(
+        {},
+        {
+          file_id: 'image-1',
+          source: 's3',
+          filepath: signedUrl,
+          storageKey: 'images/user/image.png',
+        },
+        {},
+        () => ({ getDownloadStream: jest.fn().mockRejectedValue(storageError) }),
+        { sanitizeStorageErrors: true },
+      );
+    } catch (error) {
+      attachmentError = error;
+    }
+    expect(attachmentError).toBeInstanceOf(AttachmentStorageError);
+    const initializeClient = jest.fn().mockRejectedValue(attachmentError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[ResumableAgentController] Initialization error:',
+      { type: 'Error' },
+    );
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      'An attached file could not be read from storage. Try again or upload it again.',
+      1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+    );
+    expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(signedUrl);
+    expect(JSON.stringify(mockGenerationJobManager.completeJob.mock.calls)).not.toContain(
+      signedUrl,
+    );
   });
 
   it('returns a typed recovery conflict before acknowledging generation startup', async () => {

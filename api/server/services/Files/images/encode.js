@@ -98,11 +98,14 @@ async function encodeAndFormat(req, files, params, mode) {
     /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob/Firebase storage. */
     if (blobStorageSources.has(source)) {
       const processedFile = await runGuardedEncode(file.bytes ?? 0, () =>
-        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+        getFileStream(req, file, encodingMethods, getStrategyFunctions, {
+          sanitizeStorageErrors: true,
+        }),
       );
       promises.push([file, processedFile?.content ?? null]);
       continue;
-    } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
+    }
+    if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
         const [_file, imageURL] = await preparePayload(req, file);
         return [_file, await fetchImageToBase64(imageURL)];

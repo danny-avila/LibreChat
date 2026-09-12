@@ -683,8 +683,6 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       const key = decodeKeyFromUrlPath(url.pathname.substring(startPos));
       if (!key) {
         logger.warn('[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL');
-      } else {
-        logger.debug('[extractKeyFromS3Url] Extracted key from endpoint path-style URL');
       }
       return key;
     }
@@ -699,8 +697,6 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
         const key = decodeKeyFromUrlPath(pathname.substring(firstSlashIndex + 1));
         if (key === '') {
           logger.warn('[extractKeyFromS3Url] Extracted key is empty after removing bucket name');
-        } else {
-          logger.debug('[extractKeyFromS3Url] Extracted key from path-style URL');
         }
         return key;
       }
@@ -709,23 +705,10 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     }
 
     const key = decodeKeyFromUrlPath(pathname);
-    logger.debug('[extractKeyFromS3Url] Extracted key from URL');
     return key;
   } catch {
-    if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
-      logger.error('[extractKeyFromS3Url] Error parsing URL');
-    } else {
-      logger.debug('[extractKeyFromS3Url] Non-URL input, using fallback');
-    }
-
-    const parts = fileUrlOrKey.split('/');
-    if (parts.length >= 3 && !fileUrlOrKey.startsWith('http') && !fileUrlOrKey.startsWith('/')) {
-      return fileUrlOrKey;
-    }
-
-    const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
-    logger.debug('[extractKeyFromS3Url] Using fallback key');
-    return key;
+    logger.error('[extractKeyFromS3Url] Error parsing URL');
+    return fileUrlOrKey;
   }
 }
 

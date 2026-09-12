@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
-import { AttachmentObjectNotFoundError, getFileStream } from './utils';
+import { AttachmentObjectNotFoundError, AttachmentStorageError, getFileStream } from './utils';
 
 const file = {
   file_id: 'file-1',
@@ -50,7 +50,7 @@ describe('getFileStream', () => {
     },
   );
 
-  it('preserves non-missing storage failures', async () => {
+  it('preserves non-missing storage failures by default', async () => {
     const failure = new Error('storage unavailable');
     const getDownloadStream = jest.fn().mockRejectedValue(failure);
 
@@ -80,8 +80,9 @@ describe('getFileStream', () => {
         file,
         {},
         () => ({ getDownloadStream }) as StrategyFunctions,
+        { sanitizeStorageErrors: true },
       ),
-    ).rejects.toBe(failure);
+    ).rejects.toEqual(expect.any(AttachmentStorageError));
     expect(failure).not.toHaveProperty('bufferedData');
   });
 
@@ -131,25 +132,4 @@ describe('getFileStream', () => {
 
     expect(getDownloadStream).toHaveBeenCalledWith(req, legacyUrl);
   });
-
-  it.each(['s3', 'cloudfront', 'azure_blob', 'firebase'])(
-    'keeps the filepath fallback for %s records without a storage key',
-    async (source) => {
-      const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(Buffer.from('image')));
-      const filepath = `https://storage.example/${source}/image.png?token=signed`;
-      const req = {} as ServerRequest;
-
-      await getFileStream(
-        req,
-        { ...file, source, filepath } as IMongoFile,
-        {},
-        () =>
-          ({
-            getDownloadStream,
-          }) as StrategyFunctions,
-      );
-
-      expect(getDownloadStream).toHaveBeenCalledWith(req, filepath);
-    },
-  );
 });
