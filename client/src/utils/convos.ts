@@ -293,28 +293,34 @@ function conversationBelongsToListQuery(
   );
 }
 
-/** Inserts must not land in a bookmark, search or archive cache the row would not
- * appear in on the server. Search is not matchable client-side, so those
- * variants are skipped. */
-function conversationMatchesListQuery(
+/**
+ * What a writer may do with a row it wants to add to a variant.
+ *
+ * `skip` is only for a variant the row provably does not belong to. Where membership or
+ * position cannot be decided here — a search the server evaluates, or an order keyed on
+ * something other than last activity — the variant is refetched instead: skipping it
+ * silently would leave a mounted list missing a row that belongs in it.
+ */
+type ListInsertVerdict = 'insert' | 'skip' | 'refetch';
+
+function conversationInsertVerdict(
   queryKey: readonly unknown[],
   conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'isArchived'>,
-): boolean {
+): ListInsertVerdict {
   if (!conversationBelongsToListQuery(queryKey, conversation)) {
-    return false;
+    return 'skip';
   }
   const { tags, search } = getConversationListQueryParams(queryKey);
   if (typeof search === 'string' && search.trim() !== '') {
-    return false;
+    return 'refetch';
   }
   if (Array.isArray(tags) && tags.length > 0) {
     const conversationTags = conversation.tags;
-    if (!Array.isArray(conversationTags) || conversationTags.length === 0) {
-      return false;
+    if (!Array.isArray(conversationTags) || !tags.some((tag) => conversationTags.includes(tag))) {
+      return 'skip';
     }
-    return tags.some((tag) => conversationTags.includes(tag));
   }
-  return true;
+  return queryListsNewestFirst(queryKey) ? 'insert' : 'refetch';
 }
 
 /** Dedicated pinned data wins for ids it already has. Pins that only live on
@@ -423,12 +429,11 @@ export function addConversationToAllConversationsQueries(
   newConversation: TConversation,
 ) {
   for (const query of findConversationListQueries(queryClient)) {
-    /* Only a newest-first variant has a front to insert into; the others are refetched
-       so the server places the row against its own keyset. */
-    if (!conversationMatchesListQuery(query.queryKey, newConversation)) {
+    const verdict = conversationInsertVerdict(query.queryKey, newConversation);
+    if (verdict === 'skip') {
       continue;
     }
-    if (!queryListsNewestFirst(query.queryKey)) {
+    if (verdict === 'refetch') {
       queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
@@ -542,12 +547,13 @@ export function storeEndpointSettings(conversation: TConversation | null) {
 // Add
 export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConversation) {
   for (const query of findConversationListQueries(queryClient)) {
-    if (!conversationMatchesListQuery(query.queryKey, newConvo)) {
-      continue;
-    }
     /* The unpin path reinserts a row that the update helper may have just marked stale;
        seeding it at page one would clear that invalidation and fabricate a position. */
-    if (!queryListsNewestFirst(query.queryKey)) {
+    const verdict = conversationInsertVerdict(query.queryKey, newConvo);
+    if (verdict === 'skip') {
+      continue;
+    }
+    if (verdict === 'refetch') {
       queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
@@ -623,6 +629,7 @@ export function upsertConvoInAllQueries(
     /* A variant the writers cannot order takes the merge in place and is refetched, so the
        row's new text shows at once while the server decides where it belongs. */
     const newestFirst = queryListsNewestFirst(query.queryKey);
+    const verdict = conversationInsertVerdict(query.queryKey, listConvo);
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -643,7 +650,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!newestFirst || !conversationMatchesListQuery(query.queryKey, listConvo)) {
+        if (verdict !== 'insert') {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
@@ -706,7 +713,7 @@ export function upsertConvoInAllQueries(
 
       return { ...oldData, pages };
     });
-    if (!newestFirst) {
+    if (!newestFirst || verdict === 'refetch') {
       /* Inactive variants are only marked stale: they refresh when something mounts them. */
       queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
     }

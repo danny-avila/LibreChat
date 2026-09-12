@@ -705,7 +705,12 @@ export const useDeleteConversationMutation = (
           : undefined;
         let deletedProjectId = deletedConversation?.chatProjectId;
         if (!deletedProjectId && vars.conversationId) {
-          const cacheKeys = [QueryKeys.allConversations, QueryKeys.projectConversations];
+          /* An archived row can be the only cached copy carrying `chatProjectId`. */
+          const cacheKeys = [
+            QueryKeys.allConversations,
+            QueryKeys.archivedConversations,
+            QueryKeys.projectConversations,
+          ];
           for (const cacheKey of cacheKeys) {
             const queries = queryClient.getQueryCache().findAll([cacheKey], { exact: false });
             for (const query of queries) {
@@ -782,8 +787,14 @@ export const useDeleteConversationMutation = (
           exact: true,
         });
 
+        /* A fork inherits the source's archive state, so it can belong to either list. */
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.allConversations],
+          refetchPage: () => true,
+          refetchType: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.archivedConversations],
           refetchPage: () => true,
           refetchType: 'active',
         });
@@ -829,8 +840,14 @@ export const useDuplicateConversationMutation = (
       );
       /* The copy inherits the source's archive state, so a duplicate made from an archived
          row belongs to the archived list, not the active one. */
+      /* A fork inherits the source's archive state, so it can belong to either list. */
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
+        refetchPage: () => true,
+        refetchType: 'active',
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.archivedConversations],
         refetchPage: () => true,
         refetchType: 'active',
       });
@@ -885,8 +902,14 @@ export const useForkConvoMutation = (
       queryClient.setQueryData([QueryKeys.conversation, forkedConversationId], forkedConversation);
       addConvoToAllQueries(queryClient, forkedConversation);
       queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
+      /* A fork inherits the source's archive state, so it can belong to either list. */
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
+        refetchPage: () => true,
+        refetchType: 'active',
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.archivedConversations],
         refetchPage: () => true,
         refetchType: 'active',
       });
@@ -943,8 +966,14 @@ export const useForkSharedConvoMutation = (
         );
         addConvoToAllQueries(queryClient, forkedConversation);
         queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
+        /* A fork inherits the source's archive state, so it can belong to either list. */
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.allConversations],
+          refetchPage: () => true,
+          refetchType: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.archivedConversations],
           refetchPage: () => true,
           refetchType: 'active',
         });
@@ -967,6 +996,8 @@ export const useUploadConversationsMutation = (
     onSuccess: (data, variables, context) => {
       /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      /** An import can carry already-archived chats. */
+      queryClient.invalidateQueries([QueryKeys.archivedConversations]);
       /** An imported chat can carry `pinned: true`. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       if (onSuccess) {

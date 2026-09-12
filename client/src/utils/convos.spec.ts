@@ -871,6 +871,22 @@ describe('Conversation Utilities', () => {
         ).not.toContain('a');
       });
 
+      /** A search is evaluated by the server, so a new row may or may not belong in a cached
+       *  result: skipping it silently would leave a mounted search list missing it. */
+      it('refetches a cached search variant instead of deciding its membership', () => {
+        const searchKey = ['allConversations', { search: 'draft' }];
+        queryClient.setQueryData(searchKey, {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        addConvoToAllQueries(queryClient, convoB);
+
+        const searched = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(searchKey);
+        expect(searched!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+        expect(queryClient.getQueryState(searchKey)?.isInvalidated).toBe(true);
+      });
+
       it('updates a row in place under a non-default sort rather than moving it to the top', () => {
         const sortedKey = ['allConversations', { sortBy: 'createdAt' }];
         const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
