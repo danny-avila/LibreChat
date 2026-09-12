@@ -711,7 +711,8 @@ export class MCPServersRegistry {
    * replaces only the stub that was inspected, so a replica that lost the race writes nothing.
    *
    * An entry that is no longer failed was already recovered and resolves to the stored config
-   * without another inspection. A stub that a registry re-initialization replaced while it was
+   * without another inspection, including when that recovery is found only after this call's
+   * own inspection failed. A stub that a registry re-initialization replaced while it was
    * inspected resolves through an inspection of the newer stub. A server that is still
    * unreachable rejects with `MCPInspectionFailedError`; an allowlist rejection is rethrown as is.
    */
@@ -726,11 +727,11 @@ export class MCPServersRegistry {
       storageLocation,
       userId,
     };
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     const entry = await this.getReinspectionEntry(target);
     if (!entry.inspectionFailed) {
       return { serverName, config: entry };
     }
-    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     return this.joinReinspection(target, { allowedDomains, allowedAddresses }, entry);
   }
 
@@ -778,7 +779,12 @@ export class MCPServersRegistry {
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
-      throw new MCPInspectionFailedError(serverName, error as Error);
+      return this.resolveStoredEntry(
+        target,
+        allowlists,
+        stub,
+        new MCPInspectionFailedError(serverName, error as Error),
+      );
     }
 
     const stored = await this.replaceStub(target, stub, parsedConfig);
@@ -786,18 +792,37 @@ export class MCPServersRegistry {
       await this.invalidateServerReadCaches(serverName, userId, storageLocation);
       return { serverName, config: stored };
     }
+    return this.resolveStoredEntry(
+      target,
+      allowlists,
+      stub,
+      new MCPInspectionFailedError(
+        serverName,
+        new Error('Storage did not replace the inspected stub'),
+      ),
+    );
+  }
 
-    /** Another writer replaced the stub while it was inspected: a recovery stored elsewhere is
-     *  the outcome, and a newer stub from a registry re-initialization gets its own inspection. */
+  /**
+   * Settles a reinspection whose own inspection did not replace `stub` against the entry stored
+   * now. A recovery another writer stored is the outcome, and this replica's read caches drop
+   * the stub they may still memoize from before it. A newer stub from a registry
+   * re-initialization gets its own inspection. A stub still in place rejects with `failure`.
+   */
+  private async resolveStoredEntry(
+    target: ReinspectionTarget,
+    allowlists: ResolvedMCPAllowlists,
+    stub: t.ParsedServerConfig,
+    failure: MCPInspectionFailedError,
+  ): Promise<t.AddServerResult> {
+    const { serverName, storageLocation, userId } = target;
     const current = await this.getReinspectionEntry(target);
     if (!current.inspectionFailed) {
+      await this.invalidateServerReadCaches(serverName, userId, storageLocation);
       return { serverName, config: current };
     }
     if (current.updatedAt === stub.updatedAt) {
-      throw new MCPInspectionFailedError(
-        serverName,
-        new Error('Storage did not replace the inspected stub'),
-      );
+      throw failure;
     }
     return this.joinReinspection(target, allowlists, current);
   }

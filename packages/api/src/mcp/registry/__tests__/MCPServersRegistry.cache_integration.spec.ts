@@ -350,6 +350,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         'replica.example.com',
       ]);
       await registry.addServerStub('recovering_server', testRawConfig, 'CACHE');
+      const replicaMemo = await replica.getAllServerConfigs();
 
       const inspect = jest.mocked(MCPServerInspector.inspect).getMockImplementation()!;
       let releaseReplica!: () => void;
@@ -379,6 +380,8 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       expect(recovered.inspectionFailed).toBeUndefined();
       expect(replicaConfig).toEqual(recovered);
       expect(await registry['cacheConfigsRepo'].get('recovering_server')).toEqual(recovered);
+      expect(replicaMemo.recovering_server.inspectionFailed).toBe(true);
+      expect((await replica.getAllServerConfigs()).recovering_server).toEqual(recovered);
     });
   });
 });

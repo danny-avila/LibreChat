@@ -855,6 +855,7 @@ describe('MCPServersRegistry', () => {
 
     it('writes nothing when another replica recovered the stub during inspection', async () => {
       await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const memoized = await registry.getAllServerConfigs();
       const recoveredElsewhere: t.ParsedServerConfig = {
         ...stubOptions,
         description: 'recovered elsewhere',
@@ -871,6 +872,67 @@ describe('MCPServersRegistry', () => {
       await expect(replaceSpy.mock.results[0].value).resolves.toBeUndefined();
       expect(result.config).toMatchObject(recoveredElsewhere);
       await expect(registry['cacheConfigsRepo'].get('stub_server')).resolves.toEqual(result.config);
+      expect(memoized.stub_server.inspectionFailed).toBe(true);
+      await expect(registry.getAllServerConfigs()).resolves.toMatchObject({
+        stub_server: { description: 'recovered elsewhere' },
+      });
+    });
+
+    it('resolves to a recovery stored elsewhere when its own inspection fails', async () => {
+      await registry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const memoized = await registry.getAllServerConfigs();
+      const recoveredElsewhere: t.ParsedServerConfig = {
+        ...stubOptions,
+        description: 'recovered elsewhere',
+      };
+      jest.spyOn(MCPServerInspector, 'inspect').mockImplementationOnce(async () => {
+        await registry['cacheConfigsRepo'].update('stub_server', recoveredElsewhere);
+        throw new Error('connect ECONNREFUSED');
+      });
+
+      const result = await registry.reinspectServer('stub_server', 'CACHE');
+
+      expect(result.config).toMatchObject(recoveredElsewhere);
+      expect(result.config.inspectionFailed).toBeUndefined();
+      expect(memoized.stub_server.inspectionFailed).toBe(true);
+      await expect(registry.getAllServerConfigs()).resolves.toMatchObject({
+        stub_server: { description: 'recovered elsewhere' },
+      });
+    });
+
+    it('does not inspect again when a recovery lands while its allowlists resolve', async () => {
+      let releaseResolver!: () => void;
+      const resolverHeld = new Promise<void>((resolve) => {
+        releaseResolver = resolve;
+      });
+      let markResolving!: () => void;
+      const resolving = new Promise<void>((resolve) => {
+        markResolving = resolve;
+      });
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      const slowRegistry = MCPServersRegistry.createInstance(
+        mockMongoose,
+        null,
+        null,
+        async (ctx) => {
+          if (ctx?.userId === 'slow-user') {
+            markResolving();
+            await resolverHeld;
+          }
+          return { allowedDomains: null, allowedAddresses: null };
+        },
+      );
+      await slowRegistry.reset();
+      await slowRegistry.addServerStub('stub_server', stubOptions, 'CACHE');
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const slow = slowRegistry.reinspectServer('stub_server', 'CACHE', 'slow-user');
+      await resolving;
+      const recovered = await slowRegistry.reinspectServer('stub_server', 'CACHE', 'fast-user');
+      releaseResolver();
+
+      await expect(slow).resolves.toEqual(recovered);
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
     });
 
     it('inspects the newer stub when a registry re-initialization replaced the inspected one', async () => {
