@@ -80,7 +80,7 @@ function ConvoOptions({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const { index, conversation, setConversation } = useChatContext();
+  const { index, setConversation } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
@@ -226,9 +226,12 @@ function ConvoOptions({
         { conversationId: convoId, isArchived: !isArchived },
         {
           onSuccess: () => {
-            if (conversation?.conversationId === convoId) {
-              setConversation({ ...conversation, isArchived: !isArchived });
-            }
+            /* The request outlives the row: by the time it resolves the user may have opened
+               another chat, so the open conversation is identified at commit time rather than
+               from the one this callback closed over. */
+            setConversation((prev) =>
+              prev?.conversationId === convoId ? { ...prev, isArchived: !isArchived } : prev,
+            );
             announcePolite({
               message: localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
               isStatus: true,
@@ -254,7 +257,6 @@ function ConvoOptions({
       conversationId,
       isArchived,
       currentConvoId,
-      conversation,
       setConversation,
       archiveConvoMutation,
       navigate,

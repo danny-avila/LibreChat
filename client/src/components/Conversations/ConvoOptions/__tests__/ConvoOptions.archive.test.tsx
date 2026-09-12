@@ -159,10 +159,15 @@ describe('ConvoOptions archive action', () => {
       message: 'com_ui_convo_unarchived',
       isStatus: true,
     });
-    expect(mockSetConversation).toHaveBeenCalledWith({
+    const [updater] = mockSetConversation.mock.calls[0];
+    expect(updater({ conversationId: 'conversation-1', isArchived: true })).toEqual({
       conversationId: 'conversation-1',
       isArchived: false,
     });
+    /* The request outlives the row: if another chat is open by the time it resolves, the
+       restore must not replace it with the one the callback was created for. */
+    const otherOpen = { conversationId: 'conversation-2', isArchived: false };
+    expect(updater(otherOpen)).toBe(otherOpen);
   });
 
   it('archives an unarchived conversation and leaves the one it just hid', () => {
