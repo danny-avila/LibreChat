@@ -423,6 +423,10 @@ describe('TokenUsage Breakdown', () => {
        *  the meter. */
       expect(cachedRow.parentElement?.className).toContain('pl-6');
       expect(cachedRow.textContent).toContain('30');
+      /** The share column is keyed to the window, like every row above: without
+       *  it the cached row reads as a bare number beside rows that all carry a
+       *  percentage, with the cell left blank. */
+      expect(cachedRow.textContent).toContain('(2%)');
       const peers = Array.from(breakdown.children).filter(
         (child) => !child.className.includes('pl-6'),
       );
