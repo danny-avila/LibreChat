@@ -12,6 +12,7 @@ import type { TAttachment, PartMetadata, UIResource } from 'librechat-data-provi
 import { useMCPIconMap, useAppBridge, useMCPAppFrame, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
+import { useMCPAppsPolicy } from '~/Providers/MCPAppsPolicyContext';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { selectToolCallUIResources } from '~/utils/mcpApps';
@@ -249,6 +250,7 @@ export default function ToolCall({
   );
 
   const mcpApps = useMemo(() => selectToolCallUIResources(attachments), [attachments]);
+  const { enabled: mcpAppsEnabled } = useMCPAppsPolicy();
 
   const authDomain = useMemo(() => {
     return parsedAuthUrl?.hostname ?? '';
@@ -409,7 +411,8 @@ export default function ToolCall({
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
-      {mcpApps.length > 0 &&
+      {mcpAppsEnabled &&
+        mcpApps.length > 0 &&
         mcpApps.map((app) => (
           <MCPAppView
             key={app.resourceId}

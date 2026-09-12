@@ -1,3 +1,4 @@
+import { resolveMCPAppsPolicy } from 'librechat-data-provider';
 import type { PluginAuthMethods, TokenMethods } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
 import type { MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
@@ -218,7 +219,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     try {
       const appConfig = request.config ?? (await dependencies.getAppConfig(request));
       request.config = appConfig;
-      if (appConfig?.mcpSettings?.apps === false) {
+      if (!resolveMCPAppsPolicy(appConfig?.mcpSettings?.apps).enabled) {
         response.status(403).json({ error: 'MCP Apps are disabled' });
         return;
       }

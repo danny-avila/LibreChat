@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { FrameLocator, Page, Response } from '@playwright/test';
 import {
@@ -8,6 +11,7 @@ import {
   requestJson,
   selectMockEndpoint,
   sendMessage,
+  sendMessageAndWaitForCompletion,
 } from './helpers';
 
 const MCP_SERVER_TITLE = 'E2E MCP App';
@@ -20,17 +24,177 @@ const APP_ROUTE_PATHS = new Set([
   '/api/mcp/resources/list',
   '/api/mcp/resources/templates/list',
 ]);
+const EXECUTABLE_FRAME_SELECTORS = [
+  'iframe[data-sandbox-url]',
+  `iframe[title="${LEGACY_FRAME_TITLE}"]`,
+];
+const PHASE = process.env.E2E_MCP_APPS_PHASE ?? 'standalone';
+const STATE_PATH =
+  process.env.E2E_MCP_APPS_STATE_PATH ??
+  path.resolve(process.cwd(), 'e2e/.generated/mcp-apps-state.json');
 
 type DebugEvent = { method: string; params: Record<string, unknown> };
+type MCPAppsPolicy = { enabled: boolean; legacyHtmlEnabled: boolean };
+type StoredMessage = {
+  [key: string]: unknown;
+  attachments?: Array<{
+    type?: string;
+    ui_resources?: Array<Record<string, unknown>>;
+  }>;
+};
+type PersistedState = {
+  conversationId: string;
+  label: string;
+  messageFingerprint: string;
+  uiFingerprint: string;
+};
 type SharePayload = {
   shareId: string;
   messages?: Array<{ attachments?: Array<Record<string, unknown>> }>;
 };
 
+type RawResult = { json: unknown; status: number; text: string };
+
 const randomLabel = () => `app-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 function isRoute(response: Response, pathname: string) {
   return response.request().method() === 'POST' && new URL(response.url()).pathname === pathname;
+}
+
+async function getPolicy(page: Page, token: string): Promise<MCPAppsPolicy> {
+  const config = await requestJson<{ mcpApps: MCPAppsPolicy }>(page, {
+    path: '/api/config',
+    token,
+  });
+  return config.mcpApps;
+}
+
+async function getMessages(page: Page, token: string, conversationId: string) {
+  return requestJson<StoredMessage[]>(page, {
+    path: `/api/messages/${encodeURIComponent(conversationId)}`,
+    token,
+  });
+}
+
+function uiResources(messages: StoredMessage[]) {
+  return messages.flatMap((message) =>
+    (message.attachments ?? [])
+      .filter((attachment) => attachment.type === 'ui_resources')
+      .flatMap((attachment) => attachment.ui_resources ?? []),
+  );
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
+}
+
+function fingerprintUI(messages: StoredMessage[]) {
+  const resources = uiResources(messages).sort((left, right) =>
+    String(left.uri).localeCompare(String(right.uri)),
+  );
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(resources)))
+    .digest('hex');
+}
+
+function fingerprintMessages(messages: StoredMessage[]) {
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(messages)))
+    .digest('hex');
+}
+
+function writeState(state: PersistedState) {
+  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
+  fs.writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function readState(): PersistedState {
+  return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')) as PersistedState;
+}
+
+async function trackExecutableEffects(page: Page) {
+  const appRequests: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (
+      pathname === '/api/mcp/sandbox' ||
+      (request.method() === 'POST' && APP_ROUTE_PATHS.has(pathname))
+    ) {
+      appRequests.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await page.addInitScript(
+    ({ selectors }) => {
+      const state = { app: 0, legacy: 0 };
+      Object.defineProperty(window, '__mcpExecutableFrames', { value: state });
+      const inspect = (node: Node) => {
+        if (!(node instanceof Element)) {
+          return;
+        }
+        for (const [index, selector] of selectors.entries()) {
+          const key = index === 0 ? 'app' : 'legacy';
+          if (node.matches(selector)) {
+            state[key] += 1;
+          }
+          state[key] += node.querySelectorAll(selector).length;
+        }
+      };
+      new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          mutation.addedNodes.forEach(inspect);
+        }
+      }).observe(document, { childList: true, subtree: true });
+    },
+    { selectors: EXECUTABLE_FRAME_SELECTORS },
+  );
+  return appRequests;
+}
+
+async function executableFrameCounts(page: Page) {
+  return page.evaluate(() => {
+    return (window as typeof window & { __mcpExecutableFrames?: { app: number; legacy: number } })
+      .__mcpExecutableFrames;
+  });
+}
+
+async function rawAuthenticatedRequest(
+  page: Page,
+  token: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<RawResult> {
+  return page.evaluate(
+    async ({ accessToken, requestBody, urlPath }) => {
+      const response = await fetch(urlPath, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const text = await response.text();
+      let json: unknown = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+      return { json, status: response.status, text };
+    },
+    { accessToken: token, requestBody: body, urlPath: path },
+  );
 }
 
 async function selectMcpAppServer(page: Page) {
@@ -112,6 +276,7 @@ test.describe('MCP Apps full integration', () => {
   test('runs an official SDK View, reloads its snapshot, and omits UI from a public share', async ({
     page,
   }, testInfo) => {
+    test.skip(!['standalone', 'true'].includes(PHASE));
     test.setTimeout(180_000);
     const label = randomLabel();
     const appRequests: string[] = [];
@@ -124,6 +289,8 @@ test.describe('MCP Apps full integration', () => {
 
     await resetEvents(page);
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
+    const token = await getAccessToken(page);
+    expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await selectMcpAppServer(page);
 
@@ -175,7 +342,6 @@ test.describe('MCP Apps full integration', () => {
     await expect(app.getByTestId('operation')).toContainText('ui://e2e/details/current');
     await expect(app.getByTestId('operation')).toContainText('ui://e2e/link-app.html');
 
-    const token = await getAccessToken(page);
     const templates = await requestJson<{ resourceTemplates: Array<{ uriTemplate: string }> }>(
       page,
       {
@@ -277,6 +443,19 @@ test.describe('MCP Apps full integration', () => {
     const conversationPath = new URL(page.url()).pathname;
     const conversationId = conversationPath.split('/').pop();
     expect(conversationId).toMatch(/^[0-9a-fA-F-]{36}$/);
+    const persistedMessages = await getMessages(page, token, conversationId!);
+    const persistedResources = uiResources(persistedMessages);
+    expect(persistedResources.map((resource) => resource.uri).sort()).toEqual([
+      'ui://e2e/app.html',
+      'ui://e2e/legacy.html',
+      'ui://e2e/link-app.html',
+    ]);
+    writeState({
+      conversationId: conversationId!,
+      label,
+      messageFingerprint: fingerprintMessages(persistedMessages),
+      uiFingerprint: fingerprintUI(persistedMessages),
+    });
 
     await resetEvents(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -311,5 +490,160 @@ test.describe('MCP Apps full integration', () => {
     await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
     await expect(page.locator(`iframe[title="${LEGACY_FRAME_TITLE}"]`)).toHaveCount(0);
     expect(appRequests).toHaveLength(appRequestCountBeforeShare);
+  });
+
+  test('disables all persisted executable UI when Apps are explicitly false', async ({ page }) => {
+    test.skip(PHASE !== 'false');
+    test.setTimeout(90_000);
+    const state = readState();
+    const appRequests = await trackExecutableEffects(page);
+    let releaseConfig!: () => void;
+    const configGate = new Promise<void>((resolve) => {
+      releaseConfig = resolve;
+    });
+    let observePolicy!: (policy: MCPAppsPolicy) => void;
+    const observedPolicy = new Promise<MCPAppsPolicy>((resolve) => {
+      observePolicy = resolve;
+    });
+    await page.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { mcpApps?: MCPAppsPolicy };
+      if (!body.mcpApps) {
+        await route.fulfill({ response });
+        return;
+      }
+      observePolicy(body.mcpApps);
+      await configGate;
+      await route.fulfill({ response });
+    });
+
+    const navigation = page.goto(`/c/${state.conversationId}`, { waitUntil: 'domcontentloaded' });
+    expect(await observedPolicy).toEqual({ enabled: false, legacyHtmlEnabled: false });
+    expect(await executableFrameCounts(page)).toEqual({ app: 0, legacy: 0 });
+    expect(appRequests).toEqual([]);
+    releaseConfig();
+    await navigation;
+    await page.unroute('**/api/config');
+
+    const token = await getAccessToken(page);
+    const persistedMessages = await getMessages(page, token, state.conversationId);
+    expect(fingerprintMessages(persistedMessages)).toBe(state.messageFingerprint);
+    expect(fingerprintUI(persistedMessages)).toBe(state.uiFingerprint);
+    const persistedText = JSON.stringify(persistedMessages);
+    expect(persistedText).toContain(`E2E MCP App result: ${state.label}`);
+    expect(persistedText).toContain(`E2E MCP link App result: ${state.label}`);
+    expect(persistedText).toContain(`E2E legacy MCP-UI result: ${state.label}`);
+    await expect(
+      messagesView(page).getByText(`E2E MCP App complete: ${state.label}`),
+    ).toBeVisible();
+    await expect(
+      messagesView(page).getByText(`E2E MCP link App complete: ${state.label}`),
+    ).toBeVisible();
+    await expect(messagesView(page).getByText('Legacy MCP-UI:', { exact: true })).toBeVisible();
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
+    await expect(page.locator(`iframe[title="${LEGACY_FRAME_TITLE}"]`)).toHaveCount(0);
+    expect(await executableFrameCounts(page)).toEqual({ app: 0, legacy: 0 });
+    expect(appRequests).toEqual([]);
+  });
+
+  test('keeps omitted-policy legacy HTML while rejecting new App production', async ({ page }) => {
+    test.skip(PHASE !== 'omitted');
+    test.setTimeout(120_000);
+    const label = randomLabel();
+    const appRequests = await trackExecutableEffects(page);
+
+    await resetEvents(page);
+    await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
+    const token = await getAccessToken(page);
+    expect(await getPolicy(page, token)).toEqual({ enabled: false, legacyHtmlEnabled: true });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await selectMcpAppServer(page);
+
+    const appGeneration = await sendMessageAndWaitForCompletion(page, `E2E_MCP_APP:${label}`);
+    expect(appGeneration.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText(`E2E MCP App complete: ${label}`)).toBeVisible({
+      timeout: 60_000,
+    });
+    const eventsAfterApp = await readEvents(page);
+    expect(
+      eventsAfterApp.filter(
+        (event) => event.method === 'tools/call:show_app' && event.params.label === label,
+      ),
+    ).toHaveLength(1);
+    expect(eventsAfterApp.filter((event) => event.method === 'resources/read:show_app')).toEqual(
+      [],
+    );
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
+
+    const appConversationId = new URL(page.url()).pathname.split('/').pop();
+    expect(appConversationId).toMatch(/^[0-9a-fA-F-]{36}$/);
+    const messagesAfterApp = await getMessages(page, token, appConversationId!);
+    expect(JSON.stringify(messagesAfterApp)).toContain(`E2E MCP App result: ${label}`);
+    expect(
+      uiResources(messagesAfterApp).filter(
+        (resource) => resource.mimeType === 'text/html;profile=mcp-app',
+      ),
+    ).toEqual([]);
+
+    const legacyGeneration = await sendMessageAndWaitForCompletion(page, `E2E_MCP_LEGACY:${label}`);
+    expect(legacyGeneration.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText('Legacy MCP-UI:', { exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    const legacyElement = page.locator(`iframe[title="${LEGACY_FRAME_TITLE}"]`);
+    await expect(legacyElement).toHaveCount(1);
+    await expect(
+      page.frameLocator(`iframe[title="${LEGACY_FRAME_TITLE}"]`).getByTestId('legacy-status'),
+    ).toHaveText('legacy-ready');
+    const messagesAfterLegacy = await getMessages(page, token, appConversationId!);
+    expect(JSON.stringify(messagesAfterLegacy)).toContain(`E2E legacy MCP-UI result: ${label}`);
+    expect(
+      uiResources(messagesAfterLegacy).filter(
+        (resource) => resource.uri === 'ui://e2e/legacy.html' && resource.mimeType === 'text/html',
+      ),
+    ).toHaveLength(1);
+    expect((await executableFrameCounts(page))?.app).toBe(0);
+    expect((await executableFrameCounts(page))?.legacy).toBe(1);
+    expect(appRequests).toEqual([]);
+  });
+
+  test('enforces independent configured resource and tool-call quotas', async ({ page }) => {
+    test.skip(PHASE !== 'quota');
+    test.setTimeout(90_000);
+    await resetEvents(page);
+    await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
+    const token = await getAccessToken(page);
+    expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
+
+    const resources = async () =>
+      rawAuthenticatedRequest(page, token, '/api/mcp/resources/list', {
+        serverName: 'e2e-app',
+      });
+    expect((await resources()).status).toBe(200);
+    expect((await resources()).status).toBe(200);
+    const blockedResource = await resources();
+    expect(blockedResource.status).toBe(429);
+    expect(blockedResource.json).toEqual({
+      message: 'Too many app resource requests. Try again later',
+    });
+
+    const toolCall = async () =>
+      rawAuthenticatedRequest(page, token, '/api/mcp/app-tool-call', {
+        serverName: 'e2e-app',
+        toolName: 'follow_up',
+        arguments: { label: 'quota' },
+      });
+    expect((await toolCall()).status).toBe(200);
+    expect((await toolCall()).status).toBe(200);
+    const blockedTool = await toolCall();
+    expect(blockedTool.status).toBe(429);
+    expect(blockedTool.json).toEqual({
+      message: 'Too many app tool call requests. Try again later',
+    });
+    expect(
+      (await readEvents(page)).filter(
+        (event) => event.method === 'tools/call:follow_up' && event.params.label === 'quota',
+      ),
+    ).toHaveLength(2);
   });
 });

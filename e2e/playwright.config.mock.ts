@@ -107,6 +107,28 @@ const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
 const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
 const enableDynamicMcp = process.env.E2E_MCP_LIST_CHANGED === 'true';
 const enableMcpApps = process.env.E2E_MCP_APPS === 'true';
+const mcpAppsPolicy = process.env.E2E_MCP_APPS_POLICY;
+if (mcpAppsPolicy && !['true', 'false', 'omitted'].includes(mcpAppsPolicy)) {
+  throw new Error(`E2E_MCP_APPS_POLICY must be true, false, or omitted; got ${mcpAppsPolicy}`);
+}
+
+function positiveIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer; got ${raw}`);
+  }
+  return value;
+}
+
+const mcpAppResourceLimit = positiveIntegerEnv('E2E_MCP_APP_RESOURCE_LIMIT');
+const mcpAppToolCallLimit = positiveIntegerEnv('E2E_MCP_APP_TOOL_CALL_LIMIT');
+if ((mcpAppResourceLimit == null) !== (mcpAppToolCallLimit == null)) {
+  throw new Error('MCP App resource and tool-call fixture limits must be supplied together');
+}
 
 const baseURL = getE2EBaseURL();
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
@@ -223,7 +245,10 @@ function writeRuntimeMockConfig() {
     : { allowedDomain: '', stdioEnv: '', networkServers: '' };
   const mcpAppsConfig = enableMcpApps
     ? {
-        setting: 'apps: true',
+        setting:
+          mcpAppsPolicy === 'omitted'
+            ? ''
+            : `apps: ${mcpAppsPolicy === 'false' ? 'false' : 'true'}`,
         allowedDomain: `- http://127.0.0.1:${MCP_APP_PORT}`,
         server: [
           'e2e-app:',
@@ -235,6 +260,15 @@ function writeRuntimeMockConfig() {
         ].join('\n  '),
       }
     : { setting: '', allowedDomain: '', server: '' };
+  const mcpAppsRateLimits =
+    mcpAppResourceLimit != null && mcpAppToolCallLimit != null
+      ? [
+          'rateLimits:',
+          '  mcpApps:',
+          `    resourcesPerMinute: ${mcpAppResourceLimit}`,
+          `    toolCallsPerMinute: ${mcpAppToolCallLimit}`,
+        ].join('\n')
+      : '';
   const recordProviderBlock = modelFixtureRecording
     ? [
         `- name: 'Replay Record Provider'`,
@@ -261,7 +295,8 @@ function writeRuntimeMockConfig() {
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers)
     .replace('# __E2E_MCP_APPS_SETTING__', mcpAppsConfig.setting)
     .replace('# __E2E_MCP_APPS_ALLOWED_DOMAIN__', mcpAppsConfig.allowedDomain)
-    .replace('# __E2E_MCP_APPS_SERVER__', mcpAppsConfig.server);
+    .replace('# __E2E_MCP_APPS_SERVER__', mcpAppsConfig.server)
+    .replace('# __E2E_MCP_APP_RATE_LIMITS__', mcpAppsRateLimits);
   const codeBridgeURL = process.env.E2E_CODE_BRIDGE_URL;
   const codeBridgePairing = process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
     ? [

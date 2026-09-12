@@ -9,6 +9,7 @@ import {
   getInlineResourceHtml,
   clampAppViewHeight,
 } from '~/utils/mcpApps';
+import { useMCPAppsPolicy } from '~/Providers/MCPAppsPolicyContext';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 
 /** `timedOut` and `failed` are separate only because the user-facing copy differs: one is the reveal
@@ -82,6 +83,7 @@ export function useMCPAppFrame(
   const { defaultHeight, maxHeight, toolArgs, onHeightChange, onTornDown } = options;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const readOnly = useIsMessagesViewReadOnly();
+  const { enabled: mcpAppsEnabled } = useMCPAppsPolicy();
   const [status, setStatus] = useState<MCPAppFrameStatus>('loading');
   const [height, setHeight] = useState<number | undefined>(undefined);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
@@ -99,14 +101,14 @@ export function useMCPAppFrame(
   }, [resourceKey, inlineHtml]);
 
   const kind: MCPAppFrameKind = useMemo(() => {
-    if (!resource) {
+    if (!mcpAppsEnabled || !resource) {
       return 'empty';
     }
     if (isMcpAppResource(resource)) {
       return !inlineHtml && readOnly ? 'unavailable' : 'app';
     }
     return inlineHtml ? 'static' : 'empty';
-  }, [resource, inlineHtml, readOnly]);
+  }, [mcpAppsEnabled, resource, inlineHtml, readOnly]);
 
   useEffect(() => {
     if (kind === 'app' && !sandboxUrl) {
@@ -166,11 +168,11 @@ export function useMCPAppFrame(
     status,
     kind,
     height: height ?? defaultHeight,
-    sandboxUrl,
+    sandboxUrl: mcpAppsEnabled ? sandboxUrl : undefined,
     inlineHtml,
     toolArgs: resolvedToolArgs,
     toolResult,
-    active: status !== 'tornDown',
+    active: mcpAppsEnabled && kind === 'app' && status !== 'tornDown',
     onSizeChanged,
     onLoaded,
     onTeardown,

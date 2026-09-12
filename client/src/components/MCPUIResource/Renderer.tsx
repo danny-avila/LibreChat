@@ -2,6 +2,7 @@ import { isMcpAppMimeType } from 'librechat-data-provider';
 import { UIResourceRenderer as LegacyUIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
 import type { ComponentProps } from 'react';
+import { useMCPAppsPolicy } from '~/Providers/MCPAppsPolicyContext';
 
 type LegacyRendererProps = ComponentProps<typeof LegacyUIResourceRenderer>;
 
@@ -28,7 +29,9 @@ export default function UIResourceRenderer({
   htmlProps,
   ...props
 }: UIResourceRendererProps) {
-  if (!isSupportedUIResource(resource)) {
+  const { legacyHtmlEnabled } = useMCPAppsPolicy();
+
+  if (!legacyHtmlEnabled || !isSupportedUIResource(resource)) {
     return null;
   }
 

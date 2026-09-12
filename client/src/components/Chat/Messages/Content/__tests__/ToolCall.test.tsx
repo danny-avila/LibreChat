@@ -2,6 +2,8 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import type { TStartupConfig } from 'librechat-data-provider';
+import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
 import { ToolAuthWarningContext } from '../auth';
 import ToolCall from '../ToolCall';
 
@@ -120,8 +122,17 @@ describe('ToolCall', () => {
     isSubmitting: false,
   };
 
-  const renderWithRecoil = (component: React.ReactElement) => {
-    return render(<RecoilRoot>{component}</RecoilRoot>);
+  const renderWithRecoil = (
+    component: React.ReactElement,
+    mcpApps = { enabled: true, legacyHtmlEnabled: true },
+  ) => {
+    return render(
+      <RecoilRoot>
+        <MCPAppsPolicyProvider startupConfig={{ mcpApps } as TStartupConfig} ready>
+          {component}
+        </MCPAppsPolicyProvider>
+      </RecoilRoot>,
+    );
   };
 
   beforeEach(() => {
@@ -275,6 +286,78 @@ describe('ToolCall', () => {
       // so its App.connect handshake receives tool input/results.
       const iframe = container.querySelector('iframe[data-sandbox-url]');
       expect(iframe).toBeInTheDocument();
+    });
+
+    it('keeps ordinary tool content but does not mount a stored App while disabled', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          [Tools.ui_resources]: [
+            {
+              uri: 'ui://test-server/stored.html',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>stored app</p>',
+              resourceId: 'stored-app',
+              toolName: 'test-tool',
+              serverName: 'test-server',
+            },
+          ],
+        },
+      ];
+
+      const { container } = renderWithRecoil(
+        <ToolCall {...mockProps} attachments={attachments as never} />,
+        { enabled: false, legacyHtmlEnabled: false },
+      );
+
+      expect(screen.getAllByText('Completed testFunction').length).toBeGreaterThan(0);
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      const { useAppBridge } = jest.requireMock('~/hooks/MCP') as { useAppBridge: jest.Mock };
+      expect(useAppBridge).not.toHaveBeenCalled();
+    });
+
+    it('removes a mounted App when the observed policy is disabled', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          [Tools.ui_resources]: [
+            {
+              uri: 'ui://test-server/live.html',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>live app</p>',
+              resourceId: 'live-app',
+              toolName: 'test-tool',
+              serverName: 'test-server',
+            },
+          ],
+        },
+      ];
+      const enabledConfig = {
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
+      } as TStartupConfig;
+      const disabledConfig = {
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
+      } as TStartupConfig;
+      const toolCall = <ToolCall {...mockProps} attachments={attachments as never} />;
+      const { container, rerender } = render(
+        <RecoilRoot>
+          <MCPAppsPolicyProvider startupConfig={enabledConfig} ready>
+            {toolCall}
+          </MCPAppsPolicyProvider>
+        </RecoilRoot>,
+      );
+      expect(container.querySelector('iframe[data-sandbox-url]')).toBeInTheDocument();
+
+      rerender(
+        <RecoilRoot>
+          <MCPAppsPolicyProvider startupConfig={disabledConfig} ready>
+            {toolCall}
+          </MCPAppsPolicyProvider>
+        </RecoilRoot>,
+      );
+
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Completed testFunction').length).toBeGreaterThan(0);
     });
   });
 

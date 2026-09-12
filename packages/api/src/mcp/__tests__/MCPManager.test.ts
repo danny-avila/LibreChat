@@ -96,14 +96,14 @@ const mockRegistryInstance = {
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
   getAllowedDomains: mockGetAllowedDomains,
   getAllowedAddresses: mockGetAllowedAddresses,
-  getAppsEnabled: jest.fn().mockReturnValue(true),
+  getMCPAppsPolicy: jest.fn().mockReturnValue({ enabled: true, legacyHtmlEnabled: true }),
   // Mirrors the real per-request resolver by reading the base-allowlist mocks above, so
   // existing tests that override getAllowedDomains/shouldEnableSSRFProtection still apply.
   resolveAllowlists: jest.fn(async () => ({
     allowedDomains: mockGetAllowedDomains(),
     allowedAddresses: mockGetAllowedAddresses(),
     useSSRFProtection: mockShouldEnableSSRFProtection(),
-    appsEnabled: true,
+    mcpApps: { enabled: true, legacyHtmlEnabled: true },
   })),
 };
 
@@ -1071,7 +1071,7 @@ describe('MCPManager', () => {
 
     it('does not read or attach the App when Apps policy denies it', async () => {
       (mockRegistryInstance.resolveAllowlists as jest.Mock).mockResolvedValueOnce({
-        appsEnabled: false,
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
       const request = jest.fn().mockResolvedValue(toolResult);
 
@@ -1135,14 +1135,18 @@ describe('MCPManager', () => {
     });
 
     it('does not read or publish a late result when policy resolution is aborted', async () => {
-      let resolvePolicy: ((value: { appsEnabled: boolean }) => void) | undefined;
+      let resolvePolicy:
+        | ((value: { mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean } }) => void)
+        | undefined;
       let policyStarted: (() => void) | undefined;
       const started = new Promise<void>((resolve) => {
         policyStarted = resolve;
       });
       (mockRegistryInstance.resolveAllowlists as jest.Mock).mockImplementationOnce(() => {
         policyStarted?.();
-        return new Promise<{ appsEnabled: boolean }>((resolve) => {
+        return new Promise<{
+          mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean };
+        }>((resolve) => {
           resolvePolicy = resolve;
         });
       });
@@ -1151,7 +1155,7 @@ describe('MCPManager', () => {
       const call = callWith(connectionFor(request), controller.signal);
       await started;
       controller.abort(new DOMException('stopped', 'AbortError'));
-      resolvePolicy?.({ appsEnabled: true });
+      resolvePolicy?.({ mcpApps: { enabled: true, legacyHtmlEnabled: true } });
 
       await expect(call).rejects.toMatchObject({ name: 'AbortError' });
       expect(request).toHaveBeenCalledTimes(1);

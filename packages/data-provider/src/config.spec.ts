@@ -4,6 +4,8 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  resolveMCPAppRateLimits,
+  resolveMCPAppsPolicy,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
@@ -1304,6 +1306,49 @@ describe('bedrockModels defaults', () => {
   it('keeps Opus 5 available as a global profile', () => {
     expect(bedrockModels).toContain('global.anthropic.claude-opus-5');
     expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
+  });
+});
+
+describe('MCP Apps configuration', () => {
+  it.each([
+    [undefined, { enabled: false, legacyHtmlEnabled: true }],
+    [true, { enabled: true, legacyHtmlEnabled: true }],
+    [false, { enabled: false, legacyHtmlEnabled: false }],
+  ])('resolves raw apps value %s to the effective policy', (value, expected) => {
+    expect(resolveMCPAppsPolicy(value)).toEqual(expected);
+  });
+
+  it('defaults App request limits without requiring the parent rateLimits section', () => {
+    expect(resolveMCPAppRateLimits()).toEqual({
+      resourcesPerMinute: 120,
+      toolCallsPerMinute: 60,
+    });
+  });
+
+  it('resolves configured App request limits', () => {
+    expect(
+      resolveMCPAppRateLimits({
+        mcpApps: { resourcesPerMinute: 2, toolCallsPerMinute: 3 },
+      }),
+    ).toEqual({ resourcesPerMinute: 2, toolCallsPerMinute: 3 });
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid App resource request limits: %s', (value) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.5',
+        rateLimits: { mcpApps: { resourcesPerMinute: value } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid App tool-call limits: %s', (value) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.5',
+        rateLimits: { mcpApps: { toolCallsPerMinute: value } },
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -75,6 +75,8 @@ mcpServers:
   # __E2E_DYNAMIC_MCP_NETWORK_SERVERS__
   # __E2E_MCP_APPS_SERVER__
 
+# __E2E_MCP_APP_RATE_LIMITS__
+
 # Per-endpoint file upload config so both upload UXs get e2e coverage:
 # - Mock Provider A keeps the legacy 3-way dropdown (chat.spec.ts exercises
 #   "Upload to Provider"); legacyFileUploadUX also forces llmDeliveryPath

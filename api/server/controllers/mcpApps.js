@@ -33,6 +33,7 @@ module.exports = createMCPAppsController({
       role: req.user?.role,
       userId: req.user?.id,
       tenantId: req.user?.tenantId,
+      failClosed: true,
     }),
   resolveConfigServers: (req) => resolveConfigServers(req, { throwOnError: true }),
   findPluginAuthsByKeys,

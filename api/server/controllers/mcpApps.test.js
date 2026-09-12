@@ -100,6 +100,7 @@ describe('MCP Apps controller wiring', () => {
       role: 'USER',
       userId: 'user-1',
       tenantId: 'tenant-1',
+      failClosed: true,
     });
     await expect(dependencies.resolveConfigServers(request)).resolves.toEqual({
       srv: { type: 'sse' },

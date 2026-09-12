@@ -1,6 +1,11 @@
 import { createHash } from 'crypto';
-import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import { logger, encryptV2, decryptV2, scopedCacheKey } from '@librechat/data-schemas';
+import {
+  DEFAULT_MCP_APPS_POLICY,
+  isProcessMCPServerConfig,
+  resolveMCPAppsPolicy,
+} from 'librechat-data-provider';
+import type { TMCPAppsPolicy } from 'librechat-data-provider';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type { ReadThroughTransforms, FillToken } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
@@ -190,8 +195,7 @@ export interface MCPAllowlistContext {
 export type MCPAllowlistResolver = (ctx?: MCPAllowlistContext) => Promise<{
   allowedDomains?: string[] | null;
   allowedAddresses?: string[] | null;
-  /** Per-request `mcpSettings.apps`. Omit to inherit the YAML base; `false` disables apps. */
-  appsEnabled?: boolean;
+  mcpApps: TMCPAppsPolicy;
 }>;
 
 /** Effective allowlists resolved for a request. */
@@ -220,7 +224,7 @@ export class MCPServersRegistry {
   /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
   private readonly allowedDomains?: string[] | null;
   private readonly allowedAddresses?: string[] | null;
-  private readonly appsEnabled?: boolean;
+  private readonly mcpApps: TMCPAppsPolicy;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: ReadThroughCache<t.ParsedServerConfig | undefined>;
@@ -248,7 +252,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
-    appsEnabled?: boolean,
+    mcpApps: TMCPAppsPolicy = resolveMCPAppsPolicy(),
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -256,7 +260,7 @@ export class MCPServersRegistry {
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
     this.allowlistResolver = allowlistResolver;
-    this.appsEnabled = appsEnabled;
+    this.mcpApps = mcpApps;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -280,7 +284,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
-    appsEnabled?: boolean,
+    mcpApps?: TMCPAppsPolicy,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -298,7 +302,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       allowlistResolver,
-      appsEnabled,
+      mcpApps,
     );
     return MCPServersRegistry.instance;
   }
@@ -321,9 +325,9 @@ export class MCPServersRegistry {
     return this.allowedAddresses;
   }
 
-  /** YAML base apps-enabled flag (boot/fallback). MCP Apps are enabled unless explicitly disabled. */
-  public getAppsEnabled(): boolean {
-    return this.appsEnabled !== false;
+  /** YAML base executable-UI policy used when no request resolver is available. */
+  public getMCPAppsPolicy(): TMCPAppsPolicy {
+    return this.mcpApps;
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
@@ -346,21 +350,17 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
     useSSRFProtection: boolean;
-    appsEnabled: boolean;
+    mcpApps: TMCPAppsPolicy;
   }> {
     let allowedDomains = this.allowedDomains;
     let allowedAddresses = this.allowedAddresses;
-    // Apps are tenant/principal-scoped, so honor a per-request override of `mcpSettings.apps`,
-    // falling back to the YAML base when the resolver omits it or is absent.
-    let appsEnabled = this.getAppsEnabled();
+    let mcpApps = this.getMCPAppsPolicy();
     if (this.allowlistResolver) {
       try {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
-        if (resolved.appsEnabled !== undefined) {
-          appsEnabled = resolved.appsEnabled !== false;
-        }
+        mcpApps = resolved.mcpApps;
       } catch {
         logger.warn(
           '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists and disabling apps',
@@ -368,14 +368,14 @@ export class MCPServersRegistry {
         // Allowlists fall back to the operator baseline, but apps fail CLOSED: a scope that disabled
         // them would otherwise get inline app HTML persisted and rendered, and the gated endpoints
         // cannot retract HTML that already reached the transcript.
-        appsEnabled = false;
+        mcpApps = DEFAULT_MCP_APPS_POLICY;
       }
     }
     return {
       allowedDomains,
       allowedAddresses,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
-      appsEnabled,
+      mcpApps,
     };
   }
 

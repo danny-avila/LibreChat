@@ -513,10 +513,18 @@ describe('MCPServersRegistry', () => {
       resolver?: (ctx?: { userId?: string; role?: string }) => Promise<{
         allowedDomains?: string[] | null;
         allowedAddresses?: string[] | null;
+        mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean };
       }>,
+      mcpApps?: { enabled: boolean; legacyHtmlEnabled: boolean },
     ): MCPServersRegistry => {
       (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
-      MCPServersRegistry.createInstance(mockMongoose, allowedDomains, allowedAddresses, resolver);
+      MCPServersRegistry.createInstance(
+        mockMongoose,
+        allowedDomains,
+        allowedAddresses,
+        resolver,
+        mcpApps,
+      );
       return MCPServersRegistry.getInstance();
     };
 
@@ -526,7 +534,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: ['10.0.0.0/8'],
         useSSRFProtection: false,
-        appsEnabled: true,
+        mcpApps: { enabled: false, legacyHtmlEnabled: true },
       });
     });
 
@@ -536,7 +544,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: undefined,
         allowedAddresses: undefined,
         useSSRFProtection: true,
-        appsEnabled: true,
+        mcpApps: { enabled: false, legacyHtmlEnabled: true },
       });
     });
 
@@ -544,6 +552,7 @@ describe('MCPServersRegistry', () => {
       const resolver = jest.fn().mockResolvedValue({
         allowedDomains: ['admin-added.com'],
         allowedAddresses: ['172.16.0.0/12'],
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
       const reg = createWith(['yaml.com'], null, resolver);
 
@@ -554,7 +563,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['admin-added.com'],
         allowedAddresses: ['172.16.0.0/12'],
         useSSRFProtection: false,
-        appsEnabled: true,
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
     });
 
@@ -568,7 +577,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: null,
         useSSRFProtection: false,
-        appsEnabled: false,
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
     });
 
@@ -576,6 +585,7 @@ describe('MCPServersRegistry', () => {
       const resolver = jest.fn().mockResolvedValue({
         allowedDomains: ['admin-added.com'],
         allowedAddresses: ['10.0.0.0/8'],
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
       const reg = createWith(['yaml-only.com'], null, resolver);
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');

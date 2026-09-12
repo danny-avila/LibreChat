@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import type { UIResource } from 'librechat-data-provider';
 import { useMCPAppFrame, APP_REVEAL_TIMEOUT_MS } from '~/hooks/MCP/useMCPAppFrame';
 import { MAX_CAROUSEL_VIEW_HEIGHT, MIN_APP_VIEW_HEIGHT } from '~/utils/mcpApps';
+import { useMCPAppsPolicy } from '~/Providers/MCPAppsPolicyContext';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 
 jest.mock('~/utils/mcpApps', () => ({
@@ -13,9 +14,14 @@ jest.mock('~/Providers', () => ({
   useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 
+jest.mock('~/Providers/MCPAppsPolicyContext', () => ({
+  useMCPAppsPolicy: jest.fn(() => ({ enabled: true, legacyHtmlEnabled: true })),
+}));
+
 const mockReadOnly = useIsMessagesViewReadOnly as jest.MockedFunction<
   typeof useIsMessagesViewReadOnly
 >;
+const mockUseMCPAppsPolicy = useMCPAppsPolicy as jest.MockedFunction<typeof useMCPAppsPolicy>;
 
 const appResource = (overrides: Partial<UIResource> = {}): UIResource =>
   ({
@@ -30,6 +36,7 @@ const appResource = (overrides: Partial<UIResource> = {}): UIResource =>
 describe('useMCPAppFrame', () => {
   beforeEach(() => {
     mockReadOnly.mockReturnValue(false);
+    mockUseMCPAppsPolicy.mockReturnValue({ enabled: true, legacyHtmlEnabled: true });
   });
 
   describe('kind', () => {
@@ -62,6 +69,17 @@ describe('useMCPAppFrame', () => {
 
       expect(result.current.status).toBe('failed');
       expect(result.current.sandboxUrl).toBeUndefined();
+    });
+
+    it('does not expose a frame or active bridge when Apps are disabled', () => {
+      mockUseMCPAppsPolicy.mockReturnValue({ enabled: false, legacyHtmlEnabled: false });
+      const { result } = renderHook(() =>
+        useMCPAppFrame(appResource({ text: '<p>stored app</p>' }), { defaultHeight: 100 }),
+      );
+
+      expect(result.current.kind).toBe('empty');
+      expect(result.current.sandboxUrl).toBeUndefined();
+      expect(result.current.active).toBe(false);
     });
   });
 

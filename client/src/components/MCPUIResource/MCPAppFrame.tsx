@@ -26,6 +26,10 @@ export function MCPAppFrame({
   const localize = useLocalize();
   const overlayClass = centered ? `${OVERLAY_CLASS} justify-center` : OVERLAY_CLASS;
 
+  if (frame.kind !== 'app') {
+    return null;
+  }
+
   return (
     <>
       {frame.status === 'loading' && (

@@ -1753,6 +1753,15 @@ export enum RateLimitPrefix {
   STT = 'STT',
 }
 
+export const mcpAppRateLimitSchema = z
+  .object({
+    resourcesPerMinute: z.number().int().positive().default(120),
+    toolCallsPerMinute: z.number().int().positive().default(60),
+  })
+  .default({});
+
+export type TMCPAppRateLimits = z.infer<typeof mcpAppRateLimitSchema>;
+
 export const rateLimitSchema = z.object({
   agentEvents: z
     .object({
@@ -1792,7 +1801,14 @@ export const rateLimitSchema = z.object({
       userWindowInMinutes: z.number().optional(),
     })
     .optional(),
+  mcpApps: mcpAppRateLimitSchema.optional(),
 });
+
+export function resolveMCPAppRateLimits(
+  rateLimits?: z.input<typeof rateLimitSchema>,
+): TMCPAppRateLimits {
+  return mcpAppRateLimitSchema.parse(rateLimits?.mcpApps);
+}
 
 export enum EImageOutputType {
   PNG = 'png',
@@ -2090,6 +2106,23 @@ export type StartupConfigContext = 'share';
  */
 export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
 
+export type TMCPAppsPolicy = {
+  enabled: boolean;
+  legacyHtmlEnabled: boolean;
+};
+
+export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
+  enabled: false,
+  legacyHtmlEnabled: false,
+};
+
+export function resolveMCPAppsPolicy(value?: boolean): TMCPAppsPolicy {
+  return {
+    enabled: value === true,
+    legacyHtmlEnabled: value !== false,
+  };
+}
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -2182,6 +2215,7 @@ export type TStartupConfig = {
     }
   >;
   mcpPlaceholder?: string;
+  mcpApps?: TMCPAppsPolicy;
   conversationImportMaxFileSize?: number;
   buildInfo?: {
     commit?: string | null;

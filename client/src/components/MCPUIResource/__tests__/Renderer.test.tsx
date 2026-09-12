@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { UIResourceRenderer as LegacyUIResourceRenderer } from '@mcp-ui/client';
-import type { UIResource } from 'librechat-data-provider';
+import type { TStartupConfig, UIResource } from 'librechat-data-provider';
+import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
 import UIResourceRenderer from '../Renderer';
 
 jest.mock('@mcp-ui/client', () => ({
@@ -12,6 +13,16 @@ jest.mock('@mcp-ui/client', () => ({
 const mockLegacyRenderer = LegacyUIResourceRenderer as jest.MockedFunction<
   typeof LegacyUIResourceRenderer
 >;
+
+const renderEnabled = (ui: React.ReactElement) =>
+  render(
+    <MCPAppsPolicyProvider
+      startupConfig={{ mcpApps: { enabled: true, legacyHtmlEnabled: true } } as TStartupConfig}
+      ready
+    >
+      {ui}
+    </MCPAppsPolicyProvider>,
+  );
 
 describe('UIResourceRenderer', () => {
   beforeEach(() => {
@@ -31,7 +42,7 @@ describe('UIResourceRenderer', () => {
       text: "root.innerHTML='<img src=x onerror=alert(window.origin)>'",
     };
 
-    const { container } = render(<UIResourceRenderer resource={resource} />);
+    const { container } = renderEnabled(<UIResourceRenderer resource={resource} />);
 
     expect(container).toBeEmptyDOMElement();
     expect(mockLegacyRenderer).not.toHaveBeenCalled();
@@ -45,7 +56,7 @@ describe('UIResourceRenderer', () => {
       text: '<p>Malformed resource</p>',
     };
 
-    const { container } = render(<UIResourceRenderer resource={resource} />);
+    const { container } = renderEnabled(<UIResourceRenderer resource={resource} />);
 
     expect(container).toBeEmptyDOMElement();
     expect(mockLegacyRenderer).not.toHaveBeenCalled();
@@ -60,7 +71,7 @@ describe('UIResourceRenderer', () => {
       text: '<p>Safe iframe content</p>',
     };
 
-    render(
+    renderEnabled(
       <UIResourceRenderer
         resource={resource}
         htmlProps={{ sandboxPermissions: 'allow-popups allow-same-origin' }}
@@ -86,7 +97,7 @@ describe('UIResourceRenderer', () => {
       text: '<p>Safe iframe content</p>',
     };
 
-    render(<UIResourceRenderer resource={resource} />);
+    renderEnabled(<UIResourceRenderer resource={resource} />);
 
     expect(mockLegacyRenderer).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,5 +106,19 @@ describe('UIResourceRenderer', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('does not invoke the legacy SDK without an enabled host policy', () => {
+    const resource: UIResource = {
+      resourceId: 'stored-html',
+      uri: 'ui://legacy/stored',
+      mimeType: 'text/html',
+      text: '<p>Stored legacy view</p>',
+    };
+
+    const { container } = render(<UIResourceRenderer resource={resource} />);
+
+    expect(container).toBeEmptyDOMElement();
+    expect(mockLegacyRenderer).not.toHaveBeenCalled();
   });
 });

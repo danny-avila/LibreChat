@@ -8,6 +8,8 @@ import {
   DEFAULT_MCP_IMAGE_DATA_MAX_BYTES,
 } from '../parsers';
 
+const ENABLED_MCP_APPS_POLICY = { enabled: true, legacyHtmlEnabled: true } as const;
+
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {
     it('should return string for unrecognized provider', () => {
@@ -328,6 +330,7 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
         resolvedAppResource: {
           uri: 'ui://app',
           mimeType: MCP_APP_MIME_TYPE,
@@ -390,6 +393,7 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
       });
 
       const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
@@ -410,6 +414,7 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
       });
 
       const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
@@ -439,6 +444,7 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
         resolvedAppResource:
           result.content?.[0]?.type === 'resource' ? result.content[0].resource : undefined,
         csp: { connectDomains: ['https://tool.example'] },
@@ -479,6 +485,7 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://declared',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
         resolvedAppResource: {
           uri: 'ui://declared',
           mimeType: MCP_APP_MIME_TYPE,
@@ -507,7 +514,7 @@ describe('formatToolContent', () => {
       const [content, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
         toolName: 'do_thing',
-        enableApps: false,
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
 
       expect(artifacts?.ui_resources).toBeUndefined();
@@ -522,11 +529,31 @@ describe('formatToolContent', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
-        enableApps: false,
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
 
       expect(artifacts?.ui_resources).toBeUndefined();
       expect(content).toBe('done');
+    });
+
+    it('keeps legacy HTML enabled but does not synthesize a declared App when policy is omitted', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://legacy', mimeType: 'text/html', text: '<p>legacy</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+      });
+
+      expect(content).toContain('UI Resource Marker:');
+      expect(artifacts?.ui_resources?.data).toMatchObject([{ uri: 'ui://legacy' }]);
     });
 
     it('does not synthesize an app for an empty declared resourceUri', () => {
@@ -1194,7 +1221,12 @@ describe('formatToolContent', () => {
       const [, artifacts] = formatToolContent(
         { content: [{ type: 'text', text: 'done' }] },
         'vertexai' as t.Provider,
-        { serverName: 's', toolName: 't', resourceUri: 'ui://s/app' },
+        {
+          serverName: 's',
+          toolName: 't',
+          resourceUri: 'ui://s/app',
+          mcpApps: ENABLED_MCP_APPS_POLICY,
+        },
       );
 
       expect(artifacts?.ui_resources?.data).toMatchObject([
@@ -1215,7 +1247,7 @@ describe('formatToolContent', () => {
       const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
         serverName: 's',
         toolName: 't',
-        enableApps: false,
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
 
       expect(artifacts).toBeUndefined();
@@ -1274,7 +1306,12 @@ describe('formatToolContent', () => {
       content: [{ type: 'resource', resource } as t.ToolContentPart],
     });
 
-    const appMetadata = { serverName: 'srv', toolName: 'do_thing', resourceUri: 'ui://app' };
+    const appMetadata = {
+      serverName: 'srv',
+      toolName: 'do_thing',
+      resourceUri: 'ui://app',
+      mcpApps: ENABLED_MCP_APPS_POLICY,
+    };
 
     it('drops the static echo and renders only the declared app', () => {
       const [content, artifacts] = formatToolContent(
@@ -1396,7 +1433,12 @@ describe('formatToolContent', () => {
   });
 
   describe('ordinary resources beside a declared App', () => {
-    const metadata = { serverName: 'srv', toolName: 'do_thing', resourceUri: 'ui://app' };
+    const metadata = {
+      serverName: 'srv',
+      toolName: 'do_thing',
+      resourceUri: 'ui://app',
+      mcpApps: ENABLED_MCP_APPS_POLICY,
+    };
 
     it.each(['ui://app', 'db://other'])('preserves text and JSON bodies at %s', (uri) => {
       const [text] = formatToolContent(
@@ -1462,6 +1504,7 @@ describe('shared result snapshot', () => {
     serverName: 'srv',
     toolName: 'do_thing',
     resourceUri: 'ui://app',
+    mcpApps: ENABLED_MCP_APPS_POLICY,
     resolvedAppResource: {
       uri: 'ui://app',
       mimeType: MCP_APP_MIME_TYPE,
@@ -1618,7 +1661,7 @@ describe('ui:// resource identity and rendering', () => {
         ],
       },
       'openai',
-      { ...appMeta, enableApps: false },
+      { ...appMeta, mcpApps: { enabled: false, legacyHtmlEnabled: false } },
     );
 
     expect(artifacts).toBeUndefined();
@@ -1769,6 +1812,7 @@ describe('isRenderableUiResource media types', () => {
         serverName: 'srv',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
+        mcpApps: ENABLED_MCP_APPS_POLICY,
         resolvedAppResource: {
           uri: 'ui://app',
           mimeType: 'Text/HTML;profile=mcp-app',

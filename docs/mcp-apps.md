@@ -26,7 +26,18 @@ The lockfile is the executable version boundary.
 Optional draft features such as sampling, downloads, App-provided tools, state restoration, external
 View URLs, and partial tool input are outside this profile.
 
-An explicit `mcpSettings.apps: false` disables executable MCP UI, including legacy inline HTML.
+Set `mcpSettings.apps: true` to enable MCP Apps and legacy inline HTML. When the field is omitted,
+new MCP Apps stay disabled while existing legacy inline HTML remains enabled for upgrade
+compatibility. An explicit `false` disables both. Authenticated clients fail closed when the
+resolved policy is unavailable or malformed; configuration changes take effect when startup
+configuration is refreshed, such as after a page reload.
+Consequently, a new client paired with an older backend that omits the authenticated policy
+withholds both MCP Apps and legacy inline HTML. LibreChat's monolithic same-version deployment is
+the supported upgrade path.
+
+MCP App browser routes use independent, per-user, one-minute limits. Configure positive integer
+values at `rateLimits.mcpApps.resourcesPerMinute` and
+`rateLimits.mcpApps.toolCallsPerMinute`; their defaults are 120 and 60 respectively.
 
 ## Required sandbox deployment
 
@@ -92,7 +103,7 @@ operations are:
 | Template list | `POST /api/mcp/resources/templates/list` | `{ serverName, cursor? }`             |
 
 Successful routes return the raw MCP SDK result. Invalid requests return HTTP 400, missing
-authentication returns 401, and an `mcpSettings.apps: false` policy returns 403. An auxiliary
+authentication returns 401, and a policy without MCP Apps enabled returns 403. An auxiliary
 resource read uses the same authenticated server's authority; a View cannot choose another MCP
 connection.
 

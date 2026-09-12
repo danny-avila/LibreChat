@@ -222,4 +222,24 @@ describe('createMCPAppsController', () => {
     expect(response.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('rejects requests when MCP Apps are omitted from the effective config', async () => {
+    const manager = makeManager();
+    const { dependencies } = makeDependencies(manager);
+    dependencies.getAppConfig = jest.fn(async () => ({ mcpSettings: {} }));
+    const controller = createMCPAppsController(dependencies);
+    const request = makeRequest();
+    const response = makeResponse();
+    const next = jest.fn();
+
+    await controller.requireMCPAppsEnabled(
+      asHandlerRequest(request),
+      asHandlerResponse(response),
+      next,
+    );
+
+    expect(request.config).toEqual({ mcpSettings: {} });
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
 });

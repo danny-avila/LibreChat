@@ -4,8 +4,9 @@ import {
   MCP_APP_MIME_TYPE,
   isHtmlMediaType,
   isMcpAppMimeType,
+  resolveMCPAppsPolicy,
 } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource, TMCPAppsPolicy } from 'librechat-data-provider';
 import type * as t from './types';
 
 export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
@@ -319,9 +320,10 @@ export function formatToolContent(
     resourceUri?: string;
     resolvedAppResource?: t.ResourceContents;
     toolArgs?: Record<string, unknown>;
-    enableApps?: boolean;
+    mcpApps?: TMCPAppsPolicy;
   },
 ): t.FormattedContentResult {
+  const mcpApps = metadata?.mcpApps ?? resolveMCPAppsPolicy();
   const isRecognizedProvider = RECOGNIZED_PROVIDERS.has(provider);
   // Truthiness, not != null: an empty resourceUri/serverName/toolName cannot address an app, and a
   // single predicate keeps this gate and the synthesis below from drifting apart.
@@ -374,16 +376,16 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      // Non-renderable ui:// resources use ordinary resource formatting. HTML received while Apps
-      // are disabled is reported by URI and MIME rather than gaining an executable marker.
-      const isUiResource = metadata?.enableApps !== false && isRenderableUiResource(item);
       const isDeclaredEcho = hasSyntheticApp && item.resource.uri === metadata?.resourceUri;
       const resourceText: string[] = [];
       const inlineText =
         'text' in item.resource && typeof item.resource.text === 'string' ? item.resource.text : '';
       // App-profile documents are resolved separately from the tool result. Plain HTML remains on
       // the legacy renderer, except for an echo of the declared App URI which would duplicate it.
-      const isLegacyResource = isUiResource && !isMcpAppMimeType(item.resource.mimeType);
+      const isLegacyResource =
+        mcpApps.legacyHtmlEnabled &&
+        isRenderableUiResource(item) &&
+        !isMcpAppMimeType(item.resource.mimeType);
       const hasInlineBody =
         !!inlineText ||
         ('blob' in item.resource && typeof item.resource.blob === 'string' && !!item.resource.blob);
@@ -452,7 +454,7 @@ export function formatToolContent(
   // unusable read leaves a URI-only descriptor for the existing bounded interactive retry path.
   if (
     hasSyntheticApp &&
-    metadata?.enableApps !== false &&
+    mcpApps.enabled &&
     metadata?.resourceUri &&
     metadata.serverName &&
     metadata.toolName

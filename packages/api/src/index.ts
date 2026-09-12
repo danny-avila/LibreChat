@@ -30,6 +30,7 @@ export * from './mcp/cache';
 export * from './mcp/tools';
 export * from './mcp/apps';
 export * from './mcp/apps/controller';
+export * from './mcp/apps/limits';
 export * from './mcp/sandbox';
 export * from './mcp/catalog/store';
 export * from './mcp/catalog/recovery';

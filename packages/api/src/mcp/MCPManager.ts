@@ -1,6 +1,6 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, resolveMCPAppsPolicy } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
@@ -1750,14 +1750,14 @@ Please follow these instructions when using tools from the respective MCP server
           }
         }
 
-        let enableApps = true;
+        let mcpApps = resolveMCPAppsPolicy();
         const toolResult = result as t.MCPToolCallResponse;
         if (resourceMeta || toolResult?.content?.some(isRenderableUiResource)) {
-          ({ appsEnabled: enableApps } = await registry.resolveAllowlists({
+          ({ mcpApps } = await registry.resolveAllowlists({
             userId,
             role: user?.role,
           }));
-          if (!enableApps) {
+          if (!mcpApps.enabled) {
             resourceMeta = undefined;
           } else if (resourceMeta) {
             logger.debug(
@@ -1768,7 +1768,7 @@ Please follow these instructions when using tools from the respective MCP server
         options?.signal?.throwIfAborted();
 
         let resolvedAppResource: t.ResourceContents | undefined;
-        if (resourceMeta && enableApps) {
+        if (resourceMeta && mcpApps.enabled) {
           try {
             const readResult = await connection.client.readResource(
               { uri: resourceMeta.uri },
@@ -1802,9 +1802,9 @@ Please follow these instructions when using tools from the respective MCP server
                 resourceUri: resourceMeta?.uri,
                 resolvedAppResource,
                 toolArgs: toolArguments,
-                enableApps,
+                mcpApps,
               }
-            : { enableApps },
+            : { mcpApps },
         );
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
