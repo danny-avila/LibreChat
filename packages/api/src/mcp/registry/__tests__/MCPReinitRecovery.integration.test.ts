@@ -36,7 +36,7 @@ import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
 
 jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+  ...jest.requireActual<typeof import('@librechat/data-schemas')>('@librechat/data-schemas'),
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -108,6 +108,22 @@ async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
   await conn.disconnect();
 }
 
+function makeUser(): IUser {
+  return {
+    _id: new Types.ObjectId(),
+    id: new Types.ObjectId().toString(),
+    username: 'testuser',
+    email: 'test@example.com',
+    name: 'Test',
+    avatar: '',
+    provider: 'email',
+    role: 'user',
+    emailVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as IUser;
+}
+
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -136,6 +152,12 @@ interface TestServer {
   url: string;
   port: number;
   close: () => Promise<void>;
+}
+
+interface ReinitOutcome {
+  success: boolean;
+  /** Tool count from a complete snapshot; `null` when the snapshot was incomplete */
+  tools: number | null;
 }
 
 async function createMCPServerOnPort(port: number): Promise<TestServer> {
@@ -397,26 +419,15 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
     server = await createMCPServerOnPort(deadPort);
 
     const flowManager = new FlowStateManager<null>(new Keyv(), { ttl: 60_000 });
-    const makeUser = (): IUser =>
-      ({
-        _id: new Types.ObjectId(),
-        id: new Types.ObjectId().toString(),
-        username: 'testuser',
-        email: 'test@example.com',
-        name: 'Test',
-        avatar: '',
-        provider: 'email',
-        role: 'user',
-        emailVerified: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }) as IUser;
 
     /**
-     * Replicate reinitMCPServer logic: check inspectionFailed → reinspect → getConnection.
-     * Each call uses a distinct user to simulate concurrent requests from different users.
+     * Replicate reinitMCPServer logic: check inspectionFailed → reinspect → getConnection →
+     * tools snapshot. Each call uses a distinct user to simulate concurrent requests from
+     * different users. Concurrent reinspections can each succeed, and a later one replaces the
+     * app connection an earlier call was handed; that call's snapshot is incomplete, which
+     * reinitMCPServer answers by keeping the cached tools, reported here as `tools: null`.
      */
-    async function simulateReinitMCPServer(): Promise<{ success: boolean; tools: number }> {
+    async function simulateReinitMCPServer(): Promise<ReinitOutcome> {
       const user = makeUser();
       const config = await registry.getServerConfig(serverName, user.id);
       if (config?.inspectionFailed) {
@@ -436,8 +447,8 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
         forceNew: true,
       });
 
-      const tools = await connection.fetchTools();
-      return { success: true, tools: tools.length };
+      const snapshot = await connection.fetchToolsSnapshot();
+      return { success: true, tools: snapshot.complete ? snapshot.tools.length : null };
     }
 
     const n = 3 + Math.floor(Math.random() * 5); // 3–7 concurrent calls
@@ -450,14 +461,16 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
       expect(r.status).toBe('fulfilled');
     }
 
-    const values = (results as PromiseFulfilledResult<{ success: boolean; tools: number }>[]).map(
-      (r) => r.value,
-    );
+    const values = (results as PromiseFulfilledResult<ReinitOutcome>[]).map((r) => r.value);
 
     // At least one full reinit must succeed with tools
     const succeeded = values.filter((v) => v.success);
     expect(succeeded.length).toBeGreaterThanOrEqual(1);
-    for (const s of succeeded) {
+
+    // A connection created after the last reinspection is never replaced, so one snapshot completes
+    const listed = succeeded.filter((v) => v.tools !== null);
+    expect(listed.length).toBeGreaterThanOrEqual(1);
+    for (const s of listed) {
       expect(s.tools).toBe(2);
     }
 
@@ -470,6 +483,38 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
     expect(finalConfig).toBeDefined();
     expect(finalConfig!.inspectionFailed).toBeUndefined();
     expect(finalConfig!.tools).toContain('echo');
+  });
+
+  it('reports an incomplete tool snapshot when a newer config replaces the held app connection', async () => {
+    const deadPort = await getFreePort();
+    const serverName = 'replaced-connection';
+    (MCPManager as unknown as { instance: null }).instance = null;
+    await MCPManager.createInstance({
+      [serverName]: { type: 'streamable-http', url: `http://127.0.0.1:${deadPort}/` },
+    });
+    const mcpManager = MCPManager.getInstance();
+    server = await createMCPServerOnPort(deadPort);
+    const flowManager = new FlowStateManager<null>(new Keyv(), { ttl: 60_000 });
+
+    const firstUser = makeUser();
+    await registry.reinspectServer(serverName, 'CACHE', firstUser.id);
+    const held = await mcpManager.getConnection({ serverName, user: firstUser, flowManager });
+
+    // What another replica's reinspection or an admin edit does: store a newer config
+    await registry.updateServer(serverName, { type: 'streamable-http', url: server.url }, 'CACHE');
+    const replacement = await mcpManager.getConnection({
+      serverName,
+      user: makeUser(),
+      flowManager,
+    });
+    expect(replacement).not.toBe(held);
+
+    // reinitMCPServer keeps cached tools for an incomplete snapshot; a complete empty one would
+    // publish an empty catalog
+    await expect(held.fetchToolsSnapshot()).resolves.toMatchObject({ complete: false, tools: [] });
+    const current = await replacement.fetchToolsSnapshot();
+    expect(current.complete).toBe(true);
+    expect(current.tools.map((tool) => tool.name).sort()).toEqual(['echo', 'greet']);
   });
 
   it('reinspectServer should throw MCPInspectionFailedError when the server is still unreachable', async () => {

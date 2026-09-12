@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { SVGProps } from 'react';
 import ToolsMarketplaceDialog from '../ToolsMarketplaceDialog';
 
 const mockSetValue = jest.fn();
@@ -145,6 +146,7 @@ jest.mock('@librechat/client', () => {
       asChild
         ? React.createElement(React.Fragment, null, children)
         : React.createElement('button', { type: 'button' }, children),
+    VerifiedIcon: (props: SVGProps<SVGSVGElement>) => React.createElement('svg', props),
     useToastContext: () => ({ showToast: jest.fn() }),
   };
 });

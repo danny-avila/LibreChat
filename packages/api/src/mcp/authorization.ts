@@ -134,11 +134,14 @@ export interface PersistMCPAuthorizationTransactionDeps<TTokens>
   inactiveServerError: () => Error;
 }
 
-/** Writes a durable intent now and returns the exact publication that clears only that intent. */
+/**
+ * Writes a durable intent now and returns the exact publication that clears only that intent.
+ * The publication reports the generation it wrote so its own caller can adopt it.
+ */
 export async function prepareMCPAuthorizationMutation(
   scope: MCPRecoveryGenerationScope,
   deps: MCPAuthorizationPublicationDeps,
-): Promise<() => Promise<void>> {
+): Promise<() => Promise<string | undefined>> {
   const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
   return () =>
     publishMCPAuthorizationMutation(scope, {
