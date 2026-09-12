@@ -51,30 +51,21 @@
   </a>
 </p>
 
-## 🚀 What's New in v0.8.8-rc2
+## 🚀 What's New in v0.8.8-rc3
 
-- **Agent run control:** Interrupt an Agent before visible answer text, steer runs with files and quoted excerpts, durably queue follow-ups, and recover saved partial work with **Keep going** or **Answer now**.
-- **Agent activity:** Optional generated labels group reasoning and tool work, fold completed groups into live phase cards, keep generated files visible, summarize multi-step phases, and show the current reasoning direction.
-- **Human-in-the-loop Agents:** Stream up to four related questions, pause for input or tool approval, and resume durably.
-- **Unified Agent Builder:** Configure Skills, MCP, Code Interpreter, orchestration, Programmatic Tool Calling, model-spec controls, and per-tool background and intent settings in one Tools marketplace; Skills can be enabled for standalone runtime authoring without exposing the existing catalog.
-- **Durable Agent automation:** Authenticated Agent Events support bound child actors, expected-action receipts, per-actor mailboxes, event batching, durable human pauses, and automatic detached Actions across built-in stream stores.
-- **Deeper Subagent history:** Browse branch-aware child turns with bounded reasoning and stable live event views, load earlier activity, inspect event details, continue completed child chats, and automatically wake saved parent Agents when detached work settles.
-- **Background tools:** Eligible Code Interpreter, MCP, Plugin, and Action tools can run while an Agent keeps working, with automatic delivery for supported completions and polling controls when needed.
-- **Code Interpreter workflows:** Sandbox images return as viewable artifacts; highly experimental stateful sessions add scoped managed, attached, or personal environments, per-message file downloads, and guarded file-write and command permissions.
-- **Agent extensibility:** Experimental Agent Plugins bundle deployment Skills, MCP servers, and opt-in command hooks; saved Agent teams run as isolated Subagent graphs.
-- **Scheduled Chats (experimental):** Run saved Agents with presets or custom cron, selectable time zones, multi-day weekly cadence, and optional Chat Project destinations.
-- **Memory and context:** Agents can use optionally isolated memory, preserve adaptive context fading across turns, and show categorized current-window usage, tokens, and optional cost.
-- **Editable long pastes:** Long pasted text becomes an editable attachment that can be moved back into the composer; attachment-only turns and reliable Upload as Text downloads are also supported.
-- **Projects, settings, and navigation:** Search conversation titles and message contents, manage project chats, use searchable settings and shortcuts, pin chats, choose clock/week conventions, and navigate faster on mobile.
-- **Sharing and artifacts:** Stable shared links support personal copies; fullscreen previews, Mermaid export, PowerPoint templates, shell scripts, and original Office downloads expand file workflows.
-- **Web search:** Keenable adds keyless search and page fetch, while SearXNG and Tavily gain richer controls and all web-tool egress uses stronger SSRF protection.
-- **Security and authentication:** Default HTTP security headers, opt-in nonce CSP, authenticated local images, per-user Code Interpreter JWTs, stable SAML identity binding, live-session OpenID token refresh, and retired JWT-secret rejection harden deployments.
-- **Models and reasoning:** Added GPT-5.6 with Responses reasoning controls, Claude Fable 5.1, Opus 5, and Sonnet 5, plus Gemini 3.8/3.7/3.6 Flash and Gemini 3.5 Flash-Lite.
-- **Langfuse observability:** Configure encrypted in-app connections, tenant fanout, authenticated gateways, export-decision telemetry, and authorized session links in chats and shared views.
-- **Administration:** Source-aware content filters can audit or block model-bound data, while tenant Insights, delegated configuration, encrypted secrets, and expiring violation scores improve operations.
-- **Streaming and reliability:** Adaptive smoothing, Redis delta batching and failover recovery, automatic generation protocol v2, live MCP catalog refresh, Agent circuit breakers, and DocumentDB support improve long runs and scaled deployments.
+- **Agent Management API (beta):** Create, discover, update, and delete Agents; manage Agent files and Skills; and authenticate machine clients through deployment-bound OIDC identities while preserving existing role and Agent access controls.
+- **Attached workspaces (highly experimental):** Select or save a per-Agent default workspace for each managed or personal code worker, then let Agents inspect trees, read and search files, author changes, and run Bash with bounded timeouts. Personal workers support bounded self-service enrollment, readiness status, and per-Agent Git identity.
+- **Background tool controls:** Optionally cancel ordinary background tools, including attached Bash, while keeping detached Subagent execution independent.
+- **Code approval controls:** Choose **Ask**, **Allow**, or **Deny** for file writes and command execution where administrators permit it, including a **Full access** mode for trusted attached environments. File Search and Run Code also honor role grants.
+- **Manual context compaction:** Start a summarize-only turn before the context window fills while preserving recent conversation content according to the deployment's summarization policy.
+- **Context Usage:** Inspect dialogue, retained tool traffic, Agent instructions, cache, cost, and runway pressure without double-counting category subsets.
+- **Unified attachments:** Upload once and let LibreChat route content to the model or extracted text, then provision File Search and Code tools only when needed.
+- **Models:** Added GPT-6 Astra for the OpenAI and Agents endpoints, with Responses API routing and tool-call support.
+- **Agent and chat UI:** Unified tool activity, reasoning, search, and Agent workflows; added one draggable Pinned section for chats and favorites, morphing state icons, high-contrast themes, rich-text message copying, clearer sidebar titles, and refined live phase layouts.
+- **Observability:** Export correlated application logs through OpenTelemetry, configure allowlisted Langfuse trace identity and metadata, tag browser diagnostics with client build IDs, and scope Insights to authorized Agents.
+- **Reliability and security:** Strengthened Agent continuation and checkpoint recovery, Redis liveness detection, DocumentDB coordination, OpenID and MCP OAuth sessions, shared-link throttling, tenant isolation, attachment bounds, and upload error handling.
 
-Read the [full v0.8.8-rc2 changelog](https://www.librechat.ai/changelog/v0.8.8-rc2).
+Read the [full v0.8.8-rc3 changelog](https://www.librechat.ai/changelog/v0.8.8-rc3).
 
 # ✨ Features
 
@@ -102,6 +93,8 @@ Read the [full v0.8.8-rc2 changelog](https://www.librechat.ai/changelog/v0.8.8-r
     - [Skills](https://www.librechat.ai/docs/features/skills): Create reusable `SKILL.md` instruction bundles for manual, automatic, or always-on agent workflows
     - [Agent Plugins](https://www.librechat.ai/docs/features/agent_plugins): Experimentally bundle deployment Skills and MCP servers into startup-loaded packages
     - [Subagents](https://www.librechat.ai/docs/features/subagents): Delegate focused work to isolated child agent runs with their own context windows
+    - Agent Management API: Automate Agent, file, and Skill management with deployment-bound OIDC clients
+    - Attached Code Workspaces: Let Agents inspect, search, edit, and run commands in managed or personal workspaces (highly experimental)
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
@@ -126,10 +119,12 @@ Read the [full v0.8.8-rc2 changelog](https://www.librechat.ai/changelog/v0.8.8-r
   - Edit, Resubmit, and Continue Messages with Conversation branching  
   - Create and share prompts with specific users and groups
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
+  - Compact long conversations on demand while preserving recent context
 
 - 💬 **Multimodal & File Interactions**:  
   - Upload and analyze images with Claude 3, GPT-4.5, GPT-4o, o1, Llama-Vision, and Gemini 📸  
   - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
+  - Copy messages as formatted rich text for documents, email, and collaboration apps
 
 - 🌎 **Multilingual UI**:
   - English, 中文 (简体), 中文 (繁體), العربية, Deutsch, Español, Français, Italiano
@@ -142,6 +137,10 @@ Read the [full v0.8.8-rc2 changelog](https://www.librechat.ai/changelog/v0.8.8-r
 
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
+  - Light, dark, system, and high-contrast appearance modes
+
+- 📈 **Observability**:
+  - Export traces and logs with OpenTelemetry and connect Langfuse for Agent and model insights
 
 - 🌊 **[Resumable Streams](https://www.librechat.ai/docs/features/resumable_streams)**:  
   - Never lose a response: AI responses automatically reconnect and resume if your connection drops
