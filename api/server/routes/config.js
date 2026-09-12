@@ -38,6 +38,12 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
+function getCodeEnvironmentDecisionVersion() {
+  return process.env.CODE_ENVIRONMENT_DECISION_VERSION === String(CODE_ENVIRONMENT_DECISION_VERSION)
+    ? CODE_ENVIRONMENT_DECISION_VERSION
+    : undefined;
+}
+
 /**
  * Resolve build metadata eagerly at module load so the first `/api/config`
  * request does not pay the cost of `execFileSync('git', ...)` on the hot path.
@@ -313,7 +319,9 @@ router.get('/', async function (req, res) {
       langfuseConnectionAccess,
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
       compactionEnabled: appConfig?.summarization?.enabled !== false,
-      codeEnvironmentDecisionVersion: CODE_ENVIRONMENT_DECISION_VERSION,
+      ...(getCodeEnvironmentDecisionVersion() != null
+        ? { codeEnvironmentDecisionVersion: CODE_ENVIRONMENT_DECISION_VERSION }
+        : {}),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),

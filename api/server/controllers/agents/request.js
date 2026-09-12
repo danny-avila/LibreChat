@@ -118,6 +118,22 @@ function getInitializationFailure(error) {
   };
 }
 
+function shouldPersistInitializationError({
+  streamStarted,
+  isNewConvo,
+  initializationFailure,
+  codeEnvironmentDecision,
+}) {
+  if (!streamStarted) {
+    return false;
+  }
+  return !(
+    isNewConvo &&
+    initializationFailure?.code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE &&
+    codeEnvironmentDecision == null
+  );
+}
+
 function resolveConversationCreatedAt({ userId, conversationId, isNewConvo, conversation }) {
   return resolveConversationAnchor({
     isNewConversation: isNewConvo,
@@ -3408,7 +3424,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const initializationError = initializationFailure
         ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
-      const completionPromise = streamStarted
+      const persistInitializationError = shouldPersistInitializationError({
+        streamStarted,
+        isNewConvo,
+        initializationFailure,
+        codeEnvironmentDecision: req._codeEnvironmentDecision,
+      });
+      const completionPromise = persistInitializationError
         ? GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {
             beforeErrorPublication: () =>
               saveErrorTurn(req, {

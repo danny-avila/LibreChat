@@ -1186,9 +1186,14 @@ export async function initializeAgent(
   }
   const toolResourceSet = resolveResendToolResources({
     tools: resourceToolNames,
-    codeEnvAvailable: params.codeEnvAvailable === true,
+    codeEnvAvailable: params.codeEnvAvailable === true && !attachedEnvironmentOptOut,
     fileSearchAvailable: params.fileSearchAvailable,
   });
+  let runtimeToolResources = agent.tool_resources;
+  if (attachedEnvironmentOptOut && runtimeToolResources != null) {
+    runtimeToolResources = { ...runtimeToolResources };
+    delete runtimeToolResources[EToolResources.execute_code];
+  }
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -1489,7 +1494,7 @@ export async function initializeAgent(
     attachments: currentFiles
       ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
       : undefined,
-    tool_resources: agent.tool_resources,
+    tool_resources: runtimeToolResources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,

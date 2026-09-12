@@ -3835,6 +3835,36 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveConvo).not.toHaveBeenCalled();
     });
 
+    it('does not persist a first turn whose code environment decision was rejected', async () => {
+      const res = createResumableResponse();
+      mockGenerationJobManager.claimGeneration.mockImplementation(
+        async (_userId, _clientRequestId, streamId, claimedConversationId) =>
+          wonGenerationClaim({ streamId, conversationId: claimedConversationId }),
+      );
+      const req = createFailedRequest({
+        conversationId: undefined,
+        clientRequestId: 'invalid-code-decision',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: undefined,
+      });
+      const workspaceError = Object.assign(new Error('Choose an attached workspace'), {
+        code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+        reason: 'required',
+        status: 409,
+        statusCode: 409,
+      });
+
+      await AgentController(req, res, jest.fn(), jest.fn().mockRejectedValue(workspaceError), null);
+
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining(ErrorTypes.CODE_WORKSPACE_UNAVAILABLE),
+        1000,
+      );
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+    });
+
     it('creates the conversation row for a failed first turn', async () => {
       const res = createResumableResponse();
       mockGenerationJobManager.claimGeneration.mockImplementation(

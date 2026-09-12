@@ -2461,6 +2461,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
   it('withholds attached code tools when the conversation works without an environment', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = [Tools.execute_code];
+    agent.tool_resources = {
+      [EToolResources.execute_code]: { file_ids: ['attached-code-file'] },
+    };
     agent.stateful_code_sessions = true;
     agent.code_environment_id = 'personal-vm';
     req.config = {
@@ -2506,6 +2509,10 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.toolDefinitions?.map(({ name }) => name)).not.toEqual(
       expect.arrayContaining(['bash_tool', 'read_file', 'create_file', 'edit_file']),
     );
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const primeCall = primeResources.mock.calls[primeResources.mock.calls.length - 1][0];
+    expect(primeCall.enabledToolResources.has(EToolResources.execute_code)).toBe(false);
+    expect(primeCall.tool_resources).not.toHaveProperty(EToolResources.execute_code);
   });
 
   it('does not disable managed code tools for the without-attached decision', async () => {
