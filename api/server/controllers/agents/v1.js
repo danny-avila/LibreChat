@@ -38,6 +38,9 @@ const {
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
   reportLocatorTraversalFailure,
+  reconcileAgentWorkspaceDefault,
+  shouldValidateAgentWorkspaceDefaultBinding,
+  validateAgentWorkspaceDefaultBinding,
 } = require('@librechat/api');
 const {
   Time,
@@ -480,13 +483,27 @@ const validateStatefulCodeEnvironment = (
   environment,
   environmentId,
   environmentIdSelected = false,
+  workspaceId,
+  currentWorkspaceId,
+  currentEnvironmentId,
 ) => {
+  const configuredEnvironments =
+    req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
+  const workspaceValidation = validateAgentWorkspaceDefaultBinding({
+    workspaceId,
+    environmentId,
+    currentWorkspaceId,
+    currentEnvironmentId,
+    environments: configuredEnvironments,
+  });
+  if (!workspaceValidation.valid) {
+    res.status(400).json({ error: workspaceValidation.error });
+    return false;
+  }
   if (enabled !== true && !environmentIdSelected) {
     return true;
   }
   if (environmentId != null) {
-    const configuredEnvironments =
-      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
     const configuredEnvironment = configuredEnvironments.find(
       (configured) => configured.id === environmentId,
     );
@@ -780,6 +797,7 @@ const createAgentHandler = async (req, res) => {
         agentData.stateful_code_environment,
         agentData.code_environment_id,
         agentData.code_environment_id != null,
+        agentData.code_workspace_id,
       )
     ) {
       return;
@@ -1066,7 +1084,7 @@ const updateAgentHandler = async (req, res) => {
       _id,
       ...rest
     } = validatedData;
-    const updateData = removeNullishValues(rest);
+    let updateData = removeNullishValues(rest);
     if (codeEnvironmentIdField !== undefined) {
       updateData.code_environment_id = codeEnvironmentIdField;
     }
@@ -1079,10 +1097,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.stateful_code_sessions !== undefined ||
       updateData.stateful_code_environment !== undefined ||
       updateData.code_environment_id !== undefined;
+    const includesWorkspaceConfiguration = updateData.code_workspace_id !== undefined;
     const includesToolsConfiguration = Array.isArray(updateData.tools);
     const includesToolOptionsConfiguration = updateData.tool_options !== undefined;
     if (
       includesStatefulConfiguration ||
+      includesWorkspaceConfiguration ||
       includesToolsConfiguration ||
       includesToolOptionsConfiguration
     ) {
@@ -1094,6 +1114,11 @@ const updateAgentHandler = async (req, res) => {
       const codeEnvironmentSelectionChanged =
         updateData.code_environment_id !== undefined &&
         updateData.code_environment_id !== existingAgent.code_environment_id;
+      updateData = reconcileAgentWorkspaceDefault({
+        update: updateData,
+        request: validatedData,
+        currentEnvironmentId: existingAgent.code_environment_id,
+      });
       const statefulConfigurationChanged =
         (updateData.stateful_code_sessions !== undefined &&
           (updateData.stateful_code_sessions === true) !==
@@ -1106,7 +1131,20 @@ const updateAgentHandler = async (req, res) => {
         includesToolsConfiguration &&
         updateData.tools.includes(Tools.execute_code) &&
         existingAgent.tools?.includes(Tools.execute_code) !== true;
-      if (statefulConfigurationChanged || activatesCodeExecution) {
+      const effectiveCodeWorkspaceId =
+        updateData.code_workspace_id ?? existingAgent.code_workspace_id;
+      const selectsWorkspaceDefault =
+        includesWorkspaceConfiguration &&
+        shouldValidateAgentWorkspaceDefaultBinding({
+          workspaceId: effectiveCodeWorkspaceId,
+          environmentId:
+            updateData.code_environment_id === null
+              ? undefined
+              : (updateData.code_environment_id ?? existingAgent.code_environment_id),
+          currentWorkspaceId: existingAgent.code_workspace_id,
+          currentEnvironmentId: existingAgent.code_environment_id,
+        });
+      if (statefulConfigurationChanged || selectsWorkspaceDefault || activatesCodeExecution) {
         const effectiveStatefulSessions =
           updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
         const effectiveStatefulEnvironment =
@@ -1123,6 +1161,9 @@ const updateAgentHandler = async (req, res) => {
             effectiveStatefulEnvironment,
             effectiveCodeEnvironmentId,
             codeEnvironmentSelectionChanged,
+            effectiveCodeWorkspaceId,
+            existingAgent.code_workspace_id,
+            existingAgent.code_environment_id,
           )
         ) {
           return;
@@ -1428,6 +1469,8 @@ const duplicateAgentHandler = async (req, res) => {
         newAgentData.stateful_code_sessions,
         newAgentData.stateful_code_environment,
         newAgentData.code_environment_id,
+        false,
+        newAgentData.code_workspace_id,
       )
     ) {
       return;
@@ -1829,6 +1872,7 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
       includeSkillConfig: true,
+      includeExecutionConfig: true,
     });
 
     const agents = data?.data ?? [];
@@ -2034,6 +2078,8 @@ const revertAgentVersionHandler = async (req, res) => {
         revertVersion.stateful_code_sessions,
         revertVersion.stateful_code_environment,
         revertVersion.code_environment_id,
+        false,
+        revertVersion.code_workspace_id,
       )
     ) {
       return;
