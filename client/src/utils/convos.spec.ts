@@ -1,5 +1,6 @@
 import { QueryClient, InfiniteData } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
+import type { ConversationCursorData } from './convos';
 import {
   dateKeys,
   storeEndpointSettings,
@@ -830,6 +831,44 @@ describe('Conversation Utilities', () => {
           'a',
         ]);
         expect(queryClient.getQueryState(sortedKey)?.isInvalidated).toBe(true);
+      });
+
+      /** The sidebar lists the archive from the same components, so both prefixes are live
+       *  caches: an SSE update to an archived chat must reach the list showing it. */
+      it('updates an archived row in the archived cache', () => {
+        const archivedKey = ['archivedConversations', { isArchived: true }];
+        const archived = { ...convoA, isArchived: true } as TConversation;
+        queryClient.setQueryData(archivedKey, {
+          pages: [{ conversations: [archived], nextCursor: null }],
+          pageParams: [],
+        });
+
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, title: 'Renamed archived' }));
+
+        const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(archivedKey);
+        expect(data!.pages[0].conversations[0].title).toBe('Renamed archived');
+      });
+
+      /** A copy of an archived chat inherits its archive state, so it belongs to the archived
+       *  list; seeding it into the active one would show a row the server would not return. */
+      it('keeps an archived conversation out of the active list caches', () => {
+        addConvoToAllQueries(queryClient, { ...convoB, isArchived: true } as TConversation);
+
+        const active = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+          'allConversations',
+        ]);
+        expect(active!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+      });
+
+      it('drops a row from the active cache once it is archived', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, isArchived: true }));
+
+        const active = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
+          'allConversations',
+        ]);
+        expect(
+          active!.pages.flatMap((page) => page.conversations.map((c) => c.conversationId)),
+        ).not.toContain('a');
       });
 
       it('updates a row in place under a non-default sort rather than moving it to the top', () => {

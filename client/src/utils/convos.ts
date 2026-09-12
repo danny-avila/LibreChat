@@ -227,12 +227,19 @@ function getConversationListQueryParams(queryKey: readonly unknown[]): {
   search?: string;
   sortBy?: string;
   sortDirection?: string;
+  isArchived?: boolean;
 } {
   const params = queryKey[1];
   if (!params || typeof params !== 'object') {
     return {};
   }
-  return params as { tags?: string[]; search?: string; sortBy?: string; sortDirection?: string };
+  return params as {
+    tags?: string[];
+    search?: string;
+    sortBy?: string;
+    sortDirection?: string;
+    isArchived?: boolean;
+  };
 }
 
 /**
@@ -250,14 +257,50 @@ function queryListsNewestFirst(queryKey: readonly unknown[]): boolean {
   );
 }
 
-/** Inserts must not land in a bookmark or search cache the row would not
+/**
+ * Every cached conversation list, active and archived alike. A write that visits only
+ * one prefix leaves the other rendering the row it just changed: the sidebar lists the
+ * archive from the same components, so both are live caches now.
+ */
+function findConversationListQueries(queryClient: QueryClient) {
+  return [
+    ...queryClient.getQueryCache().findAll([QueryKeys.allConversations], { exact: false }),
+    ...queryClient.getQueryCache().findAll([QueryKeys.archivedConversations], { exact: false }),
+  ];
+}
+
+/** Whether a list variant shows archived chats, which its key states and its root implies. */
+function queryListsArchived(queryKey: readonly unknown[]): boolean {
+  if (queryKey[0] === QueryKeys.archivedConversations) {
+    return true;
+  }
+  return getConversationListQueryParams(queryKey).isArchived === true;
+}
+
+/**
+ * Whether a row still belongs in a variant at all, by the facets the client can decide:
+ * its project and whether it is archived. Bookmark and search membership are deliberately
+ * excluded — a search cache matches nothing client-side, so judging a row that is already
+ * in one by that rule would evict every row it holds.
+ */
+function conversationBelongsToListQuery(
+  queryKey: readonly unknown[],
+  conversation: Pick<TConversation, 'chatProjectId' | 'isArchived'>,
+): boolean {
+  return (
+    conversationMatchesProjectQuery(queryKey, conversation) &&
+    queryListsArchived(queryKey) === (conversation.isArchived === true)
+  );
+}
+
+/** Inserts must not land in a bookmark, search or archive cache the row would not
  * appear in on the server. Search is not matchable client-side, so those
  * variants are skipped. */
 function conversationMatchesListQuery(
   queryKey: readonly unknown[],
-  conversation: Pick<TConversation, 'chatProjectId' | 'tags'>,
+  conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'isArchived'>,
 ): boolean {
-  if (!conversationMatchesProjectQuery(queryKey, conversation)) {
+  if (!conversationBelongsToListQuery(queryKey, conversation)) {
     return false;
   }
   const { tags, search } = getConversationListQueryParams(queryKey);
@@ -379,13 +422,14 @@ export function addConversationToAllConversationsQueries(
   queryClient: QueryClient,
   newConversation: TConversation,
 ) {
-  // Find all keys that start with QueryKeys.allConversations
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
-
-  for (const query of queries) {
-    if (!conversationMatchesProjectQuery(query.queryKey, newConversation)) {
+  for (const query of findConversationListQueries(queryClient)) {
+    /* Only a newest-first variant has a front to insert into; the others are refetched
+       so the server places the row against its own keyset. */
+    if (!conversationMatchesListQuery(query.queryKey, newConversation)) {
+      continue;
+    }
+    if (!queryListsNewestFirst(query.queryKey)) {
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
@@ -497,12 +541,14 @@ export function storeEndpointSettings(conversation: TConversation | null) {
 
 // Add
 export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConversation) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
-
-  for (const query of queries) {
+  for (const query of findConversationListQueries(queryClient)) {
     if (!conversationMatchesListQuery(query.queryKey, newConvo)) {
+      continue;
+    }
+    /* The unpin path reinserts a row that the update helper may have just marked stale;
+       seeding it at page one would clear that invalidation and fabricate a position. */
+    if (!queryListsNewestFirst(query.queryKey)) {
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
@@ -571,9 +617,7 @@ export function upsertConvoInAllQueries(
     moveToTop,
   );
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
     /* A variant the writers cannot order takes the merge in place and is refetched, so the
@@ -625,7 +669,7 @@ export function upsertConvoInAllQueries(
         updatedAt: listConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
       };
 
-      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+      if (!conversationBelongsToListQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, updated.conversationId ?? '');
       }
 
@@ -798,9 +842,7 @@ export function updateConvoInAllQueries(
 ) {
   updatePinnedConvosQuery(queryClient, conversationId, updater, moveToTop);
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
     /* A variant ordered by a key the client cannot place a row against keeps its positions
@@ -836,7 +878,7 @@ export function updateConvoInAllQueries(
       const merged = preserveListFlags(updater(found), found);
       const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
 
-      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+      if (!conversationBelongsToListQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, conversationId);
       }
 
@@ -889,9 +931,7 @@ export function updateConvoInAllQueries(
 export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
   updatePinnedConvosQuery(queryClient, conversationId, () => null);
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {

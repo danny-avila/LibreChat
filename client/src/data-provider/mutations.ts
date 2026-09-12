@@ -827,8 +827,15 @@ export const useDuplicateConversationMutation = (
         [QueryKeys.messages, duplicatedConversation.conversationId],
         data.messages,
       );
+      /* The copy inherits the source's archive state, so a duplicate made from an archived
+         row belongs to the archived list, not the active one. */
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
+        refetchPage: () => true,
+        refetchType: 'active',
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.archivedConversations],
         refetchPage: () => true,
         refetchType: 'active',
       });
