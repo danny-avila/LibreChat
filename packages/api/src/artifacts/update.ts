@@ -213,8 +213,70 @@ const replaceRange = (
   return originalText.substring(0, start) + updated + separator + endText;
 };
 
-const normalizeBeforeClosingArtifactFence = (text: string): string =>
-  text.replace(/\n+(?=(?:`{3,}|~{3,})[ \t]*\n[ \t]*:::)/g, '\n');
+const isWhitespaceOnly = (value: string): boolean => {
+  for (let i = 0; i < value.length; i++) {
+    if (!/\s/.test(value[i])) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const isCodeFenceLine = (line: string): boolean => {
+  const marker = line[0];
+  if (marker !== '`' && marker !== '~') {
+    return false;
+  }
+
+  let markerEnd = 1;
+  while (markerEnd < line.length && line[markerEnd] === marker) {
+    markerEnd++;
+  }
+  return markerEnd >= 3 && isWhitespaceOnly(line.slice(markerEnd));
+};
+
+const normalizeBeforeClosingArtifactFence = (text: string): string => {
+  const lines = text.split('\n');
+  const closesArtifact = new Set<number>();
+  let nextContentLine = -1;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (isWhitespaceOnly(lines[i])) {
+      continue;
+    }
+    if (
+      nextContentLine !== -1 &&
+      isCodeFenceLine(lines[i]) &&
+      lines[nextContentLine].trimStart().startsWith(ARTIFACT_END)
+    ) {
+      closesArtifact.add(i);
+    }
+    nextContentLine = i;
+  }
+
+  const blankLinesBeforeClose = new Set<number>();
+  let precedesClosingFence = false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (closesArtifact.has(i)) {
+      precedesClosingFence = true;
+      continue;
+    }
+    if (precedesClosingFence && lines[i] === '') {
+      blankLinesBeforeClose.add(i);
+      continue;
+    }
+    precedesClosingFence = false;
+  }
+
+  return lines
+    .filter((line, index) => {
+      if (line !== '' || !blankLinesBeforeClose.has(index)) {
+        return true;
+      }
+      return index === 0;
+    })
+    .join('\n');
+};
 
 export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] => {
   const artifacts: ArtifactBoundary[] = [];

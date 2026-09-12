@@ -22,8 +22,27 @@ describe('replaceArtifactContent', () => {
     expect(result).toContain('UPDATED\n```\n:::');
   });
 
+  it('normalizes before a code fence separated from the artifact close by blank lines', () => {
+    const text = artifactText.replace('```\n:::', '```\n\n:::');
+    const result = replaceArtifactContent(
+      text,
+      { ...artifact, end: text.length, text },
+      'ORIGINAL',
+      'UPDATED\n\n',
+    );
+
+    expect(result).toContain('UPDATED\n```\n\n:::');
+  });
+
   it('handles long whitespace near-misses without backtracking', () => {
     const updated = `\n\`\`\`${' \n'.repeat(100_000)}X`;
+    const result = replaceArtifactContent(artifactText, artifact, 'ORIGINAL', updated);
+
+    expect(result).toContain(updated);
+  }, 1_000);
+
+  it('handles long consecutive-newline near-misses without backtracking', () => {
+    const updated = `\n\`\`\`${'\n'.repeat(100_000)}X`;
     const result = replaceArtifactContent(artifactText, artifact, 'ORIGINAL', updated);
 
     expect(result).toContain(updated);
