@@ -22,6 +22,16 @@ describe('terminal agent-run error logging', () => {
 
     observer.log(new Error('graph failed', { cause: providerError }));
 
+    expect(
+      observer.getUserFacingError(
+        new Error('graph failed', { cause: providerError }),
+        () => 'fallback',
+      ),
+    ).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 500 }),
+    );
+
     expect(logger.error).toHaveBeenCalledWith('[Agent API] Upstream model error', {
       type: 'Error',
       status: 500,
@@ -44,6 +54,10 @@ describe('terminal agent-run error logging', () => {
     observer.modelCallback.handleLLMError(new Error('recovered model attempt'));
 
     observer.log(new Error('checkpoint failed'));
+
+    const fallback = jest.fn(() => 'fallback');
+    expect(observer.getUserFacingError(new Error('checkpoint failed'), fallback)).toBe('fallback');
+    expect(fallback).toHaveBeenCalledTimes(1);
 
     expect(logger.error).toHaveBeenCalledWith('[Agent API] Error:', { type: 'Error' });
   });
@@ -89,6 +103,52 @@ describe('terminal agent-run error logging', () => {
       '[Agent API] Upstream model error',
       expect.objectContaining({ errorCode: 'UPSTREAM_MODEL_ERROR' }),
     );
+  });
+
+  it('preserves a more specific localized model classification', () => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+    });
+    const providerError = new Error('provider failed');
+    const terminalError = Object.assign(new Error('rate limited', { cause: providerError }), {
+      lc_error_code: 'MODEL_RATE_LIMIT',
+    });
+    observer.modelCallback.handleLLMError(providerError);
+
+    expect(observer.getUserFacingError(terminalError, () => 'fallback')).toBe(
+      JSON.stringify({ type: 'model_rate_limit' }),
+    );
+  });
+
+  it('contains hostile provider accessors while building the safe fallback', () => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+    });
+    const providerError = Object.create(null, {
+      lc_error_code: {
+        get() {
+          throw new Error('hostile code getter');
+        },
+      },
+      message: {
+        get() {
+          throw new Error('hostile message getter');
+        },
+      },
+    });
+    observer.modelCallback.handleLLMError(providerError);
+
+    const fallback = jest.fn(() => {
+      throw new Error('unsafe legacy fallback was evaluated');
+    });
+
+    expect(observer.getUserFacingError(providerError, fallback)).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error' }),
+    );
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('uses a bounded fallback type and omits unavailable trace correlation', () => {

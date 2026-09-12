@@ -24,6 +24,7 @@ jest.mock('~/hooks', () => ({
 }));
 
 const catalog = translation as Record<string, string>;
+const upstreamFallback = 'The model provider could not complete this request.';
 
 describe('Error — typed provider errors', () => {
   it('renders the localized copy for a rejected Google video', () => {
@@ -57,6 +58,39 @@ describe('Error — typed provider errors', () => {
     render(<Error text={JSON.stringify({ type })} />);
 
     expect(screen.getByText(catalog[key])).toBeInTheDocument();
+  });
+
+  it('localizes an upstream model failure without a status', () => {
+    render(
+      <Error
+        text={`${upstreamFallback}\n${JSON.stringify({ type: ErrorTypes.UPSTREAM_MODEL_ERROR })}`}
+      />,
+    );
+
+    expect(screen.getByText(catalog.com_error_upstream_model)).toBeInTheDocument();
+  });
+
+  it('localizes an upstream model failure with its safe status', () => {
+    render(
+      <Error
+        text={`${upstreamFallback}\n${JSON.stringify({
+          type: ErrorTypes.UPSTREAM_MODEL_ERROR,
+          status: 529,
+        })}`}
+      />,
+    );
+
+    expect(
+      screen.getByText(catalog.com_error_upstream_model_status.replace('{{0}}', '529')),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the wire fallback readable for a client that does not know the typed error', () => {
+    render(
+      <Error text={`${upstreamFallback}\n${JSON.stringify({ type: 'future_error_type' })}`} />,
+    );
+
+    expect(screen.getByText(new RegExp(upstreamFallback, 'i'))).toBeInTheDocument();
   });
 
   it.each([

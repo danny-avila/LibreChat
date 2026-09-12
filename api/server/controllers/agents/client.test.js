@@ -2863,7 +2863,7 @@ describe('AgentClient - startup telemetry', () => {
     const { logger } = require('@librechat/data-schemas');
     const { traceIdForMessage } = require('@librechat/api');
     const privateValue = 'PRIVATE-UPSTREAM-PROVIDER-CONTENT';
-    const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
+    const providerError = Object.assign(new Error(), {
       code: 'InternalServerException',
       response: {
         status: 500,
@@ -2871,7 +2871,18 @@ describe('AgentClient - startup telemetry', () => {
         data: { prompt: privateValue },
       },
     });
-    const graphError = new Error('model execution failed', { cause: providerError });
+    Object.defineProperties(providerError, {
+      name: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+      message: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+    });
     const abortController = new AbortController();
     const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     mockCreateRun.mockImplementation(async (options) => {
@@ -2883,7 +2894,7 @@ describe('AgentClient - startup telemetry', () => {
         processStream: jest.fn(async () => {
           tracker.handleLLMError(providerError, 'model-run');
           abortController.abort();
-          throw graphError;
+          throw providerError;
         }),
         getCalibrationRatio: jest.fn(() => 0),
       };
@@ -2939,7 +2950,9 @@ describe('AgentClient - startup telemetry', () => {
     );
     expect(client.contentParts).toContainEqual({
       type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]: 'An error occurred while processing the request',
+      [ContentTypes.ERROR]:
+        'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 500 }),
     });
     errorSpy.mockRestore();
   });
@@ -9618,9 +9631,21 @@ describe('AgentClient - resumeCompletion content protection', () => {
     const { logger } = require('@librechat/data-schemas');
     const { traceIdForMessage } = require('@librechat/api');
     const privateValue = 'PRIVATE-RESUMED-UPSTREAM-CONTENT';
-    const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
+    const providerError = Object.assign(new Error(), {
       code: 'PROVIDER_INTERNAL',
       status: 503,
+    });
+    Object.defineProperties(providerError, {
+      name: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+      message: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
     });
     const abortController = new AbortController();
     const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
@@ -9637,14 +9662,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
         getCalibrationRatio: jest.fn(() => 0),
       };
     });
-    const context = makeContext({
-      messages: {
-        pii: {
-          fields: ['text'],
-          starterPatterns: ['email'],
-        },
-      },
-    });
+    const context = makeContext(undefined);
 
     await AgentClient.prototype.resumeCompletion.call(context, {
       resumeValue: {},
@@ -9666,7 +9684,9 @@ describe('AgentClient - resumeCompletion content protection', () => {
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('PROVIDER_INTERNAL');
     expect(context.contentParts).toContainEqual({
       type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]: 'An error occurred while resuming the request',
+      [ContentTypes.ERROR]:
+        'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 503 }),
     });
     errorSpy.mockRestore();
   });
