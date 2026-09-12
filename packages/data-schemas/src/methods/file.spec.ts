@@ -239,6 +239,13 @@ describe('File Methods', () => {
         tenantId: 'tenant-a',
       });
       expect(metadata.map((file) => file.file_id)).toEqual(['project-owned']);
+      expect(metadata[0]).toEqual(
+        expect.objectContaining({
+          user: userId,
+          _id: expect.any(String),
+        }),
+      );
+      expect(metadata[0]?.updatedAt).toBeInstanceOf(Date);
       expect(metadata[0]).not.toHaveProperty('text');
 
       const withContent = await fileMethods.getProjectFiles({

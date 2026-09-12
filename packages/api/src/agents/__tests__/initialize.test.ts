@@ -32,7 +32,6 @@ jest.mock('@librechat/agents', () => ({
     enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
-import mongoose from 'mongoose';
 import { Providers } from '@librechat/agents';
 import {
   Tools,
@@ -368,8 +367,8 @@ describe('initializeAgent: ChatProject context', () => {
   };
   const canonicalFile: ProjectFileRecord = {
     ...projectFile,
-    _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439012'),
-    user: { toString: () => projectFile.user } as IMongoFile['user'],
+    _id: '507f1f77bcf86cd799439012',
+    user: projectFile.user,
     expiredAt: undefined,
     createdAt: new Date('2020-01-01'),
     updatedAt: new Date('2020-01-01'),
