@@ -90,6 +90,11 @@ function ConvoOptions({
 
   const navigate = useNavigate();
   const { conversationId: currentConvoId } = useParams();
+  /* A mutation callback outlives the click that made it: the route it should compare
+     against is whichever chat is open when the request resolves, not the one that was
+     open when the menu item was pressed. */
+  const openConvoIdRef = useRef(currentConvoId);
+  openConvoIdRef.current = currentConvoId;
   const { newConversation } = useNewConvo();
 
   const menuId = useId();
@@ -236,7 +241,8 @@ function ConvoOptions({
               message: localize(isArchived ? 'com_ui_convo_unarchived' : 'com_ui_convo_archived'),
               isStatus: true,
             });
-            if (!isArchived && (currentConvoId === convoId || currentConvoId === 'new')) {
+            const openConvoId = openConvoIdRef.current;
+            if (!isArchived && (openConvoId === convoId || openConvoId === 'new')) {
               newConversation();
               navigate('/c/new', { replace: true });
             }
@@ -256,7 +262,6 @@ function ConvoOptions({
     [
       conversationId,
       isArchived,
-      currentConvoId,
       setConversation,
       archiveConvoMutation,
       navigate,

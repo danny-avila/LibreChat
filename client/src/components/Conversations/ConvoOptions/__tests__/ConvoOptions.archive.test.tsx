@@ -85,11 +85,14 @@ jest.mock('~/Providers', () => ({
   useLiveAnnouncer: () => ({ announcePolite: mockAnnouncePolite }),
 }));
 
+let mockOpenRouteConvoId: string | undefined = 'conversation-1';
+
 jest.mock('react-router-dom', () => {
   const actual = jest.requireActual('react-router-dom');
   return {
     ...actual,
     useNavigate: () => mockNavigate,
+    useParams: () => ({ conversationId: mockOpenRouteConvoId }),
   };
 });
 
@@ -97,28 +100,35 @@ jest.mock('../ProjectButton', () => () => null);
 jest.mock('../DeleteButton', () => () => null);
 jest.mock('../ShareButton', () => () => null);
 
-const renderOptions = (isArchived: boolean) => {
+const renderOptions = (isArchived: boolean, isActiveConvo = false) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const props = {
-    conversationId: 'conversation-1',
-    title: 'A conversation',
-    isArchived,
-    retainView: mockRetainView,
-    renameHandler: jest.fn(),
-    isPopoverActive: false,
-    setIsPopoverActive: mockSetIsPopoverActive,
-    isActiveConvo: false,
-  };
-
-  render(
+  const tree = (active: boolean) => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/c/conversation-1']}>
         <Routes>
-          <Route path="/c/:conversationId" element={<ConvoOptions {...props} />} />
+          <Route
+            path="/c/:conversationId"
+            element={
+              <ConvoOptions
+                conversationId="conversation-1"
+                title="A conversation"
+                isArchived={isArchived}
+                retainView={mockRetainView}
+                renameHandler={jest.fn()}
+                isPopoverActive={false}
+                setIsPopoverActive={mockSetIsPopoverActive}
+                isActiveConvo={active}
+              />
+            }
+          />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+
+  const { rerender } = render(tree(isActiveConvo));
+  /** Opening another chat moves the route and drops this row's active state. */
+  return { openAnotherChat: () => rerender(tree(false)) };
 };
 
 describe('ConvoOptions archive action', () => {
@@ -131,6 +141,7 @@ describe('ConvoOptions archive action', () => {
     mockSetIsPopoverActive.mockReset();
     mockAnnouncePolite.mockReset();
     mockSetConversation.mockReset();
+    mockOpenRouteConvoId = 'conversation-1';
   });
 
   afterEach(() => {
@@ -183,5 +194,21 @@ describe('ConvoOptions archive action', () => {
     act(() => callbacks.onSuccess());
     expect(mockNewConversation).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
+  });
+
+  /** Archiving the open chat opens a new one in its place, but the request outlives the
+   *  click: if the user has opened another chat by then, that is the one on screen and it
+   *  must be left alone. */
+  it('leaves a newer selection alone when the archive resolves', () => {
+    const { openAnotherChat } = renderOptions(false, true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+    mockOpenRouteConvoId = 'conversation-2';
+    act(() => openAnotherChat());
+
+    const [, callbacks] = mockArchiveMutate.mock.calls[0];
+    act(() => callbacks.onSuccess());
+    expect(mockNewConversation).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
