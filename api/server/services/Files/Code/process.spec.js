@@ -64,7 +64,7 @@ const mockParseSandboxImageChunk = jest.fn((response) => response);
 const passthroughWithTimeout = async (promise) => promise;
 jest.mock('@librechat/api', () => {
   return {
-    createCodeOutputPersistence: jest.requireActual('@librechat/api').createCodeOutputPersistence,
+    processCodeOutput: jest.requireActual('@librechat/api').processCodeOutput,
     prepareCodeOutputBufferForInspection:
       jest.requireActual('@librechat/api').prepareCodeOutputBufferForInspection,
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
@@ -207,12 +207,14 @@ jest.mock('@librechat/agents', () => ({
 
 // Mock models
 const mockClaimCodeFile = jest.fn();
+const mockCommitCodeFile = jest.fn();
 const mockUpdateFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
+  commitCodeFile: mockCommitCodeFile,
 }));
 
 // Mock permissions (must be before process.js import)
@@ -301,6 +303,8 @@ describe('Code Process', () => {
     });
     getFiles.mockResolvedValue(null);
     createFile.mockResolvedValue({});
+    mockCommitCodeFile.mockReset();
+    mockCommitCodeFile.mockResolvedValue(true);
     getStrategyFunctions.mockReturnValue({
       saveBuffer: jest.fn().mockResolvedValue('/uploads/mock-file-path.txt'),
     });
@@ -332,7 +336,7 @@ describe('Code Process', () => {
         },
       });
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
@@ -343,7 +347,7 @@ describe('Code Process', () => {
 
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
-      expect(createFile).toHaveBeenCalledTimes(1);
+      expect(mockCommitCodeFile).toHaveBeenCalledTimes(1);
     });
 
     it('enforces a caller-provided aggregate inspection budget while downloading', async () => {
@@ -363,7 +367,7 @@ describe('Code Process', () => {
         }),
       );
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
     });
 
     it('extracts text bytes even when the generated filename spoofs an image extension', async () => {
@@ -403,7 +407,7 @@ describe('Code Process', () => {
       });
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
     });
   });
 
@@ -449,7 +453,7 @@ describe('Code Process', () => {
       });
       expect(publish).toHaveBeenCalledWith(expect.objectContaining({ scope, provenance }));
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
       expect(discard).not.toHaveBeenCalled();
     });
 
@@ -611,6 +615,7 @@ describe('Code Process', () => {
       });
 
       expect(result).toBeNull();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
     });
 
     it('still reuses the claim when it predates the background run', async () => {
@@ -619,7 +624,7 @@ describe('Code Process', () => {
         filename: 'test-file.txt',
         updatedAt: '2024-01-01T00:00:00.000Z',
       });
-      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockCommitCodeFile.mockResolvedValue(true);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const { file: result } = await processCodeOutput({
@@ -628,6 +633,10 @@ describe('Code Process', () => {
       });
 
       expect(result.file_id).toBe('existing-file-id');
+      expect(mockCommitCodeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'existing-file-id' }),
+        new Date('2024-01-02T00:00:00.000Z').getTime(),
+      );
     });
 
     it('skips when a newer task holds an unwritten claim (insert stamp, no updatedAt yet)', async () => {
@@ -648,17 +657,15 @@ describe('Code Process', () => {
       });
 
       expect(result).toBeNull();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
     });
 
-    it('commits background writes conditionally: an inserter overtaken mid-flight misses', async () => {
-      /* This task INSERTED the claim, then a newer task stamped and wrote
-       * while this one was still downloading — the ownership predicate is in
-       * the write's own filter, so the commit atomically misses. */
+    it('omits output when the commit boundary rejects an overtaken claim', async () => {
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'mock-uuid-1234',
         user: 'user-123',
       });
-      mockUpdateFile.mockResolvedValueOnce(null);
+      mockCommitCodeFile.mockResolvedValueOnce(false);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const result = await processCodeOutput({
@@ -667,18 +674,14 @@ describe('Code Process', () => {
       });
 
       expect(result).toBeNull();
-      expect(mockUpdateFile).toHaveBeenCalledWith(
-        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
-        {
-          $or: [
-            { 'metadata.sourceDispatchedAt': { $exists: false } },
-            {
-              'metadata.sourceDispatchedAt': {
-                $lte: new Date('2024-01-01T00:00:00.000Z').getTime(),
-              },
-            },
-          ],
-        },
+      expect(mockCommitCodeFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'mock-uuid-1234',
+          metadata: expect.objectContaining({
+            sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
+          }),
+        }),
+        new Date('2024-01-01T00:00:00.000Z').getTime(),
       );
     });
 
@@ -688,7 +691,7 @@ describe('Code Process', () => {
         filename: 'test-file.txt',
         updatedAt: '2024-01-01T00:00:00.000Z',
       });
-      mockUpdateFile.mockResolvedValueOnce({ file_id: 'existing-file-id' });
+      mockCommitCodeFile.mockResolvedValueOnce(true);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const { file: result } = await processCodeOutput({
@@ -711,7 +714,7 @@ describe('Code Process', () => {
           sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
         },
       });
-      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockCommitCodeFile.mockResolvedValue(true);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const { file: result } = await processCodeOutput({
@@ -787,9 +790,9 @@ describe('Code Process', () => {
         expect(mockClaimCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
         );
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
-          true,
+          undefined,
         );
       });
 
@@ -894,7 +897,7 @@ describe('Code Process', () => {
           storageRegion: 'us-east-2',
           status: 'pending',
         });
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({
             file_id: 'mock-uuid-1234',
             user: 'user-123',
@@ -903,7 +906,7 @@ describe('Code Process', () => {
             storageKey,
             storageRegion: 'us-east-2',
           }),
-          true,
+          undefined,
         );
         expect(typeof finalize).toBe('function');
       });
@@ -929,9 +932,9 @@ describe('Code Process', () => {
         expect(mockSaveBuffer).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
         );
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
-          true,
+          undefined,
         );
       });
 
@@ -1063,9 +1066,9 @@ describe('Code Process', () => {
           'utf8-text',
         );
         expect(result.text).toBe('hello world\n');
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ text: 'hello world\n' }),
-          true,
+          undefined,
         );
       });
 
@@ -1079,7 +1082,7 @@ describe('Code Process', () => {
         const { file: result } = await processCodeOutput({ ...baseParams, name: 'archive.zip' });
 
         expect(result.text).toBeNull();
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockCommitCodeFile.mock.calls[0][0];
         expect(createCall.text).toBeNull();
       });
 
@@ -1101,7 +1104,7 @@ describe('Code Process', () => {
         await processCodeOutput({ ...baseParams, name: 'output.bin' });
 
         // null (not omitted) so $set clears any prior `text` value.
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockCommitCodeFile.mock.calls[0][0];
         expect(createCall).toHaveProperty('text', null);
       });
 
@@ -1135,7 +1138,7 @@ describe('Code Process', () => {
 
         await processCodeOutput({ ...baseParams, name: 'output.txt' });
 
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockCommitCodeFile.mock.calls[0][0];
         expect(createCall).toHaveProperty('status', null);
         expect(createCall).toHaveProperty('previewError', null);
         expect(createCall).toHaveProperty('previewRevision', null);
@@ -1156,7 +1159,7 @@ describe('Code Process', () => {
           }),
         );
         expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
-        expect(createFile).toHaveBeenCalledTimes(1);
+        expect(mockCommitCodeFile).toHaveBeenCalledTimes(1);
       });
 
       it('should fallback to download URL when file exceeds size limit', async () => {
@@ -1177,8 +1180,8 @@ describe('Code Process', () => {
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds size limit'));
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.expiresAt).toBeDefined();
-        // Should not call createFile for oversized files (fallback path)
-        expect(createFile).not.toHaveBeenCalled();
+        // Oversized files use the download fallback without committing metadata.
+        expect(mockCommitCodeFile).not.toHaveBeenCalled();
 
         // Reset to default for other tests
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
@@ -1195,7 +1198,7 @@ describe('Code Process', () => {
           expect.stringContaining('Generated file exceeds size limit'),
         );
         expect(mockClaimCodeFile).not.toHaveBeenCalled();
-        expect(createFile).not.toHaveBeenCalled();
+        expect(mockCommitCodeFile).not.toHaveBeenCalled();
 
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
       });
@@ -1408,18 +1411,18 @@ describe('Code Process', () => {
         expect(result.messageId).toBe('msg-123');
       });
 
-      it('should call createFile with upsert enabled', async () => {
+      it('commits foreground output without a background dispatch constraint', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
 
         await processCodeOutput(baseParams);
 
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({
             file_id: 'mock-uuid-1234',
             context: FileContext.execute_code,
           }),
-          true, // upsert flag
+          undefined,
         );
       });
     });
@@ -1447,18 +1450,18 @@ describe('Code Process', () => {
        */
 
       /**
-       * `processCodeOutput` mutates the file object after `createFile` returns
+       * `processCodeOutput` mutates the file object after `commitCodeFile` returns
        * (`Object.assign(file, { messageId, toolCallId })`) so the runtime
        * caller sees the live messageId on the response. Reading
-       * `createFile.mock.calls[0][0]` directly would therefore reflect the
+       * `mockCommitCodeFile.mock.calls[0][0]` directly would therefore reflect the
        * post-mutation state because JS captures by reference. To assert
        * what was actually PERSISTED, snapshot the args at call time.
        */
-      function snapshotCreateFileArgs() {
+      function snapshotCommitCodeFileArgs() {
         const snapshots = [];
-        createFile.mockImplementation(async (file) => {
+        mockCommitCodeFile.mockImplementation(async (file) => {
           snapshots.push({ ...file });
-          return {};
+          return true;
         });
         return snapshots;
       }
@@ -1471,7 +1474,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-original-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotCommitCodeFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1494,7 +1497,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           // messageId intentionally absent
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotCommitCodeFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1513,7 +1516,7 @@ describe('Code Process', () => {
           file_id: 'mock-uuid-1234',
           user: 'user-123',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotCommitCodeFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1537,7 +1540,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-original-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotCommitCodeFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1564,7 +1567,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-image-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotCommitCodeFileArgs();
 
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
@@ -1745,9 +1748,9 @@ describe('Code Process', () => {
         // Extractor MUST NOT have been called yet — that's deferred preview work.
         expect(mockExtractCodeArtifactText).not.toHaveBeenCalled();
         // Persisted record with the pending status.
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ status: 'pending', text: null, textFormat: null }),
-          true,
+          undefined,
         );
       });
 

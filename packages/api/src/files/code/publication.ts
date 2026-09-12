@@ -4,29 +4,19 @@ import type {
   RunArtifactClaim,
   RunArtifactScope,
   RunArtifactContent,
+  CodeFileCommitData,
   PublishRunArtifactInput,
 } from '@librechat/data-schemas';
 import type { RunFileProvenance, TFile } from 'librechat-data-provider';
 import type { CodeExecutionContext } from '~/agents/execution';
 
-export type CodeOutputStoredFile = Omit<
-  RunArtifactContent,
-  'text' | 'status' | 'previewError' | 'previewRevision'
-> & {
-  file_id: string;
-  user: string;
-  tenantId?: string;
-  conversationId?: string;
-  context?: FileContext;
-  object?: 'file';
-  embedded?: boolean;
-  usage?: number;
-  text?: string | null;
-  status?: TFile['status'] | null;
-  previewError?: string | null;
-  previewRevision?: string | null;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
+export type CodeOutputStoredFile = CodeFileCommitData;
+
+export type CodeOutputDownloadFallback = Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
+  expiresAt: number;
+  messageId?: string;
+  toolCallId?: string;
+  agentId?: string;
 };
 
 interface CodeOutputClaimInput {
@@ -217,10 +207,14 @@ export interface ProcessPublishedCodeOutputInput {
   bridgeWorkerId?: string;
 }
 
-export interface PublishedCodeOutputResult {
-  file: CodeOutputStoredFile | null;
+export interface CodeOutputResult {
+  file: CodeOutputStoredFile | CodeOutputDownloadFallback | null;
   finalize?: () => Promise<CodeOutputStoredFile | null>;
   previewRevision?: string;
+}
+
+export interface PublishedCodeOutputResult extends CodeOutputResult {
+  file: CodeOutputStoredFile;
 }
 
 export interface PublishGeneratedRunArtifactInput {
@@ -242,9 +236,7 @@ export function createRunArtifactPublisher({
   claimRunArtifactFile: (scope: RunArtifactScope) => Promise<RunArtifactClaim>;
   publishRunArtifactFile: CodeOutputPublication['publish'];
   findRunArtifactFile: CodeOutputPublication['find'];
-  processCodeOutput: (
-    input: ProcessPublishedCodeOutputInput,
-  ) => Promise<PublishedCodeOutputResult | null>;
+  processCodeOutput: (input: ProcessPublishedCodeOutputInput) => Promise<CodeOutputResult | null>;
   prepare: (artifact: RunArtifactDescriptor, signal?: AbortSignal) => Promise<Buffer>;
   discard: CodeOutputPublication['discard'];
   finalize: (result: PublishedCodeOutputResult) => void;
@@ -306,20 +298,23 @@ export function createRunArtifactPublisher({
           discard,
         },
       });
+      const file = result?.file;
       if (
-        result?.file?.context !== FileContext.run_artifact ||
-        result.file.source === FileSources.execute_code
+        file == null ||
+        !('file_id' in file) ||
+        file.context !== FileContext.run_artifact ||
+        file.source === FileSources.execute_code
       ) {
         signal?.throwIfAborted();
         throw new Error('The generated artifact could not be published to durable storage');
       }
       const published = publicationResult.file;
-      if (published == null || published.file_id !== result.file.file_id) {
+      if (published == null || published.file_id !== file.file_id) {
         throw new Error('The generated artifact publication could not be verified');
       }
       // Complete previews for a record that committed before cancellation; emitting
       // the attachment still waits for the cancellation check below.
-      finalize(result);
+      finalize({ ...result, file });
       signal?.throwIfAborted();
       return published;
     } finally {

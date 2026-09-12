@@ -1,5 +1,11 @@
 import { Document, Types } from 'mongoose';
-import type { CodeEnvRef, CodeEnvRefMap, RunFileProvenance, TFile } from 'librechat-data-provider';
+import type {
+  CodeEnvRef,
+  CodeEnvRefMap,
+  FileContext,
+  RunFileProvenance,
+  TFile,
+} from 'librechat-data-provider';
 
 export type RunArtifactRunScope = {
   userId: string;
@@ -43,6 +49,26 @@ export type RunArtifactContent = Pick<
   expiredAt?: Date | null;
   previewRevision?: string;
   metadata?: Omit<NonNullable<TFile['metadata']>, 'runFile'>;
+};
+
+export type CodeFileCommitData = Omit<
+  RunArtifactContent,
+  'text' | 'status' | 'previewError' | 'previewRevision'
+> & {
+  file_id: string;
+  user: string;
+  tenantId?: string;
+  conversationId?: string;
+  context?: FileContext;
+  object?: 'file';
+  embedded?: boolean;
+  usage?: number;
+  text?: string | null;
+  status?: TFile['status'] | null;
+  previewError?: string | null;
+  previewRevision?: string | null;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 };
 
 export type PublishRunArtifactInput = {

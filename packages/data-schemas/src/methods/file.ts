@@ -7,6 +7,7 @@ import type {
   RunArtifactFile,
   RunArtifactClaim,
   RunArtifactScope,
+  CodeFileCommitData,
   RunArtifactRunScope,
   PublishRunArtifactInput,
 } from '~/types/file';
@@ -167,6 +168,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId?: string | null;
     sourceDispatchedAt?: number;
   }) => Promise<IMongoFile>;
+  commitCodeFile: (data: CodeFileCommitData, sourceDispatchedAt?: number) => Promise<boolean>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
     data: Partial<IMongoFile> & { file_id: string },
@@ -808,11 +810,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * @returns A promise that resolves to the created file document
    */
   async function createFile(
-    data: Partial<IMongoFile>,
+    data: Partial<IMongoFile> | CodeFileCommitData,
     disableTTL?: boolean,
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const fileData: Partial<IMongoFile> = {
+    const fileData: (Partial<IMongoFile> | CodeFileCommitData) & { expiresAt?: Date } = {
       ...data,
       expiresAt: new Date(Date.now() + 3600 * 1000),
     };
@@ -845,7 +847,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    *   deleted).
    */
   async function updateFile(
-    data: Partial<IMongoFile> & { file_id: string },
+    data: (Partial<IMongoFile> & { file_id: string }) | CodeFileCommitData,
     extraFilter?: FilterQuery<IMongoFile>,
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
@@ -858,6 +860,24 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
+  }
+
+  /** Background outputs commit only while their dispatch still owns the claimed filename. */
+  async function commitCodeFile(
+    data: CodeFileCommitData,
+    sourceDispatchedAt?: number,
+  ): Promise<boolean> {
+    if (sourceDispatchedAt == null) {
+      await createFile(data, true);
+      return true;
+    }
+    const committed = await updateFile(data, {
+      $or: [
+        { 'metadata.sourceDispatchedAt': { $exists: false } },
+        { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+      ],
+    });
+    return committed != null;
   }
 
   /**
@@ -1195,6 +1215,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     getUserCodeFiles,
     getDeferredProvisionFiles,
     claimCodeFile,
+    commitCodeFile,
     createFile,
     updateFile,
     updateFileCodeEnvRef,

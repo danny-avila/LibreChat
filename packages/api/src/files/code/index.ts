@@ -9,5 +9,6 @@ export * from './image';
 export * from './inspection';
 export * from './preflight';
 export * from './priming';
+export * from './process';
 export * from './publication';
 export * from './snapshot';

@@ -3,6 +3,7 @@ import type { RunArtifactFile, RunArtifactScope } from '@librechat/data-schemas'
 import type { RunFileProvenance } from 'librechat-data-provider';
 import type {
   ProcessPublishedCodeOutputInput,
+  CodeOutputDownloadFallback,
   CodeOutputPublication,
   CodeOutputStoredFile,
 } from './publication';
@@ -48,6 +49,18 @@ function storedFile(file_id = 'attempt-a'): CodeOutputStoredFile {
         file_id: scope.sourceFileId,
       },
     },
+  };
+}
+
+function downloadFallback(): CodeOutputDownloadFallback {
+  return {
+    filename: 'report.csv',
+    filepath: '/api/files/code/download/child-sandbox/sandbox-a',
+    expiresAt: 1_789_232_400_000,
+    conversationId: scope.conversationId,
+    toolCallId: 'tool-call-a',
+    messageId: scope.runId,
+    agentId: scope.agentId,
   };
 }
 
@@ -292,10 +305,20 @@ describe('Run artifact publisher', () => {
     const publish = createRunArtifactPublisher({
       ...deps,
       processCodeOutput: async () => ({
-        file: { ...storedFile(), source: FileSources.execute_code },
+        file: downloadFallback(),
       }),
     });
     await expect(publish({ scope, provenance, artifact })).rejects.toThrow('durable storage');
+    expect(deps.finalize).not.toHaveBeenCalled();
+  });
+
+  it('rejects durable-looking metadata that did not pass through publication', async () => {
+    const deps = dependencies();
+    const publish = createRunArtifactPublisher({
+      ...deps,
+      processCodeOutput: async () => ({ file: publishedFile() }),
+    });
+    await expect(publish({ scope, provenance, artifact })).rejects.toThrow('could not be verified');
     expect(deps.finalize).not.toHaveBeenCalled();
   });
 
@@ -352,7 +375,7 @@ describe('Run artifact publisher', () => {
           });
           persistence.trackStored(storedFile('uncommitted'));
           if (failure === 'throw') throw new Error('Processing failed before metadata');
-          return { file: { ...storedFile(), source: FileSources.execute_code } };
+          return { file: downloadFallback() };
         },
       });
       await expect(publish({ scope, provenance, artifact })).rejects.toThrow();
@@ -452,7 +475,7 @@ describe('Run artifact publisher', () => {
         } catch {
           /* Matches the legacy fallback. */
         }
-        return { file: { ...storedFile(), source: FileSources.execute_code } };
+        return { file: downloadFallback() };
       },
     });
     await expect(
