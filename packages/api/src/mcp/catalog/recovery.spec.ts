@@ -258,7 +258,7 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it('does not adopt a publication that outlives its flight', async () => {
+  it('does not re-key the retained state of a flight its publication outlived', async () => {
     const tracker = new MCPServerCatalogRecoveryTracker();
     let releasePublication: () => void = () => undefined;
     let publication: Promise<string | undefined> | undefined;
@@ -267,7 +267,6 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
         await new Promise<void>((resolve) => {
           releasePublication = resolve;
         });
-        tracker.clear(user.id, serverName);
         return 'generation-2';
       });
       return failed();
@@ -279,6 +278,92 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     await tracker.run(user, candidate, policy, 'generation-2', retry);
     expect(retry).toHaveBeenCalledTimes(1);
   });
+
+  it('applies a clear at once to a flight that settled while its own publication is open', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    let releasePublication: () => void = () => undefined;
+    let publication: Promise<string | undefined> | undefined;
+    await tracker.run(user, candidate, policy, 'generation-1', async (trackPublication) => {
+      publication = trackPublication(async () => {
+        await new Promise<void>((resolve) => {
+          releasePublication = resolve;
+        });
+        return 'generation-2';
+      });
+      return failed();
+    });
+
+    tracker.clear(user.id, serverName);
+    const retry = jest.fn(async () => failed());
+    await tracker.run(user, candidate, policy, 'generation-1', retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+    releasePublication();
+    await publication;
+  });
+
+  it('still applies a clear from another writer that arrives during its own publication', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    const tearDownConnection = () => tracker.clear(user.id, serverName);
+    const clearAfterFence = () => tracker.clear(user.id, serverName);
+    await tracker.run(user, candidate, policy, 'generation-1', async (trackPublication) => {
+      await trackPublication(async () => {
+        tearDownConnection();
+        clearAfterFence();
+        return 'generation-2';
+      });
+      return failed();
+    });
+
+    const retry = jest.fn(async () => failed());
+    await tracker.run(user, candidate, policy, 'generation-2', retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['after a request reads a newer generation', 'generation-2', false],
+    ['after another writer clears its server', 'generation-1', true],
+  ])(
+    'lets a request take over a publication that outlives the discovery budget %s',
+    async (_trigger, observedGeneration, clearedByAnotherWriter) => {
+      let now = 1_800_000_000_000;
+      jest.spyOn(Date, 'now').mockImplementation(() => now);
+      const tracker = new MCPServerCatalogRecoveryTracker();
+      const takeover = jest.fn(async () => listed());
+      let releasePublication: () => void = () => undefined;
+
+      const stalled = tracker.run(
+        user,
+        candidate,
+        policy,
+        'generation-1',
+        async (trackPublication) => {
+          await trackPublication(async () => {
+            await new Promise<void>((resolve) => {
+              releasePublication = resolve;
+            });
+            tracker.clear(user.id, serverName);
+            return 'generation-2';
+          });
+          return listed();
+        },
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      now += policy.discoveryTimeoutMs;
+      if (clearedByAnotherWriter) {
+        tracker.clear(user.id, serverName);
+      }
+      const takenOver = tracker.run(user, candidate, policy, observedGeneration, takeover);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(takeover).toHaveBeenCalledTimes(1);
+      releasePublication();
+      await expect(takenOver).resolves.toEqual({
+        ...listed(),
+        recoveryGeneration: observedGeneration,
+      });
+      await expect(stalled).resolves.toEqual({ serverName, tools: null });
+    },
+  );
 });
 
 describe('recoverMCPServerCatalogs', () => {
@@ -912,13 +997,18 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
   const createFence = () => {
     let rotations = 1;
     let generation = 'generation-1';
+    let readsFail = false;
     let publicationHold: Promise<void> | undefined;
     const recoveryTracker = new MCPServerCatalogRecoveryTracker();
-    const invalidateRecoveryGeneration = async () => {
+    const rotate = () => {
       rotations += 1;
       generation = `generation-${rotations}`;
-      await publicationHold;
       return generation;
+    };
+    const invalidateRecoveryGeneration = async () => {
+      const written = rotate();
+      await publicationHold;
+      return written;
     };
     const onOAuthCredentialsChanging = (changed: MCPRecoveryGenerationScope) =>
       prepareMCPAuthorizationMutation(changed, {
@@ -930,9 +1020,17 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     return {
       recoveryTracker,
       onOAuthCredentialsChanging,
-      getRecoveryGeneration: async () => generation,
+      getRecoveryGeneration: async () => {
+        if (readsFail) {
+          throw new Error('tool cache unavailable');
+        }
+        return generation;
+      },
+      failReads: () => {
+        readsFail = true;
+      },
       /** A credential change committed on another replica moves only the shared generation. */
-      rotateOnAnotherReplica: invalidateRecoveryGeneration,
+      rotateOnAnotherReplica: async () => rotate(),
       /** A credential change committed by another request on this replica. */
       rotateOnThisReplica: async () => (await onOAuthCredentialsChanging(scope))(),
       /** Keeps a publication open after its generation is visible, as its remaining writes would. */
@@ -1046,6 +1144,28 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       expect(discoverServerTools).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('discards a shared catalog that the shared generation cannot confirm for a request that saw a newer one', async () => {
+    const fence = createFence();
+    const releasePublication = fence.holdPublication();
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      await refreshAccessToken(options);
+      return { tools: listedTools };
+    });
+
+    const first = loadCatalogs(fence, discoverServerTools);
+    await flush();
+    await fence.rotateOnAnotherReplica();
+    const second = loadCatalogs(fence, discoverServerTools);
+    await flush();
+    fence.failReads();
+    releasePublication();
+
+    const [refreshed, sawNewer] = await Promise.all([first, second]);
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(sawNewer.serverTools).toEqual(new Map());
+    expect(refreshed.serverTools).toEqual(new Map());
+  });
 
   it('retains a reauthorization decision under the generation its refresh published', async () => {
     const fence = createFence();

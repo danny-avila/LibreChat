@@ -207,10 +207,18 @@ interface RecoveryStateEntry {
   lastTouchedAt: number;
   outcome?: RecoveryOutcome;
   inFlight?: Promise<RecoveryOutcome>;
-  /** Credential publications this flight's own discovery has in progress. */
-  ownPublications: number;
-  /** Whether a clear arrived while one of those publications was in progress. */
-  clearedDuringPublication: boolean;
+  /** The credential publication this flight's own discovery has open, if any. */
+  publication?: OwnPublication;
+}
+
+/**
+ * Until `heldUntil`, an open publication keeps its flight joinable and holds the clears its key
+ * receives. The fence clears local recovery once when it completes; any other held clear came from
+ * another writer.
+ */
+interface OwnPublication {
+  heldUntil: number;
+  heldClears: number;
 }
 
 /** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
@@ -341,26 +349,34 @@ export class MCPServerCatalogRecoveryTracker {
     }
   }
 
-  /** A flight publishing its own credential change holds a clear until that publication ends. */
+  /** Holds a clear for a flight still in flight whose own publication is within its window. */
   private clearState(key: string): void {
     const entry = this.states.get(key);
-    if (entry != null && entry.ownPublications > 0) {
-      entry.clearedDuringPublication = true;
+    const publication = entry?.inFlight != null ? entry.publication : undefined;
+    if (publication != null && Date.now() < publication.heldUntil) {
+      publication.heldClears += 1;
       return;
     }
     this.states.delete(key);
   }
 
-  /** Adopts what the last of a flight's own publications wrote, or applies a clear it held. */
-  private finishOwnPublication(key: string, entry: RecoveryStateEntry, published?: string): void {
-    if (entry.ownPublications > 0 || this.states.get(key) !== entry) {
+  /**
+   * Settles a flight's own publication. A generation it completed is adopted along with the one
+   * clear the fence performs itself; every other clear held meanwhile still applies.
+   */
+  private finishPublication(
+    key: string,
+    entry: RecoveryStateEntry,
+    { heldClears }: OwnPublication,
+    published?: string,
+  ): void {
+    if (this.states.get(key) !== entry) {
       return;
     }
-    const cleared = entry.clearedDuringPublication;
-    entry.clearedDuringPublication = false;
     if (published != null) {
       entry.recoveryGeneration = published;
-    } else if (cleared) {
+    }
+    if (heldClears > (published != null ? 1 : 0)) {
       this.states.delete(key);
     }
   }
@@ -380,7 +396,9 @@ export class MCPServerCatalogRecoveryTracker {
       existing?.configFingerprint === configFingerprint &&
       (recoveryGeneration == null ||
         existing.recoveryGeneration === recoveryGeneration ||
-        (existing.inFlight != null && existing.ownPublications > 0));
+        (existing.inFlight != null &&
+          existing.publication != null &&
+          now < existing.publication.heldUntil));
     if (sameObservedState) {
       existing.lastTouchedAt = now;
       this.touch(key, existing);
@@ -399,29 +417,32 @@ export class MCPServerCatalogRecoveryTracker {
       failureCount: sameObservedState ? existing.failureCount : 0,
       nextRetryAt: 0,
       lastTouchedAt: now,
-      ownPublications: 0,
-      clearedDuringPublication: false,
     };
     let settled = false;
     /**
      * A credential refresh inside discovery writes a new shared generation, then clears local
-     * recovery state, and only then reports what it wrote. Until that publication ends the flight
-     * holds the clear and any request for the same server joins it, so neither the refresh's own
-     * clear nor a request that already reads the new generation can supersede it. The flight then
-     * adopts that generation; a later rotation or clear from any other writer still supersedes it.
+     * recovery state, and only then reports what it wrote. For up to one discovery budget while that
+     * publication is open, requests for the same server join this flight and its clears are held,
+     * so neither the refresh's own clear nor a request that already reads the new generation
+     * supersedes it. The flight then adopts that generation; a held clear from another writer, and
+     * any later rotation or clear, still supersedes it.
      */
     const trackPublication: PublicationTracker = async (publish) => {
-      if (settled || this.states.get(key) !== entry) {
+      if (settled || entry.publication != null || this.states.get(key) !== entry) {
         return publish();
       }
-      entry.ownPublications += 1;
+      const publication: OwnPublication = {
+        heldUntil: Date.now() + resolveBudget(candidate.serverConfig, policy),
+        heldClears: 0,
+      };
+      entry.publication = publication;
       let published: string | undefined;
       try {
         published = await publish();
         return published;
       } finally {
-        entry.ownPublications -= 1;
-        this.finishOwnPublication(key, entry, settled ? undefined : published);
+        entry.publication = undefined;
+        this.finishPublication(key, entry, publication, settled ? undefined : published);
       }
     };
     const flight = Promise.resolve()
@@ -763,11 +784,16 @@ async function recoverMCPServerCatalogsWithState(
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
       const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
-      if (
+      /** A flight can finish under a generation this request never observed — one its own refresh
+       *  published. Such an outcome stands only while the shared generation still confirms it. */
+      const unobservedGeneration =
+        recoveryGeneration != null && outcomeGeneration !== recoveryGeneration;
+      const superseded =
         outcomeGeneration != null &&
-        finalGeneration != null &&
-        outcomeGeneration !== finalGeneration
-      ) {
+        (unobservedGeneration
+          ? finalGeneration !== outcomeGeneration
+          : finalGeneration != null && finalGeneration !== outcomeGeneration);
+      if (superseded) {
         tracker.clear(user.id, candidate.serverName);
         results[index] = { serverName: candidate.serverName, tools: null };
         return;
