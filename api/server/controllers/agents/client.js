@@ -145,6 +145,7 @@ const {
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   filterFilesByEndpointRuntimeConfig,
   createModelBoundChatModelCallback: createModelBoundContentCallback,
   createInitialModelBoundAdmissionCallback,
@@ -516,6 +517,7 @@ class AgentClient extends BaseClient {
   admitSteerAttachments(files, steerId) {
     const modelBoundFiles = files.filter(isModelBoundAttachmentFile);
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req?.config?.filters,
       files: modelBoundFiles,
     });
@@ -2047,6 +2049,7 @@ class AgentClient extends BaseClient {
       return;
     }
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       legacyPii,
       storedMessages: this.modelBoundStoredMessages,
     });
@@ -2063,6 +2066,7 @@ class AgentClient extends BaseClient {
     const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
     return createModelBoundContentCallback(
       {
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req?.config?.filters,
         legacyPii: this.options.req?.config?.messageFilter?.pii,
         storedMessages: this.modelBoundStoredMessages,
@@ -2393,6 +2397,7 @@ class AgentClient extends BaseClient {
     ]);
     void earlySharedContextPromise.catch(() => {});
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req.config?.filters,
       legacyPii: this.options.req.config?.messageFilter?.pii,
       agents: allAgents.map(({ agent }) => agent),
@@ -2473,6 +2478,7 @@ class AgentClient extends BaseClient {
       this.modelBoundCurrentFiles = [...modelBoundRequestAttachments];
 
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req.config?.filters,
         files: modelBoundRequestAttachments,
       });
@@ -2720,6 +2726,7 @@ class AgentClient extends BaseClient {
        * user payload so strict file policy cannot be skipped by a late media
        * adapter. */
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req.config?.filters,
         legacyPii: this.options.req.config?.messageFilter?.pii,
         submittedMessages: [{ role: 'user', content: latestFormatted.content }],
@@ -3013,6 +3020,7 @@ class AgentClient extends BaseClient {
       });
       if (assertLateBoundContent) {
         assertModelBoundContent({
+          onTraversalFailure: reportLocatorTraversalFailure,
           filters: this.options.req.config?.filters,
           legacyPii: this.options.req.config?.messageFilter?.pii,
           agents: [agent],
@@ -3041,6 +3049,7 @@ class AgentClient extends BaseClient {
     this.modelBoundMemoryContexts = [...modelBoundMemoryContexts];
     this.modelBoundFileContexts = [...modelBoundFileContexts];
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req.config?.filters,
       legacyPii: this.options.req.config?.messageFilter?.pii,
       agents: allAgents.map(({ agent }) => agent),
@@ -4676,6 +4685,7 @@ class AgentClient extends BaseClient {
       }
 
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
         agents: reachableAgents,
@@ -5348,6 +5358,7 @@ class AgentClient extends BaseClient {
         },
         {
           getAgentCheckpointer,
+          onTraversalFailure: reportLocatorTraversalFailure,
           getMessages: db.getMessages,
           getFiles: db.getFiles,
         },
@@ -5435,6 +5446,7 @@ class AgentClient extends BaseClient {
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
             });
             assertModelBoundContent({
+              onTraversalFailure: reportLocatorTraversalFailure,
               filters: this.options.req.config?.filters,
               legacyPii: this.options.req.config?.messageFilter?.pii,
               agents: [agent],
@@ -5533,6 +5545,7 @@ class AgentClient extends BaseClient {
                   sharedRunContext: scopedContext ?? '',
                 });
                 assertModelBoundContent({
+                  onTraversalFailure: reportLocatorTraversalFailure,
                   filters: this.options.req.config?.filters,
                   legacyPii: this.options.req.config?.messageFilter?.pii,
                   agents: [agent],

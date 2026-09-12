@@ -32,6 +32,7 @@ const {
   inspectContentWithTraversal,
   ContentFilterError,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   extractToolArgumentContent,
   contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
@@ -184,6 +185,7 @@ const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
     Array.isArray(resource?.files) ? resource.files : [],
   );
   assertModelBoundContent({
+    onTraversalFailure: reportLocatorTraversalFailure,
     filters,
     agents: [{ tool_resources: activeResources }],
     files,
@@ -201,6 +203,7 @@ const withoutEncryptedActionSecrets = (action) => {
 const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
   if (filters != null) {
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters,
       actions: actions.map(withoutEncryptedActionSecrets),
     });
@@ -221,7 +224,11 @@ const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
     })),
   );
   if (filters != null) {
-    assertModelBoundContent({ filters, actions: decryptedActions });
+    assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
+      filters,
+      actions: decryptedActions,
+    });
   }
   return decryptedActions;
 };

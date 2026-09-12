@@ -1,3 +1,4 @@
+import { omitResolvedCanonicalFileLocators } from '../protection/files';
 /// <reference types="jest" />
 import express from 'express';
 import request from 'supertest';
@@ -6,6 +7,7 @@ import { recordAgentEventActorReceiptMetric } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import {
   createMetrics,
+  reportLocatorTraversalFailure,
   instrumentMongooseQueryMetrics,
   normalizePath,
   recordAgentStartupMilestone,
@@ -135,6 +137,36 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(
       /http_request_body_bytes_sum\{method="POST",path="\/api\/files\/#id"\} 42/,
     );
+  });
+
+  it('records locator traversal reasons and count distributions without content labels', async () => {
+    process.env.METRICS_SECRET = 'test-secret';
+    createMetrics();
+    const app = express();
+    app.use('/metrics', createMetrics().metricsRouter);
+    expect(() =>
+      omitResolvedCanonicalFileLocators(
+        { file_id: 'PRIVATE-FILE', payload: new Array(4096) },
+        new Map([['PRIVATE-FILE', { file_id: 'PRIVATE-FILE' }]]),
+        { messageCount: 58, onTraversalFailure: reportLocatorTraversalFailure },
+      ),
+    ).toThrow();
+    const response = await request(app).get('/metrics').set('Authorization', 'Bearer test-secret');
+    expect(response.status).toBe(200);
+    expect(response.text).toContain(
+      'content_filter_locator_traversal_failures_total{operation="omit_resolved_file_locators",reason="array_length"} 1',
+    );
+    for (const [dimension, count] of [
+      ['visitedNodes', 2],
+      ['depth', 1],
+      ['messageCount', 58],
+      ['resolvedFileCount', 1],
+    ]) {
+      expect(response.text).toContain(
+        `content_filter_locator_traversal_size_sum{operation="omit_resolved_file_locators",reason="array_length",dimension="${dimension}"} ${count}`,
+      );
+    }
+    expect(response.text).not.toContain('PRIVATE-FILE');
   });
 
   it('exposes bounded event actor receipt settlement, replay, conflict, and migration metrics', async () => {

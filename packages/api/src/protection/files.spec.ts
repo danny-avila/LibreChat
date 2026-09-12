@@ -15,9 +15,11 @@ import {
   hasActiveFilePolicy,
   omitResolvedCanonicalFileLocators,
   resolveCanonicalFileReferences,
+  resolveCanonicalFileReferenceUnits,
   UPLOAD_EXTRACTED_TEXT_PLANS,
   UninspectableFileError,
 } from './files';
+import { ContentTraversalLimitError } from './adapters/nested';
 
 describe('file content inspection policy', () => {
   it('defers extracted-text fail-close only to supported agent context extraction paths', () => {
@@ -981,6 +983,7 @@ describe('file content inspection policy', () => {
   });
 
   it('hydrates discovered file names without rejecting an unrelated oversized subtree', async () => {
+    const onTraversalFailure = jest.fn();
     const canonicalFile = {
       file_id: 'owned-file',
       filename: 'safe-report.txt',
@@ -1014,11 +1017,21 @@ describe('file content inspection policy', () => {
         input,
         user: { id: 'user-1' },
         getFiles,
+        onTraversalFailure,
+        messageCount: input.messages.length,
       }),
     ).resolves.toMatchObject({
       sanitizedInput: input,
       hydratedFiles: [canonicalFile],
     });
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        messageCount: 4200,
+        resolvedFileCount: 1,
+      }),
+    );
     expect(getFiles).toHaveBeenCalledWith(
       { file_id: { $in: ['owned-file'] }, user: 'user-1' },
       {},
@@ -1378,6 +1391,90 @@ describe('file content inspection policy', () => {
     ).resolves.toMatchObject({
       hydratedFiles: [liveFile],
     });
+  });
+
+  it.each([
+    [
+      'max_depth',
+      () => {
+        let value: object = {};
+        for (let i = 0; i < 26; i++) value = { child: value };
+        return value;
+      },
+    ],
+    ['max_nodes', () => [...Array.from({ length: 2047 }, () => ({ child: {} })), {}, {}]],
+    ['array_length', () => new Array(4096)],
+    [
+      'object_entries',
+      () => Object.fromEntries(Array.from({ length: 4096 }, (_, i) => [i, 'safe'])),
+    ],
+    [
+      'reflection_error',
+      () =>
+        Object.defineProperty({}, 'payload', {
+          enumerable: true,
+          get() {
+            throw new Error('PRIVATE-CONTENT');
+          },
+        }),
+    ],
+    [
+      'reflection_error',
+      () =>
+        Object.defineProperty([], '0', {
+          get() {
+            throw new Error('PRIVATE-CONTENT');
+          },
+        }),
+    ],
+    [
+      'reflection_error',
+      () => {
+        const { proxy, revoke } = Proxy.revocable({}, {});
+        revoke();
+        return proxy;
+      },
+    ],
+  ] as const)('reports safe %s diagnostics for locator sanitization', (reason, makeInput) => {
+    const report = jest.fn();
+    let failure: ContentTraversalLimitError | undefined;
+    try {
+      omitResolvedCanonicalFileLocators(makeInput(), new Map([['owned', { file_id: 'owned' }]]), {
+        onTraversalFailure: report,
+        messageCount: 58,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContentTraversalLimitError);
+      failure = error as ContentTraversalLimitError;
+    }
+    expect(failure).toBeDefined();
+    expect(failure?.diagnostics).toEqual({
+      operation: 'omit_resolved_file_locators',
+      reason,
+      visitedNodes: expect.any(Number),
+      depth: expect.any(Number),
+    });
+    expect(failure?.body).not.toHaveProperty('diagnostics');
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith({
+      ...failure?.diagnostics,
+      messageCount: 58,
+      resolvedFileCount: 1,
+    });
+    expect(JSON.stringify(report.mock.calls)).not.toContain('PRIVATE-CONTENT');
+  });
+
+  it('preserves own __proto__ opaque payloads in a null-prototype inspection copy', () => {
+    const input = JSON.parse('{"file_id":"owned","__proto__":{"file_id":"unresolved"}}');
+    const sanitized = omitResolvedCanonicalFileLocators(
+      input,
+      new Map([['owned', { file_id: 'owned' }]]),
+    );
+    expect(Object.getPrototypeOf(sanitized)).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(sanitized, '__proto__')).toBe(true);
+    expect(
+      getBlockedOpaqueFileField({ files: { pii: { uninspectable: 'block' } } }, sanitized),
+    ).not.toBeNull();
   });
 
   it('omits only locators that exactly match the resolved canonical row', () => {
@@ -1919,5 +2016,60 @@ describe('file content inspection policy', () => {
     });
 
     expect(getBlockedOpaqueFileField(filters, inspection.sanitizedInput)).toBe('extracted_text');
+  });
+});
+
+describe('canonical file inspection units', () => {
+  const filters: FiltersConfig = {
+    files: {
+      pii: {
+        fields: ['extracted_text'],
+        starterPatterns: [],
+        uninspectable: 'block',
+      },
+    },
+  };
+
+  it('retains a single oversized-unit rejection before owner lookup', async () => {
+    const getFiles = jest.fn(async () => [{ file_id: 'owned', text: 'safe' }]);
+    await expect(
+      resolveCanonicalFileReferenceUnits({
+        filters,
+        user: { id: 'owner' },
+        getFiles,
+        input: [
+          {
+            files: [{ file_id: 'owned' }],
+            content: Array.from({ length: 4200 }, () => ({ text: 'safe' })),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch array map or iterators while sanitizing units', async () => {
+    const units = [{ file_id: 'owned' }, { file_id: 'missing' }];
+    const map = jest.fn(() => []);
+    const iterator = jest.fn(() => {
+      throw new Error('iterator must not execute');
+    });
+    Object.defineProperty(units, 'map', { value: map });
+    Object.defineProperty(units, Symbol.iterator, { value: iterator });
+    const input = {
+      filters,
+      input: units,
+      user: { id: 'owner' },
+      getFiles: jest.fn(async () => [{ file_id: 'owned', text: 'safe' }]),
+    };
+    await expect(resolveCanonicalFileReferenceUnits(input)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+    });
+    units.pop();
+    await expect(resolveCanonicalFileReferenceUnits(input)).resolves.toMatchObject({
+      sanitizedInput: [{}],
+    });
+    expect(map).not.toHaveBeenCalled();
+    expect(iterator).not.toHaveBeenCalled();
   });
 });

@@ -77,6 +77,7 @@ export * from './activityLabels';
 export * from './activityPhases';
 export * from './subagentDelivery';
 export * from './view';
+export * from './workspace';
 export * from './reasoningLabels';
 export * from './refusal';
 export * from './toolValidation';

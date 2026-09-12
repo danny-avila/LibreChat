@@ -70,6 +70,9 @@ jest.mock('librechat-data-provider', () => {
 
 jest.mock('~/data-provider', () => ({
   ACTIVE_THREAD_REFRESH_MS: 2000,
+  /** The panel's bottom clearance follows the conversation's configured footer
+   *  (`useConfiguredFooter`), so the panel now reads the startup config. */
+  useGetStartupConfig: () => ({ data: undefined }),
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
   subagentThreadHasTaskEvidence: (view: SubagentThreadView | undefined, taskId: string): boolean =>
     view?.messages.some(

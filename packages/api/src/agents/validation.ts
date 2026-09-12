@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CODE_WORKSPACE_ID_PATTERN,
   MemoryScope,
   SkillsScope,
   getMaxSubagents,
@@ -24,6 +25,11 @@ import type { Request, Response } from 'express';
  * (see `~/types/http`), whose `params` type is widened to `unknown`.
  */
 type LooseRequest = Request<unknown, unknown, unknown>;
+
+const agentCodeWorkspaceIdSchema: z.ZodUnion<[z.ZodLiteral<''>, z.ZodString]> = z.union([
+  z.literal(''),
+  z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+]);
 
 /** Avatar schema shared between create and update */
 export const agentAvatarSchema: z.ZodObject<
@@ -501,6 +507,7 @@ export const agentBaseSchema: z.ZodObject<
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodString>;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
     git_identity: typeof agentGitIdentitySchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
@@ -577,6 +584,7 @@ export const agentBaseSchema: z.ZodObject<
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
   code_environment_id: agentCodeEnvironmentIdSchema.optional(),
+  code_workspace_id: agentCodeWorkspaceIdSchema.optional(),
   git_identity: agentGitIdentitySchema,
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
@@ -677,6 +685,7 @@ export const agentCreateSchema: z.ZodObject<
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodString>;
     git_identity: typeof agentGitIdentitySchema;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -811,6 +820,7 @@ export const agentUpdateSchema: z.ZodObject<
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
     code_environment_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
     git_identity: typeof agentGitIdentityUpdateSchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
@@ -896,6 +906,7 @@ export const agentUpdateSchema: z.ZodObject<
 > = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
   code_environment_id: agentCodeEnvironmentIdSchema.nullable().optional(),
+  code_workspace_id: agentCodeWorkspaceIdSchema.optional(),
   git_identity: agentGitIdentityUpdateSchema,
   provider: z.string().optional(),
   model: z.string().nullable().optional(),

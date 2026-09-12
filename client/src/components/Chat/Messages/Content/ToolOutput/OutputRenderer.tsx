@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
 import { Button } from '@librechat/client';
+import { hasToolCallErrorPrefix, stripToolCallErrorPrefix } from 'librechat-data-provider';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -10,11 +11,10 @@ interface ContentBlock {
   text?: string;
 }
 
-const ERROR_PREFIX = /^Error:\s*(\[.*?\]\s*)*tool call failed:\s*/i;
 const ERROR_INNER = /^Error\s+\w+ing to endpoint\s*\(HTTP \d+\):\s*/i;
 
 function cleanError(text: string): string {
-  let cleaned = text.replace(ERROR_PREFIX, '').trim();
+  let cleaned = stripToolCallErrorPrefix(text).trim();
   cleaned = cleaned.replace(ERROR_INNER, '').trim();
   if (cleaned.endsWith('Please fix your mistakes.')) {
     cleaned = cleaned.slice(0, -'Please fix your mistakes.'.length).trim();
@@ -23,7 +23,7 @@ function cleanError(text: string): string {
 }
 
 export function isError(text: string): boolean {
-  return ERROR_PREFIX.test(text) || text.startsWith('Error processing tool');
+  return hasToolCallErrorPrefix(text) || text.startsWith('Error processing tool');
 }
 
 function isStructuredText(text: string): boolean {

@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { HatGlasses } from 'lucide-react';
 import { easings } from '@react-spring/web';
-import { MessageCircleDashed } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import {
@@ -160,7 +160,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             {isTemporary ? (
               <div className={containerClassName}>
-                <MessageCircleDashed className="h-2/3 w-2/3 text-text-primary" aria-hidden="true" />
+                <HatGlasses className="h-2/3 w-2/3 text-text-primary" aria-hidden="true" />
               </div>
             ) : (
               <ConvoIcon

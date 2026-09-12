@@ -25,6 +25,7 @@ const mockResolveCodeWorkspaceSubmission = jest.fn<
 >(() => ({}));
 const mockCodeWorkspace = {
   resolveSubmission: mockResolveCodeWorkspaceSubmission,
+  rememberSelection: jest.fn(),
 };
 
 jest.mock('react-router-dom', () => ({
