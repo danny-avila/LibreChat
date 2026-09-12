@@ -2600,6 +2600,50 @@ describe('initializeAgent — execute_code capability expansion', () => {
     );
   });
 
+  it('keeps an implicit managed stateful route enabled during attached opt-out', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    agent.stateful_code_sessions = true;
+    delete agent.code_environment_id;
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { environments: [] },
+        },
+      },
+    } as unknown as NonNullable<typeof req.config>;
+
+    try {
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestBody: {
+            conversationId: 'conversation-1',
+            codeEnvironmentMode: 'without_attached',
+          },
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: false,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(result.codeEnvAvailable).toBe(true);
+      expect(result.statefulCodeSessions).toBe(true);
+      expect(result.toolDefinitions?.map(({ name }) => name)).toEqual(
+        expect.arrayContaining(['bash_tool', 'read_file']),
+      );
+    } finally {
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
   it('routes code-file priming through the stateful profile before tools load', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];
