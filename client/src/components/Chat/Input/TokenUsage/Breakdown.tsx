@@ -410,7 +410,7 @@ export default function Breakdown({
                         aria-expanded={insightsOpen}
                         aria-controls={insightsOpen ? insightsId : undefined}
                         data-testid="context-insights-toggle"
-                        className="size-6"
+                        className="size-6 text-text-secondary"
                         onFocus={() => setInsightsOpen(true)}
                         onBlur={() => setInsightsOpen(false)}
                         onClick={() => setInsightsOpen(true)}
@@ -507,12 +507,14 @@ export default function Breakdown({
                         <Row
                           label={localize('com_ui_context_cached')}
                           value={normalizeTokenCount(view.cacheRead)}
+                          max={maxTokens}
                         />
                       )}
                       {normalizeTokenCount(view.cacheWrite) > 0 && (
                         <Row
                           label={localize('com_ui_context_cache_write')}
                           value={normalizeTokenCount(view.cacheWrite)}
+                          max={maxTokens}
                         />
                       )}
                     </div>

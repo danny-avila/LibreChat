@@ -74,6 +74,18 @@ interface ChatFormProps {
   index: number;
   placeholder?: string;
   project?: TChatProject;
+  /** Owned by ChatView: which layout the composer sits in — the welcome screen
+   *  floats or bottoms it out, a conversation ends the page with it. */
+  isLandingPage: boolean;
+  /** Owned by the host: the app-level preference for where the welcome-screen
+   *  composer sits. The chat feature only consumes it. */
+  centerFormOnLanding: boolean;
+  /** Owned by ChatView: whether a footer bar renders under this band. It is an
+   *  absolutely positioned bar in a zero-height wrapper, so the clearance here
+   *  is the only thing keeping it off the composer. True on the welcome screen,
+   *  which always carries one, and in a conversation whose deployment
+   *  configured footer content of its own. */
+  footerBelow: boolean;
   /** From ChatContext: individual values so memo can compare them */
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -107,6 +119,9 @@ const ChatForm = memo(function ChatForm({
   index,
   placeholder,
   project,
+  isLandingPage,
+  footerBelow,
+  centerFormOnLanding,
   files,
   setFiles,
   conversation,
@@ -133,7 +148,6 @@ const ChatForm = memo(function ChatForm({
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
@@ -571,6 +585,23 @@ const ChatForm = memo(function ChatForm({
     [isCollapsed, isMoreThanThreeRows],
   );
 
+  /* From `sm` up the band leaves room under itself for the disclaimer, which only
+     the landing page carries — doubled while the centred landing composer floats,
+     and dropped back the moment a submission starts the thread. A started
+     conversation has nothing beneath it, so it keeps only enough to clear the
+     surface's own shadow. Below `sm` the composer runs to the viewport floor in
+     every state. */
+  const landingClearance =
+    centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
+  let bottomClearance = 'sm:mb-4';
+  if (isLandingPage) {
+    bottomClearance = landingClearance;
+  } else if (footerBelow) {
+    /* A conversation that carries a configured footer keeps the band that bar
+       needs, exactly as the welcome screen does. */
+    bottomClearance = 'sm:mb-10';
+  }
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
@@ -592,14 +623,16 @@ const ChatForm = memo(function ChatForm({
         return submitMessage(data);
       })}
       className={cn(
-        'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
+        /* `margin-bottom` is animated as well as `max-width`: it is what carries
+           the composer between the landing clearance and the conversation one,
+           and the landing page keeps the same form node when a conversation
+           opens, so the band travels instead of jumping. The centred landing
+           composer overrides both with its own `transition-all`, and a reader who
+           asked for less motion gets the new position outright — this one is a
+           slide across the page rather than decoration. */
+        'mx-auto flex w-full flex-row gap-3 transition-[max-width,margin-bottom] duration-300 motion-reduce:transition-none sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
-        centerFormOnLanding &&
-          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
-          !isSubmitting &&
-          conversation?.messages?.length === 0
-          ? 'transition-all duration-200 sm:mb-28'
-          : 'sm:mb-10',
+        bottomClearance,
       )}
     >
       <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
@@ -650,7 +683,11 @@ const ChatForm = memo(function ChatForm({
               data-testid="composer-surface"
               onClick={handleContainerClick}
               className={cn(
-                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
+                /* The surface runs to the viewport floor below `sm`, where it is
+                   squared off at the bottom (`rounded-t-3xl`) and no disclaimer
+                   follows it — so the action row is the last thing in it, with no
+                   band of padding under the buttons. */
+                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl',
                 composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
                 /* Temporary-chat accent is a ChatForm-only override, not part of
@@ -885,10 +922,16 @@ function ChatFormWrapper({
   index = 0,
   placeholder,
   project,
+  isLandingPage,
+  footerBelow,
+  centerFormOnLanding,
 }: {
   index?: number;
   placeholder?: string;
   project?: TChatProject;
+  isLandingPage: boolean;
+  footerBelow: boolean;
+  centerFormOnLanding: boolean;
 }) {
   const {
     files,
@@ -953,6 +996,9 @@ function ChatFormWrapper({
       index={index}
       placeholder={placeholder}
       project={project}
+      isLandingPage={isLandingPage}
+      footerBelow={footerBelow}
+      centerFormOnLanding={centerFormOnLanding}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
