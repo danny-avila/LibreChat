@@ -138,8 +138,8 @@ const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
  * Decided here rather than in the agents SDK at invocation time: the max-tokens
  * field below is shaped from `useResponsesApi`, so a later switch would send
  * `max_completion_tokens` to an endpoint expecting `max_output_tokens`. Config
- * time is also the only place that knows the model before Azure replaces it
- * with a deployment name.
+ * time is also where Azure decides whether the model keeps its identity, with
+ * the deployment as the wire model, or becomes the deployment name outright.
  * @see https://developers.openai.com/api/docs/guides/latest-model
  */
 const responsesApiPreferredPattern = /^gpt-6-astra(?:-|$)/i;
@@ -889,14 +889,17 @@ export function getOpenAILLMConfig({
    */
   const responsesApiExplicitlyOptedOut =
     dropParams != null && dropParams.includes('useResponsesApi');
-  const firstPartyEndpoint =
+  const firstPartyOpenAI =
+    !useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL);
+  const firstPartyAzure =
     !useOpenRouter &&
-    ((endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) ||
-      (endpoint === EModelEndpoint.azureOpenAI && isCanonicalAzureBaseURL(baseURL, azure)));
+    endpoint === EModelEndpoint.azureOpenAI &&
+    isCanonicalAzureBaseURL(baseURL, azure);
+  const firstPartyEndpoint = firstPartyOpenAI || firstPartyAzure;
+  /** Astra keeps its model identity on Azure, where the deployment becomes the wire model. */
+  const firstPartyAstra = firstPartyEndpoint && prefersResponsesApi(llmConfig.model);
   if (
-    !useOpenRouter &&
-    endpoint === EModelEndpoint.openAI &&
-    isCanonicalOpenAIBaseURL(baseURL) &&
+    firstPartyOpenAI &&
     reasoningFormat !== ReasoningParameterFormat.disabled &&
     llmConfig.useResponsesApi == null &&
     !responsesApiOptedOut &&
@@ -910,12 +913,7 @@ export function getOpenAILLMConfig({
    * rule above this does not depend on reasoning params: Astra serves tool calls
    * only from Responses on both OpenAI and Azure OpenAI.
    */
-  if (
-    firstPartyEndpoint &&
-    llmConfig.useResponsesApi == null &&
-    !responsesApiExplicitlyOptedOut &&
-    prefersResponsesApi(llmConfig.model)
-  ) {
+  if (firstPartyAstra && llmConfig.useResponsesApi == null && !responsesApiExplicitlyOptedOut) {
     llmConfig.useResponsesApi = true;
   }
 
@@ -1074,7 +1072,7 @@ export function getOpenAILLMConfig({
   constructAzureResponsesApi();
 
   /** Keep Astra's identity for SDK constraints; only the wire model is a deployment alias. */
-  if (firstPartyEndpoint && prefersResponsesApi(model)) {
+  if (firstPartyAstra) {
     llmConfig.model = model;
     llmConfig.modelKwargs = {
       ...llmConfig.modelKwargs,

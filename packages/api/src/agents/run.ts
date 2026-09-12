@@ -581,6 +581,38 @@ function mergeParameters(
   return merged;
 }
 
+/** `model_parameters` is the agent's resolved `llmConfig`, whose kwargs the schema type omits. */
+function agentModelKwargs(
+  modelParameters: AgentModelParameters | undefined,
+): Record<string, unknown> | undefined {
+  if (modelParameters == null || !('modelKwargs' in modelParameters)) {
+    return undefined;
+  }
+  return isPlainObject(modelParameters.modelKwargs) ? modelParameters.modelKwargs : undefined;
+}
+
+/**
+ * `getOpenAILLMConfig` carries an Azure Astra deployment alias in
+ * `modelKwargs.model`, which langchain spreads after `model`. The SDK's
+ * same-provider summarizer copies the agent's client options and overrides only
+ * `model`, so a summarizer on another model would still reach the agent's
+ * deployment. Hand it the agent's kwargs without the alias.
+ */
+function summarizationModelKwargs(
+  agentKwargs: Record<string, unknown> | undefined,
+  agentModel: string | undefined,
+  summarizationModel: string | undefined,
+): Record<string, unknown> | undefined {
+  if (agentKwargs == null || !('model' in agentKwargs)) {
+    return undefined;
+  }
+  if (!isNonEmptyString(summarizationModel) || summarizationModel === agentModel) {
+    return undefined;
+  }
+  const { model: _alias, ...kwargs } = agentKwargs;
+  return kwargs;
+}
+
 /**
  * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
  * assigned to `configuration`). Index signature covers fields that the
@@ -872,6 +904,7 @@ function shapeSummarizationConfig(
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
   headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  agentKwargs?: Record<string, unknown>,
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
   /**
@@ -918,13 +951,22 @@ function shapeSummarizationConfig(
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+  /** Placed first so an explicit user `modelKwargs` still replaces the agent's wholesale. */
+  const modelKwargs =
+    provider === fallbackProvider
+      ? summarizationModelKwargs(agentKwargs, fallbackModel, model)
+      : undefined;
   /**
    * A scalar `reasoning_effort` — the only reasoning shape the yaml schema
    * accepts — is inert as a client option and leaves the summarizer running at
    * whatever effort the main agent resolved. Translate it the way the main
    * flow's `getOpenAIConfig` would for the summarization target.
    */
-  const parameters = resolveReasoningParams({ provider, model, parameters: mergedParameters });
+  const parameters = resolveReasoningParams({
+    provider,
+    model,
+    parameters: modelKwargs != null ? { modelKwargs, ...mergedParameters } : mergedParameters,
+  });
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
@@ -1769,6 +1811,7 @@ export async function createRun({
       appConfig,
       agent.endpoint ?? undefined,
       { user, tenantId, requestBody },
+      agentModelKwargs(agent.model_parameters),
     );
     const summarization = modelCallbacks?.length
       ? {

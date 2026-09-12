@@ -12,6 +12,7 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import { createRun, isAskUserQuestionAdminDisabled } from '~/agents/run';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 
 // Mock winston logger — `format` must be callable so @librechat/data-schemas
 // dist module-load completes cleanly; see api/test/__mocks__/logger.js.
@@ -968,6 +969,72 @@ describe('summarization reasoning effort', () => {
       streaming: false,
       reasoning_effort: '',
     });
+  });
+});
+
+describe('Azure deployment alias', () => {
+  /** `initializeAgent` maps an Azure Responses agent to the OpenAI provider. */
+  const azureAstraAgent = () => {
+    const { llmConfig } = getOpenAIConfig(
+      'test-azure-key',
+      {
+        azure: {
+          azureOpenAIApiInstanceName: 'test-instance',
+          azureOpenAIApiDeploymentName: 'production-deployment',
+          azureOpenAIApiVersion: '2025-04-01-preview',
+          azureOpenAIApiKey: 'test-azure-key',
+        },
+        modelOptions: { model: 'gpt-6-astra', max_tokens: 2048 },
+      },
+      EModelEndpoint.azureOpenAI,
+    );
+    return makeReasoningAgent({
+      provider: EModelEndpoint.openAI,
+      endpoint: EModelEndpoint.azureOpenAI,
+      model: 'gpt-6-astra',
+      model_parameters: { ...llmConfig },
+    });
+  };
+
+  /** The SDK spreads `parameters` onto the agent's client options, then sets `model`. */
+  const summaryRequestModel = (
+    clientOptions: Record<string, unknown>,
+    summaryConfig: Record<string, unknown>,
+  ) => {
+    const summaryModel = new ChatOpenAI({
+      ...clientOptions,
+      ...((summaryConfig.parameters as Record<string, unknown> | undefined) ?? {}),
+      apiKey: 'test-key',
+      model: summaryConfig.model as string,
+    } as never);
+    return (summaryModel.invocationParams() as Record<string, unknown>).model;
+  };
+
+  it('lets a different summarization model replace the Astra deployment', async () => {
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      summarizationConfig: { model: 'gpt-4.1-mini' },
+    });
+
+    const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+
+    expect(mainClientOptions.modelKwargs).toEqual({
+      model: 'production-deployment',
+      max_output_tokens: 2048,
+    });
+    expect(summaryConfig.parameters).toEqual({ modelKwargs: { max_output_tokens: 2048 } });
+    expect(summaryRequestModel(mainClientOptions, summaryConfig)).toBe('gpt-4.1-mini');
+  });
+
+  it('keeps the deployment alias when the summarizer runs the agent model', async () => {
+    const agents = await callAndCapture({ agents: [azureAstraAgent()] });
+
+    const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+
+    expect(summaryConfig.parameters).toBeUndefined();
+    expect(summaryRequestModel(mainClientOptions, summaryConfig)).toBe('production-deployment');
   });
 });
 

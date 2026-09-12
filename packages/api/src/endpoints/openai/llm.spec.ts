@@ -864,13 +864,31 @@ describe('getOpenAILLMConfig', () => {
     });
 
     it.each([
-      { modelOptions: { model: 'gpt-6-astra', useResponsesApi: false } },
+      { modelOptions: { model: 'gpt-6-astra', max_tokens: 2048, useResponsesApi: false } },
       { addParams: { useResponsesApi: false } },
       { dropParams: ['useResponsesApi'] },
+    ])('keeps Astra constraints on an explicit Chat Completions opt-out: %j', (overrides) => {
+      const { llmConfig } = azureConfig(overrides);
+      expect(llmConfig.useResponsesApi).not.toBe(true);
+      expect(llmConfig).toMatchObject({
+        model: 'gpt-6-astra',
+        firstPartyEndpoint: true,
+        azureOpenAIApiDeploymentName: 'production-deployment',
+        modelKwargs: { model: 'production-deployment', max_completion_tokens: 2048 },
+      });
+    });
+
+    it.each([
       { modelOptions: { model: 'gpt-5.4-mini' } },
       { addParams: { model: 'gpt-5.4-mini' } },
-    ])('preserves API opt-outs and other models: %j', (overrides) => {
-      expect(azureConfig(overrides).llmConfig.useResponsesApi).not.toBe(true);
+    ])('leaves other Azure models on the deployment name: %j', (overrides) => {
+      const { llmConfig } = azureConfig(overrides);
+      expect(llmConfig.useResponsesApi).not.toBe(true);
+      expect(llmConfig).toMatchObject({
+        model: 'production-deployment',
+        firstPartyEndpoint: true,
+      });
+      expect(llmConfig.modelKwargs?.model).toBeUndefined();
     });
 
     it.each([
