@@ -92,9 +92,11 @@ export interface RunFileAudit {
   recipientAgentIds?: string[];
 }
 
+export type RunFileReadMode = 'refresh' | 'snapshot';
+
 export interface RunFileManifest<TArtifact extends RunArtifact = RunArtifact> {
   register: (execution: RunFileExecution) => void;
-  getFiles: (actor: RunFileActor, signal?: AbortSignal) => Promise<TFile[]>;
+  getFiles: (actor: RunFileActor, signal?: AbortSignal, mode?: RunFileReadMode) => Promise<TFile[]>;
   list: (actor: RunFileActor, signal?: AbortSignal) => Promise<RunFileEntry[]>;
   stage: (actor: RunFileActor, artifact: TArtifact) => void;
   discardArtifacts: (actor: RunFileActor) => void;
@@ -145,6 +147,7 @@ export function createRunFileManifest<TArtifact extends RunArtifact>({
   let pendingPublications = 0;
   let publicationRevision = 0;
   let pendingRefresh: Promise<void> | undefined;
+  let hasLoadedPublications = false;
   executions.set(root.id, structuredClone(root));
 
   function owns(file: TFile): boolean {
@@ -236,6 +239,7 @@ export function createRunFileManifest<TArtifact extends RunArtifact>({
 
   async function refreshFiles(): Promise<void> {
     assertActive();
+    hasLoadedPublications = false;
     let published: TFile[];
     let observedRevision: number;
     do {
@@ -260,6 +264,7 @@ export function createRunFileManifest<TArtifact extends RunArtifact>({
         files.set(file.file_id, structuredClone(file));
       }
     }
+    hasLoadedPublications = true;
   }
 
   async function refresh(signal?: AbortSignal): Promise<void> {
@@ -272,9 +277,17 @@ export function createRunFileManifest<TArtifact extends RunArtifact>({
     assertActive(signal);
   }
 
-  async function getFiles(actor: RunFileActor, signal?: AbortSignal): Promise<TFile[]> {
+  async function getFiles(
+    actor: RunFileActor,
+    signal?: AbortSignal,
+    mode: RunFileReadMode = 'refresh',
+  ): Promise<TFile[]> {
     executionFor(actor, signal);
-    await refresh(signal);
+    // Unrelated tools reuse the catalog, but must join an in-flight refresh so a
+    // newer preparation cannot reinstall a deleted file from an older snapshot.
+    if (mode === 'refresh' || !hasLoadedPublications || pendingRefresh != null) {
+      await refresh(signal);
+    }
     return [...files.values()]
       .filter((file) => canRead(actor, file))
       .map((file) => structuredClone(file));

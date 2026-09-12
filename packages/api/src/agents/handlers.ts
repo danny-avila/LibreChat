@@ -80,6 +80,7 @@ import {
   SEARCH_WORKSPACE_TOOL_NAME,
   isCodeFileToolName,
   isCodeSessionToolName,
+  isFileResourceToolName,
 } from './tools';
 import {
   createCodeApiRateLimitBudget,
@@ -5354,6 +5355,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 agentId,
                 executionContext,
                 runSignal ?? new AbortController().signal,
+                toolNames.some(isFileResourceToolName) ? 'refresh' : 'snapshot',
               );
             }
             const provisionedCodeFiles = provisionFiles

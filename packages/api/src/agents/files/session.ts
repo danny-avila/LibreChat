@@ -9,6 +9,7 @@ import type {
   RunFileScope,
   RunFileEntry,
   RunFileAudit,
+  RunFileReadMode,
 } from './manifest';
 import type { RunArtifactDescriptor } from '~/files/code/publication';
 import type { RunFileSnapshotStore } from './snapshots';
@@ -135,6 +136,7 @@ export interface RunFileSession {
     agentId: string,
     context: SubagentExecutionContext | undefined,
     signal: AbortSignal,
+    mode?: RunFileReadMode,
   ) => Promise<void>;
   actorFor: (agentId: string, context?: SubagentExecutionContext) => RunFileActor;
   close: () => Promise<void>;
@@ -488,13 +490,14 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     agentId: string,
     context: SubagentExecutionContext | undefined,
     signal: AbortSignal,
+    mode: RunFileReadMode = 'refresh',
   ) {
     if (!manifest) return;
     const actor = actorFor(agentId, context);
     const revision = nextPreparation(actor);
     await deps.prepareAgent({
       actor,
-      files: await manifest.getFiles(actor, signal),
+      files: await manifest.getFiles(actor, signal, mode),
       sessionKey: sessionKey(actor),
       revision,
       signal,

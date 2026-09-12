@@ -151,6 +151,59 @@ describe('createRunFileMessageEncoder', () => {
     expect(harness.extractText).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      route: 'explicit tool destination',
+      file: { llmDeliveryPath: 'none', metadata: { destinationChosen: true } },
+    },
+    {
+      route: 'explicit tool destination on a text source',
+      file: {
+        source: FileSources.text,
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: true },
+      },
+    },
+    { route: 'inferred tool destination', file: { llmDeliveryPath: 'provider' } },
+  ] satisfies { route: string; file: Partial<TFile> }[])(
+    'excludes $route files from model count, bytes and text budgets',
+    async ({ file }) => {
+      const harness = setup({
+        fileConfig: {
+          fileContextSizeLimit: 1,
+          fileContextCharLimit: 5,
+          endpoints: {
+            openAI: { fileLimit: 1, defaultLLMDeliveryPath: { fallback: 'none' } },
+          },
+        },
+      });
+      const input: TFile = { ...pdf, ...file, bytes: 2 * 1024 * 1024 };
+
+      await expect(
+        harness.encode([input, { ...input, file_id: 'second' }], 'child'),
+      ).resolves.toEqual([]);
+      expect(harness.encodeDocuments).not.toHaveBeenCalled();
+      expect(harness.extractText).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['provider', 'text'] as const)(
+    'counts an inferred tool-only input when the child resolves it to %s delivery',
+    async (fallback) => {
+      const harness = setup({
+        fileConfig: {
+          fileContextSizeLimit: 1,
+          endpoints: { openAI: { defaultLLMDeliveryPath: { fallback } } },
+        },
+      });
+      await expect(
+        harness.encode([{ ...pdf, llmDeliveryPath: 'none', bytes: 2 * 1024 * 1024 }], 'child'),
+      ).rejects.toMatchObject({ limitType: 'bytes' });
+      expect(harness.encodeDocuments).not.toHaveBeenCalled();
+      expect(harness.extractText).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects a child text route without extracted text before reading any files', async () => {
     const harness = setup({
       fileConfig: {
@@ -165,10 +218,21 @@ describe('createRunFileMessageEncoder', () => {
   });
 
   it('keeps legacy extracted text while excluding legacy tool-provisioned native bytes', async () => {
-    const harness = setup();
+    const harness = setup({
+      fileConfig: {
+        fileContextSizeLimit: 1,
+        endpoints: { openAI: { fileLimit: 1 } },
+      },
+    });
     const files: TFile[] = [
       { ...pdf, file_id: 'legacy-text', source: FileSources.text, llmDeliveryPath: undefined },
-      { ...pdf, file_id: 'legacy-tool', embedded: true, llmDeliveryPath: undefined },
+      {
+        ...pdf,
+        file_id: 'legacy-tool',
+        embedded: true,
+        llmDeliveryPath: undefined,
+        bytes: 2 * 1024 * 1024,
+      },
     ];
     const messages = await harness.encode(files, 'child');
     expect(JSON.stringify(messages[0].content)).toContain(pdf.text);
@@ -209,6 +273,12 @@ describe('createRunFileMessageEncoder', () => {
       await expect(harness.encode([pdf], 'child')).rejects.toBeInstanceOf(
         AgentAttachmentPolicyError,
       );
+      await expect(
+        harness.encode(
+          [{ ...pdf, llmDeliveryPath: 'none', metadata: { destinationChosen: true } }],
+          'child',
+        ),
+      ).rejects.toBeInstanceOf(AgentAttachmentPolicyError);
       expect(harness.encodeDocuments).not.toHaveBeenCalled();
       expect(harness.extractText).not.toHaveBeenCalled();
     },
@@ -226,6 +296,41 @@ describe('createRunFileMessageEncoder', () => {
     });
     await expect(harness.encode([pdf], 'child')).rejects.toMatchObject({ limitType: 'count' });
     expect(harness.encodeDocuments).not.toHaveBeenCalled();
+  });
+
+  it('budgets mixed inputs with permanent model context once and excludes permanent tool files', async () => {
+    const permanent: TFile = { ...pdf, file_id: 'permanent' };
+    const tool: TFile = {
+      ...pdf,
+      file_id: 'tool',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: true },
+      bytes: 2 * 1024 * 1024,
+    };
+    const harness = setup({
+      agents: {
+        child: {
+          provider: 'openAI',
+          agentContextAttachments: [permanent, { ...tool, file_id: 'permanent-tool' }],
+        },
+      },
+      fileConfig: {
+        fileContextSizeLimit: 1,
+        endpoints: { openAI: { fileLimit: 2 } },
+      },
+    });
+
+    const messages = await harness.encode([permanent, pdf, tool], 'child');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toEqual(expect.arrayContaining([nativeDocument]));
+    expect(harness.encodeDocuments).toHaveBeenCalledWith(
+      harness.req,
+      [permanent, pdf],
+      expect.any(Object),
+      harness.getStrategyFunctions,
+    );
+    expect(harness.extractText).not.toHaveBeenCalled();
   });
 
   it('rejects aggregate file bytes before encoding', async () => {
@@ -260,22 +365,35 @@ describe('createRunFileMessageEncoder', () => {
     await expect(harness.encode([pdf], 'child')).rejects.toBe(failure);
   });
 
-  it('screens file content with the deployment policy before the provider encoder runs', async () => {
-    const harness = setup();
-    harness.req.config!.filters = {
-      files: {
-        pii: {
-          fields: ['name'],
-          starterPatterns: [],
-          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+  it.each(['provider', 'none'] as const)(
+    'screens %s file content with the deployment policy before encoding',
+    async (llmDeliveryPath) => {
+      const harness = setup();
+      harness.req.config!.filters = {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+          },
         },
-      },
-    };
-    await expect(
-      harness.encode([{ ...pdf, filename: 'PRIVATE-DOC.pdf' }], 'child'),
-    ).rejects.toThrow('Submitted content contains a private value');
-    expect(harness.encodeDocuments).not.toHaveBeenCalled();
-  });
+      };
+      await expect(
+        harness.encode(
+          [
+            {
+              ...pdf,
+              filename: 'PRIVATE-DOC.pdf',
+              llmDeliveryPath,
+              metadata: { destinationChosen: true },
+            },
+          ],
+          'child',
+        ),
+      ).rejects.toThrow('Submitted content contains a private value');
+      expect(harness.encodeDocuments).not.toHaveBeenCalled();
+    },
+  );
 
   it('returns no extra message or storage access when no files are shared', async () => {
     const harness = setup();

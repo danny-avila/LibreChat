@@ -174,6 +174,42 @@ it('prepares every graph member from one read and reuses the snapshot for the ca
   );
 });
 
+it('reuses publications for unrelated batches while preparing and authorizing each execution', async () => {
+  const { session, preparation, context, read, prepared } = setup();
+  try {
+    await session.prepareTools('parent', undefined, preparation.signal, 'snapshot');
+    await session.prepareTools('parent', undefined, preparation.signal, 'snapshot');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(prepared).toHaveBeenCalledTimes(2);
+    expect(prepared).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ actor: { executionId: 'run', agentId: 'parent' }, revision: 1 }),
+    );
+    expect(prepared).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ actor: { executionId: 'run', agentId: 'parent' }, revision: 2 }),
+    );
+
+    await expect(
+      session.prepareTools('writer', context, preparation.signal, 'snapshot'),
+    ).rejects.toThrow('not authorized');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(prepared).toHaveBeenCalledTimes(2);
+
+    await session.prepare(preparation);
+    expect(read).toHaveBeenCalledTimes(2);
+    await session.prepareTools('writer', context, preparation.signal, 'snapshot');
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(prepared).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actor: { executionId: 'child-team', agentId: 'writer' } }),
+    );
+    await session.prepareTools('writer', context, preparation.signal);
+    expect(read).toHaveBeenCalledTimes(3);
+  } finally {
+    await session.close();
+  }
+});
+
 it('keeps a retained sharing preference inactive while the master subagent setting is disabled', () => {
   const { session, read } = setup(false);
   expect(session.isActive()).toBe(false);

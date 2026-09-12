@@ -14,7 +14,11 @@ import type { TFile, ImageDetail } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { TokenCountFn } from '~/utils/text';
-import { assertAgentAttachmentLimits, AgentAttachmentPolicyError } from '../attachments';
+import {
+  isModelBoundAttachmentFile,
+  assertAgentAttachmentLimits,
+  AgentAttachmentPolicyError,
+} from '../attachments';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
 import { countTokens } from '~/utils/tokenizer';
@@ -115,7 +119,13 @@ export function createRunFileMessageEncoder(deps: RunFileMessageEncoderDeps) {
         (file) => [file.file_id, file] as const,
       ),
     );
-    assertAgentAttachmentLimits({ attachments: budgetFiles.values(), req: deps.req, endpoint });
+    assertAgentAttachmentLimits({
+      attachments: [...budgetFiles.values()].filter(
+        (file) => file.llmDeliveryPath !== 'none' && isModelBoundAttachmentFile(file),
+      ),
+      req: deps.req,
+      endpoint,
+    });
     assertModelBoundContent({ filters: deps.req.config?.filters, files: sharedFiles });
 
     const images: TFile[] = [];

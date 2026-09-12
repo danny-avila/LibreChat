@@ -29,7 +29,7 @@ const identity: SubagentExecutionContext = {
   ],
 };
 
-function setup(context?: Partial<CodeExecutionContext>) {
+function setup(context?: Partial<CodeExecutionContext>, toolName = 'execute_code') {
   const signal = new AbortController().signal;
   const calls: string[] = [];
   const prepareTools = jest.fn(async () => {
@@ -39,7 +39,7 @@ function setup(context?: Partial<CodeExecutionContext>) {
     calls.push('provision');
   });
   const loadedTool = tool(async () => '', {
-    name: 'execute_code',
+    name: toolName,
     description: 'Execute code',
     schema: z.object({ code: z.string() }),
   });
@@ -106,7 +106,7 @@ function setup(context?: Partial<CodeExecutionContext>) {
     toolCalls: ToolExecuteBatchRequest['toolCalls'] = [
       {
         id: 'code-call',
-        name: 'execute_code',
+        name: toolName,
         args: { code: 'print("results")' },
         runtimeSessionHint: 'parent-runtime',
       },
@@ -150,7 +150,7 @@ describe('shared-file event execution identity', () => {
       'capture',
       'leave',
     ]);
-    expect(test.prepareTools).toHaveBeenCalledWith('worker', identity, test.signal);
+    expect(test.prepareTools).toHaveBeenCalledWith('worker', identity, test.signal, 'refresh');
     expect(test.provisionFiles).toHaveBeenCalledWith(
       ['execute_code'],
       'worker',
@@ -181,14 +181,67 @@ describe('shared-file event execution identity', () => {
     );
   });
 
-  it('stops before loading or executing any tool when the child grant is denied', async () => {
-    const test = setup();
-    test.prepareTools.mockRejectedValueOnce(new Error('Execution grant denied'));
-    await expect(test.execute()).rejects.toThrow('Execution grant denied');
+  it.each(['calculator', 'web_search', 'weather_mcp_example'])(
+    'prepares the authorized snapshot before unrelated %s batches execute',
+    async (toolName) => {
+      const test = setup(undefined, toolName);
+      expect((await test.execute())[0].status).toBe('success');
+      expect((await test.execute())[0].status).toBe('success');
+      expect(test.prepareTools).toHaveBeenCalledTimes(2);
+      expect(test.prepareTools).toHaveBeenCalledWith('worker', identity, test.signal, 'snapshot');
+      expect(test.calls.slice(0, 4)).toEqual(['prepare', 'provision', 'load', 'invoke']);
+      expect(test.calls).not.toContain('enter');
+    },
+  );
+
+  it.each([
+    'execute_code',
+    'bash_tool',
+    'run_tools_with_code',
+    'run_tools_with_bash',
+    'create_file',
+    'edit_file',
+    'read_file',
+    'write_file',
+    'search_workspace',
+    'list_workspace_files',
+    'file_search',
+    'image_gen_oai',
+    'image_edit_oai',
+    'gemini_image_gen',
+  ])('refreshes publications before the %s file consumer loads', async (toolName) => {
+    const test = setup(undefined, toolName);
+    test.prepareTools.mockRejectedValueOnce(new Error('Publication refresh failed'));
+    await expect(test.execute()).rejects.toThrow('Publication refresh failed');
+    expect(test.prepareTools).toHaveBeenCalledWith('worker', identity, test.signal, 'refresh');
     expect(test.provisionFiles).not.toHaveBeenCalled();
     expect(test.loadTools).not.toHaveBeenCalled();
-    expect(test.invoke).not.toHaveBeenCalled();
   });
+
+  it('refreshes a mixed batch before either unrelated or file-consuming tools load', async () => {
+    const test = setup();
+    test.prepareTools.mockRejectedValueOnce(new Error('Publication refresh failed'));
+    await expect(
+      test.execute(identity, [
+        { id: 'search', name: 'web_search', args: { query: 'related work' } },
+        { id: 'files', name: 'file_search', args: { query: 'uploaded report' } },
+      ]),
+    ).rejects.toThrow('Publication refresh failed');
+    expect(test.prepareTools).toHaveBeenCalledWith('worker', identity, test.signal, 'refresh');
+    expect(test.loadTools).not.toHaveBeenCalled();
+  });
+
+  it.each(['execute_code', 'calculator'])(
+    'stops before loading or executing %s when the child grant is denied',
+    async (toolName) => {
+      const test = setup(undefined, toolName);
+      test.prepareTools.mockRejectedValueOnce(new Error('Execution grant denied'));
+      await expect(test.execute()).rejects.toThrow('Execution grant denied');
+      expect(test.provisionFiles).not.toHaveBeenCalled();
+      expect(test.loadTools).not.toHaveBeenCalled();
+      expect(test.invoke).not.toHaveBeenCalled();
+    },
+  );
 
   it('holds the code queue through artifact capture before another call can mutate the sandbox', async () => {
     const test = setup();

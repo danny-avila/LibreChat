@@ -557,6 +557,51 @@ describe('run file execution host', () => {
     expect(context?.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toEqual(['input']);
   });
 
+  it('joins an in-flight refresh before a later snapshot can retain a deleted publication', async () => {
+    const h = harness({ setup: [] });
+    const read = deferred<TFile[]>();
+    try {
+      await h.prepare();
+      const published = await h.publishOutput();
+      await h.host.session.prepareTools('worker', identity(), h.signal);
+      const context = h.host.getContext('worker', identity());
+      expect(context?.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toContain(
+        published.file_id,
+      );
+      h.saved.splice(0);
+      h.listPublications.mockImplementationOnce(() => read.promise);
+      const reads = h.listPublications.mock.calls.length;
+      const refreshed = h.host.session.prepareTools('worker', identity(), h.signal);
+      let snapshotSettled = false;
+      const snapshot = h.host.session
+        .prepareTools('worker', identity(), h.signal, 'snapshot')
+        .then(() => {
+          snapshotSettled = true;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const settledBeforeRead = snapshotSettled;
+      read.resolve([]);
+      await Promise.all([refreshed, snapshot]);
+
+      const provisioned = await h.host.provisionPrepared(
+        [Constants.EXECUTE_CODE],
+        'worker',
+        h.signal,
+        identity(),
+      );
+      expect(settledBeforeRead).toBe(false);
+      expect(h.listPublications).toHaveBeenCalledTimes(reads + 1);
+      expect(h.host.getContext('worker', identity())).toBe(context);
+      expect(provisioned?.map((entry) => entry.id)).toEqual(['remote-input']);
+      expect(context?.tool_resources?.execute_code?.files?.map((entry) => entry.file_id)).toEqual([
+        'input',
+      ]);
+    } finally {
+      read.resolve([]);
+      await h.host.session.close();
+    }
+  });
+
   it('serializes preparation with provisioning without blocking another execution', async () => {
     const h = harness({ setup: [] });
     const first = identity('first');

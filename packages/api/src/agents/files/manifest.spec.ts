@@ -127,6 +127,10 @@ describe('run file manifest', () => {
   it('rejects unregistered actors, unapproved descendants and identity reassignment', async () => {
     const { manifest } = setup();
     await expect(manifest.list({ ...child, agentId: 'lead' })).rejects.toThrow('cannot access');
+    await manifest.getFiles(child, undefined, 'snapshot');
+    await expect(
+      manifest.getFiles({ ...child, agentId: 'lead' }, undefined, 'snapshot'),
+    ).rejects.toThrow('cannot access');
     expect(() =>
       manifest.register({
         id: 'stranger',
@@ -248,35 +252,87 @@ describe('run file manifest', () => {
     expect(writes()).toBe(1);
   });
 
-  it('expires or cancels access without deleting durable user files', async () => {
-    const { manifest, saved, time } = setup();
-    manifest.stage(child, { id: 'csv', filename: 'report.csv' });
-    await manifest.publish(child, 'csv');
-    await expect(manifest.list(parent, AbortSignal.abort())).rejects.toThrow();
-    time(1000);
-    await expect(manifest.list(parent)).rejects.toThrow('expired');
-    expect(saved).toHaveLength(1);
-    expect(() => manifest.stage(child, { id: 'new', filename: 'new.csv' })).toThrow('expired');
+  it('loads a snapshot once and includes local publications without another storage read', async () => {
+    const { manifest, create, register, store } = setup();
+    manifest.stage(child, { id: 'saved', filename: 'saved.csv' });
+    const saved = await manifest.publish(child, 'saved');
+    const read = jest.spyOn(store, 'list');
+    const resumed = create();
+    register(resumed);
+
+    const initial = await resumed.getFiles(parent, undefined, 'snapshot');
+    expect(initial.map((file) => file.file_id)).toEqual(['input', saved.file_id]);
+    initial[0].filename = 'changed.csv';
+    expect((await resumed.getFiles(parent, undefined, 'snapshot'))[0].filename).toBe(
+      input.filename,
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+
+    resumed.stage(child, { id: 'new', filename: 'new.csv' });
+    const published = await resumed.publish(child, 'new');
+    const reads = read.mock.calls.length;
+    expect(
+      (await resumed.getFiles(parent, undefined, 'snapshot')).map((file) => file.file_id),
+    ).toEqual(['input', saved.file_id, published.file_id]);
+    expect(
+      (await resumed.getFiles(sibling, undefined, 'snapshot')).map((file) => file.file_id),
+    ).toEqual(['input']);
+    expect(read).toHaveBeenCalledTimes(reads);
   });
 
-  it('coalesces simultaneous reads without sharing cancellation between children', async () => {
+  it('retries snapshot reads after initial or later storage failures', async () => {
     const { manifest, store } = setup();
-    let finishRead!: (files: TFile[]) => void;
-    const read = jest.spyOn(store, 'list').mockImplementation(
-      () =>
-        new Promise<TFile[]>((resolve) => {
-          finishRead = resolve;
-        }),
+    const read = jest.spyOn(store, 'list').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await expect(manifest.getFiles(parent, undefined, 'snapshot')).rejects.toThrow(
+      'Storage unavailable',
     );
-    const abort = new AbortController();
-    const cancelled = manifest.list(child, abort.signal);
-    const other = manifest.list(sibling);
-    expect(read).toHaveBeenCalledTimes(1);
-    abort.abort();
-    finishRead([]);
-    await expect(cancelled).rejects.toThrow();
-    await expect(other).resolves.toEqual([expect.objectContaining({ file_id: 'input' })]);
+    await expect(manifest.getFiles(parent, undefined, 'snapshot')).resolves.toEqual([input]);
+    await expect(manifest.getFiles(parent, undefined, 'snapshot')).resolves.toEqual([input]);
+    expect(read).toHaveBeenCalledTimes(2);
+
+    read.mockRejectedValueOnce(new Error('Storage unavailable'));
+    await expect(manifest.getFiles(parent)).rejects.toThrow('Storage unavailable');
+    await expect(manifest.getFiles(parent, undefined, 'snapshot')).resolves.toEqual([input]);
+    await expect(manifest.getFiles(parent, undefined, 'snapshot')).resolves.toEqual([input]);
+    expect(read).toHaveBeenCalledTimes(4);
   });
+
+  it.each(['refresh', 'snapshot'] as const)(
+    'expires or cancels %s access without deleting durable user files',
+    async (mode) => {
+      const { manifest, saved, time } = setup();
+      manifest.stage(child, { id: 'csv', filename: 'report.csv' });
+      await manifest.publish(child, 'csv');
+      await expect(manifest.getFiles(parent, AbortSignal.abort(), mode)).rejects.toThrow();
+      time(1000);
+      await expect(manifest.getFiles(parent, undefined, mode)).rejects.toThrow('expired');
+      expect(saved).toHaveLength(1);
+      expect(() => manifest.stage(child, { id: 'new', filename: 'new.csv' })).toThrow('expired');
+    },
+  );
+
+  it.each(['refresh', 'snapshot'] as const)(
+    'coalesces a simultaneous %s read without sharing cancellation between children',
+    async (mode) => {
+      const { manifest, store } = setup();
+      await manifest.getFiles(parent);
+      let finishRead!: (files: TFile[]) => void;
+      const read = jest.spyOn(store, 'list').mockImplementation(
+        () =>
+          new Promise<TFile[]>((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      const abort = new AbortController();
+      const cancelled = manifest.list(child, abort.signal);
+      const other = manifest.getFiles(sibling, undefined, mode);
+      expect(read).toHaveBeenCalledTimes(1);
+      abort.abort();
+      finishRead([]);
+      await expect(cancelled).rejects.toThrow();
+      await expect(other).resolves.toEqual([expect.objectContaining({ file_id: 'input' })]);
+    },
+  );
 
   it('does not discard a publication when an older in-flight read finishes after the commit', async () => {
     const { manifest, store } = setup();

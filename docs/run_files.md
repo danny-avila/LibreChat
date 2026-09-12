@@ -4,6 +4,8 @@ An agent with file sharing enabled can delegate the files attached to the curren
 Children receive an authorized file catalog and use the existing native-provider, extracted-text,
 code, or search paths. Code and search copies are provisioned when their tools need them.
 Earlier conversation attachments and another agent's setup files are not added to this catalog.
+Files explicitly routed only to tools still obey upload policy, but do not consume the receiving
+model's attachment budget. Files resolved to provider or extracted-text delivery do consume it.
 
 Enable the deployment capability in `librechat.yaml`, then enable **Share files with subagents**
 in the parent agent's subagent settings:
@@ -80,6 +82,11 @@ Each child execution has its own managed sandbox partition, including simultaneo
 the same saved agent. Its own setup files retain their existing authorization. Code execution
 within one partition is serialized through artifact capture; independent children can run
 concurrently.
+
+Unrelated tool batches reuse the authorized catalog after its initial load. File-consuming tools,
+explicit catalog reads, delegation, publication, and completion refresh persisted publications so
+deleted files leave the catalog and queued tool resources. Concurrent preparations join a pending
+refresh rather than restoring an older catalog over its result.
 
 Private output versions are captured before another sandbox operation can change their bytes.
 Reading or running more code does not retire those versions. Publication uses the selected
