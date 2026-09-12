@@ -13,6 +13,8 @@ const mockFormatMCPServerTools = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockCacheMCPServerTools = jest.fn();
 const mockGetServerToolFunctionsSnapshot = jest.fn();
+const mockClearCatalogRecoveryState = jest.fn();
+const mockInvalidateCachedTools = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -27,6 +29,7 @@ jest.mock('~/config', () => ({
     discoverServerTools: mockDiscoverServerTools,
     getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
     getToolPublicationGeneration: mockGetToolPublicationGeneration,
+    clearCatalogRecoveryState: mockClearCatalogRecoveryState,
   })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
   getFlowStateManager: jest.fn(() => ({})),
@@ -43,6 +46,11 @@ jest.mock('~/server/services/Config', () => ({
   getMCPToolsCacheGeneration: mockGetMCPToolsCacheGeneration,
   getMCPServerTools: mockGetMCPServerTools,
   cacheMCPServerTools: mockCacheMCPServerTools,
+  invalidateCachedTools: mockInvalidateCachedTools,
+}));
+jest.mock('~/server/services/MCPAuthorizationFenceRetry', () => ({
+  persistMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue('retry-v1'),
+  clearMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -73,7 +81,10 @@ describe('loadMCPServerCatalogs', () => {
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockDiscoverServerTools.mockResolvedValue({ tools: [] });
     mockFormatMCPServerTools.mockReturnValue({});
+    const observedCredentialFence = jest.fn();
+    let recoveryDeps;
     mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      recoveryDeps = deps;
       await deps.loadUserMCPAuthMap(
         user.id,
         servers.map(({ serverName }) => serverName),
@@ -82,6 +93,7 @@ describe('loadMCPServerCatalogs', () => {
         user,
         serverName: 'config-only',
         configServers: { 'config-only': servers[0].serverConfig },
+        onOAuthCredentialsChanging: observedCredentialFence,
       });
       deps.formatServerTools('config-only', []);
       await deps.getCachedServerTools(user.id, 'config-only', servers[0].serverConfig);
@@ -112,6 +124,7 @@ describe('loadMCPServerCatalogs', () => {
       servers: ['config-only', 'user-server'],
       findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
     });
+    expect(recoveryDeps.onOAuthCredentialsChanging).toEqual(expect.any(Function));
     expect(mockDiscoverServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         user,
@@ -121,6 +134,7 @@ describe('loadMCPServerCatalogs', () => {
         tokenMethods: expect.any(Object),
         upstreamTokenProvider,
         oboIdentityContext,
+        onOAuthCredentialsChanging: observedCredentialFence,
       }),
     );
     expect(mockGetConnection).not.toHaveBeenCalled();
@@ -140,6 +154,28 @@ describe('loadMCPServerCatalogs', () => {
       serverTools: new Map([['config-only', {}]]),
       serversWithoutTools: [],
     });
+  });
+
+  it('clears catalog recovery with the generation its credential fence published', async () => {
+    let recoveryDeps;
+    mockInvalidateCachedTools.mockResolvedValue('generation-2');
+    mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      recoveryDeps = deps;
+      return { serverTools: new Map(), serversWithoutTools: [] };
+    });
+
+    await loadMCPServerCatalogs({ user: { id: 'user-123' }, servers: [] });
+    const publish = await recoveryDeps.onOAuthCredentialsChanging({
+      userId: 'user-123',
+      serverName: 'oauth-server',
+    });
+
+    await expect(publish()).resolves.toBe('generation-2');
+    expect(mockClearCatalogRecoveryState).toHaveBeenCalledWith(
+      'user-123',
+      'oauth-server',
+      'generation-2',
+    );
   });
 });
 

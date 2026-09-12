@@ -73,8 +73,8 @@ async function loadMCPServerCatalogs({
       invalidateRecoveryGeneration: invalidateCachedTools,
       persistPublicationRetry: persistMCPAuthorizationFenceRetry,
       clearPublicationRetry: clearMCPAuthorizationFenceRetry,
-      clearLocalRecovery: (userId, serverName) =>
-        mcpManager.clearCatalogRecoveryState?.(userId, serverName),
+      clearLocalRecovery: (userId, serverName, generation) =>
+        mcpManager.clearCatalogRecoveryState?.(userId, serverName, generation),
       retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
       attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
     });
@@ -97,8 +97,8 @@ async function loadMCPServerCatalogs({
           oboTrustChecker: createOboTrustChecker(),
           upstreamTokenProvider,
           oboIdentityContext,
-          onOAuthCredentialsChanging,
         }),
+      onOAuthCredentialsChanging,
       formatServerTools: formatMCPServerTools,
       recoveryTracker: mcpManager.getCatalogRecoveryTracker?.(),
       getRecoveryGeneration: getMCPToolsCacheGeneration,
