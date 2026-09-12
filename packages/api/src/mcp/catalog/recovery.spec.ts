@@ -3,6 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { ErrorCode, McpError, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
+import type { MCPRecoveryGenerationScope, MCPServerCatalogLoaderDeps } from './recovery';
 import {
   MCPCatalogCapacityError,
   MCPServerCatalogRecoveryTracker,
@@ -12,6 +13,7 @@ import {
   readMCPRecoveryGenerationAround,
   recoverMCPServerCatalogs,
 } from './recovery';
+import { prepareMCPAuthorizationMutation } from '../authorization';
 import { MCPTokenRefreshUnavailableError } from '../oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -812,6 +814,166 @@ describe('loadMCPServerCatalogs', () => {
     now += 1;
     await loadMCPServerCatalogs({ user, servers, recoveryPolicy }, deps);
     expect(discoverServerTools).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('loadMCPServerCatalogs — credential refresh during discovery', () => {
+  const serverName = 'oauth-server';
+  const scope = { userId: user.id, serverName };
+  const servers = [{ serverName, serverConfig: serverConfig(serverName) }];
+  const listedTools = [{ name: 'listed', inputSchema: { type: 'object' as const } }];
+  const recoveredTools = availableTools('listed');
+
+  /**
+   * Mirrors the application wiring: one shared tool-cache generation, and an authorization fence
+   * that rotates it and then clears this replica's recovery state in the same tracker.
+   */
+  const createFence = () => {
+    let rotations = 1;
+    let generation = 'generation-1';
+    const recoveryTracker = new MCPServerCatalogRecoveryTracker();
+    const invalidateRecoveryGeneration = async () => {
+      rotations += 1;
+      generation = `generation-${rotations}`;
+      return generation;
+    };
+    const onOAuthCredentialsChanging = (changed: MCPRecoveryGenerationScope) =>
+      prepareMCPAuthorizationMutation(changed, {
+        invalidateRecoveryGeneration,
+        clearLocalRecovery: (userId, changedServerName) =>
+          recoveryTracker.clear(userId, changedServerName),
+        retryDelaysMs: [0],
+      });
+    return {
+      recoveryTracker,
+      onOAuthCredentialsChanging,
+      getRecoveryGeneration: async () => generation,
+      /** A credential change committed on another replica moves only the shared generation. */
+      rotateOnAnotherReplica: invalidateRecoveryGeneration,
+      /** A credential change committed by another request on this replica. */
+      rotateOnThisReplica: async () => (await onOAuthCredentialsChanging(scope))(),
+    };
+  };
+
+  const loadCatalogs = (
+    fence: ReturnType<typeof createFence>,
+    discoverServerTools: MCPServerCatalogLoaderDeps['discoverServerTools'],
+  ) =>
+    loadMCPServerCatalogs(
+      { user, servers },
+      {
+        getCachedServerTools: jest.fn().mockResolvedValue(null),
+        getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+        cacheServerTools: jest.fn(),
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools,
+        formatServerTools: jest.fn().mockReturnValue(recoveredTools),
+        recoveryTracker: fence.recoveryTracker,
+        getRecoveryGeneration: fence.getRecoveryGeneration,
+        onOAuthCredentialsChanging: fence.onOAuthCredentialsChanging,
+      },
+    );
+
+  /** Refreshes an expired access token the way the connection factory does during discovery. */
+  const refreshAccessToken = async ({ onOAuthCredentialsChanging }: ToolDiscoveryOptions) => {
+    const publish = await onOAuthCredentialsChanging?.(scope);
+    await publish?.();
+  };
+
+  it('keeps a catalog discovered after its own credential refresh rotated the generation', async () => {
+    const fence = createFence();
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      await refreshAccessToken(options);
+      return { tools: listedTools };
+    });
+
+    const result = await loadCatalogs(fence, discoverServerTools);
+
+    await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-2');
+    expect(result.serverTools).toEqual(new Map([[serverName, recoveredTools]]));
+    expect(result.serversWithoutTools).toEqual([]);
+  });
+
+  it.each([
+    ['another replica', 'rotateOnAnotherReplica'],
+    ['another request on this replica', 'rotateOnThisReplica'],
+  ] as const)(
+    'still discards that catalog when %s rotates the generation after the refresh',
+    async (_writer, rotate) => {
+      const fence = createFence();
+      const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+        await refreshAccessToken(options);
+        await fence[rotate]();
+        return { tools: listedTools };
+      });
+
+      const result = await loadCatalogs(fence, discoverServerTools);
+
+      await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-3');
+      expect(result.serverTools).toEqual(new Map());
+      expect(result.serversWithoutTools).toEqual([serverName]);
+    },
+  );
+
+  it('shares the discovery with a request that observes the generation its refresh published', async () => {
+    const fence = createFence();
+    const releases: Array<() => void> = [];
+    let accessTokenExpired = true;
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      if (accessTokenExpired) {
+        accessTokenExpired = false;
+        await refreshAccessToken(options);
+      }
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return { tools: listedTools };
+    });
+
+    const first = loadCatalogs(fence, discoverServerTools);
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = loadCatalogs(fence, discoverServerTools);
+    await new Promise((resolve) => setImmediate(resolve));
+    releases.splice(0).forEach((release) => release());
+
+    const recovered = expect.objectContaining({
+      serverTools: new Map([[serverName, recoveredTools]]),
+    });
+    await expect(Promise.all([first, second])).resolves.toEqual([recovered, recovered]);
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a reauthorization decision under the generation its refresh published', async () => {
+    const fence = createFence();
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      await refreshAccessToken(options);
+      return { tools: null, oauthRequired: true, authenticationKind: 'oauth' as const };
+    });
+
+    const first = await loadCatalogs(fence, discoverServerTools);
+    const second = await loadCatalogs(fence, discoverServerTools);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(first.reauthRequiredGenerations).toEqual(new Map([[serverName, 'generation-2']]));
+    expect(second.reauthRequiredGenerations).toEqual(new Map([[serverName, 'generation-2']]));
+  });
+
+  it('lets a refresh that outlives its discovery clear the backoff instead of adopting it', async () => {
+    const fence = createFence();
+    let completeRefresh: (() => Promise<string | undefined>) | undefined;
+    const discoverServerTools = jest
+      .fn()
+      .mockImplementationOnce(async ({ onOAuthCredentialsChanging }: ToolDiscoveryOptions) => {
+        completeRefresh = await onOAuthCredentialsChanging?.(scope);
+        return { tools: null };
+      })
+      .mockResolvedValue({ tools: listedTools });
+
+    const expired = await loadCatalogs(fence, discoverServerTools);
+    await completeRefresh?.();
+    const refreshed = await loadCatalogs(fence, discoverServerTools);
+
+    expect(expired.serversWithoutTools).toEqual([serverName]);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    expect(refreshed.serverTools).toEqual(new Map([[serverName, recoveredTools]]));
   });
 });
 

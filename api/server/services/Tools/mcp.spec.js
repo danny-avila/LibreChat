@@ -73,7 +73,10 @@ describe('loadMCPServerCatalogs', () => {
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockDiscoverServerTools.mockResolvedValue({ tools: [] });
     mockFormatMCPServerTools.mockReturnValue({});
+    const observedCredentialFence = jest.fn();
+    let recoveryDeps;
     mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      recoveryDeps = deps;
       await deps.loadUserMCPAuthMap(
         user.id,
         servers.map(({ serverName }) => serverName),
@@ -82,6 +85,7 @@ describe('loadMCPServerCatalogs', () => {
         user,
         serverName: 'config-only',
         configServers: { 'config-only': servers[0].serverConfig },
+        onOAuthCredentialsChanging: observedCredentialFence,
       });
       deps.formatServerTools('config-only', []);
       await deps.getCachedServerTools(user.id, 'config-only', servers[0].serverConfig);
@@ -112,6 +116,7 @@ describe('loadMCPServerCatalogs', () => {
       servers: ['config-only', 'user-server'],
       findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
     });
+    expect(recoveryDeps.onOAuthCredentialsChanging).toEqual(expect.any(Function));
     expect(mockDiscoverServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         user,
@@ -121,6 +126,7 @@ describe('loadMCPServerCatalogs', () => {
         tokenMethods: expect.any(Object),
         upstreamTokenProvider,
         oboIdentityContext,
+        onOAuthCredentialsChanging: observedCredentialFence,
       }),
     );
     expect(mockGetConnection).not.toHaveBeenCalled();

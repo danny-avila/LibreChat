@@ -49,6 +49,8 @@ export interface MCPServerCatalogRecoveryDeps {
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
   recoveryTracker?: MCPServerCatalogRecoveryTracker;
   getRecoveryGeneration?: MCPRecoveryGenerationReader;
+  /** Fences a credential refresh performed during discovery; recovery observes what it publishes. */
+  onOAuthCredentialsChanging?: ToolDiscoveryOptions['onOAuthCredentialsChanging'];
 }
 
 export interface MCPRecoveryGenerationScope {
@@ -335,7 +337,7 @@ export class MCPServerCatalogRecoveryTracker {
     candidate: RecoveryCandidate,
     policy: MCPServerCatalogRecoveryPolicy,
     recoveryGeneration: string | undefined,
-    discover: () => Promise<RecoveryOutcome>,
+    discover: (onGenerationPublished: (generation: string) => void) => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
     const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
@@ -363,7 +365,25 @@ export class MCPServerCatalogRecoveryTracker {
       nextRetryAt: 0,
       lastTouchedAt: now,
     };
-    const flight = discover()
+    let settled = false;
+    /**
+     * A credential refresh inside discovery publishes a new generation and then clears local
+     * recovery state, which would otherwise discard this flight as superseded by a mutation it
+     * made itself. Adopting what the flight published keeps it current under that generation; a
+     * later rotation or clear from any other writer still supersedes it.
+     */
+    const adoptPublishedGeneration = (generation: string): void => {
+      const current = this.states.get(key);
+      if (settled || (current != null && current !== entry)) {
+        return;
+      }
+      entry.recoveryGeneration = generation;
+      this.states.set(key, entry);
+    };
+    const flight = discover(adoptPublishedGeneration)
+      .finally(() => {
+        settled = true;
+      })
       .then((outcome) => {
         if (this.states.get(key) !== entry) {
           return { serverName: candidate.serverName, tools: null };
@@ -418,12 +438,35 @@ export class MCPServerCatalogRecoveryTracker {
   }
 }
 
+/** Reports each generation the fence publishes for a credential refresh made by this discovery. */
+function observePublishedGeneration(
+  onOAuthCredentialsChanging: ToolDiscoveryOptions['onOAuthCredentialsChanging'],
+  onGenerationPublished?: (generation: string) => void,
+): ToolDiscoveryOptions['onOAuthCredentialsChanging'] {
+  if (onOAuthCredentialsChanging == null || onGenerationPublished == null) {
+    return onOAuthCredentialsChanging;
+  }
+  return async (scope) => {
+    const publish = await onOAuthCredentialsChanging(scope);
+    return async () => {
+      const published = await publish();
+      if (published) {
+        onGenerationPublished(published);
+      }
+      return published;
+    };
+  };
+}
+
 async function discoverCandidate(
   user: IUser,
   { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
   policy: MCPServerCatalogRecoveryPolicy,
-  signal?: AbortSignal,
+  {
+    signal,
+    onGenerationPublished,
+  }: { signal?: AbortSignal; onGenerationPublished?: (generation: string) => void } = {},
 ): Promise<RecoveryOutcome> {
   try {
     const result = await deps.discoverServerTools({
@@ -433,6 +476,10 @@ async function discoverCandidate(
       customUserVars,
       deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
       signal,
+      onOAuthCredentialsChanging: observePublishedGeneration(
+        deps.onOAuthCredentialsChanging,
+        onGenerationPublished,
+      ),
     });
     const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
     if (signal?.aborted) {
@@ -642,7 +689,7 @@ async function recoverMCPServerCatalogsWithState(
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
       if (usesRequestCredential) {
-        results[index] = await discoverCandidate(user, candidate, deps, policy, signal);
+        results[index] = await discoverCandidate(user, candidate, deps, policy, { signal });
         return;
       }
       const observedGeneration = await readMCPRecoveryGeneration(
@@ -663,8 +710,13 @@ async function recoverMCPServerCatalogsWithState(
         return;
       }
       const recoveryGeneration = observedGeneration ?? snapshotGeneration;
-      const outcome = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
-        discoverCandidate(user, candidate, deps, policy),
+      const outcome = await tracker.run(
+        user,
+        candidate,
+        policy,
+        recoveryGeneration,
+        (onGenerationPublished) =>
+          discoverCandidate(user, candidate, deps, policy, { onGenerationPublished }),
       );
       const finalGeneration = await readMCPRecoveryGeneration(
         { userId: user.id, serverName: candidate.serverName },
