@@ -169,6 +169,8 @@ const {
   createContextMetaPublisher,
   selectRunContextMetaToPublish,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
+  isAgentRunCancellation,
 } = require('@librechat/api');
 const {
   Run,
@@ -4375,6 +4377,12 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #sendCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -4854,6 +4862,7 @@ class AgentClient extends BaseClient {
           modelCallbacks: [
             modelBoundCallback,
             createAgentMemoryCallback(this.attachmentMemoryContext ?? {}),
+            terminalRunError.modelCallback,
           ],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
@@ -5075,7 +5084,7 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: err.message,
         });
-      } else if (abortController.signal.aborted) {
+      } else if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
@@ -5100,10 +5109,7 @@ class AgentClient extends BaseClient {
           },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -5237,6 +5243,12 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #resumeCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -5613,7 +5625,11 @@ class AgentClient extends BaseClient {
       run = await createRun({
         agents,
         conversationId: this.conversationId,
-        modelCallbacks: [modelBoundCallback, attachmentMemoryCallback],
+        modelCallbacks: [
+          modelBoundCallback,
+          attachmentMemoryCallback,
+          terminalRunError.modelCallback,
+        ],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
@@ -5755,7 +5771,7 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-      if (abortController.signal.aborted) {
+      if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
           {
@@ -5773,10 +5789,7 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: getUserFacingRequestError(

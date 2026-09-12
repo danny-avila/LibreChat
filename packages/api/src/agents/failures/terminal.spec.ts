@@ -1,0 +1,102 @@
+import { createTerminalRunErrorObserver, getUpstreamModelErrorMetadata } from './terminal';
+
+describe('terminal agent-run error logging', () => {
+  it('logs stable upstream metadata and deterministic trace correlation', () => {
+    const logger = { error: jest.fn() };
+    const privateValue = 'PRIVATE-PROVIDER-CONTENT';
+    const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
+      name: 'InternalServerException',
+      code: 'InternalServerException',
+      response: {
+        status: 500,
+        headers: { authorization: privateValue },
+        data: { prompt: privateValue },
+      },
+    });
+    const observer = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: '78847296-b174-4127-a342-78efa427d4a5',
+      source: '[Agent API]',
+    });
+    observer.modelCallback.handleLLMError(providerError);
+
+    observer.log(new Error('graph failed', { cause: providerError }));
+
+    expect(logger.error).toHaveBeenCalledWith('[Agent API] Upstream model error', {
+      type: 'Error',
+      status: 500,
+      errorCode: 'UPSTREAM_MODEL_ERROR',
+      errorOrigin: 'model_provider',
+      errorType: '500',
+      traceId: '3a90048362ec9a2e717c6b77769b9a54',
+    });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('InternalServerException');
+  });
+
+  it('keeps unrelated terminal failures on the generic safe path', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: 'response-123',
+      source: '[Agent API]',
+    });
+    observer.modelCallback.handleLLMError(new Error('recovered model attempt'));
+
+    observer.log(new Error('checkpoint failed'));
+
+    expect(logger.error).toHaveBeenCalledWith('[Agent API] Error:', { type: 'Error' });
+  });
+
+  it('does not log a tracked client cancellation as an upstream failure', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const controller = new AbortController();
+    const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
+    observer.modelCallback.handleLLMError(abortError);
+    controller.abort();
+
+    observer.log(abortError, controller.signal);
+
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps provider AbortErrors observable while the run signal is live', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const abortError = Object.assign(new Error('provider aborted'), { name: 'AbortError' });
+    observer.modelCallback.handleLLMError(abortError);
+
+    observer.log(abortError, new AbortController().signal);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[Agent API] Upstream model error',
+      expect.objectContaining({ errorCode: 'UPSTREAM_MODEL_ERROR' }),
+    );
+  });
+
+  it('keeps real provider failures observable when Stop wins the same-tick race', () => {
+    const logger = { error: jest.fn() };
+    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const controller = new AbortController();
+    const providerError = new Error('provider failed');
+    observer.modelCallback.handleLLMError(providerError);
+    controller.abort();
+
+    observer.log(providerError, controller.signal);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[Agent API] Upstream model error',
+      expect.objectContaining({ errorCode: 'UPSTREAM_MODEL_ERROR' }),
+    );
+  });
+
+  it('uses a bounded fallback type and omits unavailable trace correlation', () => {
+    expect(getUpstreamModelErrorMetadata(new Error('provider failed'))).toEqual({
+      type: 'Error',
+      errorCode: 'UPSTREAM_MODEL_ERROR',
+      errorOrigin: 'model_provider',
+      errorType: '_OTHER',
+    });
+  });
+});

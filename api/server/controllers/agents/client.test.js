@@ -2858,6 +2858,151 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
+  it('classifies a terminal chat-model failure without logging provider content', async () => {
+    jest.clearAllMocks();
+    const { logger } = require('@librechat/data-schemas');
+    const { traceIdForMessage } = require('@librechat/api');
+    const privateValue = 'PRIVATE-UPSTREAM-PROVIDER-CONTENT';
+    const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
+      code: 'InternalServerException',
+      response: {
+        status: 500,
+        headers: { authorization: privateValue },
+        data: { prompt: privateValue },
+      },
+    });
+    const graphError = new Error('model execution failed', { cause: providerError });
+    const abortController = new AbortController();
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        Graph: null,
+        processStream: jest.fn(async () => {
+          tracker.handleLLMError(providerError, 'model-run');
+          abortController.abort();
+          throw graphError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: { [EModelEndpoint.agents]: {} },
+          filters: { messages: { pii: {} } },
+        },
+        _resumableStreamId: 'conversation-upstream-error',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-upstream-error';
+    client.responseMessageId = 'response-upstream-error';
+    client.parentMessageId = 'parent-upstream-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Upstream model error',
+      {
+        type: 'Error',
+        status: 500,
+        errorCode: 'UPSTREAM_MODEL_ERROR',
+        errorOrigin: 'model_provider',
+        errorType: '500',
+        traceId: traceIdForMessage('response-upstream-error'),
+      },
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('InternalServerException');
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+      expect.anything(),
+    );
+    expect(client.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]: 'An error occurred while processing the request',
+    });
+    errorSpy.mockRestore();
+  });
+
+  it('keeps a later non-provider run failure on the generic error path', async () => {
+    jest.clearAllMocks();
+    const { logger } = require('@librechat/data-schemas');
+    const recoveredProviderError = new Error('recovered provider failure');
+    const checkpointError = new Error('checkpoint failed');
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        Graph: null,
+        processStream: jest.fn(async () => {
+          tracker.handleLLMError(recoveredProviderError, 'recovered-model-run');
+          throw checkpointError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-non-provider-error',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-non-provider-error';
+    client.responseMessageId = 'response-non-provider-error';
+    client.parentMessageId = 'parent-non-provider-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+      { type: 'Error' },
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Upstream model error',
+      expect.anything(),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('cancels current attachment persistence after combined admission rejects the run', async () => {
     jest.clearAllMocks();
     let attachmentLimitError;
@@ -9466,6 +9611,63 @@ describe('AgentClient - resumeCompletion content protection', () => {
       '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
       expect.objectContaining({ type: 'Error' }),
     );
+    errorSpy.mockRestore();
+  });
+
+  it('classifies a terminal resumed model failure and preserves redaction', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    const { traceIdForMessage } = require('@librechat/api');
+    const privateValue = 'PRIVATE-RESUMED-UPSTREAM-CONTENT';
+    const providerError = Object.assign(new Error(`Provider echoed ${privateValue}`), {
+      code: 'PROVIDER_INTERNAL',
+      status: 503,
+    });
+    const abortController = new AbortController();
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        resume: jest.fn(async () => {
+          tracker.handleLLMError(providerError, 'resumed-model-run');
+          abortController.abort();
+          throw providerError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: ['email'],
+        },
+      },
+    });
+
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      abortController,
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #resumeCompletion] Upstream model error',
+      {
+        type: 'Error',
+        status: 503,
+        errorCode: 'UPSTREAM_MODEL_ERROR',
+        errorOrigin: 'model_provider',
+        errorType: '503',
+        traceId: traceIdForMessage('response-123'),
+      },
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('PROVIDER_INTERNAL');
+    expect(context.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]: 'An error occurred while resuming the request',
+    });
     errorSpy.mockRestore();
   });
 
