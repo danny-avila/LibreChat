@@ -281,7 +281,7 @@ describe('useTextarea long-paste fallback', () => {
 
   it('does not restore the paste when the attachment is accepted', async () => {
     mockRouteFiles.mockResolvedValueOnce(true);
-    const { result } = renderTextareaHook();
+    const { result, textArea } = renderTextareaHook();
     const event = createPasteEvent();
 
     act(() =>
@@ -296,7 +296,7 @@ describe('useTextarea long-paste fallback', () => {
       }),
     );
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
-    expect(mockForceResize).not.toHaveBeenCalled();
+    expect(textArea.value).toBe('');
   });
 
   it('replaces selected draft text when the attachment is accepted', async () => {
