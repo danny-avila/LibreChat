@@ -1,16 +1,9 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { TraceModel, TraceWindow } from './model';
-import {
-  ZOOM_STEP,
-  zoomWindow,
-  panWindow,
-  assignLanes,
-  clampWindow,
-  minimumSpan,
-  formatDuration,
-} from './model';
+import { ZOOM_STEP, zoomWindow, panWindow, assignLanes, clampWindow, minimumSpan } from './model';
 import { KIND_APPEARANCE } from './kinds';
+import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -39,6 +32,7 @@ function Timeline({
   onViewChange: (view: TraceWindow | null) => void;
 }) {
   const localize = useLocalize();
+  const format = useTraceFormat();
   const hintId = useId();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -238,7 +232,7 @@ function Timeline({
         aria-hidden="true"
       >
         {TICKS.map((tick) => (
-          <span key={tick}>{formatDuration(span * tick)}</span>
+          <span key={tick}>{format.duration(span * tick)}</span>
         ))}
       </div>
       <p id={hintId} className="sr-only">

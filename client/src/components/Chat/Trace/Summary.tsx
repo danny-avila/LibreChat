@@ -2,7 +2,7 @@ import { memo } from 'react';
 import type { TranslationKeys } from '~/hooks';
 import type { TraceSummary } from './model';
 import { formatCost, formatTokens } from '~/utils/tokens';
-import { formatDuration } from './model';
+import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -18,11 +18,12 @@ function TraceSummaryBar({
   currency?: { code: string; rate: number };
 }) {
   const localize = useLocalize();
+  const format = useTraceFormat();
   const items: SummaryItem[] = [
     {
       key: 'duration',
       label: 'com_ui_trace_summary_duration',
-      value: formatDuration(summary.duration),
+      value: format.duration(summary.duration),
     },
     { key: 'turns', label: 'com_ui_trace_summary_turns', value: String(summary.turns) },
     {

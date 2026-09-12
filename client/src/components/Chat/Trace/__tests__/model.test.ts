@@ -6,7 +6,6 @@ import {
   assignLanes,
   clampWindow,
   flattenRows,
-  formatDuration,
   buildTraceModel,
   collapsibleKeys,
 } from '../model';
@@ -320,14 +319,5 @@ describe('assignLanes', () => {
     expect(lanes.get('b')).toBe(1);
     expect(lanes.get('c')).toBe(0);
     expect(lanes.get('d')).toBe(1);
-  });
-});
-
-describe('formatDuration', () => {
-  it('scales the unit with the magnitude', () => {
-    expect(formatDuration(12)).toMatch(/12\s?ms/);
-    expect(formatDuration(1234)).toMatch(/1\.23\s?s/);
-    expect(formatDuration(65_000)).toMatch(/1\s?m(in)?\s+5\s?s/);
-    expect(formatDuration(-5)).toMatch(/0\s?ms/);
   });
 });

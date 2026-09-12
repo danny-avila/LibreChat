@@ -8,7 +8,7 @@ import type { TraceNode } from './model';
 import { useConversationTraceRecordQuery } from '~/data-provider';
 import { formatCost, formatTokens } from '~/utils/tokens';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
-import { formatClock, formatDuration } from './model';
+import { useTraceFormat } from './format';
 import { formatJSON } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -130,6 +130,7 @@ function Inspector({
   onClose: () => void;
 }) {
   const localize = useLocalize();
+  const format = useTraceFormat();
   const headingId = useId();
   const { record } = node;
   const appearance = KIND_APPEARANCE[record.kind];
@@ -137,23 +138,23 @@ function Inspector({
   const { usage } = record;
 
   const timing: Field[] = [
-    { label: 'com_ui_trace_started', value: formatClock(node.start) },
-    { label: 'com_ui_trace_offset', value: formatDuration(node.start - turnStart) },
+    { label: 'com_ui_trace_started', value: format.clock(node.start) },
+    { label: 'com_ui_trace_offset', value: format.duration(node.start - turnStart) },
     {
       label: 'com_ui_trace_column_duration',
       value:
-        node.end == null ? localize(STATUS_LABEL.running) : formatDuration(node.end - node.start),
+        node.end == null ? localize(STATUS_LABEL.running) : format.duration(node.end - node.start),
     },
   ];
   if (node.firstToken != null) {
     timing.push({
       label: 'com_ui_trace_ttft',
-      value: formatDuration(node.firstToken - node.start),
+      value: format.duration(node.firstToken - node.start),
     });
     if (node.end != null) {
       timing.push({
         label: 'com_ui_trace_decoding',
-        value: formatDuration(node.end - node.firstToken),
+        value: format.duration(node.end - node.firstToken),
       });
     }
   }

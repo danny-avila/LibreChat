@@ -317,6 +317,25 @@ describe('Trace Viewer', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('reports a failed refresh while every page is already loaded, with a retry', async () => {
+    const list = jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockResolvedValueOnce({ records })
+      .mockRejectedValueOnce(axiosError(504, 'timeout'))
+      .mockResolvedValue({ records });
+    renderViewer();
+    await treeItem(/AgentGraph/);
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_refresh' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_trace_error_timeout');
+    expect(screen.getByRole('treeitem', { name: /AgentGraph/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
   it('closes the inspector on Escape before closing the trace', async () => {
     const { onClose } = renderViewer();
     await userEvent.click(await treeItem(/llm/));

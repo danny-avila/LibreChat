@@ -1,6 +1,7 @@
-import { useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useSetAtom } from 'jotai';
-import { Constants, resolveTraceViewerConfig } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants, resolveTraceViewerConfig } from 'librechat-data-provider';
 import type { TTraceViewerConfig } from 'librechat-data-provider';
 import { useConversationTraceAvailabilityQuery } from '~/data-provider';
 import { traceViewerConversationAtom } from './store';
@@ -38,6 +39,18 @@ export default function useTraceControl({
   const { data } = useConversationTraceAvailabilityQuery(conversationId ?? '', {
     enabled: eligible && !isSubmitting,
   });
+
+  /** A settled run adds a turn to the trace, so pages cached by an earlier open go stale now
+   *  rather than when their stale time lapses. */
+  const queryClient = useQueryClient();
+  const wasSubmitting = useRef(isSubmitting);
+  useEffect(() => {
+    const settled = wasSubmitting.current && !isSubmitting;
+    wasSubmitting.current = isSubmitting;
+    if (settled && eligible && conversationId != null) {
+      queryClient.invalidateQueries([QueryKeys.conversationTraceRecords, conversationId]);
+    }
+  }, [isSubmitting, eligible, conversationId, queryClient]);
 
   const open = useCallback(() => {
     if (conversationId != null) {

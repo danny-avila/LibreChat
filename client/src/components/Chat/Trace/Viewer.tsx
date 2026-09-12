@@ -22,14 +22,8 @@ import {
   useGetLangfuseSessionLinkQuery,
   useConversationTraceRecordsQuery,
 } from '~/data-provider';
-import {
-  ZOOM_STEP,
-  zoomWindow,
-  flattenRows,
-  formatDuration,
-  buildTraceModel,
-  collapsibleKeys,
-} from './model';
+import { ZOOM_STEP, zoomWindow, flattenRows, buildTraceModel, collapsibleKeys } from './model';
+import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import Inspector from './Inspector';
 import Timeline from './Timeline';
@@ -66,6 +60,7 @@ export default function Viewer({
   onClose: () => void;
 }) {
   const localize = useLocalize();
+  const format = useTraceFormat();
   const headingId = useId();
   const searchId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -225,7 +220,8 @@ export default function Viewer({
       );
     }
 
-    const olderPageFailed = recordsQuery.isError && recordsQuery.data != null;
+    /** A refresh or an older page failed while earlier results stay on screen. */
+    const cachedReadFailed = recordsQuery.isError && recordsQuery.data != null;
     return (
       <>
         <div className="flex flex-col gap-3 border-b border-border-light px-3 py-3 md:px-4">
@@ -275,8 +271,8 @@ export default function Viewer({
               {view != null && (
                 <span className="text-xs tabular-nums text-text-secondary" aria-live="polite">
                   {localize('com_ui_trace_selection', {
-                    0: formatDuration(view.start - model.start),
-                    1: formatDuration(view.end - model.start),
+                    0: format.duration(view.start - model.start),
+                    1: format.duration(view.end - model.start),
                   })}
                 </span>
               )}
@@ -322,22 +318,34 @@ export default function Viewer({
                 onToggle={toggle}
               />
             )}
-            {recordsQuery.hasNextPage === true && (
+            {(recordsQuery.hasNextPage === true || cachedReadFailed) && (
               <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border-light p-2">
-                {olderPageFailed && (
-                  <span role="alert" className="text-xs text-status-error">
-                    {localize(errorMessageKey(recordsQuery.error))}
-                  </span>
+                {cachedReadFailed && (
+                  <>
+                    <span role="alert" className="text-xs text-status-error">
+                      {localize(errorMessageKey(recordsQuery.error))}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={recordsQuery.isFetching}
+                      onClick={() => recordsQuery.refetch()}
+                    >
+                      {localize('com_ui_retry')}
+                    </Button>
+                  </>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={recordsQuery.isFetchingNextPage}
-                  onClick={() => recordsQuery.fetchNextPage()}
-                >
-                  {recordsQuery.isFetchingNextPage && <Spinner className="size-3.5" />}
-                  {localize('com_ui_trace_load_older')}
-                </Button>
+                {recordsQuery.hasNextPage === true && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recordsQuery.isFetchingNextPage}
+                    onClick={() => recordsQuery.fetchNextPage()}
+                  >
+                    {recordsQuery.isFetchingNextPage && <Spinner className="size-3.5" />}
+                    {localize('com_ui_trace_load_older')}
+                  </Button>
+                )}
               </div>
             )}
           </div>

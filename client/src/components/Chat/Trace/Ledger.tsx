@@ -2,11 +2,12 @@ import { memo, useId, useMemo, useState } from 'react';
 import { ChevronRight, CircleAlert, CircleDashed } from 'lucide-react';
 import type { RefObject, CSSProperties, KeyboardEvent } from 'react';
 import type { TraceModel, TraceNode, TraceRow, TraceTurn, TraceWindow } from './model';
-import { formatClock, formatDuration, turnKey } from './model';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
 import { formatTokens } from '~/utils/tokens';
+import { useTraceFormat } from './format';
 import { useRowWindow } from './virtual';
 import { useLocalize } from '~/hooks';
+import { turnKey } from './model';
 import { cn } from '~/utils';
 
 const ROW_HEIGHT = 32;
@@ -109,6 +110,7 @@ function Ledger({
   onToggle: (key: string) => void;
 }) {
   const localize = useLocalize();
+  const format = useTraceFormat();
   const idPrefix = useId();
   const scrollRef = treeRef;
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -218,14 +220,14 @@ function Ledger({
 
     if (row.type === 'turn') {
       const { turn } = row;
-      const label = localize('com_ui_trace_turn', { 0: formatClock(turn.start) });
+      const label = localize('com_ui_trace_turn', { 0: format.clock(turn.start) });
       return (
         <div
           key={row.key}
           {...common}
           aria-level={1}
           aria-expanded={row.expanded}
-          aria-label={`${label}, ${localize('com_ui_trace_turn_records', { 0: String(turn.recordCount) })}, ${formatDuration(turn.end - turn.start)}`}
+          aria-label={`${label}, ${localize('com_ui_trace_turn_records', { 0: String(turn.recordCount) })}, ${format.duration(turn.end - turn.start)}`}
           className={cn(
             GRID,
             'absolute inset-x-0 cursor-pointer items-center gap-2 border-t border-border-light bg-surface-primary-alt px-2 text-xs font-semibold text-text-primary hover:bg-surface-hover',
@@ -246,7 +248,7 @@ function Ledger({
             )}
           </span>
           <span className="text-right font-normal tabular-nums text-text-secondary">
-            {formatDuration(turn.end - turn.start)}
+            {format.duration(turn.end - turn.start)}
           </span>
           <span className="hidden md:block" />
           <span className="relative h-full overflow-hidden">
@@ -264,7 +266,7 @@ function Ledger({
     const running = node.end == null;
     const duration = running
       ? localize(STATUS_LABEL.running)
-      : formatDuration((node.end ?? node.start) - node.start);
+      : format.duration((node.end ?? node.start) - node.start);
     const statusText =
       record.status === 'error' || record.status === 'warning'
         ? `${duration}, ${localize(STATUS_LABEL[record.status])}`
@@ -279,7 +281,7 @@ function Ledger({
         aria-selected={selectedId === row.key}
         aria-label={localize('com_ui_trace_bar_description', {
           0: `${record.name}, ${localize(appearance.label)}`,
-          1: formatDuration(node.start - turnStart),
+          1: format.duration(node.start - turnStart),
           2: statusText,
         })}
         className={cn(
@@ -373,8 +375,8 @@ function Ledger({
         <span className="hidden text-right md:block">{localize('com_ui_trace_column_tokens')}</span>
         {viewDomain ? (
           <span className="flex justify-between normal-case tabular-nums tracking-normal">
-            <span>{formatDuration(viewDomain.start - model.start)}</span>
-            <span>{formatDuration(viewDomain.start + viewDomain.span - model.start)}</span>
+            <span>{format.duration(viewDomain.start - model.start)}</span>
+            <span>{format.duration(viewDomain.start + viewDomain.span - model.start)}</span>
           </span>
         ) : (
           <span>{localize('com_ui_trace_column_timeline')}</span>

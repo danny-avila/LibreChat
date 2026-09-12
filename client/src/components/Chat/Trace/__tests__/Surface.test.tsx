@@ -145,6 +145,27 @@ describe('trace entry point and surface', () => {
     expect(availability).toHaveBeenCalledTimes(2);
   });
 
+  it('reads the trace again after a response settles instead of reusing cached pages', async () => {
+    const list = jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockResolvedValue({ records: [] });
+    const { rerenderHost } = renderHost({ conversationId: 'convo-1' });
+    const close = () => userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_close' }));
+
+    await userEvent.click(await screen.findByTestId('header-trace-button'));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    await close();
+    await userEvent.click(screen.getByTestId('header-trace-button'));
+    await close();
+    expect(list).toHaveBeenCalledTimes(1);
+
+    rerenderHost({ conversationId: 'convo-1', isSubmitting: true });
+    rerenderHost({ conversationId: 'convo-1', isSubmitting: false });
+    await userEvent.click(await screen.findByTestId('header-trace-button'));
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  });
+
   it('covers the chat without unmounting it and restores it with focus on close', async () => {
     renderHost({ conversationId: 'convo-1' });
     await userEvent.type(screen.getByLabelText('composer'), 'unsent draft');
