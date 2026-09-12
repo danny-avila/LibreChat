@@ -26,7 +26,7 @@ import type { Request, Response } from 'express';
  */
 type LooseRequest = Request<unknown, unknown, unknown>;
 
-const agentCodeWorkspaceIdSchema = z.union([
+const agentCodeWorkspaceIdSchema: z.ZodUnion<[z.ZodLiteral<''>, z.ZodString]> = z.union([
   z.literal(''),
   z.string().regex(CODE_WORKSPACE_ID_PATTERN),
 ]);
