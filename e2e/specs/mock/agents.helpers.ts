@@ -5,8 +5,9 @@ import { MOCK_ENDPOINTS, NEW_CHAT_PATH, fetchJson, getAccessToken, requestJson }
 
 export const AGENT_EDIT_PERMISSION = 2;
 
-/** Tailwind's `md`, where the side rail replaces the sidebar's switcher menu. */
-const MD_BREAKPOINT = 768;
+/** The app switches layouts on `(max-width: 768px)` — inclusive, so 768 itself
+ *  is the sidebar-switcher layout, not the rail. */
+const NARROW_MAX_WIDTH = 768;
 /** Playwright reports no viewport only for a full-page context, which the mock
  *  projects never use; treat that as the desktop layout. */
 const DESKTOP_WIDTH = 1280;
@@ -98,10 +99,10 @@ export async function openAgentBuilder(page: Page) {
     .catch(() => false);
   if (!builderVisible) {
     /** Which control exists is a layout decision, not a timing one: the rail is
-     *  desktop-only, and below Tailwind's `md` the same panels are entries in
-     *  the sidebar's switcher menu. Probing for the rail instead would turn a
-     *  slow first paint into the wrong branch. */
-    const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) < MD_BREAKPOINT;
+     *  desktop-only, and at or below the app's own `(max-width: 768px)` the
+     *  same panels are entries in the sidebar's switcher menu. Probing for the
+     *  rail instead would turn a slow first paint into the wrong branch. */
+    const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) <= NARROW_MAX_WIDTH;
     if (narrow) {
       const openSidebarButton = page.getByRole('button', { name: 'Open sidebar' });
       if (await openSidebarButton.isVisible()) {
