@@ -12,12 +12,9 @@ const {
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
   getEndpointsDropParamsMap,
+  resolveCodeEnvironmentDecisionVersion,
 } = require('@librechat/api');
-const {
-  CODE_ENVIRONMENT_DECISION_VERSION,
-  EModelEndpoint,
-  defaultSocialLogins,
-} = require('librechat-data-provider');
+const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -37,12 +34,6 @@ const publicSharedLinksEnabled =
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
-
-function getCodeEnvironmentDecisionVersion() {
-  return process.env.CODE_ENVIRONMENT_DECISION_VERSION === String(CODE_ENVIRONMENT_DECISION_VERSION)
-    ? CODE_ENVIRONMENT_DECISION_VERSION
-    : undefined;
-}
 
 /**
  * Resolve build metadata eagerly at module load so the first `/api/config`
@@ -259,6 +250,9 @@ router.get('/', async function (req, res) {
     }
 
     const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
+    const codeEnvironmentDecisionVersion = resolveCodeEnvironmentDecisionVersion(
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+    );
 
     const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints);
 
@@ -319,9 +313,7 @@ router.get('/', async function (req, res) {
       langfuseConnectionAccess,
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
       compactionEnabled: appConfig?.summarization?.enabled !== false,
-      ...(getCodeEnvironmentDecisionVersion() != null
-        ? { codeEnvironmentDecisionVersion: CODE_ENVIRONMENT_DECISION_VERSION }
-        : {}),
+      ...(codeEnvironmentDecisionVersion != null ? { codeEnvironmentDecisionVersion } : {}),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),

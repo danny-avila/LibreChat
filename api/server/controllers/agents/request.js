@@ -44,6 +44,7 @@ const {
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
+  shouldPersistCodeWorkspaceInitializationError,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -116,22 +117,6 @@ function getInitializationFailure(error) {
     ...getCodeWorkspaceSelectionErrorDetails(error),
     error: error?.message || 'Failed to start generation',
   };
-}
-
-function shouldPersistInitializationError({
-  streamStarted,
-  isNewConvo,
-  initializationFailure,
-  codeEnvironmentDecision,
-}) {
-  if (!streamStarted) {
-    return false;
-  }
-  return !(
-    isNewConvo &&
-    initializationFailure?.code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE &&
-    codeEnvironmentDecision == null
-  );
 }
 
 function resolveConversationCreatedAt({ userId, conversationId, isNewConvo, conversation }) {
@@ -3424,11 +3409,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const initializationError = initializationFailure
         ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
-      const persistInitializationError = shouldPersistInitializationError({
+      const persistInitializationError = shouldPersistCodeWorkspaceInitializationError({
         streamStarted,
-        isNewConvo,
-        initializationFailure,
-        codeEnvironmentDecision: req._codeEnvironmentDecision,
+        isNewConversation: isNewConvo,
+        failureCode: initializationFailure?.code,
+        hasValidatedDecision: req._codeEnvironmentDecision != null,
       });
       const completionPromise = persistInitializationError
         ? GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {

@@ -1,6 +1,19 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { mergeAccessibleCodeEnvironments } from './config';
+import { mergeAccessibleCodeEnvironments, resolveCodeEnvironmentDecisionVersion } from './config';
+
+describe('resolveCodeEnvironmentDecisionVersion', () => {
+  it('advertises the exact supported protocol version', () => {
+    expect(resolveCodeEnvironmentDecisionVersion('1')).toBe(1);
+  });
+
+  it.each([undefined, '0', '2', '1.0', 'true'])(
+    'keeps unsupported configured version %s on the legacy-safe path',
+    (version) => {
+      expect(resolveCodeEnvironmentDecisionVersion(version)).toBeUndefined();
+    },
+  );
+});
 
 describe('mergeAccessibleCodeEnvironments', () => {
   test('adds principal environments without allowing them to shadow deployment entries', async () => {

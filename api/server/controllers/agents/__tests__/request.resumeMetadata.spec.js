@@ -278,6 +278,8 @@ jest.mock('@librechat/api', () => ({
   encodeAndFormatImages: jest.requireActual('@librechat/api').encodeAndFormatImages,
   getCodeWorkspaceSelectionErrorDetails:
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
+  shouldPersistCodeWorkspaceInitializationError:
+    jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
   GenerationJobManager: mockGenerationJobManager,
