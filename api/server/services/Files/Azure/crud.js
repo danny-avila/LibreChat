@@ -6,6 +6,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   deleteRagFile,
   assertRemoteFileURL,
+  getSafeErrorMetadata,
   getAzureContainerClient,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
@@ -287,7 +288,7 @@ async function getAzureFileStream(_req, fileURL, { signal } = {}) {
     }
     return response.readableStreamBody;
   } catch (error) {
-    logger.error('[getAzureFileStream] Error getting blob stream:', error);
+    logger.error('[getAzureFileStream] Error getting blob stream:', getSafeErrorMetadata(error));
     throw error;
   }
 }

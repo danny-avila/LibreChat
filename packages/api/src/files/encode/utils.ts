@@ -43,6 +43,17 @@ function isStorageNotFoundError(error: unknown): boolean {
   );
 }
 
+function discardBufferedData(error: unknown): void {
+  if (typeof error !== 'object' || error == null || !('bufferedData' in error)) {
+    return;
+  }
+  try {
+    delete (error as { bufferedData?: unknown }).bufferedData;
+  } catch {
+    // A third-party error may define a non-configurable property.
+  }
+}
+
 /**
  * Extracts the configured file size limit for a specific provider from fileConfig
  * @param req - The server request object containing config
@@ -76,7 +87,7 @@ export const getConfiguredFileSizeLimit = (
  * @param file - File object to process
  * @param encodingMethods - Cache of encoding methods by source
  * @param getStrategyFunctions - Function to get strategy functions for a source
- * @returns Processed file with content and metadata, or null if filepath missing
+ * @returns Processed file with content and metadata, or null if no download reference exists
  */
 export async function getFileStream(
   req: ServerRequest,
@@ -84,7 +95,7 @@ export async function getFileStream(
   encodingMethods: Record<string, StrategyFunctions>,
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<ProcessedFile | null> {
-  if (!file?.filepath) {
+  if (!file?.filepath && !file?.storageKey) {
     return null;
   }
 
@@ -113,6 +124,7 @@ export async function getFileStream(
       },
     };
   } catch (error) {
+    discardBufferedData(error);
     if (isStorageNotFoundError(error)) {
       throw new AttachmentObjectNotFoundError(file.file_id);
     }

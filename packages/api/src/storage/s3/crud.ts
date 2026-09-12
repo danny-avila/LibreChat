@@ -51,6 +51,7 @@ import {
   assertPathSegment,
   sanitizeContentDispositionFilename,
 } from '~/storage/validation';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
 import { s3Config } from './s3Config';
@@ -653,7 +654,7 @@ function decodeKeyFromUrlPath(key: string): string {
   try {
     return decodeURIComponent(key);
   } catch {
-    logger.warn(`[extractKeyFromS3Url] Could not decode key, using it as-is: ${key}`);
+    logger.warn('[extractKeyFromS3Url] Could not decode key, using it as-is');
     return key;
   }
 }
@@ -681,11 +682,9 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
         1;
       const key = decodeKeyFromUrlPath(url.pathname.substring(startPos));
       if (!key) {
-        logger.warn(
-          `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
-        );
+        logger.warn('[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL');
       } else {
-        logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+        logger.debug('[extractKeyFromS3Url] Extracted key from endpoint path-style URL');
       }
       return key;
     }
@@ -699,32 +698,24 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       if (firstSlashIndex > 0) {
         const key = decodeKeyFromUrlPath(pathname.substring(firstSlashIndex + 1));
         if (key === '') {
-          logger.warn(
-            `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
-          );
+          logger.warn('[extractKeyFromS3Url] Extracted key is empty after removing bucket name');
         } else {
-          logger.debug(
-            `[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
-          );
+          logger.debug('[extractKeyFromS3Url] Extracted key from path-style URL');
         }
         return key;
       }
-      logger.warn(
-        `[extractKeyFromS3Url] Unable to extract key from path-style URL: ${fileUrlOrKey}`,
-      );
+      logger.warn('[extractKeyFromS3Url] Unable to extract key from path-style URL');
       return '';
     }
 
     const key = decodeKeyFromUrlPath(pathname);
-    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+    logger.debug('[extractKeyFromS3Url] Extracted key from URL');
     return key;
-  } catch (error) {
+  } catch {
     if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
-      logger.error(
-        `[extractKeyFromS3Url] Error parsing URL: ${fileUrlOrKey}, Error: ${(error as Error).message}`,
-      );
+      logger.error('[extractKeyFromS3Url] Error parsing URL');
     } else {
-      logger.debug(`[extractKeyFromS3Url] Non-URL input, using fallback: ${fileUrlOrKey}`);
+      logger.debug('[extractKeyFromS3Url] Non-URL input, using fallback');
     }
 
     const parts = fileUrlOrKey.split('/');
@@ -733,9 +724,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     }
 
     const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
-    logger.debug(
-      `[extractKeyFromS3Url] FALLBACK. fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
-    );
+    logger.debug('[extractKeyFromS3Url] Using fallback key');
     return key;
   }
 }
@@ -893,11 +882,11 @@ export async function getS3FileStream(
 
     const data = await s3.send(new GetObjectCommand(params), { abortSignal: signal });
     if (!data.Body) {
-      throw new Error(`[getS3FileStream] S3 response body is empty for key: ${Key}`);
+      throw new Error('[getS3FileStream] S3 response body is empty');
     }
     return data.Body as Readable;
   } catch (error) {
-    logger.error('[getS3FileStream] Error retrieving S3 file stream:', error);
+    logger.error('[getS3FileStream] Error retrieving S3 file stream', getSafeErrorMetadata(error));
     throw error;
   }
 }

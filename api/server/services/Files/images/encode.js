@@ -1,6 +1,5 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, validateImage, runGuardedEncode } = require('@librechat/api');
+const { logAxiosError, validateImage, getFileStream, runGuardedEncode } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
@@ -11,44 +10,6 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-
-/**
- * Converts a readable stream to a base64 encoded string.
- *
- * @param {NodeJS.ReadableStream} stream - The readable stream to convert.
- * @param {boolean} [destroyStream=true] - Whether to destroy the stream after processing.
- * @returns {Promise<string>} - Promise resolving to the base64 encoded content.
- */
-async function streamToBase64(stream, destroyStream = true) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-
-    stream.on('data', (chunk) => {
-      chunks.push(chunk);
-    });
-
-    stream.on('end', () => {
-      try {
-        const buffer = Buffer.concat(chunks);
-        const base64Data = buffer.toString('base64');
-        chunks.length = 0; // Clear the array
-        resolve(base64Data);
-      } catch (err) {
-        reject(err);
-      }
-    });
-
-    stream.on('error', (error) => {
-      chunks.length = 0;
-      reject(error);
-    });
-  }).finally(() => {
-    // Clean up the stream if required
-    if (destroyStream && stream.destroy && typeof stream.destroy === 'function') {
-      stream.destroy();
-    }
-  });
-}
 
 /**
  * Fetches an image from a URL and returns its base64 representation.
@@ -103,7 +64,7 @@ async function encodeAndFormat(req, files, params, mode) {
   const { provider, endpoint } = params;
   const effectiveEndpoint = endpoint ?? provider;
   const promises = [];
-  /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
+  /** @type {Record<FileSources, ReturnType<typeof getStrategyFunctions>>} */
   const encodingMethods = {};
   /** @type {{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
   const result = {
@@ -136,20 +97,11 @@ async function encodeAndFormat(req, files, params, mode) {
     const preparePayload = encodingMethods[source].prepareImagePayload;
     /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob/Firebase storage. */
     if (blobStorageSources.has(source)) {
-      try {
-        const downloadStream = encodingMethods[source].getDownloadStream;
-        let base64Data = await runGuardedEncode(file.bytes ?? 0, async () => {
-          let stream = await downloadStream(req, file.filepath);
-          const data = await streamToBase64(stream);
-          stream = null;
-          return data;
-        });
-        promises.push([file, base64Data]);
-        base64Data = null;
-        continue;
-      } catch (error) {
-        logger.error('Error processing image from blob storage:', error);
-      }
+      const processedFile = await runGuardedEncode(file.bytes ?? 0, () =>
+        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+      );
+      promises.push([file, processedFile?.content ?? null]);
+      continue;
     } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
         const [_file, imageURL] = await preparePayload(req, file);
