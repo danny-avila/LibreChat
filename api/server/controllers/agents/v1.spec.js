@@ -3334,16 +3334,20 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(Object.keys(agent).sort()).toEqual(
         [
           '_id',
+          'agent_ids',
           'author',
           'avatar',
           'category',
           'conversation_starters',
           'description',
+          'edges',
           'id',
           'isEditable',
           'is_promoted',
           'name',
+          'subagents',
           'support_contact',
+          'tools',
           'updatedAt',
         ].sort(),
       );
@@ -3355,6 +3359,9 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           author: userA.toString(),
           category: 'general',
           is_promoted: true,
+          tools: ['execute_code'],
+          edges: [{ from: agentA1.id, to: agentA2.id }],
+          subagents: { enabled: true, agent_ids: [agentA2.id] },
         }),
       );
     });
