@@ -98,8 +98,9 @@ export interface IThemeRGB {
    * green check is the selected/complete cue everywhere else in the product
    * (including the selected-tool check on the very same card) while blue is the
    * cross-product convention for provenance. It carries `text-on-status`.
-   * A theme that predates the token and names `status-success-strong` keeps
-   * wearing it here, which is the fill the mark had before this token existed.
+   * A theme that repaints the mark's surroundings — the old
+   * `status-success-strong` fill, the check, or the card surfaces — keeps the
+   * mark on that success fill, which is what it wore before this token existed.
    */
   'rgb-status-verified'?: string;
   'rgb-text-on-status'?: string;

@@ -232,8 +232,10 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
   the only thing it paints, and it is painted rather than outlined, since an
   outline would halo the badge against the card. Both relationships are
   graphical, so both are held at 3:1 — against every surface the card takes,
-  including its hover repaint. A theme that predates the token and names
-  `status-success-strong` keeps the mark on that fill.
+  including its hover repaint. A theme that repaints what the mark sits in —
+  the old `status-success-strong` fill, the `text-on-status` check, or the card
+  surfaces — keeps the mark on that success fill instead of taking this blue,
+  since it coordinated the mark before the token existed.
 
 ### Other Colors
 

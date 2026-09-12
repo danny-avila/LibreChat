@@ -326,6 +326,19 @@ describe('theme registry', () => {
     );
   });
 
+  it('keeps the bundled verified fill for a theme that repaints nothing around the mark', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'unrelated-partial-reference',
+        modes: { dark: { colors: { 'rgb-text-primary': '250 250 250' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe(darkTheme['rgb-status-verified']);
+  });
+
   it('preserves an explicit verified fill', () => {
     const resolved = resolveTheme(
       {

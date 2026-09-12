@@ -267,6 +267,16 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--status-verified')).toBe('8 135 89');
   });
 
+  it('leaves the verified fill alone for a legacy theme that repaints nothing around the mark', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-primary': '10 20 30' }, root, {
+      'rgb-status-success-strong': '8 135 89',
+    });
+
+    expect(root.style.getPropertyValue('--status-verified')).toBe('');
+  });
+
   it('clears only properties owned by the theme module', () => {
     const root = document.documentElement;
     root.style.setProperty('--text-primary', '1 2 3');

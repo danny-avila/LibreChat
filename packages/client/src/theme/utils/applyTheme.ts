@@ -1,5 +1,10 @@
 import type { IThemeAppearance, IThemeBrands, IThemeRGB, ResolvedThemeDefinition } from '../types';
-import { themeAppearanceProperties, themeBrandTokens, themeColorTokens } from '../registry';
+import {
+  MARK_NEIGHBOURHOOD,
+  themeAppearanceProperties,
+  themeBrandTokens,
+  themeColorTokens,
+} from '../registry';
 
 const colorProperty = (token: keyof IThemeRGB): `--${string}` => `--${token.slice(4)}`;
 const brandProperty = (token: keyof IThemeBrands): `--${string}` => `--${token}`;
@@ -66,15 +71,20 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
   }
 
   /**
-   * Same compatibility as `resolveTheme`: the mark wore `status-success-strong`
-   * before it had a token of its own, and this adapter writes only the keys a
-   * theme names, so an older stored or environment theme would otherwise keep
-   * the stock blue while the palette around it moved. A theme that inherits the
-   * green rather than restating it gets the same treatment through `base`.
+   * Same rule as `resolveTheme`: a theme that paints what the mark is measured
+   * against coordinated the `status-success-strong` the mark wore before it had
+   * a token, so it keeps that fill rather than taking LibreChat's stock blue.
+   * This adapter writes only the keys a theme names, so the inherited value
+   * arrives through `base`, the bundled palette for the mode being applied.
    */
+  const ownsMarkSurroundings = MARK_NEIGHBOURHOOD.some((token) => colors[token] !== undefined);
   const inheritedSuccess =
     colors['rgb-status-success-strong'] ?? base?.['rgb-status-success-strong'];
-  if (colors['rgb-status-verified'] === undefined && inheritedSuccess !== undefined) {
+  if (
+    ownsMarkSurroundings &&
+    colors['rgb-status-verified'] === undefined &&
+    inheritedSuccess !== undefined
+  ) {
     variables.push(['--status-verified', inheritedSuccess]);
   }
 
