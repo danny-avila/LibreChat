@@ -14,12 +14,16 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createAuthIdentityContext: jest.fn(),
   createMCPAppsController: jest.fn(() => mockController),
+  prepareMCPAuthorizationMutation: jest.fn(),
 }));
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
 }));
-jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn(),
+  invalidateCachedTools: jest.fn(),
+}));
 jest.mock('~/server/services/MCP', () => ({ resolveConfigServers: jest.fn() }));
 jest.mock('~/server/services/OpenIDSessionRefresh', () => ({
   createOpenIDSessionTokenProvider: jest.fn(),
@@ -32,16 +36,28 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
 }));
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
+jest.mock('~/server/services/MCPAuthorizationFenceRetry', () => ({
+  clearMCPAuthorizationFenceRetry: jest.fn(),
+  persistMCPAuthorizationFenceRetry: jest.fn(),
+}));
 
 const { CacheKeys } = require('librechat-data-provider');
 const { getTenantId } = require('@librechat/data-schemas');
-const { createAuthIdentityContext, createMCPAppsController } = require('@librechat/api');
+const {
+  createAuthIdentityContext,
+  createMCPAppsController,
+  prepareMCPAuthorizationMutation,
+} = require('@librechat/api');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getAppConfig } = require('~/server/services/Config');
+const { getAppConfig, invalidateCachedTools } = require('~/server/services/Config');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const models = require('~/models');
 const { getLogStores } = require('~/cache');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 
 describe('MCP Apps controller wiring', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -61,7 +77,17 @@ describe('MCP Apps controller wiring', () => {
 
     expect(createMCPAppsController).toHaveBeenCalledTimes(1);
     const dependencies = createMCPAppsController.mock.calls[0][0];
-    const request = { user: { id: 'user-1', role: 'USER', tenantId: 'tenant-1' } };
+    const request = {
+      user: { id: 'user-1', role: 'USER', tenantId: 'tenant-1' },
+      config: {
+        mcpSettings: {
+          catalogRecovery: {
+            authorizationFenceRetryMs: [0, 25],
+            authorizationFenceTimeoutMs: 750,
+          },
+        },
+      },
+    };
     const response = {};
 
     expect(dependencies.getManager).toBe(getMCPManager);
@@ -86,6 +112,22 @@ describe('MCP Apps controller wiring', () => {
       updateToken: models.updateToken,
       deleteTokens: models.deleteTokens,
     });
+    const onOAuthCredentialsChanging = dependencies.createOAuthCredentialsChanging(request);
+    const scope = { userId: 'user-1', serverName: 'srv' };
+    await onOAuthCredentialsChanging(scope);
+    expect(prepareMCPAuthorizationMutation).toHaveBeenCalledWith(scope, {
+      invalidateRecoveryGeneration: invalidateCachedTools,
+      persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+      clearPublicationRetry: clearMCPAuthorizationFenceRetry,
+      clearLocalRecovery: expect.any(Function),
+      retryDelaysMs: [0, 25],
+      attemptTimeoutMs: 750,
+    });
+    const publicationDependencies = prepareMCPAuthorizationMutation.mock.calls[0][1];
+    const manager = { clearCatalogRecoveryState: jest.fn() };
+    getMCPManager.mockReturnValue(manager);
+    publicationDependencies.clearLocalRecovery('user-1', 'srv');
+    expect(manager.clearCatalogRecoveryState).toHaveBeenCalledWith('user-1', 'srv');
     expect(dependencies.createUpstreamTokenProvider(request, response, request.user)).toBe(
       'provider',
     );

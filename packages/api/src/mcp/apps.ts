@@ -40,6 +40,7 @@ export interface MCPAppOperationContext {
   flowManager: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   upstreamTokenProvider?: UpstreamTokenProvider;
+  onOAuthCredentialsChanging: NonNullable<t.UserConnectionContext['onOAuthCredentialsChanging']>;
   signal?: AbortSignal;
 }
 
@@ -106,6 +107,7 @@ export async function resolveAppRequestContext({
   flowManager,
   tokenMethods,
   upstreamTokenProvider,
+  onOAuthCredentialsChanging,
   signal,
 }: {
   user: AuthenticatedMCPAppUser;
@@ -115,6 +117,7 @@ export async function resolveAppRequestContext({
   flowManager: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   upstreamTokenProvider?: UpstreamTokenProvider;
+  onOAuthCredentialsChanging: NonNullable<t.UserConnectionContext['onOAuthCredentialsChanging']>;
   signal?: AbortSignal;
 }): Promise<MCPAppRequestContext> {
   const userId = user.id;
@@ -141,6 +144,7 @@ export async function resolveAppRequestContext({
     flowManager,
     tokenMethods,
     upstreamTokenProvider,
+    onOAuthCredentialsChanging,
     signal,
   };
 }

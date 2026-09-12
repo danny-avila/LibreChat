@@ -60,6 +60,7 @@ const asHandlerResponse = (response: MockResponse): Response => response as unkn
 
 function makeDependencies(manager: MCPAppsProxyManager) {
   const provider = jest.fn();
+  const onOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
   const dependencies: MCPAppsControllerDependencies = {
     logger: { error: jest.fn() },
     sandboxPath: '/tmp/mcp-sandbox.html',
@@ -78,9 +79,10 @@ function makeDependencies(manager: MCPAppsProxyManager) {
       updateToken: jest.fn(),
       deleteTokens: jest.fn(),
     },
+    createOAuthCredentialsChanging: jest.fn(() => onOAuthCredentialsChanging),
     createUpstreamTokenProvider: jest.fn(() => provider),
   } as unknown as MCPAppsControllerDependencies;
-  return { dependencies, provider };
+  return { dependencies, provider, onOAuthCredentialsChanging };
 }
 
 const makeManager = (): jest.Mocked<MCPAppsProxyManager> => ({
@@ -99,7 +101,7 @@ describe('createMCPAppsController', () => {
   it('passes the authenticated user, resolved config, provider, and request signal to the manager', async () => {
     const manager = makeManager();
     manager.readResource.mockResolvedValue({ contents: [] });
-    const { dependencies, provider } = makeDependencies(manager);
+    const { dependencies, provider, onOAuthCredentialsChanging } = makeDependencies(manager);
     const controller = createMCPAppsController(dependencies);
     const request = makeRequest();
     const response = makeResponse();
@@ -118,9 +120,11 @@ describe('createMCPAppsController', () => {
         configServers: { srv: { type: 'stdio', command: 'test' } },
         customUserVars: { API_KEY: 'secret' },
         upstreamTokenProvider: provider,
+        onOAuthCredentialsChanging,
         signal: expect.any(AbortSignal),
       }),
     );
+    expect(dependencies.createOAuthCredentialsChanging).toHaveBeenCalledWith(request);
     expect(response.json).toHaveBeenCalledWith({ contents: [] });
     expect(request.listenerCount('aborted')).toBe(0);
     expect(response.listenerCount('close')).toBe(0);

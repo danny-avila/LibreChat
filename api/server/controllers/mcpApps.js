@@ -1,11 +1,19 @@
 const path = require('path');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { createAuthIdentityContext, createMCPAppsController } = require('@librechat/api');
+const {
+  createAuthIdentityContext,
+  createMCPAppsController,
+  prepareMCPAuthorizationMutation,
+} = require('@librechat/api');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getAppConfig } = require('~/server/services/Config');
+const { getAppConfig, invalidateCachedTools } = require('~/server/services/Config');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 const {
   findPluginAuthsByKeys,
   findToken,
@@ -29,6 +37,19 @@ module.exports = createMCPAppsController({
   resolveConfigServers: (req) => resolveConfigServers(req, { throwOnError: true }),
   findPluginAuthsByKeys,
   tokenMethods: { findToken, createToken, updateToken, deleteTokens },
+  createOAuthCredentialsChanging: (req) => {
+    const recoveryPolicy = req.config?.mcpSettings?.catalogRecovery;
+    return (scope) =>
+      prepareMCPAuthorizationMutation(scope, {
+        invalidateRecoveryGeneration: invalidateCachedTools,
+        persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+        clearPublicationRetry: clearMCPAuthorizationFenceRetry,
+        clearLocalRecovery: (userId, serverName) =>
+          getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
+        retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+        attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
+      });
+  },
   createUpstreamTokenProvider: (req, res, user) =>
     createOpenIDSessionTokenProvider({
       req,

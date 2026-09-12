@@ -73,6 +73,7 @@ describe('resolveAppRequestContext', () => {
   const mockGetPluginAuthMap = getPluginAuthMap as jest.MockedFunction<typeof getPluginAuthMap>;
   const user = { id: 'user-1' } as Parameters<typeof resolveAppRequestContext>[0]['user'];
   const flowManager = {} as Parameters<typeof resolveAppRequestContext>[0]['flowManager'];
+  const onOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -86,12 +87,14 @@ describe('resolveAppRequestContext', () => {
         Promise.resolve({ srv: { type: 'sse', url: 'https://a.example.com' } }),
       findPluginAuthsByKeys,
       flowManager,
+      onOAuthCredentialsChanging,
     });
 
     expect(ctx.configServers).toEqual({ srv: { type: 'sse', url: 'https://a.example.com' } });
     expect(ctx.customUserVars).toEqual({ API_KEY: 'secret' });
     expect(ctx.user).toBe(user);
     expect(ctx.serverName).toBe('srv');
+    expect(ctx.onOAuthCredentialsChanging).toBe(onOAuthCredentialsChanging);
   });
 
   it('fails closed when config resolution fails', async () => {
@@ -102,6 +105,7 @@ describe('resolveAppRequestContext', () => {
         resolveConfigServers: () => Promise.reject(new Error('config unavailable')),
         findPluginAuthsByKeys,
         flowManager,
+        onOAuthCredentialsChanging,
       }),
     ).rejects.toThrow('config unavailable');
   });
@@ -116,6 +120,7 @@ describe('resolveAppRequestContext', () => {
         resolveConfigServers: () => Promise.resolve({}),
         findPluginAuthsByKeys,
         flowManager,
+        onOAuthCredentialsChanging,
       }),
     ).rejects.toThrow('db down');
     expect(logger.error).toHaveBeenCalled();
@@ -130,6 +135,7 @@ describe('resolveAppRequestContext', () => {
       resolveConfigServers: () => Promise.resolve({}),
       findPluginAuthsByKeys,
       flowManager,
+      onOAuthCredentialsChanging,
     });
 
     expect(ctx.customUserVars).toBeUndefined();

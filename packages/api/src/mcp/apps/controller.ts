@@ -46,6 +46,9 @@ export interface MCPAppsControllerDependencies {
   resolveConfigServers: (request: MCPAppsRequest) => Promise<Record<string, t.ParsedServerConfig>>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
   tokenMethods: TokenMethods;
+  createOAuthCredentialsChanging: (
+    request: MCPAppsRequest,
+  ) => NonNullable<t.UserConnectionContext['onOAuthCredentialsChanging']>;
   createUpstreamTokenProvider: (
     request: MCPAppsRequest,
     response: Response,
@@ -143,6 +146,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
           findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
           flowManager: dependencies.getFlowManager(),
           tokenMethods: dependencies.tokenMethods,
+          onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
           upstreamTokenProvider: dependencies.createUpstreamTokenProvider(
             request,
             response,

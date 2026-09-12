@@ -1880,8 +1880,15 @@ Please follow these instructions when using tools from the respective MCP server
     context: MCPAppOperationContext,
     operation: (connection: MCPConnection, options: RequestOptions) => Promise<TResult>,
   ): Promise<TResult> {
-    const { serverName, user, customUserVars, flowManager, tokenMethods, upstreamTokenProvider } =
-      context;
+    const {
+      serverName,
+      user,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+      upstreamTokenProvider,
+      onOAuthCredentialsChanging,
+    } = context;
     const { signal } = context;
     const logPrefix = `[MCP][User: ${user.id}][${serverName}]`;
     const config = await this.getAppServerConfig(context);
@@ -1909,6 +1916,7 @@ Please follow these instructions when using tools from the respective MCP server
           flowManager,
           tokenMethods,
           upstreamTokenProvider,
+          onOAuthCredentialsChanging,
           directBearerRecoveryState,
           signal,
         });
@@ -1958,6 +1966,7 @@ Please follow these instructions when using tools from the respective MCP server
             tokenMethods,
             customUserVars,
             upstreamTokenProvider,
+            onOAuthCredentialsChanging,
             signal,
             directBearerRecoveryState,
           });

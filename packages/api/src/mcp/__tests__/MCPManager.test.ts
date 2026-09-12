@@ -4094,6 +4094,7 @@ describe('MCPManager', () => {
   describe('MCP App operations', () => {
     const user = { id: 'user-123', role: 'ADMIN' } as IUser & { id: string };
     const flowManager = {} as Parameters<MCPManager['readResource']>[0]['flowManager'];
+    const defaultOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
 
     const context = (
       serverName: string,
@@ -4104,6 +4105,7 @@ describe('MCPManager', () => {
       user,
       configServers: { [serverName]: config },
       flowManager,
+      onOAuthCredentialsChanging: defaultOAuthCredentialsChanging,
       ...extra,
     });
 
@@ -4118,6 +4120,65 @@ describe('MCPManager', () => {
         timeout: 30_000,
         client: fakeClient(request),
       }) as unknown as MCPConnection;
+
+    const newOAuthConnection = (request: jest.Mock) =>
+      Object.assign(connection(request), {
+        isStale: jest.fn().mockReturnValue(false),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      });
+
+    const standardOAuthConfig = {
+      source: 'yaml',
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      requiresOAuth: true,
+      oauth: { client_id: 'client' },
+    } as t.ParsedServerConfig;
+
+    const prepareFreshOAuthAppOperation = ({
+      request,
+      publish,
+      renewalCurrent = true,
+    }: {
+      request: jest.Mock;
+      publish: jest.Mock;
+      renewalCurrent?: boolean;
+    }) => {
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        srv: standardOAuthConfig,
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      const appConnection = newOAuthConnection(request);
+      const onOAuthCredentialsChanging = jest.fn().mockResolvedValue(publish);
+      const generation = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewal = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(renewalCurrent);
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (_basic: t.BasicConnectionOptions, options: t.OAuthConnectionOptions) => {
+          const publishPrepared = await options.onOAuthCredentialsChanging?.({
+            userId: user.id,
+            serverName: 'srv',
+          });
+          await publishPrepared?.();
+          return appConnection;
+        },
+      );
+      return {
+        appConnection,
+        onOAuthCredentialsChanging,
+        renewal,
+        restore: () => {
+          generation.mockRestore();
+          renewal.mockRestore();
+        },
+      };
+    };
 
     it.each([
       {
@@ -4197,14 +4258,16 @@ describe('MCPManager', () => {
       const appConnection = connection(request);
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const getConnection = jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const onOAuthCredentialsChanging = jest.fn(async () => async () => 'generation-b');
 
-      await manager.listResources(context('srv', config));
+      await manager.listResources(context('srv', config, { onOAuthCredentialsChanging }));
 
       expect(getConnection).toHaveBeenCalledWith(
         expect.objectContaining({
           user,
           serverConfig: config,
           flowManager,
+          onOAuthCredentialsChanging,
         }),
       );
       expect(request).toHaveBeenCalledWith(
@@ -4212,6 +4275,82 @@ describe('MCPManager', () => {
         ListResourcesResultSchema,
         expect.any(Object),
       );
+    });
+
+    it('adopts the authorization generation published by a fresh App OAuth connection', async () => {
+      const request = jest.fn().mockResolvedValue({ resources: [] });
+      const publish = jest.fn().mockResolvedValue('generation-b');
+      const { onOAuthCredentialsChanging, renewal, restore } = prepareFreshOAuthAppOperation({
+        request,
+        publish,
+      });
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.listResources(
+            context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
+          ),
+        ).resolves.toEqual({ resources: [] });
+
+        expect(onOAuthCredentialsChanging).toHaveBeenCalledWith({
+          userId: user.id,
+          serverName: 'srv',
+        });
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(renewal).toHaveBeenCalledWith({
+          userId: user.id,
+          serverName: 'srv',
+          publicationGeneration: 'generation-b',
+        });
+        expect(request).toHaveBeenCalledTimes(1);
+      } finally {
+        restore();
+      }
+    });
+
+    it('does not run an App operation after a foreign rotation fences its fresh OAuth connection', async () => {
+      const request = jest.fn();
+      const { appConnection, onOAuthCredentialsChanging, restore } = prepareFreshOAuthAppOperation({
+        request,
+        publish: jest.fn().mockResolvedValue('generation-b'),
+        renewalCurrent: false,
+      });
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.listResources(
+            context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
+          ),
+        ).rejects.toThrow('Publication lease is no longer current');
+
+        expect(appConnection.dispose).toHaveBeenCalled();
+        expect(request).not.toHaveBeenCalled();
+      } finally {
+        restore();
+      }
+    });
+
+    it('does not run an App operation when OAuth authorization publication fails', async () => {
+      const request = jest.fn();
+      const publicationError = new Error('authorization publication unavailable');
+      const { onOAuthCredentialsChanging, restore } = prepareFreshOAuthAppOperation({
+        request,
+        publish: jest.fn().mockRejectedValue(publicationError),
+      });
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.listResources(
+            context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
+          ),
+        ).rejects.toBe(publicationError);
+        expect(request).not.toHaveBeenCalled();
+      } finally {
+        restore();
+      }
     });
 
     it('forwards an opaque auxiliary URI to the same authenticated server without local template inference', async () => {
