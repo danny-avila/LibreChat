@@ -11,6 +11,8 @@ const mockRetrieveAssistant = jest.fn();
 const mockListThreadMessages = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetFiles = jest.fn();
+const mockEncodeAndFormat = jest.fn();
+const mockGetSafeErrorMetadata = jest.fn(() => ({ type: 'Error', status: 404 }));
 const mockGetOpenAIClient = jest.fn().mockResolvedValue({
   openai: {
     beta: {
@@ -54,6 +56,7 @@ jest.mock('@librechat/api', () => {
     checkBalance: jest.fn(),
     getBalanceConfig: jest.fn(),
     getModelMaxTokens: jest.fn(),
+    getSafeErrorMetadata: (...args) => mockGetSafeErrorMetadata(...args),
   };
 });
 
@@ -90,7 +93,7 @@ jest.mock('~/app/clients/prompts', () => ({
 }));
 
 jest.mock('~/server/services/Files/images/encode', () => ({
-  encodeAndFormat: jest.fn(),
+  encodeAndFormat: (...args) => mockEncodeAndFormat(...args),
 }));
 
 jest.mock('~/server/services/Runs', () => ({
@@ -135,6 +138,8 @@ jest.mock('./helpers', () => ({
 
 const chatV1 = require('./chatV1');
 const chatV2 = require('./chatV2');
+const { logger } = require('@librechat/data-schemas');
+const { ImageVisionTool } = require('librechat-data-provider');
 
 describe.each([
   ['v1', chatV1],
@@ -157,6 +162,7 @@ describe.each([
     });
     mockGetFiles.mockReset().mockResolvedValue([]);
     mockGetConvo.mockReset().mockResolvedValue(null);
+    mockEncodeAndFormat.mockReset().mockResolvedValue({ files: [], image_urls: [] });
     mockInitThread.mockReset();
     closeHandler = undefined;
     req = {
@@ -382,6 +388,40 @@ describe.each([
   });
 
   if (_version === 'v1') {
+    describe('V1 vision attachment failures', () => {
+      it('does not log a signed storage URL from an image encoding error', async () => {
+        const signedUrl =
+          'https://minio.example.com/bucket/image.png?X-Amz-Credential=secret&X-Amz-Signature=signed';
+        const failure = Object.assign(new Error(`NoSuchKey for ${signedUrl}`), {
+          statusCode: 404,
+        });
+        mockRetrieveAssistant.mockResolvedValueOnce({
+          id: 'asst-1',
+          instructions: 'Safe assistant',
+          tools: [{ type: 'function', function: { name: ImageVisionTool.function.name } }],
+        });
+        req.body.endpointOption.attachments = Promise.resolve([
+          {
+            source: 's3',
+            filepath: signedUrl,
+            storageKey: 'images/user/image.png',
+          },
+        ]);
+        mockEncodeAndFormat.mockRejectedValueOnce(failure);
+
+        await chatV1(req, res);
+
+        expect(mockEncodeAndFormat).toHaveBeenCalled();
+        expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(failure);
+        expect(logger.error).toHaveBeenCalledWith('[/assistants/chat/]', {
+          type: 'Error',
+          status: 404,
+        });
+        expect(JSON.stringify(logger.error.mock.calls)).not.toContain(signedUrl);
+        expect(JSON.stringify(mockSendResponse.mock.calls)).not.toContain(signedUrl);
+      });
+    });
+
     describe('V1 final conversation-file preflight', () => {
       beforeEach(() => {
         req.config.filters = {
