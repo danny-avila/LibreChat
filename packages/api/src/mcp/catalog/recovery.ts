@@ -75,7 +75,7 @@ export async function publishMCPAuthorizationMutation(
     retryDelaysMs?: readonly number[];
     attemptTimeoutMs?: number;
   },
-): Promise<void> {
+): Promise<string | undefined> {
   /** Persist retry intent before touching the shared cache. A credential writer can keep this
    * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
    * durable path to fence other replicas. */
@@ -89,8 +89,9 @@ export async function publishMCPAuthorizationMutation(
       const attemptTimeoutMs =
         deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let published: unknown;
       try {
-        await Promise.race([
+        published = await Promise.race([
           deps.invalidateRecoveryGeneration(scope),
           new Promise<never>((_, reject) => {
             timeoutId = setTimeout(
@@ -114,7 +115,7 @@ export async function publishMCPAuthorizationMutation(
         );
       }
       deps.clearLocalRecovery?.(scope.userId, scope.serverName);
-      return;
+      return typeof published === 'string' && published.length > 0 ? published : undefined;
     } catch (error) {
       lastError = error;
       logger.warn(
