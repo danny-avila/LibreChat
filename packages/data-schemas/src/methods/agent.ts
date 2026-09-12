@@ -604,12 +604,14 @@ export function createAgentMethods(
     limit,
     after,
     includeSkillConfig,
+    includeExecutionConfig,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
+    includeExecutionConfig?: boolean;
   }) => Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1352,12 +1354,14 @@ export function createAgentMethods(
     limit = 100,
     after = null,
     includeSkillConfig = false,
+    includeExecutionConfig = false,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
+    includeExecutionConfig?: boolean;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1425,6 +1429,18 @@ export function createAgentMethods(
       projection.skill_authoring_enabled = 1;
       projection.skills_scope = 1;
     }
+    if (includeExecutionConfig) {
+      projection.tools = 1;
+      projection.stateful_code_sessions = 1;
+      projection.code_environment_id = 1;
+      projection.code_workspace_id = 1;
+      projection.agent_ids = 1;
+      projection['edges.from'] = 1;
+      projection['edges.to'] = 1;
+      projection['subagents.enabled'] = 1;
+      projection['subagents.agent_ids'] = 1;
+      projection['subagents.graphs.agent_ids'] = 1;
+    }
 
     let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
 
@@ -1437,6 +1453,12 @@ export function createAgentMethods(
     const hasMore = isPaginated && normalizedLimit ? agents.length > normalizedLimit : false;
     const data = (isPaginated && normalizedLimit ? agents.slice(0, normalizedLimit) : agents).map(
       (agent) => {
+        if (includeExecutionConfig) {
+          agent.tools =
+            Array.isArray(agent.tools) && agent.tools.includes(EToolResources.execute_code)
+              ? [EToolResources.execute_code]
+              : [];
+        }
         if (agent.author) {
           agent.author = (agent.author as Types.ObjectId).toString();
         }
@@ -1578,6 +1600,7 @@ export function createAgentMethods(
     const unsetOnRestore: Record<string, 1> = {};
     for (const field of [
       'code_environment_id',
+      'code_workspace_id',
       'git_identity',
       'skills_scope',
       'skill_authoring_enabled',

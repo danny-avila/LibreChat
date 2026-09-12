@@ -8,6 +8,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
+  useScrollbarGutterSeed,
   useAddedResponse,
   useResumeOnLoad,
   useAdaptiveSSE,
@@ -20,13 +21,13 @@ import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
 import { pendingApprovalActionFamily } from './approval/state';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import Footer, { useConfiguredFooter } from './Footer';
 import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
-import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -50,6 +51,15 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const pendingAction = useAtomValue(
     pendingApprovalActionFamily(conversationId ?? Constants.NEW_CONVO),
   );
+
+  /** The welcome screen reserves the message column's scrollbar band before any
+   *  column exists to measure it (see the column's class list below). */
+  useScrollbarGutterSeed();
+
+  /** A conversation carries a footer only for configured content, and the
+   *  composer's clearance has to account for the bar when it does — including
+   *  while the config is still in flight, so a cold load does not jump. */
+  const configuredFooter = useConfiguredFooter();
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -101,6 +111,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const isLandingPage =
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
+
+  /** A footer bar renders beneath the composer on the welcome screen always, and
+   *  in a conversation when the deployment configured one. `present` already
+   *  carries the remembered answer while the config is in flight, so this is the
+   *  same value before and after it resolves. */
+  const footerBelow = isLandingPage || configuredFooter.present;
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
 
@@ -151,7 +167,15 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                       className={cn(
                         'flex flex-col',
                         isLandingPage
-                          ? 'flex-1 items-center justify-end sm:justify-center'
+                          ? /* The gutter is reserved once per state, wherever the
+                               centring happens. A conversation centres the composer
+                               inside the band below, against a message column that
+                               holds the scrollbar band back; the landing page centres
+                               this whole column instead, greeting and composer
+                               together, so it holds the same band back here. Without
+                               it the composer lands 4px right of where a conversation
+                               puts it and slides sideways on the way in. */
+                            'scrollbar-gutter-spacer flex-1 items-center justify-end sm:justify-center'
                           : 'h-full overflow-y-auto',
                       )}
                     >
@@ -181,9 +205,15 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             index={index}
                             placeholder={chatFormPlaceholder}
                             project={isProjectLandingPage ? project : undefined}
+                            isLandingPage={isLandingPage}
+                            footerBelow={footerBelow}
+                            centerFormOnLanding={centerFormOnLanding}
                           />
                         )}
-                        {!isLandingPage && <Footer />}
+                        {/* The generic disclaimer is the welcome screen's; a
+                            deployment's own footer, privacy policy and terms
+                            stay with the conversation that always showed them. */}
+                        {!isLandingPage && configuredFooter.present && <Footer configuredOnly />}
                       </div>
                     </div>
                     {isLandingPage && <Footer />}

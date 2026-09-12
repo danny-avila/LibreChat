@@ -52,6 +52,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
     selections: [selected],
     resolveSelections: () => [selected],
     resolveSubmission: () => ({ codeWorkspaces: [selected] }),
+    rememberSelection: jest.fn(),
     ...overrides,
   };
 }
@@ -73,6 +74,10 @@ describe('CodeWorkspaceMenu', () => {
       ...conversation,
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
+    const navigated = { ...conversation, agent_id: 'different-agent' };
+    expect(update(navigated)).toBe(navigated);
+    const differentChat = { ...conversation, conversationId: 'different-chat' };
+    expect(update(differentChat)).toBe(differentChat);
     expect(screen.getByTestId('code-workspace')).toHaveTextContent('Project A');
   });
 
@@ -82,6 +87,7 @@ describe('CodeWorkspaceMenu', () => {
       codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'removed-project' }],
     };
     const setConversation = jest.fn();
+    const rememberSelection = jest.fn();
     render(
       <CodeWorkspaceMenu
         conversation={savedConversation}
@@ -97,6 +103,7 @@ describe('CodeWorkspaceMenu', () => {
               selected: undefined,
             },
           ],
+          rememberSelection,
         })}
         disabled={false}
       />,
@@ -107,6 +114,10 @@ describe('CodeWorkspaceMenu', () => {
     await userEvent.click(screen.getByTestId('code-workspace'));
     await userEvent.click(await screen.findByText('Project A'));
 
+    expect(rememberSelection).toHaveBeenCalledWith({
+      environmentId: 'personal-vm',
+      workspaceId: 'project-a',
+    });
     const update = setConversation.mock.calls[0][0];
     expect(update(savedConversation)).toEqual({
       ...savedConversation,

@@ -9,6 +9,7 @@ export * from './file-config';
 export * from './resolve-llm-delivery-path';
 /* messages  */
 export * from './messages';
+export * from './errors';
 /* run steps */
 export * from './runSteps';
 /* artifacts  */

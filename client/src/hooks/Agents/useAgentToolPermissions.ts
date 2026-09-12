@@ -77,12 +77,18 @@ export default function useAgentToolPermissions(
     return tools?.includes(Tools.execute_code) ?? false;
   }, [agentId, selectedAgent, tools, ephemeralAgent]);
 
+  const agent = useMemo(() => {
+    if (selectedAgent == null) return agentData;
+    if (agentData == null) return selectedAgent;
+    return { ...selectedAgent, ...agentData };
+  }, [agentData, selectedAgent]);
+
   return {
     fileSearchAllowedByAgent,
     codeAllowedByAgent,
     statefulCodeSessionsAllowedByAgent,
     codeEnvironmentId,
-    agent: agentData ?? selectedAgent,
+    agent,
     provider,
     tools,
   };
