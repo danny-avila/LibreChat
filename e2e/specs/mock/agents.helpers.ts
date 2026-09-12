@@ -95,27 +95,33 @@ export async function openAgentBuilder(page: Page) {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
 
   const form = page.getByRole('form', { name: 'Agent configuration form' });
+  /** Which control exists is a layout decision, not a timing one: the rail is
+   *  desktop-only, and at or below the app's own `(max-width: 768px)` the same
+   *  panels live in the sidebar's switcher menu. Probing the page for one would
+   *  turn a slow first paint into the wrong branch. */
+  const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) <= NARROW_MAX_WIDTH;
+
+  if (narrow) {
+    /** The drawer stays mounted while closed — translated off-canvas and marked
+     *  `inert` — and Playwright calls a translated element visible, so both the
+     *  switcher and a restored builder form pass a visibility check while they
+     *  sit behind an inert drawer. `inert` is the state, and the drawer element
+     *  is where the app writes it (`UnifiedSidebar.tsx`), so the drawer is
+     *  opened before anything inside it is read or handed back. */
+    const drawer = page.locator(`#${MOBILE_DRAWER_ID}`);
+    await expect(drawer).toBeAttached();
+    if (await drawer.evaluate((element) => element.hasAttribute('inert'))) {
+      await page.getByRole('button', { name: 'Open sidebar' }).click();
+      await expect(drawer).not.toHaveAttribute('inert', /.*/);
+    }
+  }
+
   const builderVisible = await form
     .waitFor({ state: 'visible', timeout: 1000 })
     .then(() => true)
     .catch(() => false);
   if (!builderVisible) {
-    /** Which control exists is a layout decision, not a timing one: the rail is
-     *  desktop-only, and at or below the app's own `(max-width: 768px)` the
-     *  same panels are entries in the sidebar's switcher menu. Probing for the
-     *  rail instead would turn a slow first paint into the wrong branch. */
-    const narrow = (page.viewportSize()?.width ?? DESKTOP_WIDTH) <= NARROW_MAX_WIDTH;
     if (narrow) {
-      /** The drawer stays mounted while closed — translated off-canvas and
-       *  marked `inert` — so the switcher inside it is "visible" either way and
-       *  says nothing about the state. `inert` is the state, and the drawer
-       *  element is where it is written (`UnifiedSidebar.tsx`). */
-      const drawer = page.locator(`#${MOBILE_DRAWER_ID}`);
-      await expect(drawer).toBeAttached();
-      if (await drawer.evaluate((element) => element.hasAttribute('inert'))) {
-        await page.getByRole('button', { name: 'Open sidebar' }).click();
-        await expect(drawer).not.toHaveAttribute('inert', /.*/);
-      }
       await page.getByTestId('panel-switcher-button').click();
       await page.getByRole('menuitemcheckbox', { name: 'Agent Builder' }).click();
     } else {
