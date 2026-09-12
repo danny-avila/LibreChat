@@ -179,19 +179,17 @@ export const useArchiveAllConversationsMutation = (
   const { onSuccess, onError, ..._options } = options || {};
 
   const reconcileCaches = () => {
-    /* Archiving everything invalidates every cached list wholesale, so unlike a single
-       archive this one refetches inactive variants too: leaving them merely stale would
-       let a remembered sort or bookmark variant render chats that are all archived now. */
-    queryClient.invalidateQueries({
-      queryKey: [QueryKeys.allConversations],
-      refetchPage: () => true,
-      refetchType: 'all',
-    });
-    queryClient.invalidateQueries({
-      queryKey: [QueryKeys.archivedConversations],
-      refetchPage: () => true,
-      refetchType: 'all',
-    });
+    /* Archiving everything leaves no cached list trustworthy, but only the mounted ones are
+       worth the round trips: the rest are dropped, so a remembered sort or bookmark variant
+       cannot render chats that are all archived now and refetches from scratch when mounted. */
+    for (const listKey of [QueryKeys.allConversations, QueryKeys.archivedConversations]) {
+      queryClient.invalidateQueries({
+        queryKey: [listKey],
+        refetchPage: () => true,
+        refetchType: 'active',
+      });
+      queryClient.removeQueries({ queryKey: [listKey], type: 'inactive' });
+    }
     /** The pinned section fetches on its own key with a five-minute stale time, so an
      * archived pin would keep rendering in the sidebar without this. */
     queryClient.invalidateQueries([QueryKeys.pinnedConversations]);

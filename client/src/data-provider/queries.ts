@@ -93,8 +93,8 @@ export const useConversationsInfiniteQuery = (
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
       { isArchived, sortBy, sortDirection, tags, search, projectId },
     ],
-    queryFn: ({ pageParam }) =>
-      dataService.listConversations({
+    queryFn: async ({ pageParam }) => {
+      const page = await dataService.listConversations({
         isArchived,
         sortBy,
         sortDirection,
@@ -102,7 +102,19 @@ export const useConversationsInfiniteQuery = (
         search,
         projectId,
         cursor: pageParam?.toString(),
-      }),
+      });
+      /* A row's own `isArchived` decides what its menu offers, so a backend that predates
+         that field in the list projection would make archived rows offer Archive and submit
+         a no-op. What the variant asked for is the answer for any row that omits it. */
+      return {
+        ...page,
+        conversations: page.conversations.map((conversation) =>
+          conversation.isArchived == null
+            ? { ...conversation, isArchived: isArchived === true }
+            : conversation,
+        ),
+      };
+    },
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes

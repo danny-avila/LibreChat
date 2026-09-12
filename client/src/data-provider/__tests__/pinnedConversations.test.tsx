@@ -22,7 +22,11 @@ import {
   useDeleteConversationTagMutation,
   usePinConversationMutation,
 } from '../mutations';
-import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
+import {
+  pinnedConversationsPageSize,
+  useConversationsInfiniteQuery,
+  usePinnedConversationsQuery,
+} from '../queries';
 import { chatFilterTagsAtom } from '~/components/Conversations/chatFilters';
 
 jest.mock('librechat-data-provider', () => {
@@ -215,6 +219,40 @@ describe('usePinnedConversationsQuery', () => {
       expect.not.objectContaining({ isArchived: expect.anything() }),
     );
     expect(queryClient.getQueryData([QueryKeys.pinnedConversations])).toBeDefined();
+  });
+});
+
+describe('useConversationsInfiniteQuery', () => {
+  /** A row's own `isArchived` decides what its menu offers. A backend that predates that
+   *  field in the list projection would otherwise have archived rows offering Archive. */
+  it('fills a missing archive state from what the variant asked for', async () => {
+    listConversations.mockResolvedValue(
+      listResponse([{ conversationId: 'convo-1', title: 'Archived roadmap' } as TConversation]),
+    );
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({ isArchived: true }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations[0].isArchived).toBe(true);
+  });
+
+  it('leaves an explicit archive state alone', async () => {
+    listConversations.mockResolvedValue(
+      listResponse([
+        { conversationId: 'convo-1', title: 'Unarchived pin', isArchived: false } as TConversation,
+      ]),
+    );
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({ isArchived: true }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations[0].isArchived).toBe(false);
   });
 });
 
