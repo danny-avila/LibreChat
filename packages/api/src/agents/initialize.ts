@@ -58,6 +58,7 @@ import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { AgentExecutionContext } from './runtime';
+import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import {
   injectSkillCatalog,
   resolveSkillCatalog,
@@ -637,6 +638,7 @@ export function optsOutOfAttachedCodeEnvironment(
   agent: Agent,
   requestBody: RequestBody | undefined,
   environments: readonly CodeEnvironmentConfig[] | undefined,
+  implicitStatefulRouteAvailable = false,
 ): boolean {
   if (requestBody?.codeEnvironmentMode !== 'without_attached') return false;
   const configured = agent.code_environment_id
@@ -645,7 +647,8 @@ export function optsOutOfAttachedCodeEnvironment(
   return (
     agent.stateful_code_sessions === true &&
     (configured?.type === 'attached' ||
-      (configured == null && Boolean(agent.code_environment_id)))
+      (configured == null &&
+        (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
   );
 }
 
@@ -1136,6 +1139,10 @@ export async function initializeAgent(
     agent,
     requestBody,
     configuredCodeEnvironments,
+    isImplicitStatefulCodeRouteAvailable(
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+    ),
   );
   const effectiveCodeEnvAvailable =
     params.codeEnvAvailable === true && agentRequestsCodeExec && !attachedEnvironmentOptOut;

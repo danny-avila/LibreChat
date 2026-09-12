@@ -25,6 +25,7 @@ const {
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
   optsOutOfAttachedCodeEnvironment,
+  isImplicitStatefulCodeRouteAvailable,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -1033,6 +1034,10 @@ const initializeClient = async ({
       agent,
       runtimeRequestBody,
       configuredCodeEnvironments,
+      isImplicitStatefulCodeRouteAvailable(
+        process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+        process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+      ),
     );
     const lazyCodeEnvAvailable =
       codeEnvAvailable === true &&
@@ -1050,21 +1055,17 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
-    const hasConfiguredCodeEnvironment =
-      agent.code_environment_id != null ||
-      configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const baseCodeExecutionContext =
-      lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
-        ? resolveCodeExecutionContext({
-            statefulSessions: statefulCodeSessions,
-            environment: statefulCodeEnvironment,
-            environmentId: agent.code_environment_id,
-            environments: configuredCodeEnvironments,
-            userId,
-            agentId: agent.id,
-            conversationId,
-          })
-        : undefined;
+    const baseCodeExecutionContext = lazyCodeEnvAvailable
+      ? resolveCodeExecutionContext({
+          statefulSessions: statefulCodeSessions,
+          environment: statefulCodeEnvironment,
+          environmentId: agent.code_environment_id,
+          environments: configuredCodeEnvironments,
+          userId,
+          agentId: agent.id,
+          conversationId,
+        })
+      : undefined;
     const codeExecutionContext = baseCodeExecutionContext
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,

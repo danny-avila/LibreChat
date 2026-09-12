@@ -1,6 +1,10 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { mergeAccessibleCodeEnvironments, resolveCodeEnvironmentDecisionVersion } from './config';
+import {
+  isImplicitStatefulCodeRouteAvailable,
+  mergeAccessibleCodeEnvironments,
+  resolveCodeEnvironmentDecisionVersion,
+} from './config';
 
 describe('resolveCodeEnvironmentDecisionVersion', () => {
   it('advertises the exact supported protocol version', () => {
@@ -13,6 +17,14 @@ describe('resolveCodeEnvironmentDecisionVersion', () => {
       expect(resolveCodeEnvironmentDecisionVersion(version)).toBeUndefined();
     },
   );
+});
+
+describe('isImplicitStatefulCodeRouteAvailable', () => {
+  it('requires both the deployed protocol version and a non-empty managed base URL', () => {
+    expect(isImplicitStatefulCodeRouteAvailable('1', 'https://code.example/v1')).toBe(true);
+    expect(isImplicitStatefulCodeRouteAvailable(undefined, 'https://code.example/v1')).toBe(false);
+    expect(isImplicitStatefulCodeRouteAvailable('1', '  ')).toBe(false);
+  });
 });
 
 describe('mergeAccessibleCodeEnvironments', () => {

@@ -30,6 +30,17 @@ export function resolveCodeEnvironmentDecisionVersion(
     : undefined;
 }
 
+/** Enables the implicit managed route only after the versioned rollout is complete. */
+export function isImplicitStatefulCodeRouteAvailable(
+  configuredVersion?: string,
+  statefulBaseURL?: string,
+): boolean {
+  return (
+    resolveCodeEnvironmentDecisionVersion(configuredVersion) != null &&
+    (statefulBaseURL?.trim().length ?? 0) > 0
+  );
+}
+
 function isExecutableCodeEnvironment(environment: CodeEnvironmentConfig): boolean {
   return !(
     environment.pairing?.allowPrincipalWorkers === true &&
