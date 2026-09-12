@@ -428,9 +428,13 @@ describe('success fill defaults', () => {
 });
 
 /** `status-verified` paints one thing: the check a first-party item wears next
- *  to its name. Same two ratios as the success fill — AA under the
- *  `text-on-status` check it carries, and the 3:1 mark floor against the card
- *  panel, which is `surface-secondary` in every mode. Separate from
+ *  to its name. Both of its relationships are graphical objects under WCAG
+ *  1.4.11, so both owe 3:1 and neither owes AA: the badge against the card it
+ *  sits on, and the `text-on-status` check against the badge. That is where it
+ *  parts from the success fill above, which carries a text label and therefore
+ *  owes AA. The card is not one surface — `ToolCard` rests on the dialog and
+ *  repaints to `surface-tertiary` on hover — so the silhouette is checked
+ *  against every background the card can take. Separate from
  *  `status-success-strong` on purpose: green already means selected on the same
  *  card, so provenance needs its own hue. */
 describe.each([
@@ -439,17 +443,27 @@ describe.each([
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
 ])('%s verified fill', (_name, theme: IThemeRGB) => {
-  it('carries its check at WCAG AA', () => {
+  it('carries its check at the 3:1 mark floor', () => {
     const ratio = contrast(toRgb(theme, 'rgb-status-verified'), toRgb(theme, 'rgb-text-on-status'));
-    expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
   });
 
-  it('keeps its silhouette at the 3:1 mark floor on the panel', () => {
-    const ratio = contrast(
-      toRgb(theme, 'rgb-status-verified'),
-      toRgb(theme, 'rgb-surface-secondary'),
-    );
-    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  it('keeps its silhouette at the 3:1 mark floor on every card state', () => {
+    const mark = toRgb(theme, 'rgb-status-verified');
+    /** Resting card, the panel behind the grid, and the hover repaint from
+     *  `ToolCard`'s `hover:bg-surface-tertiary`. */
+    const surfaces: Array<keyof IThemeRGB> = [
+      'rgb-surface-dialog',
+      'rgb-surface-secondary',
+      'rgb-surface-tertiary',
+    ];
+
+    const failures = surfaces.flatMap((surface) => {
+      const ratio = contrast(mark, toRgb(theme, surface));
+      return ratio < WCAG_MARK_MIN ? [`${surface}: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
   });
 });
 

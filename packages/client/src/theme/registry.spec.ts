@@ -294,6 +294,39 @@ describe('theme registry', () => {
     );
   });
 
+  it('keeps the verified mark on the success fill a theme already named', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-verified-reference',
+        modes: { dark: { colors: { 'rgb-status-success-strong': '8 135 89' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('8 135 89');
+  });
+
+  it('preserves an explicit verified fill', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-verified-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-status-success-strong': '8 135 89',
+              'rgb-status-verified': '26 127 216',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('26 127 216');
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

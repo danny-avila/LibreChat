@@ -95,10 +95,14 @@ export const darkTheme: IThemeRGB = {
   'rgb-status-neutral-subtle': '33 33 33', // #212121 (gray-800)
   'rgb-status-neutral-border': '47 47 47', // #2f2f2f (gray-700)
   /** Verified mark. Not `status-info`'s `blue-300`, which is a text hue and
-   *  leaves a white check at 1.35:1; and not `blue-600`, which drops to 3.12:1
-   *  against the #212121 panel. Balanced like the success fill above: 4.71:1
-   *  under the white `text-on-status` check and 3.42:1 against the panel. */
-  'rgb-status-verified': '11 116 212', // #0b74d4
+   *  leaves a white check at 1.35:1. The card it sits on is `surface-dialog`
+   *  at rest and `surface-tertiary` (#2f2f2f) on hover, and that hover is the
+   *  binding constraint: `#0b74d4` held the panel at 3.42:1 but fell to 2.85:1
+   *  there. Both relationships are graphical (WCAG 1.4.11): 3.23:1 against the
+   *  hover surface, 4.52:1 against the resting dialog, and 4.14:1 under the
+   *  white `text-on-status` check. No hue clears 3:1 on #2f2f2f and 4.5:1
+   *  under a white check at once — the check would have to stop being white. */
+  'rgb-status-verified': '26 127 216', // #1a7fd8
   'rgb-text-on-status': '255 255 255', // #fff (white)
 
   // Brand colors

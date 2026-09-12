@@ -415,6 +415,19 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
           'rgb-series-8': customColors?.['rgb-text-secondary'] ?? baseColors['rgb-text-secondary'],
         }
       : {};
+  /**
+   * The verified mark was painted with `status-success-strong` until it earned
+   * its own token, so a theme written before that names the green but not the
+   * blue. Filling the omission from the bundled palette would drop LibreChat's
+   * stock blue into a palette that never chose it, beside the deployment's own
+   * `text-on-status` check and card surfaces; carrying the fill it used to wear
+   * keeps that coordination, and a theme that wants the blue names the token.
+   */
+  const verifiedFallback =
+    customColors?.['rgb-status-verified'] === undefined &&
+    customColors?.['rgb-status-success-strong'] !== undefined
+      ? { 'rgb-status-verified': customColors['rgb-status-success-strong'] }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -430,6 +443,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
       ...seriesEightFallback,
+      ...verifiedFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */

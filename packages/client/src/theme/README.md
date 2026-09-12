@@ -230,7 +230,10 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
   item, worn by `VerifiedIcon`, whose badge is filled with `currentColor` and
   carries a `stroke-text-on-status` check. A color with no family: the mark is
   the only thing it paints, and it is painted rather than outlined, since an
-  outline would halo the badge against the card.
+  outline would halo the badge against the card. Both relationships are
+  graphical, so both are held at 3:1 — against every surface the card takes,
+  including its hover repaint. A theme that predates the token and names
+  `status-success-strong` keeps the mark on that fill.
 
 ### Other Colors
 

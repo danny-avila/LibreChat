@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
-import { Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import { VerifiedIcon } from '@librechat/client';
+import { Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';

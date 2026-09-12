@@ -62,6 +62,19 @@ function mapColors(colors: IThemeRGB): Array<[string, string]> {
     variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
   }
 
+  /**
+   * Same compatibility as `resolveTheme`: the mark wore `status-success-strong`
+   * before it had a token of its own, and this adapter writes only the keys a
+   * theme names, so an older stored or environment theme would otherwise keep
+   * the stock blue while the palette around it moved.
+   */
+  if (
+    colors['rgb-status-verified'] === undefined &&
+    colors['rgb-status-success-strong'] !== undefined
+  ) {
+    variables.push(['--status-verified', colors['rgb-status-success-strong']]);
+  }
+
   return variables;
 }
 
