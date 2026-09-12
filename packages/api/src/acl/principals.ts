@@ -1,23 +1,54 @@
+import type { TPrincipal } from 'librechat-data-provider';
+
 export interface DirectoryPrincipalUser {
   id: string;
 }
 
-export interface ResolveDirectoryPrincipalUserParams {
-  userBySourceId?: DirectoryPrincipalUser | null;
-  userByEmail?: DirectoryPrincipalUser | null;
+export interface DirectoryPrincipalUserData {
+  name?: string;
+  email: string;
+  emailVerified: false;
+  provider: 'openid';
+  idOnTheSource: string;
 }
 
-export const resolveDirectoryPrincipalUser = ({
-  userBySourceId,
-  userByEmail,
-}: ResolveDirectoryPrincipalUserParams): string | null => {
+export interface DirectoryPrincipalUserMethods {
+  findUserBySourceId: (idOnTheSource: string) => Promise<DirectoryPrincipalUser | null>;
+  findUserByEmail: (email: string) => Promise<DirectoryPrincipalUser | null>;
+  createUser: (user: DirectoryPrincipalUserData) => Promise<string>;
+}
+
+type DirectoryPrincipal = Pick<TPrincipal, 'name' | 'email' | 'idOnTheSource'>;
+
+export class DirectoryPrincipalConflictError extends Error {
+  readonly statusCode = 409;
+}
+
+export const ensureDirectoryPrincipalUser = async (
+  principal: DirectoryPrincipal,
+  methods: DirectoryPrincipalUserMethods,
+): Promise<string> => {
+  if (!principal.email || !principal.idOnTheSource) {
+    throw new Error('Directory user principals must have email and idOnTheSource');
+  }
+
+  const userBySourceId = await methods.findUserBySourceId(principal.idOnTheSource);
   if (userBySourceId) {
     return userBySourceId.id;
   }
 
+  const userByEmail = await methods.findUserByEmail(principal.email);
   if (userByEmail) {
-    throw new Error('Existing user must link their directory identity during sign-in');
+    throw new DirectoryPrincipalConflictError(
+      'Existing user must link their directory identity during sign-in',
+    );
   }
 
-  return null;
+  return methods.createUser({
+    name: principal.name,
+    email: principal.email.toLowerCase(),
+    emailVerified: false,
+    provider: 'openid',
+    idOnTheSource: principal.idOnTheSource,
+  });
 };

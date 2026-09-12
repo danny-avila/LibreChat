@@ -1,9 +1,5 @@
 const mongoose = require('mongoose');
-const {
-  AccessControlService,
-  isEnabled,
-  resolveDirectoryPrincipalUser,
-} = require('@librechat/api');
+const { AccessControlService, isEnabled, ensureDirectoryPrincipalUser } = require('@librechat/api');
 const {
   tenantStorage,
   getTenantId,
@@ -341,31 +337,20 @@ const ensurePrincipalExists = async function (principal) {
   }
 
   if (principal.type === PrincipalType.USER && principal.source === 'entra') {
-    if (!principal.email || !principal.idOnTheSource) {
-      throw new Error('Entra ID user principals must have email and idOnTheSource');
-    }
-
-    const userBySourceId = await db.findUser({ idOnTheSource: principal.idOnTheSource });
-    const userByEmail = userBySourceId ? null : await db.findUser({ email: principal.email });
-    const existingUserId = resolveDirectoryPrincipalUser({
-      userBySourceId: userBySourceId ? { id: userBySourceId._id.toString() } : null,
-      userByEmail: userByEmail ? { id: userByEmail._id.toString() } : null,
+    return ensureDirectoryPrincipalUser(principal, {
+      findUserBySourceId: async (idOnTheSource) => {
+        const user = await db.findUser({ idOnTheSource });
+        return user ? { id: user._id.toString() } : null;
+      },
+      findUserByEmail: async (email) => {
+        const user = await db.findUser({ email });
+        return user ? { id: user._id.toString() } : null;
+      },
+      createUser: async (userData) => {
+        const userId = await db.createUser(userData, true, true);
+        return userId.toString();
+      },
     });
-
-    if (existingUserId) {
-      return existingUserId;
-    }
-
-    const userData = {
-      name: principal.name,
-      email: principal.email.toLowerCase(),
-      emailVerified: false,
-      provider: 'openid',
-      idOnTheSource: principal.idOnTheSource,
-    };
-
-    const userId = await db.createUser(userData, true, true);
-    return userId.toString();
   }
 
   if (principal.type === PrincipalType.GROUP) {

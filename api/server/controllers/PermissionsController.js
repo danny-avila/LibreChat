@@ -13,6 +13,7 @@ const {
   maskAgentInsightsBit,
   sanitizeInsightsPermissionPrincipals,
   validateInsightsPermissionUpdates,
+  DirectoryPrincipalConflictError,
 } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
@@ -142,6 +143,9 @@ const updateResourcePermissions = async (req, res) => {
           id: principalId,
         });
       } catch (error) {
+        if (error instanceof DirectoryPrincipalConflictError) {
+          throw error;
+        }
         logger.error('Error ensuring principal exists:', {
           principal: {
             type: principal.type,

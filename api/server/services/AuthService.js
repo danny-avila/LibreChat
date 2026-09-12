@@ -1005,8 +1005,8 @@ const resendVerificationEmail = async (req) => {
   } catch (error) {
     logger.error(`[resendVerificationEmail] Error resending verification email: ${error.message}`);
     return {
-      status: 500,
-      message: 'Something went wrong.',
+      status: 200,
+      message: genericVerificationMessage,
     };
   }
 };
