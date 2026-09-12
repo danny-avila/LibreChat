@@ -200,6 +200,87 @@ describe('MCPServerCatalogRecoveryTracker capacity', () => {
   });
 });
 
+describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
+  const policy = {
+    discoveryBackoffMs: [60_000],
+    discoveryTimeoutMs: 3_000,
+    reauthRetryMs: 60_000,
+    maxStateEntries: 10,
+    generationReadTimeoutMs: 500,
+    authorizationFenceRetryMs: [0],
+    authorizationFenceTimeoutMs: 1_000,
+    authorizationFenceRetryIntervalMs: 30_000,
+    authorizationFenceRetryBatchSize: 100,
+  };
+  const serverName = 'oauth-server';
+  const candidate = { serverName, serverConfig: serverConfig(serverName) };
+  const listed = () => ({ serverName, tools: availableTools('listed') });
+  const failed = () => ({ serverName, tools: null, state: 'backoff' as const });
+
+  it('stays joinable through the local clear its own publication performs', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    const replacement = jest.fn(async () => listed());
+    let joined: Promise<unknown> | undefined;
+
+    const flight = tracker.run(
+      user,
+      candidate,
+      policy,
+      'generation-1',
+      async (trackPublication) => {
+        await trackPublication(async () => {
+          tracker.clear(user.id, serverName);
+          joined = tracker.run(user, candidate, policy, 'generation-2', replacement);
+          return 'generation-2';
+        });
+        return listed();
+      },
+    );
+
+    const outcome = await flight;
+    expect(outcome).toEqual({ ...listed(), recoveryGeneration: 'generation-2' });
+    await expect(joined).resolves.toBe(outcome);
+    expect(replacement).not.toHaveBeenCalled();
+  });
+
+  it('applies a clear that arrived during its own publication when that publication fails', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    await tracker.run(user, candidate, policy, 'generation-1', async (trackPublication) => {
+      await trackPublication(async () => {
+        tracker.clear(user.id, serverName);
+        throw new Error('tool cache unavailable');
+      }).catch(() => undefined);
+      return failed();
+    });
+
+    const retry = jest.fn(async () => failed());
+    await tracker.run(user, candidate, policy, 'generation-1', retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not adopt a publication that outlives its flight', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker();
+    let releasePublication: () => void = () => undefined;
+    let publication: Promise<string | undefined> | undefined;
+    await tracker.run(user, candidate, policy, 'generation-1', async (trackPublication) => {
+      publication = trackPublication(async () => {
+        await new Promise<void>((resolve) => {
+          releasePublication = resolve;
+        });
+        tracker.clear(user.id, serverName);
+        return 'generation-2';
+      });
+      return failed();
+    });
+
+    releasePublication();
+    await publication;
+    const retry = jest.fn(async () => listed());
+    await tracker.run(user, candidate, policy, 'generation-2', retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('recoverMCPServerCatalogs', () => {
   it('does not discover with a credential snapshot superseded while auth was loading', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
@@ -831,10 +912,12 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
   const createFence = () => {
     let rotations = 1;
     let generation = 'generation-1';
+    let publicationHold: Promise<void> | undefined;
     const recoveryTracker = new MCPServerCatalogRecoveryTracker();
     const invalidateRecoveryGeneration = async () => {
       rotations += 1;
       generation = `generation-${rotations}`;
+      await publicationHold;
       return generation;
     };
     const onOAuthCredentialsChanging = (changed: MCPRecoveryGenerationScope) =>
@@ -852,8 +935,21 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       rotateOnAnotherReplica: invalidateRecoveryGeneration,
       /** A credential change committed by another request on this replica. */
       rotateOnThisReplica: async () => (await onOAuthCredentialsChanging(scope))(),
+      /** Keeps a publication open after its generation is visible, as its remaining writes would. */
+      holdPublication: () => {
+        let release: () => void = () => undefined;
+        publicationHold = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return () => {
+          publicationHold = undefined;
+          release();
+        };
+      },
     };
   };
+
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
 
   const loadCatalogs = (
     fence: ReturnType<typeof createFence>,
@@ -915,31 +1011,41 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     },
   );
 
-  it('shares the discovery with a request that observes the generation its refresh published', async () => {
-    const fence = createFence();
-    const releases: Array<() => void> = [];
-    let accessTokenExpired = true;
-    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
-      if (accessTokenExpired) {
-        accessTokenExpired = false;
-        await refreshAccessToken(options);
-      }
-      await new Promise<void>((resolve) => releases.push(resolve));
-      return { tools: listedTools };
-    });
+  it.each([
+    ['after its refresh published', false],
+    ['while its refresh is still publishing', true],
+  ])(
+    'shares the discovery with a request that reads the refreshed generation %s',
+    async (_when, duringPublication) => {
+      const fence = createFence();
+      const releaseDiscovery: Array<() => void> = [];
+      const releasePublication = duringPublication ? fence.holdPublication() : undefined;
+      let accessTokenExpired = true;
+      const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+        if (accessTokenExpired) {
+          accessTokenExpired = false;
+          await refreshAccessToken(options);
+        }
+        await new Promise<void>((resolve) => releaseDiscovery.push(resolve));
+        return { tools: listedTools };
+      });
 
-    const first = loadCatalogs(fence, discoverServerTools);
-    await new Promise((resolve) => setImmediate(resolve));
-    const second = loadCatalogs(fence, discoverServerTools);
-    await new Promise((resolve) => setImmediate(resolve));
-    releases.splice(0).forEach((release) => release());
+      const first = loadCatalogs(fence, discoverServerTools);
+      await flush();
+      await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-2');
+      const second = loadCatalogs(fence, discoverServerTools);
+      await flush();
+      releasePublication?.();
+      await flush();
+      releaseDiscovery.splice(0).forEach((release) => release());
 
-    const recovered = expect.objectContaining({
-      serverTools: new Map([[serverName, recoveredTools]]),
-    });
-    await expect(Promise.all([first, second])).resolves.toEqual([recovered, recovered]);
-    expect(discoverServerTools).toHaveBeenCalledTimes(1);
-  });
+      const recovered = expect.objectContaining({
+        serverTools: new Map([[serverName, recoveredTools]]),
+      });
+      await expect(Promise.all([first, second])).resolves.toEqual([recovered, recovered]);
+      expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('retains a reauthorization decision under the generation its refresh published', async () => {
     const fence = createFence();

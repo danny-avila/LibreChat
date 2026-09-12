@@ -207,7 +207,16 @@ interface RecoveryStateEntry {
   lastTouchedAt: number;
   outcome?: RecoveryOutcome;
   inFlight?: Promise<RecoveryOutcome>;
+  /** Credential publications this flight's own discovery has in progress. */
+  ownPublications: number;
+  /** Whether a clear arrived while one of those publications was in progress. */
+  clearedDuringPublication: boolean;
 }
+
+/** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
+type PublicationTracker = (
+  publish: () => Promise<string | undefined>,
+) => Promise<string | undefined>;
 
 interface CatalogWorkLane {
   tasks: ReadonlyArray<() => Promise<void>>;
@@ -321,14 +330,38 @@ export class MCPServerCatalogRecoveryTracker {
   /** Clears suppression after a credential/config mutation commits. */
   public clear(userId: string, serverName?: string): void {
     if (serverName != null) {
-      this.states.delete(getRecoveryKey(userId, serverName));
+      this.clearState(getRecoveryKey(userId, serverName));
       return;
     }
     const prefix = `${userId}\u0000`;
     for (const key of this.states.keys()) {
       if (key.startsWith(prefix)) {
-        this.states.delete(key);
+        this.clearState(key);
       }
+    }
+  }
+
+  /** A flight publishing its own credential change holds a clear until that publication ends. */
+  private clearState(key: string): void {
+    const entry = this.states.get(key);
+    if (entry != null && entry.ownPublications > 0) {
+      entry.clearedDuringPublication = true;
+      return;
+    }
+    this.states.delete(key);
+  }
+
+  /** Adopts what the last of a flight's own publications wrote, or applies a clear it held. */
+  private finishOwnPublication(key: string, entry: RecoveryStateEntry, published?: string): void {
+    if (entry.ownPublications > 0 || this.states.get(key) !== entry) {
+      return;
+    }
+    const cleared = entry.clearedDuringPublication;
+    entry.clearedDuringPublication = false;
+    if (published != null) {
+      entry.recoveryGeneration = published;
+    } else if (cleared) {
+      this.states.delete(key);
     }
   }
 
@@ -337,7 +370,7 @@ export class MCPServerCatalogRecoveryTracker {
     candidate: RecoveryCandidate,
     policy: MCPServerCatalogRecoveryPolicy,
     recoveryGeneration: string | undefined,
-    discover: (onGenerationPublished: (generation: string) => void) => Promise<RecoveryOutcome>,
+    discover: (trackPublication: PublicationTracker) => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
     const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
@@ -345,7 +378,9 @@ export class MCPServerCatalogRecoveryTracker {
     const existing = this.states.get(key);
     const sameObservedState =
       existing?.configFingerprint === configFingerprint &&
-      (recoveryGeneration == null || existing.recoveryGeneration === recoveryGeneration);
+      (recoveryGeneration == null ||
+        existing.recoveryGeneration === recoveryGeneration ||
+        (existing.inFlight != null && existing.ownPublications > 0));
     if (sameObservedState) {
       existing.lastTouchedAt = now;
       this.touch(key, existing);
@@ -364,23 +399,33 @@ export class MCPServerCatalogRecoveryTracker {
       failureCount: sameObservedState ? existing.failureCount : 0,
       nextRetryAt: 0,
       lastTouchedAt: now,
+      ownPublications: 0,
+      clearedDuringPublication: false,
     };
     let settled = false;
     /**
-     * A credential refresh inside discovery publishes a new generation and then clears local
-     * recovery state, which would otherwise discard this flight as superseded by a mutation it
-     * made itself. Adopting what the flight published keeps it current under that generation; a
-     * later rotation or clear from any other writer still supersedes it.
+     * A credential refresh inside discovery writes a new shared generation, then clears local
+     * recovery state, and only then reports what it wrote. Until that publication ends the flight
+     * holds the clear and any request for the same server joins it, so neither the refresh's own
+     * clear nor a request that already reads the new generation can supersede it. The flight then
+     * adopts that generation; a later rotation or clear from any other writer still supersedes it.
      */
-    const adoptPublishedGeneration = (generation: string): void => {
-      const current = this.states.get(key);
-      if (settled || (current != null && current !== entry)) {
-        return;
+    const trackPublication: PublicationTracker = async (publish) => {
+      if (settled || this.states.get(key) !== entry) {
+        return publish();
       }
-      entry.recoveryGeneration = generation;
-      this.states.set(key, entry);
+      entry.ownPublications += 1;
+      let published: string | undefined;
+      try {
+        published = await publish();
+        return published;
+      } finally {
+        entry.ownPublications -= 1;
+        this.finishOwnPublication(key, entry, settled ? undefined : published);
+      }
     };
-    const flight = discover(adoptPublishedGeneration)
+    const flight = Promise.resolve()
+      .then(() => discover(trackPublication))
       .finally(() => {
         settled = true;
       })
@@ -438,23 +483,17 @@ export class MCPServerCatalogRecoveryTracker {
   }
 }
 
-/** Reports each generation the fence publishes for a credential refresh made by this discovery. */
-function observePublishedGeneration(
+/** Routes each fence publication a discovery's own refresh makes through its recovery flight. */
+function trackPublications(
   onOAuthCredentialsChanging: ToolDiscoveryOptions['onOAuthCredentialsChanging'],
-  onGenerationPublished?: (generation: string) => void,
+  trackPublication?: PublicationTracker,
 ): ToolDiscoveryOptions['onOAuthCredentialsChanging'] {
-  if (onOAuthCredentialsChanging == null || onGenerationPublished == null) {
+  if (onOAuthCredentialsChanging == null || trackPublication == null) {
     return onOAuthCredentialsChanging;
   }
   return async (scope) => {
     const publish = await onOAuthCredentialsChanging(scope);
-    return async () => {
-      const published = await publish();
-      if (published) {
-        onGenerationPublished(published);
-      }
-      return published;
-    };
+    return () => trackPublication(publish);
   };
 }
 
@@ -465,8 +504,8 @@ async function discoverCandidate(
   policy: MCPServerCatalogRecoveryPolicy,
   {
     signal,
-    onGenerationPublished,
-  }: { signal?: AbortSignal; onGenerationPublished?: (generation: string) => void } = {},
+    trackPublication,
+  }: { signal?: AbortSignal; trackPublication?: PublicationTracker } = {},
 ): Promise<RecoveryOutcome> {
   try {
     const result = await deps.discoverServerTools({
@@ -476,9 +515,9 @@ async function discoverCandidate(
       customUserVars,
       deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
       signal,
-      onOAuthCredentialsChanging: observePublishedGeneration(
+      onOAuthCredentialsChanging: trackPublications(
         deps.onOAuthCredentialsChanging,
-        onGenerationPublished,
+        trackPublication,
       ),
     });
     const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
@@ -715,8 +754,8 @@ async function recoverMCPServerCatalogsWithState(
         candidate,
         policy,
         recoveryGeneration,
-        (onGenerationPublished) =>
-          discoverCandidate(user, candidate, deps, policy, { onGenerationPublished }),
+        (trackPublication) =>
+          discoverCandidate(user, candidate, deps, policy, { trackPublication }),
       );
       const finalGeneration = await readMCPRecoveryGeneration(
         { userId: user.id, serverName: candidate.serverName },
