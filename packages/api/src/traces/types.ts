@@ -20,7 +20,10 @@ export interface TraceQuery {
  * a backend is a new reader rather than a branch in the routes or the client.
  */
 export interface TraceReader {
-  /** Whether a trace may exist; must not call the tracing backend's read API. */
+  /**
+   * Whether a trace may exist. Runs alongside the ownership check, so it may
+   * read only the requesting user's own data and never the backend's records.
+   */
   isAvailable(query: TraceQuery): Promise<boolean>;
   listRecords(query: TraceQuery & { cursor?: string }): Promise<TTracePage>;
   /** `null` when the record is absent or outside the conversation's traces. */

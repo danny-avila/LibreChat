@@ -604,13 +604,21 @@ export interface MessageMethods {
   /**
    * Reads the references a trace viewer needs for one of the user's
    * conversations: when it began and which responses were sampled into traces.
-   * `sampledLimit` bounds the sampled list for existence checks.
    */
   getConversationTraceRefs(input: {
     user: string;
     conversationId: string;
-    sampledLimit?: number;
   }): Promise<ConversationTraceRefs>;
+  /**
+   * Whether any of the user's responses in the conversation was sampled into a
+   * trace that one of `destinationIds` can hold. A response with no recorded
+   * destinations predates the record and counts for every destination.
+   */
+  hasSampledTraceMessage(input: {
+    user: string;
+    conversationId: string;
+    destinationIds: string[];
+  }): Promise<boolean>;
   recordSubagentTaskControlReceipt(input: {
     userId: string;
     conversationId: string;
@@ -3341,28 +3349,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function getConversationTraceRefs({
     user,
     conversationId,
-    sampledLimit,
   }: {
     user: string;
     conversationId: string;
-    sampledLimit?: number;
   }): Promise<ConversationTraceRefs> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const sampledQuery = Message.find({ user, conversationId, langfuseSampled: true })
-        .select('messageId createdAt langfuseDestinationIds -_id')
-        .sort({ createdAt: 1 });
-      if (sampledLimit != null && sampledLimit > 0) {
-        sampledQuery.limit(sampledLimit);
-      }
       const [first, sampled] = await Promise.all([
         Message.findOne({ user, conversationId })
           .select('createdAt -_id')
           .sort({ createdAt: 1 })
           .lean<Pick<IMessage, 'createdAt'>>(),
-        sampledQuery.lean<
-          Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>
-        >(),
+        Message.find({ user, conversationId, langfuseSampled: true })
+          .select('messageId createdAt langfuseDestinationIds -_id')
+          .sort({ createdAt: 1 })
+          .lean<Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>>(),
       ]);
       return {
         firstMessageAt: first?.createdAt,
@@ -3376,6 +3377,35 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       };
     } catch (err) {
       logger.error('Error getting conversation trace references:', err);
+      throw err;
+    }
+  }
+
+  async function hasSampledTraceMessage({
+    user,
+    conversationId,
+    destinationIds,
+  }: {
+    user: string;
+    conversationId: string;
+    destinationIds: string[];
+  }): Promise<boolean> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const match = await Message.findOne({
+        user,
+        conversationId,
+        langfuseSampled: true,
+        $or: [
+          { langfuseDestinationIds: null },
+          { langfuseDestinationIds: { $in: destinationIds } },
+        ],
+      })
+        .select('_id')
+        .lean();
+      return match != null;
+    } catch (err) {
+      logger.error('Error checking for a sampled trace message:', err);
       throw err;
     }
   }
@@ -3479,6 +3509,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     deleteMessagesSince,
     getMessages,
     getConversationTraceRefs,
+    hasSampledTraceMessage,
     getMessagesForSubagentThreadView,
     listSubagentTasksForThreads,
     getMessage,

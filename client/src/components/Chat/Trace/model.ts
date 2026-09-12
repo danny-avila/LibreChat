@@ -45,15 +45,12 @@ export type TraceModel = {
 
 export type TraceWindow = { start: number; end: number };
 
+/** `position` and `setSize` count the row's visible siblings, as a tree item's ARIA position does. */
+type RowPlacement = { key: string; expanded: boolean; position: number; setSize: number };
+
 export type TraceRow =
-  | { type: 'turn'; key: string; turn: TraceTurn; expanded: boolean }
-  | {
-      type: 'record';
-      key: string;
-      node: TraceNode;
-      expanded: boolean;
-      hasChildren: boolean;
-    };
+  | (RowPlacement & { type: 'turn'; turn: TraceTurn })
+  | (RowPlacement & { type: 'record'; node: TraceNode; hasChildren: boolean });
 
 export type TraceFilter = {
   collapsed: ReadonlySet<string>;
@@ -280,37 +277,55 @@ export function flattenRows(
   const visible = filtering ? visibleIds(model, normalizedQuery, window) : null;
   const rows: TraceRow[] = [];
 
-  for (const turn of model.turns) {
+  const turns = model.turns.flatMap((turn) => {
     const roots = visible ? turn.rootIds.filter((id) => visible.has(id)) : turn.rootIds;
-    if (visible && roots.length === 0) {
-      continue;
-    }
+    return visible && roots.length === 0 ? [] : [{ turn, roots }];
+  });
+
+  turns.forEach(({ turn, roots }, turnIndex) => {
     const turnExpanded = filtering || !collapsed.has(turn.key);
-    rows.push({ type: 'turn', key: turn.key, turn, expanded: turnExpanded });
+    rows.push({
+      type: 'turn',
+      key: turn.key,
+      turn,
+      expanded: turnExpanded,
+      position: turnIndex + 1,
+      setSize: turns.length,
+    });
     if (!turnExpanded) {
-      continue;
+      return;
     }
 
-    const stack = [...roots].reverse();
+    const stack = roots
+      .map((id, index) => ({ id, position: index + 1, setSize: roots.length }))
+      .reverse();
     while (stack.length > 0) {
-      const id = stack.pop();
-      const node = id != null ? model.nodes.get(id) : undefined;
-      if (id == null || !node) {
+      const entry = stack.pop();
+      const node = entry != null ? model.nodes.get(entry.id) : undefined;
+      if (entry == null || !node) {
         continue;
       }
       const children = visible
         ? node.childIds.filter((childId) => visible.has(childId))
         : node.childIds;
-      const expanded = filtering || !collapsed.has(id);
-      rows.push({ type: 'record', key: id, node, expanded, hasChildren: children.length > 0 });
+      const expanded = filtering || !collapsed.has(entry.id);
+      rows.push({
+        type: 'record',
+        key: entry.id,
+        node,
+        expanded,
+        hasChildren: children.length > 0,
+        position: entry.position,
+        setSize: entry.setSize,
+      });
       if (!expanded) {
         continue;
       }
       for (let i = children.length - 1; i >= 0; i--) {
-        stack.push(children[i]);
+        stack.push({ id: children[i], position: i + 1, setSize: children.length });
       }
     }
-  }
+  });
   return rows;
 }
 

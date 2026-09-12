@@ -123,9 +123,50 @@ describe('trace handlers', () => {
     expect(records.status).toBe(404);
     expect(records.body.errorCode).toBe('not_found');
     expect(detail.status).toBe(404);
-    expect(reader.isAvailable).not.toHaveBeenCalled();
     expect(reader.listRecords).not.toHaveBeenCalled();
     expect(reader.getRecord).not.toHaveBeenCalled();
+  });
+
+  it('starts the availability lookup alongside the ownership check', async () => {
+    let readerStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      readerStarted = resolve;
+    });
+    const reader = createReader({
+      isAvailable: jest.fn(async () => {
+        readerStarted();
+        return true;
+      }),
+    });
+    /** Owned only if the lookup was already running; a serial handler times out to unowned. */
+    const getConvoOwnership = jest.fn(async () =>
+      Promise.race([
+        started.then(() => ({ user: 'owner' })),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
+      ]),
+    );
+    const { app } = createApp({ reader, getConvoOwnership });
+
+    const response = await request(app).get('/api/traces/convo-1/availability');
+
+    expect(response.body).toEqual({ available: true });
+  });
+
+  it('answers unavailable for an unowned conversation even when the lookup fails', async () => {
+    const reader = createReader({
+      isAvailable: jest.fn(async () => {
+        throw new TraceReadError('upstream_error', 'lookup failed');
+      }),
+    });
+    const unowned = createApp({ reader, getConvoOwnership: jest.fn(async () => null) });
+    const owned = createApp({ reader });
+
+    const unownedResponse = await request(unowned.app).get('/api/traces/convo-1/availability');
+    const ownedResponse = await request(owned.app).get('/api/traces/convo-1/availability');
+
+    expect(unownedResponse.status).toBe(200);
+    expect(unownedResponse.body).toEqual({ available: false });
+    expect(ownedResponse.status).toBe(502);
   });
 
   it('rejects the new-conversation placeholder and malformed cursors', async () => {

@@ -21,8 +21,6 @@ import { redirectPolicyFor } from './utils';
 import { traceIdForMessage } from './trace';
 
 const OBSERVATIONS_PATH = '/api/public/v2/observations';
-/** Mirrors the connection check's budget for a single Langfuse round trip. */
-const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_PAGE_SIZE = 1000;
 /** Langfuse stamps observations with the exporting server's clock; the margin
  *  absorbs skew between that clock and the database's message timestamps. */
@@ -71,8 +69,12 @@ export interface LangfuseTraceReaderDeps {
   getConversationTraceRefs: (input: {
     user: string;
     conversationId: string;
-    sampledLimit?: number;
   }) => Promise<ConversationTraceRefs>;
+  hasSampledTraceMessage: (input: {
+    user: string;
+    conversationId: string;
+    destinationIds: string[];
+  }) => Promise<boolean>;
   /** Defaults to the destinations feedback scores use, which carry the read credentials. */
   resolveDestinations?: (appConfig?: AppConfig) => Promise<LangfuseScoreDestination[]>;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
@@ -92,14 +94,14 @@ function clamp(value: string, maxLength: number): string {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
 
-function toStatus(observation: LangfuseObservation): TTraceStatus {
+function toStatus(observation: LangfuseObservation, endTime?: string | null): TTraceStatus {
   if (observation.level === 'ERROR') {
     return 'error';
   }
   if (observation.level === 'WARNING') {
     return 'warning';
   }
-  return observation.endTime ? 'ok' : 'running';
+  return endTime ? 'ok' : 'running';
 }
 
 function usageValue(details: Record<string, number>, ...keys: string[]): number | undefined {
@@ -140,7 +142,10 @@ function toCost(observation: LangfuseObservation): number | undefined {
 }
 
 function toRecord(observation: LangfuseObservation, messageId: string): TTraceRecord {
-  const status = toStatus(observation);
+  const type = observation.type.toUpperCase();
+  /** An event is a point in time and is never given an end, so a missing end is not "running". */
+  const endTime = observation.endTime ?? (type === 'EVENT' ? observation.startTime : null);
+  const status = toStatus(observation, endTime);
   const name = observation.name?.trim() || observation.type.toLowerCase();
   const statusMessage = observation.statusMessage?.trim();
   const model = (observation.model ?? observation.providedModelName)?.trim();
@@ -151,12 +156,12 @@ function toRecord(observation: LangfuseObservation, messageId: string): TTraceRe
     traceId: observation.traceId,
     messageId,
     parentId: observation.parentObservationId || null,
-    kind: KIND_BY_TYPE[observation.type.toUpperCase()] ?? 'span',
+    kind: KIND_BY_TYPE[type] ?? 'span',
     name: clamp(name, NAME_MAX_LENGTH),
     startTime: new Date(observation.startTime).toISOString(),
     status,
     ...(model ? { model: clamp(model, NAME_MAX_LENGTH) } : {}),
-    ...(observation.endTime ? { endTime: new Date(observation.endTime).toISOString() } : {}),
+    ...(endTime ? { endTime: new Date(endTime).toISOString() } : {}),
     ...(observation.completionStartTime
       ? { completionStartTime: new Date(observation.completionStartTime).toISOString() }
       : {}),
@@ -196,24 +201,37 @@ function buildTraceOwners(messages: SampledTraceMessage[]): Map<string, string> 
   return owners;
 }
 
+/**
+ * Picks the one project to read: the destination that received the most of the
+ * conversation's sampled responses, then the tenant's own project over central.
+ * A connection enabled mid-conversation holds only the later turns, so
+ * preference alone would hide every turn exported before it. A message with no
+ * recorded destinations predates the record and could be in any of them.
+ */
 function selectDestination(
   destinations: LangfuseScoreDestination[],
   messages: SampledTraceMessage[],
 ): LangfuseScoreDestination | undefined {
-  const recorded = new Set<string>();
-  let hasUnrecorded = false;
-  for (const { langfuseDestinationIds } of messages) {
-    if (langfuseDestinationIds == null) {
-      hasUnrecorded = true;
-      continue;
-    }
-    for (const id of langfuseDestinationIds) {
-      recorded.add(id);
+  let selected: LangfuseScoreDestination | undefined;
+  let selectedCoverage = 0;
+  for (const destination of destinations) {
+    const coverage = messages.filter(
+      ({ langfuseDestinationIds }) =>
+        langfuseDestinationIds == null ||
+        (destination.id != null && langfuseDestinationIds.includes(destination.id)),
+    ).length;
+    const better =
+      coverage > selectedCoverage ||
+      (coverage > 0 &&
+        coverage === selectedCoverage &&
+        selected != null &&
+        DESTINATION_PREFERENCE[destination.name] < DESTINATION_PREFERENCE[selected.name]);
+    if (better) {
+      selected = destination;
+      selectedCoverage = coverage;
     }
   }
-  return destinations
-    .filter(({ id }) => hasUnrecorded || (id != null && recorded.has(id)))
-    .sort((a, b) => DESTINATION_PREFERENCE[a.name] - DESTINATION_PREFERENCE[b.name])[0];
+  return selected;
 }
 
 function statusError(status: number, hasCursor: boolean): TraceReadError {
@@ -252,28 +270,28 @@ function isTimeout(error: unknown): boolean {
 
 export function createLangfuseTraceReader({
   getConversationTraceRefs,
+  hasSampledTraceMessage,
   resolveDestinations = (appConfig) =>
     getScoreDestinations(appConfig, '', true, { waitForCentralProjectId: true }),
   fetch: fetchImpl = (input, init) => fetch(input, init),
   now = Date.now,
 }: LangfuseTraceReaderDeps): TraceReader {
-  async function resolveTarget(query: TraceQuery, sampledLimit?: number) {
-    const refs = await getConversationTraceRefs({
-      user: query.userId,
-      conversationId: query.conversationId,
-      sampledLimit,
-    });
-    if (refs.sampledMessages.length === 0) {
-      return undefined;
-    }
-    const destinations = await resolveDestinations(query.appConfig);
+  async function readableDestinations(appConfig?: AppConfig): Promise<LangfuseScoreDestination[]> {
+    const destinations = await resolveDestinations(appConfig);
     if (destinations.length === 0) {
       warnOnce(
         'no_destination',
-        '[traces] The trace viewer is enabled, but no Langfuse destination with read credentials is configured, so sampled conversations show no trace.',
+        '[traces] The trace viewer is enabled, but Langfuse tracing is disabled or has no destination with read credentials, so no conversation shows a trace.',
       );
-      return undefined;
     }
+    return destinations;
+  }
+
+  async function resolveTarget(query: TraceQuery) {
+    const [refs, destinations] = await Promise.all([
+      getConversationTraceRefs({ user: query.userId, conversationId: query.conversationId }),
+      readableDestinations(query.appConfig),
+    ]);
     const destination = selectDestination(destinations, refs.sampledMessages);
     return destination ? { refs, destination } : undefined;
   }
@@ -293,14 +311,14 @@ export function createLangfuseTraceReader({
   async function requestPage(
     destination: LangfuseScoreDestination,
     params: URLSearchParams,
-    hasCursor: boolean,
+    { hasCursor, timeoutMs }: { hasCursor: boolean; timeoutMs: number },
   ): Promise<z.infer<typeof pageSchema>> {
     const url = `${destination.baseUrl.replace(/\/+$/, '')}${OBSERVATIONS_PATH}?${params.toString()}`;
     let response: Response;
     try {
       response = await fetchImpl(url, {
         headers: mergeHeaders(destination.headers, { Authorization: destination.authorization }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
         ...redirectPolicyFor(destination.headers),
       });
     } catch (error) {
@@ -353,7 +371,15 @@ export function createLangfuseTraceReader({
 
   return {
     async isAvailable(query) {
-      return (await resolveTarget(query, 1)) != null;
+      const destinations = await readableDestinations(query.appConfig);
+      if (destinations.length === 0) {
+        return false;
+      }
+      return hasSampledTraceMessage({
+        user: query.userId,
+        conversationId: query.conversationId,
+        destinationIds: destinations.flatMap(({ id }) => (id != null ? [id] : [])),
+      });
     },
 
     async listRecords(query) {
@@ -380,7 +406,10 @@ export function createLangfuseTraceReader({
         if (cursor) {
           params.set('cursor', cursor);
         }
-        const page = await requestPage(target.destination, params, cursor != null);
+        const page = await requestPage(target.destination, params, {
+          hasCursor: cursor != null,
+          timeoutMs: query.settings.requestTimeoutMs,
+        });
         for (const { observation, messageId } of parseRows(page.data, owners)) {
           records.push(toRecord(observation, messageId));
         }
@@ -417,7 +446,10 @@ export function createLangfuseTraceReader({
         limit: '1',
         filter: JSON.stringify(filter),
       });
-      const page = await requestPage(target.destination, params, false);
+      const page = await requestPage(target.destination, params, {
+        hasCursor: false,
+        timeoutMs: query.settings.requestTimeoutMs,
+      });
       const match = parseRows(page.data, owners).find(
         ({ observation }) => observation.id === query.recordId,
       );

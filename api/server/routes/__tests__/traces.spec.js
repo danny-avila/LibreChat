@@ -4,12 +4,14 @@ const { createHash } = require('crypto');
 
 const mockGetConvoOwnership = jest.fn();
 const mockGetConversationTraceRefs = jest.fn();
+const mockHasSampledTraceMessage = jest.fn();
 let mockUser;
 let mockTraceViewer;
 
 jest.mock('~/models', () => ({
   getConvoOwnership: (...args) => mockGetConvoOwnership(...args),
   getConversationTraceRefs: (...args) => mockGetConversationTraceRefs(...args),
+  hasSampledTraceMessage: (...args) => mockHasSampledTraceMessage(...args),
 }));
 
 jest.mock('~/server/middleware', () => ({
@@ -61,6 +63,7 @@ describe('trace routes', () => {
       firstMessageAt: new Date('2026-09-12T11:00:00.000Z'),
       sampledMessages: [{ messageId: 'response-1' }],
     });
+    mockHasSampledTraceMessage.mockResolvedValue(true);
     fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(
       async () =>
         new Response(
@@ -115,10 +118,16 @@ describe('trace routes', () => {
     expect(response.body.records.map(({ id }) => id)).toEqual(['obs-root']);
     expect(response.body.records[0]).toMatchObject({ messageId: 'response-1', kind: 'agent' });
     expect(mockGetConvoOwnership).toHaveBeenCalledWith('owner', 'convo-1');
+    expect(mockHasSampledTraceMessage).toHaveBeenCalledWith({
+      user: 'owner',
+      conversationId: 'convo-1',
+      destinationIds: [
+        createHash('sha256').update('https://langfuse.route.test\nroute-project').digest('hex'),
+      ],
+    });
     expect(mockGetConversationTraceRefs).toHaveBeenCalledWith({
       user: 'owner',
       conversationId: 'convo-1',
-      sampledLimit: undefined,
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(new URL(url).origin).toBe('https://langfuse.route.test');

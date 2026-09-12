@@ -1848,10 +1848,27 @@ export const traceViewerDefaults = {
   maxRecords: 1000,
   maxContentLength: 50_000,
   requestsPerMinute: 30,
+  requestTimeoutMs: 10_000,
 } as const;
 
-export const TRACE_VIEWER_MAX_RECORDS_CEILING = 10_000;
-export const TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING = 1_000_000;
+type TraceViewerLimitField =
+  | 'maxRecords'
+  | 'maxContentLength'
+  | 'requestsPerMinute'
+  | 'requestTimeoutMs';
+
+/** Inclusive bounds for the numeric `interface.traceViewer` fields. */
+export const traceViewerLimits: Readonly<
+  Record<TraceViewerLimitField, { readonly min: number; readonly max: number }>
+> = {
+  maxRecords: { min: 1, max: 10_000 },
+  maxContentLength: { min: 1, max: 1_000_000 },
+  requestsPerMinute: { min: 1, max: 1000 },
+  requestTimeoutMs: { min: 1000, max: 300_000 },
+};
+
+const boundedIntegerSchema = (field: TraceViewerLimitField) =>
+  z.number().int().min(traceViewerLimits[field].min).max(traceViewerLimits[field].max).optional();
 
 const traceViewerSchema = z.object({
   /** Shows the conversation trace control for traces this deployment exported. */
@@ -1859,26 +1876,26 @@ const traceViewerSchema = z.object({
   /** Returns observation input, output and metadata in the record inspector. */
   showInputOutput: z.boolean().optional(),
   /** Observations read from the tracing backend per request. */
-  maxRecords: z.number().int().min(1).max(TRACE_VIEWER_MAX_RECORDS_CEILING).optional(),
+  maxRecords: boundedIntegerSchema('maxRecords'),
   /** Characters kept from each input, output and metadata value before truncation. */
-  maxContentLength: z.number().int().min(1).max(TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING).optional(),
+  maxContentLength: boundedIntegerSchema('maxContentLength'),
   /** Trace reads one user may start per minute. */
-  requestsPerMinute: z.number().int().min(1).max(1000).optional(),
+  requestsPerMinute: boundedIntegerSchema('requestsPerMinute'),
+  /** Budget for each round trip to the tracing backend, in milliseconds. */
+  requestTimeoutMs: boundedIntegerSchema('requestTimeoutMs'),
 });
 
 export type TTraceViewerConfig = z.infer<typeof traceViewerSchema>;
 export type TResolvedTraceViewerConfig = {
   enabled: boolean;
   showInputOutput: boolean;
-  maxRecords: number;
-  maxContentLength: number;
-  requestsPerMinute: number;
-};
+} & Record<TraceViewerLimitField, number>;
 
-function boundedInteger(value: unknown, fallback: number, max: number): number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
+function boundedInteger(value: unknown, field: TraceViewerLimitField): number {
+  const { min, max } = traceViewerLimits[field];
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= min
     ? Math.min(value, max)
-    : fallback;
+    : traceViewerDefaults[field];
 }
 
 /**
@@ -1892,21 +1909,10 @@ export function resolveTraceViewerConfig(
   return {
     enabled: config?.enabled === true,
     showInputOutput: config?.showInputOutput === true,
-    maxRecords: boundedInteger(
-      config?.maxRecords,
-      traceViewerDefaults.maxRecords,
-      TRACE_VIEWER_MAX_RECORDS_CEILING,
-    ),
-    maxContentLength: boundedInteger(
-      config?.maxContentLength,
-      traceViewerDefaults.maxContentLength,
-      TRACE_VIEWER_MAX_CONTENT_LENGTH_CEILING,
-    ),
-    requestsPerMinute: boundedInteger(
-      config?.requestsPerMinute,
-      traceViewerDefaults.requestsPerMinute,
-      1000,
-    ),
+    maxRecords: boundedInteger(config?.maxRecords, 'maxRecords'),
+    maxContentLength: boundedInteger(config?.maxContentLength, 'maxContentLength'),
+    requestsPerMinute: boundedInteger(config?.requestsPerMinute, 'requestsPerMinute'),
+    requestTimeoutMs: boundedInteger(config?.requestTimeoutMs, 'requestTimeoutMs'),
   };
 }
 

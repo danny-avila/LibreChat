@@ -93,15 +93,15 @@ function applyCostPolicy(record: TTraceRecord, includeCost: boolean): TTraceReco
 }
 
 /**
- * Trace routes for a user's own conversations. Every read re-proves ownership
- * of the conversation before the reader runs; the reader then narrows the
- * backend's session to the traces that user's responses produced.
+ * Trace routes for a user's own conversations. Every response is gated on
+ * ownership of the conversation; the reader then narrows the backend's session
+ * to the traces that user's responses produced.
  */
 export function createTraceHandlers({
   reader,
   getConvoOwnership,
 }: TraceHandlerDeps): TraceHandlers {
-  async function resolveScope(req: TraceRequest): Promise<ScopeResult> {
+  function prepareScope(req: TraceRequest): ScopeResult {
     const settings = resolveTraceViewerConfig(req.config?.interfaceConfig?.traceViewer);
     if (!settings.enabled) {
       return { errorCode: 'disabled' };
@@ -119,16 +119,26 @@ export function createTraceHandlers({
       return { errorCode: 'invalid_request' };
     }
 
-    const conversation = await getConvoOwnership(userId, conversationId);
-    /** Child threads share their parent's session, and reads of them already
-     *  answer as missing (see message validation), so they do too here. */
-    if (!conversation || conversation.user !== userId || conversation.subagentThread != null) {
-      return { errorCode: 'not_found' };
-    }
-
     return {
       query: { userId, conversationId, appConfig: req.config, settings },
     };
+  }
+
+  /** Child threads share their parent's session, and reads of them already
+   *  answer as missing (see message validation), so they do too here. */
+  async function isOwned({ userId, conversationId }: TraceQuery): Promise<boolean> {
+    const conversation = await getConvoOwnership(userId, conversationId);
+    return (
+      conversation != null && conversation.user === userId && conversation.subagentThread == null
+    );
+  }
+
+  async function resolveScope(req: TraceRequest): Promise<ScopeResult> {
+    const scope = prepareScope(req);
+    if ('errorCode' in scope) {
+      return scope;
+    }
+    return (await isOwned(scope.query)) ? scope : { errorCode: 'not_found' };
   }
 
   function handleFailure(res: Response, error: unknown, action: string): Response {
@@ -147,11 +157,24 @@ export function createTraceHandlers({
   async function availability(req: TraceRequest, res: Response): Promise<Response> {
     res.set('Cache-Control', 'private, no-store');
     try {
-      const scope = await resolveScope(req);
+      const scope = prepareScope(req);
       if ('errorCode' in scope) {
         return res.status(200).json({ available: false });
       }
-      return res.status(200).json({ available: await reader.isAvailable(scope.query) });
+      /** Both reads are scoped to the requesting user, so they start together on
+       *  the conversation-load path; nothing is answered until ownership holds. */
+      const availability = reader.isAvailable(scope.query).then(
+        (available) => ({ available }),
+        (error: unknown) => ({ error }),
+      );
+      const [owned, result] = await Promise.all([isOwned(scope.query), availability]);
+      if (!owned) {
+        return res.status(200).json({ available: false });
+      }
+      if ('error' in result) {
+        throw result.error;
+      }
+      return res.status(200).json({ available: result.available });
     } catch (error) {
       return handleFailure(res, error, 'availability');
     }

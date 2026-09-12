@@ -210,8 +210,8 @@ function Ledger({
     const common = {
       id: rowId(row.key),
       role: 'treeitem',
-      'aria-posinset': index + 1,
-      'aria-setsize': rows.length,
+      'aria-posinset': row.position,
+      'aria-setsize': row.setSize,
       style,
       onClick: () => activate(row),
     };

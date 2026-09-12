@@ -1885,8 +1885,11 @@ describe('interface.traceViewer', () => {
         maxRecords: 500,
         maxContentLength: 2000,
         requestsPerMinute: 10,
+        requestTimeoutMs: 30_000,
       }),
     ).toBe(true);
+    expect(parse({ requestTimeoutMs: 999 })).toBe(false);
+    expect(parse({ requestTimeoutMs: 300_001 })).toBe(false);
     expect(parse({ maxRecords: 0 })).toBe(false);
     expect(parse({ maxRecords: 10_001 })).toBe(false);
     expect(parse({ maxContentLength: 1.5 })).toBe(false);
@@ -1906,6 +1909,7 @@ describe('interface.traceViewer', () => {
         maxRecords: 50_000,
         maxContentLength: -5,
         requestsPerMinute: Number.NaN,
+        requestTimeoutMs: 50,
       }),
     ).toEqual({
       enabled: false,
@@ -1913,6 +1917,7 @@ describe('interface.traceViewer', () => {
       maxRecords: 10_000,
       maxContentLength: traceViewerDefaults.maxContentLength,
       requestsPerMinute: traceViewerDefaults.requestsPerMinute,
+      requestTimeoutMs: traceViewerDefaults.requestTimeoutMs,
     });
   });
 });

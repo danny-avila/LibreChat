@@ -103,26 +103,6 @@ describe('getConversationTraceRefs', () => {
     expect(refs).toEqual({ firstMessageAt: at(5), sampledMessages: [] });
   });
 
-  it('bounds the sampled list with sampledLimit', async () => {
-    await seed(
-      [1, 2, 3].map((minute) => ({
-        messageId: `response-${minute}`,
-        conversationId: 'convo',
-        user: 'owner',
-        createdAt: at(minute),
-        langfuseSampled: true,
-      })),
-    );
-
-    const refs = await methods.getConversationTraceRefs({
-      user: 'owner',
-      conversationId: 'convo',
-      sampledLimit: 1,
-    });
-
-    expect(refs.sampledMessages).toEqual([{ messageId: 'response-1', createdAt: at(1) }]);
-  });
-
   it('reads only the active tenant', async () => {
     await tenantStorage.run({ tenantId: TENANT_A }, () =>
       Message.create({
@@ -146,5 +126,66 @@ describe('getConversationTraceRefs', () => {
     );
 
     expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['tenant-b-response']);
+  });
+});
+
+describe('hasSampledTraceMessage', () => {
+  const sampled = (messageId: string, overrides: Partial<IMessage> = {}): Partial<IMessage> => ({
+    messageId,
+    conversationId: 'convo',
+    user: 'owner',
+    createdAt: at(1),
+    langfuseSampled: true,
+    ...overrides,
+  });
+
+  it('finds a newer response held by a readable destination after older ones went elsewhere', async () => {
+    await seed([
+      sampled('old', { createdAt: at(1), langfuseDestinationIds: ['retired'] }),
+      sampled('new', { createdAt: at(9), langfuseDestinationIds: ['current'] }),
+    ]);
+
+    await expect(
+      methods.hasSampledTraceMessage({
+        user: 'owner',
+        conversationId: 'convo',
+        destinationIds: ['current'],
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.hasSampledTraceMessage({
+        user: 'owner',
+        conversationId: 'convo',
+        destinationIds: ['elsewhere'],
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('counts a response with no recorded destinations for any destination', async () => {
+    await seed([sampled('unrecorded')]);
+
+    await expect(
+      methods.hasSampledTraceMessage({
+        user: 'owner',
+        conversationId: 'convo',
+        destinationIds: [],
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('ignores unsampled responses, an empty destination record and other users', async () => {
+    await seed([
+      sampled('unsampled', { langfuseSampled: false }),
+      sampled('recorded-none', { langfuseDestinationIds: [] }),
+      sampled('someone-else', { user: 'victim' }),
+    ]);
+
+    await expect(
+      methods.hasSampledTraceMessage({
+        user: 'owner',
+        conversationId: 'convo',
+        destinationIds: ['current'],
+      }),
+    ).resolves.toBe(false);
   });
 });

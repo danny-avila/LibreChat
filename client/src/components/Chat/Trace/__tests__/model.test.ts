@@ -200,6 +200,25 @@ describe('flattenRows', () => {
     }),
   ]);
 
+  it('places each row among its visible siblings rather than the whole list', () => {
+    const placements = flattenRows(model, noFilter).map(({ key, position, setSize }) => [
+      key,
+      position,
+      setSize,
+    ]);
+
+    expect(placements).toEqual([
+      [turnKey('response-1'), 1, 1],
+      ['root', 1, 1],
+      ['llm', 1, 2],
+      ['tool', 2, 2],
+      ['nested', 1, 1],
+    ]);
+    expect(
+      flattenRows(model, { ...noFilter, query: 'fetch' }).find((row) => row.key === 'tool'),
+    ).toMatchObject({ position: 1, setSize: 1 });
+  });
+
   it('hides the descendants of a collapsed record and turn', () => {
     expect(rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set(['tool']) }))).toEqual([
       turnKey('response-1'),

@@ -11,7 +11,10 @@ const db = require('~/models');
 const router = express.Router();
 
 const handlers = createTraceHandlers({
-  reader: createLangfuseTraceReader({ getConversationTraceRefs: db.getConversationTraceRefs }),
+  reader: createLangfuseTraceReader({
+    getConversationTraceRefs: db.getConversationTraceRefs,
+    hasSampledTraceMessage: db.hasSampledTraceMessage,
+  }),
   getConvoOwnership: db.getConvoOwnership,
 });
 const traceReadLimiter = createTraceReadLimiter();

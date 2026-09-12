@@ -103,14 +103,29 @@ function setup({
     return next;
   });
   const getConversationTraceRefs = jest.fn(async () => refs);
+  /** Same rule as the data-schemas query, which has its own database spec. */
+  const hasSampledTraceMessage = jest.fn(async ({ destinationIds }: { destinationIds: string[] }) =>
+    refs.sampledMessages.some(
+      ({ langfuseDestinationIds }) =>
+        langfuseDestinationIds == null ||
+        langfuseDestinationIds.some((id) => destinationIds.includes(id)),
+    ),
+  );
   const resolveDestinations = jest.fn(async () => destinations);
   const reader = createLangfuseTraceReader({
     getConversationTraceRefs,
+    hasSampledTraceMessage,
     resolveDestinations,
     fetch: fetchMock,
     now: () => NOW,
   });
-  return { reader, fetchMock, getConversationTraceRefs, resolveDestinations };
+  return {
+    reader,
+    fetchMock,
+    getConversationTraceRefs,
+    hasSampledTraceMessage,
+    resolveDestinations,
+  };
 }
 
 function requestedUrl(fetchMock: jest.Mock, call = 0): URL {
@@ -120,12 +135,12 @@ function requestedUrl(fetchMock: jest.Mock, call = 0): URL {
 describe('createLangfuseTraceReader', () => {
   describe('isAvailable', () => {
     it('is unavailable without a sampled response and never reads Langfuse', async () => {
-      const { reader, fetchMock, resolveDestinations } = setup({
+      const { reader, fetchMock, getConversationTraceRefs } = setup({
         refs: createRefs({ sampledMessages: [] }),
       });
 
       await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
-      expect(resolveDestinations).not.toHaveBeenCalled();
+      expect(getConversationTraceRefs).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -139,8 +154,26 @@ describe('createLangfuseTraceReader', () => {
       await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
     });
 
+    it('stays available when only newer responses reached a readable destination', async () => {
+      const { reader, hasSampledTraceMessage } = setup({
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-0', langfuseDestinationIds: ['retired-id'] },
+            { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
+          ],
+        }),
+      });
+
+      await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
+      expect(hasSampledTraceMessage).toHaveBeenCalledWith({
+        user: 'owner',
+        conversationId: 'convo-1',
+        destinationIds: ['central-id', 'connection-id'],
+      });
+    });
+
     it('explains once when no destination can read traces at all', async () => {
-      const { reader } = setup({ destinations: [] });
+      const { reader, hasSampledTraceMessage } = setup({ destinations: [] });
       const { logger } = jest.requireMock<{ logger: { warn: jest.Mock } }>(
         '@librechat/data-schemas',
       );
@@ -149,19 +182,17 @@ describe('createLangfuseTraceReader', () => {
       await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
       await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
 
+      expect(hasSampledTraceMessage).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledTimes(1);
-      expect(logger.warn.mock.calls[0][0]).toContain('no Langfuse destination');
+      expect(logger.warn.mock.calls[0][0]).toContain('no destination with read credentials');
     });
 
-    it('checks one sampled message without reading Langfuse', async () => {
-      const { reader, fetchMock, getConversationTraceRefs } = setup();
+    it('answers from one existence query without loading every response or reading Langfuse', async () => {
+      const { reader, fetchMock, getConversationTraceRefs, hasSampledTraceMessage } = setup();
 
       await expect(reader.isAvailable(createQuery())).resolves.toBe(true);
-      expect(getConversationTraceRefs).toHaveBeenCalledWith({
-        user: 'owner',
-        conversationId: 'convo-1',
-        sampledLimit: 1,
-      });
+      expect(hasSampledTraceMessage).toHaveBeenCalledTimes(1);
+      expect(getConversationTraceRefs).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -204,6 +235,23 @@ describe('createLangfuseTraceReader', () => {
       const { reader, fetchMock } = setup({
         refs: createRefs({
           sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['central-id'] }],
+        }),
+        responses: [jsonResponse({ data: [] })],
+      });
+
+      await reader.listRecords(createQuery());
+
+      expect(requestedUrl(fetchMock).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('reads the project that holds the most responses when a connection arrived mid-conversation', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-0', langfuseDestinationIds: ['central-id'] },
+            { messageId: 'response-1', langfuseDestinationIds: ['central-id'] },
+            { messageId: 'response-2', langfuseDestinationIds: ['central-id', 'connection-id'] },
+          ],
         }),
         responses: [jsonResponse({ data: [] })],
       });
@@ -403,6 +451,43 @@ describe('createLangfuseTraceReader', () => {
       ).rejects.toMatchObject({ code: 'invalid_request' });
     });
 
+    it('bounds each Langfuse request by the configured timeout', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      const { reader } = setup({ responses: [jsonResponse({ data: [] })] });
+
+      await reader.listRecords(
+        createQuery({
+          settings: resolveTraceViewerConfig({ enabled: true, requestTimeoutMs: 45_000 }),
+        }),
+      );
+
+      expect(timeoutSpy).toHaveBeenCalledWith(45_000);
+      timeoutSpy.mockRestore();
+    });
+
+    it('treats a point-in-time event without an end as completed, not running', async () => {
+      const { reader } = setup({
+        responses: [
+          jsonResponse({
+            data: [
+              observation({ id: 'event', type: 'EVENT', name: 'checkpoint', endTime: null }),
+              observation({ id: 'open-span', type: 'SPAN', endTime: null }),
+            ],
+          }),
+        ],
+      });
+
+      const { records } = await reader.listRecords(createQuery());
+
+      expect(records.find(({ id }) => id === 'event')).toMatchObject({
+        kind: 'event',
+        status: 'ok',
+        endTime: '2026-09-12T11:30:00.000Z',
+      });
+      expect(records.find(({ id }) => id === 'open-span')).toMatchObject({ status: 'running' });
+      expect(records.find(({ id }) => id === 'open-span')).not.toHaveProperty('endTime');
+    });
+
     it('maps an aborted request to a timeout and a broken body to an upstream error', async () => {
       const timeout = new Error('The operation was aborted due to timeout');
       timeout.name = 'TimeoutError';
@@ -517,6 +602,7 @@ describe('createLangfuseTraceReader', () => {
         async (_url: string, _init: RequestInit): Promise<Response> => jsonResponse({ data: [] }),
       );
       const reader = createLangfuseTraceReader({
+        hasSampledTraceMessage: async () => true,
         getConversationTraceRefs: async () =>
           createRefs({
             sampledMessages: [
@@ -546,12 +632,15 @@ describe('createLangfuseTraceReader', () => {
       process.env.LANGFUSE_SECRET_KEY = 'sk';
       process.env.LANGFUSE_PROJECT_ID = 'central-project';
       process.env.LANGFUSE_TRACING_ENABLED = 'false';
+      const hasSampledTraceMessage = jest.fn(async () => true);
       const reader = createLangfuseTraceReader({
         getConversationTraceRefs: async () =>
           createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        hasSampledTraceMessage,
       });
 
       await expect(reader.isAvailable(createQuery())).resolves.toBe(false);
+      expect(hasSampledTraceMessage).not.toHaveBeenCalled();
     });
   });
 });
