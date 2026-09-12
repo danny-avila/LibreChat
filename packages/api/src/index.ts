@@ -28,6 +28,8 @@ export * from './mcp/errors';
 export * from './mcp/openid';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/apps';
+export * from './mcp/sandbox';
 export * from './mcp/catalog/store';
 export * from './mcp/catalog/recovery';
 export * from './mcp/authorization';

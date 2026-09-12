@@ -30,6 +30,7 @@ async function resolveMCPAllowlists(ctx) {
   return {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
+    appsEnabled: appConfig?.mcpSettings?.apps,
   };
 }
 
@@ -107,6 +108,7 @@ async function initializeMCPs() {
       appConfig?.mcpSettings?.allowedDomains,
       appConfig?.mcpSettings?.allowedAddresses,
       resolveMCPAllowlists,
+      appConfig?.mcpSettings?.apps,
     );
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);

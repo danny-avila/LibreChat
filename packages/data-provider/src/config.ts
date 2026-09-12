@@ -2732,6 +2732,7 @@ export const configSchema = z.object({
           authorizationFenceRetryBatchSize: z.number().int().positive().max(10_000).default(100),
         })
         .default({}),
+      apps: z.boolean().optional(),
     })
     .optional(),
   interface: interfaceSchema,

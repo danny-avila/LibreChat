@@ -150,6 +150,7 @@ describe('initializeMCPs', () => {
         ['localhost'],
         undefined,
         expect.any(Function), // per-request allowlist resolver
+        undefined, // mcpSettings.apps
       );
     });
 
@@ -167,6 +168,7 @@ describe('initializeMCPs', () => {
         allowedDomains,
         undefined,
         expect.any(Function),
+        undefined,
       );
     });
 
@@ -183,6 +185,7 @@ describe('initializeMCPs', () => {
         undefined,
         undefined,
         expect.any(Function),
+        undefined,
       );
     });
 

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import {
@@ -8,11 +8,13 @@ import {
   actionDomainSeparator,
   splitToolCallName,
 } from 'librechat-data-provider';
-import type { TAttachment, PartMetadata } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata, UIResource } from 'librechat-data-provider';
+import { useMCPIconMap, useAppBridge, useMCPAppFrame, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { selectToolCallUIResources } from '~/utils/mcpApps';
 import { cn, getToolDisplayLabel, logger } from '~/utils';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useToolCallIntent } from './Parts/intent';
@@ -22,6 +24,68 @@ import ProgressText from './ProgressText';
 import { TOOL_ROW_CLASSES } from './rows';
 import { ToolAuthWarning } from './auth';
 import store from '~/store';
+
+const DEFAULT_APP_VIEW_HEIGHT = 320;
+
+const MCPAppView = React.memo(function MCPAppView({
+  app,
+  args,
+}: {
+  app: UIResource;
+  args: string | Record<string, unknown>;
+}) {
+  const localize = useLocalize();
+  const frame = useMCPAppFrame(app, {
+    defaultHeight: DEFAULT_APP_VIEW_HEIGHT,
+    toolArgs: args,
+  });
+
+  useAppBridge({
+    iframeRef: frame.iframeRef,
+    resource: app,
+    toolArgs: frame.toolArgs,
+    toolResult: frame.toolResult,
+    active: frame.active,
+    onSizeChanged: frame.onSizeChanged,
+    onLoaded: frame.onLoaded,
+    onTeardown: frame.onTeardown,
+    onFailed: frame.onFailed,
+  });
+
+  if (frame.status === 'tornDown') {
+    return null;
+  }
+
+  // Read-only views don't fetch app HTML, so a resourceUri-only app shows a placeholder.
+  if (frame.kind === 'unavailable') {
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+        {localize('com_ui_mcp_app_shared_unavailable')}
+      </div>
+    );
+  }
+  if (frame.kind === 'static') {
+    return (
+      <div className="my-2">
+        <iframe
+          srcDoc={frame.inlineHtml}
+          sandbox=""
+          style={{ width: '100%', minHeight: '200px', border: 'none' }}
+          title={app.uri}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative my-2 overflow-hidden"
+      style={{ height: frame.height, minHeight: DEFAULT_APP_VIEW_HEIGHT }}
+    >
+      <MCPAppFrame frame={frame} resource={app} spinner />
+    </div>
+  );
+});
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -193,6 +257,8 @@ export default function ToolCall({
     [args, output],
   );
 
+  const mcpApps = useMemo(() => selectToolCallUIResources(attachments), [attachments]);
+
   const authDomain = useMemo(() => {
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
@@ -324,7 +390,7 @@ export default function ToolCall({
                 'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
               )}
             >
-              <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
+              <ToolCallInfo input={args ?? ''} output={output} />
             </div>
           )}
         </div>
@@ -352,6 +418,10 @@ export default function ToolCall({
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
+      {mcpApps.length > 0 &&
+        mcpApps.map((app) => (
+          <MCPAppView key={app.resourceId} app={app} args={app.toolArgs ?? _args} />
+        ))}
     </>
   );
 }
