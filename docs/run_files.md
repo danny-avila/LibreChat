@@ -101,14 +101,14 @@ Expiry and cancellation end temporary access; they do not delete durable user fi
 files use the existing file retention and deletion behavior and can be explicitly attached to a
 new message. Audit events record inheritance, publication, and expiry without file contents.
 
-## Development dependency and current support
+## SDK dependency and current support
 
-This implementation requires the companion `@librechat/agents` change exposing
+The dependency manifests require `@librechat/agents` 3.8.6 or later, and the lockfile installs 3.8.6.
+This release includes the host-owned execution context from
+[agents #539](https://github.com/danny-avila/agents/pull/539), exposing
 `SUBAGENT_CONTEXT_VERSION = 1` and the `RunConfig.subagentContext` prepare/complete adapter.
-That SDK change is being developed alongside LibreChat on `feat/run-scoped-subagent-files`.
-The dependency manifests still reference released SDK 3.8.5; a clean install deliberately rejects
-enabled sharing until the companion SDK is released and the lockfile is updated. Local integration
-checks use the companion SDK's built `dist` in `node_modules/@librechat/agents/dist`.
+A normal locked install includes the required SDK; no local SDK build is needed. The runtime
+capability check rejects enabled sharing if an incompatible SDK is loaded.
 
 The first implementation supports foreground chat delegation with managed code environments and
 subagent teams whose members use the same provider, endpoint, model, and Responses API setting.
