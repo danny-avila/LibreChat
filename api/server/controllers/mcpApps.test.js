@@ -123,6 +123,11 @@ describe('MCP Apps controller wiring', () => {
       tenantId: 'tenant-1',
       failClosed: true,
     });
+    await expect(dependencies.getSandboxCspLimits()).resolves.toEqual({
+      maxSourcesPerDirective: 32,
+      maxSerializedLength: 4096,
+    });
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true, failClosed: true });
     await expect(dependencies.ensureConfigServers({ srv: { type: 'sse' } })).resolves.toEqual({
       srv: { type: 'sse' },
     });

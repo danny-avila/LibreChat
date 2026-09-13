@@ -1544,6 +1544,55 @@ describe('User parameter passing tests', () => {
   });
 
   describe('createMCPTool', () => {
+    it('preserves a completed tool result when optional App enrichment observes cancellation', async () => {
+      const mockUser = { id: 'completed-result-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const abortController = new AbortController();
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn().mockImplementation(async () => {
+          abortController.abort();
+          return ['ordinary output', undefined];
+        }),
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://completed.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            signal: abortController.signal,
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ordinary output');
+    });
+
     it('keeps shared OAuth recovery alive when one tool caller aborts', async () => {
       const mockUser = { id: 'shared-recovery-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

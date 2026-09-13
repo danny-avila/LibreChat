@@ -1051,7 +1051,7 @@ describe('MCPManager', () => {
       expect(app?.content).toBe(toolResult.content);
     });
 
-    it('keeps the successful tool output and URI-only descriptor when document reading fails', async () => {
+    it('keeps canonical tool output without an App artifact when document reading fails', async () => {
       const request = jest.fn(async ({ method }: { method: string }) => {
         if (method === 'tools/call') {
           return toolResult;
@@ -1062,9 +1062,7 @@ describe('MCPManager', () => {
       const [text, artifacts] = await callWith(connectionFor(request));
 
       expect(text).toContain('ordinary output');
-      expect(artifacts?.ui_resources?.data).toMatchObject([{ uri: resourceUri }]);
-      expect(artifacts?.ui_resources?.data?.[0]).not.toHaveProperty('text');
-      expect(artifacts?.ui_resources?.data?.[0]).not.toHaveProperty('blob');
+      expect(artifacts?.ui_resources).toBeUndefined();
       expect(
         request.mock.calls.filter(([request]) => request.method === 'tools/call'),
       ).toHaveLength(1);
@@ -1075,14 +1073,30 @@ describe('MCPManager', () => {
         mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
       const request = jest.fn().mockResolvedValue(toolResult);
-
-      const [, artifacts] = await callWith(connectionFor(request));
+      const connection = connectionFor(request);
+      const [, artifacts] = await callWith(connection);
 
       expect(request).toHaveBeenCalledTimes(1);
+      expect(connection.fetchOrderedToolsSnapshot).not.toHaveBeenCalled();
       expect(artifacts?.ui_resources).toBeUndefined();
     });
 
-    it('propagates a user abort during the declared resource read', async () => {
+    it('keeps canonical tool output when Apps policy resolution fails', async () => {
+      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockRejectedValueOnce(
+        new Error('config unavailable'),
+      );
+      const request = jest.fn().mockResolvedValue(toolResult);
+      const connection = connectionFor(request);
+
+      const [text, artifacts] = await callWith(connection);
+
+      expect(text).toContain('ordinary output');
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(connection.fetchOrderedToolsSnapshot).not.toHaveBeenCalled();
+      expect(artifacts?.ui_resources).toBeUndefined();
+    });
+
+    it('keeps canonical tool output when the declared resource read is aborted', async () => {
       let readStarted: (() => void) | undefined;
       const started = new Promise<void>((resolve) => {
         readStarted = resolve;
@@ -1105,13 +1119,15 @@ describe('MCPManager', () => {
       await started;
       controller.abort(new DOMException('stopped', 'AbortError'));
 
-      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(call).resolves.toEqual(
+        expect.arrayContaining([expect.stringContaining('ordinary output')]),
+      );
       expect(
         request.mock.calls.filter(([request]) => request.method === 'tools/call'),
       ).toHaveLength(1);
     });
 
-    it('does not publish a late result when metadata discovery is aborted', async () => {
+    it('keeps canonical tool output when metadata discovery is aborted', async () => {
       let snapshotStarted: (() => void) | undefined;
       const started = new Promise<void>((resolve) => {
         snapshotStarted = resolve;
@@ -1131,7 +1147,9 @@ describe('MCPManager', () => {
       await started;
       controller.abort(new DOMException('stopped', 'AbortError'));
 
-      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(call).resolves.toEqual(
+        expect.arrayContaining([expect.stringContaining('ordinary output')]),
+      );
       expect(request).toHaveBeenCalledTimes(1);
     });
 
@@ -1183,7 +1201,7 @@ describe('MCPManager', () => {
       );
     });
 
-    it('does not read or publish a late result when policy resolution is aborted', async () => {
+    it('returns canonical output promptly when policy resolution is aborted', async () => {
       let resolvePolicy:
         | ((value: { mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean } }) => void)
         | undefined;
@@ -1204,10 +1222,12 @@ describe('MCPManager', () => {
       const call = callWith(connectionFor(request), controller.signal);
       await started;
       controller.abort(new DOMException('stopped', 'AbortError'));
-      resolvePolicy?.({ mcpApps: { enabled: true, legacyHtmlEnabled: true } });
 
-      await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(call).resolves.toEqual(
+        expect.arrayContaining([expect.stringContaining('ordinary output')]),
+      );
       expect(request).toHaveBeenCalledTimes(1);
+      resolvePolicy?.({ mcpApps: { enabled: true, legacyHtmlEnabled: true } });
     });
   });
 

@@ -69,6 +69,21 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(base, configs).filters).toEqual(base.filters);
   });
 
+  it('keeps MCP App sandbox limits at deployment scope', () => {
+    const base = {
+      mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+    } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        { mcpAppSandbox: { maxSourcesPerDirective: 128, maxSerializedLength: 16384 } },
+        10,
+        ['mcpAppSandbox.maxSerializedLength'],
+      ),
+    ];
+
+    expect(mergeConfigOverrides(base, configs).mcpAppSandbox).toEqual(base.mcpAppSandbox);
+  });
+
   it('applies tenant-wide Langfuse settings only from the base principal', () => {
     const configs = [
       fakeConfig(

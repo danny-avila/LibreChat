@@ -402,7 +402,10 @@ test.describe('MCP Apps full integration', () => {
     expect(sandboxUrl).toBeTruthy();
     expect(new URL(sandboxUrl!).origin).not.toBe(new URL(page.url()).origin);
     expect(new URL(sandboxUrl!).origin).toBe('http://localhost:3080');
-    await expect(outerFrame).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin');
+    await expect(outerFrame).toHaveAttribute(
+      'sandbox',
+      'allow-scripts allow-same-origin allow-forms',
+    );
 
     const innerFrame = page.frameLocator('iframe[title="MCP App: show_app"]').locator('iframe');
     await expect(innerFrame).toHaveAttribute('sandbox', 'allow-scripts allow-forms');

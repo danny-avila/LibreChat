@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import {
   DEFAULT_MCP_APPS_POLICY,
+  resolveMCPAppCspLimits,
   type TMCPAppsPolicy,
   type TStartupConfig,
 } from 'librechat-data-provider';
@@ -28,7 +29,7 @@ function getPublishedPolicy(
   ) {
     return DEFAULT_MCP_APPS_POLICY;
   }
-  return policy;
+  return { ...policy, cspLimits: resolveMCPAppCspLimits(policy.cspLimits) };
 }
 
 export function MCPAppsPolicyProvider({

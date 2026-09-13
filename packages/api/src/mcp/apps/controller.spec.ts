@@ -83,6 +83,10 @@ function makeDependencies(manager: MCPAppsProxyManager) {
       mcpSettings: { apps: true },
       mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
     })),
+    getSandboxCspLimits: jest.fn(async () => ({
+      maxSourcesPerDirective: 32,
+      maxSerializedLength: 4096,
+    })),
     ensureConfigServers: jest.fn(async () => ({
       srv: { type: 'stdio', command: 'test', args: [] },
     })),
@@ -632,6 +636,26 @@ describe('createMCPAppsController', () => {
 
     expect(dependencies.readSandboxFile).toHaveBeenCalledTimes(1);
     expect(dependencies.readSandboxFile).toHaveBeenCalledWith('/tmp/mcp-sandbox.html', 'utf8');
+    expect(dependencies.getSandboxCspLimits).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when trusted sandbox limits cannot be resolved', async () => {
+    const manager = makeManager();
+    const { dependencies } = makeDependencies(manager);
+    dependencies.getSandboxCspLimits = jest.fn(async () => {
+      throw new Error('config unavailable');
+    });
+    const controller = createMCPAppsController(dependencies);
+    const response = makeResponse();
+
+    await controller.serveMCPSandbox(
+      asHandlerRequest(makeRequest()),
+      asHandlerResponse(response),
+      jest.fn(),
+    );
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    expect(response.send).not.toHaveBeenCalled();
   });
 
   it('retries a sandbox document read after a request-time failure', async () => {

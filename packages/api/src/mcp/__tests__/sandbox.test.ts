@@ -6,8 +6,13 @@ import { buildSandboxResponse } from '../sandbox';
 const SANDBOX_PATH = path.resolve(__dirname, '../../../../../client/public/mcp-sandbox.html');
 const SANDBOX_HTML = fs.readFileSync(SANDBOX_PATH, 'utf8');
 
-const serve = (query: { csp?: string | string[]; frameAncestors?: string } = {}) =>
-  buildSandboxResponse({ sandboxHtml: SANDBOX_HTML, ...query });
+const serve = (
+  query: {
+    csp?: string | string[];
+    frameAncestors?: string;
+    limits?: { maxSourcesPerDirective: number; maxSerializedLength: number };
+  } = {},
+) => buildSandboxResponse({ sandboxHtml: SANDBOX_HTML, ...query });
 
 const policies = (query?: Parameters<typeof serve>[0]): string[] =>
   serve(query).headers['Content-Security-Policy'] as string[];
@@ -152,6 +157,26 @@ describe('buildSandboxResponse resource policy', () => {
       .find((directive) => directive.startsWith('connect-src '));
     expect(emitted?.split(' ')).toHaveLength(33);
     expect(emitted).not.toContain('d32.example.com');
+  });
+
+  it('honors deployment-provided source and serialized-length limits', () => {
+    const domains = Array.from({ length: 40 }, (_, i) => `https://d${i}.example.com`);
+    const csp = JSON.stringify({ connectDomains: domains });
+    const emitted = resourcePolicy({
+      csp,
+      limits: { maxSourcesPerDirective: 40, maxSerializedLength: csp.length },
+    })
+      .split('; ')
+      .find((directive) => directive.startsWith('connect-src '));
+
+    expect(emitted?.split(' ')).toHaveLength(41);
+    expect(emitted).toContain('d39.example.com');
+    expect(
+      resourcePolicy({
+        csp,
+        limits: { maxSourcesPerDirective: 40, maxSerializedLength: csp.length - 1 },
+      }),
+    ).toContain("connect-src 'none'");
   });
 
   it.each([

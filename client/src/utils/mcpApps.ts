@@ -5,6 +5,7 @@ import {
   isMcpAppMimeType,
   MCP_APP_CSP_MAX_LENGTH,
   normalizeMCPAppCspDeclaration,
+  resolveMCPAppCspLimits,
 } from 'librechat-data-provider';
 import type {
   CallToolResult,
@@ -12,7 +13,7 @@ import type {
   ReadResourceResult,
   ListResourceTemplatesResult,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { TAttachment, UIResource } from 'librechat-data-provider';
+import type { MCPAppCspLimits, TAttachment, UIResource } from 'librechat-data-provider';
 
 export type AppToolResult = {
   content: unknown[];
@@ -81,10 +82,7 @@ export function getMCPSandboxUrl(): string | undefined {
   }
 }
 
-/**
- * Shared with the sandbox route; an effective declaration longer than this falls back to the
- * restrictive default policy.
- */
+/** Default route bound retained for mixed-version callers and assertions. */
 export const MAX_SANDBOX_CSP_PARAM_LENGTH = MCP_APP_CSP_MAX_LENGTH;
 
 /**
@@ -95,14 +93,16 @@ export const MAX_SANDBOX_CSP_PARAM_LENGTH = MCP_APP_CSP_MAX_LENGTH;
 export function withSandboxCsp(
   sandboxUrl: string,
   csp: UIResource['csp'],
+  limits?: MCPAppCspLimits,
 ): { url: string; applied: UIResource['csp'] } {
   if (!csp) {
     return { url: sandboxUrl, applied: undefined };
   }
   try {
-    const normalized = normalizeMCPAppCspDeclaration(csp);
+    const effectiveLimits = resolveMCPAppCspLimits(limits);
+    const normalized = normalizeMCPAppCspDeclaration(csp, effectiveLimits);
     const serialized = JSON.stringify(normalized);
-    if (serialized.length > MAX_SANDBOX_CSP_PARAM_LENGTH) {
+    if (serialized.length > effectiveLimits.maxSerializedLength) {
       return { url: sandboxUrl, applied: undefined };
     }
     const url = new URL(sandboxUrl, window.location.origin);
@@ -339,7 +339,11 @@ function urlMatchesDeclaredSource(url: URL, entry: string): boolean {
  * for egress are opened; a resource declaring none gets no host-opened links, matching the
  * `connect-src 'none'` default applied inside the sandbox.
  */
-export function isAllowedAppLink(url: string, csp: UIResource['csp']): boolean {
+export function isAllowedAppLink(
+  url: string,
+  csp: UIResource['csp'],
+  limits?: MCPAppCspLimits,
+): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -349,7 +353,7 @@ export function isAllowedAppLink(url: string, csp: UIResource['csp']): boolean {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return false;
   }
-  const effective = normalizeMCPAppCspDeclaration(csp);
+  const effective = normalizeMCPAppCspDeclaration(csp, limits);
   const declared = [
     ...(effective.connectDomains ?? []),
     ...(effective.resourceDomains ?? []),

@@ -1,8 +1,18 @@
-/** Maximum serialized resource CSP accepted by both the host and sandbox response boundary. */
-export const MCP_APP_CSP_MAX_LENGTH = 4096;
+export type MCPAppCspLimits = {
+  maxSourcesPerDirective: number;
+  maxSerializedLength: number;
+};
 
-/** Maximum number of sources emitted for any one MCP App CSP directive. */
-export const MCP_APP_CSP_MAX_DOMAINS = 32;
+export const DEFAULT_MCP_APP_CSP_LIMITS: Readonly<MCPAppCspLimits> = Object.freeze({
+  maxSourcesPerDirective: 32,
+  maxSerializedLength: 4096,
+});
+
+/** Default serialized resource CSP limit retained for mixed-version consumers. */
+export const MCP_APP_CSP_MAX_LENGTH = DEFAULT_MCP_APP_CSP_LIMITS.maxSerializedLength;
+
+/** Default source count retained for mixed-version consumers. */
+export const MCP_APP_CSP_MAX_DOMAINS = DEFAULT_MCP_APP_CSP_LIMITS.maxSourcesPerDirective;
 
 export type MCPAppCspDeclaration = {
   resourceDomains?: string[];
@@ -14,14 +24,36 @@ export type MCPAppCspDeclaration = {
 const MCP_APP_CSP_SOURCE_PATTERN =
   /^(?:(?:https?|wss?):\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::(?:\d{1,5}|\*))?(?:\/[^\s;,'"?#]*)?$/i;
 
-const normalizeCspSources = (value: unknown): string[] | undefined => {
+const validLimit = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+
+export function resolveMCPAppCspLimits(value?: Partial<MCPAppCspLimits>): MCPAppCspLimits {
+  return {
+    maxSourcesPerDirective: validLimit(
+      value?.maxSourcesPerDirective,
+      DEFAULT_MCP_APP_CSP_LIMITS.maxSourcesPerDirective,
+    ),
+    maxSerializedLength: validLimit(
+      value?.maxSerializedLength,
+      DEFAULT_MCP_APP_CSP_LIMITS.maxSerializedLength,
+    ),
+  };
+}
+
+const normalizeCspSources = (value: unknown, maxSources: number): string[] | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const sources = value
-    .map((source) => (typeof source === 'string' ? source.trim() : ''))
-    .filter((source) => source.length > 0 && MCP_APP_CSP_SOURCE_PATTERN.test(source))
-    .slice(0, MCP_APP_CSP_MAX_DOMAINS);
+  const sources: string[] = [];
+  for (const entry of value) {
+    const source = typeof entry === 'string' ? entry.trim() : '';
+    if (source.length > 0 && MCP_APP_CSP_SOURCE_PATTERN.test(source)) {
+      sources.push(source);
+      if (sources.length === maxSources) {
+        break;
+      }
+    }
+  }
   return sources.length > 0 ? sources : undefined;
 };
 
@@ -29,10 +61,14 @@ const normalizeCspSources = (value: unknown): string[] | undefined => {
  * Canonical declaration used for sandbox serialization, response policies, and host link checks.
  * Host link matching remains intentionally narrower than this CSP source grammar.
  */
-export function normalizeMCPAppCspDeclaration(value: unknown): MCPAppCspDeclaration {
+export function normalizeMCPAppCspDeclaration(
+  value: unknown,
+  limits?: Partial<MCPAppCspLimits>,
+): MCPAppCspDeclaration {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
+  const { maxSourcesPerDirective } = resolveMCPAppCspLimits(limits);
   const input = value as Record<keyof MCPAppCspDeclaration, unknown>;
   const normalized: MCPAppCspDeclaration = {};
   for (const key of [
@@ -41,7 +77,7 @@ export function normalizeMCPAppCspDeclaration(value: unknown): MCPAppCspDeclarat
     'frameDomains',
     'baseUriDomains',
   ] as const) {
-    const sources = normalizeCspSources(input[key]);
+    const sources = normalizeCspSources(input[key], maxSourcesPerDirective);
     if (sources) {
       normalized[key] = sources;
     }

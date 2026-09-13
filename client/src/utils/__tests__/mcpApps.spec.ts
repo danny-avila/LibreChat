@@ -279,6 +279,17 @@ describe('normalizeMCPAppCspDeclaration', () => {
     );
     expect(normalizeMCPAppCspDeclaration({ connectDomains }).connectDomains).toHaveLength(32);
   });
+
+  it('uses an injected effective-policy limit', () => {
+    const connectDomains = Array.from(
+      { length: 40 },
+      (_unused, index) => `https://host${index}.example.com`,
+    );
+    expect(
+      normalizeMCPAppCspDeclaration({ connectDomains }, { maxSourcesPerDirective: 40 })
+        .connectDomains,
+    ).toHaveLength(40);
+  });
 });
 
 describe('clampAppViewHeight', () => {
@@ -346,6 +357,22 @@ describe('withSandboxCsp', () => {
     });
     expect(url).toBe('http://localhost:3080/api/mcp/sandbox');
     expect(applied).toBeUndefined();
+  });
+
+  it('uses the deployment limits for URL serialization and host link policy', () => {
+    const connectDomains = Array.from(
+      { length: 40 },
+      (_unused, index) => `https://api${index}.example.com`,
+    );
+    const limits = { maxSourcesPerDirective: 40, maxSerializedLength: 8192 };
+    const { url, applied } = withSandboxCsp(
+      'http://localhost:3080/api/mcp/sandbox',
+      { connectDomains },
+      limits,
+    );
+
+    expect(new URL(url).searchParams.get('csp')).toContain('api39.example.com');
+    expect(isAllowedAppLink('https://api39.example.com/path', applied, limits)).toBe(true);
   });
 });
 

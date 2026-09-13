@@ -306,6 +306,7 @@ describe('useAppBridge', () => {
       const siblingBridge = FakeAppBridge.instances[1];
       const targetFrame = screen.getByTitle('MCP App: target');
       const siblingFrame = screen.getByTitle('MCP App: sibling');
+      expect(targetFrame).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
       targetFrame.dataset.retryAnchor = 'target';
       siblingFrame.dataset.retryAnchor = 'sibling';
       expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeVisible();

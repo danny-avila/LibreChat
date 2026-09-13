@@ -1,4 +1,7 @@
 import { logger } from '@librechat/data-schemas';
+import { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
+import { patchConfig, pickRunnableConfigKeys } from '@langchain/core/runnables';
+import { AsyncLocalStorageProviderSingleton } from '@langchain/core/singletons';
 import {
   Constants,
   buildServerNameAliases,
@@ -12,6 +15,28 @@ import { canUseAppConnection, requiresEphemeralUserConnection } from './utils';
 import { getMCPAppToolsPublicationGeneration } from './toolsChanged';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
 import { isToolHiddenFromModel } from './apps';
+
+type DynamicStructuredToolFields = ConstructorParameters<typeof DynamicStructuredTool>[0];
+type DynamicStructuredToolFunction = DynamicStructuredToolFields['func'];
+
+export function createMCPStructuredTool(
+  func: (
+    input: Parameters<DynamicStructuredToolFunction>[0],
+    config?: Parameters<DynamicStructuredToolFunction>[2],
+  ) => ReturnType<DynamicStructuredToolFunction>,
+  fields: Omit<DynamicStructuredToolFields, 'func'>,
+): DynamicStructuredTool {
+  return new DynamicStructuredTool({
+    ...fields,
+    func: (input, runManager, config) => {
+      const childConfig = patchConfig(config, { callbacks: runManager?.getChild() });
+      return AsyncLocalStorageProviderSingleton.runWithConfig(
+        pickRunnableConfigKeys(childConfig),
+        () => func(input, childConfig),
+      );
+    },
+  });
+}
 
 /** `_meta` carries the MCP Apps `ui.visibility` used to hide app-only tools from the model. */
 export type MCPToolInput = Pick<Tool, 'name' | 'description'> &

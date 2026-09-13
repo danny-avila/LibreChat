@@ -58,7 +58,7 @@ export function MCPAppFrame({
         <iframe
           ref={frame.iframeRef}
           data-sandbox-url={frame.sandboxUrl}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts allow-same-origin allow-forms"
           style={{
             width: '100%',
             height: '100%',

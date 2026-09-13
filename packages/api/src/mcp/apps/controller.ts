@@ -1,6 +1,7 @@
 import { resolveMCPAppsPolicy } from 'librechat-data-provider';
 import type { PluginAuthMethods, TokenMethods } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
+import type { MCPAppCspLimits } from 'librechat-data-provider';
 import type { MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
 import type { UpstreamTokenProvider } from '../oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
@@ -48,6 +49,7 @@ export interface MCPAppsControllerDependencies {
   getManager: () => MCPAppsProxyManager;
   getFlowManager: () => FlowStateManager<MCPOAuthTokens | null>;
   getAppConfig: (request: MCPAppsRequest) => Promise<MCPAppsConfig | undefined>;
+  getSandboxCspLimits: () => Promise<MCPAppCspLimits>;
   ensureConfigServers: (
     mcpConfig: Record<string, t.MCPOptions>,
   ) => Promise<Record<string, t.ParsedServerConfig>>;
@@ -238,10 +240,12 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
 
   const serveMCPSandbox: RequestHandler = async (request, response): Promise<void> => {
     try {
+      const limits = await dependencies.getSandboxCspLimits();
       const { headers, body } = buildSandboxResponse({
         sandboxHtml: loadSandboxHtml(),
         frameAncestors: dependencies.sandboxFrameAncestors,
         csp: typeof request.query.csp === 'string' ? request.query.csp : undefined,
+        limits,
       });
       for (const [name, value] of Object.entries(headers)) {
         response.setHeader(name, value);

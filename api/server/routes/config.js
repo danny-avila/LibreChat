@@ -15,6 +15,7 @@ const {
   resolveCodeEnvironmentDecisionVersion,
 } = require('@librechat/api');
 const {
+  DEFAULT_MCP_APP_CSP_LIMITS,
   EModelEndpoint,
   defaultSocialLogins,
   resolveMCPAppsPolicy,
@@ -321,7 +322,10 @@ router.get('/', async function (req, res) {
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
       compactionEnabled: appConfig?.summarization?.enabled !== false,
       ...(codeEnvironmentDecisionVersion != null ? { codeEnvironmentDecisionVersion } : {}),
-      mcpApps: resolveMCPAppsPolicy(appConfig?.mcpSettings?.apps),
+      mcpApps: resolveMCPAppsPolicy(
+        appConfig?.mcpSettings?.apps,
+        appConfig?.mcpAppSandbox ?? DEFAULT_MCP_APP_CSP_LIMITS,
+      ),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),

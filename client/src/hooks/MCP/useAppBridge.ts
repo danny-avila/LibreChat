@@ -19,7 +19,11 @@ import {
   isAllowedAppLink,
   withSandboxCsp,
 } from '~/utils/mcpApps';
-import { useOptionalMessagesOperations, useIsMessagesViewReadOnly } from '~/Providers';
+import {
+  useOptionalMessagesOperations,
+  useIsMessagesViewReadOnly,
+  useMCPAppsPolicy,
+} from '~/Providers';
 import { logger } from '~/utils';
 
 type MessageContentBlock = { type?: string; text?: string };
@@ -100,6 +104,7 @@ export function useAppBridge({
   // Read-only views (shared transcripts, /search) must not let the embedded app proxy tool calls
   // or resource reads against the viewer's MCP servers with the viewer's auth.
   const readOnly = useIsMessagesViewReadOnly();
+  const { cspLimits } = useMCPAppsPolicy();
   const queryClient = useQueryClient();
   const viewId = useId();
   // The csp actually delivered to the sandbox document, which is what bounds the app's own egress.
@@ -146,7 +151,11 @@ export function useAppBridge({
     ] as const;
 
     const assignSandboxSrc = (csp: UIResource['csp']) => {
-      const { url, applied } = withSandboxCsp(iframe.getAttribute('data-sandbox-url') ?? '', csp);
+      const { url, applied } = withSandboxCsp(
+        iframe.getAttribute('data-sandbox-url') ?? '',
+        csp,
+        cspLimits,
+      );
       // srcCsp records what was requested (it guards against reloading the document in a loop);
       // effectiveCspRef records what the sandbox response was actually given.
       srcCsp = csp;
@@ -219,7 +228,7 @@ export function useAppBridge({
       if (signal.aborted) {
         return { isError: true };
       }
-      if (!isAllowedAppLink(url, effectiveCspRef.current)) {
+      if (!isAllowedAppLink(url, effectiveCspRef.current, cspLimits)) {
         logger.warn('[MCP App] Blocked open-link outside the declared egress domains');
         return { isError: true };
       }
@@ -457,5 +466,7 @@ export function useAppBridge({
     userId,
     viewId,
     attempt,
+    cspLimits?.maxSourcesPerDirective,
+    cspLimits?.maxSerializedLength,
   ]);
 }

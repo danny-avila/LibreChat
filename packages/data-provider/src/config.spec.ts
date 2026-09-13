@@ -12,6 +12,7 @@ import {
 } from './config';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
+import { DEFAULT_MCP_APP_CSP_LIMITS } from './mcp/csp';
 import { modelSpecSubagentsSchema } from './models';
 
 const endpointsConfig: TEndpointsConfig = {
@@ -1402,6 +1403,27 @@ describe('MCP Apps configuration', () => {
     [false, { enabled: false, legacyHtmlEnabled: false }],
   ])('resolves raw apps value %s to the effective policy', (value, expected) => {
     expect(resolveMCPAppsPolicy(value)).toEqual(expected);
+  });
+
+  it('defaults and validates deployment-owned sandbox limits', () => {
+    expect(configSchema.parse({ version: '1.2.1' }).mcpAppSandbox).toEqual(
+      DEFAULT_MCP_APP_CSP_LIMITS,
+    );
+    expect(
+      configSchema.parse({
+        version: '1.2.1',
+        mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+      }).mcpAppSandbox,
+    ).toEqual({ maxSourcesPerDirective: 64, maxSerializedLength: 8192 });
+    for (const mcpAppSandbox of [
+      { maxSourcesPerDirective: 0 },
+      { maxSourcesPerDirective: 1.5 },
+      { maxSerializedLength: -1 },
+      { maxSerializedLength: 1.5 },
+      { maxSerializedLength: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      expect(configSchema.safeParse({ version: '1.2.1', mcpAppSandbox }).success).toBe(false);
+    }
   });
 
   it('defaults App request limits without requiring the parent rateLimits section', () => {

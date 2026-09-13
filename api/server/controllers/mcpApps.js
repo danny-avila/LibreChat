@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, resolveMCPAppCspLimits } = require('librechat-data-provider');
 const {
   createAuthIdentityContext,
   createMCPAppsController,
@@ -37,6 +37,10 @@ module.exports = createMCPAppsController({
       tenantId: req.user?.tenantId,
       failClosed: true,
     }),
+  getSandboxCspLimits: async () => {
+    const appConfig = await getAppConfig({ baseOnly: true, failClosed: true });
+    return resolveMCPAppCspLimits(appConfig?.mcpAppSandbox);
+  },
   ensureConfigServers: (mcpConfig) => getMCPServersRegistry().ensureConfigServers(mcpConfig),
   getAllServerConfigs: (userId, configServers, role) =>
     getMCPServersRegistry().getAllServerConfigs(userId, configServers, role),

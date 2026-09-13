@@ -42,6 +42,7 @@ const {
   isOAuthServer,
   isAbortError,
   isDirectOpenIDBearerRecoveryEnabled,
+  createMCPStructuredTool,
   OpenIDReauthRequiredError,
   MCPAuthenticationRefreshError,
   MCPAuthenticationRejectedError,
@@ -1401,7 +1402,7 @@ function createToolInstance({
     }
   };
 
-  const toolInstance = tool(_call, {
+  const toolInstance = createMCPStructuredTool(_call, {
     schema,
     name: normalizedToolKey,
     description: description || '',

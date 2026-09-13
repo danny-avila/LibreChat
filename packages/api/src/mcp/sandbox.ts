@@ -1,5 +1,5 @@
-import { MCP_APP_CSP_MAX_LENGTH, normalizeMCPAppCspDeclaration } from 'librechat-data-provider';
-import type { MCPAppCspDeclaration } from 'librechat-data-provider';
+import { normalizeMCPAppCspDeclaration, resolveMCPAppCspLimits } from 'librechat-data-provider';
+import type { MCPAppCspDeclaration, MCPAppCspLimits } from 'librechat-data-provider';
 
 /** Replaced on the way out so the proxy can refuse to build a frame it has no response policy for. */
 const CSP_APPLIED_PLACEHOLDER = '/*__CSP_APPLIED__*/';
@@ -50,13 +50,16 @@ const serializeInlineScriptString = (value: string): string =>
   });
 
 /** An unparseable, oversized, or repeated `csp` param yields the restrictive default policy. */
-const parseCspParam = (raw?: string | string[]): MCPAppCspDeclaration => {
-  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MCP_APP_CSP_MAX_LENGTH) {
+const parseCspParam = (
+  raw: string | string[] | undefined,
+  limits: MCPAppCspLimits,
+): MCPAppCspDeclaration => {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > limits.maxSerializedLength) {
     return {};
   }
   try {
     const parsed: unknown = JSON.parse(raw);
-    return normalizeMCPAppCspDeclaration(parsed);
+    return normalizeMCPAppCspDeclaration(parsed, limits);
   } catch {
     return {};
   }
@@ -84,13 +87,16 @@ export function buildSandboxResponse({
   sandboxHtml,
   frameAncestors,
   csp,
+  limits: rawLimits,
 }: {
   sandboxHtml: string;
   frameAncestors?: string;
   csp?: string | string[];
+  limits?: Partial<MCPAppCspLimits>;
 }): SandboxResponse {
   const ancestors = buildFrameAncestors(frameAncestors);
-  const declaration = parseCspParam(csp);
+  const limits = resolveMCPAppCspLimits(rawLimits);
+  const declaration = parseCspParam(csp, limits);
   const proxyPolicy = buildCspPolicy(declaration, true);
   const viewPolicy = buildCspPolicy(declaration, false);
   const headers: Record<string, string | string[]> = {

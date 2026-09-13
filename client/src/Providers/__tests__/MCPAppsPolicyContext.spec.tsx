@@ -13,6 +13,13 @@ function HostProbe() {
   return <output>{`${policy.enabled}:${policy.legacyHtmlEnabled}:${userId ?? 'none'}`}</output>;
 }
 
+function LimitsProbe() {
+  const { cspLimits } = useMCPAppsPolicy();
+  return (
+    <output>{`${cspLimits?.maxSourcesPerDirective}:${cspLimits?.maxSerializedLength}`}</output>
+  );
+}
+
 function CachedPolicyProvider({ children }: { children: React.ReactNode }) {
   const { data, isSuccess, error } = useQuery<TStartupConfig>(
     ['startup-policy'],
@@ -49,6 +56,36 @@ describe('MCPAppsPolicyProvider', () => {
       </MCPAppsPolicyProvider>,
     );
     expect(screen.getByText('true:true:user-1')).toBeInTheDocument();
+  });
+
+  it('uses safe defaults for missing or malformed published CSP limits', () => {
+    const { rerender } = render(
+      <MCPAppsPolicyProvider
+        startupConfig={{ mcpApps: { enabled: true, legacyHtmlEnabled: true } } as TStartupConfig}
+        ready
+      >
+        <LimitsProbe />
+      </MCPAppsPolicyProvider>,
+    );
+    expect(screen.getByText('32:4096')).toBeInTheDocument();
+
+    rerender(
+      <MCPAppsPolicyProvider
+        startupConfig={
+          {
+            mcpApps: {
+              enabled: true,
+              legacyHtmlEnabled: true,
+              cspLimits: { maxSourcesPerDirective: 0, maxSerializedLength: 8192 },
+            },
+          } as TStartupConfig
+        }
+        ready
+      >
+        <LimitsProbe />
+      </MCPAppsPolicyProvider>,
+    );
+    expect(screen.getByText('32:8192')).toBeInTheDocument();
   });
 
   it('tracks the startup cache without exposing pending, missing, or malformed policy', async () => {

@@ -37,6 +37,21 @@ Consequently, a new client paired with an older backend that omits the authentic
 withholds both MCP Apps and legacy inline HTML. LibreChat's monolithic same-version deployment is
 the supported upgrade path.
 
+The deployment-owned sandbox transport limits default to 32 sources per CSP directive and 4,096
+serialized characters. Raise them for Apps that declare more origins or a larger CSP payload:
+
+```yaml
+mcpAppSandbox:
+  maxSourcesPerDirective: 64
+  maxSerializedLength: 8192
+```
+
+These positive-integer settings come only from the base deployment configuration; role, group, and
+user overrides cannot change them. Apply a limits change across the server and client deployment,
+then reload open chat pages so host link decisions and newly served sandbox responses use the same
+snapshot. Request query parameters contain only the normalized CSP declaration and cannot choose
+their own limits.
+
 MCP App browser routes use independent, per-user, one-minute limits. Configure positive integer
 values at `rateLimits.mcpApps.resourcesPerMinute` and
 `rateLimits.mcpApps.toolCallsPerMinute`; their defaults are 120 and 60 respectively.
@@ -65,9 +80,11 @@ docker build -f Dockerfile.multi --build-arg VITE_MCP_SANDBOX_URL=https://mcp-sa
 Route `https://mcp-sandbox.example.com/api/mcp/sandbox` to the LibreChat sandbox handler without
 adding authentication or HTML transformation. Preserve its response headers, especially its CSP,
 `Cache-Control`, `Cross-Origin-Resource-Policy`, and frame-ancestor policy. The outer proxy iframe
-uses `sandbox="allow-scripts allow-same-origin"`; the proxy creates an opaque-origin inner iframe for
-the server-provided document. The dedicated origin should expose only this sandbox endpoint, not
-the chat application, session endpoints, or other authenticated LibreChat routes.
+uses `sandbox="allow-scripts allow-same-origin allow-forms"`; the proxy creates an opaque-origin
+inner iframe for the server-provided document. Form destinations remain bounded by the resource's
+declared `connectDomains` through the sandbox response's `form-action` policy. The dedicated origin
+should expose only this sandbox endpoint, not the chat application, session endpoints, or other
+authenticated LibreChat routes.
 
 The outer proxy response CSP is a loader policy that permits its own blob-backed inner frame. Before
 the App document runs, the proxy separately installs the View policy as a CSP meta element inside

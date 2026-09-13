@@ -17,6 +17,11 @@ import {
   eReasoningParameterFormatSchema,
   eReasoningResponseKeySchema,
 } from './schemas';
+import {
+  DEFAULT_MCP_APP_CSP_LIMITS,
+  resolveMCPAppCspLimits,
+  type MCPAppCspLimits,
+} from './mcp/csp';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
@@ -40,7 +45,7 @@ export {
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -2203,6 +2208,7 @@ export type EndpointsDropParamsMap = Record<string, string[] | Record<string, st
 export type TMCPAppsPolicy = {
   enabled: boolean;
   legacyHtmlEnabled: boolean;
+  cspLimits?: MCPAppCspLimits;
 };
 
 export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
@@ -2210,10 +2216,14 @@ export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
   legacyHtmlEnabled: false,
 };
 
-export function resolveMCPAppsPolicy(value?: boolean): TMCPAppsPolicy {
+export function resolveMCPAppsPolicy(
+  value?: boolean,
+  cspLimits?: Partial<MCPAppCspLimits>,
+): TMCPAppsPolicy {
   return {
     enabled: value === true,
     legacyHtmlEnabled: value !== false,
+    ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
   };
 }
 
@@ -2817,6 +2827,22 @@ export const configSchema = z.object({
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
+  mcpAppSandbox: z
+    .object({
+      maxSourcesPerDirective: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_CSP_LIMITS.maxSourcesPerDirective),
+      maxSerializedLength: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_CSP_LIMITS.maxSerializedLength),
+    })
+    .default({}),
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),

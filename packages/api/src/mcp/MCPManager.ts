@@ -1,7 +1,7 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
-import { Permissions, PermissionTypes, resolveMCPAppsPolicy } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { Permissions, PermissionTypes, DEFAULT_MCP_APPS_POLICY } from 'librechat-data-provider';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
@@ -24,10 +24,10 @@ import {
   resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
-import { formatToolContent, isRenderableUiResource, selectResolvedAppResource } from './parsers';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { formatToolContent, selectResolvedAppResource } from './parsers';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
@@ -86,6 +86,56 @@ function getDiscoveryAuthenticationKind(
     (observedOAuthRequired && serverConfig.requiresOAuth !== false)
     ? 'oauth'
     : 'server';
+}
+
+async function resolvePostCallAppsPolicy(
+  resolvePolicy: () => Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>>,
+  signal: AbortSignal | undefined,
+  logPrefix: string,
+): Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>> {
+  if (signal?.aborted) {
+    return DEFAULT_MCP_APPS_POLICY;
+  }
+
+  let policy: Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>>;
+  try {
+    policy = resolvePolicy();
+  } catch (error) {
+    logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
+    return DEFAULT_MCP_APPS_POLICY;
+  }
+  if (!signal) {
+    try {
+      return await policy;
+    } catch (error) {
+      logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
+      return DEFAULT_MCP_APPS_POLICY;
+    }
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: ReturnType<MCPServersRegistry['getMCPAppsPolicy']>): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onAbort = (): void => finish(DEFAULT_MCP_APPS_POLICY);
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+    }
+    void policy.then(finish, (error) => {
+      if (!settled) {
+        logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
+        finish(DEFAULT_MCP_APPS_POLICY);
+      }
+    });
+  });
 }
 
 /**
@@ -1794,6 +1844,16 @@ Please follow these instructions when using tools from the respective MCP server
           await this.updateUserLastActivity(userId);
         }
         this.checkIdleConnections();
+        const toolResult = result as t.MCPToolCallResponse;
+        const mcpApps = await resolvePostCallAppsPolicy(
+          () =>
+            registry
+              .resolveAllowlists({ userId, role: user?.role })
+              .then(({ mcpApps: policy }) => policy),
+          options?.signal,
+          `${logPrefix}[${toolName}]`,
+        );
+
         // The app routes reject OBO, Graph-token, and runtime body-placeholder configs, so do not
         // advertise an app bridge for a tool whose follow-up requests cannot be served.
         const appCompatible =
@@ -1803,7 +1863,7 @@ Please follow these instructions when using tools from the respective MCP server
             getMissingRuntimeBodyPlaceholderFields(rawConfig).length === 0);
 
         let resourceMeta: { uri: string } | undefined;
-        if (appCompatible) {
+        if (mcpApps.enabled && appCompatible && !options?.signal?.aborted) {
           try {
             resourceMeta = await this.getResourceMeta(
               connection,
@@ -1817,46 +1877,39 @@ Please follow these instructions when using tools from the respective MCP server
             /* empty */
           }
         }
-
-        let mcpApps = resolveMCPAppsPolicy();
-        const toolResult = result as t.MCPToolCallResponse;
-        if (resourceMeta || toolResult?.content?.some(isRenderableUiResource)) {
-          ({ mcpApps } = await registry.resolveAllowlists({
-            userId,
-            role: user?.role,
-          }));
-          if (!mcpApps.enabled) {
-            resourceMeta = undefined;
-          } else if (resourceMeta) {
-            logger.debug(
-              `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
-            );
-          }
+        if (options?.signal?.aborted) {
+          resourceMeta = undefined;
+        } else if (resourceMeta) {
+          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
         }
-        options?.signal?.throwIfAborted();
 
         let resolvedAppResource: t.ResourceContents | undefined;
-        if (resourceMeta && mcpApps.enabled) {
+        if (resourceMeta && !options?.signal?.aborted) {
           try {
             const readResult = await connection.client.readResource(
               { uri: resourceMeta.uri },
               { timeout: connection.timeout, signal: options?.signal },
             );
-            options?.signal?.throwIfAborted();
-            resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceMeta.uri);
+            if (!options?.signal?.aborted) {
+              resolvedAppResource = selectResolvedAppResource(
+                readResult.contents,
+                resourceMeta.uri,
+              );
+            }
             if (!resolvedAppResource) {
               logger.warn(
                 `[MCP][${serverName}][${toolName}] App resource "${resourceMeta.uri}" did not return usable App content; preserving tool result`,
               );
+              resourceMeta = undefined;
             }
           } catch (error) {
-            if (options?.signal?.aborted) {
-              throw error;
+            if (!options?.signal?.aborted) {
+              logger.warn(
+                `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceMeta.uri}"; preserving tool result`,
+                error,
+              );
             }
-            logger.warn(
-              `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceMeta.uri}"; preserving tool result`,
-              error,
-            );
+            resourceMeta = undefined;
           }
         }
 

@@ -357,7 +357,25 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.statusCode).toBe(200);
-      expect(response.body.mcpApps).toEqual(expected);
+      expect(response.body.mcpApps).toEqual({
+        ...expected,
+        cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+      });
+    });
+
+    it('publishes deployment-owned MCP App sandbox limits', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        mcpSettings: { apps: true },
+        mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+      });
+      const response = await request(createApp(mockUser)).get('/api/config');
+
+      expect(response.body.mcpApps).toEqual({
+        enabled: true,
+        legacyHtmlEnabled: true,
+        cspLimits: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+      });
     });
 
     it('should include modelSpecs, balance, and webSearch', async () => {
