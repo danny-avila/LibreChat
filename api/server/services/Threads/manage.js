@@ -1,6 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const { countTokens } = require('@librechat/api');
+const { countTokens, hasPersistableAbortContent } = require('@librechat/api');
 const { logger, escapeRegExp } = require('@librechat/data-schemas');
 const {
   Constants,
@@ -405,8 +405,14 @@ async function syncMessages({
      a cancelled run, or one that errored after the model had already produced content. The
      `saveConvo` above carries no reply stamp, so without this the recovered reply would never
      raise its unseen indicator. Only a write that actually persisted counts, and it is
-     best-effort, since those messages are already durable. */
-  const persistedAssistantReply = recordedAssistantReplies.findLast((message) => message != null);
+     best-effort, since those messages are already durable.
+     A run cancelled before any output still persists the synthetic row `checkMessageGaps`
+     built, and the error handlers add their visible content to the returned object rather
+     than to that row: stamping it would raise a dot for a message that renders nothing, and
+     acknowledgement requires the stamped reply to be on screen. */
+  const persistedAssistantReply = recordedAssistantReplies.findLast(
+    (message) => message != null && hasPersistableAbortContent(message.content),
+  );
   if (persistedAssistantReply?.messageId && ctx.isTemporary !== true) {
     try {
       await stampConvoLastResponse(

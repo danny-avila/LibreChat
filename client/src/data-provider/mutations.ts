@@ -470,20 +470,32 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
         const operationToken = claimReadWrite(queryClient, vars.conversationId);
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         if (abandonWhenSuperseded(queryClient, vars, operationToken)) {
-          return { operationToken, interrupted, superseded: true as const };
+          return {
+            previous: undefined,
+            acknowledged: undefined,
+            operationToken,
+            interrupted,
+            superseded: true,
+          };
         }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
            a clock running behind the server would leave the row still unseen, and the cache
            write feeding the seen triggers would restart this mutation on every pass. Equality
            reads as caught up. */
-        const acknowledged =
+        const acknowledged: string | undefined =
           vars.lastResponseAt ?? cached?.lastResponseAt ?? new Date().toISOString();
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastSeenAt: acknowledged,
         }));
-        return { previous: cached?.lastSeenAt, acknowledged, operationToken, interrupted };
+        return {
+          previous: cached?.lastSeenAt,
+          acknowledged,
+          operationToken,
+          interrupted,
+          superseded: false,
+        };
       },
       onSuccess: (data, vars, context) => {
         if (context?.superseded === true) {
@@ -674,26 +686,26 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           lastSeenAt: observed?.lastSeenAt,
         });
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
+        const baseline = {
+          chain: owner.chain,
+          lastResponseAt: owner.chain.baseline.lastResponseAt,
+          lastResponseMessageId: owner.chain.baseline.lastResponseMessageId,
+          lastResponseIsManual: owner.chain.baseline.lastResponseIsManual,
+          lastSeenAt: owner.chain.baseline.lastSeenAt,
+          token: owner.token,
+          interrupted,
+        };
         if (abandonWhenSuperseded(queryClient, vars, owner.token)) {
-          return { chain: owner.chain, token: owner.token, interrupted, superseded: true as const };
+          return { ...baseline, optimisticResponseAt: undefined, superseded: true };
         }
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
            state apart from a newer reply that arrived while the request was open. A never-
            replied conversation gets an explicit manual marker; replied conversations retain
            their real stamp but are still made unread. */
-        const optimisticResponseAt =
+        const optimisticResponseAt: string | undefined =
           previous?.lastResponseAt ?? previous?.updatedAt ?? new Date().toISOString();
-        const context = {
-          chain: owner.chain,
-          lastResponseAt: owner.chain.baseline.lastResponseAt,
-          lastResponseMessageId: owner.chain.baseline.lastResponseMessageId,
-          lastResponseIsManual: owner.chain.baseline.lastResponseIsManual,
-          lastSeenAt: owner.chain.baseline.lastSeenAt,
-          optimisticResponseAt,
-          token: owner.token,
-          interrupted,
-        };
+        const context = { ...baseline, optimisticResponseAt, superseded: false };
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt: convo.lastResponseAt ?? optimisticResponseAt,

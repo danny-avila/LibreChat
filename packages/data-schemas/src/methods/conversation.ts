@@ -2580,56 +2580,65 @@ export function createConversationMethods(
       const newChatProjectId = conversation.chatProjectId ?? null;
       const projectMembershipChanged = previousChatProjectId !== newChatProjectId;
 
-      /**
-       * A chat that moved between projects (e.g. a stale tab re-submitting an
-       * older project id) must fully recompute the stats of the project it left;
-       * the incremental path only ever touches the project it now belongs to.
-       */
-      if (projectMembershipChanged && previousChatProjectId) {
-        await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
-      }
-
-      if (conversation.chatProjectId) {
-        const isRetentionVisibilityUpdate =
-          typeof update.isTemporary === 'boolean' ||
-          Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+      /* The conversation and its reply stamp are durable by now, and the caller hands this
+         document to the client as the turn's conversation. Project statistics are maintenance
+         on a different collection: letting one of their failures reach the catch below would
+         answer a successful save with an error, dropping the stamp from the terminal event and
+         presenting a reply the user already watched arrive as unread on the next refresh. */
+      try {
         /**
-         * Saving a conversation that is itself archived or retention-hidden (e.g.
-         * renaming or title generation on an archived project chat) must recompute
-         * stats rather than take the incremental fast path, otherwise the project's
-         * lastConversationAt/Id would point at a chat the project workspace hides.
+         * A chat that moved between projects (e.g. a stale tab re-submitting an
+         * older project id) must fully recompute the stats of the project it left;
+         * the incremental path only ever touches the project it now belongs to.
          */
-        const isConversationHidden =
-          conversation.isArchived === true ||
-          conversation.isTemporary === true ||
-          (conversation.expiredAt != null &&
-            new Date(conversation.expiredAt).getTime() <= Date.now());
-        /**
-         * A move into this project (projectMembershipChanged) also needs a full
-         * refresh: the incremental path only bumps the count for brand-new inserts,
-         * so a pre-existing chat joining the project would otherwise be uncounted.
-         */
-        const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
-        const shouldRefreshProjectStats =
-          projectMembershipChanged ||
-          isNewConversation ||
-          typeof update.isArchived === 'boolean' ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
-          isRetentionVisibilityUpdate ||
-          isConversationHidden;
-
-        if (shouldRefreshProjectStats) {
-          await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
-        } else {
-          await updateChatProjectLastConversationForUser(
-            mongoose,
-            userId,
-            conversation.chatProjectId,
-            conversation,
-          );
+        if (projectMembershipChanged && previousChatProjectId) {
+          await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
         }
+
+        if (conversation.chatProjectId) {
+          const isRetentionVisibilityUpdate =
+            typeof update.isTemporary === 'boolean' ||
+            Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+          /**
+           * Saving a conversation that is itself archived or retention-hidden (e.g.
+           * renaming or title generation on an archived project chat) must recompute
+           * stats rather than take the incremental fast path, otherwise the project's
+           * lastConversationAt/Id would point at a chat the project workspace hides.
+           */
+          const isConversationHidden =
+            conversation.isArchived === true ||
+            conversation.isTemporary === true ||
+            (conversation.expiredAt != null &&
+              new Date(conversation.expiredAt).getTime() <= Date.now());
+          /**
+           * A move into this project (projectMembershipChanged) also needs a full
+           * refresh: the incremental path only bumps the count for brand-new inserts,
+           * so a pre-existing chat joining the project would otherwise be uncounted.
+           */
+          const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
+          const shouldRefreshProjectStats =
+            projectMembershipChanged ||
+            isNewConversation ||
+            typeof update.isArchived === 'boolean' ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
+            isRetentionVisibilityUpdate ||
+            isConversationHidden;
+
+          if (shouldRefreshProjectStats) {
+            await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+          } else {
+            await updateChatProjectLastConversationForUser(
+              mongoose,
+              userId,
+              conversation.chatProjectId,
+              conversation,
+            );
+          }
+        }
+      } catch (error) {
+        logger.error('[saveConvo] Failed to maintain project statistics', error);
       }
 
       return conversation.toObject();

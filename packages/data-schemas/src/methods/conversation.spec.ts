@@ -2242,6 +2242,39 @@ describe('Conversation Operations', () => {
       }
     });
 
+    it('keeps a saved reply stamp when project maintenance fails', async () => {
+      /* The caller hands this document to the client as the turn's conversation. Answering a
+         durable save with an error would drop the stamp from the terminal event, and the next
+         list refresh would present a reply the user watched arrive as unread. */
+      const project = await ChatProject.create({
+        name: 'Unavailable project stats',
+        user: 'user123',
+      });
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+        chatProjectId: project._id.toString(),
+      });
+      const update = jest.spyOn(ChatProject, 'updateOne').mockImplementation(() => {
+        throw new Error('project update unavailable');
+      });
+      try {
+        const saved = await saveConvo(
+          mockCtx,
+          { ...mockConversationData, chatProjectId: project._id.toString() },
+          { stampReply: true, replyMessageId: 'reply-project-tail' },
+        );
+        expect(saved).not.toMatchObject({ message: 'Error saving conversation' });
+        expect((saved as IConversation).lastResponseMessageId).toBe('reply-project-tail');
+        const stored = await Conversation.findOne({
+          conversationId: mockConversationData.conversationId,
+        }).lean<IConversation>();
+        expect(stored?.lastResponseMessageId).toBe('reply-project-tail');
+      } finally {
+        update.mockRestore();
+      }
+    });
+
     it('stamps lastResponseAt and lifts the conversation like any other reply', async () => {
       /* The away poll pages by `updatedAt`, so a reply that left the order alone would be
          invisible on any conversation that had fallen past the first page. BaseClient's own
