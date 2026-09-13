@@ -14,9 +14,8 @@ describe('withoutTraceRefs', () => {
   });
 
   it('marks a row that never carried a record as unsampled, so feedback never recomputes sampling', () => {
-    expect(withoutTraceRefs({ messageId: 'copy-2' })).toEqual({
-      messageId: 'copy-2',
-      langfuseSampled: false,
-    });
+    const row: { messageId: string; langfuseSampled?: boolean } = { messageId: 'copy-2' };
+
+    expect(withoutTraceRefs(row)).toEqual({ messageId: 'copy-2', langfuseSampled: false });
   });
 });
