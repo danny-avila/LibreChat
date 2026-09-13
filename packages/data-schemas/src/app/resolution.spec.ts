@@ -71,13 +71,25 @@ describe('mergeConfigOverrides', () => {
 
   it('keeps MCP App sandbox limits at deployment scope', () => {
     const base = {
-      mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+      mcpAppSandbox: {
+        url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+        maxSourcesPerDirective: 64,
+        maxSerializedLength: 8192,
+        maxAdmissionRequestsPerMinute: 480,
+      },
     } as unknown as AppConfig;
     const configs = [
       fakeConfig(
-        { mcpAppSandbox: { maxSourcesPerDirective: 128, maxSerializedLength: 16384 } },
+        {
+          mcpAppSandbox: {
+            url: 'https://user-sandbox.example.com/api/mcp/sandbox',
+            maxSourcesPerDirective: 128,
+            maxSerializedLength: 16384,
+            maxAdmissionRequestsPerMinute: 960,
+          },
+        },
         10,
-        ['mcpAppSandbox.maxSerializedLength'],
+        ['mcpAppSandbox.url', 'mcpAppSandbox.maxAdmissionRequestsPerMinute'],
       ),
     ];
 

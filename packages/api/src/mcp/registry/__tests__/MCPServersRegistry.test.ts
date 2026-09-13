@@ -633,6 +633,95 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('resolveCachedAppServerConfig', () => {
+    const rawConfig: t.MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://config.example.com/mcp',
+    };
+    const allowlists = {
+      allowedDomains: ['config.example.com'],
+      allowedAddresses: null,
+    };
+
+    it('returns an exact healthy config-cache target without inspecting or connecting', async () => {
+      const cachedConfig = {
+        ...rawConfig,
+        source: 'config' as const,
+        requiresOAuth: false,
+      } as t.ParsedServerConfig;
+      const key = registry['configCacheKey']('srv', rawConfig, allowlists);
+      await registry['configCacheRepo'].add(key, cachedConfig);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      await expect(
+        registry.resolveCachedAppServerConfig({
+          serverName: 'srv',
+          userId: 'user-1',
+          role: 'USER',
+          mcpConfig: { srv: rawConfig },
+          ...allowlists,
+        }),
+      ).resolves.toEqual({
+        serverConfig: cachedConfig,
+        connectionOwner: 'principal',
+      });
+      expect(inspectSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps an absent or failed config-cache target unavailable instead of using a same-name base', async () => {
+      await registry['cacheConfigsRepo'].add('srv', {
+        ...testParsedConfig,
+        source: 'yaml',
+      });
+
+      await expect(
+        registry.resolveCachedAppServerConfig({
+          serverName: 'srv',
+          userId: 'user-1',
+          role: 'USER',
+          mcpConfig: { srv: rawConfig },
+          ...allowlists,
+        }),
+      ).resolves.toBeUndefined();
+
+      const key = registry['configCacheKey']('srv', rawConfig, allowlists);
+      await registry['configCacheRepo'].add(key, {
+        ...rawConfig,
+        source: 'config',
+        inspectionFailed: true,
+      } as t.ParsedServerConfig);
+      await expect(
+        registry.resolveCachedAppServerConfig({
+          serverName: 'srv',
+          userId: 'user-1',
+          role: 'USER',
+          mcpConfig: { srv: rawConfig },
+          ...allowlists,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('uses the operator target for an admitted unmodified YAML config', async () => {
+      const yamlConfig = {
+        ...rawConfig,
+        source: 'yaml' as const,
+        requiresOAuth: false,
+      } as t.ParsedServerConfig;
+      await registry['cacheConfigsRepo'].add('srv', yamlConfig);
+
+      await expect(
+        registry.resolveCachedAppServerConfig({
+          serverName: 'srv',
+          userId: 'user-1',
+          role: 'USER',
+          mcpConfig: { srv: rawConfig },
+          ...allowlists,
+        }),
+      ).resolves.toEqual({ serverConfig: yamlConfig, connectionOwner: 'operator' });
+    });
+  });
+
   describe('reset', () => {
     it('should clear all servers from cache repository', async () => {
       // Add servers to cache using the new API

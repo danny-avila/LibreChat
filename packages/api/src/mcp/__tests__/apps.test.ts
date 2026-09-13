@@ -111,6 +111,11 @@ describe('App request config and auth resolution', () => {
   >[0]['user'];
   const flowManager = {} as Parameters<typeof resolveAppRequestContext>[0]['flowManager'];
   const onOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
+  const allowlists = {
+    allowedDomains: ['a.example.com'],
+    allowedAddresses: null,
+    useSSRFProtection: false,
+  };
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -129,6 +134,7 @@ describe('App request config and auth resolution', () => {
       findPluginAuthsByKeys,
       flowManager,
       onOAuthCredentialsChanging,
+      allowlists,
     });
 
     expect(ctx.connectionTarget.serverConfig).toEqual({
@@ -139,6 +145,7 @@ describe('App request config and auth resolution', () => {
     expect(ctx.user).toBe(user);
     expect(ctx.serverName).toBe('srv');
     expect(ctx.onOAuthCredentialsChanging).toBe(onOAuthCredentialsChanging);
+    expect(ctx.allowlists).toBe(allowlists);
   });
 
   it('fails closed when config resolution fails', async () => {
@@ -151,6 +158,7 @@ describe('App request config and auth resolution', () => {
         findPluginAuthsByKeys,
         flowManager,
         onOAuthCredentialsChanging,
+        allowlists,
       }),
     ).rejects.toThrow('config unavailable');
   });
@@ -171,6 +179,7 @@ describe('App request config and auth resolution', () => {
         findPluginAuthsByKeys,
         flowManager,
         onOAuthCredentialsChanging,
+        allowlists,
       }),
     ).rejects.toThrow('db down');
     expect(logger.error).toHaveBeenCalled();
@@ -191,6 +200,7 @@ describe('App request config and auth resolution', () => {
       findPluginAuthsByKeys,
       flowManager,
       onOAuthCredentialsChanging,
+      allowlists,
     });
 
     expect(ctx.customUserVars).toBeUndefined();
@@ -212,6 +222,7 @@ describe('App request config and auth resolution', () => {
         findPluginAuthsByKeys,
         flowManager,
         onOAuthCredentialsChanging,
+        allowlists,
       }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidRequest });
   });

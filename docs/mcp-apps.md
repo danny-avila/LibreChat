@@ -42,9 +42,11 @@ serialized characters. Raise them for Apps that declare more origins or a larger
 
 ```yaml
 mcpAppSandbox:
+  url: https://mcp-sandbox.example.com/api/mcp/sandbox
   maxSourcesPerDirective: 64
   maxSerializedLength: 8192
   maxPersistedAppBytes: 2097152
+  maxAdmissionRequestsPerMinute: 480
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and
@@ -56,30 +58,39 @@ bounds each complete App attachment added to a message, rather than the whole me
 oversized full document falls back to a bound URI-only descriptor; if that descriptor is still too
 large, LibreChat omits the optional App artifact while preserving ordinary tool output.
 
+`maxAdmissionRequestsPerMinute` defaults to 240 and is a shared per-user ceiling across every App
+validation, resource, and tool-call route. LibreChat applies it before principal-scoped configuration
+admission. The existing `rateLimits.mcpApps` values remain the more precise resource and tool-call
+limits applied after admission.
+
 MCP App browser routes use independent, per-user, one-minute limits. Configure positive integer
 values at `rateLimits.mcpApps.resourcesPerMinute` and
 `rateLimits.mcpApps.toolCallsPerMinute`; their defaults are 120 and 60 respectively.
 
 ## Required sandbox deployment
 
-The chat application and Sandbox Proxy must use different URL origins. Set the client build variable
-to an absolute proxy URL and allow the chat origin to frame the proxy response:
+The chat application and Sandbox Proxy must use different URL origins. Set the proxy URL in the base
+LibreChat configuration and allow the chat origin to frame the proxy response:
+
+```yaml
+mcpAppSandbox:
+  url: https://mcp-sandbox.example.com/api/mcp/sandbox
+```
 
 ```dotenv
-VITE_MCP_SANDBOX_URL=https://mcp-sandbox.example.com/api/mcp/sandbox
 MCP_SANDBOX_FRAME_ANCESTORS=https://chat.example.com
 ```
 
-`VITE_MCP_SANDBOX_URL` is read while building the client. It must be an absolute `http:` or `https:`
-URL whose origin differs from the chat page. Missing, invalid, or same-origin values fail closed and
-show the View load error.
+The runtime `url` must be an absolute `http:` or `https:` URL whose origin differs from the chat
+page. It is delivered only in authenticated startup configuration, so official prebuilt images use
+it without rebuilding the client. Missing, invalid, or same-origin values fail closed and show the
+View load error. Configuration changes take effect after a page reload.
 
-Pass the value explicitly to either supported image build:
-
-```bash
-docker build --build-arg VITE_MCP_SANDBOX_URL=https://mcp-sandbox.example.com/api/mcp/sandbox -t librechat:mcp-apps .
-docker build -f Dockerfile.multi --build-arg VITE_MCP_SANDBOX_URL=https://mcp-sandbox.example.com/api/mcp/sandbox -t librechat:mcp-apps-multi .
-```
+For compatibility with older servers, a client built with `VITE_MCP_SANDBOX_URL` uses that compiled
+URL only when authenticated startup configuration omits `sandboxUrl`. An explicit runtime URL is
+authoritative: if it is unusable, the client does not silently fall back to the compiled value. The
+build argument remains supported for existing custom images, but runtime YAML is the supported
+same-version deployment path.
 
 Route `https://mcp-sandbox.example.com/api/mcp/sandbox` to the LibreChat sandbox handler without
 adding authentication or HTML transformation. Preserve its response headers, especially its CSP,
@@ -106,7 +117,8 @@ An App tool declares its View on `_meta.ui.resourceUri` (the deprecated `ui/reso
 accepted for compatibility). LibreChat reads that exact URI from the same authenticated MCP
 connection during the original tool call and persists the selected App-profile document. The tool
 result sent to the View remains unchanged, including any embedded resource body; an embedded body
-does not replace the required `resources/read` document.
+does not replace the required `resources/read` document. MCP tools invoked through Assistants and
+Azure Assistants retain the App attachment alongside their canonical model-visible tool text.
 
 Each persisted App also carries an opaque server binding issued from the exact authenticated MCP
 target used by the original call. LibreChat validates that binding before loading stored inline HTML
@@ -116,6 +128,11 @@ credential refresh does not. Invalidated and older unbound App attachments remai
 never bind by server name to a replacement configuration. The host does not live-revoke a document
 that is already loaded: a remount or page reload validates before loading it again, and every later
 App operation validates independently.
+
+Validation of stored inline HTML compares the binding with the current local admitted server target;
+it does not connect to the MCP server. A matching persisted document can therefore render while its
+server is temporarily offline, although any live View operation still reports that outage. A
+URI-only descriptor needs a live bound resource read before it has a document to render.
 
 If the initial read fails or returns no usable exact item, the ordinary tool result remains
 successful and LibreChat stores a URI-only unavailable descriptor. An authenticated interactive
@@ -150,11 +167,12 @@ older cached client can still display inline HTML after a server upgrade, but co
 routes reject every bridge operation that omits the binding; same-version client/server deployment
 remains the supported upgrade model.
 
-Standard MCP OAuth callbacks reuse an existing or refreshable user connection. When interactive
-authorization is required, the user starts it through LibreChat's existing MCP UI; an App callback
-does not open a separate authorization flow. Direct OpenID reauthentication returns the established
-HTTP 401 `invalid_token` shape, rejected bearer credentials return 403, temporary refresh failure
-returns 503, and unexpected failures return a generic 500 response.
+Standard MCP OAuth and direct-bearer App callbacks reuse the same bounded connection recovery as
+ordinary MCP tool calls. When interactive authorization is required, the user starts it through
+LibreChat's existing MCP UI; an App callback does not open a separate authorization flow. Direct
+OpenID reauthentication returns the established HTTP 401 `invalid_token` shape, rejected bearer
+credentials return 403, temporary refresh failure returns 503, and unexpected failures return a
+generic 500 response.
 
 ## Reproducible integration fixture
 

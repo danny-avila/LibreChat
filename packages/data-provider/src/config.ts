@@ -2211,27 +2211,37 @@ export type TMCPAppsPolicy = {
   cspLimits?: MCPAppCspLimits;
   /** Server-enforced UTF-8 JSON byte cap for one persisted MCP App artifact. */
   maxPersistedAppBytes?: number;
+  /** Shared per-user ceiling applied before principal-scoped MCP App admission. */
+  maxAdmissionRequestsPerMinute?: number;
+  /** Deployment-owned dedicated Sandbox Proxy URL published to authenticated clients. */
+  sandboxUrl?: string;
 };
 
 export const DEFAULT_MCP_APP_PERSISTED_BYTES = 1024 * 1024;
 export const MAX_MCP_APP_PERSISTED_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE = 240;
 
 export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
   enabled: false,
   legacyHtmlEnabled: false,
   maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+  maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
 };
 
 export function resolveMCPAppsPolicy(
   value?: boolean,
   cspLimits?: Partial<MCPAppCspLimits>,
   maxPersistedAppBytes = DEFAULT_MCP_APP_PERSISTED_BYTES,
+  maxAdmissionRequestsPerMinute = DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+  sandboxUrl?: string,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
     legacyHtmlEnabled: value !== false,
     ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
     maxPersistedAppBytes,
+    maxAdmissionRequestsPerMinute,
+    ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
   };
 }
 
@@ -2837,6 +2847,21 @@ export const configSchema = z.object({
   mcpServers: MCPServersSchema.optional(),
   mcpAppSandbox: z
     .object({
+      url: z
+        .string()
+        .trim()
+        .url()
+        .refine(
+          (value) => {
+            try {
+              return ['http:', 'https:'].includes(new URL(value).protocol);
+            } catch {
+              return false;
+            }
+          },
+          { message: 'MCP App sandbox URL must use http:// or https://' },
+        )
+        .optional(),
       maxSourcesPerDirective: z
         .number()
         .int()
@@ -2855,6 +2880,12 @@ export const configSchema = z.object({
         .positive()
         .max(MAX_MCP_APP_PERSISTED_BYTES)
         .default(DEFAULT_MCP_APP_PERSISTED_BYTES),
+      maxAdmissionRequestsPerMinute: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE),
     })
     .default({}),
   mcpSettings: z

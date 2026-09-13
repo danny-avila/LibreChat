@@ -51,6 +51,7 @@ const {
   serveMCPSandbox,
   requireMCPAppsEnabled,
 } = require('~/server/controllers/mcpApps');
+const mcpAppAdmissionLimiter = require('~/server/middleware/limiters/mcpAppAdmissionLimiter');
 const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
 const mcpAppResourceLimiter = require('~/server/middleware/limiters/mcpAppResourceLimiter');
 const {
@@ -1330,6 +1331,7 @@ router.delete(
 router.post(
   '/app/validate',
   requireJwtAuth,
+  mcpAppAdmissionLimiter,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
   mcpAppResourceLimiter,
@@ -1343,6 +1345,7 @@ router.post(
 router.post(
   '/resources/read',
   requireJwtAuth,
+  mcpAppAdmissionLimiter,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
   mcpAppResourceLimiter,
@@ -1356,6 +1359,7 @@ router.post(
 router.post(
   '/resources/list',
   requireJwtAuth,
+  mcpAppAdmissionLimiter,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
   mcpAppResourceLimiter,
@@ -1369,6 +1373,7 @@ router.post(
 router.post(
   '/resources/templates/list',
   requireJwtAuth,
+  mcpAppAdmissionLimiter,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
   mcpAppResourceLimiter,
@@ -1382,6 +1387,7 @@ router.post(
 router.post(
   '/app-tool-call',
   requireJwtAuth,
+  mcpAppAdmissionLimiter,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
   mcpAppToolCallLimiter,

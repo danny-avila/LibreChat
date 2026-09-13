@@ -28,6 +28,8 @@ memory:
   personalize: true
   tokenLimit: 10000
 
+# __E2E_MCP_APP_SANDBOX__
+
 mcpSettings:
   # __E2E_MCP_APPS_SETTING__
   # Deliberately excludes the e2e-http origin below, so that server is blocked

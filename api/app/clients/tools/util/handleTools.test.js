@@ -476,6 +476,14 @@ describe('Tool Handlers', () => {
           req: {
             user: { id: fakeUser._id.toString(), role: 'USER' },
             body: {},
+            config: {
+              mcpSettings: { apps: true },
+              mcpAppSandbox: {
+                maxPersistedAppBytes: 2048,
+                maxAdmissionRequestsPerMinute: 12,
+                url: 'https://sandbox.example.com',
+              },
+            },
           },
         },
       });
@@ -490,6 +498,13 @@ describe('Tool Handlers', () => {
         expect.objectContaining({
           toolKey: normalizedKey,
           serverName: rawServerName,
+          mcpApps: expect.objectContaining({
+            enabled: true,
+            legacyHtmlEnabled: true,
+            maxPersistedAppBytes: 2048,
+            maxAdmissionRequestsPerMinute: 12,
+            sandboxUrl: 'https://sandbox.example.com',
+          }),
         }),
       );
     });

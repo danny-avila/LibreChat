@@ -395,6 +395,56 @@ export class MCPServersRegistry {
   }
 
   /**
+   * Resolves an App validation target from configuration already admitted and cached by the host.
+   * This path never initializes, reinspects, recovers, or connects to an MCP server. A config-tier
+   * entry that is absent or failed therefore stays unavailable instead of silently rebinding a
+   * persisted App to a same-name base server.
+   */
+  public async resolveCachedAppServerConfig({
+    serverName,
+    userId,
+    role,
+    mcpConfig,
+    allowedDomains,
+    allowedAddresses,
+  }: {
+    serverName: string;
+    userId: string;
+    role?: string;
+    mcpConfig: Record<string, t.MCPOptions>;
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  }): Promise<t.MCPConnectionTarget | undefined> {
+    const baseConfigs = await this.getBaseServerConfigs(userId, role);
+    const base = baseConfigs[serverName];
+    const rawConfig = mcpConfig[serverName];
+    let selectedConfig = base;
+
+    if (rawConfig && base?.source !== 'user' && !isProcessMCPServerConfig(base)) {
+      const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+      if (!this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+        const cached = await this.configCacheRepo.get(
+          this.configCacheKey(serverName, rawConfig, { allowedDomains, allowedAddresses }),
+        );
+        if (!cached || cached.inspectionFailed) {
+          return undefined;
+        }
+        selectedConfig = base ? { ...cached, source: overlaySource(base, cached) } : cached;
+      }
+    }
+
+    if (!selectedConfig || selectedConfig.inspectionFailed) {
+      return undefined;
+    }
+    return {
+      serverConfig: selectedConfig,
+      connectionOwner: (await this.isAppServerConfig(serverName, selectedConfig))
+        ? 'operator'
+        : 'principal',
+    };
+  }
+
+  /**
    * Returns the config for a single server, mirroring the precedence used by
    * getAllServerConfigs so list views and single-server lookups agree on
    * the same name:

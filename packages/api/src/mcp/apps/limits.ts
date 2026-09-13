@@ -1,5 +1,9 @@
 import { rateLimit } from 'express-rate-limit';
-import { ViolationTypes, resolveMCPAppRateLimits } from 'librechat-data-provider';
+import {
+  ViolationTypes,
+  resolveMCPAppRateLimits,
+  DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+} from 'librechat-data-provider';
 import type { AugmentedRequest, Store } from 'express-rate-limit';
 import type { Request, RequestHandler, Response } from 'express';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -32,6 +36,10 @@ export interface MCPAppRateLimiterDependencies {
     details: ViolationDetails,
     score?: number | string,
   ) => Promise<void>;
+}
+
+export interface MCPAppAdmissionRateLimiterDependencies extends MCPAppRateLimiterDependencies {
+  getLimit: () => number | undefined;
 }
 
 const limiters: Record<
@@ -72,6 +80,38 @@ export function createMCPAppRateLimiter(
       };
       await dependencies.logViolation(request, response, type, details, dependencies.score);
       response.status(429).json({ message: definition.message });
+    },
+    keyGenerator: (request) => String((request as MCPAppRateLimitRequest).user?.id ?? ''),
+    store: dependencies.store,
+  });
+}
+
+/** Shared inexpensive admission bucket evaluated before request-scoped MCP policy/config work. */
+export function createMCPAppAdmissionRateLimiter(
+  dependencies: MCPAppAdmissionRateLimiterDependencies,
+): RequestHandler {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: () => {
+      try {
+        const configured = dependencies.getLimit();
+        return typeof configured === 'number' && Number.isSafeInteger(configured) && configured > 0
+          ? configured
+          : DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE;
+      } catch {
+        return DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE;
+      }
+    },
+    handler: async (request, response) => {
+      const type = ViolationTypes.TOOL_CALL_LIMIT;
+      const details: ViolationDetails = {
+        type,
+        max: (request as AugmentedRequest).rateLimit.limit,
+        limiter: 'user',
+        windowInMinutes: 1,
+      };
+      await dependencies.logViolation(request, response, type, details, dependencies.score);
+      response.status(429).json({ message: 'Too many app requests. Try again later' });
     },
     keyGenerator: (request) => String((request as MCPAppRateLimitRequest).user?.id ?? ''),
     store: dependencies.store,

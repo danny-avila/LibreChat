@@ -78,9 +78,13 @@ export function buildAppToolResult(resource: UIResource): AppToolResult | undefi
   };
 }
 
-export function getMCPSandboxUrl(): string | undefined {
+export function getMCPSandboxUrl(runtimeUrl?: unknown): string | undefined {
   const env = import.meta.env as Record<string, string | undefined>;
-  const base = env.VITE_MCP_SANDBOX_URL?.trim();
+  let base = env.VITE_MCP_SANDBOX_URL ?? '';
+  if (runtimeUrl !== undefined) {
+    base = typeof runtimeUrl === 'string' ? runtimeUrl : '';
+  }
+  base = base.trim();
   if (!base) {
     return undefined;
   }

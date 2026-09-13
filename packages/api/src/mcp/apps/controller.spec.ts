@@ -18,7 +18,11 @@ type MockRequest = EventEmitter & {
   query: Record<string, unknown>;
   user?: { id: string; role?: string };
   config?: {
-    mcpSettings?: { apps?: boolean };
+    mcpSettings?: {
+      apps?: boolean;
+      allowedDomains?: string[] | null;
+      allowedAddresses?: string[] | null;
+    };
     mcpConfig?: Record<string, { type?: string; command?: string; args?: string[] }>;
   };
 };
@@ -95,6 +99,10 @@ function makeDependencies(manager: MCPAppsProxyManager) {
     })),
     recoverServerConfig: jest.fn(async (_serverName, config) => config),
     isAppServerConfig: jest.fn(async () => false),
+    resolveCachedAppServerConfig: jest.fn(async () => ({
+      serverConfig: { type: 'stdio', command: 'cached', args: [] },
+      connectionOwner: 'principal',
+    })),
     findPluginAuthsByKeys: jest.fn(),
     tokenMethods: {
       findToken: jest.fn(),
@@ -127,7 +135,16 @@ describe('createMCPAppsController', () => {
     manager.validateAppBinding.mockResolvedValue({ valid: true });
     const { dependencies } = makeDependencies(manager);
     const controller = createMCPAppsController(dependencies);
-    const request = makeRequest();
+    const request = makeRequest({
+      config: {
+        mcpSettings: {
+          apps: true,
+          allowedDomains: ['mcp.example.com'],
+          allowedAddresses: null,
+        },
+        mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
+      },
+    });
     const response = makeResponse();
 
     await controller.validateMCPApp(
@@ -137,8 +154,30 @@ describe('createMCPAppsController', () => {
     );
 
     expect(manager.validateAppBinding).toHaveBeenCalledWith(
-      expect.objectContaining({ serverName: 'srv', serverBinding: 'binding' }),
+      expect.objectContaining({
+        serverName: 'srv',
+        serverBinding: 'binding',
+        connectionTarget: {
+          serverConfig: { type: 'stdio', command: 'cached', args: [] },
+          connectionOwner: 'principal',
+        },
+        customUserVars: { API_KEY: 'secret' },
+      }),
     );
+    expect(dependencies.resolveCachedAppServerConfig).toHaveBeenCalledWith({
+      serverName: 'srv',
+      userId: 'user-1',
+      role: 'USER',
+      mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
+      allowedDomains: ['mcp.example.com'],
+      allowedAddresses: null,
+    });
+    expect(dependencies.ensureConfigServers).not.toHaveBeenCalled();
+    expect(dependencies.getAllServerConfigs).not.toHaveBeenCalled();
+    expect(dependencies.recoverServerConfig).not.toHaveBeenCalled();
+    expect(dependencies.getFlowManager).not.toHaveBeenCalled();
+    expect(dependencies.createOAuthCredentialsChanging).not.toHaveBeenCalled();
+    expect(dependencies.createUpstreamTokenProvider).not.toHaveBeenCalled();
     expect(response.json).toHaveBeenCalledWith({ valid: true });
   });
 
@@ -146,6 +185,14 @@ describe('createMCPAppsController', () => {
     const manager = makeManager();
     manager.readResource.mockResolvedValue({ contents: [] });
     const { dependencies, provider, onOAuthCredentialsChanging } = makeDependencies(manager);
+    dependencies.getAppConfig = jest.fn(async () => ({
+      mcpSettings: {
+        apps: true,
+        allowedDomains: ['mcp.example.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      },
+      mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
+    }));
     const controller = createMCPAppsController(dependencies);
     const request = makeRequest();
     const response = makeResponse();
@@ -187,6 +234,11 @@ describe('createMCPAppsController', () => {
         customUserVars: { API_KEY: 'secret' },
         upstreamTokenProvider: provider,
         onOAuthCredentialsChanging,
+        allowlists: {
+          allowedDomains: ['mcp.example.com'],
+          allowedAddresses: ['10.0.0.0/8'],
+          useSSRFProtection: false,
+        },
         signal: expect.any(AbortSignal),
       }),
     );

@@ -54,7 +54,6 @@ const {
   Constants,
   Permissions,
   PermissionTypes,
-  isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
   getOAuthReconnectionManager,
@@ -861,6 +860,7 @@ async function reconnectServer({
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
+ * @param {import('librechat-data-provider').TMCPAppsPolicy} [params.mcpApps] - Request-admitted MCP Apps policy.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTools({
@@ -878,6 +878,7 @@ async function createMCPTools({
   requestScopedConnections,
   upstreamTokenProvider,
   oboIdentityContext,
+  mcpApps,
   streamId = null,
   jobCreatedAt,
 }) {
@@ -961,6 +962,7 @@ async function createMCPTools({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      mcpApps,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -990,6 +992,7 @@ async function createMCPTools({
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
+ * @param {import('librechat-data-provider').TMCPAppsPolicy} [params.mcpApps] - Request-admitted MCP Apps policy.
  * @param {string} [params.serverName] - Resolved raw MCP server name from tool loading.
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
@@ -1011,6 +1014,7 @@ async function createMCPTool({
   configServers,
   upstreamTokenProvider,
   oboIdentityContext,
+  mcpApps,
   serverName: resolvedServerName,
   onAvailableTools,
   streamId = null,
@@ -1188,6 +1192,7 @@ async function createMCPTool({
     toolDefinition: toolEntry['function'],
     upstreamTokenProvider,
     oboIdentityContext,
+    mcpApps,
     streamId,
     jobCreatedAt,
     recoveryPolicy,
@@ -1209,6 +1214,7 @@ function createToolInstance({
   provider: capturedProvider,
   upstreamTokenProvider: capturedUpstreamTokenProvider = null,
   oboIdentityContext: capturedOboIdentityContext = null,
+  mcpApps: capturedMCPApps,
   streamId = null,
   jobCreatedAt,
   recoveryPolicy,
@@ -1339,11 +1345,8 @@ function createToolInstance({
         oboTrustChecker: createOboTrustChecker(),
         upstreamTokenProvider: capturedUpstreamTokenProvider,
         oboIdentityContext: capturedOboIdentityContext,
+        mcpApps: capturedMCPApps,
       });
-
-      if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
-        return result[0];
-      }
       return result;
     } catch (error) {
       /** A user Stop aborts every in-flight call at once, and that rejection is

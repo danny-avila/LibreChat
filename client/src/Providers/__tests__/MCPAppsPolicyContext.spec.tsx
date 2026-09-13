@@ -20,6 +20,11 @@ function LimitsProbe() {
   );
 }
 
+function SandboxPolicyProbe() {
+  const { sandboxUrl, maxAdmissionRequestsPerMinute } = useMCPAppsPolicy();
+  return <output>{`${sandboxUrl ?? 'none'}:${maxAdmissionRequestsPerMinute ?? 'none'}`}</output>;
+}
+
 function CachedPolicyProvider({ children }: { children: React.ReactNode }) {
   const { data, isSuccess, error } = useQuery<TStartupConfig>(
     ['startup-policy'],
@@ -86,6 +91,30 @@ describe('MCPAppsPolicyProvider', () => {
       </MCPAppsPolicyProvider>,
     );
     expect(screen.getByText('32:8192')).toBeInTheDocument();
+  });
+
+  it('preserves deployment-owned sandbox startup fields', () => {
+    render(
+      <MCPAppsPolicyProvider
+        startupConfig={
+          {
+            mcpApps: {
+              enabled: true,
+              legacyHtmlEnabled: true,
+              sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+              maxAdmissionRequestsPerMinute: 480,
+            },
+          } as TStartupConfig
+        }
+        ready
+      >
+        <SandboxPolicyProbe />
+      </MCPAppsPolicyProvider>,
+    );
+
+    expect(
+      screen.getByText('https://mcp-sandbox.example.com/api/mcp/sandbox:480'),
+    ).toBeInTheDocument();
   });
 
   it('tracks the startup cache without exposing pending, missing, or malformed policy', async () => {

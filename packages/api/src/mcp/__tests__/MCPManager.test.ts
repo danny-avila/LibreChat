@@ -1000,7 +1000,14 @@ describe('MCPManager', () => {
       } as unknown as MCPConnection;
     }
 
-    async function callWith(connection: MCPConnection, signal?: AbortSignal) {
+    async function callWith(
+      connection: MCPConnection,
+      signal?: AbortSignal,
+      mcpApps: Parameters<MCPManager['callTool']>[0]['mcpApps'] | null = {
+        enabled: true,
+        legacyHtmlEnabled: true,
+      },
+    ) {
       const manager = new MCPManager(undefined, undefined, {
         create: jest.fn(() => 'binding'),
         verify: jest.fn(() => true),
@@ -1014,6 +1021,7 @@ describe('MCPManager', () => {
         provider: 'openai',
         flowManager,
         options: { signal },
+        ...(mcpApps ? { mcpApps } : {}),
       });
     }
 
@@ -1073,26 +1081,23 @@ describe('MCPManager', () => {
     });
 
     it('does not read or attach the App when Apps policy denies it', async () => {
-      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockResolvedValueOnce({
-        mcpApps: { enabled: false, legacyHtmlEnabled: false },
-      });
       const request = jest.fn().mockResolvedValue(toolResult);
       const connection = connectionFor(request);
-      const [, artifacts] = await callWith(connection);
+      const [, artifacts] = await callWith(connection, undefined, {
+        enabled: false,
+        legacyHtmlEnabled: false,
+      });
 
       expect(request).toHaveBeenCalledTimes(1);
       expect(connection.fetchOrderedToolsSnapshot).not.toHaveBeenCalled();
       expect(artifacts?.ui_resources).toBeUndefined();
     });
 
-    it('keeps canonical tool output when Apps policy resolution fails', async () => {
-      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockRejectedValueOnce(
-        new Error('config unavailable'),
-      );
+    it('keeps canonical tool output when no Apps policy was admitted', async () => {
       const request = jest.fn().mockResolvedValue(toolResult);
       const connection = connectionFor(request);
 
-      const [text, artifacts] = await callWith(connection);
+      const [text, artifacts] = await callWith(connection, undefined, null);
 
       expect(text).toContain('ordinary output');
       expect(request).toHaveBeenCalledTimes(1);
@@ -1186,6 +1191,7 @@ describe('MCPManager', () => {
         toolName: 'app_tool',
         provider: 'openai',
         flowManager,
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
       connection.toolListVersion += 1;
       (connection.fetchOrderedToolsSnapshot as jest.Mock).mockResolvedValueOnce({
@@ -1199,6 +1205,7 @@ describe('MCPManager', () => {
         toolName: 'app_tool',
         provider: 'openai',
         flowManager,
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
 
       expect(first[1]?.ui_resources?.data).toHaveLength(1);
@@ -1208,33 +1215,13 @@ describe('MCPManager', () => {
       );
     });
 
-    it('returns canonical output promptly when policy resolution is aborted', async () => {
-      let resolvePolicy:
-        | ((value: { mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean } }) => void)
-        | undefined;
-      let policyStarted: (() => void) | undefined;
-      const started = new Promise<void>((resolve) => {
-        policyStarted = resolve;
-      });
-      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockImplementationOnce(() => {
-        policyStarted?.();
-        return new Promise<{
-          mcpApps: { enabled: boolean; legacyHtmlEnabled: boolean };
-        }>((resolve) => {
-          resolvePolicy = resolve;
-        });
-      });
+    it('uses the admitted policy without a post-call policy read', async () => {
       const request = jest.fn().mockResolvedValue(toolResult);
-      const controller = new AbortController();
-      const call = callWith(connectionFor(request), controller.signal);
-      await started;
-      controller.abort(new DOMException('stopped', 'AbortError'));
+      mockRegistryInstance.resolveAllowlists.mockClear();
 
-      await expect(call).resolves.toEqual(
-        expect.arrayContaining([expect.stringContaining('ordinary output')]),
-      );
-      expect(request).toHaveBeenCalledTimes(1);
-      resolvePolicy?.({ mcpApps: { enabled: true, legacyHtmlEnabled: true } });
+      await callWith(connectionFor(request));
+
+      expect(mockRegistryInstance.resolveAllowlists).not.toHaveBeenCalled();
     });
   });
 
@@ -4194,6 +4181,11 @@ describe('MCPManager', () => {
         serverConfig: config,
         connectionOwner: config.requiresOAuth ? ('principal' as const) : ('operator' as const),
       },
+      allowlists: {
+        allowedDomains: null,
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      },
       flowManager,
       onOAuthCredentialsChanging: defaultOAuthCredentialsChanging,
       ...extra,
@@ -4205,6 +4197,8 @@ describe('MCPManager', () => {
         toolListVersion: 1,
         isConnected: jest.fn().mockResolvedValue(true),
         getLastConnectionCheckError: jest.fn(),
+        isOAuthAuthenticationError: jest.fn((error: { status?: number }) => error?.status === 401),
+        usesOAuth: jest.fn().mockReturnValue(false),
         setRequestHeaders: jest.fn(),
         getMCPAppRuntimeTarget: jest.fn(() => ({
           type: 'sse',
@@ -4340,6 +4334,31 @@ describe('MCPManager', () => {
       );
     });
 
+    it('validates a binding from the supplied target without checking out a connection', async () => {
+      const config = {
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      } as t.ParsedServerConfig;
+      const manager = await createAppManager(newMCPServersConfig());
+      const getConnection = jest.spyOn(manager, 'getConnection');
+
+      await expect(manager.validateAppBinding(context('srv', config))).resolves.toEqual({
+        valid: true,
+      });
+
+      expect(getConnection).not.toHaveBeenCalled();
+      expect(appBindingCodec.verify).toHaveBeenCalledWith(
+        'binding',
+        expect.objectContaining({
+          serverName: 'srv',
+          userId: user.id,
+          connectionTarget: { serverConfig: config, connectionOwner: 'operator' },
+          runtimeTarget: { type: 'sse', url: 'https://example.com/mcp' },
+        }),
+      );
+    });
+
     it('uses the normal checkout path for an existing standard OAuth connection', async () => {
       const config = {
         source: 'yaml',
@@ -4369,6 +4388,43 @@ describe('MCPManager', () => {
         ListResourcesResultSchema,
         expect.any(Object),
       );
+    });
+
+    it('uses the shared OAuth recovery owner and retries an App operation once', async () => {
+      const unauthorized = Object.assign(new Error('Unauthorized'), { status: 401 });
+      const request = jest
+        .fn()
+        .mockRejectedValueOnce(unauthorized)
+        .mockResolvedValueOnce({ resources: [] });
+      const appConnection = connection(request);
+      const manager = await createAppManager(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const recoverOAuth = jest
+        .spyOn(
+          manager as unknown as {
+            recoverOAuthConnection: (...args: unknown[]) => Promise<void>;
+          },
+          'recoverOAuthConnection',
+        )
+        .mockResolvedValue();
+
+      await expect(manager.listResources(context('srv', standardOAuthConfig))).resolves.toEqual({
+        resources: [],
+      });
+
+      expect(recoverOAuth).toHaveBeenCalledWith(
+        appConnection,
+        unauthorized,
+        'srv',
+        user.id,
+        expect.any(Function),
+        undefined,
+        undefined,
+        flowManager,
+        undefined,
+        true,
+      );
+      expect(request).toHaveBeenCalledTimes(2);
     });
 
     it('adopts the authorization generation published by a fresh App OAuth connection', async () => {

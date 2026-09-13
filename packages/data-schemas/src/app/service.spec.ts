@@ -291,13 +291,20 @@ describe('AppService MCP App sandbox configuration', () => {
   it('preserves deployment-owned MCP App sandbox limits', async () => {
     const result = await AppService({
       config: {
-        mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+        mcpAppSandbox: {
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+          maxSourcesPerDirective: 64,
+          maxSerializedLength: 8192,
+          maxAdmissionRequestsPerMinute: 480,
+        },
       } as DeepPartial<TCustomConfig>,
     });
 
     expect(result.mcpAppSandbox).toEqual({
+      url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
       maxSourcesPerDirective: 64,
       maxSerializedLength: 8192,
+      maxAdmissionRequestsPerMinute: 480,
     });
   });
 });

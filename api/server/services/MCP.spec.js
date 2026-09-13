@@ -1544,6 +1544,53 @@ describe('User parameter passing tests', () => {
   });
 
   describe('createMCPTool', () => {
+    it('preserves the full MCP tuple for the Assistants required-action sink', async () => {
+      const mockUser = { id: 'assistants-app-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const mcpApps = { enabled: true, legacyHtmlEnabled: true };
+      const artifact = { ui_resources: { data: [{ uri: 'ui://app' }] } };
+      const callTool = jest.fn().mockResolvedValue(['ordinary output', artifact]);
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({ callTool });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://assistants.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'assistants',
+        mcpApps,
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool._call(
+          {},
+          {
+            configurable: { user: mockUser },
+            metadata: { provider: 'assistants', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toEqual(['ordinary output', artifact]);
+      expect(callTool).toHaveBeenCalledWith(expect.objectContaining({ mcpApps }));
+    });
+
     it('preserves a completed tool result when optional App enrichment observes cancellation', async () => {
       const mockUser = { id: 'completed-result-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

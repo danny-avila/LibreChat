@@ -48,6 +48,8 @@ module.exports = createMCPAppsController({
     getMCPServersRegistry().recoverServerConfig(serverName, config, userId),
   isAppServerConfig: (serverName, config) =>
     getMCPServersRegistry().isAppServerConfig(serverName, config),
+  resolveCachedAppServerConfig: (args) =>
+    getMCPServersRegistry().resolveCachedAppServerConfig(args),
   findPluginAuthsByKeys,
   tokenMethods: { findToken, createToken, updateToken, deleteTokens },
   createOAuthCredentialsChanging: (req) => {

@@ -4,11 +4,12 @@ import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol
 import { Permissions, PermissionTypes, DEFAULT_MCP_APPS_POLICY } from 'librechat-data-provider';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { TMCPAppsPolicy } from 'librechat-data-provider';
 import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { MCPAppOperationContext, MCPAppValidationContext } from './apps';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
-import type { MCPAppOperationContext } from './apps';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
@@ -92,56 +93,6 @@ function getDiscoveryAuthenticationKind(
     (observedOAuthRequired && serverConfig.requiresOAuth !== false)
     ? 'oauth'
     : 'server';
-}
-
-async function resolvePostCallAppsPolicy(
-  resolvePolicy: () => Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>>,
-  signal: AbortSignal | undefined,
-  logPrefix: string,
-): Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>> {
-  if (signal?.aborted) {
-    return DEFAULT_MCP_APPS_POLICY;
-  }
-
-  let policy: Promise<ReturnType<MCPServersRegistry['getMCPAppsPolicy']>>;
-  try {
-    policy = resolvePolicy();
-  } catch (error) {
-    logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
-    return DEFAULT_MCP_APPS_POLICY;
-  }
-  if (!signal) {
-    try {
-      return await policy;
-    } catch (error) {
-      logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
-      return DEFAULT_MCP_APPS_POLICY;
-    }
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: ReturnType<MCPServersRegistry['getMCPAppsPolicy']>): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      resolve(value);
-    };
-    const onAbort = (): void => finish(DEFAULT_MCP_APPS_POLICY);
-
-    signal.addEventListener('abort', onAbort, { once: true });
-    if (signal.aborted) {
-      onAbort();
-    }
-    void policy.then(finish, (error) => {
-      if (!settled) {
-        logger.warn(`${logPrefix} Could not resolve MCP Apps policy; disabling apps`, error);
-        finish(DEFAULT_MCP_APPS_POLICY);
-      }
-    });
-  });
 }
 
 /**
@@ -990,6 +941,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
+    mcpApps,
     signal,
     directBearerRecoveryState = { attempted: true },
   }: {
@@ -1009,6 +961,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
+    mcpApps?: TMCPAppsPolicy;
     signal?: AbortSignal;
     directBearerRecoveryState?: t.DirectBearerRecoveryState;
   }): Promise<void> {
@@ -1882,14 +1835,7 @@ Please follow these instructions when using tools from the respective MCP server
         }
         this.checkIdleConnections();
         const toolResult = result as t.MCPToolCallResponse;
-        const mcpApps = await resolvePostCallAppsPolicy(
-          () =>
-            registry
-              .resolveAllowlists({ userId, role: user?.role })
-              .then(({ mcpApps: policy }) => policy),
-          options?.signal,
-          `${logPrefix}[${toolName}]`,
-        );
+        const admittedMCPApps = mcpApps ?? DEFAULT_MCP_APPS_POLICY;
 
         // The app routes reject OBO, Graph-token, and runtime body-placeholder configs, so do not
         // advertise an app bridge for a tool whose follow-up requests cannot be served.
@@ -1900,7 +1846,7 @@ Please follow these instructions when using tools from the respective MCP server
             getMissingRuntimeBodyPlaceholderFields(rawConfig).length === 0);
 
         let resourceMeta: { uri: string } | undefined;
-        if (mcpApps.enabled && appCompatible && !options?.signal?.aborted) {
+        if (admittedMCPApps.enabled && appCompatible && !options?.signal?.aborted) {
           try {
             resourceMeta = await this.getResourceMeta(
               connection,
@@ -1978,9 +1924,9 @@ Please follow these instructions when using tools from the respective MCP server
                 resolvedAppResource,
                 serverBinding,
                 toolArgs: toolArguments,
-                mcpApps,
+                mcpApps: admittedMCPApps,
               }
-            : { mcpApps },
+            : { mcpApps: admittedMCPApps },
         );
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
@@ -2014,7 +1960,7 @@ Please follow these instructions when using tools from the respective MCP server
     }
   }
 
-  private getAppServerConfig(context: MCPAppOperationContext): t.ParsedServerConfig {
+  private getAppServerConfig(context: MCPAppValidationContext): t.ParsedServerConfig {
     const { serverName, user, connectionTarget } = context;
     const { serverConfig: config } = connectionTarget;
     const logPrefix = `[MCP][User: ${user.id}][${serverName}]`;
@@ -2054,23 +2000,51 @@ Please follow these instructions when using tools from the respective MCP server
       tokenMethods,
       upstreamTokenProvider,
       onOAuthCredentialsChanging,
+      allowlists,
     } = context;
     const { signal } = context;
     const logPrefix = `[MCP][User: ${user.id}][${serverName}]`;
     const config = this.getAppServerConfig(context);
     const directBearerRecovery = usesDirectOpenIDBearerRecovery(config);
     const directBearerRecoveryState: t.DirectBearerRecoveryState = { attempted: false };
+    let oauthRecoveryAttempted = false;
+    let recoveryTakeoverConsumed = false;
 
     while (true) {
       signal?.throwIfAborted();
       let connection: MCPConnection | undefined;
       let retained = false;
-      const release = async () => {
+      let deferredDisposalHeld = false;
+      const release = async (preserveDisposalHold = false) => {
         if (!connection || !retained) {
           return;
         }
+        if (deferredDisposalHeld && !preserveDisposalHold) {
+          await this.releaseDeferredConnectionDisposal(connection);
+          deferredDisposalHeld = false;
+        }
         retained = false;
         await this.releaseConnection(connection);
+      };
+      const retain = () => {
+        if (!connection || retained) {
+          return;
+        }
+        this.retainConnection(connection);
+        retained = true;
+      };
+      const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
+        const recovery = startRecovery();
+        if (!deferredDisposalHeld) {
+          this.holdDeferredConnectionDisposal(connection!);
+          deferredDisposalHeld = true;
+        }
+        await release(true);
+        try {
+          await recovery;
+        } finally {
+          retain();
+        }
       };
 
       try {
@@ -2086,8 +2060,7 @@ Please follow these instructions when using tools from the respective MCP server
           directBearerRecoveryState,
           signal,
         }));
-        this.retainConnection(connection);
-        retained = true;
+        retain();
 
         const activeRecovery = this.oauthRecoveries.get(connection);
         if (activeRecovery) {
@@ -2122,6 +2095,30 @@ Please follow these instructions when using tools from the respective MCP server
           connection,
           projectMCPAppRuntimeTarget(currentOptions),
         );
+        const standardOAuth = isOAuthServer(currentOptions) || connection.usesOAuth();
+        const attachSharedOAuthHandler = standardOAuth
+          ? (relay: OAuthLifecycleRelay) =>
+              MCPConnectionFactory.attachRequestOAuthHandler(
+                {
+                  serverName,
+                  serverConfig: currentOptions,
+                  dbSourced: isUserSourced(config),
+                  skipEnvProcessing: true,
+                  ...allowlists,
+                },
+                {
+                  useOAuth: true,
+                  user,
+                  flowManager,
+                  tokenMethods,
+                  oauthStart: relay.start,
+                  oauthEnd: relay.end,
+                  customUserVars,
+                  onOAuthCredentialsChanging,
+                },
+                connection!,
+              )
+          : undefined;
 
         const recover = async (error: unknown): Promise<void> => {
           if (directBearerRecoveryState.attempted) {
@@ -2144,12 +2141,51 @@ Please follow these instructions when using tools from the respective MCP server
           await release();
           await recovery;
         };
+        const recoverOAuth = async (error: unknown): Promise<void> => {
+          if (!attachSharedOAuthHandler) {
+            throw new MCPAuthenticationRejectedError(serverName, false, error);
+          }
+          if (oauthRecoveryAttempted) {
+            throw new MCPAuthenticationRejectedError(serverName, true, error);
+          }
+          oauthRecoveryAttempted = true;
+          try {
+            await waitForRecoveryWithoutLease(() =>
+              this.recoverOAuthConnection(
+                connection!,
+                error,
+                serverName,
+                user.id,
+                attachSharedOAuthHandler,
+                undefined,
+                undefined,
+                flowManager,
+                signal,
+                !recoveryTakeoverConsumed,
+              ),
+            );
+          } catch (recoveryError) {
+            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+              oauthRecoveryAttempted = false;
+              throw recoveryError;
+            }
+            if (signal?.aborted) {
+              throw recoveryError;
+            }
+            logger.warn(`${logPrefix} OAuth recovery failed`, recoveryError);
+            throw new MCPAuthenticationRejectedError(serverName, false, error);
+          }
+        };
 
         const connected = await connection.isConnected(signal);
         if (!connected) {
           const connectionError = connection.getLastConnectionCheckError();
           if (directBearerRecovery && isMCPTransportAuthenticationError(connectionError)) {
             await recover(connectionError);
+            continue;
+          }
+          if (standardOAuth && connection.isOAuthAuthenticationError(connectionError)) {
+            await recoverOAuth(connectionError);
             continue;
           }
           throw new McpError(ErrorCode.InternalError, `${logPrefix} Connection is not active.`);
@@ -2166,6 +2202,10 @@ Please follow these instructions when using tools from the respective MCP server
             await recover(error);
             continue;
           }
+          if (standardOAuth && connection.isOAuthAuthenticationError(error)) {
+            await recoverOAuth(error);
+            continue;
+          }
           throw error;
         }
 
@@ -2174,6 +2214,12 @@ Please follow these instructions when using tools from the respective MCP server
         }
         this.checkIdleConnections();
         return result;
+      } catch (error) {
+        if (error instanceof OAuthRecoveryTakeoverRequired) {
+          recoveryTakeoverConsumed = true;
+          continue;
+        }
+        throw error;
       } finally {
         await release();
       }
@@ -2221,8 +2267,30 @@ Please follow these instructions when using tools from the respective MCP server
     }
   }
 
-  async validateAppBinding(context: MCPAppOperationContext): Promise<{ valid: true }> {
-    return this.runAppOperation(context, async () => ({ valid: true }));
+  async validateAppBinding(context: MCPAppValidationContext): Promise<{ valid: true }> {
+    context.signal?.throwIfAborted();
+    const config = this.getAppServerConfig(context);
+    const currentOptions = processMCPEnv({
+      user: context.user,
+      dbSourced: isUserSourced(config),
+      options: config,
+      customUserVars: context.customUserVars,
+    });
+    const valid = this.appBindingCodec?.verify(context.serverBinding, {
+      serverName: context.serverName,
+      userId: context.user.id,
+      tenantId: typeof context.user.tenantId === 'string' ? context.user.tenantId : null,
+      connectionTarget: context.connectionTarget,
+      runtimeTarget: projectMCPAppRuntimeTarget(currentOptions),
+    });
+    if (!valid) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `MCP App binding for server "${context.serverName}" is no longer valid.`,
+      );
+    }
+    context.signal?.throwIfAborted();
+    return { valid: true };
   }
 
   async readResource({

@@ -45,6 +45,27 @@ describe('getMCPSandboxUrl', () => {
     expect(url.searchParams.get('parentOrigin')).toBe(window.location.origin);
     expect(url.searchParams.get('fixed')).toBe('1');
   });
+
+  it('prefers the runtime URL over a different compiled URL', () => {
+    process.env.VITE_MCP_SANDBOX_URL =
+      'https://compiled-sandbox.example.com/api/mcp/sandbox?compiled=1';
+    const url = new URL(
+      getMCPSandboxUrl('https://runtime-sandbox.example.com/api/mcp/sandbox?runtime=1') as string,
+    );
+
+    expect(url.origin).toBe('https://runtime-sandbox.example.com');
+    expect(url.searchParams.get('runtime')).toBe('1');
+    expect(url.searchParams.get('compiled')).toBeNull();
+    expect(url.searchParams.get('parentOrigin')).toBe(window.location.origin);
+  });
+
+  it.each(['', '/api/mcp/sandbox', 'javascript:alert(1)', window.location.origin, null])(
+    'does not fall back after explicit invalid runtime configuration %s',
+    (value) => {
+      process.env.VITE_MCP_SANDBOX_URL = 'https://compiled-sandbox.example.com/api/mcp/sandbox';
+      expect(getMCPSandboxUrl(value)).toBeUndefined();
+    },
+  );
 });
 
 describe('isAllowedAppLink', () => {

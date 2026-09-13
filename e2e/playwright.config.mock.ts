@@ -131,6 +131,12 @@ if ((mcpAppResourceLimit == null) !== (mcpAppToolCallLimit == null)) {
 }
 
 const baseURL = getE2EBaseURL();
+const baseUrlObject = new URL(baseURL);
+const mcpSandboxHost = baseUrlObject.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+const defaultMcpSandboxUrl = new URL('/api/mcp/sandbox', baseUrlObject);
+defaultMcpSandboxUrl.hostname = mcpSandboxHost;
+const mcpSandboxUrl = process.env.E2E_MCP_SANDBOX_URL ?? defaultMcpSandboxUrl.href;
+process.env.E2E_MCP_SANDBOX_URL = mcpSandboxUrl;
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
 const vanillaOverrides = {
@@ -249,6 +255,7 @@ function writeRuntimeMockConfig() {
           mcpAppsPolicy === 'omitted'
             ? ''
             : `apps: ${mcpAppsPolicy === 'false' ? 'false' : 'true'}`,
+        sandbox: ['mcpAppSandbox:', `  url: ${JSON.stringify(mcpSandboxUrl)}`].join('\n'),
         allowedDomain: `- http://127.0.0.1:${MCP_APP_PORT}`,
         server: [
           'e2e-app:',
@@ -259,7 +266,7 @@ function writeRuntimeMockConfig() {
           '  timeout: 30000',
         ].join('\n  '),
       }
-    : { setting: '', allowedDomain: '', server: '' };
+    : { setting: '', sandbox: '', allowedDomain: '', server: '' };
   const mcpAppsRateLimits =
     mcpAppResourceLimit != null && mcpAppToolCallLimit != null
       ? [
@@ -293,6 +300,7 @@ function writeRuntimeMockConfig() {
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers)
+    .replace('# __E2E_MCP_APP_SANDBOX__', mcpAppsConfig.sandbox)
     .replace('# __E2E_MCP_APPS_SETTING__', mcpAppsConfig.setting)
     .replace('# __E2E_MCP_APPS_ALLOWED_DOMAIN__', mcpAppsConfig.allowedDomain)
     .replace('# __E2E_MCP_APPS_SERVER__', mcpAppsConfig.server)

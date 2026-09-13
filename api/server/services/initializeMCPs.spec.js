@@ -152,7 +152,12 @@ describe('initializeMCPs', () => {
         ['localhost'],
         undefined,
         expect.any(Function), // per-request allowlist resolver
-        { enabled: false, legacyHtmlEnabled: true, maxPersistedAppBytes: 1048576 },
+        {
+          enabled: false,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
       );
     });
 
@@ -170,7 +175,12 @@ describe('initializeMCPs', () => {
         allowedDomains,
         undefined,
         expect.any(Function),
-        { enabled: false, legacyHtmlEnabled: true, maxPersistedAppBytes: 1048576 },
+        {
+          enabled: false,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
       );
     });
 
@@ -187,19 +197,61 @@ describe('initializeMCPs', () => {
         undefined,
         undefined,
         expect.any(Function),
-        { enabled: false, legacyHtmlEnabled: true, maxPersistedAppBytes: 1048576 },
+        {
+          enabled: false,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
       );
     });
 
     it.each([
-      [true, { enabled: true, legacyHtmlEnabled: true, maxPersistedAppBytes: 1048576 }],
-      [false, { enabled: false, legacyHtmlEnabled: false, maxPersistedAppBytes: 1048576 }],
+      [
+        true,
+        {
+          enabled: true,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
+      ],
+      [
+        false,
+        {
+          enabled: false,
+          legacyHtmlEnabled: false,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
+      ],
     ])('normalizes the startup MCP Apps policy for apps=%s', async (apps, expected) => {
       mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: { apps } });
 
       await initializeMCPs();
 
       expect(mockCreateMCPServersRegistry.mock.calls[0][4]).toEqual(expected);
+    });
+
+    it('publishes the base admission ceiling once to the registry policy', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        mcpSettings: { apps: true },
+        mcpAppSandbox: {
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+          maxAdmissionRequestsPerMinute: 480,
+        },
+      });
+
+      await initializeMCPs();
+
+      expect(mockCreateMCPServersRegistry.mock.calls[0][4]).toEqual({
+        enabled: true,
+        legacyHtmlEnabled: true,
+        maxPersistedAppBytes: 1048576,
+        maxAdmissionRequestsPerMinute: 480,
+        sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+      });
     });
 
     it('wires a per-request resolver that reads the merged (non-baseOnly) config', async () => {
@@ -231,7 +283,12 @@ describe('initializeMCPs', () => {
       expect(resolved).toEqual({
         allowedDomains: ['merged.com'],
         allowedAddresses: ['10.0.0.0/8'],
-        mcpApps: { enabled: true, legacyHtmlEnabled: true, maxPersistedAppBytes: 1048576 },
+        mcpApps: {
+          enabled: true,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: 1048576,
+          maxAdmissionRequestsPerMinute: 240,
+        },
       });
     });
 

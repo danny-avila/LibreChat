@@ -194,6 +194,11 @@ jest.mock('~/server/middleware', () => ({
   canAccessMCPServerResource: () => (req, res, next) => next(),
 }));
 
+jest.mock(
+  '~/server/middleware/limiters/mcpAppAdmissionLimiter',
+  () => (_req, _res, next) => next(),
+);
+
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
   loadMCPServerCatalogs: (...args) => mockLoadMCPServerCatalogs(...args),
@@ -333,6 +338,20 @@ describe('MCP Routes', () => {
     cacheService.getMCPToolsCacheGeneration.mockReset().mockResolvedValue('test-generation');
     cacheService.cacheMCPServerTools.mockReset().mockResolvedValue(undefined);
     cacheService.invalidateCachedTools.mockReset().mockResolvedValue(undefined);
+  });
+
+  it.each([
+    '/app/validate',
+    '/resources/read',
+    '/resources/list',
+    '/resources/templates/list',
+    '/app-tool-call',
+  ])('places the shared App admission limiter immediately after JWT auth on %s', (path) => {
+    const routeLayer = mcpRouter.stack.find((layer) => layer.route?.path === path);
+    const admissionLimiter = require('~/server/middleware/limiters/mcpAppAdmissionLimiter');
+
+    expect(routeLayer).toBeDefined();
+    expect(routeLayer.route.stack[1].handle).toBe(admissionLimiter);
   });
 
   describe('GET /:serverName/oauth/initiate', () => {

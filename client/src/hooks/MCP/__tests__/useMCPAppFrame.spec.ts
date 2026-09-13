@@ -77,6 +77,23 @@ describe('useMCPAppFrame', () => {
       expect(result.current.attempt).toBe(0);
     });
 
+    it('resolves the sandbox from the authenticated runtime policy', () => {
+      const runtimeUrl = 'https://mcp-sandbox.example.com/api/mcp/sandbox';
+      const { getMCPSandboxUrl } = jest.requireMock('~/utils/mcpApps') as {
+        getMCPSandboxUrl: jest.Mock;
+      };
+      mockUseMCPAppsPolicy.mockReturnValue({
+        enabled: true,
+        legacyHtmlEnabled: true,
+        sandboxUrl: runtimeUrl,
+      });
+
+      const { result } = renderHook(() => useMCPAppFrame(appResource(), { defaultHeight: 100 }));
+
+      expect(getMCPSandboxUrl).toHaveBeenCalledWith(runtimeUrl);
+      expect(result.current.sandboxUrl).toBe('http://sandbox.localhost:3081/api/mcp/sandbox');
+    });
+
     it('does not expose a frame or active bridge when Apps are disabled', () => {
       mockUseMCPAppsPolicy.mockReturnValue({ enabled: false, legacyHtmlEnabled: false });
       const { result } = renderHook(() =>

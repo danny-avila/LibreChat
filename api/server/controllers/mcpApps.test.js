@@ -78,6 +78,10 @@ describe('MCP Apps controller wiring', () => {
     const getAllServerConfigs = jest.fn().mockResolvedValue({ srv: { type: 'sse' } });
     const recoverServerConfig = jest.fn().mockResolvedValue({ type: 'sse' });
     const isAppServerConfig = jest.fn().mockResolvedValue(true);
+    const resolveCachedAppServerConfig = jest.fn().mockResolvedValue({
+      serverConfig: { type: 'sse' },
+      connectionOwner: 'operator',
+    });
     getLogStores.mockReturnValue('flow-store');
     getFlowStateManager.mockReturnValue('flow-manager');
     getMCPServersRegistry.mockReturnValue({
@@ -85,6 +89,7 @@ describe('MCP Apps controller wiring', () => {
       getAllServerConfigs,
       recoverServerConfig,
       isAppServerConfig,
+      resolveCachedAppServerConfig,
     });
     getAppConfig.mockResolvedValue({ mcpSettings: { apps: true } });
     getTenantId.mockReturnValue('tenant-1');
@@ -147,6 +152,17 @@ describe('MCP Apps controller wiring', () => {
     );
     await expect(dependencies.isAppServerConfig('srv', { type: 'sse' })).resolves.toBe(true);
     expect(isAppServerConfig).toHaveBeenCalledWith('srv', { type: 'sse' });
+    const cachedArgs = {
+      serverName: 'srv',
+      userId: 'user-1',
+      role: 'USER',
+      mcpConfig: {},
+    };
+    await expect(dependencies.resolveCachedAppServerConfig(cachedArgs)).resolves.toEqual({
+      serverConfig: { type: 'sse' },
+      connectionOwner: 'operator',
+    });
+    expect(resolveCachedAppServerConfig).toHaveBeenCalledWith(cachedArgs);
     expect(dependencies.findPluginAuthsByKeys).toBe(models.findPluginAuthsByKeys);
     expect(dependencies.tokenMethods).toEqual({
       findToken: models.findToken,

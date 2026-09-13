@@ -507,12 +507,14 @@ actions:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
 
-# Deployment-owned MCP App sandbox transport limits. These cannot be overridden by role,
-# group, or user configuration. Defaults are shown.
+# Deployment-owned MCP App sandbox settings. These cannot be overridden by role, group, or user
+# configuration. Set url to a dedicated origin routed to /api/mcp/sandbox. Defaults are shown.
 # mcpAppSandbox:
+#   url: https://mcp-sandbox.example.com/api/mcp/sandbox
 #   maxSourcesPerDirective: 32
 #   maxSerializedLength: 4096
 #   maxPersistedAppBytes: 1048576
+#   maxAdmissionRequestsPerMinute: 240
 
 # Example MCP Servers Object Structure
 # mcpServers:

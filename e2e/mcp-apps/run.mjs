@@ -10,6 +10,8 @@ const baseUrl = new URL(process.env.E2E_BASE_URL || 'http://127.0.0.1:3080');
 const sandboxHost = baseUrl.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
 const sandboxUrl = new URL('/api/mcp/sandbox', baseUrl);
 sandboxUrl.hostname = sandboxHost;
+const runtimeSandboxUrl =
+  process.env.E2E_MCP_SANDBOX_URL || process.env.VITE_MCP_SANDBOX_URL || sandboxUrl.href;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(path.join(root, 'package.json'));
@@ -21,8 +23,8 @@ const env = {
   E2E_BASE_URL: baseUrl.origin,
   E2E_MCP_APPS: 'true',
   E2E_MCP_APPS_STATE_PATH: statePath,
+  E2E_MCP_SANDBOX_URL: runtimeSandboxUrl,
   MCP_SANDBOX_FRAME_ANCESTORS: baseUrl.origin,
-  VITE_MCP_SANDBOX_URL: process.env.VITE_MCP_SANDBOX_URL || sandboxUrl.href,
   JWT_SECRET: process.env.JWT_SECRET || randomBytes(32).toString('hex'),
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || randomBytes(32).toString('hex'),
   CREDS_KEY: process.env.CREDS_KEY || randomBytes(32).toString('hex'),
@@ -63,7 +65,8 @@ const phases = [
 
 let mongo;
 try {
-  await run('npm', ['run', 'e2e:prepare']);
+  // Build like an official prebuilt image: the browser must receive its Sandbox URL at runtime.
+  await run('npm', ['run', 'e2e:prepare'], { VITE_MCP_SANDBOX_URL: '' });
   mongo = await MongoMemoryServer.create({
     instance: { ip: '127.0.0.1', dbName: 'LibreChat-e2e' },
   });

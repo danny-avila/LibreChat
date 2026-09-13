@@ -2,7 +2,7 @@ import { resolveMCPAppsPolicy } from 'librechat-data-provider';
 import type { PluginAuthMethods, TokenMethods } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
 import type { MCPAppCspLimits } from 'librechat-data-provider';
-import type { MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
+import type { MCPAppAllowlists, MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
 import type { UpstreamTokenProvider } from '../oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '../oauth';
@@ -16,6 +16,7 @@ import {
   buildAppProxyErrorResponse,
   isDeniedAppRequest,
   resolveAppRequestContext,
+  resolveAppValidationContext,
   resolveEffectiveAppServerConfig,
 } from '../apps';
 import { buildSandboxResponse } from '../sandbox';
@@ -30,7 +31,11 @@ interface MCPAppsBody {
 }
 
 interface MCPAppsConfig {
-  mcpSettings?: { apps?: boolean };
+  mcpSettings?: {
+    apps?: boolean;
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  };
   mcpConfig?: Record<string, t.MCPOptions>;
 }
 
@@ -66,6 +71,14 @@ export interface MCPAppsControllerDependencies {
     userId?: string,
   ) => Promise<t.ParsedServerConfig | undefined>;
   isAppServerConfig: (serverName: string, config: t.ParsedServerConfig) => Promise<boolean>;
+  resolveCachedAppServerConfig: (args: {
+    serverName: string;
+    userId: string;
+    role?: string;
+    mcpConfig: Record<string, t.MCPOptions>;
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  }) => Promise<t.MCPConnectionTarget | undefined>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
   tokenMethods: TokenMethods;
   createOAuthCredentialsChanging: (
@@ -141,6 +154,18 @@ function getAdmittedMCPConfig(request: MCPAppsRequest): Record<string, t.MCPOpti
   return request.config.mcpConfig ?? {};
 }
 
+function getAdmittedMCPAllowlists(request: MCPAppsRequest): MCPAppAllowlists {
+  if (request.config == null) {
+    throw new Error('MCP App request configuration was not admitted');
+  }
+  const { allowedDomains, allowedAddresses } = request.config.mcpSettings ?? {};
+  return {
+    allowedDomains,
+    allowedAddresses,
+    useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+  };
+}
+
 export function createMCPAppsController(dependencies: MCPAppsControllerDependencies): {
   readMCPResource: RequestHandler;
   listMCPResources: RequestHandler;
@@ -204,6 +229,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
           tokenMethods: dependencies.tokenMethods,
           onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
           upstreamTokenProvider: dependencies.createUpstreamTokenProvider(request, response, user),
+          allowlists: getAdmittedMCPAllowlists(request),
           signal: cancellation.signal,
         });
         cancellation.signal.throwIfAborted();
@@ -225,11 +251,51 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     fallback: 'Failed to read resource',
     proxy: (manager, context, body) => readAppResource(manager, context, body.uri),
   });
-  const validateMCPApp = createProxyHandler({
-    label: 'validateMCPApp',
-    fallback: 'Failed to validate MCP App',
-    proxy: (manager, context) => validateAppServerBinding(manager, context),
-  });
+  const validateMCPApp: RequestHandler = async (baseRequest, response): Promise<void> => {
+    const request = baseRequest as MCPAppsRequest;
+    const user = request.user;
+    if (!user?.id) {
+      response.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const cancellation = attachCancellation(request, response);
+    try {
+      cancellation.signal.throwIfAborted();
+      const body = request.body ?? {};
+      const serverName = getServerName(body);
+      const allowlists = getAdmittedMCPAllowlists(request);
+      const context = await resolveAppValidationContext({
+        user,
+        serverName,
+        serverBinding: body.serverBinding,
+        resolveServerConfig: () =>
+          dependencies.resolveCachedAppServerConfig({
+            serverName,
+            userId: user.id,
+            role: user.role,
+            mcpConfig: getAdmittedMCPConfig(request),
+            allowedDomains: allowlists.allowedDomains,
+            allowedAddresses: allowlists.allowedAddresses,
+          }),
+        findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
+        signal: cancellation.signal,
+      });
+      cancellation.signal.throwIfAborted();
+      const result = await validateAppServerBinding(dependencies.getManager(), context);
+      if (canWriteResponse(response)) {
+        response.json(result);
+      }
+    } catch (error) {
+      if (!cancellation.signal.aborted) {
+        sendError(response, error, {
+          label: 'validateMCPApp',
+          fallback: 'Failed to validate MCP App',
+        });
+      }
+    } finally {
+      cancellation.dispose();
+    }
+  };
   const listMCPResources = createProxyHandler({
     label: 'listMCPResources',
     fallback: 'Failed to list resources',

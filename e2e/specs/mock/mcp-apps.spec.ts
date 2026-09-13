@@ -45,7 +45,12 @@ const STATE_PATH =
   path.resolve(process.cwd(), 'e2e/.generated/mcp-apps-state.json');
 
 type DebugEvent = { method: string; params: Record<string, unknown> };
-type MCPAppsPolicy = { enabled: boolean; legacyHtmlEnabled: boolean };
+type MCPAppsPolicy = {
+  enabled: boolean;
+  legacyHtmlEnabled: boolean;
+  sandboxUrl?: string;
+  maxAdmissionRequestsPerMinute?: number;
+};
 type StoredToolCall = { id?: string; agentId?: string; stepId?: string };
 type StoredContentPart = {
   type?: string;
@@ -388,7 +393,12 @@ test.describe('MCP Apps full integration', () => {
     await resetEvents(page);
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
     const token = await getAccessToken(page);
-    expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
+    expect(await getPolicy(page, token)).toMatchObject({
+      enabled: true,
+      legacyHtmlEnabled: true,
+      sandboxUrl: process.env.E2E_MCP_SANDBOX_URL,
+      maxAdmissionRequestsPerMinute: 240,
+    });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await selectMcpAppServer(page);
 
@@ -710,7 +720,11 @@ test.describe('MCP Apps full integration', () => {
     await resetEvents(page);
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
     const token = await getAccessToken(page);
-    expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
+    expect(await getPolicy(page, token)).toMatchObject({
+      enabled: true,
+      legacyHtmlEnabled: true,
+      sandboxUrl: process.env.E2E_MCP_SANDBOX_URL,
+    });
     await selectMockEndpoint(page, MCP_APP_PHASE_ENDPOINT);
     await selectMcpAppServer(page);
 
@@ -840,7 +854,11 @@ test.describe('MCP Apps full integration', () => {
     });
 
     const navigation = page.goto(`/c/${state.conversationId}`, { waitUntil: 'domcontentloaded' });
-    expect(await observedPolicy).toEqual({ enabled: false, legacyHtmlEnabled: false });
+    await expect(observedPolicy).resolves.toMatchObject({
+      enabled: false,
+      legacyHtmlEnabled: false,
+      sandboxUrl: process.env.E2E_MCP_SANDBOX_URL,
+    });
     expect(await executableFrameCounts(page)).toEqual({ app: 0, legacy: 0 });
     expect(appRequests).toEqual([]);
     releaseConfig();
@@ -881,7 +899,11 @@ test.describe('MCP Apps full integration', () => {
     await resetEvents(page);
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
     const token = await getAccessToken(page);
-    expect(await getPolicy(page, token)).toEqual({ enabled: false, legacyHtmlEnabled: true });
+    expect(await getPolicy(page, token)).toMatchObject({
+      enabled: false,
+      legacyHtmlEnabled: true,
+      sandboxUrl: process.env.E2E_MCP_SANDBOX_URL,
+    });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await selectMcpAppServer(page);
 
@@ -954,7 +976,11 @@ test.describe('MCP Apps full integration', () => {
     await resetEvents(page);
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
     const token = await getAccessToken(page);
-    expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
+    expect(await getPolicy(page, token)).toMatchObject({
+      enabled: true,
+      legacyHtmlEnabled: true,
+      sandboxUrl: process.env.E2E_MCP_SANDBOX_URL,
+    });
     const state = readState();
     const serverBinding = persistedServerBinding(
       await getMessages(page, token, state.conversationId),

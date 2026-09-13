@@ -32,17 +32,27 @@ export const RESOURCE_MIME_TYPE: string = MCP_APP_MIME_TYPE;
 
 export type AuthenticatedMCPAppUser = IUser & { id: string };
 
-export interface MCPAppOperationContext {
+export interface MCPAppValidationContext {
   serverName: string;
   serverBinding: string;
   user: AuthenticatedMCPAppUser;
   connectionTarget: t.MCPConnectionTarget;
   customUserVars?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
+export interface MCPAppAllowlists {
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+  useSSRFProtection: boolean;
+}
+
+export interface MCPAppOperationContext extends MCPAppValidationContext {
+  allowlists: MCPAppAllowlists;
   flowManager: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   upstreamTokenProvider?: UpstreamTokenProvider;
   onOAuthCredentialsChanging: NonNullable<t.UserConnectionContext['onOAuthCredentialsChanging']>;
-  signal?: AbortSignal;
 }
 
 export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
@@ -78,7 +88,7 @@ export function isToolHiddenFromModel(tool: ToolWithMeta): boolean {
 
 /** Declared here rather than importing MCPManager to avoid a circular import. */
 export interface MCPAppsProxyManager {
-  validateAppBinding(args: MCPAppOperationContext): Promise<{ valid: true }>;
+  validateAppBinding(args: MCPAppValidationContext): Promise<{ valid: true }>;
   readResource(args: MCPAppOperationContext & { uri: string }): Promise<unknown>;
   listResources(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
   listResourceTemplates(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
@@ -91,6 +101,57 @@ export interface MCPAppsProxyManager {
 }
 
 export type MCPAppRequestContext = MCPAppOperationContext;
+
+export async function resolveAppValidationContext({
+  serverName,
+  serverBinding,
+  user,
+  resolveServerConfig,
+  findPluginAuthsByKeys,
+  signal,
+}: {
+  user: AuthenticatedMCPAppUser;
+  serverName: string;
+  serverBinding: unknown;
+  resolveServerConfig: () => Promise<t.MCPConnectionTarget | undefined>;
+  findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
+  signal?: AbortSignal;
+}): Promise<MCPAppValidationContext> {
+  const userId = user.id;
+  if (typeof serverBinding !== 'string' || serverBinding.length === 0) {
+    throw new McpError(ErrorCode.InvalidRequest, 'serverBinding must be a non-empty string');
+  }
+  const [connectionTarget, userMCPAuthMap] = await Promise.all([
+    resolveServerConfig(),
+    getUserMCPAuthMap({
+      userId,
+      servers: [serverName],
+      findPluginAuthsByKeys,
+      throwOnError: true,
+    }).catch((error) => {
+      logger.error(
+        `[resolveAppValidationContext] Failed to resolve MCP auth values for user ${userId}, server ${serverName}; failing closed`,
+        error,
+      );
+      throw error;
+    }),
+  ]);
+  if (!connectionTarget) {
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `Configuration for MCP server "${serverName}" is not available to this user.`,
+    );
+  }
+  signal?.throwIfAborted();
+  return {
+    serverName,
+    serverBinding,
+    user,
+    connectionTarget,
+    customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
+    signal,
+  };
+}
 
 export async function resolveEffectiveAppServerConfig({
   serverName,
@@ -155,6 +216,7 @@ export async function resolveAppRequestContext({
   tokenMethods,
   upstreamTokenProvider,
   onOAuthCredentialsChanging,
+  allowlists,
   signal,
 }: {
   user: AuthenticatedMCPAppUser;
@@ -166,40 +228,20 @@ export async function resolveAppRequestContext({
   tokenMethods?: TokenMethods;
   upstreamTokenProvider?: UpstreamTokenProvider;
   onOAuthCredentialsChanging: NonNullable<t.UserConnectionContext['onOAuthCredentialsChanging']>;
+  allowlists: MCPAppAllowlists;
   signal?: AbortSignal;
 }): Promise<MCPAppRequestContext> {
-  const userId = user.id;
-  if (typeof serverBinding !== 'string' || serverBinding.length === 0) {
-    throw new McpError(ErrorCode.InvalidRequest, 'serverBinding must be a non-empty string');
-  }
-  const [connectionTarget, userMCPAuthMap] = await Promise.all([
-    resolveServerConfig(),
-    getUserMCPAuthMap({
-      userId,
-      servers: [serverName],
-      findPluginAuthsByKeys,
-      throwOnError: true,
-    }).catch((error) => {
-      logger.error(
-        `[resolveAppRequestContext] Failed to resolve MCP auth values for user ${userId}, server ${serverName}; failing closed`,
-        error,
-      );
-      throw error;
-    }),
-  ]);
-  if (!connectionTarget) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Configuration for MCP server "${serverName}" is not available to this user.`,
-    );
-  }
-  signal?.throwIfAborted();
-  return {
+  const validationContext = await resolveAppValidationContext({
     serverName,
     serverBinding,
     user,
-    connectionTarget,
-    customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
+    resolveServerConfig,
+    findPluginAuthsByKeys,
+    signal,
+  });
+  return {
+    ...validationContext,
+    allowlists,
     flowManager,
     tokenMethods,
     upstreamTokenProvider,
@@ -210,7 +252,7 @@ export async function resolveAppRequestContext({
 
 export async function validateAppServerBinding(
   manager: MCPAppsProxyManager,
-  ctx: MCPAppRequestContext,
+  ctx: MCPAppValidationContext,
 ): Promise<{ valid: true }> {
   return manager.validateAppBinding(ctx);
 }

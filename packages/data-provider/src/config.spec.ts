@@ -5,6 +5,7 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
   DEFAULT_MCP_APP_PERSISTED_BYTES,
   MAX_MCP_APP_PERSISTED_BYTES,
   resolveMCPAppRateLimits,
@@ -1406,6 +1407,7 @@ describe('MCP Apps configuration', () => {
         enabled: false,
         legacyHtmlEnabled: true,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
       },
     ],
     [
@@ -1414,6 +1416,7 @@ describe('MCP Apps configuration', () => {
         enabled: true,
         legacyHtmlEnabled: true,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
       },
     ],
     [
@@ -1422,6 +1425,7 @@ describe('MCP Apps configuration', () => {
         enabled: false,
         legacyHtmlEnabled: false,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
       },
     ],
   ])('resolves raw apps value %s to the effective policy', (value, expected) => {
@@ -1432,6 +1436,7 @@ describe('MCP Apps configuration', () => {
     expect(configSchema.parse({ version: '1.2.1' }).mcpAppSandbox).toEqual({
       ...DEFAULT_MCP_APP_CSP_LIMITS,
       maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+      maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
     });
     expect(
       configSchema.parse({
@@ -1440,12 +1445,16 @@ describe('MCP Apps configuration', () => {
           maxSourcesPerDirective: 64,
           maxSerializedLength: 8192,
           maxPersistedAppBytes: 2048,
+          maxAdmissionRequestsPerMinute: 480,
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
         },
       }).mcpAppSandbox,
     ).toEqual({
       maxSourcesPerDirective: 64,
       maxSerializedLength: 8192,
       maxPersistedAppBytes: 2048,
+      maxAdmissionRequestsPerMinute: 480,
+      url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
     });
     for (const mcpAppSandbox of [
       { maxSourcesPerDirective: 0 },
@@ -1456,9 +1465,32 @@ describe('MCP Apps configuration', () => {
       { maxPersistedAppBytes: 0 },
       { maxPersistedAppBytes: 1.5 },
       { maxPersistedAppBytes: MAX_MCP_APP_PERSISTED_BYTES + 1 },
+      { maxAdmissionRequestsPerMinute: 0 },
+      { maxAdmissionRequestsPerMinute: 1.5 },
+      { maxAdmissionRequestsPerMinute: Number.MAX_SAFE_INTEGER + 1 },
+      { url: '/api/mcp/sandbox' },
+      { url: 'ftp://mcp-sandbox.example.com/api/mcp/sandbox' },
     ]) {
       expect(configSchema.safeParse({ version: '1.2.1', mcpAppSandbox }).success).toBe(false);
     }
+  });
+
+  it('publishes optional runtime sandbox fields in the effective policy', () => {
+    expect(
+      resolveMCPAppsPolicy(
+        true,
+        undefined,
+        2048,
+        480,
+        'https://mcp-sandbox.example.com/api/mcp/sandbox',
+      ),
+    ).toEqual({
+      enabled: true,
+      legacyHtmlEnabled: true,
+      maxPersistedAppBytes: 2048,
+      maxAdmissionRequestsPerMinute: 480,
+      sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+    });
   });
 
   it('defaults App request limits without requiring the parent rateLimits section', () => {

@@ -86,11 +86,11 @@ export function useMCPAppFrame(
   const { defaultHeight, maxHeight, toolArgs, onHeightChange, onTornDown } = options;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const readOnly = useIsMessagesViewReadOnly();
-  const { enabled: mcpAppsEnabled } = useMCPAppsPolicy();
+  const { enabled: mcpAppsEnabled, sandboxUrl: configuredSandboxUrl } = useMCPAppsPolicy();
   const [status, setStatus] = useState<MCPAppFrameStatus>('loading');
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
-  const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
+  const sandboxUrl = useMemo(() => getMCPSandboxUrl(configuredSandboxUrl), [configuredSandboxUrl]);
   const inlineHtml = useMemo(
     () => (resource ? getInlineResourceHtml(resource) : undefined),
     [resource],
