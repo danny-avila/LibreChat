@@ -38,10 +38,12 @@ const FAVORITE_ROW_DRAG_TYPE = 'favorite-item';
  *  to a row would otherwise never meet the section's written hint, leaving the
  *  only non-pointer way to reorder undiscoverable. */
 const REORDER_SHORTCUTS = 'Alt+ArrowUp Alt+ArrowDown';
-/** A pinned row accepts both: favorites reorder here only, while a dragged
- *  conversation reorders here but can also be dropped on a project row or the
- *  Chats section to be filed or unfiled. */
+/** The whole section accepts both kinds: a drop anywhere on it pins a chat that
+ *  is not pinned yet, whichever row it happened to land on. */
 const PINNED_ROW_ACCEPTS = [CONVERSATION_DRAG_TYPE, FAVORITE_ROW_DRAG_TYPE];
+/** What a row answers a release with, so the drag can tell a reorder inside
+ *  this list from a drop that filed the chat somewhere else. */
+const PINNED_ROW_DROP_RESULT = { pinnedRowReorder: true } as const;
 
 const noop = () => {};
 
@@ -112,6 +114,13 @@ const DraggablePinnedRow = ({
      * groups are ordered independently, and the drag layer shows no
      * displacement for a target that cannot receive it. */
     accept: entry.kind === 'convo' ? CONVERSATION_DRAG_TYPE : FAVORITE_ROW_DRAG_TYPE,
+    /* A release on a row ends a reorder; it files nothing. The row has to stay
+     * droppable to get there — the HTML5 backend reports hover only for targets
+     * that could receive the drag, and the hover is what reorders — so it names
+     * itself in the drop result instead. Without that name, `end` below saw
+     * `monitor.didDrop()` and read the release as a filing action, discarding
+     * the arrangement: every pointer reorder snapped back on release. */
+    drop: () => PINNED_ROW_DROP_RESULT,
     collect(monitor) {
       return { handlerId: monitor.getHandlerId() };
     },
@@ -157,11 +166,14 @@ const DraggablePinnedRow = ({
         : { key: entry.key, conversationId: '', chatProjectId: null, pinned: false };
     },
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-    /* Rows carry no drop handler of their own, so an unhandled drop usually
-     * means a reorder. A refused external target also reports none, though, so
-     * the last thing under the pointer settles it. */
+    /* A drop the list itself answered is a reorder and keeps the arrangement.
+     * Anything else that handled it filed the chat — into a project, or back
+     * into Chats — and a refused external target reports no handler at all, so
+     * the last thing under the pointer settles that case. */
     end: (_item, monitor) => {
-      onDrop(monitor.didDrop() || endedOverExternalTarget());
+      const result = monitor.getDropResult() as { pinnedRowReorder?: boolean } | null;
+      const filedElsewhere = monitor.didDrop() && result?.pinnedRowReorder !== true;
+      onDrop(filedElsewhere || endedOverExternalTarget());
     },
   });
 
