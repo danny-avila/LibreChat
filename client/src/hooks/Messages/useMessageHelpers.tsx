@@ -1,6 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import throttle from 'lodash/throttle';
-import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import {
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+  isConfiguredSender,
+} from 'librechat-data-provider';
 import type { SearchResultData } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
@@ -108,6 +112,15 @@ export default function useMessageHelpers(
     getCanCopy,
     enterEdit,
     conversation,
+    /** Whether the header's label is a configured sender, so it can withhold the model
+     *  it stands in for. */
+    hasConfiguredSender: isConfiguredSender({
+      sender: message?.sender,
+      endpoint: message?.endpoint ?? conversation?.endpoint,
+      endpointType: conversation?.endpointType,
+      model: message?.model ?? conversation?.model,
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
     isSubmitting,
     handleScroll,
     handleContinue,

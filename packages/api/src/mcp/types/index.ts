@@ -272,6 +272,25 @@ export interface UserConnectionContext {
     userId: string;
     serverName: string;
   }) => Promise<() => Promise<string | undefined>>;
+  /**
+   * Receives discovery work the caller stopped waiting for at its deadline or abort, such as an
+   * OAuth token flow still persisting a refresh. The work keeps running; the promise settles with it.
+   */
+  onDiscoveryDetached?: (work: Promise<unknown>) => void;
+  /**
+   * Reports the publication generation carried by credentials the factory adopted from an
+   * authorization or refresh it did not perform. A caller leasing a generation captured before it
+   * resolved credentials moves the lease to the reported one while that is the generation
+   * currently stored: the build then leases under the publication that stored its credentials
+   * and stays fenced by any rotation that followed them.
+   */
+  onOAuthCredentialsAdopted?: (publicationGeneration: string) => Promise<void>;
+  /**
+   * Runs before the factory re-reads credentials from storage because a credential change
+   * invalidated its cached token flow. A caller leasing a generation captured earlier re-captures
+   * it here, ahead of the read, so a rotation that follows the read still fences the build.
+   */
+  onOAuthCredentialsInvalidated?: () => Promise<void>;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -337,6 +356,7 @@ export interface ToolDiscoveryOptions {
   deadlineMs?: number;
   onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
   onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
+  onDiscoveryDetached?: UserConnectionContext['onDiscoveryDetached'];
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;

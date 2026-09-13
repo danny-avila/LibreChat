@@ -144,6 +144,7 @@ export interface SchedulesServiceDeps {
   findUserById: (
     userId: string | Types.ObjectId,
   ) => Promise<{ _id: Types.ObjectId; tenantId?: string; role?: string } | null>;
+  /** Reads the balance record together with the credits unexpired in-flight reservations hold. */
   findBalance: (userId: string) => Promise<IBalance | null>;
   /**
    * Upserts a balance record. `setOnInsert` carries fields that must ONLY apply to a
@@ -461,6 +462,10 @@ export function createSchedulesService(
         return false;
       }
       let record = await deps.findBalance(user.id);
+      // Credits in-flight requests hold are unavailable to this fire as well: the chat
+      // balance check admits against the unreserved amount. Taken from this read because
+      // the initialization/sync writes below return the record without the total.
+      const reservedCredits = record?.reservedCredits ?? 0;
       // Initialize/sync the record exactly as the chat's balance middleware would,
       // so a new user's startBalance is applied before we read it (avoids skipping
       // a schedule that an interactive chat would have allowed).
@@ -501,7 +506,7 @@ export function createSchedulesService(
           }
         }
       }
-      const credits = record?.tokenCredits ?? 0;
+      const credits = (record?.tokenCredits ?? 0) - reservedCredits;
       if (credits > 0) {
         return false;
       }

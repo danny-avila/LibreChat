@@ -797,12 +797,15 @@ export abstract class UserConnectionManager {
       };
 
       /**
-       * A credential refresh performed while this connection is being built rotates the very
-       * generation captured above, so the build would otherwise fence itself: the connection
-       * holding the newest credentials publishes under a generation its own refresh retired.
-       * Recording what it published lets the fence keep pointing at foreign rotations only.
+       * Credentials resolved after the capture above were published under a generation that
+       * capture predates, so the build would otherwise fence itself: a refresh it performs, an
+       * authorization it waits on, or a re-read after a change invalidated its token cache each
+       * hand it the newest credentials, which it would then publish under a retired generation.
+       * Recording the generation those credentials carry, while it is still the stored one, keeps
+       * the fence pointing at rotations that follow them; a carried generation the store has
+       * already retired proves nothing about the current one, so the capture stands for it.
        */
-      let selfPublishedGeneration: string | undefined;
+      let credentialGeneration: string | undefined;
       const trackPublishedGeneration: t.UserConnectionContext['onOAuthCredentialsChanging'] =
         onOAuthCredentialsChanging == null
           ? undefined
@@ -811,10 +814,24 @@ export abstract class UserConnectionManager {
               return async () => {
                 const published = await publish();
                 if (published) {
-                  selfPublishedGeneration = published;
+                  credentialGeneration = published;
                 }
                 return published;
               };
+            };
+      const adoptCredentialGeneration: t.UserConnectionContext['onOAuthCredentialsAdopted'] =
+        ephemeralConnection
+          ? undefined
+          : async (published) => {
+              if ((await getMCPToolsChangedGeneration({ userId, serverName })) === published) {
+                credentialGeneration = published;
+              }
+            };
+      const recaptureCredentialGeneration: t.UserConnectionContext['onOAuthCredentialsInvalidated'] =
+        ephemeralConnection
+          ? undefined
+          : async () => {
+              credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
             };
 
       const useOAuth = usesDirectOpenIDBearerRecovery(config)
@@ -848,6 +865,8 @@ export abstract class UserConnectionManager {
           connectionTimeout: connectionTimeout,
           onOAuthCredentialsChanged,
           onOAuthCredentialsChanging: trackPublishedGeneration,
+          onOAuthCredentialsAdopted: adoptCredentialGeneration,
+          onOAuthCredentialsInvalidated: recaptureCredentialGeneration,
         };
       } else {
         connectionOptions = {
@@ -867,7 +886,7 @@ export abstract class UserConnectionManager {
 
       const effectiveGeneration = ephemeralConnection
         ? undefined
-        : (selfPublishedGeneration ?? publicationGeneration);
+        : (credentialGeneration ?? publicationGeneration);
 
       if (effectiveGeneration) {
         this.toolPublicationGenerations.set(connection, effectiveGeneration);

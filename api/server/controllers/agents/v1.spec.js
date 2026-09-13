@@ -3003,6 +3003,67 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json.mock.calls[0][0].agent.tool_options).toEqual({});
     });
 
+    test('duplicateAgentHandler preserves a disabled stale workspace binding', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Disabled BYOM Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        stateful_code_sessions: false,
+        code_environment_id: 'removed-vm',
+        code_workspace_id: 'project-a',
+      });
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { environments: [] },
+          },
+        },
+      };
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json.mock.calls[0][0].agent).toEqual(
+        expect.objectContaining({
+          stateful_code_sessions: false,
+          code_environment_id: 'removed-vm',
+          code_workspace_id: 'project-a',
+        }),
+      );
+    });
+
+    test('duplicateAgentHandler rejects an active stale workspace binding', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Active BYOM Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        stateful_code_sessions: true,
+        code_environment_id: 'removed-vm',
+        code_workspace_id: 'project-a',
+      });
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { environments: [] },
+          },
+        },
+      };
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Code workspace defaults require an explicit attached code environment',
+      });
+    });
+
     test('revertAgentVersionHandler removes restored programmatic options without Code Interpreter', async () => {
       const agent = await Agent.create({
         id: `agent_${uuidv4()}`,
@@ -3029,6 +3090,83 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       expect(mockRes.json).toHaveBeenCalled();
       expect(mockRes.json.mock.calls[0][0].tool_options).toEqual({});
+    });
+
+    test('revertAgentVersionHandler restores a disabled stale workspace binding', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        versions: [
+          {
+            name: 'Disabled Historical BYOM Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            stateful_code_sessions: false,
+            code_environment_id: 'removed-vm',
+            code_workspace_id: 'project-a',
+          },
+        ],
+      });
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { environments: [] },
+          },
+        },
+      };
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      const persisted = await Agent.findOne({ id: agent.id }).lean();
+      expect(persisted).toEqual(
+        expect.objectContaining({
+          stateful_code_sessions: false,
+          code_environment_id: 'removed-vm',
+          code_workspace_id: 'project-a',
+        }),
+      );
+    });
+
+    test('revertAgentVersionHandler rejects a stale binding that inherits active sessions', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        stateful_code_sessions: true,
+        versions: [
+          {
+            name: 'Historical BYOM Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            code_environment_id: 'removed-vm',
+            code_workspace_id: 'project-a',
+          },
+        ],
+      });
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { environments: [] },
+          },
+        },
+      };
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Code workspace defaults require an explicit attached code environment',
+      });
     });
 
     test('revertAgentVersionHandler does not update unchanged tool options', async () => {

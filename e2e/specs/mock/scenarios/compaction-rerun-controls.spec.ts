@@ -240,6 +240,46 @@ test.describe('compaction rerun controls', () => {
       await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Rerun', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Update & rerun' })).toHaveCount(0);
+      /* ...and the footer says why the action it usually carries is gone. */
+      await expect(
+        page.getByText('Rerunning replays the user message before a response', { exact: false }),
+      ).toBeVisible();
+      await expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
+    } finally {
+      await cleanup(conversationId);
+    }
+  });
+
+  test('a reply left at the root keeps its editor without a rerun @scenario:root-reply-keeps-editor-without-rerun', async ({
+    page,
+  }) => {
+    const rootReplyId = randomUUID();
+    const conversationId = await seedBranch([
+      {
+        messageId: rootReplyId,
+        parentMessageId: ROOT_PARENT,
+        text: 'An imported reply with nothing before it',
+        isCreatedByUser: false,
+        sender: 'OpenAI',
+        finish_reason: 'length',
+      },
+    ]);
+    try {
+      await openRow(page, conversationId, rootReplyId);
+
+      /* The importer chains each saved message onto the previous one, so a skipped
+         first human message leaves its reply with no parent in the thread at all. */
+      await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
+      await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
+
+      await page.locator(`[id="edit-${rootReplyId}"]`).click();
+      const editor = page.getByTestId('message-text-editor');
+      await expect(editor).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Rerun', exact: true })).toHaveCount(0);
+      await expect(
+        page.getByText('Rerunning replays the user message before a response', { exact: false }),
+      ).toBeVisible();
       await expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
     } finally {
       await cleanup(conversationId);

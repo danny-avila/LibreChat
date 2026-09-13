@@ -9,8 +9,48 @@ interface AgentWorkspaceEnvironment {
   type?: string;
 }
 
+interface AgentWorkspaceConfiguration {
+  stateful_code_sessions?: boolean;
+  stateful_code_environment?: string | null;
+  code_environment_id?: string | null;
+  code_workspace_id?: string;
+}
+
 export const AGENT_WORKSPACE_ATTACHED_ENVIRONMENT_ERROR =
   'Code workspace defaults require an explicit attached code environment';
+
+export function isActiveAgentWorkspaceConfiguration(
+  configuration?: AgentWorkspaceConfiguration,
+): boolean {
+  return configuration?.stateful_code_sessions === true;
+}
+
+/** Resolve workspace fields according to the version restore persistence contract. */
+export function resolveAgentWorkspaceRestoreConfiguration({
+  version,
+  current,
+}: {
+  version: AgentWorkspaceConfiguration;
+  current: AgentWorkspaceConfiguration;
+}): AgentWorkspaceConfiguration {
+  return {
+    stateful_code_sessions: Object.prototype.hasOwnProperty.call(version, 'stateful_code_sessions')
+      ? version.stateful_code_sessions
+      : current.stateful_code_sessions,
+    stateful_code_environment: Object.prototype.hasOwnProperty.call(
+      version,
+      'stateful_code_environment',
+    )
+      ? version.stateful_code_environment
+      : current.stateful_code_environment,
+    code_environment_id: Object.prototype.hasOwnProperty.call(version, 'code_environment_id')
+      ? version.code_environment_id
+      : undefined,
+    code_workspace_id: Object.prototype.hasOwnProperty.call(version, 'code_workspace_id')
+      ? version.code_workspace_id
+      : undefined,
+  };
+}
 
 export function shouldValidateAgentWorkspaceDefaultBinding({
   workspaceId,

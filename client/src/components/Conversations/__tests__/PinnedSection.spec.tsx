@@ -172,12 +172,14 @@ describe('PinnedSection unified list', () => {
     expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat', 'Another Pin']);
   });
 
-  it('interleaves favorites and conversations by the stored order', () => {
+  /* Chats and favorites are two independently ordered groups: an order saved
+   * before that rule, with the two interleaved, is read back grouped. */
+  it('orders each kind by the stored order and keeps the kinds grouped', () => {
     mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }, { agentId: 'agent-1' }];
     mockFavoritesData.agentsMap = { 'agent-1': { id: 'agent-1' } };
-    mockPinnedOrder = ['convo:c1', 'agent:agent-1', 'model:6:openAI:gpt-4o'];
-    renderSection([pinnedConvo('c1', 'Pinned Chat')]);
-    expect(itemLabels()).toEqual(['Pinned Chat', 'agent-1', 'gpt-4o']);
+    mockPinnedOrder = ['convo:c2', 'agent:agent-1', 'model:6:openAI:gpt-4o', 'convo:c1'];
+    renderSection([pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Another Pin')]);
+    expect(itemLabels()).toEqual(['agent-1', 'gpt-4o', 'Another Pin', 'Pinned Chat']);
   });
 
   it('appends items missing from the stored order and ignores stale keys', () => {
@@ -214,26 +216,42 @@ describe('PinnedSection unified list', () => {
       fireEvent.keyDown(screen.getByText(label), { key, altKey: true });
 
     it('moves a row down with Alt+ArrowDown and persists the new order', () => {
-      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      mockFavoritesData.favorites = [
+        { model: 'gpt-4o', endpoint: 'openAI' },
+        { model: 'gpt-4o-mini', endpoint: 'openAI' },
+      ];
       renderSection([pinnedConvo('c1', 'Pinned Chat')]);
-      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+      expect(itemLabels()).toEqual(['gpt-4o', 'gpt-4o-mini', 'Pinned Chat']);
 
       moveFocusedRow('gpt-4o', 'ArrowDown');
 
-      expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
+      expect(itemLabels()).toEqual(['gpt-4o-mini', 'gpt-4o', 'Pinned Chat']);
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:c1', 'model:6:openAI:gpt-4o'],
+        ['model:6:openAI:gpt-4o-mini', 'model:6:openAI:gpt-4o', 'convo:c1'],
         expect.anything(),
       );
     });
 
     it('moves a row up with Alt+ArrowUp', () => {
+      renderSection([pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')]);
+
+      moveFocusedRow('Second', 'ArrowUp');
+
+      expect(itemLabels()).toEqual(['Second', 'First']);
+    });
+
+    /* The pointer cannot drag a chat through a pinned agent or model, so the
+     * keyboard must not either: a step that would leave the row's own group
+     * does nothing rather than interleaving the two. */
+    it('refuses a step that would cross into the other kind', () => {
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       renderSection([pinnedConvo('c1', 'Pinned Chat')]);
 
+      moveFocusedRow('gpt-4o', 'ArrowDown');
       moveFocusedRow('Pinned Chat', 'ArrowUp');
 
-      expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
+      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+      expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
     });
 
     /* Reordering against an order that has not arrived yet would merge into
@@ -242,13 +260,16 @@ describe('PinnedSection unified list', () => {
     /* A write that settles after the user has arranged the list again must not
      * clear the snapshot showing that newer arrangement. */
     it('keeps a newer arrangement when an older write settles', () => {
-      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-      renderSection([pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')]);
+      renderSection([
+        pinnedConvo('c1', 'First'),
+        pinnedConvo('c2', 'Second'),
+        pinnedConvo('c3', 'Third'),
+      ]);
 
-      moveFocusedRow('gpt-4o', 'ArrowDown');
+      moveFocusedRow('First', 'ArrowDown');
       const firstSettle = mockUpdatePinnedOrder.mock.calls[0][1].onSettled;
 
-      moveFocusedRow('gpt-4o', 'ArrowDown');
+      moveFocusedRow('First', 'ArrowDown');
       const arranged = itemLabels();
 
       act(() => firstSettle());
@@ -307,12 +328,12 @@ describe('PinnedSection unified list', () => {
     });
 
     it('prunes keys that are gone once the whole list is known', () => {
-      mockPinnedOrder = ['convo:gone', 'model:6:openAI:gpt-4o', 'convo:c1'];
+      mockPinnedOrder = ['convo:gone', 'model:6:openAI:gpt-4o', 'convo:c1', 'convo:c2'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       render(
         <DndProvider backend={HTML5Backend}>
           <PinnedSection
-            conversations={[pinnedConvo('c1', 'Pinned Chat')]}
+            conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
             toggleNav={jest.fn()}
             membershipComplete
             membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
@@ -320,12 +341,12 @@ describe('PinnedSection unified list', () => {
         </DndProvider>,
       );
 
-      moveFocusedRow('gpt-4o', 'ArrowDown');
+      moveFocusedRow('Pinned Chat', 'ArrowDown');
 
       /* Merging forever would grow the array until the size guard rejected
        * every write, so a complete membership load compacts it. */
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:c1', 'model:6:openAI:gpt-4o'],
+        ['model:6:openAI:gpt-4o', 'convo:c2', 'convo:c1'],
         expect.anything(),
       );
     });
@@ -351,10 +372,9 @@ describe('PinnedSection unified list', () => {
     });
 
     it('announces the new position', () => {
-      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+      renderSection([pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')]);
 
-      moveFocusedRow('gpt-4o', 'ArrowDown');
+      moveFocusedRow('First', 'ArrowDown');
 
       expect(screen.getByRole('status')).toHaveTextContent('com_ui_moved_to_position');
     });
@@ -362,29 +382,36 @@ describe('PinnedSection unified list', () => {
     /* Rows can be missing from view for reasons the section cannot tell apart:
      * a bookmark filter hides them, or the pinned query is still draining its
      * cursor. Persisting only what is on screen would drop those keys and lose
-     * their positions, so the order is always merged, never replaced. */
+     * their positions, so the order is always merged, never replaced — and an
+     * order saved while the two kinds interleaved is normalized on the way out,
+     * so the hidden chat keeps its place among chats rather than being carried
+     * across the favorite that used to sit above it. */
     it('keeps keys it cannot see in the stored order', () => {
-      mockPinnedOrder = ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c1'];
+      mockPinnedOrder = ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c1', 'convo:c2'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+      renderSection([pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]);
 
-      moveFocusedRow('gpt-4o', 'ArrowDown');
+      moveFocusedRow('Pinned Chat', 'ArrowDown');
 
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:hidden', 'convo:c1', 'model:6:openAI:gpt-4o'],
+        ['model:6:openAI:gpt-4o', 'convo:hidden', 'convo:c2', 'convo:c1'],
         expect.anything(),
       );
     });
 
     it('does not write the favorites array a second time', () => {
-      mockPinnedOrder = ['model:6:openAI:gpt-4o', 'convo:c1'];
-      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+      mockPinnedOrder = ['model:6:openAI:gpt-4o', 'model:6:openAI:gpt-4o-mini'];
+      mockFavoritesData.favorites = [
+        { model: 'gpt-4o', endpoint: 'openAI' },
+        { model: 'gpt-4o-mini', endpoint: 'openAI' },
+      ];
+      renderSection([]);
 
       moveFocusedRow('gpt-4o', 'ArrowDown');
 
       /* `pinnedOrder` is the only ordering the section reads, and a second
        * whole-array write would race the favorites membership mutations. */
+      expect(mockUpdatePinnedOrder).toHaveBeenCalled();
       expect(mockReorderFavorites).not.toHaveBeenCalled();
     });
   });
@@ -458,16 +485,16 @@ describe('PinnedSection unified list', () => {
    * has to stay quiet when there is nothing being held: reposting a committed
    * arrangement would undo whatever that reconciliation just brought in. */
   it('does not repost an arrangement that was already written', () => {
-    mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-    const view = renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+    const rows = [pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')];
+    const view = renderSection(rows);
 
-    fireEvent.keyDown(screen.getByText('gpt-4o'), { key: 'ArrowDown', altKey: true });
+    fireEvent.keyDown(screen.getByText('First'), { key: 'ArrowDown', altKey: true });
     expect(mockUpdatePinnedOrder).toHaveBeenCalledTimes(1);
 
     mockOrderFetching = true;
-    view.rerender(renderTree([pinnedConvo('c1', 'Pinned Chat')]));
+    view.rerender(renderTree(rows));
     mockOrderFetching = false;
-    view.rerender(renderTree([pinnedConvo('c1', 'Pinned Chat')]));
+    view.rerender(renderTree(rows));
 
     expect(mockUpdatePinnedOrder).toHaveBeenCalledTimes(1);
   });

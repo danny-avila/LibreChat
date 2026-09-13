@@ -475,6 +475,9 @@ export type TPinConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
   langfuseSessionUrl?: string;
+  /** Whether the link was published with a configured sender label; withholds the
+   * model on hover. */
+  hasConfiguredSender?: boolean;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -1061,4 +1064,6 @@ export type TLangfuseConnectionTestResponse =
 
 export type TLangfuseSessionLinkResponse = {
   url: string | null;
+  /** Opaque identity of the project `url` opens, so a caller can tell whether it holds what it showed. */
+  destinationId?: string;
 };

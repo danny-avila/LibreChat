@@ -133,6 +133,95 @@ describe('persistMCPAuthorizationTransaction', () => {
       completeAuthorization.mock.invocationCallOrder[0],
     );
   });
+
+  it('hands the published generation to the OAuth completion and pending token waiters', async () => {
+    const tokens = { access_token: 'fresh' };
+    const persistTokens = jest.fn(async (_tokens, onStoreCommitted) => {
+      await onStoreCommitted(tokens);
+      return tokens;
+    });
+    const completeAuthorization = jest.fn().mockResolvedValue(undefined);
+    const flowManager = {
+      getFlowState: jest.fn().mockResolvedValue({
+        type: 'mcp_get_tokens',
+        status: 'PENDING',
+        createdAt: 123,
+        metadata: {},
+      }),
+      deleteFlow: jest.fn(),
+      settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
+    };
+
+    const transactionResult = await persistMCPAuthorizationTransaction(
+      { scope, flowIds: ['token-flow'], tokens, completeAuthorization, persistTokens },
+      {
+        ensureServerActive: jest.fn().mockResolvedValue(true),
+        inactiveServerError: () => new Error('deleted'),
+        invalidateRecoveryGeneration: jest.fn().mockResolvedValue('generation-b'),
+        persistPublicationRetry: jest.fn().mockResolvedValue('prepared-v1'),
+        clearPublicationRetry: jest.fn().mockResolvedValue(undefined),
+        flowManager,
+        retryDelaysMs: [0],
+      },
+    );
+    expect(transactionResult).toEqual({
+      access_token: 'fresh',
+      publication_generation: 'generation-b',
+    });
+
+    const released = { access_token: 'fresh', publication_generation: 'generation-b' };
+    expect(completeAuthorization).toHaveBeenCalledWith(released);
+    expect(completeAuthorization.mock.calls[0][0]).toBe(transactionResult);
+    expect(flowManager.settleFlowIfCurrent).toHaveBeenCalledWith(
+      'token-flow',
+      'mcp_get_tokens',
+      123,
+      '',
+      released,
+    );
+  });
+
+  it('releases the committed tokens unchanged when the publication reports no generation', async () => {
+    const tokens = { access_token: 'fresh' };
+    const persistTokens = jest.fn(async (_tokens, onStoreCommitted) => {
+      await onStoreCommitted(tokens);
+      return tokens;
+    });
+    const completeAuthorization = jest.fn().mockResolvedValue(undefined);
+    const flowManager = {
+      getFlowState: jest.fn().mockResolvedValue({
+        type: 'mcp_get_tokens',
+        status: 'PENDING',
+        createdAt: 123,
+        metadata: {},
+      }),
+      deleteFlow: jest.fn(),
+      settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
+    };
+
+    await persistMCPAuthorizationTransaction(
+      { scope, flowIds: ['token-flow'], tokens, completeAuthorization, persistTokens },
+      {
+        ensureServerActive: jest.fn().mockResolvedValue(true),
+        inactiveServerError: () => new Error('deleted'),
+        invalidateRecoveryGeneration: jest.fn().mockResolvedValue(undefined),
+        persistPublicationRetry: jest.fn().mockResolvedValue('prepared-v1'),
+        clearPublicationRetry: jest.fn().mockResolvedValue(undefined),
+        flowManager,
+        retryDelaysMs: [0],
+      },
+    );
+
+    expect(completeAuthorization).toHaveBeenCalledWith(tokens);
+    expect(completeAuthorization.mock.calls[0][0]).toBe(tokens);
+    expect(flowManager.settleFlowIfCurrent).toHaveBeenCalledWith(
+      'token-flow',
+      'mcp_get_tokens',
+      123,
+      '',
+      tokens,
+    );
+  });
 });
 
 describe('finalizeMCPAuthorizationMutation', () => {

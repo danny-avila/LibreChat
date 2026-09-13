@@ -15,8 +15,8 @@ type TUseGenerations = {
    *  replay needs the answer. */
   getHasEditablePart?: () => boolean;
   /** For a model turn: whether the message it hangs off is the user turn a rerun
-   *  would replay. `undefined` when the thread is unavailable (a search or share
-   *  row) or the parent was not resolved, which withholds nothing. */
+   *  would replay, `false` when no such turn is in the thread. `undefined` when the
+   *  thread is unavailable (a search or share row), which withholds nothing. */
   parentIsUserMessage?: boolean;
   /** The turn carries the server's manual-compaction marker. Compact runs on
    *  whatever leaf the branch ends with, so such a turn can hang off a user
@@ -52,12 +52,12 @@ export default function useGenerationsByLatest({
   );
 
   /** Every rerun shape replays the message's parent as the turn's user message, so
-   *  a model turn hanging off another model turn has none: the submission would
-   *  mint a user message under an existing response's id and run on empty text.
-   *  An imported or restored thread reaches that shape whenever a reply is chained
-   *  onto a reply, and a manual compaction reaches it whenever it summarized an
-   *  answer. A marked compaction is excluded whatever it hangs off. An unknown
-   *  parent withholds nothing, and the rerun paths refuse it on their own. */
+   *  a model turn with no user turn behind it has none: the submission would mint a
+   *  user message under an existing response's id and run on empty text. An imported
+   *  or restored thread reaches that shape whenever a reply is chained onto a reply
+   *  or left at the root, and a manual compaction reaches it whenever it summarized
+   *  an answer. A marked compaction is excluded whatever it hangs off. Only a row
+   *  that cannot see the thread at all withholds nothing. */
   const hasNoTurnToReplay =
     !isCreatedByUser && (parentIsUserMessage === false || isUserInitiatedCompaction);
 

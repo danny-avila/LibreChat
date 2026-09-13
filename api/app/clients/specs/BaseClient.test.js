@@ -48,9 +48,22 @@ jest.mock('~/models', () => ({
   deleteFiles: jest.fn(),
   getFiles: jest.fn(),
   updateFileUsage: jest.fn(),
+  getMultiplier: jest.fn(),
+  reserveBalance: jest.fn(),
+  renewBalanceReservation: jest.fn(),
+  releaseBalanceReservation: jest.fn(),
 }));
 
-const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
+const {
+  releaseBalanceReservation,
+  reserveBalance,
+  getMultiplier,
+  saveMessage,
+  getMessages,
+  saveConvo,
+  getFiles,
+  getConvo,
+} = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -2222,6 +2235,91 @@ describe('BaseClient', () => {
           transactions: { enabled: true },
         }),
       );
+    });
+  });
+
+  describe('balance reservation lifecycle', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+    let events;
+
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      TestClient.options.endpoint = EModelEndpoint.openAI;
+      delete TestClient.options.endpointType;
+      TestClient.options.req = { config: { balance: { enabled: true } } };
+
+      events = [];
+      getMultiplier.mockReturnValue(1);
+      reserveBalance.mockImplementation(async () => {
+        events.push('reserve');
+        return { reserved: true, balance: 1000 };
+      });
+      releaseBalanceReservation.mockImplementation(async () => {
+        events.push('release');
+      });
+      TestClient.sendCompletion.mockImplementation(async () => {
+        events.push('completion');
+        return { completion: 'Mock response text', metadata: undefined };
+      });
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn(async () => {
+        events.push('usage');
+      });
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('releases the reservation once the response usage is recorded, before persistence', async () => {
+      const beforeResponsePersistence = jest.fn(async () => {
+        events.push('persist');
+        return true;
+      });
+
+      await TestClient.sendMessage('Hello', { beforeResponsePersistence });
+
+      expect(events).toEqual(['reserve', 'completion', 'usage', 'release', 'persist']);
+      const [{ reservationId, amount }] = reserveBalance.mock.calls[0];
+      expect(releaseBalanceReservation).toHaveBeenCalledTimes(1);
+      expect(releaseBalanceReservation).toHaveBeenCalledWith({
+        user: TestClient.user,
+        reservationId,
+        amount,
+      });
+    });
+
+    test('releases the reservation when the completion fails', async () => {
+      TestClient.sendCompletion.mockRejectedValue(new Error('provider unavailable'));
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow('provider unavailable');
+
+      expect(events).toEqual(['reserve', 'release']);
+    });
+
+    test('releases the reservation when work after the completion fails', async () => {
+      TestClient.recordTokenUsage.mockRejectedValue(new Error('usage write failed'));
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow('usage write failed');
+
+      expect(events).toEqual(['reserve', 'completion', 'release']);
+    });
+
+    test('takes no reservation when the balance check refuses the request', async () => {
+      reserveBalance.mockResolvedValue({ reserved: false, balance: 0 });
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow();
+
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+      expect(releaseBalanceReservation).not.toHaveBeenCalled();
     });
   });
 

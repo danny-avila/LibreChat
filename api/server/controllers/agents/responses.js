@@ -771,6 +771,7 @@ const executeResponse = async (envelope, { req, res }) => {
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        getRoleByName: db.getRoleByName,
       };
 
       const enabledCapabilities = new Set(agentsEConfig?.capabilities);
@@ -800,6 +801,12 @@ const executeResponse = async (envelope, { req, res }) => {
        *  a tool the loader is about to drop. */
       const fileSearchAvailable =
         fileSearchCapabilityEnabled && (await toolRoleGrants)?.fileSearch === true;
+      /** Called by `initializeAgent` only when an agent's built provider config
+       *  turns native web search on. It reaches the initializer with `runtime`
+       *  and no `req`, so this is what lets it join the grants memoized on this
+       *  request instead of issuing its own read. */
+      const resolveWebSearchGrant = async () =>
+        (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName })).webSearch;
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
@@ -866,6 +873,7 @@ const executeResponse = async (envelope, { req, res }) => {
           }),
           codeEnvAvailable,
           fileSearchAvailable,
+          resolveWebSearchGrant,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -946,6 +954,7 @@ const executeResponse = async (envelope, { req, res }) => {
           defaultActiveOnShare,
           codeEnvAvailable,
           fileSearchAvailable,
+          resolveWebSearchGrant,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(

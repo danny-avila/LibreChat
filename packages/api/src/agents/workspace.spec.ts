@@ -1,8 +1,55 @@
 import {
   AGENT_WORKSPACE_ATTACHED_ENVIRONMENT_ERROR,
+  isActiveAgentWorkspaceConfiguration,
   reconcileAgentWorkspaceDefault,
+  resolveAgentWorkspaceRestoreConfiguration,
   validateAgentWorkspaceDefaultBinding,
 } from './workspace';
+
+describe('restored agent workspace configuration', () => {
+  it('inherits persistent session fields and clears omitted binding fields', () => {
+    const restored = resolveAgentWorkspaceRestoreConfiguration({
+      version: {},
+      current: {
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+        code_environment_id: 'removed-vm',
+        code_workspace_id: 'project-a',
+      },
+    });
+
+    expect(restored).toEqual({
+      stateful_code_sessions: true,
+      stateful_code_environment: 'conversation',
+      code_environment_id: undefined,
+      code_workspace_id: undefined,
+    });
+    expect(isActiveAgentWorkspaceConfiguration(restored)).toBe(true);
+  });
+
+  it('uses explicit historical session and binding fields', () => {
+    const restored = resolveAgentWorkspaceRestoreConfiguration({
+      version: {
+        stateful_code_sessions: false,
+        stateful_code_environment: 'user',
+        code_environment_id: 'removed-vm',
+        code_workspace_id: 'project-a',
+      },
+      current: {
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+      },
+    });
+
+    expect(restored).toEqual({
+      stateful_code_sessions: false,
+      stateful_code_environment: 'user',
+      code_environment_id: 'removed-vm',
+      code_workspace_id: 'project-a',
+    });
+    expect(isActiveAgentWorkspaceConfiguration(restored)).toBe(false);
+  });
+});
 
 describe('reconcileAgentWorkspaceDefault', () => {
   it('clears a stale default when the attached environment changes', () => {
