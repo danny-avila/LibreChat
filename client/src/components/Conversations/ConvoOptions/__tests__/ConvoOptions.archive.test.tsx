@@ -58,6 +58,7 @@ jest.mock('@librechat/client', () => ({
   buttonVariants: () => '',
   useToastContext: () => ({ showToast: jest.fn() }),
   useMediaQuery: () => false,
+  useRemScale: () => 1,
 }));
 
 jest.mock('~/data-provider', () => ({
