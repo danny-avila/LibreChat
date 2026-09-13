@@ -1650,7 +1650,7 @@ describe('User parameter passing tests', () => {
         return new Promise((resolve, reject) => {
           const onAbort = () => {
             signal?.removeEventListener('abort', onAbort);
-            reject(new Error('tool caller aborted'));
+            reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
           };
           signal?.addEventListener('abort', onAbort, { once: true });
           sharedRecovery.then(() => {
