@@ -103,8 +103,10 @@ export async function withBalanceReservations<T>(
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 /**
- * Keeps an admitted reservation alive until it is released: renews it every half TTL, and retries a
- * failed renewal well within the remaining half so a transient failure does not let it expire.
+ * Keeps an admitted reservation alive until it is released: renews it at half of its stored
+ * expiry, measured from the expiry rather than from when the write that stored it settled, so a
+ * slow admission or renewal write cannot let the hold expire before the next renewal. A failed
+ * renewal retries well within the remaining half so a transient failure does not let it expire.
  */
 function holdReservation(
   {
@@ -112,35 +114,37 @@ function holdReservation(
     reservationId,
     amount,
     ttlMs,
-  }: { user: string; reservationId: string; amount: number; ttlMs: number },
+    expiresAt,
+  }: { user: string; reservationId: string; amount: number; ttlMs: number; expiresAt: Date },
   deps: Pick<CheckBalanceDeps, 'renewBalanceReservation' | 'releaseBalanceReservation'>,
 ): BalanceReservation {
-  const renewEveryMs = Math.min(ttlMs / 2, MAX_TIMER_DELAY_MS);
-  const retryEveryMs = Math.min(renewEveryMs / 10, 5_000);
+  const retryEveryMs = Math.min(ttlMs / 20, 5_000);
   let timer: NodeJS.Timeout | undefined;
   let released: Promise<void> | undefined;
 
   const schedule = (delayMs: number) => {
-    timer = setTimeout(renew, delayMs);
+    timer = setTimeout(renew, Math.min(delayMs, MAX_TIMER_DELAY_MS));
     timer.unref();
   };
 
+  const scheduleFrom = (storedExpiry: Date) =>
+    schedule(Math.max(0, storedExpiry.getTime() - ttlMs / 2 - Date.now()));
+
   function renew() {
-    deps
-      .renewBalanceReservation({ user, reservationId, expiresAt: new Date(Date.now() + ttlMs) })
-      .then(
-        () => (released ? undefined : schedule(renewEveryMs)),
-        (error) => {
-          logger.error('[Balance.check] Failed to renew balance reservation', { user, error });
-          if (!released) {
-            schedule(retryEveryMs);
-          }
-        },
-      );
+    const renewedExpiry = new Date(Date.now() + ttlMs);
+    deps.renewBalanceReservation({ user, reservationId, expiresAt: renewedExpiry }).then(
+      () => (released ? undefined : scheduleFrom(renewedExpiry)),
+      (error) => {
+        logger.error('[Balance.check] Failed to renew balance reservation', { user, error });
+        if (!released) {
+          schedule(retryEveryMs);
+        }
+      },
+    );
   }
 
   if (amount > 0) {
-    schedule(renewEveryMs);
+    scheduleFrom(expiresAt);
   }
 
   return {
@@ -232,16 +236,17 @@ export async function checkBalance(
     endpointTokenConfig: !!endpointTokenConfig,
   });
 
+  const expiresAt = new Date(Date.now() + ttlMs);
   const result = await deps.reserveBalance({
     user,
     reservationId,
     amount: tokenCost,
-    expiresAt: new Date(Date.now() + ttlMs),
+    expiresAt,
     initialBalance: buildInitialBalance(user, deps.balanceConfig),
   });
 
   if (result?.reserved) {
-    return holdReservation({ user, reservationId, amount: tokenCost, ttlMs }, deps);
+    return holdReservation({ user, reservationId, amount: tokenCost, ttlMs, expiresAt }, deps);
   }
 
   if (!result) {

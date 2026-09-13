@@ -208,6 +208,49 @@ describe('checkBalance', () => {
       await reservation.release();
     });
 
+    it('renews from the stored expiry when the admission write is slow', async () => {
+      const deps = createMockDeps({
+        balanceConfig: { reservationTtlMs: 10_000 },
+        reserveBalance: jest.fn(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ reserved: true, balance: 1000 }), 3_000),
+            ),
+        ),
+      });
+
+      const admission = checkBalance({ req, res, txData: baseTxData }, deps);
+      await jest.advanceTimersByTimeAsync(3_000);
+      const reservation = await admission;
+
+      await jest.advanceTimersByTimeAsync(1_999);
+      expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+
+      await reservation.release();
+    });
+
+    it('renews from the stored expiry when a renewal write is slow', async () => {
+      const deps = createMockDeps({
+        balanceConfig: { reservationTtlMs: 10_000 },
+        renewBalanceReservation: jest.fn(
+          () => new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
+        ),
+      });
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+
+      await reservation.release();
+    });
+
     it('keeps the renewal delay within the timer range for a very long TTL', async () => {
       const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 6_000_000_000 } });
 

@@ -1104,13 +1104,26 @@ describe('Balance Reservations', () => {
   const readState = (user: mongoose.Types.ObjectId) =>
     Balance.findOne({ user }).select('+reservations +reservedCredits +pendingRefill').lean();
 
-  /** Runs `interleave` once, immediately before the next `Balance.updateOne` executes. */
+  /** Runs `interleave` once, immediately before the next `Balance` write executes. */
   const interleaveBeforeNextWrite = (interleave: () => Promise<unknown>) => {
+    let fired = false;
     const realUpdateOne = Balance.updateOne.bind(Balance);
-    return jest
+    const realBulkWrite = Balance.bulkWrite.bind(Balance);
+    const before = (write: () => unknown): unknown => {
+      if (fired) {
+        return write();
+      }
+      fired = true;
+      return interleave().then(() => write());
+    };
+    jest
       .spyOn(Balance, 'updateOne')
-      .mockImplementationOnce(((...args: Parameters<typeof Balance.updateOne>) =>
-        interleave().then(() => realUpdateOne(...args))) as unknown as typeof Balance.updateOne);
+      .mockImplementation(((...args: Parameters<typeof Balance.updateOne>) =>
+        before(() => realUpdateOne(...args))) as unknown as typeof Balance.updateOne);
+    jest
+      .spyOn(Balance, 'bulkWrite')
+      .mockImplementation(((...args: Parameters<typeof Balance.bulkWrite>) =>
+        before(() => realBulkWrite(...args))) as unknown as typeof Balance.bulkWrite);
   };
 
   afterEach(() => {
@@ -1322,7 +1335,7 @@ describe('Balance Reservations', () => {
     expect(stored?.reservedCredits).toBe(600);
   });
 
-  test('prunes a backlog of expired reservations in one write', async () => {
+  test('prunes a backlog of expired reservations in one bulk write', async () => {
     const user = new mongoose.Types.ObjectId();
     const expiredAt = new Date(Date.now() - 1000);
     await Balance.create({
@@ -1339,6 +1352,7 @@ describe('Balance Reservations', () => {
       ],
     });
     const writes = jest.spyOn(Balance, 'updateOne');
+    const bulkWrites = jest.spyOn(Balance, 'bulkWrite');
 
     const reservationId = newId();
     await expect(reserve(user.toString(), 100, reservationId)).resolves.toEqual({
@@ -1346,7 +1360,9 @@ describe('Balance Reservations', () => {
       balance: 999,
     });
 
-    expect(writes).toHaveBeenCalledTimes(2);
+    expect(bulkWrites).toHaveBeenCalledTimes(1);
+    expect(bulkWrites.mock.calls[0][0]).toHaveLength(200);
+    expect(writes).toHaveBeenCalledTimes(1);
     const stored = await readState(user);
     expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
       'live',
@@ -1355,7 +1371,7 @@ describe('Balance Reservations', () => {
     expect(stored?.reservedCredits).toBe(101);
   });
 
-  test('prunes the rest when one expired reservation is renewed mid-attempt', async () => {
+  test('prunes the rest in the same write when one expired reservation is renewed mid-attempt', async () => {
     const user = new mongoose.Types.ObjectId();
     const expiredAt = new Date(Date.now() - 1000);
     await Balance.create({
@@ -1376,11 +1392,13 @@ describe('Balance Reservations', () => {
       }),
     );
 
+    const reads = jest.spyOn(Balance, 'findOne');
     const reservationId = newId();
     await expect(reserve(user.toString(), 600, reservationId)).resolves.toEqual({
       reserved: true,
       balance: 600,
     });
+    expect(reads).toHaveBeenCalledTimes(2);
     const stored = await readState(user);
     expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
       'renewed',

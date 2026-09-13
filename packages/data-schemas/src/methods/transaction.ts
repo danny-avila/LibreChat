@@ -1,5 +1,5 @@
 import { getRefillEligibilityDate } from 'librechat-data-provider';
-import type { FilterQuery, Model, Types } from 'mongoose';
+import type { AnyBulkWriteOperation, FilterQuery, Model, Types } from 'mongoose';
 import type {
   BalanceReservationRequest,
   BalanceReservationRenewal,
@@ -12,6 +12,7 @@ import type {
   IBalance,
 } from '~/types';
 import type { ITransaction } from '~/schema/transaction';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
 const cancelRate = 1.15;
@@ -396,10 +397,11 @@ export function createTransactionMethods(
   }
 
   /**
-   * Removes reservations and their credits from the running total in one atomic write, which
-   * matches only while every one of them is still held at the amount read. With `expiredBy`, each
-   * must also still be expired at that instant, so a reservation renewed after it was read
-   * survives; the caller then re-reads.
+   * Removes reservations and their credits from the running total, one atomic update per
+   * reservation sent as a single bulk write, so each is removed only while it is still held at the
+   * amount read and the rest proceed when one has changed. With `expiredBy`, a reservation is
+   * removed only while it is still expired at that instant, so one renewed after it was read
+   * survives.
    */
   async function removeReservations(
     filter: FilterQuery<IBalance>,
@@ -408,15 +410,13 @@ export function createTransactionMethods(
   ): Promise<void> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     const expiry = expiredBy ? { expiresAt: { $lte: expiredBy } } : {};
-    const held = reservations.map(({ id, amount }) => ({ $elemMatch: { id, amount, ...expiry } }));
-    const total = reservations.reduce((sum, { amount }) => sum + amount, 0);
-    await Balance.updateOne(
-      { ...filter, reservations: { $all: held } },
-      {
-        $pull: { reservations: { id: { $in: reservations.map(({ id }) => id) } } },
-        $inc: { reservedCredits: -total },
+    const removals: AnyBulkWriteOperation<IBalance>[] = reservations.map(({ id, amount }) => ({
+      updateOne: {
+        filter: { ...filter, reservations: { $elemMatch: { id, amount, ...expiry } } },
+        update: { $pull: { reservations: { id } }, $inc: { reservedCredits: -amount } },
       },
-    );
+    }));
+    await tenantSafeBulkWrite(Balance, removals as AnyBulkWriteOperation[], { ordered: false });
   }
 
   /**
