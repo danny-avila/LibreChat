@@ -128,6 +128,11 @@ export async function dragRowOnto(
   if (!from || !to) {
     throw new Error('drag source and target must both be laid out');
   }
+  /* The list disconnects its drag sources while the saved order reconciles, and
+   * react-dnd marks a connected one `draggable`. Pressing on a row that is not
+   * yet connected does not start a drag at all: the press and release become a
+   * click, and the row navigates instead of moving. */
+  await expect.poll(() => source.getAttribute('draggable'), { timeout: 15_000 }).toBe('true');
   const startX = from.x + from.width / 2;
   const startY = from.y + from.height / 2;
   const endX = to.x + to.width / 2;
