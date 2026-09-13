@@ -112,6 +112,11 @@ const KIND_BY_TYPE: Record<string, TTraceRecordKind> = {
   EVENT: 'event',
 };
 
+/** Node's fetch returns a connection to its pool only once the body is consumed or cancelled. */
+async function release(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => undefined);
+}
+
 function clamp(value: string, maxLength: number): string {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
@@ -503,6 +508,7 @@ export function createLangfuseTraceReader({
       );
     }
     if (!response.ok) {
+      await release(response);
       throw statusError(response.status, hasCursor);
     }
     let body: unknown;

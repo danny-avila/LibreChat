@@ -1196,12 +1196,15 @@ describe('createLangfuseTraceReader', () => {
       [500, 'upstream_error'],
       [400, 'upstream_error'],
     ])('maps a Langfuse %s to %s', async (status, code) => {
-      const { reader } = setup({ responses: [jsonResponse({ message: 'nope' }, status)] });
+      const failure = jsonResponse({ message: 'nope' }, status);
+      const { reader } = setup({ responses: [failure] });
 
       const error = await reader.listRecords(createQuery()).catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(TraceReadError);
       expect(error).toMatchObject({ code });
+      /** The failed response's body is released, so its connection returns to the pool. */
+      expect(failure.bodyUsed).toBe(true);
     });
 
     it('treats a cursor Langfuse rejects as an invalid request', async () => {
