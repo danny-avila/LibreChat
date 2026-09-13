@@ -396,9 +396,10 @@ export function createTransactionMethods(
   }
 
   /**
-   * Removes reservations and their credits from the running total, each in one atomic write.
-   * With `expiredBy`, a reservation is removed only while it is still expired at that instant, so a
-   * reservation renewed after it was read survives.
+   * Removes reservations and their credits from the running total in one atomic write, which
+   * matches only while every one of them is still held at the amount read. With `expiredBy`, each
+   * must also still be expired at that instant, so a reservation renewed after it was read
+   * survives; the caller then re-reads.
    */
   async function removeReservations(
     filter: FilterQuery<IBalance>,
@@ -406,18 +407,15 @@ export function createTransactionMethods(
     expiredBy?: Date,
   ): Promise<void> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    await Promise.all(
-      reservations.map(({ id, amount }) =>
-        Balance.updateOne(
-          {
-            ...filter,
-            reservations: {
-              $elemMatch: { id, amount, ...(expiredBy ? { expiresAt: { $lte: expiredBy } } : {}) },
-            },
-          },
-          { $pull: { reservations: { id } }, $inc: { reservedCredits: -amount } },
-        ),
-      ),
+    const expiry = expiredBy ? { expiresAt: { $lte: expiredBy } } : {};
+    const held = reservations.map(({ id, amount }) => ({ $elemMatch: { id, amount, ...expiry } }));
+    const total = reservations.reduce((sum, { amount }) => sum + amount, 0);
+    await Balance.updateOne(
+      { ...filter, reservations: { $all: held } },
+      {
+        $pull: { reservations: { id: { $in: reservations.map(({ id }) => id) } } },
+        $inc: { reservedCredits: -total },
+      },
     );
   }
 

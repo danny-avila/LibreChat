@@ -1322,6 +1322,73 @@ describe('Balance Reservations', () => {
     expect(stored?.reservedCredits).toBe(600);
   });
 
+  test('prunes a backlog of expired reservations in one write', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const expiredAt = new Date(Date.now() - 1000);
+    await Balance.create({
+      user,
+      tokenCredits: 1000,
+      reservedCredits: 201,
+      reservations: [
+        { id: 'live', amount: 1, expiresAt: inFuture() },
+        ...Array.from({ length: 200 }, (_, i) => ({
+          id: `stale-${i}`,
+          amount: 1,
+          expiresAt: expiredAt,
+        })),
+      ],
+    });
+    const writes = jest.spyOn(Balance, 'updateOne');
+
+    const reservationId = newId();
+    await expect(reserve(user.toString(), 100, reservationId)).resolves.toEqual({
+      reserved: true,
+      balance: 999,
+    });
+
+    expect(writes).toHaveBeenCalledTimes(2);
+    const stored = await readState(user);
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
+      'live',
+      reservationId,
+    ]);
+    expect(stored?.reservedCredits).toBe(101);
+  });
+
+  test('prunes the rest when one expired reservation is renewed mid-attempt', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const expiredAt = new Date(Date.now() - 1000);
+    await Balance.create({
+      user,
+      tokenCredits: 1000,
+      reservedCredits: 900,
+      reservations: [
+        { id: 'renewed', amount: 400, expiresAt: expiredAt },
+        { id: 'stale', amount: 500, expiresAt: expiredAt },
+      ],
+    });
+
+    interleaveBeforeNextWrite(() =>
+      renewBalanceReservation({
+        user: user.toString(),
+        reservationId: 'renewed',
+        expiresAt: inFuture(),
+      }),
+    );
+
+    const reservationId = newId();
+    await expect(reserve(user.toString(), 600, reservationId)).resolves.toEqual({
+      reserved: true,
+      balance: 600,
+    });
+    const stored = await readState(user);
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
+      'renewed',
+      reservationId,
+    ]);
+    expect(stored?.reservedCredits).toBe(1000);
+  });
+
   test('renews a live reservation and never resurrects a released one', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });
