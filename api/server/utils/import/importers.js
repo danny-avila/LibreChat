@@ -7,6 +7,7 @@ const {
   stripMessageUIResourceMarkers,
 } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
+const { withoutTraceRefs } = require('@librechat/api');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
@@ -59,12 +60,9 @@ function sanitizeImportedMessage(message) {
   const text = castPersistedImportedText(message.text);
   const content = normalizeImportedArray(message.content);
   const attachments = normalizeImportedArray(message.attachments);
-  const importable = { ...message };
   /** Server-private run state and trace sampling records never come from an import. */
+  const importable = withoutTraceRefs({ ...message });
   delete importable.contextMeta;
-  delete importable.langfuseSampled;
-  delete importable.langfuseDestinationIds;
-  delete importable.langfuseRunId;
   return {
     ...importable,
     isUserSubmitted: true,

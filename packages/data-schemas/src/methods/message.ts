@@ -628,6 +628,10 @@ export interface MessageMethods {
     user: string;
     conversationId: string;
     tenantId?: string;
+    /** The newest response to include; the page ends there instead of at the newest one. */
+    through?: string;
+    /** The most responses to return, newest first from `through`; all of them when absent. */
+    limit?: number;
   }): Promise<ConversationTraceRefs>;
   /**
    * Whether any of the user's responses in the conversation was sampled into a
@@ -3372,30 +3376,60 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     user,
     conversationId,
     tenantId,
+    through,
+    limit,
   }: {
     user: string;
     conversationId: string;
     tenantId?: string;
+    /** The newest response to include; the page ends there instead of at the newest one. */
+    through?: string;
+    /** The most responses to return, newest first from `through`; all of them when absent. */
+    limit?: number;
   }): Promise<ConversationTraceRefs> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const scope = { user, conversationId, ...traceTenantScope(tenantId) };
-      const [first, sampled] = await Promise.all([
+      const sampledScope = { ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE };
+      const [first, anchor] = await Promise.all([
         Message.findOne(scope)
           .select('createdAt -_id')
           .sort({ createdAt: 1 })
           .lean<Pick<IMessage, 'createdAt'>>(),
-        Message.find({ ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
-          .select('messageId createdAt langfuseDestinationIds langfuseRunId -_id')
-          /** `_id` breaks ties between responses saved in the same millisecond, so every page
-           *  request rebuilds the same turn order its cursor was positioned in. */
-          .sort({ createdAt: 1, _id: 1 })
-          .lean<
-            Array<
-              Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'>
-            >
-          >(),
+        through != null
+          ? Message.findOne({ ...sampledScope, messageId: through })
+              .select('_id createdAt')
+              .lean<{ _id: Types.ObjectId; createdAt: Date }>()
+          : null,
       ]);
+      if (through != null && anchor == null) {
+        return { firstMessageAt: first?.createdAt, sampledMessages: [] };
+      }
+      /** `_id` breaks ties between responses saved in the same millisecond, so every page
+       *  request rebuilds the same turn order its cursor was positioned in. */
+      const range =
+        anchor != null
+          ? {
+              $or: [
+                { createdAt: { $lt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, _id: { $lte: anchor._id } },
+              ],
+            }
+          : {};
+      const query = Message.find({ ...sampledScope, ...range }).select(
+        'messageId createdAt langfuseDestinationIds langfuseRunId -_id',
+      );
+      const bounded = limit != null;
+      const rows = await (
+        bounded
+          ? query.sort({ createdAt: -1, _id: -1 }).limit(limit)
+          : query.sort({ createdAt: 1, _id: 1 })
+      ).lean<
+        Array<
+          Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'>
+        >
+      >();
+      const sampled = bounded ? rows.reverse() : rows;
       return {
         firstMessageAt: first?.createdAt,
         sampledMessages: sampled

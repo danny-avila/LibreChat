@@ -51,6 +51,7 @@ jest.mock('@librechat/api', () => {
   };
 
   return {
+    withoutTraceRefs: jest.requireActual('@librechat/api').withoutTraceRefs,
     createContentFilter: jest.fn(() => (req, res, next) => next()),
     inspectContent,
     extractChatContent,

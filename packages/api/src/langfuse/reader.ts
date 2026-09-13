@@ -15,6 +15,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery, TraceReader } from '~/traces/types';
+import { exportsInternalTraceUserId } from './identity';
 import { getScoreDestinations } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
@@ -73,6 +74,8 @@ export interface LangfuseTraceReaderDeps {
     user: string;
     conversationId: string;
     tenantId?: string;
+    through?: string;
+    limit?: number;
   }) => Promise<ConversationTraceRefs>;
   hasSampledTraceMessage: (input: {
     user: string;
@@ -256,10 +259,13 @@ function sourceIdOf(destination: LangfuseScoreDestination): string {
  */
 function readableSources(
   destinations: LangfuseScoreDestination[],
-  messages: SampledTraceMessage[],
+  messages?: SampledTraceMessage[],
 ): LangfuseScoreDestination[] {
   return destinations
-    .filter((destination) => messages.some((message) => couldHold(destination, message)))
+    .filter(
+      (destination) =>
+        messages == null || messages.some((message) => couldHold(destination, message)),
+    )
     .sort((a, b) => DESTINATION_PREFERENCE[a.name] - DESTINATION_PREFERENCE[b.name])
     .filter(
       (destination, index, ordered) =>
@@ -360,10 +366,11 @@ function ownerFilter(query: TraceQuery): LangfuseFilter[number] {
  * tenants. So its traces are never shown.
  */
 function keyedByInternalId(appConfig?: AppConfig): boolean {
-  const field = appConfig?.langfuse?.trace?.userIdField;
-  if (field == null || field === 'id') {
+  const trace = appConfig?.langfuse?.trace;
+  if (exportsInternalTraceUserId(trace)) {
     return true;
   }
+  const field = trace?.userIdField;
   warnOnce(
     `user_id_field:${field}`,
     `[traces] The trace viewer shows no traces while langfuse.trace.userIdField is "${field}": only the internal user id identifies who a trace belongs to.`,
@@ -563,10 +570,35 @@ export function createLangfuseTraceReader({
       if (!keyedByInternalId(query.appConfig)) {
         throw new TraceReadError('not_found', 'Traces here are not keyed by the internal user id');
       }
-      const { refs, sources } = await loadConversation(query);
-      const messages = refs.sampledMessages;
-      const owners = buildTraceOwners(messages);
-      const timeFilter = startTimeFilter(timeWindow(refs));
+      /**
+       * Sampled responses load a segment's worth at a time, ending at the turn
+       * being read, plus one older response that says where the next page starts.
+       * A long conversation's pages then never reload the responses before them.
+       */
+      const loadWindow = async (through?: string) => {
+        const refs = await getConversationTraceRefs({
+          user: query.userId,
+          conversationId: query.conversationId,
+          tenantId: query.tenantId,
+          ...(through != null ? { through } : {}),
+          limit: SEGMENT_TURNS + 1,
+        });
+        const peek =
+          refs.sampledMessages.length > SEGMENT_TURNS ? refs.sampledMessages[0] : undefined;
+        return {
+          refs,
+          peek,
+          messages: peek ? refs.sampledMessages.slice(1) : refs.sampledMessages,
+        };
+      };
+      const [initial, destinations] = await Promise.all([
+        loadWindow(continuation?.m),
+        readableDestinations(query.appConfig),
+      ]);
+      const sources = readableSources(destinations);
+      let { messages, peek } = initial;
+      let owners = buildTraceOwners(messages);
+      const timeFilter = startTimeFilter(timeWindow(initial.refs));
       const scopeFilter = (traceIds: string[]): LangfuseFilter => [
         { type: 'string', column: 'sessionId', operator: '=', value: query.conversationId },
         ownerFilter(query),
@@ -577,15 +609,14 @@ export function createLangfuseTraceReader({
       let turn = messages.length - 1;
       let startKind: TraceKind | undefined;
       if (continuation != null) {
-        turn = messages.findIndex(({ messageId }) => messageId === continuation.m);
         startKind = continuation.k != null ? KIND_BY_CODE[continuation.k] : undefined;
-        if (turn === -1) {
+        if (messages[turn]?.messageId !== continuation.m) {
           throw new TraceReadError(
             'invalid_request',
             'The page cursor names a turn this conversation no longer has',
           );
         }
-      } else if (sources.length === 0) {
+      } else if (messages.length === 0 || sources.length === 0) {
         throw new TraceReadError('not_found', 'No sampled trace for this conversation');
       }
 
@@ -620,6 +651,7 @@ export function createLangfuseTraceReader({
         const filter = JSON.stringify([...scopeFilter(pending), ROOT_FILTER]);
         try {
           let cursor: string | undefined;
+          const seenCursors = new Set<string>();
           do {
             const params = new URLSearchParams({
               fields: 'core',
@@ -648,6 +680,13 @@ export function createLangfuseTraceReader({
               );
             }
             cursor = page.data.length > 0 ? page.meta?.cursor || undefined : undefined;
+            /** A cursor that repeats would page forever, each request under its own timeout. */
+            if (cursor != null && seenCursors.has(cursor)) {
+              throw new TraceReadError('upstream_error', 'Langfuse repeated a page cursor');
+            }
+            if (cursor != null) {
+              seenCursors.add(cursor);
+            }
           } while (cursor);
         } catch (error) {
           if (!isFailover(error)) {
@@ -854,7 +893,17 @@ export function createLangfuseTraceReader({
 
       let resume = continuation?.c != null ? continuation : undefined;
       let firstSourceId: string | undefined;
-      while (turn >= 0) {
+      for (;;) {
+        if (turn < 0) {
+          if (peek == null) {
+            break;
+          }
+          ({ messages, peek } = await loadWindow(peek.messageId));
+          owners = buildTraceOwners(messages);
+          turn = messages.length - 1;
+          startKind = undefined;
+          continue;
+        }
         const lowest = Math.max(0, turn - SEGMENT_TURNS + 1);
         await gatherEvidence(lowest, turn);
         const units = unitsFrom(turn, startKind, lowest);
@@ -911,14 +960,15 @@ export function createLangfuseTraceReader({
           };
         }
         if (result.records.length > 0) {
-          const older =
-            after ??
-            (lowest > 0 ? { turn: lowest - 1, kind: 'run' as const, first: true } : undefined);
-          return {
-            records: result.records,
-            sourceId,
-            ...(older ? { nextCursor: encodeCursor(positionOf(older)) } : {}),
-          };
+          let nextCursor: string | undefined;
+          if (after != null) {
+            nextCursor = encodeCursor(positionOf(after));
+          } else if (lowest > 0) {
+            nextCursor = encodeCursor({ m: messages[lowest - 1].messageId });
+          } else if (peek != null) {
+            nextCursor = encodeCursor({ m: peek.messageId });
+          }
+          return { records: result.records, sourceId, ...(nextCursor ? { nextCursor } : {}) };
         }
         advance();
       }

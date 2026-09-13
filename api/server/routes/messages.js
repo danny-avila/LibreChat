@@ -26,6 +26,7 @@ const {
   mergeUserSubmittedPaths,
   mergeUserSubmittedMessageFieldPaths,
   isContentFilterError,
+  withoutTraceRefs,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
@@ -522,18 +523,14 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     if (await rejectSubagentThreadWrite(req, res, req.params.conversationId)) {
       return;
     }
-    const message = { ...req.body, conversationId: req.params.conversationId };
+    /** Trace sampling fields are ownership claims only the server writes. */
+    const message = withoutTraceRefs({ ...req.body, conversationId: req.params.conversationId });
     delete message.isUserSubmitted;
     delete message.userSubmittedPaths;
     delete message.userSubmittedMessageFieldPaths;
     /** Server-private run state: a client-authored row must never seed a run's
      * calibration or fading tiers, so the field only ever comes from the server. */
     delete message.contextMeta;
-    /** Trace sampling records which traces a response produced; the trace viewer and
-     * feedback scores treat them as ownership, so a client can never author them. */
-    delete message.langfuseSampled;
-    delete message.langfuseDestinationIds;
-    delete message.langfuseRunId;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,

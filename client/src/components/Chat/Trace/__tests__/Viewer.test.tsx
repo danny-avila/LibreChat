@@ -527,6 +527,33 @@ describe('Trace Viewer', () => {
     );
   });
 
+  it('rereads an open record detail when the trace is refreshed', async () => {
+    mockStartupConfig = { interface: { traceViewer: { enabled: true, showInputOutput: true } } };
+    renderViewer();
+    await userEvent.click(await treeItem(/llm/));
+    await waitFor(() => expect(dataService.getConversationTraceRecord).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_refresh' }));
+
+    await waitFor(() => expect(dataService.getConversationTraceRecord).toHaveBeenCalledTimes(2));
+  });
+
+  it('returns focus to the search field when closing the inspector after a filter hid every row', async () => {
+    renderViewer();
+    await userEvent.click(await treeItem(/llm/));
+    const search = screen.getByLabelText('com_ui_trace_search');
+    await userEvent.type(search, 'no-such-record');
+    expect(screen.queryByRole('tree')).not.toBeInTheDocument();
+
+    const inspector = screen.getByTestId('trace-inspector');
+    await userEvent.click(
+      within(inspector).getByRole('button', { name: 'com_ui_trace_close_details' }),
+    );
+
+    expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+  });
+
   it('closes the inspector on Escape before closing the trace', async () => {
     const { onClose } = renderViewer();
     await userEvent.click(await treeItem(/llm/));

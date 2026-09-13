@@ -118,7 +118,19 @@ function setup({
     }
     return next;
   });
-  const getConversationTraceRefs = jest.fn(async () => refs);
+  /** Same paging contract as the data-schemas query, which has its own database spec. */
+  const getConversationTraceRefs = jest.fn(
+    async ({ through, limit }: { through?: string; limit?: number } = {}) => {
+      const all = refs.sampledMessages;
+      const end =
+        through != null ? all.findIndex(({ messageId }) => messageId === through) : all.length - 1;
+      if (through != null && end === -1) {
+        return { ...refs, sampledMessages: [] };
+      }
+      const start = limit != null ? Math.max(0, end - limit + 1) : 0;
+      return { ...refs, sampledMessages: all.slice(start, end + 1) };
+    },
+  );
   /** Same rule as the data-schemas query, which has its own database spec. */
   const hasSampledTraceMessage = jest.fn(async ({ destinationIds }: { destinationIds: string[] }) =>
     refs.sampledMessages.some(
@@ -385,6 +397,13 @@ describe('createLangfuseTraceReader', () => {
       await expect(reader.getRecord({ ...query, recordId: 'obs-root' })).resolves.toBeNull();
       expect(hasSampledTraceMessage).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
+
+      const ignoredField = createQuery({
+        appConfig: {
+          langfuse: { trace: { userIdField: 'not-a-user-field' } },
+        } as unknown as AppConfig,
+      });
+      await expect(reader.isAvailable(ignoredField)).resolves.toEqual({ available: true });
     });
 
     it('reads a turn only its preferred project holds without asking any project first', async () => {
@@ -573,6 +592,78 @@ describe('createLangfuseTraceReader', () => {
       await expect(
         later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor }),
       ).rejects.toMatchObject({ code: 'upstream_error' });
+    });
+
+    it('loads sampled responses a segment at a time, ending at the turn a page starts from', async () => {
+      const sampledMessages = Array.from({ length: 60 }, (_, index) => ({
+        messageId: `response-${index}`,
+        langfuseDestinationIds: ['connection-id'],
+      }));
+      const refs = createRefs({ sampledMessages });
+      const first = setup({ refs, route: (request) => recordsFor(request, 'response-59') });
+
+      const page = await first.reader.listRecords(createQuery());
+
+      expect(first.getConversationTraceRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 51 }),
+      );
+      expect(first.getConversationTraceRefs.mock.calls[0][0]).not.toHaveProperty('through');
+      const later = setup({ refs, route: (request) => recordsFor(request, 'response-9') });
+      await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
+
+      expect(later.getConversationTraceRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ through: 'response-9', limit: 51 }),
+      );
+      expect(requestedTraceIds(later.fetchMock).sort()).toEqual(
+        tracesOf(...sampledMessages.slice(0, 10).map(({ messageId }) => messageId)).sort(),
+      );
+    });
+
+    it('moves to the next older window of responses within a request when a window has no records', async () => {
+      const sampledMessages = Array.from({ length: 60 }, (_, index) => ({
+        messageId: `response-${index}`,
+        langfuseDestinationIds: ['connection-id'],
+      }));
+      const { reader, getConversationTraceRefs } = setup({
+        refs: createRefs({ sampledMessages }),
+        route: (request) => recordsFor(request, 'response-3'),
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(page.records.map(({ id }) => id)).toEqual(['response-3']);
+      expect(page.nextCursor).toBeUndefined();
+      expect(getConversationTraceRefs.mock.calls.map(([input]) => input?.through)).toEqual([
+        undefined,
+        'response-9',
+      ]);
+    });
+
+    it('treats a root lookup that repeats its cursor as a failed project', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'legacy-response' }] }),
+        route: (request) => {
+          if (request.origin === TENANT && request.probe) {
+            return jsonResponse({
+              data: [{ id: 'root', traceId: traceIdForMessage('legacy-response') }],
+              meta: { cursor: 'same' },
+            });
+          }
+          return request.probe
+            ? rootsFor(request, 'legacy-response')
+            : recordsFor(request, 'legacy-response');
+        },
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(calls(fetchMock)).toEqual([
+        'probe tenant',
+        'probe tenant @same',
+        'probe central',
+        'read central',
+      ]);
+      expect(page).toMatchObject({ sourceId: 'central-id' });
     });
 
     it('bounds how many turns one read asks a project for', async () => {

@@ -130,6 +130,7 @@ describe('trace routes', () => {
       user: 'owner',
       conversationId: 'convo-1',
       tenantId: undefined,
+      limit: 51,
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(new URL(url).origin).toBe('https://langfuse.route.test');

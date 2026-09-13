@@ -123,6 +123,31 @@ describe('getConversationTraceRefs', () => {
     expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['first', 'second']);
   });
 
+  it('reads a bounded page of sampled responses ending at an anchor', async () => {
+    await seed(
+      [1, 2, 3, 4, 5].map((index) => ({
+        messageId: `response-${index}`,
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(index),
+        langfuseSampled: true,
+      })),
+    );
+    const page = (input: { through?: string; limit?: number }) =>
+      methods
+        .getConversationTraceRefs({ user: 'owner', conversationId: 'convo', ...input })
+        .then((refs) => refs.sampledMessages.map(({ messageId }) => messageId));
+
+    await expect(page({ limit: 2 })).resolves.toEqual(['response-4', 'response-5']);
+    await expect(page({ through: 'response-3', limit: 2 })).resolves.toEqual([
+      'response-2',
+      'response-3',
+    ]);
+    await expect(page({ through: 'response-1', limit: 2 })).resolves.toEqual(['response-1']);
+    await expect(page({ through: 'deleted-response', limit: 2 })).resolves.toEqual([]);
+    await expect(page({})).resolves.toHaveLength(5);
+  });
+
   it('never treats a client-authored row as a sampled response', async () => {
     await seed([
       {

@@ -1,7 +1,7 @@
 import { useId, useRef, useMemo, useState, useEffect, useCallback, useDeferredValue } from 'react';
 import axios from 'axios';
 import { useQueryClient } from '@tanstack/react-query';
-import { resolveTraceViewerConfig } from 'librechat-data-provider';
+import { QueryKeys, resolveTraceViewerConfig } from 'librechat-data-provider';
 import { Button, Spinner, EmptyState, FilterInput, buttonVariants } from '@librechat/client';
 import {
   X,
@@ -108,6 +108,8 @@ export default function Viewer({
     setLastRead('refresh');
     keepNewestTracePage(queryClient, conversationId);
     recordsQuery.refetch();
+    /** An open record may have finished or finished ingesting since its detail loaded. */
+    queryClient.invalidateQueries([QueryKeys.conversationTraceRecord, conversationId]);
   }, [queryClient, conversationId, recordsQuery]);
   const loadOlder = useCallback(() => {
     setLastRead('older');
@@ -182,8 +184,9 @@ export default function Viewer({
 
   const closeInspector = useCallback(() => {
     setSelectedId(null);
-    treeRef.current?.focus();
-  }, []);
+    /** A filter that matches nothing unmounts the tree; the search field is what is left to return to. */
+    (treeRef.current ?? document.getElementById(searchId))?.focus();
+  }, [searchId]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented) {
