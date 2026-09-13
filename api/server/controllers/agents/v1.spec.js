@@ -3133,19 +3133,19 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       );
     });
 
-    test('revertAgentVersionHandler rejects an active stale workspace binding', async () => {
+    test('revertAgentVersionHandler rejects a stale binding that inherits active sessions', async () => {
       const agent = await Agent.create({
         id: `agent_${uuidv4()}`,
         name: 'Current Agent',
         provider: 'openai',
         model: 'gpt-4',
         author: mockReq.user.id,
+        stateful_code_sessions: true,
         versions: [
           {
-            name: 'Active Historical BYOM Agent',
+            name: 'Historical BYOM Agent',
             provider: 'openai',
             model: 'gpt-4',
-            stateful_code_sessions: true,
             code_environment_id: 'removed-vm',
             code_workspace_id: 'project-a',
           },
