@@ -734,6 +734,62 @@ function resolveBuiltInClientOverrides(
   return Object.keys(shaping).length > 0 ? shaping : undefined;
 }
 
+/** Azure Responses shares OpenAI's SDK provider, so switching endpoints must replace its transport. */
+function resolveOpenAISummarization(
+  model: string,
+  appConfig: AppConfig | undefined,
+  parameters: SummarizationConfig['parameters'],
+  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+): { provider: string; clientOverrides: SummarizationClientOverrides } {
+  const parameterConfig = parameters?.configuration as t.OpenAIConfiguration;
+  const baseURL =
+    parameterConfig?.baseURL ??
+    (typeof parameters?.baseURL === 'string'
+      ? parameters.baseURL
+      : getBuiltInBaseURL(EModelEndpoint.openAI));
+  const apiKey =
+    typeof parameters?.apiKey === 'string' ? parameters.apiKey : process.env.OPENAI_API_KEY;
+  if (!apiKey || isUserProvided(baseURL ?? undefined) || isUserProvided(apiKey)) {
+    throw new Error('OpenAI summarization requires server-configured credentials and a base URL.');
+  }
+  const headers = mergeHeaders(
+    appConfig?.endpoints?.all?.headers,
+    appConfig?.endpoints?.openAI?.headers,
+  );
+  const { llmConfig, configOptions } = getOpenAIConfig(
+    apiKey,
+    {
+      modelOptions: {
+        model,
+        reasoning_effort: summarizationReasoningEffort(parameters),
+        useResponsesApi:
+          typeof parameters?.useResponsesApi === 'boolean' ? parameters.useResponsesApi : undefined,
+      },
+      reverseProxyUrl: baseURL,
+      proxy: process.env.PROXY ?? undefined,
+      headers: resolveModelHeaders({
+        headers: headers ?? {},
+        user: createSafeUser(headerContext.user),
+        tenantId: headerContext.tenantId,
+        body: headerContext.requestBody,
+      }),
+    },
+    EModelEndpoint.openAI,
+  );
+  return {
+    provider: Providers.OPENAI,
+    clientOverrides: {
+      ...llmConfig,
+      apiKey,
+      useResponsesApi: llmConfig.useResponsesApi ?? false,
+      firstPartyEndpoint: llmConfig.firstPartyEndpoint ?? false,
+      reasoning: llmConfig.reasoning,
+      modelKwargs: llmConfig.modelKwargs ?? {},
+      configuration: configOptions,
+    },
+  };
+}
+
 /** Resolve the summary model's deployment and transport before the SDK inherits agent options. */
 function resolveAzureSummarization(
   model: string,
@@ -1002,7 +1058,7 @@ function shapeSummarizationConfig(
 
   const targetsAzure =
     rawProvider === EModelEndpoint.azureOpenAI ||
-    (agentEndpoint === EModelEndpoint.azureOpenAI && rawProvider === fallbackProvider);
+    (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null);
   const azureOverrides =
     targetsAzure &&
     isNonEmptyString(model) &&
@@ -1010,7 +1066,15 @@ function shapeSummarizationConfig(
     (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel)
       ? resolveAzureSummarization(model, appConfig, config?.parameters, headerContext)
       : undefined;
+  const openAIOverrides =
+    agentEndpoint === EModelEndpoint.azureOpenAI &&
+    config?.provider === EModelEndpoint.openAI &&
+    config.enabled !== false &&
+    isNonEmptyString(model)
+      ? resolveOpenAISummarization(model, appConfig, config.parameters, headerContext)
+      : undefined;
   const { provider, clientOverrides } =
+    openAIOverrides ??
     azureOverrides ??
     (isSameEndpointAsAgent
       ? { provider: fallbackProvider, clientOverrides: undefined }

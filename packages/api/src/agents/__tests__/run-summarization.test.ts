@@ -975,6 +975,66 @@ describe('summarization reasoning effort', () => {
   });
 });
 
+async function compactSummary(agents: Array<Record<string, unknown>>) {
+  const summaryConfig = agents[0].summarizationConfig as NonNullable<
+    AgentInputs['summarizationConfig']
+  >;
+  const clientOptions = agents[0].clientOptions as { configuration?: OpenAIConfiguration };
+  const configuration = {
+    ...((summaryConfig.parameters?.configuration ??
+      clientOptions.configuration) as OpenAIConfiguration),
+  };
+  summaryConfig.parameters = { ...summaryConfig.parameters, configuration };
+  const requests: {
+    url: URL;
+    headers: Headers;
+    body: OpenAI.ChatCompletionCreateParams & OpenAI.Responses.ResponseCreateParams;
+  }[] = [];
+  configuration.fetch = async (url, init) => {
+    requests.push({
+      url: new URL(String(url)),
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+    });
+    const text = 'The user asked for arithmetic and the assistant calculated four.';
+    return Response.json({
+      id: 'summary-response',
+      model: 'summary-production',
+      object: 'response',
+      status: 'completed',
+      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+      output: [
+        {
+          type: 'message',
+          id: 'msg_summary',
+          role: 'assistant',
+          status: 'completed',
+          content: [{ type: 'output_text', text, annotations: [] }],
+        },
+      ],
+      usage: {
+        prompt_tokens: 20,
+        completion_tokens: 10,
+        input_tokens: 20,
+        output_tokens: 10,
+        total_tokens: 30,
+      },
+    });
+  };
+  const actual = jest.requireActual<typeof import('@librechat/agents')>('@librechat/agents');
+  const runConfig = (Run.create as jest.Mock).mock.calls[0][0] as Parameters<typeof Run.create>[0];
+  const run = await actual.Run.create({
+    ...runConfig,
+    tokenCounter: (message) => String(message.content).length,
+  });
+  await run.processStream(
+    { messages: [new HumanMessage('Compute 2 + 2.'), new AIMessage('4')] },
+    { version: 'v2', configurable: { thread_id: 'azure-summary-test' } },
+  );
+
+  return { requests };
+}
+
 describe('Azure deployment alias', () => {
   /** `initializeAgent` maps an Azure Responses agent to the OpenAI provider. */
   const azureAstraAgent = () => {
@@ -1040,6 +1100,119 @@ describe('Azure deployment alias', () => {
     expect(summaryRequestModel(mainClientOptions, summaryConfig)).toBe('production-deployment');
   });
 
+  it.each<{
+    model: string;
+    deployed: boolean;
+    proxy?: string;
+    parameters?: SummarizationConfig['parameters'];
+  }>([
+    { model: 'gpt-4.1-mini', deployed: false, proxy: undefined },
+    { model: 'gpt-4.1-mini', deployed: true, proxy: undefined },
+    { model: 'gpt-6-astra', deployed: true, proxy: undefined },
+    { model: 'gpt-4.1-mini', deployed: false, proxy: 'https://summary-gateway.example/v1' },
+    {
+      model: 'gpt-6-astra',
+      deployed: true,
+      parameters: { useResponsesApi: false, apiKey: 'override-key' },
+    },
+    {
+      model: 'gpt-4.1-mini',
+      deployed: false,
+      parameters: { baseURL: 'https://per-summary.example/v1', useResponsesApi: true },
+    },
+  ])(
+    'honors explicit OpenAI for $model (Azure deployed: $deployed, proxy: $proxy)',
+    async ({ model, deployed, proxy, parameters }) => {
+      jest.replaceProperty(process, 'env', {
+        ...process.env,
+        OPENAI_API_KEY: 'openai-summary-key',
+        OPENAI_REVERSE_PROXY: proxy,
+      });
+      const appConfig = makeAppConfig([]);
+      appConfig.endpoints!.all = { headers: { 'X-Global': 'global' } };
+      appConfig.endpoints!.openAI = { headers: { 'X-Summary': 'openai' } };
+      appConfig.endpoints!.azureOpenAI = {
+        isValid: true,
+        errors: [],
+        modelNames: deployed ? [model] : [],
+        modelGroupMap: deployed ? { [model]: { group: 'azure' } } : {},
+        groupMap: {
+          azure: {
+            apiKey: 'test-azure-key',
+            instanceName: 'test-instance',
+            version: '2025-04-01-preview',
+            models: { [model]: { deploymentName: 'production-deployment' } },
+          },
+        },
+      };
+      const agents = await callAndCapture({
+        agents: [azureAstraAgent()],
+        appConfig,
+        summarizeOnly: true,
+        summarizationConfig: {
+          provider: EModelEndpoint.openAI,
+          model,
+          parameters: { streaming: false, ...parameters },
+        },
+      });
+      const { requests } = await compactSummary(agents);
+      expect(requests).toHaveLength(1);
+      const { url, headers, body } = requests[0];
+      const baseURL = parameters?.baseURL ?? proxy;
+      expect(url.origin).toBe(
+        typeof baseURL === 'string' ? new URL(baseURL).origin : 'https://api.openai.com',
+      );
+      const usesResponses = parameters?.useResponsesApi ?? model === 'gpt-6-astra';
+      expect(url.pathname).toBe(usesResponses ? '/v1/responses' : '/v1/chat/completions');
+      expect(url.search).toBe('');
+      expect(headers.get('authorization')).toBe(
+        `Bearer ${parameters?.apiKey ?? 'openai-summary-key'}`,
+      );
+      expect(headers.has('api-key')).toBe(false);
+      expect(headers.get('X-Global')).toBe('global');
+      expect(headers.get('X-Summary')).toBe('openai');
+      expect(body.model).toBe(model);
+      expect(body).not.toHaveProperty('max_output_tokens', 2048);
+      expect((agents[0].clientOptions as OpenAIConfiguration)?.apiKey).toBe('test-azure-key');
+    },
+  );
+
+  it('does not fall back to Azure credentials when the OpenAI key is missing', async () => {
+    jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: undefined });
+    await expect(
+      callAndCapture({
+        agents: [azureAstraAgent()],
+        appConfig: makeAppConfig([]),
+        summarizeOnly: true,
+        summarizationConfig: {
+          provider: EModelEndpoint.openAI,
+          model: 'gpt-4.1-mini',
+          parameters: { streaming: false },
+        },
+      }),
+    ).rejects.toThrow(
+      'OpenAI summarization requires server-configured credentials and a base URL.',
+    );
+    expect(Run.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['OPENAI_API_KEY', 'OPENAI_REVERSE_PROXY'])(
+    'rejects an unresolved user-provided %s instead of inheriting Azure',
+    async (setting) => {
+      jest.replaceProperty(process, 'env', { ...process.env, [setting]: 'user_provided' });
+      await expect(
+        callAndCapture({
+          agents: [azureAstraAgent()],
+          appConfig: makeAppConfig([]),
+          summarizationConfig: { provider: EModelEndpoint.openAI, model: 'gpt-4.1-mini' },
+        }),
+      ).rejects.toThrow(
+        'OpenAI summarization requires server-configured credentials and a base URL.',
+      );
+      expect(Run.create).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     { summaryModel: 'gpt-4.1-mini', instance: 'test-instance', provider: undefined },
     {
@@ -1080,62 +1253,7 @@ describe('Azure deployment alias', () => {
         summarizeOnly: true,
         summarizationConfig: { model: summaryModel, provider, parameters: { streaming: false } },
       });
-      const summaryConfig = agents[0].summarizationConfig as NonNullable<
-        AgentInputs['summarizationConfig']
-      >;
-      const parameters = summaryConfig.parameters!;
-      const configuration = parameters.configuration as NonNullable<OpenAIConfiguration>;
-      const requests: {
-        url: URL;
-        headers: Headers;
-        body: OpenAI.ChatCompletionCreateParams & OpenAI.Responses.ResponseCreateParams;
-      }[] = [];
-      configuration.fetch = async (url, init) => {
-        requests.push({
-          url: new URL(String(url)),
-          headers: new Headers(init?.headers),
-          body: JSON.parse(String(init?.body)),
-        });
-        const text = 'The user asked for arithmetic and the assistant calculated four.';
-        return Response.json({
-          id: 'summary-response',
-          model: 'summary-production',
-          object: 'response',
-          status: 'completed',
-          choices: [
-            { index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' },
-          ],
-          output: [
-            {
-              type: 'message',
-              id: 'msg_summary',
-              role: 'assistant',
-              status: 'completed',
-              content: [{ type: 'output_text', text, annotations: [] }],
-            },
-          ],
-          usage: {
-            prompt_tokens: 20,
-            completion_tokens: 10,
-            input_tokens: 20,
-            output_tokens: 10,
-            total_tokens: 30,
-          },
-        });
-      };
-      const actual = jest.requireActual<typeof import('@librechat/agents')>('@librechat/agents');
-      const runConfig = (Run.create as jest.Mock).mock.calls[0][0] as Parameters<
-        typeof Run.create
-      >[0];
-      const run = await actual.Run.create({
-        ...runConfig,
-        tokenCounter: (message) => String(message.content).length,
-      });
-      await run.processStream(
-        { messages: [new HumanMessage('Compute 2 + 2.'), new AIMessage('4')] },
-        { version: 'v2', configurable: { thread_id: 'azure-summary-test' } },
-      );
-
+      const { requests } = await compactSummary(agents);
       expect(requests).toHaveLength(1);
       const { url, headers, body } = requests[0];
       const usesResponses = summaryModel.startsWith('gpt-6-astra');
