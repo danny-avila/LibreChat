@@ -59,7 +59,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   /** A conversation carries a footer only for configured content, and the
    *  composer's clearance has to account for the bar when it does — including
-   *  while the config is still in flight, so a cold load does not jump. */
+   *  before the config answers, so a cold load does not jump. */
   const configuredFooter = useConfiguredFooter();
 
   const methods = useForm<ChatFormValues>({
@@ -114,10 +114,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     (conversationId === Constants.NEW_CONVO || !conversationId);
 
   /** A footer bar renders beneath the composer on the welcome screen always, and
-   *  in a conversation when the deployment configured one. `present` already
-   *  carries the remembered answer while the config is in flight, so this is the
-   *  same value before and after it resolves. */
-  const footerBelow = isLandingPage || configuredFooter.present;
+   *  in a conversation when the deployment configured one. The shell already
+   *  carried that answer, so this is the same value before and after the config
+   *  resolves. */
+  const footerBelow = isLandingPage || configuredFooter;
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
 
@@ -214,7 +214,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                         {/* The generic disclaimer is the welcome screen's; a
                             deployment's own footer, privacy policy and terms
                             stay with the conversation that always showed them. */}
-                        {!isLandingPage && configuredFooter.present && <Footer configuredOnly />}
+                        {!isLandingPage && configuredFooter && <Footer configuredOnly />}
                       </div>
                     </div>
                     {isLandingPage && <Footer />}

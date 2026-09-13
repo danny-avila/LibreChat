@@ -43,6 +43,7 @@ const {
   setPluginHookSource,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
+  injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -283,6 +284,14 @@ const startServer = async () => {
       indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
     }
   }
+
+  /* The composer lays out against whether a footer bar sits beneath it, and
+     `/api/config` answers that only after it has painted. The answer is a
+     deployment-lifetime fact, so it is baked into the shell once here. */
+  indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
+    customFooter: process.env.CUSTOM_FOOTER,
+    interfaceConfig: appConfig?.interfaceConfig,
+  });
 
   const cspPolicy = createCspPolicy();
   const shellCache = shellCacheHeaders(cspPolicy != null);

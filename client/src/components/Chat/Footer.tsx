@@ -1,11 +1,9 @@
 import React, { useEffect, memo } from 'react';
-import { useAtom } from 'jotai';
 import TagManager from 'react-gtm-module';
 import ReactMarkdown from 'react-markdown';
-import { Constants } from 'librechat-data-provider';
+import { Constants, hasConfiguredFooter } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
-import { configuredFooterAtom } from './footerMemory';
 import { useLocalize } from '~/hooks';
 
 type FooterProps = {
@@ -24,15 +22,17 @@ type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'cus
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
-export type ConfiguredFooter = {
-  /** Whether a footer bar belongs under the composer in a conversation: the
-   *  deployment configured a custom footer, a privacy policy or terms of
-   *  service. Before the startup config answers this is the answer the last
-   *  load recorded, which is what keeps a cold load from laying out twice. */
-  present: boolean;
-  /** The startup config has answered on this load. */
-  resolved: boolean;
-};
+/**
+ * Whether the deployment configured footer content of its own, as the server
+ * said when it served this document (`injectConfiguredFooterBootstrap`).
+ *
+ * Read once at module load: it is a property of the document, and an answer
+ * that arrived a render later would be the guess this replaces. A shell that
+ * carries no answer — the Vite dev server serves `client/index.html` itself —
+ * reads as no footer, which is the default deployment.
+ */
+const shellHasConfiguredFooter =
+  typeof window !== 'undefined' && window.__LIBRECHAT_CONFIG__?.hasConfiguredFooter === true;
 
 /**
  * What a conversation has to render beneath its composer. The conversation
@@ -41,26 +41,14 @@ export type ConfiguredFooter = {
  * zero-height wrapper, so a composer that did not reserve it would be painted
  * over. Both decisions read this one answer so they cannot disagree.
  *
- * While `/api/config` is in flight the answer is the one this deployment gave
- * last (`configuredFooterAtom`), so a cold load lays out once instead of
- * guessing and correcting. Only a successful response replaces it: a request
- * that exhausted its retries has answered nothing.
+ * Until `/api/config` answers, that answer is the shell's, which is the same
+ * one the config will give: the deployment a cold load lands on is the
+ * deployment that served the document.
  */
-export function useConfiguredFooter(): ConfiguredFooter {
+export function useConfiguredFooter(): boolean {
   const { data: config, isSuccess } = useGetStartupConfig();
-  const [remembered, remember] = useAtom(configuredFooterAtom);
-  const configured =
-    typeof config?.customFooter === 'string' ||
-    config?.interface?.privacyPolicy?.externalUrl != null ||
-    config?.interface?.termsOfService?.externalUrl != null;
 
-  useEffect(() => {
-    if (isSuccess && configured !== remembered) {
-      remember(configured);
-    }
-  }, [configured, isSuccess, remembered, remember]);
-
-  return { present: isSuccess ? configured : remembered, resolved: isSuccess };
+  return isSuccess ? hasConfiguredFooter(config) : shellHasConfiguredFooter;
 }
 
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {

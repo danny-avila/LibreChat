@@ -676,8 +676,13 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    /** Answers the server emits with the document, ahead of the app's own
+     *  scripts, for questions the first render must not guess at. */
     __LIBRECHAT_CONFIG__?: {
       enableQueryDevtools?: boolean;
+      /** Whether this deployment configured footer content of its own, so the
+       *  composer reserves the footer bar's band on its first frame. */
+      hasConfiguredFooter?: boolean;
     };
   }
 }

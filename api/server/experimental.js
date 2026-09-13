@@ -37,6 +37,7 @@ const {
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
+  injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -550,6 +551,14 @@ if (cluster.isMaster) {
         indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
       }
     }
+
+    /* The composer lays out against whether a footer bar sits beneath it, and
+       `/api/config` answers that only after it has painted. One shell serves
+       every request, so the answer comes from the base config, like index.js. */
+    indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
+      customFooter: process.env.CUSTOM_FOOTER,
+      interfaceConfig: baseAppConfig?.interfaceConfig,
+    });
 
     const cspPolicy = createCspPolicy();
     const shellCache = shellCacheHeaders(cspPolicy != null);
