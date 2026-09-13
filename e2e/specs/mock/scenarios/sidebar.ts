@@ -20,11 +20,15 @@ export async function openSidebar(page: Page) {
   }
 }
 
-/** Touch has no hover, so the control is revealed rather than pointed at. */
+/** The row mounts its real menu on the first mouse enter or focus (`Convo.tsx`). Touch has
+ * neither, and a real `hover()` waits for actionability the mobile drawer cannot always offer,
+ * so the reveal is dispatched rather than pointed: `dispatchEvent` only needs the element to be
+ * attached, which is exactly the precondition that holds here. */
 export async function openConversationMenu(row: Locator) {
   const menu = row.getByRole('button', { name: 'Conversation Menu Options' });
   if (!(await menu.isVisible().catch(() => false))) {
-    await row.hover();
+    await row.dispatchEvent('mouseenter');
   }
+  await expect(menu).toBeAttached();
   await menu.dispatchEvent('click');
 }

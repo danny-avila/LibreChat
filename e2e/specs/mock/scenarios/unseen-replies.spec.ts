@@ -261,6 +261,11 @@ test.describe('unseen replies', () => {
         await second.bringToFront();
         await unfocus(page);
         await sendMessageAndWaitForCompletion(second, `E2E_REPLY:other-tab-${id.slice(0, 8)}`);
+        /* Back to the front, still away: a backgrounded tab has its timers throttled, so the
+         * 30-second away poll this scenario is about may simply never run inside the budget.
+         * `unfocus` keeps the app in away mode while the browser keeps the page live. */
+        await page.bringToFront();
+        await unfocus(page);
         /* The reply tab also marks its active conversation read; restore the remote tab's
          * unread baseline so the first tab observes the new response stamp. */
         await restoreUnreadBaseline(id, now(), replyAt);
