@@ -98,7 +98,13 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     return agents;
   }, [data?.pages]);
 
-  const hasData = currentAgents.length > 0;
+  /**
+   * `keepPreviousData` deliberately leaves the prior query's pages in `data` while a
+   * replacement scope is loading or failing. Those rows belong to another search/filter
+   * scope and must not remain actionable while the new request reports its result.
+   */
+  const visibleAgents = isPreviousData ? [] : currentAgents;
+  const hasData = visibleAgents.length > 0;
   const scopeKey = useMemo(() => JSON.stringify(queryParams), [queryParams]);
   /**
    * react-query drops `error` for the duration of a retry, so rendering straight off it
@@ -229,12 +235,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
    * swapping it out for a failure or an empty result would tear an open dialog down
    * mid-flight and leave keyboard focus on a detached card.
    *
-   * With rows already loaded the grid renders it after them, which on a list several
-   * viewports tall is below everything the reader can see. A failure nobody scrolls to
-   * looks like a healthy marketplace that has quietly stopped loading, so the card is
-   * pinned to the bottom of the scroll frame instead: its status, countdown, retry and
-   * eventual reload link stay on screen wherever the reader already was. Without rows
-   * there is nothing to pin it over and it is the whole of the page.
+   * With rows already loaded the grid renders it before them so keyboard and reading order
+   * reach recovery immediately. It is pinned to the top of the scroll frame: sticky bottom
+   * would only remain visible when the card's flow position had already passed the viewport,
+   * while this card starts before the rows and must stay visible as they scroll underneath it.
+   * Without rows there is nothing to pin it over and it is the whole of the page.
    */
   let listPlaceholder: React.ReactNode = null;
   if (failure) {
@@ -259,9 +264,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       />
     );
     listPlaceholder = hasData ? (
-      /* The wrapper takes no pointer events so the rows it overlaps stay clickable;
-         the card itself takes them back for its retry and reload controls. */
-      <div className="pointer-events-none sticky bottom-0 z-10 flex justify-center pt-5">
+      /* This is before the rows for direct keyboard access; the top pin is intentional because
+         a bottom pin on an element before the list would scroll away with its flow position.
+         The wrapper takes no pointer events so the rows it overlaps stay clickable; the card
+         itself takes them back for its retry and reload controls. */
+      <div className="pointer-events-none sticky top-0 z-10 flex justify-center pb-5">
         <div className="pointer-events-auto w-full max-w-xl rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
           {errorCard}
         </div>
@@ -303,7 +310,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
               aria-atomic="true"
             >
               {localize('com_agents_grid_announcement', {
-                count: currentAgents?.length || 0,
+                count: visibleAgents?.length || 0,
                 category: getCategoryDisplayName(category),
               })}
             </div>
@@ -311,10 +318,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({
 
           <VirtualizedAgentGrid
             key={scopeKey}
-            agents={currentAgents}
+            agents={visibleAgents}
             scrollElementRef={scrollElementRef}
             label={localize('com_agents_grid_announcement', {
-              count: currentAgents.length,
+              count: visibleAgents.length,
               category: getCategoryDisplayName(category),
             })}
             hasNextPage={(hasNextPage ?? false) && !failure}

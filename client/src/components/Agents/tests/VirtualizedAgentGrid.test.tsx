@@ -151,4 +151,16 @@ describe('VirtualizedAgentGrid', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 4' })).toHaveFocus());
     await waitFor(() => expect(frame.scrollTop).toBeLessThan(32000));
   });
+  it('restores focus to the same agent after a reorder remounts its row', async () => {
+    const agents = makeAgents(3);
+    const view = render(<Harness agents={agents} />);
+    const target = await screen.findByRole('button', { name: 'Agent 0' });
+
+    act(() => target.focus());
+    expect(target).toHaveFocus();
+
+    view.rerender(<Harness agents={[agents[1], agents[0], agents[2]]} />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 0' })).toHaveFocus());
+  });
 });

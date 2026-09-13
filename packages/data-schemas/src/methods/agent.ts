@@ -195,8 +195,10 @@ function castCursorPrimary(
  * Decodes a base64 cursor produced by `encodeAgentSortCursor`, returning `null` for
  * anything the caller should treat as "start from page one": malformed base64/JSON, a
  * `secondary` that is not an ObjectId, a `primary` that does not parse as the current
- * mode's value type, or a cursor minted before sort modes existed (which had no
- * `primary` key at all).
+ * mode's value type, or a legacy cursor used with a mode other than `recent`.
+ *
+ * Legacy cursors carry only `updatedAt` and `_id`; they are accepted for `recent` because
+ * that mode preserves the old updated-time ordering, including its value type and tie-break.
  *
  * Validating `primary` matters because it flows straight into a Mongo query: without
  * this, a hand-edited `{"primary": null, ...}` reaches the driver as an `Invalid Date`.
@@ -204,7 +206,22 @@ function castCursorPrimary(
 function decodeAgentSortCursor(after: string, sort: AgentListSortOption): AgentSortCursor | null {
   try {
     const decoded = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-    if (typeof decoded?.primary === 'undefined' || typeof decoded?.secondary !== 'string') {
+    const hasPrimary = typeof decoded?.primary !== 'undefined';
+    if (!hasPrimary) {
+      /* Old instances emitted only this pair for their updatedAt-desc/_id-asc walk.
+       * It is readable here only for `recent`, whose field, value type, and directions
+       * are identical; other modes must not resume a different ordering. */
+      if (
+        sort !== 'recent' ||
+        typeof decoded?.updatedAt !== 'string' ||
+        typeof decoded?._id !== 'string'
+      ) {
+        return null;
+      }
+      decoded.primary = decoded.updatedAt;
+      decoded.secondary = decoded._id;
+    }
+    if (typeof decoded?.secondary !== 'string') {
       return null;
     }
     if (!OBJECT_ID_HEX.test(decoded.secondary)) {
@@ -899,6 +916,10 @@ export function createAgentMethods(
       skipVersioning?: boolean;
     },
   ) => Promise<IAgent | null>;
+  updateAgentAvatar: (params: {
+    id: string;
+    avatar: { filepath: string; source: string };
+  }) => Promise<boolean>;
   deleteAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
   deleteUserAgents: (userId: string) => Promise<void>;
   revertAgentVersion: (
@@ -1421,6 +1442,19 @@ export function createAgentMethods(
     }
 
     return updatedAgent;
+  }
+
+  /** Updates only the stored avatar metadata; maintenance must not advance list cursors. */
+  async function updateAgentAvatar({
+    id,
+    avatar,
+  }: {
+    id: string;
+    avatar: { filepath: string; source: string };
+  }): Promise<boolean> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const result = await Agent.updateOne({ id }, { $set: { avatar } }, { timestamps: false });
+    return result.matchedCount > 0;
   }
 
   /**
@@ -2393,6 +2427,7 @@ export function createAgentMethods(
     getAgentIdsByMCPServerName,
     getAgentsWithMCPServerNames,
     updateAgent,
+    updateAgentAvatar,
     deleteAgent,
     deleteUserAgents,
     revertAgentVersion,
