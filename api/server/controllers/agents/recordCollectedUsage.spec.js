@@ -112,6 +112,28 @@ describe('AgentClient - recordCollectedUsage', () => {
       );
     });
 
+    it('labels the estimate as an abort when the run was stopped and no context is given', async () => {
+      client.abortController = { signal: { aborted: true } };
+
+      await client.recordTokenUsage({ ...estimate, usage: undefined, model: 'gpt-4' });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ context: 'abort' }),
+        estimate,
+      );
+    });
+
+    it('labels the estimate as a message when the run completed and no context is given', async () => {
+      client.abortController = { signal: { aborted: false } };
+
+      await client.recordTokenUsage({ ...estimate, usage: undefined, model: 'gpt-4' });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ context: 'message' }),
+        estimate,
+      );
+    });
+
     it('still bills the estimate when the recorded report is all zero', async () => {
       await client.recordTokenUsage({
         ...estimate,

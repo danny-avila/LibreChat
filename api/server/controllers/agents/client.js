@@ -6148,13 +6148,13 @@ class AgentClient extends BaseClient {
     transactions,
     promptTokens,
     completionTokens,
-    context = 'message',
+    context,
   }) {
     await recordFallbackTokenUsage(
       { spendTokens: db.spendTokens },
       {
         usage,
-        context,
+        context: context ?? resolveRunUsageContext(this.abortController?.signal?.aborted === true),
         promptTokens,
         completionTokens,
         txMetadata: {
