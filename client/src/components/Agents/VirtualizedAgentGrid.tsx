@@ -181,7 +181,8 @@ export default function VirtualizedAgentGrid({
    */
   let selectedAgent: t.Agent | null = null;
   if (selection != null) {
-    selectedAgent = selectedIndex != null ? agents[selectedIndex] : selection.agent;
+    selectedAgent =
+      selectedIndex != null ? agents[selectedIndex] : (selectedAgentQuery.data ?? selection.agent);
   }
 
   const getScrollElement = useCallback(() => scrollElementRef.current, [scrollElementRef]);

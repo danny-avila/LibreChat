@@ -103,26 +103,29 @@ function isValidDisplayName(varRef: string): AggregationExpression {
   };
 }
 
+export type AgentListSortOption = AgentSortOption | 'recent';
+
 /**
  * How each marketplace sort mode orders the agent list, and how a cursor taken from
  * that ordering has to be read back.
  *
- * `createdAt` is stored, while popularity counts and author display names are
- * computed for their respective paths. Each mode applies its cursor predicate
- * before selecting the next page.
+ * `createdAt` is stored, while popularity counts and author display names are computed for
+ * their respective paths. Each mode applies its cursor predicate before selecting the next
+ * page.
  *
- * The `_id` tie-break is ascending for every mode except 'oldest'. The latter
- * reverses both keys so MongoDB can scan the existing `{ createdAt: -1, _id: 1 }`
- * index backwards without requiring a second ascending index.
+ * The cursor version is part of the ordering identity. Bump the version whenever an ordering's
+ * comparison semantics change, or an older reader will resume a walk under semantics that no
+ * longer exist. Cursors without a version are version 1 for rolling-deployment compatibility.
+ *
+ * `'recent'` is not a marketplace mode: it is the order this endpoint has always served when
+ * nothing asks for one — most recently edited first — and the agent selector, the mention menu
+ * and the schedule pickers still rely on it. The marketplace's own default, `'newest'`, orders
+ * by creation instead, so it has to be requested explicitly.
+ *
+ * The `_id` tie-break is ascending for every mode except 'oldest'. The latter reverses both
+ * keys so MongoDB can scan the existing `{ createdAt: -1, _id: 1 }` index backwards without
+ * requiring a second ascending index.
  */
-/**
- * `'recent'` is not a marketplace mode: it is the order this endpoint has always served
- * when nothing asks for one — most recently edited first — and the agent selector, the
- * mention menu and the schedule pickers still rely on it. The marketplace's own default,
- * `'newest'`, orders by creation instead, so it has to be requested explicitly.
- */
-export type AgentListSortOption = AgentSortOption | 'recent';
-
 const AGENT_SORT_CONFIG: Record<
   AgentListSortOption,
   {
@@ -130,13 +133,45 @@ const AGENT_SORT_CONFIG: Record<
     direction: 1 | -1;
     tieBreakDirection: 1 | -1;
     valueType: 'date' | 'number' | 'string';
+    version: number;
   }
 > = {
-  recent: { field: 'updatedAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
-  newest: { field: 'createdAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
-  oldest: { field: 'createdAt', direction: 1, tieBreakDirection: -1, valueType: 'date' },
-  popular: { field: 'favoriteCount', direction: -1, tieBreakDirection: 1, valueType: 'number' },
-  author: { field: 'authorSortKey', direction: 1, tieBreakDirection: 1, valueType: 'string' },
+  recent: {
+    field: 'updatedAt',
+    direction: -1,
+    tieBreakDirection: 1,
+    valueType: 'date',
+    version: 1,
+  },
+  newest: {
+    field: 'createdAt',
+    direction: -1,
+    tieBreakDirection: 1,
+    valueType: 'date',
+    version: 1,
+  },
+  oldest: {
+    field: 'createdAt',
+    direction: 1,
+    tieBreakDirection: -1,
+    valueType: 'date',
+    version: 1,
+  },
+  popular: {
+    field: 'favoriteCount',
+    direction: -1,
+    tieBreakDirection: 1,
+    valueType: 'number',
+    version: 1,
+  },
+  // Version 2 records the normalized (`$toLower`) comparison key.
+  author: {
+    field: 'authorSortKey',
+    direction: 1,
+    tieBreakDirection: 1,
+    valueType: 'string',
+    version: 2,
+  },
 };
 
 /**
@@ -221,9 +256,13 @@ function castCursorPrimary(
  * by a reader that implements that ordering. A cursor that cannot be honored is an error,
  * never a silent restart.
  *
- * Legacy cursors carry only `updatedAt` and `_id`; they name `recent`, whose ordering
- * preserves the old updated-time walk. A cursor naming another ordering is a mismatch,
- * while malformed data is unreadable; both are fail-closed.
+ * The `sort`/`version` pair is the ordering identity. Bump the version whenever an ordering's
+ * comparison semantics change, or an older reader will resume a walk under semantics that no
+ * longer exist. Cursors without a version are version 1 for rolling-deployment compatibility.
+ *
+ * Legacy cursors carry only `updatedAt` and `_id`; they name `recent`, whose ordering preserves
+ * the old updated-time walk. A cursor naming another ordering is a mismatch, while malformed
+ * data is unreadable; both are fail-closed.
  */
 function decodeAgentSortCursor(
   after: string,
@@ -260,6 +299,10 @@ function decodeAgentSortCursor(
       return { kind: 'unreadable' };
     } else {
       cursorSort = decoded.sort;
+      const cursorVersion = typeof decoded.version === 'undefined' ? 1 : decoded.version;
+      if (cursorVersion !== AGENT_SORT_CONFIG[cursorSort].version) {
+        return { kind: 'ordering-mismatch' };
+      }
     }
     if (!hasPrimary && hasLegacyPair && cursorSort !== 'recent') {
       return { kind: 'ordering-mismatch' };
@@ -337,13 +380,16 @@ function buildAgentSortCursorCondition(
 
   return { $or: branches };
 }
+
 /**
  * Cursor invariant: a cursor names the ordering it was produced under, and is honored only
  * by a reader that implements that ordering. A cursor that cannot be honored is an error,
  * never a silent restart.
  *
- * The `sort` field is the ordering identity; `recent` additionally carries the legacy pair
- * so old instances can keep reading its updated-time walk.
+ * The `sort`/`version` pair is the ordering identity. Bump the version whenever an ordering's
+ * comparison semantics change, or an older reader will resume a walk under semantics that no
+ * longer exist. `recent` additionally carries the legacy pair so old instances can keep
+ * reading its updated-time walk.
  */
 function encodeAgentSortCursor(
   sort: AgentListSortOption,
@@ -380,6 +426,7 @@ function encodeAgentSortCursor(
   return Buffer.from(
     JSON.stringify({
       sort,
+      version: AGENT_SORT_CONFIG[sort].version,
       primary,
       secondary,
       ...(legacyUpdatedAt == null ? {} : { updatedAt: legacyUpdatedAt, _id: secondary }),

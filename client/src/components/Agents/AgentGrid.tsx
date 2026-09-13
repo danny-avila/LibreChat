@@ -78,6 +78,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     refetch,
     isFetchingNextPage,
     isPreviousData,
+    cursorRecovery,
   } = useMarketplaceAgentsInfiniteQuery(queryParams);
 
   // Deduplicate as pages are traversed rather than creating a second flattened
@@ -119,6 +120,8 @@ const AgentGrid: React.FC<AgentGridProps> = ({
    * list means that page arrived, and only `fetchNextPage` asks for it again. A first
    * load or a refresh of the pages already held is the opposite case: the page count
    * does not change, so `dataUpdatedAt` is the signal and `refetch` is the retry.
+   * A cursor ordering mismatch is different: the query explicitly resets the whole walk,
+   * so its recovery signal clears this held failure when the replacement first page settles.
    */
   const inFlightKindRef = useRef<'next-page' | 'refresh'>('refresh');
   if (isFetching) {
@@ -130,6 +133,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     at: number;
     pages: number;
     kind: 'next-page' | 'refresh';
+    cursorRecoveryId: number | null;
   } | null>(null);
   if (error) {
     failureRef.current = {
@@ -138,13 +142,19 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       at: dataUpdatedAt,
       pages: data?.pages.length ?? 0,
       kind: inFlightKindRef.current,
+      cursorRecoveryId: cursorRecovery?.status === 'resetting' ? cursorRecovery.id : null,
     };
   } else if (data && failureRef.current != null) {
     const held = failureRef.current;
+    const recoveredByCursorReset =
+      held.cursorRecoveryId != null &&
+      cursorRecovery?.status === 'succeeded' &&
+      cursorRecovery.id === held.cursorRecoveryId;
     const recovered =
-      held.kind === 'next-page' && held.pages > 0
+      recoveredByCursorReset ||
+      (held.kind === 'next-page' && held.pages > 0
         ? data.pages.length > held.pages
-        : dataUpdatedAt !== held.at;
+        : dataUpdatedAt !== held.at);
     if (recovered) {
       failureRef.current = null;
     }
