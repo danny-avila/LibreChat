@@ -27,7 +27,7 @@ const {
   isMemoryAgentEnabled,
   recordCollectedUsage,
   resolveRunUsageContext,
-  hasRecordedProviderUsage,
+  recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
@@ -6150,17 +6150,15 @@ class AgentClient extends BaseClient {
     completionTokens,
     context = 'message',
   }) {
-    /** `BaseClient` reaches this fallback whenever the recorded usage lacks a positive
-     *  output count, but a recorded usage means `recordCollectedUsage` already billed the
-     *  provider's numbers (a stopped call can report input and no output). */
-    if (hasRecordedProviderUsage(usage)) {
-      return;
-    }
-    try {
-      await db.spendTokens(
-        {
+    await recordFallbackTokenUsage(
+      { spendTokens: db.spendTokens },
+      {
+        usage,
+        context,
+        promptTokens,
+        completionTokens,
+        txMetadata: {
           model,
-          context,
           balance,
           transactions,
           messageId: this.responseMessageId,
@@ -6168,35 +6166,8 @@ class AgentClient extends BaseClient {
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            transactions,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
-    } catch (error) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        getSafeErrorMetadata(error),
-      );
-    }
+      },
+    );
   }
 
   /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */

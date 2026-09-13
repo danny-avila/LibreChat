@@ -24,6 +24,7 @@ import {
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -624,6 +625,56 @@ export function hasRecordedProviderUsage(
   usage: Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> | null | undefined,
 ): boolean {
   return usage != null && ((usage.input_tokens ?? 0) > 0 || (usage.output_tokens ?? 0) > 0);
+}
+
+export interface FallbackTokenUsageParams {
+  /** Usage the run already recorded for this response, when it recorded any. */
+  usage?:
+    | (Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> & { reasoning_tokens?: number })
+    | null;
+  promptTokens?: number;
+  completionTokens?: number;
+  context?: string;
+  /** Transaction fields the caller owns: user, conversation, message, model, config. */
+  txMetadata: Omit<TxMetadata, 'context'>;
+}
+
+/**
+ * Text-count billing for a response whose provider usage was never recorded — the
+ * fallback `BaseClient` takes when the recorded usage has no positive output count.
+ * Once provider usage was recorded it is already billed, so this records nothing
+ * (see {@link hasRecordedProviderUsage}). A reasoning count the estimate cannot see is
+ * billed as its own `'reasoning'` row. Failures are logged, never thrown, so a billing
+ * error cannot fail the response that was already produced.
+ */
+export async function recordFallbackTokenUsage(
+  deps: Pick<RecordUsageDeps, 'spendTokens'>,
+  {
+    usage,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+    txMetadata,
+  }: FallbackTokenUsageParams,
+): Promise<void> {
+  if (hasRecordedProviderUsage(usage)) {
+    return;
+  }
+  try {
+    await deps.spendTokens({ ...txMetadata, context }, { promptTokens, completionTokens });
+    const reasoningTokens = usage?.reasoning_tokens;
+    if (typeof reasoningTokens === 'number') {
+      await deps.spendTokens(
+        { ...txMetadata, context: 'reasoning' },
+        { completionTokens: reasoningTokens },
+      );
+    }
+  } catch (error) {
+    logger.error(
+      '[recordFallbackTokenUsage] Error recording token usage',
+      getSafeErrorMetadata(error),
+    );
+  }
 }
 
 export interface RecordUsageParams {

@@ -12,6 +12,7 @@ import {
   resolveAgentTokenConfig,
   resolveRunUsageContext,
   hasRecordedProviderUsage,
+  recordFallbackTokenUsage,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
   computeSummaryUsedTokens,
@@ -2525,5 +2526,64 @@ describe('hasRecordedProviderUsage', () => {
     expect(hasRecordedProviderUsage(null)).toBe(false);
     expect(hasRecordedProviderUsage({ input_tokens: 0, output_tokens: 0 })).toBe(false);
     expect(hasRecordedProviderUsage({})).toBe(false);
+  });
+});
+
+describe('recordFallbackTokenUsage', () => {
+  const txMetadata = {
+    user: 'user-1',
+    conversationId: 'convo-1',
+    messageId: 'msg-1',
+    model: 'gpt-4',
+    balance: { enabled: true },
+    transactions: { enabled: true },
+  };
+  const estimate = { promptTokens: 40, completionTokens: 7 };
+
+  it('records nothing once provider usage was recorded, even with no output', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage(
+      { spendTokens },
+      { ...estimate, usage: { input_tokens: 40, output_tokens: 0 }, txMetadata },
+    );
+
+    expect(spendTokens).not.toHaveBeenCalled();
+  });
+
+  it('bills the estimate under the given context when nothing was recorded', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata, context: 'abort' });
+
+    expect(spendTokens).toHaveBeenCalledTimes(1);
+    expect(spendTokens).toHaveBeenCalledWith({ ...txMetadata, context: 'abort' }, estimate);
+  });
+
+  it('bills a reasoning count the estimate cannot see as its own row', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage(
+      { spendTokens },
+      {
+        ...estimate,
+        usage: { input_tokens: 0, output_tokens: 0, reasoning_tokens: 12 },
+        txMetadata,
+      },
+    );
+
+    expect(spendTokens).toHaveBeenCalledTimes(2);
+    expect(spendTokens).toHaveBeenLastCalledWith(
+      { ...txMetadata, context: 'reasoning' },
+      { completionTokens: 12 },
+    );
+  });
+
+  it('logs a billing failure instead of throwing', async () => {
+    const spendTokens = jest.fn().mockRejectedValue(new Error('db down'));
+
+    await expect(
+      recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata }),
+    ).resolves.toBeUndefined();
   });
 });
