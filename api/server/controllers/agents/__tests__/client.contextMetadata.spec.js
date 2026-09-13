@@ -55,6 +55,7 @@ function buildMeta({
   stepLimitReached = false,
   latestToolCallIds,
   contentParts,
+  maxRetainedToolCountChars,
 }) {
   const self = {
     collectedThoughtSignatures: null,
@@ -62,6 +63,9 @@ function buildMeta({
     stepLimitReached,
     contentParts,
     getEncoding: () => 'o200k_base',
+    options: {
+      req: { config: { endpoints: { agents: { maxRetainedToolCountChars } } } },
+    },
     contextUsageSink: snap
       ? { latest: snap, count: 1, latestUsageIndex, latestToolCallIds }
       : { latest: null, count: 0 },
@@ -183,6 +187,7 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
       stepLimitReached: true,
       latestToolCallIds,
       contentParts,
+      maxRetainedToolCountChars: 1_048_576,
     });
     expect(mockResolveRetainedToolTokens).toHaveBeenCalledWith({
       stoppedAtToolLimit: true,
@@ -190,6 +195,8 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
       /** The calls the snapshot already saw; only the rest are retained. */
       priorToolCallIds: latestToolCallIds,
       encoding: 'o200k_base',
+      /** The deployment's ceiling on the tokenization this costs. */
+      maxCountChars: 1_048_576,
     });
     expect(meta.contextUsage.retainedToolTokens).toBe(180);
   });

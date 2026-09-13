@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { ContentTypes, isAgentsEndpoint } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  isAgentsEndpoint,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+} from 'librechat-data-provider';
 import {
   labelContentByAgent,
   extractImageDimensions,
@@ -379,10 +383,6 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
-/** Total characters one turn's retained results may be tokenized for: the same
- *  order as the tokenizer's own per-string bound, at ~60 ms/MB. */
-const MAX_RETAINED_COUNT_LENGTH = 8 * 1024 * 1024;
-
 /**
  * Exact token count of the tool results a turn retains beyond its last context
  * snapshot.
@@ -405,20 +405,24 @@ const MAX_RETAINED_COUNT_LENGTH = 8 * 1024 * 1024;
  * exact provider accounting, so it errs low rather than overstating the context.
  * Non-string outputs are skipped, matching {@link countFormattedMessageTokens}.
  *
- * `countExact` returns `undefined` for content it cannot count exactly, and that
- * withdraws the whole figure: a turn whose gauge is missing the retained result
- * is better than one whose exact figures absorbed a guess. The Claude framing
- * correction is applied, matching the counter that produced the snapshot.
+ * `maxCountChars` bounds the tokenization this turn may cost — one call can request
+ * several tools, so the budget spans all their results — and `countExact` returns
+ * `undefined` for content it cannot count exactly. Either limit withdraws the whole
+ * figure: a turn whose gauge is missing the retained result is better than one
+ * whose exact figures absorbed a guess. The Claude framing correction is applied,
+ * matching the counter that produced the snapshot.
  */
 export function countRetainedToolTokens({
   contentParts,
   priorToolCallIds,
   countExact,
+  maxCountChars = DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   isClaude = false,
 }: {
   contentParts: ReadonlyArray<unknown> | null | undefined;
   priorToolCallIds: ReadonlySet<string> | null | undefined;
   countExact: (text: string) => number | undefined;
+  maxCountChars?: number;
   isClaude?: boolean;
 }): number | undefined {
   if (!Array.isArray(contentParts)) {
@@ -438,11 +442,8 @@ export function countRetainedToolTokens({
     if (typeof output !== 'string' || output.length === 0) {
       continue;
     }
-    /** The counter bounds one result; a final call that requested several tools in
-     *  parallel would otherwise multiply that bound by the number of results, so
-     *  the turn has a budget of its own and withdraws past it. */
     charactersCounted += output.length;
-    if (charactersCounted > MAX_RETAINED_COUNT_LENGTH) {
+    if (charactersCounted > maxCountChars) {
       return undefined;
     }
     const counted = countExact(output);

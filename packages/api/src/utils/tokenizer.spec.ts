@@ -132,12 +132,6 @@ describe('Tokenizer', () => {
       expect(Tokenizer.countExactTokens('', 'o200k_base')).toBe(0);
     });
 
-    it('refuses absurd input rather than paying to tokenize it', () => {
-      /** ~60 ms/MB: worth spending on a retained tool result, not on content no
-       *  provider would have accepted in the first place. */
-      expect(Tokenizer.countExactTokens('a'.repeat(8 * 1024 * 1024 + 1))).toBeUndefined();
-    });
-
     it('returns nothing while the encoding is still cold', () => {
       jest.isolateModules(() => {
         // eslint-disable-next-line @typescript-eslint/no-require-imports

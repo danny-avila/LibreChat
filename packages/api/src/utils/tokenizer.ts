@@ -6,8 +6,6 @@ export type EncodingName = 'o200k_base' | 'claude';
 type EncodingData = ConstructorParameters<typeof AiTokenizer>[0];
 
 const MAX_TOKENIZER_INPUT_LENGTH = 4 * 1024;
-/** Beyond this, an exact count is refused rather than paid for: ~60 ms/MB. */
-const MAX_EXACT_COUNT_LENGTH = 8 * 1024 * 1024;
 
 function estimateBoundedTokenCount(text: string): number {
   return Buffer.byteLength(text, 'utf8');
@@ -91,16 +89,13 @@ class Tokenizer {
    *
    * The input is tokenized whole. Counting it in slices would be cheaper but not
    * exact — a BPE merge spanning a seam is charged twice, ~1 token per 4 KiB
-   * measured — and this is the one caller that needs the real number. Whole-input
-   * tokenization costs ~60 ms/MB here and runs once, at the end of a stopped
-   * turn, so only absurd content is refused outright by {@link MAX_EXACT_COUNT_LENGTH}.
+   * measured — and this is the one caller that needs the real number. It costs
+   * ~60 ms/MB, so the caller decides how much content is worth counting
+   * (`endpoints.agents.maxRetainedToolCountChars`) rather than a bound here.
    */
   countExactTokens(text: string, encoding: EncodingName = 'o200k_base'): number | undefined {
     if (text.length === 0) {
       return 0;
-    }
-    if (text.length > MAX_EXACT_COUNT_LENGTH) {
-      return undefined;
     }
     const tokenizer = this.tokenizersCache[encoding];
     if (!tokenizer) {

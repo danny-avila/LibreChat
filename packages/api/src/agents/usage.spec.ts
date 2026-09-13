@@ -58,6 +58,20 @@ describe('resolveRetainedToolTokens', () => {
     ).toBeUndefined();
   });
 
+  it('passes the deployment ceiling on to the counter', () => {
+    /** `endpoints.agents.maxRetainedToolCountChars`: past it the figure is withdrawn
+     *  rather than estimated, so the gauge under-reports instead of stalling a save. */
+    expect(
+      resolveRetainedToolTokens({
+        stoppedAtToolLimit: true,
+        contentParts: [toolPart('call_1', 'a result longer than the ceiling allows')],
+        priorToolCallIds: new Set(),
+        encoding: 'o200k_base',
+        maxCountChars: 4,
+      }),
+    ).toBeUndefined();
+  });
+
   it('takes a supplied counter instead of reaching for the shared tokenizer', () => {
     const countExact = jest.fn((text: string) => text.length);
     expect(

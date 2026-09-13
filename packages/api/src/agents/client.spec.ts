@@ -1,7 +1,7 @@
-import { ContentTypes } from 'librechat-data-provider';
 import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
 import { Providers, StandardGraph } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { ContentTypes, DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
   collectToolCallIds,
@@ -141,20 +141,35 @@ describe('countRetainedToolTokens', () => {
     ).toBeUndefined();
   });
 
-  it('withdraws instead of tokenizing an unbounded pile of parallel results', () => {
-    /** The tokenizer bounds one result; several parallel results just under that
-     *  bound would multiply the work, so the turn keeps a budget of its own. */
-    const half = 'a'.repeat(5 * 1024 * 1024);
+  it('withdraws once the turn exhausts its tokenization budget', () => {
+    /** Tokenizing costs ~60 ms/MB, so the deployment's ceiling covers the whole
+     *  turn: a final call requesting several tools cannot multiply it per result. */
     const counted = jest.fn(countExact);
     expect(
       countRetainedToolTokens({
-        contentParts: [toolPart('call_1', 'grep', half), toolPart('call_2', 'read_file', half)],
+        contentParts: [
+          toolPart('call_1', 'grep', 'a'.repeat(60)),
+          toolPart('call_2', 'read_file', 'b'.repeat(60)),
+        ],
         priorToolCallIds: new Set(),
         countExact: counted,
+        maxCountChars: 100,
       }),
     ).toBeUndefined();
     /** It stops at the budget rather than counting the rest for nothing. */
     expect(counted).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults the budget to the shipped ceiling', () => {
+    const output = 'a'.repeat(1024);
+    expect(
+      countRetainedToolTokens({
+        contentParts: [toolPart('call_1', 'grep', output)],
+        priorToolCallIds: new Set(),
+        countExact,
+      }),
+    ).toBe(countExact(output));
+    expect(DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS).toBe(8 * 1024 * 1024);
   });
 });
 

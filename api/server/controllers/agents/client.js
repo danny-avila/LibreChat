@@ -3634,6 +3634,9 @@ class AgentClient extends BaseClient {
           contentParts: this.contentParts,
           priorToolCallIds: this.contextUsageSink?.latestToolCallIds,
           encoding: this.getEncoding(),
+          maxCountChars:
+            this.options?.req?.config?.endpoints?.[EModelEndpoint.agents]
+              ?.maxRetainedToolCountChars,
         }),
       });
     }

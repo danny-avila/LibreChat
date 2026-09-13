@@ -404,19 +404,22 @@ const normalizePersistedTokenRecord = (
  * `countExact` is the run's own exact counter. It defaults to the shared
  * tokenizer for the given encoding — the same one the SDK counted the snapshot
  * with, which is the point — and is a parameter so a caller (or a test) can
- * supply its own without reaching into module state.
+ * supply its own without reaching into module state. `maxCountChars` is the
+ * deployment's ceiling on that work (`endpoints.agents.maxRetainedToolCountChars`).
  */
 export function resolveRetainedToolTokens({
   stoppedAtToolLimit,
   contentParts,
   priorToolCallIds,
   encoding,
+  maxCountChars,
   countExact = (text: string) => Tokenizer.countExactTokens(text, encoding),
 }: {
   stoppedAtToolLimit: boolean;
   contentParts: ReadonlyArray<unknown> | null | undefined;
   priorToolCallIds: ReadonlySet<string> | null | undefined;
   encoding: EncodingName;
+  maxCountChars?: number;
   countExact?: (text: string) => number | undefined;
 }): number | undefined {
   if (!stoppedAtToolLimit) {
@@ -426,6 +429,7 @@ export function resolveRetainedToolTokens({
     contentParts,
     priorToolCallIds,
     countExact,
+    maxCountChars,
     isClaude: encoding === 'claude',
   });
 }
