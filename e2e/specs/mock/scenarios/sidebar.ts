@@ -20,14 +20,17 @@ export async function openSidebar(page: Page) {
   }
 }
 
-/** The row mounts its real menu on the first mouse enter or focus (`Convo.tsx`). Touch has
- * neither, and a real `hover()` waits for actionability the mobile drawer cannot always offer,
- * so the reveal is dispatched rather than pointed: `dispatchEvent` only needs the element to be
- * attached, which is exactly the precondition that holds here. */
+/** The row mounts its real menu on the first mouse enter (`Convo.tsx`). Hovering is what a
+ * pointer device does, but the mobile drawer cannot always offer a hoverable row, and a real
+ * `hover()` then waits out the whole budget. The fallback dispatches `mouseover`, which is the
+ * native event React derives `onMouseEnter` from, and needs the row only to be attached. */
 export async function openConversationMenu(row: Locator) {
   const menu = row.getByRole('button', { name: 'Conversation Menu Options' });
   if (!(await menu.isVisible().catch(() => false))) {
-    await row.dispatchEvent('mouseenter');
+    await row.hover({ timeout: 5_000 }).catch(() => undefined);
+  }
+  if (!(await menu.isVisible().catch(() => false))) {
+    await row.dispatchEvent('mouseover');
   }
   await expect(menu).toBeAttached();
   await menu.dispatchEvent('click');

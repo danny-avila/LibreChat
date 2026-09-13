@@ -260,14 +260,22 @@ test.describe('unseen replies', () => {
         await selectMockEndpoint(second, MOCK_ENDPOINTS[0]);
         await second.bringToFront();
         await unfocus(page);
+        const acknowledged = second.waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === '/api/convos/seen' &&
+            response.request().method() === 'POST',
+        );
         await sendMessageAndWaitForCompletion(second, `E2E_REPLY:other-tab-${id.slice(0, 8)}`);
+        /* The reply tab acknowledges the reply it just rendered. Restoring the unread baseline
+         * before that write lands would simply be overwritten by it, and the first tab would
+         * then poll a conversation the server considers read. */
+        await acknowledged;
+        await second.goto(NEW_CHAT_PATH);
         /* Back to the front, still away: a backgrounded tab has its timers throttled, so the
          * 30-second away poll this scenario is about may simply never run inside the budget.
          * `unfocus` keeps the app in away mode while the browser keeps the page live. */
         await page.bringToFront();
         await unfocus(page);
-        /* The reply tab also marks its active conversation read; restore the remote tab's
-         * unread baseline so the first tab observes the new response stamp. */
         await restoreUnreadBaseline(id, now(), replyAt);
         await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
           timeout: 75_000,
