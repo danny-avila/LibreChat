@@ -447,6 +447,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
               tenantId: principal.tenantId,
               conversationId: request.conversation_id,
               resolvedConversation,
+              includeResources: false,
             },
             {
               getConvo: db.getConvo,

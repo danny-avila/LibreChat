@@ -200,7 +200,11 @@ async function deleteFailedResumeCheckpoint(args, context) {
 }
 
 const GENERIC_RESUME_ERROR = 'Resume failed';
-async function resolveResumeProjectContext(req, conversationId, { fresh = false } = {}) {
+async function resolveResumeProjectContext(
+  req,
+  conversationId,
+  { fresh = false, includeResources = true } = {},
+) {
   if (
     !fresh &&
     Object.prototype.hasOwnProperty.call(req, 'chatProjectContext') &&
@@ -215,6 +219,7 @@ async function resolveResumeProjectContext(req, conversationId, { fresh = false 
       userId: req.user.id,
       tenantId: req.user.tenantId,
       conversationId,
+      includeResources,
       ...(fresh ? {} : { resolvedConversation: req.resolvedConversation }),
     };
     context = await resolveChatProjectContext(input, {
@@ -226,6 +231,7 @@ async function resolveResumeProjectContext(req, conversationId, { fresh = false 
       getProjectFiles,
     });
     if (fresh) {
+      req.chatProjectContextResourcesPromise = undefined;
       req.chatProjectFiles = undefined;
       req.chatProjectFilesPromise = undefined;
       req.resolvedConversation = refreshedConversation ?? null;
@@ -252,18 +258,34 @@ async function rejectChangedProjectContext({
   checkpointGeneration,
   fresh = false,
 }) {
-  const currentContext = await resolveResumeProjectContext(req, conversationId, { fresh });
-  const currentKey = getChatProjectContextKey(currentContext);
+  /*
+   * The originating turn resolves guidance first and hydrates resources only after the
+   * effective File Search gate is known. Compare against that guidance-only snapshot first:
+   * denied turns avoid the resource read entirely. A mismatch means the paused key included
+   * canonical resources, so rehydrate before the final comparison. This makes the resume
+   * snapshot use the same representation selected before the pause without weakening resource
+   * identity/version checks.
+   */
+  let currentContext = await resolveResumeProjectContext(req, conversationId, {
+    fresh,
+    includeResources: false,
+  });
+  let currentKey = getChatProjectContextKey(currentContext);
+  const expectedKey = pendingAction?.projectContextKey;
+  if (typeof expectedKey === 'string' && expectedKey !== currentKey) {
+    currentContext = await resolveResumeProjectContext(req, conversationId, {
+      fresh,
+      includeResources: true,
+    });
+    currentKey = getChatProjectContextKey(currentContext);
+  }
   const hasModelFacingProjectContext =
     currentContext != null &&
     (currentContext.instructions.trim() !== '' || currentContext.file_ids.length > 0);
-  if (typeof pendingAction?.projectContextKey !== 'string' && !hasModelFacingProjectContext) {
+  if (typeof expectedKey !== 'string' && !hasModelFacingProjectContext) {
     return false;
   }
-  if (
-    typeof pendingAction?.projectContextKey === 'string' &&
-    pendingAction.projectContextKey === currentKey
-  ) {
+  if (typeof expectedKey === 'string' && expectedKey === currentKey) {
     return false;
   }
   let finalized = false;

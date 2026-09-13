@@ -593,6 +593,7 @@ const initializeClientWithProvider = async ({
             conversationId,
             requestedProjectId,
             resolvedConversation,
+            includeResources: false,
           },
           {
             getConvo: db.getConvo,

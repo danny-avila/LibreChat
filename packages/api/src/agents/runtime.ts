@@ -24,6 +24,8 @@ export interface AgentExecutionContext {
   chatProjectContext?: ResolvedChatProjectContext | null;
   /** Metadata-only project files hydrated once per request for enabled file search tools. */
   chatProjectFiles?: TFile[];
+  /** Shares in-flight project-context resource hydration across graph agents. */
+  chatProjectContextResourcesPromise?: Promise<ResolvedChatProjectContext>;
   /** Shares in-flight hydration across concurrently initialized graph agents. */
   chatProjectFilesPromise?: Promise<TFile[]>;
 }
@@ -39,6 +41,7 @@ export function createAgentExecutionContext({
   hasResolvedConversation = false,
   chatProjectContext,
   chatProjectFiles,
+  chatProjectContextResourcesPromise,
   chatProjectFilesPromise,
 }: {
   user?: IUser;
@@ -50,6 +53,7 @@ export function createAgentExecutionContext({
   hasResolvedConversation?: boolean;
   chatProjectContext?: ResolvedChatProjectContext | null;
   chatProjectFiles?: TFile[];
+  chatProjectContextResourcesPromise?: Promise<ResolvedChatProjectContext>;
   chatProjectFilesPromise?: Promise<TFile[]>;
 }): AgentExecutionContext {
   const context: AgentExecutionContext = {
@@ -59,6 +63,9 @@ export function createAgentExecutionContext({
     turnStartedAt,
     conversationCreatedAt,
     ...(chatProjectContext !== undefined ? { chatProjectContext } : {}),
+    ...(chatProjectContextResourcesPromise !== undefined
+      ? { chatProjectContextResourcesPromise }
+      : {}),
     ...(chatProjectFiles !== undefined ? { chatProjectFiles } : {}),
     ...(chatProjectFilesPromise !== undefined ? { chatProjectFilesPromise } : {}),
   };
@@ -85,6 +92,7 @@ export function createRequestAgentExecutionContext(
     hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
     chatProjectContext: req.chatProjectContext,
     chatProjectFiles: req.chatProjectFiles,
+    chatProjectContextResourcesPromise: req.chatProjectContextResourcesPromise,
     chatProjectFilesPromise: req.chatProjectFilesPromise,
   });
 }
