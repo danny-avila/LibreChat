@@ -65,7 +65,7 @@ describe('resolveAgentParameterSettings — denied parameters survive pruning', 
 
   it("preserves a stored web_search value through a denied editor's save", () => {
     const denied = resolved(false);
-    const stored = { model: 'gpt-4o', web_search: true, temperature: 0.5 };
+    const stored = { model: 'gpt-4o', web_search: true, temperature: 0.5 } as never;
     expect(pruneAgentModelParameters(stored, denied)).toEqual(stored);
   });
 

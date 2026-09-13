@@ -432,6 +432,35 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     );
   });
 
+  /** Provider-native search is a model parameter with no capability of its own,
+   *  so an embedder that omits `appConfig` still gets the role gate. */
+  it('wires the web search grant from the role lookup without appConfig', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: { [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } },
+    });
+    deps.getRoleByName = getRoleByName as never;
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    expect(getRoleByName).not.toHaveBeenCalled();
+    const [[{ resolveWebSearchGrant }]] = (deps.initializeAgent as jest.Mock).mock.calls;
+    await expect(resolveWebSearchGrant()).resolves.toBe(false);
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+  });
+
+  it('wires no web search grant when the embedder supplies no role lookup', async () => {
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveWebSearchGrant: undefined }),
+    );
+  });
+
   it('preserves stateful scope policy status and code in an initialization error response', async () => {
     const policyError = Object.assign(
       new Error('Stateful code environment is not allowed by this deployment: conversation'),
