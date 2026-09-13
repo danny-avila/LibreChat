@@ -168,19 +168,50 @@ describe('checkBalance', () => {
       const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
       const { reservationId } = reserveRequest(deps);
 
-      jest.advanceTimersByTime(5_000);
+      await jest.advanceTimersByTimeAsync(5_000);
       expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
       expect(deps.renewBalanceReservation).toHaveBeenCalledWith({
         user: 'user-1',
         reservationId,
         expiresAt: new Date(Date.now() + 10_000),
       });
-      jest.advanceTimersByTime(5_000);
+      await jest.advanceTimersByTimeAsync(5_000);
       expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
 
       await reservation.release();
-      jest.advanceTimersByTime(50_000);
+      await jest.advanceTimersByTimeAsync(50_000);
       expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a failed renewal well before the reservation would expire', async () => {
+      const deps = createMockDeps({
+        balanceConfig: { reservationTtlMs: 10_000 },
+        renewBalanceReservation: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('DB unavailable'))
+          .mockResolvedValue(undefined),
+      });
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(500);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+
+      await reservation.release();
+    });
+
+    it('keeps the renewal delay within the timer range for a very long TTL', async () => {
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 6_000_000_000 } });
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+      await jest.advanceTimersByTimeAsync(60_000);
+
+      expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
+      await reservation.release();
     });
 
     it('does not renew a zero-cost admission, which holds nothing', async () => {
@@ -190,7 +221,7 @@ describe('checkBalance', () => {
         { req, res, txData: { ...baseTxData, amount: 0 } },
         deps,
       );
-      jest.advanceTimersByTime(50_000);
+      await jest.advanceTimersByTimeAsync(50_000);
 
       expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
       await reservation.release();

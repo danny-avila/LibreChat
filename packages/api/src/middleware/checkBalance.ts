@@ -87,6 +87,63 @@ export async function withBalanceReservations<T>(
   }
 }
 
+/** Node clamps a timer delay above a signed 32-bit millisecond count to 1 ms. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/**
+ * Keeps an admitted reservation alive until it is released: renews it every half TTL, and retries a
+ * failed renewal well within the remaining half so a transient failure does not let it expire.
+ */
+function holdReservation(
+  {
+    user,
+    reservationId,
+    amount,
+    ttlMs,
+  }: { user: string; reservationId: string; amount: number; ttlMs: number },
+  deps: Pick<CheckBalanceDeps, 'renewBalanceReservation' | 'releaseBalanceReservation'>,
+): BalanceReservation {
+  const renewEveryMs = Math.min(ttlMs / 2, MAX_TIMER_DELAY_MS);
+  const retryEveryMs = Math.min(renewEveryMs / 10, 5_000);
+  let timer: NodeJS.Timeout | undefined;
+  let released: Promise<void> | undefined;
+
+  const schedule = (delayMs: number) => {
+    timer = setTimeout(renew, delayMs);
+    timer.unref();
+  };
+
+  function renew() {
+    deps
+      .renewBalanceReservation({ user, reservationId, expiresAt: new Date(Date.now() + ttlMs) })
+      .then(
+        () => (released ? undefined : schedule(renewEveryMs)),
+        (error) => {
+          logger.error('[Balance.check] Failed to renew balance reservation', { user, error });
+          if (!released) {
+            schedule(retryEveryMs);
+          }
+        },
+      );
+  }
+
+  if (amount > 0) {
+    schedule(renewEveryMs);
+  }
+
+  return {
+    release: () => {
+      clearTimeout(timer);
+      released ??= deps
+        .releaseBalanceReservation({ user, reservationId, amount })
+        .catch((error) => {
+          logger.error('[Balance.check] Failed to release balance reservation', { user, error });
+        });
+      return released;
+    },
+  };
+}
+
 let warnedInvalidReservationTtl = false;
 
 function getReservationTtlMs(config?: BalanceConfig): number {
@@ -170,36 +227,7 @@ export async function checkBalance(
   });
 
   if (result?.reserved) {
-    const renewal =
-      tokenCost > 0
-        ? setInterval(() => {
-            deps
-              .renewBalanceReservation({
-                user,
-                reservationId,
-                expiresAt: new Date(Date.now() + ttlMs),
-              })
-              .catch((error) => {
-                logger.error('[Balance.check] Failed to renew balance reservation', {
-                  user,
-                  error,
-                });
-              });
-          }, ttlMs / 2)
-        : undefined;
-    renewal?.unref();
-    let released: Promise<void> | undefined;
-    return {
-      release: () => {
-        clearInterval(renewal);
-        released ??= deps
-          .releaseBalanceReservation({ user, reservationId, amount: tokenCost })
-          .catch((error) => {
-            logger.error('[Balance.check] Failed to release balance reservation', { user, error });
-          });
-        return released;
-      },
-    };
+    return holdReservation({ user, reservationId, amount: tokenCost, ttlMs }, deps);
   }
 
   if (!result) {

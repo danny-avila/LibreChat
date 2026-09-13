@@ -1427,6 +1427,24 @@ describe('Balance Reservations', () => {
     }
   });
 
+  test('removes a reservation whose write committed but failed to acknowledge', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    const realUpdateOne = Balance.updateOne.bind(Balance);
+    jest.spyOn(Balance, 'updateOne').mockImplementationOnce(((
+      ...args: Parameters<typeof Balance.updateOne>
+    ) =>
+      realUpdateOne(...args).then(() => {
+        throw new Error('connection reset');
+      })) as unknown as typeof Balance.updateOne);
+
+    await expect(reserve(user.toString(), 400)).rejects.toThrow('connection reset');
+
+    const stored = await readState(user);
+    expect(stored?.reservations).toEqual([]);
+    expect(stored?.reservedCredits).toBe(0);
+  });
+
   test('re-reads when a spend lands between the read and the write', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });

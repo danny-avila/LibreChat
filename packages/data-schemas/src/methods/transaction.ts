@@ -524,20 +524,35 @@ export function createTransactionMethods(
       }
 
       const held = Math.ceil(amount);
-      const result = await Balance.updateOne(
-        {
-          _id: record._id,
-          tokenCredits: { $gte: credits },
-          $or: [
-            { reservedCredits: { $lte: credits - amount } },
-            { reservedCredits: { $exists: false } },
-          ],
-        },
-        {
-          $push: { reservations: { id: reservationId, amount: held, expiresAt } },
-          $inc: { reservedCredits: held },
-        },
-      );
+      let result: Awaited<ReturnType<typeof Balance.updateOne>>;
+      try {
+        result = await Balance.updateOne(
+          {
+            _id: record._id,
+            tokenCredits: { $gte: credits },
+            $or: [
+              { reservedCredits: { $lte: credits - amount } },
+              { reservedCredits: { $exists: false } },
+            ],
+          },
+          {
+            $push: { reservations: { id: reservationId, amount: held, expiresAt } },
+            $inc: { reservedCredits: held },
+          },
+        );
+      } catch (error) {
+        /** The write may have committed before its acknowledgement was lost; the caller never
+         * receives a handle to release it, so remove it here rather than leave it to expire. */
+        await removeReservations({ _id: record._id }, [{ id: reservationId, amount: held }]).catch(
+          (cleanupError) => {
+            logger.error('[Balance.reserve] Failed to remove an unacknowledged reservation', {
+              user,
+              error: cleanupError,
+            });
+          },
+        );
+        throw error;
+      }
       if (result.matchedCount === 1) {
         return { reserved, balance };
       }
