@@ -175,6 +175,48 @@ test.describe('compaction rerun controls', () => {
     }
   });
 
+  test('a failed compaction hanging off a user turn offers no rerun controls @scenario:failed-compaction-on-user-turn-offers-no-rerun-controls', async ({
+    page,
+  }) => {
+    const userMessageId = randomUUID();
+    const compactionId = randomUUID();
+    const conversationId = await seedBranch([
+      {
+        messageId: userMessageId,
+        parentMessageId: ROOT_PARENT,
+        text: 'Compact this before I continue',
+        isCreatedByUser: true,
+        sender: 'User',
+      },
+      {
+        messageId: compactionId,
+        parentMessageId: userMessageId,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'OpenAI',
+        content: [
+          {
+            type: 'error',
+            error: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+            initiatedBy: 'user',
+          },
+        ],
+      },
+    ]);
+    try {
+      const row = await openRow(page, conversationId, compactionId);
+
+      await expect(row.getByText('Nothing to compact', { exact: false })).toBeVisible();
+      /* The compaction marks its failure, so the turn is still a compaction:
+         replaying the user message behind it would answer it instead. */
+      await expect(page.locator(`[id="edit-${compactionId}"]`)).toHaveCount(0);
+      await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
+      await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
+    } finally {
+      await cleanup(conversationId);
+    }
+  });
+
   test('a turn that only auto-summarized keeps its rerun controls @scenario:auto-summarized-turn-keeps-rerun-controls', async ({
     page,
   }) => {
@@ -228,7 +270,7 @@ test.describe('compaction rerun controls', () => {
       },
     ]);
     try {
-      const row = await openRow(page, conversationId, chainedId);
+      await openRow(page, conversationId, chainedId);
 
       /* No user turn to replay, so the rerun shapes go... */
       await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);

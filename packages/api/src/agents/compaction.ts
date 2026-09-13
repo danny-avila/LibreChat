@@ -1,3 +1,4 @@
+import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
 import {
   COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION,
   MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
@@ -15,6 +16,58 @@ import type {
   ICompactionSemanticIndexProjection,
   TCompactionSemanticIndexEntry,
 } from '@librechat/data-schemas';
+import type { TMessageContentParts } from 'librechat-data-provider';
+
+type SummaryPart = Extract<TMessageContentParts, { type: ContentTypes.SUMMARY }>;
+
+/** Text of a summary content part; empty for anything else. */
+export function getSummaryPartText(part: TMessageContentParts | null | undefined): string {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * Stamps `initiatedBy: 'user'` on the part that carries a manual compaction's
+ * outcome, which is the turn's only record of having been one: the run emits no
+ * text of its own, and a compaction hangs off whatever leaf the branch ends
+ * with, so a reader cannot infer it from the turn's shape or its parent.
+ *
+ * Both outcomes are marked. A run that produced a summary marks it; a run that
+ * recorded why it could not (an error part, e.g. a skipped compaction) marks
+ * that instead, so the failure is still identifiable as a compaction rather
+ * than as an answer to the message behind it. A run that ended with neither
+ * fails as a typed error instead of persisting an empty assistant message.
+ */
+export function markCompactionOutcome(contentParts: TMessageContentParts[]): void {
+  const summary = contentParts.find(
+    (part): part is SummaryPart =>
+      part?.type === ContentTypes.SUMMARY &&
+      part.failed !== true &&
+      getSummaryPartText(part).length > 0,
+  );
+  if (summary != null) {
+    summary.initiatedBy = 'user';
+    return;
+  }
+  let markedFailure = false;
+  for (const part of contentParts) {
+    if (part?.type === ContentTypes.ERROR) {
+      part.initiatedBy = 'user';
+      markedFailure = true;
+    }
+  }
+  if (markedFailure) {
+    return;
+  }
+  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
+    code: 'COMPACTION_FAILED',
+  });
+}
 
 function snapshotEntry(
   entry: CompactionSemanticIndexEntry,

@@ -1,3 +1,4 @@
+import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
 import { COMPACTION_SEMANTIC_INDEX_LIMITS } from '@librechat/agents';
 import {
   MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
@@ -7,8 +8,10 @@ import {
 } from '@librechat/data-schemas';
 import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import {
   createCompactionSemanticIndexProjection,
+  markCompactionOutcome,
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
 } from './compaction';
@@ -135,5 +138,57 @@ describe('compaction semantic index continuation projection', () => {
       text: '',
       redacted: true,
     });
+  });
+});
+
+describe('markCompactionOutcome', () => {
+  const summary = (text: string, overrides: Record<string, unknown> = {}) =>
+    ({
+      type: ContentTypes.SUMMARY,
+      content: [{ type: ContentTypes.TEXT, text }],
+      ...overrides,
+    }) as TMessageContentParts;
+  const failure = (error: string) =>
+    ({ type: ContentTypes.ERROR, [ContentTypes.ERROR]: error }) as TMessageContentParts;
+
+  it('marks the summary a compaction produced', () => {
+    const parts = [summary('Earlier turns, compacted.')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  /** The turn has no other record of having been a compaction: without the
+   *  marker a failure hanging off a user message keeps a Regenerate that
+   *  answers that message instead of redoing the compaction. */
+  it('marks the failure a compaction recorded instead of a summary', () => {
+    const parts = [failure('Nothing to summarize')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  it('marks the failure when only a partial summary streamed before it', () => {
+    const parts = [summary('Half a checkpoint', { failed: true }), failure('Summarization failed')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).not.toHaveProperty('initiatedBy');
+    expect(parts[1]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  it.each([
+    ['nothing at all', []],
+    ['an empty summary', [summary('   ')]],
+    [
+      'a partial summary with no recorded failure',
+      [summary('Half a checkpoint', { failed: true })],
+    ],
+  ])('fails as a typed error for a run that produced %s', (_label, parts) => {
+    expect(() => markCompactionOutcome(parts)).toThrow(
+      JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+    );
   });
 });

@@ -171,6 +171,8 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
+  getSummaryPartText,
+  markCompactionOutcome,
 } = require('@librechat/api');
 const {
   Run,
@@ -328,41 +330,6 @@ function captureRunContextMeta(client) {
     fadingTier: source?.getFadingTier?.(),
     fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
-  });
-}
-
-/** Text of a summary content part; empty for anything else. */
-function getSummaryPartText(part) {
-  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-    return '';
-  }
-  return part.content
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .join('')
-    .trim();
-}
-
-/**
- * A compaction turn's response is its summary. The run emits no text, so a
- * completion without a usable summary part means the summarizer produced
- * nothing. A run that already recorded why (an error part, e.g. a skipped
- * compaction) persists with that explanation; one that ended with neither
- * fails as a typed error instead of persisting an empty assistant message.
- * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
- */
-function markCompactionSummary(contentParts) {
-  const summary = contentParts.find(
-    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
-  );
-  if (summary != null) {
-    summary.initiatedBy = 'user';
-    return;
-  }
-  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
-    return;
-  }
-  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
-    code: 'COMPACTION_FAILED',
   });
 }
 
@@ -3568,7 +3535,7 @@ class AgentClient extends BaseClient {
 
     const completion = filterMalformedContentParts(this.contentParts);
     if (this.isCompactionTurn()) {
-      markCompactionSummary(completion);
+      markCompactionOutcome(completion);
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };

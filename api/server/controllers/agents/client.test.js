@@ -2985,6 +2985,53 @@ describe('AgentClient - startup telemetry', () => {
     errorSpy.mockRestore();
   });
 
+  /** A compaction's only record of having been one is the marker on the part it
+   *  produced, and Compact runs on whatever leaf the branch ends with. Without
+   *  the marker on the failure, a compaction that failed on a user leaf keeps a
+   *  Regenerate that answers that user message instead of redoing the run. */
+  it('marks the failure a compaction turn persists instead of a summary', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        throw new Error('summarizer unavailable');
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-failure',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-failure';
+    client.responseMessageId = 'response-compaction-failure';
+    client.parentMessageId = 'parent-compaction-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      expect.objectContaining({ type: ContentTypes.ERROR, initiatedBy: 'user' }),
+    ]);
+  });
+
   it('keeps a later non-provider run failure on the generic error path', async () => {
     jest.clearAllMocks();
     const { logger } = require('@librechat/data-schemas');
