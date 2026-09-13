@@ -1147,7 +1147,11 @@ export function completeMessagesReplyFetch(
 export function applyServerReplyStamp(
   queryClient: QueryClient,
   conversationId: string,
-  { lastResponseAt, updatedAt }: { lastResponseAt: string; updatedAt?: string },
+  {
+    lastResponseAt,
+    lastResponseMessageId,
+    updatedAt,
+  }: { lastResponseAt: string; lastResponseMessageId?: string; updatedAt?: string },
 ): void {
   const cached = findConvoInAllQueries(queryClient, conversationId);
   if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
@@ -1160,6 +1164,7 @@ export function applyServerReplyStamp(
     (convo) => ({
       ...convo,
       lastResponseAt,
+      lastResponseMessageId: lastResponseMessageId ?? convo.lastResponseMessageId,
       lastResponseIsManual: undefined,
       lastSeenAt: advances ? undefined : convo.lastSeenAt,
       updatedAt: updatedAt ?? convo.updatedAt,
@@ -1193,6 +1198,9 @@ const preserveReadState = (next: TConversation, found: TConversation): TConversa
   if (!('lastResponseAt' in next)) {
     merged.lastResponseAt = found.lastResponseAt;
   }
+  if (!('lastResponseMessageId' in next)) {
+    merged.lastResponseMessageId = found.lastResponseMessageId;
+  }
   if (!('lastResponseIsManual' in next)) {
     merged.lastResponseIsManual = found.lastResponseIsManual;
   }
@@ -1204,13 +1212,15 @@ const preserveReadState = (next: TConversation, found: TConversation): TConversa
 
 /**
  * Read state the sidebar owns for the same reason: `lastResponseAt` is stamped by the server as
- * a reply persists, `lastResponseIsManual` records synthetic unread markers, and `lastSeenAt`
- * by the seen mutation, none of which reaches the chat's own conversation state. Stripped rather
- * than carried, so `updateConvoInAllQueries` falls back to whatever the list caches already hold.
+ * a reply persists, `lastResponseMessageId` identifies the stamped reply, `lastResponseIsManual`
+ * records synthetic unread markers, and `lastSeenAt` by the seen mutation, none of which reaches
+ * the chat's own conversation state. Stripped rather than carried, so `updateConvoInAllQueries`
+ * falls back to whatever the list caches already hold.
  */
 const chatOwnedStaleFields = [
   ...listFlags,
   'lastResponseAt',
+  'lastResponseMessageId',
   'lastResponseIsManual',
   'lastSeenAt',
 ] as const;

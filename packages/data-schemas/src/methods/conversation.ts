@@ -285,6 +285,8 @@ export interface ConversationMethods {
       appendMessageIds?: Types.ObjectId[];
       /** Advance the reply version and clear the catch-up after persisting an assistant reply. */
       stampReply?: boolean;
+      /** Durable messageId paired atomically with a reply stamp. */
+      replyMessageId?: string;
     },
   ): Promise<IConversation | { message: string } | null>;
   setConvoPinned(
@@ -503,11 +505,17 @@ export interface ConversationMethods {
   markConvoUnread(
     user: string,
     conversationId: string,
-  ): Promise<{ modified: boolean; lastResponseAt?: Date; lastResponseIsManual?: boolean }>;
+  ): Promise<{
+    modified: boolean;
+    lastResponseAt?: Date;
+    lastResponseMessageId?: string;
+    lastResponseIsManual?: boolean;
+  }>;
   stampConvoLastResponse(
     user: string,
     conversationId: string,
-  ): Promise<{ lastResponseAt: Date; updatedAt?: Date } | null>;
+    responseMessageId: string,
+  ): Promise<{ lastResponseAt: Date; lastResponseMessageId: string; updatedAt?: Date } | null>;
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
@@ -545,6 +553,7 @@ export function createConversationMethods(
   async function stampReplyWithCas(
     Conversation: Model<IConversation>,
     filter: FilterQuery<IConversation>,
+    responseMessageId: string,
     projection?: Record<string, 0 | 1>,
   ): Promise<{ stamp: Date; conversation: Partial<IConversation> } | null> {
     const replyFilter = { ...filter, isTemporary: { $ne: true } };
@@ -572,7 +581,7 @@ export function createConversationMethods(
       const stamped = await Conversation.findOneAndUpdate(
         casFilter,
         {
-          $set: { lastResponseAt: stamp },
+          $set: { lastResponseAt: stamp, lastResponseMessageId: responseMessageId },
           $unset: { lastSeenAt: '', lastResponseIsManual: '' },
           $max: { updatedAt: stamp },
         },
@@ -2231,6 +2240,8 @@ export function createConversationMethods(
       appendMessageIds?: Types.ObjectId[];
       /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply. */
       stampReply?: boolean;
+      /** Durable messageId paired atomically with a reply stamp. */
+      replyMessageId?: string;
     },
   ) {
     try {
@@ -2248,6 +2259,8 @@ export function createConversationMethods(
       /* Read-state fields are server-owned. A stale marker must never be reintroduced by a
        * metadata save after a real reply cleared it. */
       delete update.lastResponseIsManual;
+      delete update.lastResponseAt;
+      delete update.lastResponseMessageId;
       delete update.initial_agent_id;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
@@ -2257,6 +2270,8 @@ export function createConversationMethods(
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
       delete unsetFields.lastResponseIsManual;
+      delete unsetFields.lastResponseMessageId;
+      delete unsetFields.lastResponseAt;
       delete unsetFields.initial_agent_id;
       stripActorCheckpointFields(unsetFields);
 
@@ -2514,28 +2529,34 @@ export function createConversationMethods(
       /* Advance the version and clear the previous catch-up atomically. The database CAS orders
        * concurrent replies even when their application hosts disagree about wall-clock time. */
       if (metadata?.stampReply === true) {
-        try {
-          const stamped = await stampReplyWithCas(
-            Conversation,
-            { _id: conversation._id },
-            {
-              lastResponseAt: 1,
-              lastResponseIsManual: 1,
-              updatedAt: 1,
-            },
-          );
-          if (stamped) {
-            /* The caller hands this document to the client as the turn's conversation, and the
-             * seen acknowledgement is bound to the stamp it carries. */
-            conversation.lastResponseAt = stamped.stamp;
-            conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
-            conversation.lastSeenAt = undefined;
-            if (stamped.conversation.updatedAt) {
-              conversation.updatedAt = stamped.conversation.updatedAt;
+        const responseMessageId = metadata.replyMessageId;
+        if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+          try {
+            const stamped = await stampReplyWithCas(
+              Conversation,
+              { _id: conversation._id },
+              responseMessageId,
+              {
+                lastResponseAt: 1,
+                lastResponseMessageId: 1,
+                lastResponseIsManual: 1,
+                updatedAt: 1,
+              },
+            );
+            if (stamped) {
+              /* The caller hands this document to the client as the turn's conversation, and the
+               * seen acknowledgement is bound to the stamp it carries. */
+              conversation.lastResponseAt = stamped.stamp;
+              conversation.lastResponseMessageId = stamped.conversation.lastResponseMessageId;
+              conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
+              conversation.lastSeenAt = undefined;
+              if (stamped.conversation.updatedAt) {
+                conversation.updatedAt = stamped.conversation.updatedAt;
+              }
             }
+          } catch (error) {
+            logger.error('[saveConvo] Failed to stamp persisted reply', error);
           }
-        } catch (error) {
-          logger.error('[saveConvo] Failed to stamp persisted reply', error);
         }
       }
 
@@ -2717,6 +2738,10 @@ export function createConversationMethods(
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
         const sanitized = { ...convo };
+        delete sanitized.lastResponseAt;
+        delete sanitized.lastResponseMessageId;
+        delete sanitized.lastResponseIsManual;
+        delete sanitized.lastSeenAt;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
@@ -3015,7 +3040,7 @@ export function createConversationMethods(
            the sidebar lists archived and unarchived chats in the same session, and the
            active list also carries the unarchived pins beside them. */
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned lastResponseAt lastResponseIsManual lastSeenAt',
+          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned lastResponseAt lastResponseMessageId lastResponseIsManual lastSeenAt',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -3513,7 +3538,7 @@ export function createConversationMethods(
   async function markConvoUnread(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const projection = { lastResponseAt: 1, lastResponseIsManual: 1 };
+      const projection = { lastResponseAt: 1, lastResponseMessageId: 1, lastResponseIsManual: 1 };
       const stamped = await Conversation.findOneAndUpdate(
         {
           conversationId,
@@ -3522,14 +3547,17 @@ export function createConversationMethods(
         },
         {
           $set: { lastResponseAt: new Date(), lastResponseIsManual: true },
-          $unset: { lastSeenAt: '' },
+          $unset: { lastSeenAt: '', lastResponseMessageId: '' },
         },
         { timestamps: false, new: true, projection },
-      ).lean<Pick<IConversation, 'lastResponseAt' | 'lastResponseIsManual'>>();
+      ).lean<
+        Pick<IConversation, 'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual'>
+      >();
       if (stamped) {
         return {
           modified: true,
           lastResponseAt: stamped.lastResponseAt,
+          lastResponseMessageId: stamped.lastResponseMessageId,
           lastResponseIsManual: stamped.lastResponseIsManual === true,
         };
       }
@@ -3538,12 +3566,15 @@ export function createConversationMethods(
         { conversationId, user },
         { $unset: { lastSeenAt: '' } },
         { timestamps: false, new: true, projection },
-      ).lean<Pick<IConversation, 'lastResponseAt' | 'lastResponseIsManual'>>();
+      ).lean<
+        Pick<IConversation, 'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual'>
+      >();
 
       return cleared
         ? {
             modified: true,
             lastResponseAt: cleared.lastResponseAt,
+            lastResponseMessageId: cleared.lastResponseMessageId,
             lastResponseIsManual: cleared.lastResponseIsManual === true,
           }
         : { modified: false };
@@ -3567,13 +3598,24 @@ export function createConversationMethods(
    * by, so a stamp that left the order alone would hide replies to any conversation that had
    * fallen past the first page. Contrast `markConvoSeen`, where reading must not reorder.
    */
-  async function stampConvoLastResponse(user: string, conversationId: string) {
+  async function stampConvoLastResponse(
+    user: string,
+    conversationId: string,
+    responseMessageId: string,
+  ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const stamped = await stampReplyWithCas(
         Conversation,
         { conversationId, user },
-        { conversationId: 1, chatProjectId: 1, createdAt: 1, updatedAt: 1 },
+        responseMessageId,
+        {
+          conversationId: 1,
+          chatProjectId: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          lastResponseMessageId: 1,
+        },
       );
 
       /* Moving `updatedAt` is only half of what `saveConvo` does for a project chat: the
@@ -3597,6 +3639,7 @@ export function createConversationMethods(
       return stamped
         ? {
             lastResponseAt: stamped.stamp,
+            lastResponseMessageId: responseMessageId,
             ...(stamped.conversation.updatedAt
               ? { updatedAt: stamped.conversation.updatedAt }
               : {}),

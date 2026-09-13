@@ -853,7 +853,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                  the same upsert that creates it carries the reply stamp, assigned at write
                  time. Best-effort: the messages are already durable, and a missed stamp must
                  not suppress the normal FINAL. */
-              if (messageContext.isTemporary !== true) {
+              if (messageContext.isTemporary !== true && persistedResponse.messageId) {
                 try {
                   await saveConvo(
                     messageContext,
@@ -865,6 +865,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                     {
                       context: 'api/server/routes/agents/index.js - abort reply stamp',
                       stampReply: true,
+                      replyMessageId: persistedResponse.messageId,
                     },
                   );
                 } catch (error) {

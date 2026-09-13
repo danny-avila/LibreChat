@@ -537,9 +537,9 @@ async function saveErrorTurn(
     /* A failed run still persisted an assistant message, and a user on another device has no
        other way to learn the turn ended. Best effort: the error turn is already durable, and
        a missed indicator must not turn a handled failure into a thrown one. */
-    if (reqCtx.isTemporary !== true) {
+    if (reqCtx.isTemporary !== true && savedErrorMessage.messageId) {
       try {
-        await stampConvoLastResponse(userId, conversationId);
+        await stampConvoLastResponse(userId, conversationId, savedErrorMessage.messageId);
       } catch (stampError) {
         logger.error('[AgentController] Failed to stamp the persisted error turn', stampError);
       }
@@ -3014,9 +3014,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         /** A persisted BaseClient response already advanced lastResponseAt. Re-stamp only
          * when its terminal persistence was explicitly skipped, then refresh the payload's
          * conversation snapshot so it acknowledges the durable timestamp. */
-        if (responseIsUnfinished && responsePersistenceWasSkipped && reqCtx.isTemporary !== true) {
+        if (
+          responseIsUnfinished &&
+          responsePersistenceWasSkipped &&
+          reqCtx.isTemporary !== true &&
+          savedResponseMessage.messageId
+        ) {
           try {
-            await stampConvoLastResponse(reqCtx.userId, response.conversationId);
+            await stampConvoLastResponse(
+              reqCtx.userId,
+              response.conversationId,
+              savedResponseMessage.messageId,
+            );
             const stampedConversation = await getConvo(reqCtx.userId, response.conversationId);
             if (stampedConversation) {
               conversation = { ...conversation, ...stampedConversation };

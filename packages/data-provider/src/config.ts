@@ -102,6 +102,7 @@ export const excludedKeys = new Set([
   'disableParams',
   'chatProjectId',
   'lastResponseAt',
+  'lastResponseMessageId',
   'lastResponseIsManual',
   'lastSeenAt',
 ]);

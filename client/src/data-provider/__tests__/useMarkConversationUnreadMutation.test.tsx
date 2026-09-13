@@ -4,10 +4,11 @@ import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils/convos';
+import { useMarkConversationSeenMutation, useMarkConversationUnreadMutation } from '../mutations';
 import { isConversationUnseen, updateConvoInAllQueries } from '~/utils';
-import { useMarkConversationUnreadMutation } from '../mutations';
 
 const mockMarkUnread = jest.fn();
+const mockMarkSeen = jest.fn();
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
@@ -15,6 +16,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       markConversationUnread: (...args: unknown[]) => mockMarkUnread(...args),
+      markConversationSeen: (...args: unknown[]) => mockMarkSeen(...args),
     },
   };
 });
@@ -37,6 +39,7 @@ function seedList(queryClient: QueryClient, lastResponseAt?: string, lastSeenAt?
             createdAt: RESPONDED_AT,
             updatedAt: SEEN_AT,
             lastResponseAt,
+            lastResponseMessageId: lastResponseAt == null ? undefined : 'original-reply',
             lastSeenAt,
           },
         ],
@@ -60,12 +63,13 @@ function setup(lastResponseAt?: string, lastSeenAt?: string) {
     queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages[0]
       .conversations[0];
 
-  return { ...view, cached, queryClient };
+  return { ...view, cached, queryClient, wrapper };
 }
 
 describe('useMarkConversationUnreadMutation', () => {
   beforeEach(() => {
     mockMarkUnread.mockReset();
+    mockMarkSeen.mockReset();
   });
 
   it('reasserts the unread state when a refetch lands on top of it', async () => {
@@ -82,6 +86,28 @@ describe('useMarkConversationUnreadMutation', () => {
 
     await waitFor(() => expect(isConversationUnseen(cached())).toBe(true));
     expect(cached()?.lastSeenAt).toBeUndefined();
+  });
+
+  it('preserves a later seen operation even when its stamp equals the original catch-up', async () => {
+    const request = deferred();
+    mockMarkUnread.mockReturnValue(request.promise);
+    mockMarkSeen.mockResolvedValue({ modified: true });
+    const { result, cached, wrapper } = setup(RESPONDED_AT, RESPONDED_AT);
+    const seen = renderHook(() => useMarkConversationSeenMutation(), { wrapper });
+
+    await act(async () => {
+      const unread = result.current.mutateAsync({ conversationId: CONVO_ID });
+      await flush();
+      await seen.result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+      request.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await unread;
+    });
+
+    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
+    expect(isConversationUnseen(cached())).toBe(false);
   });
 
   it('preserves an acknowledgement that landed while the unread request was open', async () => {
@@ -146,12 +172,14 @@ describe('useMarkConversationUnreadMutation', () => {
       updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
         ...convo,
         lastResponseAt: NEWER_RESPONDED_AT,
+        lastResponseMessageId: 'newer-reply',
       }));
       request.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
       await pending;
     });
 
     expect(cached()?.lastResponseAt).toBe(NEWER_RESPONDED_AT);
+    expect(cached()?.lastResponseMessageId).toBe('newer-reply');
     expect(isConversationUnseen(cached())).toBe(true);
   });
 
@@ -172,12 +200,14 @@ describe('useMarkConversationUnreadMutation', () => {
       updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
         ...convo,
         lastResponseAt: NEWER_RESPONDED_AT,
+        lastResponseMessageId: 'newer-reply',
       }));
       request.reject(new Error('network down'));
       await pending;
     });
 
     expect(cached()?.lastResponseAt).toBe(NEWER_RESPONDED_AT);
+    expect(cached()?.lastResponseMessageId).toBe('newer-reply');
     expect(isConversationUnseen(cached())).toBe(true);
   });
 
@@ -205,6 +235,24 @@ describe('useMarkConversationUnreadMutation', () => {
     });
 
     await waitFor(() => expect(cached()?.lastResponseAt).toBe(serverStamp));
+    expect(isConversationUnseen(cached())).toBe(true);
+  });
+
+  it('settles a concurrently discovered real reply with its server message identity', async () => {
+    const serverStamp = '2026-08-16T12:00:00.000Z';
+    mockMarkUnread.mockResolvedValue({
+      modified: true,
+      lastResponseAt: serverStamp,
+      lastResponseMessageId: 'server-reply',
+      lastResponseIsManual: false,
+    });
+    const { result, cached } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: CONVO_ID });
+    });
+
+    expect(cached()?.lastResponseAt).toBe(serverStamp);
+    expect(cached()?.lastResponseMessageId).toBe('server-reply');
     expect(isConversationUnseen(cached())).toBe(true);
   });
 

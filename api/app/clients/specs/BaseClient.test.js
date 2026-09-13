@@ -1585,8 +1585,8 @@ describe('BaseClient', () => {
       /* A user turn stamping this would light the unseen dot the moment they press Enter. */
       expect(userTurn[1].lastResponseAt).toBeUndefined();
       expect(userTurn[2].stampReply).toBeUndefined();
-      expect(reply[1].lastResponseAt).toBeUndefined();
       expect(reply[2].stampReply).toBe(true);
+      expect(reply[2].replyMessageId).toBe('m2');
     });
 
     test('never stamps a reply whose message write resolved empty', async () => {
@@ -1630,7 +1630,7 @@ describe('BaseClient', () => {
       TestClient.skipSaveConvo = false;
       expect(saveConvo).not.toHaveBeenCalled();
       expect(stampConvoLastResponse).toHaveBeenCalledTimes(1);
-      expect(stampConvoLastResponse).toHaveBeenCalledWith('user-override', 'convo-override');
+      expect(stampConvoLastResponse).toHaveBeenCalledWith('user-override', 'convo-override', 'm5');
     });
 
     test('never fails a persisted reply because its indicator stamp failed', async () => {
@@ -1660,6 +1660,7 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         model: 'gpt-3.5-turbo',
         lastResponseAt: new Date(),
+        lastResponseMessageId: 'reply-unseen',
         lastSeenAt: new Date(),
       });
       const saveOptions = TestClient.getSaveOptions();
@@ -1675,6 +1676,7 @@ describe('BaseClient', () => {
       const [, , convoOptions] = saveConvo.mock.calls[0];
       expect(convoOptions.unsetFields).not.toHaveProperty('lastResponseAt');
       expect(convoOptions.unsetFields).not.toHaveProperty('lastSeenAt');
+      expect(convoOptions.unsetFields).not.toHaveProperty('lastResponseMessageId');
     });
 
     test('does not start the completed response write when terminal ownership is denied', async () => {

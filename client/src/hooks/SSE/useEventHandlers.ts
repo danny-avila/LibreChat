@@ -935,6 +935,7 @@ export default function useEventHandlers({
             );
             applyServerReplyStamp(queryClient, conversation.conversationId, {
               lastResponseAt: serverLastResponseAt,
+              lastResponseMessageId: serverConversation.lastResponseMessageId,
               updatedAt: serverConversation.updatedAt,
             });
           }
@@ -1028,7 +1029,9 @@ export default function useEventHandlers({
        * before the list update can ask useConversationSeen to acknowledge it. */
       const getSettledErrorReadState = (
         convoId: string,
-      ): { lastResponseAt: string; updatedAt?: string } | undefined => {
+      ):
+        | { lastResponseAt: string; lastResponseMessageId?: string; updatedAt?: string }
+        | undefined => {
         if (submission.isTemporary === true || !data || !convoId) {
           return undefined;
         }
@@ -1039,6 +1042,10 @@ export default function useEventHandlers({
         }
         return {
           lastResponseAt,
+          lastResponseMessageId:
+            typeof settledConversation.lastResponseMessageId === 'string'
+              ? settledConversation.lastResponseMessageId
+              : undefined,
           updatedAt:
             typeof settledConversation.updatedAt === 'string'
               ? settledConversation.updatedAt

@@ -225,7 +225,14 @@ const mergeTimestamps = async (
   stampDelivery = false,
   isCurrent: () => boolean = () => true,
 ): Promise<void> => {
-  const { conversationId, lastResponseAt, lastResponseIsManual, lastSeenAt, updatedAt } = convo;
+  const {
+    conversationId,
+    lastResponseAt,
+    lastResponseMessageId,
+    lastResponseIsManual,
+    lastSeenAt,
+    updatedAt,
+  } = convo;
   if (!conversationId || !lastResponseAt) {
     return;
   }
@@ -257,45 +264,74 @@ const mergeTimestamps = async (
     }
   }
 
+  const incomingResponseMessageId =
+    lastResponseIsManual === true ? undefined : lastResponseMessageId;
   if (
     cached &&
     cached.lastResponseAt === lastResponseAt &&
     cached.lastResponseIsManual === lastResponseIsManual &&
     cached.lastSeenAt === (lastSeenAt ?? undefined) &&
-    (updatedAt === undefined || cached.updatedAt === updatedAt)
+    (updatedAt === undefined || cached.updatedAt === updatedAt) &&
+    (incomingResponseMessageId === undefined ||
+      cached.lastResponseMessageId === incomingResponseMessageId)
   ) {
     return;
   }
 
   /* Two fetches for the same conversation can resolve out of order: overlapping away polls, or
-     completion fetches for concurrent jobs. Taking the older one would walk the read state
-     backwards and either drop a dot or bring one back. A snapshot is accepted whole or not at
-     all, since its two stamps come from one server read and `lastSeenAt` legitimately clears
-     when another device marks the conversation unread. */
+   * completion fetches for concurrent jobs. Taking the older one would walk the read state
+   * backwards and either drop a dot or bring one back. A snapshot is accepted whole or not at
+   * all, since its two stamps come from one server read and `lastSeenAt` legitimately clears
+   * when another device marks the conversation unread. */
   if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
     return;
   }
-  if (stampDelivery && cached?.lastResponseAt === lastResponseAt) {
+
+  /* An equal timestamp already names the same server reply. Identity can arrive after the
+   * timestamp (especially from a completion point read), so merge it without refetching history.
+   * Completion snapshots are intentionally read-state neutral: they must not clear a newer
+   * catch-up that arrived while the point request was in flight. */
+  if (cached?.lastResponseAt === lastResponseAt) {
+    const nextLastResponseMessageId =
+      lastResponseIsManual === true
+        ? undefined
+        : (incomingResponseMessageId ?? cached.lastResponseMessageId);
+    const nextLastSeenAt = stampDelivery ? cached.lastSeenAt : lastSeenAt;
+    const nextUpdatedAt = stampDelivery ? cached.updatedAt : (updatedAt ?? cached.updatedAt);
+    if (
+      cached.lastResponseMessageId !== nextLastResponseMessageId ||
+      cached.lastResponseIsManual !== lastResponseIsManual ||
+      cached.lastSeenAt !== nextLastSeenAt ||
+      cached.updatedAt !== nextUpdatedAt
+    ) {
+      updateConvoInAllQueries(queryClient, conversationId, (current) => ({
+        ...current,
+        lastResponseMessageId: nextLastResponseMessageId,
+        lastResponseIsManual,
+        lastSeenAt: nextLastSeenAt,
+        updatedAt: nextUpdatedAt,
+      }));
+    }
     return;
   }
 
   /* Awaited, and before the stamp. A reply this tab never streamed is not in the rendered
-     tree, and exposing the stamp first would let the seen trigger acknowledge it from a scroll
-     position that belongs to the previous message. Invalidation resolves once the active
-     refetch has landed, so the conversation the user is looking at is showing the reply by the
-     time it can be credited; anywhere else the query is unmounted, nothing is fetched and this
-     resolves immediately. */
+   * tree, and exposing the stamp first would let the seen trigger acknowledge it from a scroll
+   * position that belongs to the previous message. Invalidation resolves once the active
+   * refetch has landed, so the conversation the user is looking at is showing the reply by the
+   * time it can be credited; anywhere else the query is unmounted, nothing is fetched and this
+   * resolves immediately. */
   const messagesKey = [QueryKeys.messages, conversationId];
   await queryClient.invalidateQueries(messagesKey);
   if (!isCurrent()) {
     return;
   }
   /* Invalidation settles rather than throwing when the refetch fails, so the failure has to be
-     read off the query itself. Exposing the stamp anyway would let the seen trigger credit a
-     reply the tab never managed to load; the next poll retries.
-     Only an observed query counts: invalidation refetches those, so its error is this attempt's.
-     A cached error left behind by a conversation the user has since closed never clears, and
-     reading it would withhold that conversation's stamp for the rest of the session. */
+   * read off the query itself. Exposing the stamp anyway would let the seen trigger credit a
+   * reply the tab never managed to load; the next poll retries.
+   * Only an observed query counts: invalidation refetches those, so its error is this attempt's.
+   * A cached error left behind by a conversation the user has since closed never clears, and
+   * reading it would withhold that conversation's stamp for the rest of the session. */
   const messagesQuery = queryClient.getQueryCache().find(messagesKey);
   const isObserved = (messagesQuery?.getObserversCount() ?? 0) > 0;
   if (isObserved && messagesQuery?.state.status === 'error') {
@@ -303,20 +339,31 @@ const mergeTimestamps = async (
   }
 
   /* The await above is a real network wait while the conversation is open, and a newer stamp
-     can land during it: the SSE final handler, or a fresher overlapping fetch. Writing this
-     snapshot over that would walk the read state backwards after the newer reply's signal was
-     already consumed, so the ordering guard runs again against what the cache holds now, and
-     an unchanged row is left alone for the same `dataUpdatedAt` reason as above. */
+   * can land during it: the SSE final handler, or a fresher overlapping fetch. Writing this
+   * snapshot over that would walk the read state backwards after the newer reply's signal was
+   * already consumed, so the ordering guard runs again against what the cache holds now, and
+   * an unchanged row is left alone for the same `dataUpdatedAt` reason as above. */
   const fresh = findConvoInAllQueries(queryClient, conversationId);
   if (fresh?.lastResponseAt != null && lastResponseAt < fresh.lastResponseAt) {
     return;
   }
   if (stampDelivery && fresh?.lastResponseAt === lastResponseAt) {
+    if (
+      fresh.lastResponseMessageId !== incomingResponseMessageId ||
+      fresh.lastResponseIsManual !== lastResponseIsManual
+    ) {
+      updateConvoInAllQueries(queryClient, conversationId, (current) => ({
+        ...current,
+        lastResponseMessageId: incomingResponseMessageId,
+        lastResponseIsManual,
+      }));
+    }
     return;
   }
   if (
     fresh &&
     fresh.lastResponseAt === lastResponseAt &&
+    fresh.lastResponseMessageId === (incomingResponseMessageId ?? fresh.lastResponseMessageId) &&
     fresh.lastResponseIsManual === lastResponseIsManual &&
     fresh.lastSeenAt === (lastSeenAt ?? undefined) &&
     (updatedAt === undefined || fresh.updatedAt === updatedAt)
@@ -330,12 +377,13 @@ const mergeTimestamps = async (
     (current) => ({
       ...current,
       lastResponseAt,
+      lastResponseMessageId: incomingResponseMessageId ?? current.lastResponseMessageId,
       lastResponseIsManual,
       lastSeenAt,
       updatedAt: updatedAt ?? current.updatedAt,
     }),
     /* Reordering only when the server says the conversation moved; a bare read-state merge
-       must not jump the row. */
+     * must not jump the row. */
     updatedAt !== undefined && fresh?.updatedAt !== updatedAt,
   );
 };

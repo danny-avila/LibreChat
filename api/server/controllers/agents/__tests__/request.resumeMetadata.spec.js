@@ -5959,6 +5959,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     it('stamps and acknowledges the fallback conversation when BaseClient persistence is skipped', async () => {
       const stampedAt = new Date('2026-09-07T12:00:00.000Z');
+      mockSaveMessage.mockImplementation(async (_ctx, message) => message);
       mockGetConvo.mockResolvedValue({
         conversationId: 'new',
         title: null,

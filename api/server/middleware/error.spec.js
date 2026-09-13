@@ -50,20 +50,25 @@ describe('sendError', () => {
     mockSaveMessage.mockReset();
     mockSaveMessage.mockImplementation(async (_ctx, message) => message);
     mockStampConvoLastResponse.mockReset();
-    mockStampConvoLastResponse.mockResolvedValue({ lastResponseAt: stampedAt, updatedAt });
+    mockStampConvoLastResponse.mockResolvedValue({
+      lastResponseAt: stampedAt,
+      lastResponseMessageId: 'error-msg',
+      updatedAt,
+    });
     mockHandleError.mockReset();
   });
 
   it('stamps the conversation once the error reply is durable and emits that settled read state', async () => {
     await sendError(reqWith(), {}, options);
 
-    expect(mockStampConvoLastResponse).toHaveBeenCalledWith('user-123', CONVO_ID);
+    expect(mockStampConvoLastResponse).toHaveBeenCalledWith('user-123', CONVO_ID, 'error-msg');
     expect(mockHandleError).toHaveBeenCalledWith(
       {},
       expect.objectContaining({
         conversation: {
           conversationId: CONVO_ID,
           lastResponseAt: stampedAt,
+          lastResponseMessageId: 'error-msg',
           updatedAt,
         },
       }),

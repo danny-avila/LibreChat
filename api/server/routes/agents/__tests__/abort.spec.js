@@ -531,7 +531,10 @@ describe('Agent Abort Endpoint', () => {
             endpoint: 'anthropic',
             model: 'claude-3',
           }),
-          expect.objectContaining({ stampReply: true }),
+          expect.objectContaining({
+            stampReply: true,
+            replyMessageId: 'response-msg-456',
+          }),
         );
       });
 

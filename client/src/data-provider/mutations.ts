@@ -496,8 +496,23 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
  */
 type UnreadWriteBaseline = Pick<
   t.TConversation,
-  'lastResponseAt' | 'lastResponseIsManual' | 'lastSeenAt'
+  'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual' | 'lastSeenAt'
 >;
+
+const resolveReplyIdentity = (
+  cached: Partial<t.TConversation> | undefined,
+  next:
+    | Pick<t.TConversation, 'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual'>
+    | undefined,
+): string | undefined => {
+  if (!next?.lastResponseAt || next.lastResponseIsManual === true) {
+    return undefined;
+  }
+  return (
+    next.lastResponseMessageId ??
+    (next.lastResponseAt === cached?.lastResponseAt ? cached?.lastResponseMessageId : undefined)
+  );
+};
 
 type UnreadWriteChain = {
   baseline: UnreadWriteBaseline;
@@ -579,6 +594,8 @@ const reassertAcceptedUnread = (
   updateConvoInAllQueries(queryClient, conversationId, (convo) => ({
     ...convo,
     lastResponseAt: serverResponseAt ?? convo.lastResponseAt,
+    lastResponseMessageId:
+      serverResponseAt == null ? convo.lastResponseMessageId : resolveReplyIdentity(convo, data),
     lastResponseIsManual:
       serverResponseAt == null ? convo.lastResponseIsManual : data.lastResponseIsManual,
     lastSeenAt: undefined,
@@ -607,6 +624,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const observed = findConvoInAllQueries(queryClient, vars.conversationId);
         const owner = claimUnreadWrite(queryClient, vars.conversationId, {
           lastResponseAt: observed?.lastResponseAt,
+          lastResponseMessageId: observed?.lastResponseMessageId,
           lastResponseIsManual: observed?.lastResponseIsManual,
           lastSeenAt: observed?.lastSeenAt,
         });
@@ -621,6 +639,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const context = {
           chain: owner.chain,
           lastResponseAt: owner.chain.baseline.lastResponseAt,
+          lastResponseMessageId: owner.chain.baseline.lastResponseMessageId,
           lastResponseIsManual: owner.chain.baseline.lastResponseIsManual,
           lastSeenAt: owner.chain.baseline.lastSeenAt,
           optimisticResponseAt,
@@ -630,6 +649,10 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt: convo.lastResponseAt ?? optimisticResponseAt,
+          lastResponseMessageId:
+            convo.lastResponseAt == null || convo.lastResponseIsManual === true
+              ? undefined
+              : convo.lastResponseMessageId,
           lastResponseIsManual:
             convo.lastResponseAt == null || convo.lastResponseIsManual === true ? true : undefined,
           lastSeenAt: undefined,
@@ -668,6 +691,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
             ...convo,
             lastResponseAt: context?.lastResponseAt,
+            lastResponseMessageId: resolveReplyIdentity(convo, context),
             lastResponseIsManual: context?.lastResponseIsManual,
             lastSeenAt: context?.lastSeenAt,
           }));
@@ -691,7 +715,10 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
            before it, in which case the server holds the conversation unread while this tab
            shows it read. Neither guess is safe, so the row is refetched and the server
            decides. */
-        if (cached?.lastSeenAt !== undefined && cached.lastSeenAt !== context?.lastSeenAt) {
+        if (
+          !isLatestReadWrite(queryClient, vars.conversationId, context?.token) ||
+          (cached?.lastSeenAt !== undefined && cached.lastSeenAt !== context?.lastSeenAt)
+        ) {
           refreshConvoReadCaches(queryClient, vars.conversationId);
           return;
         }
@@ -709,16 +736,22 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const lastResponseIsManual = keepsCached
           ? cached?.lastResponseIsManual
           : data.lastResponseIsManual;
+        const lastResponseMessageId =
+          keepsCached || serverResponseAt == null
+            ? cached?.lastResponseMessageId
+            : resolveReplyIdentity(cached, data);
         if (
           cached?.lastSeenAt === undefined &&
           cachedResponseAt === lastResponseAt &&
-          cached?.lastResponseIsManual === lastResponseIsManual
+          cached?.lastResponseIsManual === lastResponseIsManual &&
+          cached?.lastResponseMessageId === lastResponseMessageId
         ) {
           return;
         }
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt,
+          lastResponseMessageId,
           lastResponseIsManual,
           lastSeenAt: undefined,
         }));
@@ -751,6 +784,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt: context?.lastResponseAt,
+          lastResponseMessageId: resolveReplyIdentity(convo, context),
           lastResponseIsManual: context?.lastResponseIsManual,
           lastSeenAt: context?.lastSeenAt,
         }));

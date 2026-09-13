@@ -742,11 +742,13 @@ describe('tPresetSchema', () => {
       conversationId: null,
       endpoint: 'openAI',
       lastResponseAt: '2026-08-16T10:00:00.000Z',
+      lastResponseMessageId: 'reply-1',
       lastResponseIsManual: true,
       lastSeenAt: '2026-08-16T09:00:00.000Z',
     });
 
     expect(parsed).not.toHaveProperty('lastResponseAt');
+    expect(parsed).not.toHaveProperty('lastResponseMessageId');
     expect(parsed).not.toHaveProperty('lastResponseIsManual');
     expect(parsed).not.toHaveProperty('lastSeenAt');
   });

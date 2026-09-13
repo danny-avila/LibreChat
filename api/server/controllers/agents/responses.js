@@ -451,10 +451,10 @@ async function saveResponseOutput(
  * @returns {Promise<void>}
  */
 async function stampResponseReply(req, conversationId, savedMessage) {
-  if (req?.body?.isTemporary === true || savedMessage == null) {
+  if (req?.body?.isTemporary === true || savedMessage?.messageId == null) {
     return;
   }
-  await db.stampConvoLastResponse(req.user.id, conversationId);
+  await db.stampConvoLastResponse(req.user.id, conversationId, savedMessage.messageId);
 }
 
 /**

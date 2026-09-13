@@ -186,7 +186,10 @@ async function saveAssistantMessage(req, params) {
        *  that resolved empty would announce a reply nobody can open. `saveConvo` assigns the
        *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
        *  flight cannot outrank this reply. */
-      stampReply: message != null && ctx.isTemporary !== true,
+      stampReply: message != null && ctx.isTemporary !== true && Boolean(message.messageId),
+      ...(message != null && ctx.isTemporary !== true && message.messageId
+        ? { replyMessageId: message.messageId }
+        : {}),
       ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
     },
   );
@@ -403,10 +406,14 @@ async function syncMessages({
      `saveConvo` above carries no reply stamp, so without this the recovered reply would never
      raise its unseen indicator. Only a write that actually persisted counts, and it is
      best-effort, since those messages are already durable. */
-  const persistedAssistantReply = recordedAssistantReplies.some((message) => message != null);
-  if (persistedAssistantReply && ctx.isTemporary !== true) {
+  const persistedAssistantReply = recordedAssistantReplies.findLast((message) => message != null);
+  if (persistedAssistantReply?.messageId && ctx.isTemporary !== true) {
     try {
-      await stampConvoLastResponse(openai.req.user.id, conversationId);
+      await stampConvoLastResponse(
+        openai.req.user.id,
+        conversationId,
+        persistedAssistantReply.messageId,
+      );
     } catch (error) {
       logger.warn('[syncMessages] Failed to stamp lastResponseAt', error);
     }

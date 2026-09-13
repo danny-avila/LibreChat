@@ -490,6 +490,8 @@ export type TMarkConversationUnreadResponse = {
   modified: boolean;
   /** The stamp the server settled on, so the client never has to invent its own marker. */
   lastResponseAt?: string;
+  /** Durable messageId paired with a real reply stamp; absent for synthetic markers. */
+  lastResponseMessageId?: string;
   /** True only when the settled stamp is the synthetic mark-unread marker. */
   lastResponseIsManual?: boolean;
 };

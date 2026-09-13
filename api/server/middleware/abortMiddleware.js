@@ -169,9 +169,9 @@ async function abortMessage(req, res) {
      key and endpoint, so the request body alone would stamp a stopped temporary chat. */
   const stampConversationId = jobData?.conversationId;
   const isTemporaryJob = (jobData?.isTemporary ?? req?.body?.isTemporary) === true;
-  if (savedMessage != null && !isTemporaryJob && stampConversationId) {
+  if (savedMessage?.messageId && !isTemporaryJob && stampConversationId) {
     try {
-      await db.stampConvoLastResponse(userId, stampConversationId);
+      await db.stampConvoLastResponse(userId, stampConversationId, savedMessage.messageId);
     } catch (error) {
       logger.warn('[abortMessage] Failed to stamp lastResponseAt', error);
     }

@@ -69,7 +69,11 @@ const sendError = async (req, res, options, callback) => {
     const stampUserId = req?.user?.id ?? user;
     if (savedError != null && !isTemporary && stampUserId && conversationId) {
       try {
-        settledReadState = await stampConvoLastResponse(stampUserId, conversationId);
+        settledReadState = await stampConvoLastResponse(
+          stampUserId,
+          conversationId,
+          savedError.messageId,
+        );
       } catch (err) {
         logger.error('[sendError] Failed to stamp the persisted error reply', err);
       }
@@ -84,6 +88,9 @@ const sendError = async (req, res, options, callback) => {
     errorMessage.conversation = {
       conversationId,
       lastResponseAt: settledReadState.lastResponseAt,
+      ...(settledReadState.lastResponseMessageId != null
+        ? { lastResponseMessageId: settledReadState.lastResponseMessageId }
+        : {}),
       ...(settledReadState.updatedAt != null ? { updatedAt: settledReadState.updatedAt } : {}),
     };
   }

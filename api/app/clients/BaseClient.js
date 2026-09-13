@@ -1357,7 +1357,11 @@ class BaseClient {
       const stampUserId = reqCtx.userId ?? user ?? this.user;
       if (persistedReply && reqCtx.isTemporary !== true && stampUserId) {
         try {
-          await db.stampConvoLastResponse(stampUserId, message.conversationId);
+          await db.stampConvoLastResponse(
+            stampUserId,
+            message.conversationId,
+            savedMessage.messageId,
+          );
         } catch (error) {
           logger.error('[BaseClient] Failed to stamp reply on skipped conversation save', error);
         }
@@ -1428,7 +1432,9 @@ class BaseClient {
       noUpsert: req?._agentEventBindingParentConversationId != null,
       initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
-      ...(stampReply ? { stampReply } : {}),
+      ...(stampReply && savedMessage?.messageId != null
+        ? { stampReply, replyMessageId: savedMessage.messageId }
+        : {}),
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
 

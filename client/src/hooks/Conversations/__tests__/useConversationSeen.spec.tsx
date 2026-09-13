@@ -3,10 +3,15 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryKeys, tMessageSchema } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { TMessage } from 'librechat-data-provider';
+import {
+  markLocallyCommittedReply,
+  markServerFetchedReply,
+  updateConvoInAllQueries,
+} from '~/utils';
 import { useGetMessagesByConvoId } from '~/data-provider/Messages/queries';
 import { suppressFocusAcknowledgement } from '../notificationNavigation';
 import useConversationSeen from '../useConversationSeen';
-import { markLocallyCommittedReply } from '~/utils';
 
 const mockMarkSeen = jest.fn();
 const mockGetMessages = jest.fn();
@@ -32,6 +37,8 @@ const RESPONDED_LATER_AT = '2026-08-16T10:05:00.000Z';
 
 type ConvoFixture = {
   lastResponseAt?: string;
+  lastResponseMessageId?: string;
+  lastResponseIsManual?: boolean;
   lastSeenAt?: string;
 };
 
@@ -39,6 +46,8 @@ type SeededConvo = {
   conversationId: string;
   title: string;
   lastResponseAt?: string;
+  lastResponseMessageId?: string;
+  lastResponseIsManual?: boolean;
   lastSeenAt?: string;
 };
 
@@ -56,7 +65,14 @@ function seedUnseen(
   queryClient.setQueryData([QueryKeys.allConversations, { isArchived: false }], {
     pages: [
       {
-        conversations: [{ conversationId, title: 'Test', lastResponseAt }],
+        conversations: [
+          {
+            conversationId,
+            title: 'Test',
+            lastResponseAt,
+            lastResponseMessageId: 'server-reply',
+          },
+        ],
         nextCursor: null,
       },
     ],
@@ -68,6 +84,7 @@ function setup(
   fixture: ConvoFixture | null,
   initialProps: SeenProps = { id: CONVO_ID, submitting: false },
   measureNearBottom?: () => boolean | null,
+  isResponseRendered?: (messageId: string) => boolean,
 ) {
   const queryClient = createClient();
   if (fixture !== null) {
@@ -76,6 +93,8 @@ function setup(
         conversationId: initialProps.id,
         title: 'Test',
         lastResponseAt: fixture.lastResponseAt,
+        lastResponseMessageId: fixture.lastResponseMessageId ?? 'server-reply',
+        lastResponseIsManual: fixture.lastResponseIsManual,
         lastSeenAt: fixture.lastSeenAt,
       },
     ];
@@ -92,12 +111,17 @@ function setup(
     });
   }
 
+  const renderedResponseId = fixture?.lastResponseMessageId ?? 'server-reply';
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <div id={renderedResponseId}>
+      <div data-testid="message-body">{renderedResponseId}</div>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </div>
   );
 
   const view = renderHook(
-    ({ id, submitting }: SeenProps) => useConversationSeen(id, submitting, measureNearBottom),
+    ({ id, submitting }: SeenProps) =>
+      useConversationSeen(id, submitting, measureNearBottom, isResponseRendered),
     {
       initialProps,
       wrapper,
@@ -170,7 +194,10 @@ describe('useConversationSeen', () => {
         .mockReturnValueOnce(latest);
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <MemoryRouter initialEntries={[`/c/${CONVO_ID}`]}>
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+          <div id="server-reply">
+            <div data-testid="message-body">{history[0].text}</div>
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+          </div>
         </MemoryRouter>
       );
       try {
@@ -210,6 +237,85 @@ describe('useConversationSeen', () => {
     const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
     queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'final-reply' }]);
     markLocallyCommittedReply(queryClient, CONVO_ID, RESPONDED_AT);
+    const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
+
+    act(() => result.current(true));
+
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+    expect(invalidateMessages).not.toHaveBeenCalled();
+  });
+  it('does not acknowledge a fetched hidden sibling until that response branch is visible', async () => {
+    let responseVisible = false;
+    const { result, queryClient } = setup(
+      { lastResponseAt: RESPONDED_AT, lastResponseMessageId: 'hidden-reply' },
+      { id: CONVO_ID, submitting: false },
+      undefined,
+      () => responseVisible,
+    );
+    const hiddenReply = tMessageSchema.parse({
+      messageId: 'hidden-reply',
+      conversationId: CONVO_ID,
+      parentMessageId: 'hidden-user',
+      sender: 'Assistant',
+      text: 'Hidden reply',
+      isCreatedByUser: false,
+    }) as TMessage;
+    const stored = queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [hiddenReply]);
+    markServerFetchedReply(queryClient, CONVO_ID, RESPONDED_AT, stored!);
+
+    act(() => result.current(true));
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    responseVisible = true;
+    act(() => result.current(true));
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+  });
+
+  it('acknowledges a synthetic manual marker from the settled route without refetching history', async () => {
+    const queryClient = createClient();
+    seedUnseen(queryClient);
+    updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
+      ...convo,
+      lastResponseIsManual: true,
+      lastResponseMessageId: undefined,
+    }));
+    const getHistory = jest.fn(async () => []);
+    await queryClient.fetchQuery({
+      queryKey: [QueryKeys.messages, CONVO_ID],
+      queryFn: getHistory,
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useConversationSeen(CONVO_ID, false), { wrapper });
+    act(() => result.current(true));
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+    expect(invalidateMessages).not.toHaveBeenCalled();
+    expect(getHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledges a warm synthetic manual marker without a metadata refetch', async () => {
+    const { result, queryClient } = setup({
+      lastResponseAt: RESPONDED_AT,
+      lastResponseIsManual: true,
+    });
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'existing-reply' }]);
     const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
 
     act(() => result.current(true));
@@ -554,6 +660,7 @@ describe('useConversationSeen', () => {
         conversationId: CONVO_ID,
         title: 'Test',
         lastResponseAt: RESPONDED_AT,
+        lastResponseMessageId: 'server-reply',
       });
     });
 

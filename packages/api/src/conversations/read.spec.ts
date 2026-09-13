@@ -136,9 +136,11 @@ describe('createMarkConvoUnreadHandler', () => {
   });
 
   it('flags the conversation and returns the marker the server settled on', async () => {
-    const markConvoUnread = jest
-      .fn()
-      .mockResolvedValue({ modified: true, lastResponseAt: new Date('2026-08-16T10:00:00.000Z') });
+    const markConvoUnread = jest.fn().mockResolvedValue({
+      modified: true,
+      lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+      lastResponseMessageId: 'reply-1',
+    });
     const res = mockResponse();
 
     await createMarkConvoUnreadHandler({ markConvoUnread })(
@@ -150,6 +152,7 @@ describe('createMarkConvoUnreadHandler', () => {
     expect(res.body).toEqual({
       modified: true,
       lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+      lastResponseMessageId: 'reply-1',
     });
     expect(markConvoUnread).toHaveBeenCalledWith('user-123', 'conv-1');
   });

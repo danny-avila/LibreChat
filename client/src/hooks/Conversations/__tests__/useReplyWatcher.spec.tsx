@@ -49,7 +49,14 @@ function setup(toggles: Toggles = {}) {
   queryClient.setQueryData(listKey, {
     pages: [
       {
-        conversations: [{ conversationId: CONVO_ID, title: 'Watched', endpoint: 'openAI' }],
+        conversations: [
+          {
+            conversationId: CONVO_ID,
+            title: 'Watched',
+            endpoint: 'openAI',
+            lastResponseMessageId: 'reply-id',
+          },
+        ],
         nextCursor: null,
       },
     ],
@@ -141,6 +148,7 @@ describe('useReplyWatcher', () => {
     mockGetConversationById.mockResolvedValue({
       conversationId: CONVO_ID,
       lastResponseAt: successorStamp,
+      lastResponseMessageId: 'successor-reply',
     });
 
     mockActiveJobIds = [];
@@ -148,6 +156,44 @@ describe('useReplyWatcher', () => {
 
     await waitFor(() => expect(cachedConvo()?.lastResponseAt).toBe(successorStamp));
     expect(isConversationUnseen(cachedConvo())).toBe(true);
+  });
+  it('merges an equal-stamp response identity without clearing newer read state', async () => {
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
+    mockActiveJobIds = [CONVO_ID];
+    const { rerender, queryClient, cachedConvo } = setup();
+    updateCachedTimestamps(queryClient);
+    queryClient.setQueryData(
+      listKey,
+      (current: InfiniteData<ConversationCursorData> | undefined) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            conversations: page.conversations.map((conversation) => ({
+              ...conversation,
+              lastResponseMessageId: undefined,
+              lastSeenAt: RESPONDED_AT,
+            })),
+          })),
+        };
+      },
+    );
+    mockGetConversationById.mockResolvedValue({
+      conversationId: CONVO_ID,
+      lastResponseAt: RESPONDED_AT,
+      lastResponseMessageId: 'reply-id',
+      lastSeenAt: undefined,
+    });
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    mockActiveJobIds = [];
+    rerender();
+
+    await waitFor(() => expect(cachedConvo()?.lastResponseMessageId).toBe('reply-id'));
+    expect(invalidate).not.toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]);
   });
 
   it('polls the conversation list while away once notifications are enabled', async () => {
@@ -862,6 +908,7 @@ function updateCachedTimestamps(queryClient: QueryClient) {
             createdAt: RESPONDED_AT,
             updatedAt: RESPONDED_AT,
             lastResponseAt: RESPONDED_AT,
+            lastResponseMessageId: 'reply-id',
           },
         ],
         nextCursor: null,

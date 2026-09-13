@@ -387,6 +387,10 @@ const convoSchema: Schema<IConversation> = new Schema(
     lastResponseAt: {
       type: Date,
     },
+    /** Durable messageId of the assistant reply named by lastResponseAt. */
+    lastResponseMessageId: {
+      type: String,
+    },
     /** True only for the synthetic unread marker; real replies clear this field. */
     lastResponseIsManual: {
       type: Boolean,

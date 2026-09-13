@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
@@ -51,7 +51,7 @@ function MessagesViewContent({
   const { conversationId } = conversation ?? {};
   const fileMap = useFileMapContext();
   const threadRows = useThreadRows(FLAT_THREAD ? messages : null, conversationId, fileMap);
-  const { index, latestMessageDepth } = useChatContext();
+  const { index, latestMessageId, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { showScrollButton, maximizeChatSpace } = useChatSurface();
   const autoScroll = useAtomValue(autoScrollAtom);
@@ -69,12 +69,31 @@ function MessagesViewContent({
     return end.getBoundingClientRect().top <= scrollable.getBoundingClientRect().bottom + 1;
   }, [messagesEndRef, scrollableRef]);
 
+  /** MessageRow owns the durable DOM id. Scoping the lookup to this content root prevents a stale
+   * row in another mounted surface from proving a hidden sibling branch visible. A body child is
+   * required because progressive mounting can expose the row shell before its body commits. */
+  const isResponseRendered = useCallback(
+    (messageId: string) => {
+      const content = contentRef.current;
+      const row = document.getElementById(messageId);
+      if (!content || !row || !content.contains(row)) {
+        return false;
+      }
+      const body = row.querySelector('[data-testid="message-body"]');
+      return (
+        body != null && (body.childElementCount > 0 || (body.textContent?.trim().length ?? 0) > 0)
+      );
+    },
+    [contentRef],
+  );
+
   /** Piggybacks the messages-end observer rather than adding a second one, and stays a plain
    *  callback so intersection flips keep re-rendering only `ScrollButton`. */
   const reportNearBottom = useConversationSeen(
     conversationId ?? undefined,
     isSubmitting,
     measureNearBottom,
+    isResponseRendered,
   );
   const handleNearBottom = useCallback(
     (isNearBottom: boolean) => {
@@ -96,6 +115,12 @@ function MessagesViewContent({
     conversationId: treeConversationId,
     scrollableRef,
   });
+  useEffect(() => {
+    const isNearBottom = measureNearBottom();
+    if (isNearBottom != null) {
+      reportNearBottom(isNearBottom);
+    }
+  }, [latestMessageId, measureNearBottom, mountWindow, reportNearBottom, _messagesTree]);
 
   /** The in-flight steer overlay floats above the composer over the bottom of
    *  the thread (see `InFlightSteers`); reserve an equal band here so the

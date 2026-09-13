@@ -208,6 +208,9 @@ describe('Conversation Operations', () => {
           checkpointNs: 'event-actor/other',
           checkpointId: 'other',
         },
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastResponseMessageId: 'forged-reply',
+        lastResponseIsManual: true,
       };
       await saveConvo(mockCtx, { ...mockConversationData, ...forged });
       await methods.bulkSaveConvos([{ ...mockConversationData, user: mockCtx.userId, ...forged }]);
@@ -280,31 +283,38 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('keeps lastResponseAt monotonic when an older save lands last', async () => {
-      /* Two responses persisting concurrently each capture their stamp before saveConvo's own
-         reads; the older save resuming last must not walk the stamp backwards, or the newer
-         reply reads as already seen. */
-      const newer = new Date('2026-08-16T10:05:00.000Z');
-      const older = new Date('2026-08-16T10:00:00.000Z');
-
-      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: newer });
-      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: older });
+    it('does not let metadata forge a reply timestamp or identity', async () => {
+      const replyAt = new Date('2026-08-16T10:05:00.000Z');
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-newer' },
+      );
+      await saveConvo(mockCtx, {
+        ...mockConversationData,
+        lastResponseAt: new Date('2026-08-16T11:00:00.000Z'),
+        lastResponseMessageId: 'forged',
+      });
 
       const convo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
       });
-      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(replyAt.getTime());
+      expect(convo?.lastResponseMessageId).toBe('reply-newer');
     });
 
     it('stamps a first reply through the monotonic path', async () => {
-      const stamp = new Date('2026-08-16T10:00:00.000Z');
-
-      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: stamp });
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-first' },
+      );
 
       const convo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
       });
-      expect(convo?.lastResponseAt?.getTime()).toBe(stamp.getTime());
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseMessageId).toBe('reply-first');
     });
 
     it('stamps the reply at write time and clears the catch-up it outranks', async () => {
@@ -318,7 +328,11 @@ describe('Conversation Operations', () => {
         { $set: { lastSeenAt: new Date(Date.now() + 5_000) } },
       );
 
-      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-write-time' },
+      );
 
       const convo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
@@ -334,7 +348,10 @@ describe('Conversation Operations', () => {
       });
       let result;
       try {
-        result = await saveConvo(mockCtx, mockConversationData, { stampReply: true });
+        result = await saveConvo(mockCtx, mockConversationData, {
+          stampReply: true,
+          replyMessageId: 'reply-failed-read',
+        });
       } finally {
         find.mockRestore();
       }
@@ -351,7 +368,11 @@ describe('Conversation Operations', () => {
     });
 
     it('advances past a future stamp when a save host clock is behind', async () => {
-      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-before-future' },
+      );
       const newer = new Date(Date.now() + 60_000);
       const seenAt = new Date(Date.now() + 90_000);
       await Conversation.updateOne(
@@ -359,7 +380,11 @@ describe('Conversation Operations', () => {
         { $set: { lastResponseAt: newer, lastSeenAt: seenAt } },
       );
 
-      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-after-future' },
+      );
 
       const convo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
@@ -2176,7 +2201,7 @@ describe('Conversation Operations', () => {
         updatedAt: new Date('2026-08-16T09:00:00.000Z'),
       });
 
-      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      await stampConvoLastResponse('user123', mockConversationData.conversationId, 'reply-project');
 
       const refreshed = await ChatProject.findById(project._id).lean<{
         lastConversationAt?: Date;
@@ -2204,6 +2229,7 @@ describe('Conversation Operations', () => {
         const settled = await stampConvoLastResponse(
           'user123',
           mockConversationData.conversationId,
+          'reply-project-failure',
         );
         const saved = await Conversation.findOne({
           conversationId: mockConversationData.conversationId,
@@ -2229,12 +2255,17 @@ describe('Conversation Operations', () => {
         updatedAt: createdAt,
       });
 
-      const settled = await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      const settled = await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-latest',
+      );
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
       expect(settled?.lastResponseAt).toBeInstanceOf(Date);
+      expect(settled?.lastResponseMessageId).toBe('reply-latest');
       expect(settled?.updatedAt).toBeInstanceOf(Date);
       expect(settled?.lastResponseAt?.getTime()).toBe(convo?.lastResponseAt?.getTime());
       expect(settled?.updatedAt?.getTime()).toBe(convo?.updatedAt?.getTime());
@@ -2255,7 +2286,11 @@ describe('Conversation Operations', () => {
         { timestamps: false },
       );
 
-      const settled = await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      const settled = await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-future',
+      );
 
       expect(settled?.lastResponseAt?.getTime()).toBeGreaterThan(metadataAt.getTime());
       expect(settled?.updatedAt).toEqual(settled?.lastResponseAt);
@@ -2273,7 +2308,11 @@ describe('Conversation Operations', () => {
         lastSeenAt: new Date(Date.now() + 5_000),
       });
 
-      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-manual-clear',
+      );
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
@@ -2293,7 +2332,7 @@ describe('Conversation Operations', () => {
         lastSeenAt: seenAt,
       });
 
-      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      await stampConvoLastResponse('user123', mockConversationData.conversationId, 'reply-future');
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
@@ -2312,6 +2351,7 @@ describe('Conversation Operations', () => {
       const settled = await stampConvoLastResponse(
         'someone-else',
         mockConversationData.conversationId,
+        'reply-other-user',
       );
 
       const convo = await Conversation.findOne({
@@ -2329,7 +2369,11 @@ describe('Conversation Operations', () => {
         isTemporary: true,
       });
 
-      const settled = await stampConvoLastResponse('user123', original.conversationId);
+      const settled = await stampConvoLastResponse(
+        'user123',
+        original.conversationId,
+        'reply-temporary',
+      );
       const current = await Conversation.findById(original._id).lean<IConversation>();
 
       expect(settled).toBeNull();
@@ -2376,6 +2420,7 @@ describe('Conversation Operations', () => {
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
       expect(result.lastResponseAt?.toISOString()).toBe(convo?.lastResponseAt?.toISOString());
+      expect(result.lastResponseMessageId).toBeUndefined();
       expect(result.lastResponseIsManual).toBe(true);
     });
 
@@ -2398,12 +2443,13 @@ describe('Conversation Operations', () => {
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
         lastResponseAt: responded,
-        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+        lastResponseMessageId: 'reply-existing',
       });
 
       const result = await markConvoUnread('user123', mockConversationData.conversationId);
 
       expect(result.lastResponseAt?.toISOString()).toBe(responded.toISOString());
+      expect(result.lastResponseMessageId).toBe('reply-existing');
       expect(result.lastResponseIsManual).toBe(false);
     });
     it('marks a never-replied conversation with a monotonic manual marker so the dot lights', async () => {
@@ -2472,6 +2518,7 @@ describe('Conversation Operations', () => {
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
         lastResponseAt,
+        lastResponseMessageId: 'reply-listed',
         lastResponseIsManual: true,
         lastSeenAt,
       });
@@ -2479,6 +2526,7 @@ describe('Conversation Operations', () => {
       const { conversations } = await getConvosByCursor('user123');
       expect(conversations).toHaveLength(1);
       expect(conversations[0].lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
+      expect(conversations[0].lastResponseMessageId).toBe('reply-listed');
       expect(conversations[0].lastResponseIsManual).toBe(true);
       expect(conversations[0].lastSeenAt?.toISOString()).toBe(lastSeenAt.toISOString());
     });

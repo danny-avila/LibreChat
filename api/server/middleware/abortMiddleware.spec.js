@@ -403,7 +403,7 @@ describe('abortMiddleware - transactions config', () => {
 
     await handleAbort()(buildReq(), res);
 
-    expect(db.stampConvoLastResponse).toHaveBeenCalledWith('user-123', 'convo-123');
+    expect(db.stampConvoLastResponse).toHaveBeenCalledWith('user-123', 'convo-123', 'msg-123');
     expect(JSON.parse(res.send.mock.calls[0][0]).final).toBe(true);
   });
 

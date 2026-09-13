@@ -22,7 +22,7 @@ const openAudioContext = (): AudioContext | null => {
   }
   sharedContext = sharedContext ?? new AudioContext();
   if (sharedContext.state === 'suspended') {
-    void sharedContext.resume();
+    void sharedContext.resume().catch(() => undefined);
   }
   return sharedContext;
 };
@@ -40,28 +40,38 @@ export const unlockReplyNotificationSound = (): void => {
  * Synthesized rather than shipped as an asset: two short tones need no binary, no request, and
  * no cache entry. Failure is always silent, because a missed chime is not worth an error toast.
  */
-const playChime = () => {
+const playChime = (arrivals: ReplyReadState['unseen']) => {
   try {
     const context = openAudioContext();
-    if (!context) {
+    if (!context || context.state !== 'running') {
       return;
     }
-    sharedContext = context;
-    const start = sharedContext.currentTime;
+    let claimed = false;
+    for (const conversation of arrivals) {
+      if (
+        claimReplyAnnouncement('sound', conversation.conversationId, conversation.lastResponseAt)
+      ) {
+        claimed = true;
+      }
+    }
+    if (!claimed) {
+      return;
+    }
+    const start = context.currentTime;
     const tones: Array<[number, number]> = [
       [880, 0],
       [1174.66, 0.12],
     ];
 
     for (const [frequency, offset] of tones) {
-      const oscillator = sharedContext.createOscillator();
-      const gain = sharedContext.createGain();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
       oscillator.type = 'sine';
       oscillator.frequency.value = frequency;
       gain.gain.setValueAtTime(0.0001, start + offset);
       gain.gain.exponentialRampToValueAtTime(0.12, start + offset + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.25);
-      oscillator.connect(gain).connect(sharedContext.destination);
+      oscillator.connect(gain).connect(context.destination);
       oscillator.start(start + offset);
       oscillator.stop(start + offset + 0.3);
     }
@@ -282,15 +292,10 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    /* Every arrival is claimed, not just the first: one chime covers the whole pass, and
-       leaving the rest unclaimed would hand another tab a reason to chime again for them. */
+    /* The usable audio context claims every covered arrival, so a suspended tab cannot silence
+       the same reply in another tab that can actually schedule playback. */
     if (soundEnabled) {
-      const chimed = arrivals.filter((conversation) =>
-        claimReplyAnnouncement('sound', conversation.conversationId, conversation.lastResponseAt),
-      );
-      if (chimed.length > 0) {
-        playChime();
-      }
+      playChime(arrivals);
     }
 
     if (!willNotify) {

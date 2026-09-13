@@ -33,6 +33,7 @@ export default function useConversationSeen(
   conversationId: string | undefined,
   isSubmitting: boolean,
   measureNearBottom?: () => boolean | null,
+  isResponseRendered?: (messageId: string) => boolean,
 ) {
   const queryClient = useQueryClient();
   const { mutate: markSeen } = useMarkConversationSeenMutation();
@@ -55,6 +56,24 @@ export default function useConversationSeen(
    * network keeps refusing them. Re-armed by a genuinely newer reply, or by refocusing. */
   const attemptedRef = useRef<Map<string, string | undefined>>(new Map());
   const markSeenRef = useRef<() => void>(() => undefined);
+  const isResponseRenderedRef = useRef(isResponseRendered);
+  isResponseRenderedRef.current = isResponseRendered;
+  /** The active MessagesView scopes this to its rendered tree. The document fallback keeps the
+   * hook safe for callers that do not own a content ref, while still requiring the actual row
+   * body rather than a virtual/progressive placeholder. */
+  const hasRenderedResponse = useCallback((messageId: string | undefined): boolean => {
+    if (!messageId) {
+      return false;
+    }
+    if (isResponseRenderedRef.current) {
+      return isResponseRenderedRef.current(messageId);
+    }
+    const row = document.getElementById(messageId);
+    const body = row?.querySelector('[data-testid="message-body"]');
+    return (
+      body != null && (body.childElementCount > 0 || (body.textContent?.trim().length ?? 0) > 0)
+    );
+  }, []);
 
   const scheduleRenderedCheck = useCallback(
     (expectedStamp: string | undefined, proofSource?: 'local' | 'server') => {
@@ -77,11 +96,15 @@ export default function useConversationSeen(
               hasLocallyCommittedReply(queryClient, conversationId, expectedStamp)) ||
               (proofSource === 'server' &&
                 hasServerFetchedReply(queryClient, conversationId, expectedStamp)));
+          const responseIsRendered =
+            cached?.lastResponseIsManual === true ||
+            hasRenderedResponse(cached?.lastResponseMessageId);
           if (
             expectedStamp != null &&
             messagesReady &&
             cached?.lastResponseAt === expectedStamp &&
             isConversationUnseen(cached) &&
+            responseIsRendered &&
             (proofSource == null ? true : cached.lastResponseIsManual !== true && proofStillHolds)
           ) {
             renderedMessagesRef.current.set(conversationId, expectedStamp);
@@ -94,7 +117,7 @@ export default function useConversationSeen(
         });
       });
     },
-    [conversationId, queryClient],
+    [conversationId, queryClient, hasRenderedResponse],
   );
 
   const markSeenIfCaughtUp = useCallback(
@@ -134,11 +157,28 @@ export default function useConversationSeen(
       }
 
       const renderedStamp = renderedMessagesRef.current.get(conversationId);
+      const isManualMarker = cached?.lastResponseIsManual === true;
       const hasLocalProof = hasLocallyCommittedReply(queryClient, conversationId, lastResponseAt);
       const hasServerProof = hasServerFetchedReply(queryClient, conversationId, lastResponseAt);
       if (
+        !isManualMarker &&
+        (hasLocalProof || hasServerProof) &&
+        !hasRenderedResponse(cached?.lastResponseMessageId)
+      ) {
+        /* A stamped history cache can still describe a hidden sibling branch, or a progressive
+         * row whose body has not committed. Neither is safe to acknowledge and neither should
+         * trigger a second history request. */
+        return;
+      }
+      if (isManualMarker && renderedStamp !== lastResponseAt) {
+        /* Synthetic markers carry no message identity. The successful active history query and
+         * the two-frame render gate are the route/scroll proof for these list-only events. */
+        scheduleRenderedCheck(lastResponseAt);
+        return;
+      }
+      if (
         renderedStamp !== lastResponseAt &&
-        cached?.lastResponseIsManual !== true &&
+        !isManualMarker &&
         (hasLocalProof || hasServerProof)
       ) {
         /* A terminal SSE event or a server fetch paired this exact cache object with the reply.
@@ -148,6 +188,9 @@ export default function useConversationSeen(
       }
 
       if (renderedStamp !== lastResponseAt) {
+        if (isManualMarker) {
+          return;
+        }
         if (requestedMessagesRef.current.get(conversationId) === lastResponseAt) {
           /* The requested fetch succeeded, but its cache event has not painted yet. */
           return;
@@ -168,7 +211,7 @@ export default function useConversationSeen(
        * newer, so a reply persisted from another device mid-request stays unseen. */
       markSeen({ conversationId, lastResponseAt });
     },
-    [conversationId, queryClient, markSeen, scheduleRenderedCheck],
+    [conversationId, queryClient, markSeen, scheduleRenderedCheck, hasRenderedResponse],
   );
 
   markSeenRef.current = markSeenIfCaughtUp;

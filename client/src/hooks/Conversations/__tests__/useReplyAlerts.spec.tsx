@@ -37,12 +37,17 @@ const createdNotifications: FakeNotification[] = [];
 
 const createOscillator = jest.fn();
 const createGain = jest.fn();
+let audioState: AudioContextState = 'running';
+const resumeAudio = jest.fn().mockResolvedValue(undefined);
 
 class FakeAudioContext {
-  state = 'running';
+  get state() {
+    return audioState;
+  }
+
   currentTime = 0;
   destination = {};
-  resume = jest.fn();
+  resume = resumeAudio;
   createOscillator = createOscillator;
   createGain = createGain;
 }
@@ -173,6 +178,8 @@ describe('useReplyAlerts', () => {
     permissionRequest.mockReset();
     createOscillator.mockReset();
     createGain.mockReset();
+    audioState = 'running';
+    resumeAudio.mockReset().mockResolvedValue(undefined);
     stubOscillator();
     FakeNotification.permission = 'granted';
     /* jsdom ships neither API; the narrowest honest stand-ins are constructor shims. */
@@ -537,6 +544,27 @@ describe('useReplyAlerts', () => {
 
     expect(createdNotifications).toHaveLength(0);
     expect(createOscillator).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a suspended tab’s chime claim available to a usable audio context', async () => {
+    audioState = 'suspended';
+    resumeAudio.mockReturnValue(Promise.withResolvers<void>().promise);
+    const locked = setup({ sound: true }, stateOf([]));
+    await act(async () => {
+      locked.rerender(stateOf([row('shared-reply', 'Reply')]));
+    });
+    expect(window.localStorage.getItem('replyAlerts:announced:sound')).toBeNull();
+    expect(createOscillator).not.toHaveBeenCalled();
+
+    audioState = 'running';
+    const ready = setup({ sound: true }, stateOf([]));
+    act(() => {
+      ready.rerender(stateOf([row('shared-reply', 'Reply')]));
+    });
+    expect(createOscillator).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(window.localStorage.getItem('replyAlerts:announced:sound') ?? '[]')).toEqual([
+      ['shared-reply', '2026-08-16T10:00:00.000Z'],
+    ]);
   });
 
   it('leaves the focus trigger alone for the conversation already on screen', async () => {
