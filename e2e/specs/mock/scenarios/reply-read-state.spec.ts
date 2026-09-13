@@ -8,7 +8,13 @@ import type { TMarkConversationUnreadResponse as MutationResult } from 'librecha
 import type { AllMethods, IConversation } from '@librechat/data-schemas';
 import { getRuntimeEnvPath } from '../../../setup/env';
 import { getE2EUser } from '../../../setup/user';
-import { seedConversations, seedMessages, withMongo } from '../db';
+import {
+  deleteConversations,
+  deleteMessagesByConversation,
+  seedConversations,
+  seedMessages,
+  withMongo,
+} from '../db';
 import { getAccessToken, requestJson } from '../helpers';
 
 type ReadState = Pick<
@@ -18,6 +24,7 @@ type ReadState = Pick<
 const NO_PARENT = Constants.NO_PARENT;
 let methods: AllMethods;
 let userId: string;
+const createdConversationIds: string[] = [];
 
 async function readState(conversationId: string) {
   return withMongo((db) => db.collection<ReadState>('conversations').findOne({ conversationId }));
@@ -46,6 +53,18 @@ test.beforeAll(async () => {
   userId = user._id.toString();
 });
 
+/* These fixtures share one database with every other spec in the run, and an abandoned unread
+ * conversation inflates the tab count that other scenarios assert. Removed after each test,
+ * including a failing one. */
+test.afterEach(async () => {
+  const ids = createdConversationIds.splice(0, createdConversationIds.length);
+  if (ids.length === 0) {
+    return;
+  }
+  await deleteMessagesByConversation(ids);
+  await deleteConversations(ids);
+});
+
 test.afterAll(async () => {
   await mongoose.disconnect();
 });
@@ -55,9 +74,10 @@ test('later visible read wins over a delayed unread response, and stale seen can
 }, testInfo) => {
   test.setTimeout(120_000);
   const conversationId = randomUUID();
+  createdConversationIds.push(conversationId);
   const userMessageId = randomUUID();
   const replyId = randomUUID();
-  const title = 'Read ordering acceptance';
+  const title = `Read ordering acceptance ${conversationId.slice(0, 8)}`;
   await seedConversations(getE2EUser().email, [{ conversationId, title, updatedAt: new Date() }]);
   await seedMessages(getE2EUser().email, conversationId, [
     {
@@ -170,9 +190,14 @@ test('a hidden sibling reply stays unread until its actual branch is rendered @s
 }, testInfo) => {
   test.setTimeout(120_000);
   const conversationId = randomUUID();
+  createdConversationIds.push(conversationId);
   const [root, older, visible, followup, hidden] = Array.from({ length: 5 }, () => randomUUID());
   await seedConversations(getE2EUser().email, [
-    { conversationId, title: 'Visible branch acceptance', updatedAt: new Date() },
+    {
+      conversationId,
+      title: `Visible branch acceptance ${conversationId.slice(0, 8)}`,
+      updatedAt: new Date(),
+    },
   ]);
   await seedMessages(getE2EUser().email, conversationId, [
     {
@@ -249,9 +274,14 @@ test('a synthetic unread marker clears on a cold open with one history request @
 }) => {
   test.setTimeout(120_000);
   const conversationId = randomUUID();
+  createdConversationIds.push(conversationId);
   const noteId = randomUUID();
   await seedConversations(getE2EUser().email, [
-    { conversationId, title: 'Manual unread acceptance', updatedAt: new Date() },
+    {
+      conversationId,
+      title: `Manual unread acceptance ${conversationId.slice(0, 8)}`,
+      updatedAt: new Date(),
+    },
   ]);
   await seedMessages(getE2EUser().email, conversationId, [
     {
