@@ -1558,6 +1558,24 @@ describe('Balance Reservations', () => {
       expect(stored?.reservations).toBeUndefined();
     });
 
+    test.each([
+      ['covers the request exactly', 100, true, 100],
+      ['still falls short', 10, false, 10],
+    ])(
+      'applies a refill whose interval is due again at once only once per admission when it %s',
+      async (_case, refillAmount, reserved, credits) => {
+        const user = new mongoose.Types.ObjectId();
+        await Balance.create({ user, ...refillable, refillAmount, refillIntervalValue: 0 });
+
+        await expect(reserve(user.toString(), 100)).resolves.toEqual({
+          reserved,
+          balance: credits,
+        });
+        expect((await readState(user))?.tokenCredits).toBe(credits);
+        expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(1);
+      },
+    );
+
     test('does not refill while the unreserved balance covers the request', async () => {
       const user = new mongoose.Types.ObjectId();
       await Balance.create({ user, ...refillable, tokenCredits: 500 });

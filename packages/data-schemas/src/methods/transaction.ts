@@ -472,8 +472,9 @@ export function createTransactionMethods(
    * Admission is one conditional `$push`/`$inc`: it matches only while `tokenCredits` is at least
    * the value read and `reservedCredits` still leaves room for the amount, so concurrent
    * admissions of a funded balance all commit, and an admission that lost the credits re-reads.
-   * A due auto-refill is applied first by its own fenced write. Returns null when the user has no
-   * balance record and no `initialBalance` was given.
+   * A due auto-refill is applied first by its own fenced write, at most once per admission, so a
+   * refill interval that is due again the instant it is applied still refills once. Returns null
+   * when the user has no balance record and no `initialBalance` was given.
    */
   async function reserveBalance({
     user,
@@ -484,6 +485,7 @@ export function createTransactionMethods(
   }: BalanceReservationRequest): Promise<BalanceReservationResult | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     let delay = 10;
+    let refilled = false;
 
     for (let attempt = 1; attempt <= maxReservationAttempts; attempt++) {
       const record = await Balance.findOne({ user })
@@ -513,8 +515,8 @@ export function createTransactionMethods(
 
       const credits = record.tokenCredits ?? 0;
       const balance = credits - (record.reservedCredits ?? 0);
-      if (refillSettled && balance - amount <= 0 && isAutoRefillDue(record, now)) {
-        await applyAutoRefill(record, now);
+      if (refillSettled && !refilled && balance - amount <= 0 && isAutoRefillDue(record, now)) {
+        refilled = await applyAutoRefill(record, now);
         continue;
       }
 
