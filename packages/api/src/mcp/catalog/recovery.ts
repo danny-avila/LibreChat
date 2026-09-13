@@ -18,8 +18,9 @@ let activeCatalogWork = 0;
  * unauthenticated fallback all draw down this single budget. Recovery targets a server that is
  * reachable and authorized but whose catalog cache expired, and such a server answers well inside
  * this window. The settle grace lets a discovery that honored the budget finish closing its
- * connections; past it, recovery releases the slot even if some dependency is still stalled, and
- * starts no other discovery for that server until the released one settles.
+ * connections; past it, recovery releases the slot even if some dependency is still stalled. By
+ * default no more released discoveries may still run than there are catalog slots, the most work a
+ * stalled dependency could hold before discoveries were released.
  */
 const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
@@ -27,6 +28,7 @@ const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoverySettleGraceMs: 10_000,
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
+  maxDetachedDiscoveries: CATALOG_FANOUT_CONCURRENCY,
   generationReadTimeoutMs: 500,
   authorizationFenceRetryMs: [0, 50, 200],
   authorizationFenceTimeoutMs: 1_000,
@@ -156,6 +158,8 @@ export interface MCPServerCatalogRecoveryPolicy {
   discoverySettleGraceMs: number;
   reauthRetryMs: number;
   maxStateEntries: number;
+  /** How many released discoveries may still run before no new discovery starts. */
+  maxDetachedDiscoveries: number;
   generationReadTimeoutMs: number;
   authorizationFenceRetryMs: readonly number[];
   authorizationFenceTimeoutMs: number;
@@ -243,6 +247,15 @@ interface RecoveryStateEntry {
 type PublicationTracker = (
   publish: () => Promise<string | undefined>,
 ) => Promise<string | undefined>;
+
+/** Hands the tracker a discovery released past its settle grace that is still running. */
+type DiscoveryDetacher = (discovery: Promise<unknown>) => void;
+
+/** The observed state a released discovery ran under; it holds only an attempt that matches it. */
+interface DetachedDiscovery {
+  configFingerprint: string;
+  recoveryGeneration?: string;
+}
 
 interface CatalogWorkLane {
   tasks: ReadonlyArray<() => Promise<void>>;
@@ -343,28 +356,94 @@ function getRecoveryFingerprint(
 export class MCPServerCatalogRecoveryTracker {
   private readonly states = new Map<string, RecoveryStateEntry>();
   /** Discoveries released past their settle grace that are still running, by recovery key. */
-  private readonly detachedDiscoveries = new Map<string, Promise<unknown>>();
+  private readonly detachedDiscoveries = new Map<string, DetachedDiscovery[]>();
+  private detachedDiscoveryCount = 0;
 
-  constructor(private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries) {}
+  constructor(
+    private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries,
+    private readonly maxDetachedDiscoveries: number = DEFAULT_RECOVERY_POLICY.maxDetachedDiscoveries,
+  ) {}
 
-  /**
-   * Holds a recovery key while a discovery released past its settle grace keeps running, so a
-   * stuck dependency accumulates at most one background discovery per user and server. Only the
-   * discovery settling lifts the hold; clears do not.
-   */
-  public detachDiscovery(userId: string, serverName: string, discovery: Promise<unknown>): void {
-    const key = getRecoveryKey(userId, serverName);
-    this.detachedDiscoveries.set(key, discovery);
-    const release = () => {
-      if (this.detachedDiscoveries.get(key) === discovery) {
-        this.detachedDiscoveries.delete(key);
-      }
-    };
-    discovery.then(release, release);
+  /** Whether a request-bound discovery, which never joins a flight, may start. */
+  public admitsDiscovery(
+    user: IUser,
+    candidate: RecoveryCandidate,
+    policy: MCPServerCatalogRecoveryPolicy,
+  ): boolean {
+    return !this.isDiscoveryHeld(
+      getRecoveryKey(user.id, candidate.serverName),
+      getRecoveryFingerprint(candidate.serverConfig, policy),
+      undefined,
+    );
   }
 
-  public hasDetachedDiscovery(userId: string, serverName: string): boolean {
-    return this.detachedDiscoveries.has(getRecoveryKey(userId, serverName));
+  /** Counts a request-bound discovery released past its settle grace until it settles. */
+  public detachDiscovery(
+    user: IUser,
+    candidate: RecoveryCandidate,
+    policy: MCPServerCatalogRecoveryPolicy,
+    discovery: Promise<unknown>,
+  ): void {
+    this.detach(
+      getRecoveryKey(user.id, candidate.serverName),
+      { configFingerprint: getRecoveryFingerprint(candidate.serverConfig, policy) },
+      discovery,
+    );
+  }
+
+  /**
+   * A released discovery keeps running, so another attempt under the same observed state would stack
+   * on the same stuck dependency. Released discoveries also share one process-wide limit: once that
+   * many still run, no new discovery starts until one settles. A changed configuration or credential
+   * generation is new state and may discover within that limit. Only settling lifts a hold; clears
+   * do not. Discoveries already running when the limit fills can still be released, so the count
+   * can exceed it by at most the catalog concurrency.
+   */
+  private isDiscoveryHeld(
+    key: string,
+    configFingerprint: string,
+    recoveryGeneration: string | undefined,
+  ): boolean {
+    if (this.detachedDiscoveryCount >= this.maxDetachedDiscoveries) {
+      return true;
+    }
+    return (
+      this.detachedDiscoveries
+        .get(key)
+        ?.some(
+          (detached) =>
+            detached.configFingerprint === configFingerprint &&
+            (recoveryGeneration == null || detached.recoveryGeneration === recoveryGeneration),
+        ) === true
+    );
+  }
+
+  private detach(key: string, detached: DetachedDiscovery, discovery: Promise<unknown>): void {
+    const held = this.detachedDiscoveries.get(key);
+    if (held == null) {
+      this.detachedDiscoveries.set(key, [detached]);
+    } else {
+      held.push(detached);
+    }
+    this.detachedDiscoveryCount += 1;
+    if (this.detachedDiscoveryCount === this.maxDetachedDiscoveries) {
+      logger.warn(
+        `[MCP catalog recovery] Released discoveries still running reached the limit of ${this.maxDetachedDiscoveries}; starting no new discovery until one settles`,
+      );
+    }
+    const release = () => {
+      const current = this.detachedDiscoveries.get(key);
+      const index = current?.indexOf(detached) ?? -1;
+      if (current == null || index < 0) {
+        return;
+      }
+      current.splice(index, 1);
+      if (current.length === 0) {
+        this.detachedDiscoveries.delete(key);
+      }
+      this.detachedDiscoveryCount -= 1;
+    };
+    discovery.then(release, release);
   }
 
   private touch(key: string, entry: RecoveryStateEntry): void {
@@ -420,13 +499,16 @@ export class MCPServerCatalogRecoveryTracker {
     candidate: RecoveryCandidate,
     policy: MCPServerCatalogRecoveryPolicy,
     recoveryGeneration: string | undefined,
-    discover: (trackPublication: PublicationTracker) => Promise<RecoveryOutcome>,
+    discover: (
+      trackPublication: PublicationTracker,
+      detach: DiscoveryDetacher,
+    ) => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
     const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
     const now = Date.now();
     const existing = this.states.get(key);
-    const detached = this.detachedDiscoveries.has(key);
+    const held = this.isDiscoveryHeld(key, configFingerprint, recoveryGeneration);
     const sameObservedState =
       existing?.configFingerprint === configFingerprint &&
       (recoveryGeneration == null ||
@@ -438,11 +520,11 @@ export class MCPServerCatalogRecoveryTracker {
       if (existing.inFlight != null) {
         return existing.inFlight;
       }
-      if (existing.outcome != null && (detached || existing.nextRetryAt > now)) {
+      if (existing.outcome != null && (held || existing.nextRetryAt > now)) {
         return Promise.resolve(existing.outcome);
       }
     }
-    if (detached) {
+    if (held) {
       return Promise.resolve({ serverName: candidate.serverName, tools: null });
     }
 
@@ -480,8 +562,14 @@ export class MCPServerCatalogRecoveryTracker {
         entry.publishing = false;
       }
     };
+    const detach: DiscoveryDetacher = (discovery) =>
+      this.detach(
+        key,
+        { configFingerprint, recoveryGeneration: entry.recoveryGeneration },
+        discovery,
+      );
     const flight = Promise.resolve()
-      .then(() => discover(trackPublication))
+      .then(() => discover(trackPublication, detach))
       .finally(() => {
         settled = true;
       })
@@ -578,8 +666,7 @@ async function discoverCandidate(
   }: {
     signal?: AbortSignal;
     trackPublication?: PublicationTracker;
-    /** Receives a discovery released past its settle grace while it keeps running. */
-    onDetached?: (discovery: Promise<unknown>) => void;
+    onDetached?: DiscoveryDetacher;
   } = {},
 ): Promise<RecoveryOutcome> {
   const deadlineMs = Date.now() + resolveBudget(serverConfig, policy);
@@ -604,7 +691,7 @@ async function discoverCandidate(
     if (!discovery.settled) {
       onDetached?.(pending);
       logger.warn(
-        `[MCP catalog recovery] Discovery for ${serverName} is still running ${policy.discoverySettleGraceMs}ms past its budget; releasing its catalog slot and starting no other discovery for it until it settles`,
+        `[MCP catalog recovery] Discovery for ${serverName} is still running ${policy.discoverySettleGraceMs}ms past its budget; releasing its catalog slot while it finishes in the background`,
       );
       return { serverName, tools: null, ...(!signal?.aborted && { state: 'backoff' as const }) };
     }
@@ -816,12 +903,14 @@ async function recoverMCPServerCatalogsWithState(
       const usesRequestCredential =
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
-      const onDetached = (discovery: Promise<unknown>) =>
-        tracker.detachDiscovery(user.id, candidate.serverName, discovery);
       if (usesRequestCredential) {
-        results[index] = tracker.hasDetachedDiscovery(user.id, candidate.serverName)
-          ? { serverName: candidate.serverName, tools: null }
-          : await discoverCandidate(user, candidate, deps, policy, { signal, onDetached });
+        results[index] = tracker.admitsDiscovery(user, candidate, policy)
+          ? await discoverCandidate(user, candidate, deps, policy, {
+              signal,
+              onDetached: (discovery) =>
+                tracker.detachDiscovery(user, candidate, policy, discovery),
+            })
+          : { serverName: candidate.serverName, tools: null };
         return;
       }
       const observedGeneration = await readMCPRecoveryGeneration(
@@ -847,8 +936,11 @@ async function recoverMCPServerCatalogsWithState(
         candidate,
         policy,
         recoveryGeneration,
-        (trackPublication) =>
-          discoverCandidate(user, candidate, deps, policy, { trackPublication, onDetached }),
+        (trackPublication, detach) =>
+          discoverCandidate(user, candidate, deps, policy, {
+            trackPublication,
+            onDetached: detach,
+          }),
       );
       const finalGeneration = await readMCPRecoveryGeneration(
         { userId: user.id, serverName: candidate.serverName },

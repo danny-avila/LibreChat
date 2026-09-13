@@ -991,6 +991,7 @@ describe('allowedAddressesSchema', () => {
         discoverySettleGraceMs: 10_000,
         reauthRetryMs: 1_800_000,
         maxStateEntries: 10_000,
+        maxDetachedDiscoveries: 3,
         generationReadTimeoutMs: 500,
         authorizationFenceRetryMs: [0, 50, 200],
         authorizationFenceTimeoutMs: 1_000,
@@ -1014,6 +1015,12 @@ describe('allowedAddressesSchema', () => {
         configSchema.safeParse({
           version: '1.0',
           mcpSettings: { catalogRecovery: { discoverySettleGraceMs: -1 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { maxDetachedDiscoveries: 0 } },
         }).success,
       ).toBe(false);
       expect(

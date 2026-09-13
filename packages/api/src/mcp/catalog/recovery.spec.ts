@@ -178,6 +178,7 @@ describe('MCPServerCatalogRecoveryTracker capacity', () => {
     discoverySettleGraceMs: 10_000,
     reauthRetryMs: 60_000,
     maxStateEntries: 2,
+    maxDetachedDiscoveries: 3,
     generationReadTimeoutMs: 500,
     authorizationFenceRetryMs: [0],
     authorizationFenceTimeoutMs: 1_000,
@@ -236,6 +237,7 @@ describe('MCPServerCatalogRecoveryTracker own credential publications', () => {
     discoverySettleGraceMs: 10_000,
     reauthRetryMs: 60_000,
     maxStateEntries: 10,
+    maxDetachedDiscoveries: 3,
     generationReadTimeoutMs: 500,
     authorizationFenceRetryMs: [0],
     authorizationFenceTimeoutMs: 1_000,
@@ -1947,6 +1949,102 @@ describe('recoverMCPServerCatalogs — discovery that outlives its budget', () =
       await expect(
         recoverMCPServerCatalogs({ user, servers, recoveryPolicy }, deps),
       ).resolves.toEqual(new Map([['obo', availableTools('obo-tool')]]));
+      expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    } finally {
+      pending.forEach(({ resolve }) => resolve({ tools: null }));
+    }
+  });
+
+  it.each([
+    [
+      'configuration',
+      {
+        serverConfig: { ...serverConfig('changed'), url: 'https://changed-v2.example.com/mcp' },
+        generation: 'generation-1',
+      },
+    ],
+    [
+      'credential generation',
+      { serverConfig: serverConfig('changed'), generation: 'generation-2' },
+    ],
+  ])('lets a changed %s discover beside a released discovery', async (_change, next) => {
+    let generation = 'generation-1';
+    const { discoverServerTools, pending } = stalledDiscovery();
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue(availableTools('changed-tool')),
+      recoveryTracker,
+      getRecoveryGeneration: jest.fn(async () => generation),
+    };
+    const released = [{ serverName: 'changed', serverConfig: serverConfig('changed') }];
+
+    try {
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: released, recoveryPolicy }, deps),
+      ).resolves.toEqual(new Map());
+      generation = next.generation;
+      discoverServerTools.mockResolvedValueOnce({ tools: [] });
+      await expect(
+        recoverMCPServerCatalogs(
+          {
+            user,
+            servers: [
+              { serverName: 'changed', serverConfig: next.serverConfig as ParsedServerConfig },
+            ],
+            recoveryPolicy,
+          },
+          deps,
+        ),
+      ).resolves.toEqual(new Map([['changed', availableTools('changed-tool')]]));
+      expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    } finally {
+      pending.forEach(({ resolve }) => resolve({ tools: null }));
+    }
+  });
+
+  it('starts no new discovery while released discoveries fill the process-wide limit', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker(undefined, 1);
+    const { discoverServerTools, pending } = stalledDiscovery();
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue(availableTools('fresh-tool')),
+      recoveryTracker: tracker,
+    };
+    const named = (serverName: string, overrides: Partial<ParsedServerConfig> = {}) => [
+      {
+        serverName,
+        serverConfig: { ...serverConfig(serverName), ...overrides } as ParsedServerConfig,
+      },
+    ];
+
+    try {
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: named('stuck'), recoveryPolicy }, deps),
+      ).resolves.toEqual(new Map());
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('reached the limit of 1'));
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: named('other'), recoveryPolicy }, deps),
+      ).resolves.toEqual(new Map());
+      await expect(
+        recoverMCPServerCatalogs(
+          {
+            user,
+            servers: named('request-bound', { obo: { scopes: 'api://mcp/.default' } }),
+            recoveryPolicy,
+          },
+          deps,
+        ),
+      ).resolves.toEqual(new Map());
+      expect(discoverServerTools).toHaveBeenCalledTimes(1);
+
+      pending[0].resolve({ tools: null });
+      await new Promise((resolve) => setImmediate(resolve));
+      discoverServerTools.mockResolvedValueOnce({ tools: [] });
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: named('other'), recoveryPolicy }, deps),
+      ).resolves.toEqual(new Map([['other', availableTools('fresh-tool')]]));
       expect(discoverServerTools).toHaveBeenCalledTimes(2);
     } finally {
       pending.forEach(({ resolve }) => resolve({ tools: null }));
