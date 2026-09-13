@@ -283,6 +283,15 @@ function buildAgentSortCursorCondition(
  * A row with no usable date encodes an empty `primary` rather than falling back to the
  * epoch: an epoch cursor would be a date the row never had, and the resulting condition
  * could never re-select it. It would also throw on `.toISOString()`, surfacing as a 500.
+ *
+ * The legacy `updatedAt`/`_id` pair is carried alongside, describing the same row, so a
+ * cursor minted here stays readable by an instance that predates sort modes. During a
+ * rolling deployment the next page can reach one of those, and it reads exactly these
+ * two keys: without them it builds an `Invalid Date`, which Mongo rejects and the
+ * endpoint reports as a 500 mid-scroll. With them it continues its own updated-time
+ * ordering from the row this page ended on — the page it would have served all along.
+ * `decodeAgentSortCursor` ignores the pair, so the mode's own key stays authoritative
+ * wherever the request lands on a current instance.
  */
 function encodeAgentSortCursor(
   sort: AgentListSortOption,
@@ -291,30 +300,43 @@ function encodeAgentSortCursor(
   const { field, valueType } = AGENT_SORT_CONFIG[sort];
   const rawValue = lastAgent[field];
 
+  const asIsoDate = (value: unknown): string | null => {
+    if (value == null) {
+      return null;
+    }
+    let asDate: Date;
+    if (value instanceof Date) {
+      asDate = value;
+    } else if (typeof value === 'string' || typeof value === 'number') {
+      asDate = new Date(value);
+    } else {
+      asDate = new Date(Number.NaN);
+    }
+    return Number.isNaN(asDate.getTime()) ? null : asDate.toISOString();
+  };
+
   let primary: string;
   if (valueType === 'date') {
-    if (rawValue == null) {
-      primary = '';
-    } else {
-      let asDate: Date;
-      if (rawValue instanceof Date) {
-        asDate = rawValue;
-      } else if (typeof rawValue === 'string' || typeof rawValue === 'number') {
-        asDate = new Date(rawValue);
-      } else {
-        asDate = new Date(Number.NaN);
-      }
-      primary = Number.isNaN(asDate.getTime()) ? '' : asDate.toISOString();
-    }
+    primary = asIsoDate(rawValue) ?? '';
   } else if (valueType === 'number') {
     primary = String(rawValue ?? 0);
   } else {
     primary = String(rawValue ?? AUTHOR_SORT_SENTINEL);
   }
 
-  return Buffer.from(JSON.stringify({ primary, secondary: String(lastAgent._id) })).toString(
-    'base64',
-  );
+  const secondary = String(lastAgent._id);
+  /** Omitted when the row carries no usable timestamp: an older instance rejects an
+   *  absent pair the same way it rejects an unreadable one, and inventing a date here
+   *  would move its page to a row the cursor never described. */
+  const legacyUpdatedAt = asIsoDate(lastAgent.updatedAt);
+
+  return Buffer.from(
+    JSON.stringify({
+      primary,
+      secondary,
+      ...(legacyUpdatedAt == null ? {} : { updatedAt: legacyUpdatedAt, _id: secondary }),
+    }),
+  ).toString('base64');
 }
 
 /**
@@ -1896,7 +1918,7 @@ export function createAgentMethods(
       /* The count-0 tail is ordered by `_id` alone, so the database applies both the
          cursor predicate and the limit to it. */
       let tailHasMore = false;
-      let tailLastId: Types.ObjectId | null = null;
+      let tailCursorRow: Record<string, unknown> | null = null;
       if (!favoritedHasMore) {
         const remaining = normalizedLimit == null ? null : normalizedLimit - pageFavorited.length;
         const conditions: Record<string, unknown>[] = [baseQuery];
@@ -1919,17 +1941,24 @@ export function createAgentMethods(
         for (const agent of tailPage) {
           data.push(finalizeAgent(agent));
         }
-        const tailCursorRow = tailPage[tailPage.length - 1];
-        tailLastId = tailCursorRow ? (tailCursorRow._id as Types.ObjectId) : null;
+        tailCursorRow = tailPage[tailPage.length - 1] ?? null;
       }
 
       const hasMore = favoritedHasMore || tailHasMore;
       const favoritedCursorRow = pageFavorited[pageFavorited.length - 1];
       let nextCursor: string | null = null;
-      if (hasMore && tailLastId) {
-        nextCursor = encodeAgentSortCursor(sort, { favoriteCount: 0, _id: tailLastId });
+      /* The whole row rather than its id alone: `encodeAgentSortCursor` carries the
+         row's `updatedAt` so an instance that predates sort modes can still read the
+         cursor. A copy, so stripping the internal keys off the response later cannot
+         reach into what the cursor was built from. */
+      if (hasMore && tailCursorRow) {
+        nextCursor = encodeAgentSortCursor(sort, { ...tailCursorRow, favoriteCount: 0 });
       } else if (hasMore && favoritedCursorRow) {
-        nextCursor = encodeAgentSortCursor(sort, favoritedCursorRow);
+        nextCursor = encodeAgentSortCursor(sort, {
+          ...favoritedById.get(favoritedCursorRow.idHex),
+          _id: favoritedCursorRow._id,
+          favoriteCount: favoritedCursorRow.favoriteCount,
+        });
       }
       return buildEnvelope(data, hasMore, nextCursor);
     }

@@ -212,9 +212,16 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   };
   const emptyState = getEmptyStateHeading();
 
-  const loadingSkeleton = isPendingResults ? (
-    <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
-  ) : null;
+  /**
+   * Not while a failure is held: the retry that clears it runs with no data of its own,
+   * so the skeleton would fill the viewport above the error card and push the card's
+   * status, countdown and action below the fold — hiding the recovery it is reporting.
+   * The card owns the waiting state for the request it describes.
+   */
+  const loadingSkeleton =
+    isPendingResults && !failure ? (
+      <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
+    ) : null;
 
   /**
    * What the grid shows instead of the list. Rendered inside the grid rather than in

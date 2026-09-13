@@ -270,4 +270,36 @@ test.describe('marketplace recovery', () => {
     await expect(anchor).toBeVisible();
     expect(await frame.evaluate((element) => element.scrollTop)).toBeGreaterThan(deepScroll / 2);
   });
+
+  test('@scenario:retry-keeps-the-error-card-on-screen the retry runs behind the error card instead of a skeleton', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await routeMarketplace(page, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'marketplace unavailable' }),
+      });
+    });
+
+    await page.goto('/agents/all');
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText(translations.com_agents_error_server_title);
+
+    /* The card's own attempt, reported on its button. The failure has no data of its
+       own, so this is exactly when a skeleton would fill the viewport, push the card's
+       status, countdown and action below the fold, and leave the reader looking at
+       placeholder cards instead of the recovery. */
+    await expect(
+      page.getByRole('button', { name: translations.com_agents_error_retrying }),
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText(translations.com_agents_error_server_suggestion);
+    await expect(page.getByRole('status', { name: translations.com_agents_loading })).toHaveCount(
+      0,
+    );
+  });
 });
