@@ -14,6 +14,7 @@ import {
   pinnedRowNames,
   pinnedRows,
   pinnedSection,
+  reloadWithPinnedSection,
   removePins,
   resetPinnedState,
   seedPinnedConversations,
@@ -32,15 +33,18 @@ let seededPins: SeededPin[] = [];
 const unpinnedConversationIds: string[] = [];
 
 test.afterEach(async ({ page }) => {
+  const pins = seededPins.splice(0);
+  const plain = unpinnedConversationIds.splice(0);
+  /* A test that skipped on a pointer without hover seeded nothing and left no
+   * page to read a token from: reaching for one here is what turns a skip into
+   * a failure. */
+  if (pins.length === 0 && plain.length === 0) {
+    return;
+  }
   try {
-    if (!page.url().includes('/c/')) {
-      await openWithPinnedSection(page);
-    }
     await resetPinnedState(page);
   } finally {
-    await removePins(seededPins);
-    seededPins = [];
-    const plain = unpinnedConversationIds.splice(0);
+    await removePins(pins);
     if (plain.length > 0) {
       await deleteConversations(plain);
     }
@@ -83,7 +87,7 @@ test.describe('pinned drag rules', () => {
     await expect(chatsListRow(page, draggedTitle)).toBeVisible();
     await expect.poll(() => isConversationPinned(seededPins[0].conversationId)).toBe(false);
 
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
     await expect(pinnedSection(page)).toBeVisible();
     await expect(pinnedConvoRow(page, draggedTitle)).toHaveCount(0);
     await expect(chatsListRow(page, draggedTitle)).toBeVisible();
@@ -131,7 +135,7 @@ test.describe('pinned drag rules', () => {
 
     await openWithPinnedSection(page);
     await setFavorites(page, [MOCK_FAVORITE_A, MOCK_FAVORITE_B]);
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
     await expect(favoriteRowByName(page, MOCK_FAVORITE_A.model)).toBeVisible();
     await expect(favoriteRowByName(page, MOCK_FAVORITE_B.model)).toBeVisible();
     await expect(pinnedRows(page)).toHaveCount(3);
@@ -153,7 +157,7 @@ test.describe('pinned drag rules', () => {
      *  test would pass just as well against a drag source that does nothing. */
     const [neighbourTitle] = uniqueTitles('kind-boundary-neighbour', 1);
     seededPins.push(...(await seedPinnedConversations([neighbourTitle])));
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
     await expect(pinnedRows(page)).toHaveCount(4);
     const withNeighbour = await pinnedRowNames(page);
     const lower = withNeighbour[3];
@@ -190,7 +194,7 @@ test.describe('pinned drag rules', () => {
       favoriteEntryKey(MOCK_FAVORITE_A),
       convoEntryKey(seededPins[0].conversationId),
     ]);
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
     await expect(favoriteRowByName(page, MOCK_FAVORITE_A.model)).toBeVisible();
     await expect(pinnedRows(page)).toHaveCount(2);
 
@@ -210,7 +214,7 @@ test.describe('pinned drag rules', () => {
       convoEntryKey(seededPins[0].conversationId),
       convoEntryKey(secondPins[0].conversationId),
     ]);
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
     await expect(favoriteRowByName(page, MOCK_FAVORITE_A.model)).toBeVisible();
     await expect(pinnedRows(page)).toHaveCount(3);
 
@@ -239,7 +243,7 @@ test.describe('pinned drag rules', () => {
       favoriteEntryKey(MOCK_FAVORITE_A),
       convoEntryKey(seededPins[1].conversationId),
     ]);
-    await page.reload({ timeout: 10000 });
+    await reloadWithPinnedSection(page);
 
     await expect(favoriteRowByName(page, MOCK_FAVORITE_A.model)).toBeVisible();
     await expect(pinnedRows(page)).toHaveCount(3);

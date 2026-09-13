@@ -80,37 +80,55 @@ export const useEffectiveProjectId = () => {
   );
 };
 
+/** Files a dropped conversation, resolving to whether it now sits where the
+ *  drop asked. */
+export type AssignDroppedConversation = (
+  item: ConversationDragItem,
+  projectId: string | null,
+) => Promise<boolean>;
+
+/** Unpins a dropped conversation, if it was pinned at all. */
+export type UnpinDroppedConversation = (item: ConversationDragItem) => void;
+
 /** Files a dragged conversation into a project, or back into the root chats
  *  list on `projectId: null`. The mutation owns every cache invalidation
  *  (chats, pinned rows, project stats); this adds the toast feedback the
- *  options-menu path already shows for the same action. */
-export const useAssignDroppedConversation = () => {
+ *  options-menu path already shows for the same action.
+ *
+ *  Resolves to whether the chat now sits where the drop asked — `true` for a
+ *  drop that had nothing to file — so a caller with a second half to apply can
+ *  wait for this one instead of racing it. */
+export const useAssignDroppedConversation = (): AssignDroppedConversation => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const assignConversation = useAssignConversationToProjectMutation();
   const effectiveProjectId = useEffectiveProjectId();
 
   return useCallback(
-    (item: ConversationDragItem, projectId: string | null) => {
+    (item: ConversationDragItem, projectId: string | null): Promise<boolean> => {
       const conversationId = item.conversationId;
       if (!conversationId || effectiveProjectId(item) === projectId) {
-        return;
+        return Promise.resolve(true);
       }
       /* The mutation serializes these per conversation and records where each
        * is headed, so this only has to report the outcome. */
-      void assignConversation.mutateAsync({ conversationId, projectId }).then(
-        () =>
+      return assignConversation.mutateAsync({ conversationId, projectId }).then(
+        () => {
           showToast({
             message: localize('com_ui_project_updated'),
             severity: NotificationSeverity.SUCCESS,
             showIcon: true,
-          }),
-        () =>
+          });
+          return true;
+        },
+        () => {
           showToast({
             message: localize('com_ui_project_update_error'),
             severity: NotificationSeverity.ERROR,
             showIcon: true,
-          }),
+          });
+          return false;
+        },
       );
     },
     [assignConversation, effectiveProjectId, localize, showToast],
@@ -121,7 +139,7 @@ export const useAssignDroppedConversation = () => {
  *  landing there is being asked to be an ordinary chat, which a pinned one is
  *  not. Silent on success — the row leaving the pinned section is the feedback
  *  — and reports only the failure, as the row badge does. */
-export const useUnpinDroppedConversation = () => {
+export const useUnpinDroppedConversation = (): UnpinDroppedConversation => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const pinConversation = usePinConversationMutation();

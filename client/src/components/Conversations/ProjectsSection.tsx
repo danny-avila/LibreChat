@@ -204,7 +204,12 @@ const ProjectItem = memo(
        * project it already belongs to still left the pinned list, and the rows
        * it crossed must not be saved in their shifted order. */
       hover: () => markExternalHover(),
-      drop: (item) => assignDropped(item, project._id),
+      /* The drop result is what the pinned list reads to tell a reorder from a
+       * filing action, so this hands back nothing rather than the assignment's
+       * promise. */
+      drop: (item) => {
+        void assignDropped(item, project._id);
+      },
       collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
     });
     dropRef(projectRowRef);

@@ -159,10 +159,36 @@ export const favoriteRowByName = (page: Page, name: string): Locator =>
 export const chatsListRow = (page: Page, title: string): Locator =>
   page.getByTestId('convo-item').filter({ hasText: title }).first();
 
-/** Opens a fresh chat route and waits for the Pinned section to render. */
+/**
+ * Brings the sidebar on screen. A narrow viewport keeps the drawer mounted and
+ * slides it out of view instead of unmounting it, so every row still answers a
+ * query while nothing on it can be tapped — the tap would land on the page
+ * beside the drawer. The chat header's opener is what a person reaches for
+ * there, and the rail's own toggle is not rendered at that width.
+ */
+export async function ensureSidebarOnScreen(page: Page): Promise<void> {
+  const section = pinnedSection(page);
+  const onScreen = async () => ((await section.boundingBox())?.x ?? -1) >= 0;
+  if (await onScreen()) {
+    return;
+  }
+  await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+  await expect.poll(onScreen, { timeout: 10_000 }).toBe(true);
+}
+
+/** Opens a fresh chat route and waits for the Pinned section to be reachable. */
 export async function openWithPinnedSection(page: Page): Promise<void> {
   await page.goto('/c/new', { timeout: 15_000 });
   await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+  await ensureSidebarOnScreen(page);
+}
+
+/** Reloads and waits for the Pinned section to be reachable again: a reload
+ *  puts a narrow viewport's drawer back off screen. */
+export async function reloadWithPinnedSection(page: Page): Promise<void> {
+  await page.reload({ timeout: 15_000 });
+  await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+  await ensureSidebarOnScreen(page);
 }
 
 /** The rendered order of the Pinned section as row kinds, for the grouping the

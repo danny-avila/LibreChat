@@ -214,10 +214,19 @@ const Conversations: FC<ConversationsProps> = ({
      * save the shift its pointer caused on the way out of the pinned list. */
     hover: () => markExternalHover(),
     drop: (item) => {
-      /* Both, for a pinned chat that also sits in a project: each call is a
-       * no-op for the half that already holds. */
-      assignDropped(item, null);
-      unpinDropped(item);
+      /* Sequenced rather than fired together, for a pinned chat that also sits
+       * in a project. The pin write answers with the conversation as it stands
+       * once it has run, so a pin that overlapped the project write would
+       * publish a row still carrying its old `chatProjectId` into the lists the
+       * assignment had just corrected. Waiting also gives a failure one shape:
+       * an assignment that did not take leaves the chat pinned where it was,
+       * instead of unpinning it out of a project it is still in. Each half is a
+       * no-op when it already holds. */
+      void assignDropped(item, null).then((filed) => {
+        if (filed) {
+          unpinDropped(item);
+        }
+      });
     },
     collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
   });

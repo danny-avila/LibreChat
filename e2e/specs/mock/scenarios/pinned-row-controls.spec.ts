@@ -9,7 +9,7 @@ import {
   isTransparent,
   openWithPinnedSection,
   pinnedConvoRow,
-  pinnedSection,
+  reloadWithPinnedSection,
   removePins,
   resetPinnedState,
   seedPinnedConversations,
@@ -61,8 +61,7 @@ test.describe('pinned row controls', () => {
     ]);
     await openWithPinnedSection(page);
     await setFavorites(page, [FAVORITE]);
-    await page.reload();
-    await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+    await reloadWithPinnedSection(page);
   });
 
   test.afterEach(async ({ page }) => {
