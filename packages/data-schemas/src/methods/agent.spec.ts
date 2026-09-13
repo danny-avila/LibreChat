@@ -5881,7 +5881,17 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(page2.data.map((agent) => agent.author)).toEqual([users[1]._id.toString()]);
       expect(new Set([...page1.data, ...page2.data].map((agent) => agent.id)).size).toBe(3);
       const cursor = JSON.parse(Buffer.from(page1.after as string, 'base64').toString('utf8'));
-      expect(cursor).toMatchObject({ sort: 'author', version: 2, primary: 'mike' });
+      /* A pre-versioning reader reads `primary`/`secondary` and ignores fields it does not
+         know, so a bumped ordering has to keep its boundary somewhere that reader cannot
+         find — otherwise it resumes the walk under the comparison this version replaced. */
+      expect(cursor).toMatchObject({
+        sort: 'author',
+        version: 2,
+        boundary: { primary: 'mike' },
+      });
+      expect(cursor.primary).toBeUndefined();
+      expect(cursor.secondary).toBeUndefined();
+      expect(cursor.updatedAt).toBeUndefined();
     });
 
     test('paginates across multiple pages without duplicates or gaps', async () => {
@@ -6704,6 +6714,23 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
       }
 
+      /* A boundary sitting where a pre-versioning reader looks for it did not come from this
+         encoder, so it is not trusted even when it names the right version. */
+      const flattenedCursor = {
+        sort: cursor.sort,
+        version: cursor.version,
+        ...(cursor.boundary as Record<string, unknown>),
+      };
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'author',
+          limit: 1,
+          after: encode(flattenedCursor),
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
+
       const page2 = await getListAgentsByAccess({
         accessibleIds,
         otherParams: {},
@@ -6811,9 +6838,17 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
         expect(cursor.sort).toBe(sort);
         expect(cursor.version).toBe(sort === 'author' ? 2 : 1);
-        expect(typeof cursor.primary).toBe('string');
-        expect(typeof cursor.secondary).toBe('string');
-        if (sort !== 'author') {
+        if (sort === 'author') {
+          /* Past version 1 the boundary is nested, out of reach of a reader that predates
+             versioning and would otherwise resume under the comparison this version replaced. */
+          const boundary = cursor.boundary as Record<string, unknown>;
+          expect(typeof boundary.primary).toBe('string');
+          expect(typeof boundary.secondary).toBe('string');
+          expect(cursor).not.toHaveProperty('primary');
+          expect(cursor).not.toHaveProperty('secondary');
+        } else {
+          expect(typeof cursor.primary).toBe('string');
+          expect(typeof cursor.secondary).toBe('string');
           const versionlessCursor = { ...cursor };
           delete versionlessCursor.version;
           const nextPage = await getListAgentsByAccess({
