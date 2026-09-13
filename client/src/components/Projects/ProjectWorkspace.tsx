@@ -35,9 +35,9 @@ import {
   useProjectQuery,
 } from '~/data-provider';
 import ProjectInstructionsDialog from './ProjectInstructionsDialog';
+import { useElementSize, useLocalize, useNewConvo } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
-import { useElementSize, useLocalize, useNewConvo } from '~/hooks';
 import ProjectResources from './ProjectResources';
 import ProjectChatList from './ProjectChatList';
 import { clearMessagesCache } from '~/utils';
