@@ -522,7 +522,7 @@ const chatV2 = async (req, res) => {
     }
 
     if (response.run.status === RunStatus.IN_PROGRESS) {
-      processRun(true);
+      balanceReservations.holdUntil(processRun(true));
     }
 
     completedRun = response.run;

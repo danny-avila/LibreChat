@@ -367,6 +367,22 @@ describe('checkBalance', () => {
       expect(second.release).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps reservations held until background work settles, even when it fails', async () => {
+      const reservations = createBalanceReservations();
+      const reservation = createReservation();
+      let finishWork: (error: Error) => void = () => undefined;
+      await reservations.track(Promise.resolve(reservation));
+      reservations.holdUntil(new Promise((_resolve, reject) => (finishWork = reject)));
+
+      const released = reservations.release();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(reservation.release).not.toHaveBeenCalled();
+      finishWork(new Error('background run failed'));
+      await released;
+
+      expect(reservation.release).toHaveBeenCalledTimes(1);
+    });
+
     it('releases the turn reservations whether the turn resolves or throws', async () => {
       const kept = createReservation();
       const failed = createReservation();

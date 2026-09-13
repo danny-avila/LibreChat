@@ -588,6 +588,46 @@ describe.each([
   }
 
   if (_version === 'v2') {
+    it('keeps the balance reservation until a run that continued in the background settles', async () => {
+      req.config.filters = {};
+      const release = jest.fn().mockResolvedValue(undefined);
+      getBalanceConfig.mockReturnValue({ enabled: true });
+      checkBalance.mockResolvedValue({ release });
+      mockInitThread.mockResolvedValueOnce({ thread_id: 'thread-existing' });
+      let finishBackgroundRun = () => undefined;
+      const usage = { prompt_tokens: 1, completion_tokens: 1 };
+      mockStreamRunManager
+        .mockImplementationOnce(() => ({
+          runAssistant: jest.fn().mockResolvedValue(undefined),
+          run: { id: 'run-1', status: 'in_progress', usage },
+          intermediateText: '',
+          messages: [],
+        }))
+        .mockImplementationOnce(() => ({
+          runAssistant: jest.fn(() => new Promise((resolve) => (finishBackgroundRun = resolve))),
+          run: { id: 'run-1', status: 'completed', usage },
+          intermediateText: '',
+          messages: [],
+        }));
+
+      const handled = chatController(req, res);
+      for (let i = 0; i < 50 && !res.end.mock.calls.length; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      expect(mockStreamRunManager).toHaveBeenCalledTimes(2);
+      expect(mockHandleError.mock.calls.map(([error]) => error?.message)).toEqual([]);
+      expect(res.end).toHaveBeenCalled();
+      expect(release).not.toHaveBeenCalled();
+
+      finishBackgroundRun();
+      await handled;
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
     describe('V2 final conversation-file preflight', () => {
       beforeEach(() => {
         req.config.filters = {

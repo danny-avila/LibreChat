@@ -56,12 +56,17 @@ export interface BalanceReservation {
 export interface BalanceReservations {
   /** Tracks an admission that may still be pending; returns the same promise. */
   track: <T extends BalanceReservation | undefined>(admission: Promise<T>) => Promise<T>;
+  /** Keeps the turn's reservations held until `work` settles, such as a run continuing in the background. */
+  holdUntil: (work: Promise<unknown>) => void;
   /**
    * Releases every tracked reservation, first waiting for admissions still pending so a
-   * reservation that settles after its turn failed is released too. Failed admissions hold nothing.
+   * reservation that settles after its turn failed is released too, and for work passed to
+   * `holdUntil`. Failed admissions hold nothing.
    */
   release: () => Promise<void>;
 }
+
+const noReservation = (): undefined => undefined;
 
 export function createBalanceReservations(): BalanceReservations {
   let admissions: Promise<BalanceReservation | undefined>[] = [];
@@ -69,6 +74,9 @@ export function createBalanceReservations(): BalanceReservations {
     track: (admission) => {
       admissions.push(admission.catch(() => undefined));
       return admission;
+    },
+    holdUntil: (work) => {
+      admissions.push(work.then(noReservation, noReservation));
     },
     release: async () => {
       const pending = admissions;
