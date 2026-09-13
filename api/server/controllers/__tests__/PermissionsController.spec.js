@@ -65,7 +65,6 @@ jest.mock('~/server/services/GraphApiService', () => ({
 }));
 
 const db = require('~/models');
-const GraphApiService = require('~/server/services/GraphApiService');
 const {
   updateResourcePermissions,
   searchPrincipals,
@@ -102,54 +101,6 @@ describe('PermissionsController', () => {
       db.sortPrincipalsByRelevance.mockImplementation((results) => results);
     });
 
-    it('rejects non-string query parameters', async () => {
-      const req = createMockReq({
-        query: { q: ['alice'] },
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Query parameter "q" is required and must not be empty',
-      });
-      expect(db.searchPrincipals).not.toHaveBeenCalled();
-    });
-
-    it('searches with the trimmed literal query', async () => {
-      db.searchPrincipals.mockResolvedValue([
-        {
-          id: 'user-1',
-          type: PrincipalType.USER,
-          name: 'Regex [invalid User',
-          source: 'local',
-        },
-      ]);
-
-      const req = createMockReq({
-        query: { q: '  [invalid  ', limit: '5', types: PrincipalType.USER },
-        principalSearchTypes: [PrincipalType.USER],
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(db.searchPrincipals).toHaveBeenCalledWith('[invalid', 5, [PrincipalType.USER]);
-      expect(db.calculateRelevanceScore).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Regex [invalid User' }),
-        '[invalid',
-      );
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          query: '[invalid',
-          limit: 5,
-          count: 1,
-        }),
-      );
-    });
-
     it.each([{ q: 'al', type: PrincipalType.GROUP }, { q: 'al', types: 'foobar' }, { q: 'al' }])(
       'searches only the types the people picker check resolved for %j',
       async (query) => {
@@ -176,64 +127,6 @@ describe('PermissionsController', () => {
         );
       },
     );
-
-    it('searches no types when the people picker check did not run', async () => {
-      const req = createMockReq({ query: { q: 'alice', types: PrincipalType.USER } });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(db.searchPrincipals).toHaveBeenCalledWith('alice', 20, []);
-      expect(res.status).toHaveBeenCalledWith(200);
-    });
-
-    it.each([
-      [[PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE], 'all'],
-      [[PrincipalType.USER, PrincipalType.ROLE], 'users'],
-      [[PrincipalType.GROUP, PrincipalType.ROLE], 'groups'],
-      [[PrincipalType.ROLE], null],
-    ])('scopes the Entra ID search for %j to %s', async (principalSearchTypes, graphType) => {
-      GraphApiService.entraIdPrincipalFeatureEnabled.mockReturnValueOnce(true);
-      GraphApiService.searchEntraIdPrincipals.mockResolvedValue([]);
-      const req = createMockReq({
-        query: { q: 'alice' },
-        headers: { authorization: 'Bearer token' },
-        user: { id: 'user-1', role: 'USER', openidId: 'oid-1' },
-        principalSearchTypes,
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      if (graphType) {
-        expect(GraphApiService.searchEntraIdPrincipals).toHaveBeenCalledWith(
-          'token',
-          'oid-1',
-          'alice',
-          graphType,
-          20,
-        );
-      } else {
-        expect(GraphApiService.searchEntraIdPrincipals).not.toHaveBeenCalled();
-      }
-      expect(res.status).toHaveBeenCalledWith(200);
-    });
-
-    it('does not expose internal error details on search failures', async () => {
-      db.searchPrincipals.mockRejectedValue(new Error('database failure with internal detail'));
-
-      const req = createMockReq({
-        query: { q: 'alice' },
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Failed to search principals',
-      });
-    });
   });
 
   describe('getResourcePermissions — principal details', () => {

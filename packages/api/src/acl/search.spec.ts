@@ -1,8 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, SystemRoles, PrincipalType, PermissionTypes } from 'librechat-data-provider';
+import type { TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { PrincipalSearchRequest, SearchablePrincipalType } from './search';
+import type {
+  PrincipalSearchDeps,
+  PrincipalSearchRequest,
+  SearchablePrincipalType,
+} from './search';
 import {
+  createPrincipalSearch,
   createPeoplePickerAccess,
   getRequestedPrincipalTypes,
   getEntraPrincipalSearchType,
@@ -221,4 +227,235 @@ describe('createPeoplePickerAccess', () => {
     expect(test.next).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
+});
+
+describe('createPrincipalSearch', () => {
+  type ScoredResults = Parameters<PrincipalSearchDeps['sortPrincipalsByRelevance']>[0];
+
+  const principal = (overrides: Partial<TPrincipalSearchResult>): TPrincipalSearchResult => ({
+    type: USER,
+    name: 'Principal',
+    source: 'local',
+    ...overrides,
+  });
+
+  const setupSearch = ({
+    query = { q: 'alice' },
+    types,
+    entraEnabled = false,
+    authorization = 'Bearer token',
+    localResults = [],
+    entraResults = [],
+  }: {
+    query?: Query;
+    types?: SearchablePrincipalType[];
+    entraEnabled?: boolean;
+    authorization?: string;
+    localResults?: TPrincipalSearchResult[];
+    entraResults?: TPrincipalSearchResult[];
+  }) => {
+    const deps = {
+      searchPrincipals: jest.fn(async () => localResults),
+      calculateRelevanceScore: jest.fn((item: TPrincipalSearchResult) => item.name.length),
+      sortPrincipalsByRelevance: jest.fn((results: ScoredResults) =>
+        [...results].sort((a, b) => b._searchScore - a._searchScore),
+      ),
+      entraIdPrincipalFeatureEnabled: jest.fn(() => entraEnabled),
+      searchEntraIdPrincipals: jest.fn(async () => entraResults),
+    };
+    const req = {
+      query,
+      headers: { authorization },
+      user: { id: 'user123', role: SystemRoles.USER, openidId: 'oid-1' },
+      principalSearchTypes: types,
+    } as PrincipalSearchRequest;
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const search = createPrincipalSearch(deps);
+    return { deps, req, res, run: () => search(req, res as unknown as Response) };
+  };
+
+  it.each([{}, { q: ['alice'] }, { q: '   ' }])('rejects the query %j', async (query) => {
+    const test = setupSearch({ query, types: [USER] });
+    await test.run();
+
+    expect(test.res.status).toHaveBeenCalledWith(400);
+    expect(test.res.json).toHaveBeenCalledWith({
+      error: 'Query parameter "q" is required and must not be empty',
+    });
+    expect(test.deps.searchPrincipals).not.toHaveBeenCalled();
+  });
+
+  it('rejects a one-character query', async () => {
+    const test = setupSearch({ query: { q: ' a ' }, types: [USER] });
+    await test.run();
+
+    expect(test.res.status).toHaveBeenCalledWith(400);
+    expect(test.res.json).toHaveBeenCalledWith({
+      error: 'Query must be at least 2 characters long',
+    });
+    expect(test.deps.searchPrincipals).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [undefined, 20],
+    ['5', 5],
+    ['500', 50],
+    ['0', 10],
+    ['-3', 1],
+    ['abc', 10],
+  ])('searches the trimmed literal query with limit %s as %d', async (limit, expected) => {
+    const test = setupSearch({ query: { q: '  [invalid  ', limit }, types: [USER] });
+    await test.run();
+
+    expect(test.deps.searchPrincipals).toHaveBeenCalledWith('[invalid', expected, [USER]);
+    expect(test.res.status).toHaveBeenCalledWith(200);
+    expect(test.res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ query: '[invalid', limit: expected }),
+    );
+  });
+
+  it('searches only the resolved types, ignoring the query filter', async () => {
+    const test = setupSearch({ query: { q: 'alice', type: USER, types: USER }, types: [GROUP] });
+    await test.run();
+
+    expect(test.deps.searchPrincipals).toHaveBeenCalledWith('alice', 20, [GROUP]);
+    expect(test.res.json).toHaveBeenCalledWith(expect.objectContaining({ types: [GROUP] }));
+  });
+
+  it('searches no types when the access check did not run', async () => {
+    const test = setupSearch({ query: { q: 'alice', types: USER }, entraEnabled: true });
+    await test.run();
+
+    expect(test.deps.searchPrincipals).toHaveBeenCalledWith('alice', 20, []);
+    expect(test.deps.searchEntraIdPrincipals).not.toHaveBeenCalled();
+    expect(test.res.status).toHaveBeenCalledWith(200);
+  });
+
+  it.each<[SearchablePrincipalType[], string | null]>([
+    [[USER, GROUP, ROLE], 'all'],
+    [[USER, ROLE], 'users'],
+    [[GROUP, ROLE], 'groups'],
+    [[ROLE], null],
+  ])('scopes the Entra ID search for %j to %s', async (types, graphType) => {
+    const test = setupSearch({
+      types,
+      entraEnabled: true,
+      localResults: [principal({ name: 'Alice Local', email: 'alice@local.test' })],
+    });
+    await test.run();
+
+    if (graphType) {
+      expect(test.deps.searchEntraIdPrincipals).toHaveBeenCalledWith(
+        'token',
+        'oid-1',
+        'alice',
+        graphType,
+        19,
+      );
+    } else {
+      expect(test.deps.searchEntraIdPrincipals).not.toHaveBeenCalled();
+    }
+    expect(test.res.status).toHaveBeenCalledWith(200);
+  });
+
+  it.each([
+    ['Entra ID search is disabled', { entraEnabled: false }],
+    ['there is no bearer token', { authorization: 'Basic token' }],
+    [
+      'local results fill the limit',
+      { query: { q: 'alice', limit: '1' }, localResults: [principal({ name: 'Alice' })] },
+    ],
+  ])('skips Entra ID search when %s', async (_case, overrides) => {
+    const test = setupSearch({ types: [USER, GROUP], entraEnabled: true, ...overrides });
+    await test.run();
+
+    expect(test.deps.searchEntraIdPrincipals).not.toHaveBeenCalled();
+    expect(test.res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('merges new Entra ID principals, ranks them, and counts sources', async () => {
+    const test = setupSearch({
+      types: [USER, GROUP],
+      entraEnabled: true,
+      localResults: [
+        principal({ name: 'Alice', email: 'alice@example.test' }),
+        principal({ type: GROUP, name: 'Admins', idOnTheSource: 'group-1' }),
+      ],
+      entraResults: [
+        principal({ name: 'Alice Entra', email: 'ALICE@example.test', source: 'entra' }),
+        principal({ type: GROUP, name: 'Admins Entra', idOnTheSource: 'group-1', source: 'entra' }),
+        principal({ name: 'Alexandra', email: 'alexandra@example.test', source: 'entra' }),
+      ],
+    });
+    await test.run();
+
+    expect(test.res.json).toHaveBeenCalledWith({
+      query: 'alice',
+      limit: 20,
+      types: [USER, GROUP],
+      results: [
+        principal({ name: 'Alexandra', email: 'alexandra@example.test', source: 'entra' }),
+        principal({ type: GROUP, name: 'Admins', idOnTheSource: 'group-1' }),
+        principal({ name: 'Alice', email: 'alice@example.test' }),
+      ],
+      count: 3,
+      sources: { local: 2, entra: 1 },
+    });
+  });
+
+  it('falls back to local results when Entra ID search fails', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const local = principal({ name: 'Alice' });
+    const test = setupSearch({ types: [USER], entraEnabled: true, localResults: [local] });
+    test.deps.searchEntraIdPrincipals.mockRejectedValue(new Error('graph unavailable'));
+    await test.run();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Graph API search failed, falling back to local results:',
+      'graph unavailable',
+    );
+    expect(test.res.status).toHaveBeenCalledWith(200);
+    expect(test.res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ results: [local], sources: { local: 1, entra: 0 } }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('does not expose internal error details on search failures', async () => {
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const test = setupSearch({ types: [USER] });
+    const error = new Error('database failure with internal detail');
+    test.deps.searchPrincipals.mockRejectedValue(error);
+    await test.run();
+
+    expect(errorSpy).toHaveBeenCalledWith('Error searching principals:', error);
+    expect(test.res.status).toHaveBeenCalledWith(500);
+    expect(test.res.json).toHaveBeenCalledWith({ error: 'Failed to search principals' });
+    errorSpy.mockRestore();
+  });
+
+  it.each<Query>([{ q: 'alice', type: GROUP }, { q: 'alice', types: 'foobar' }, { q: 'alice' }])(
+    'searches local and Entra ID groups only for a groups-only role requesting %j',
+    async (query) => {
+      const test = setupSearch({ query, entraEnabled: true });
+      const search = createPrincipalSearch(test.deps);
+      const checkAccess = createPeoplePickerAccess({
+        getRoleByName: async () => ({
+          permissions: { [PermissionTypes.PEOPLE_PICKER]: permissionsFor([GROUP]) },
+        }),
+      });
+      await checkAccess(test.req, test.res as unknown as Response, () =>
+        search(test.req, test.res as unknown as Response),
+      );
+
+      expect(test.deps.searchPrincipals).toHaveBeenCalledWith('alice', 20, [GROUP]);
+      expect(test.deps.searchEntraIdPrincipals).toHaveBeenCalledWith(
+        'token',
+        'oid-1',
+        'alice',
+        'groups',
+        20,
+      );
+    },
+  );
 });

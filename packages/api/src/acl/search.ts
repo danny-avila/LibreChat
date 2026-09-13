@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, SystemRoles, PrincipalType, PermissionTypes } from 'librechat-data-provider';
+import type {
+  TPeoplePickerPermissions,
+  TPrincipalSearchResponse,
+  TPrincipalSearchResult,
+} from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
-import type { IRole } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 
 export type SearchablePrincipalType = PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE;
@@ -19,7 +23,31 @@ export type PeoplePickerAccess = (
   next: NextFunction,
 ) => Promise<Response | void>;
 
-type PeoplePickerRole = Pick<IRole, 'permissions'>;
+export type PeoplePickerRole = {
+  permissions?: { [PermissionTypes.PEOPLE_PICKER]?: Partial<TPeoplePickerPermissions> };
+};
+
+export type PrincipalSearch = (req: PrincipalSearchRequest, res: Response) => Promise<void>;
+
+type ScoredPrincipal = TPrincipalSearchResult & { _searchScore: number };
+
+export interface PrincipalSearchDeps {
+  searchPrincipals: (
+    query: string,
+    limitPerType: number,
+    types: SearchablePrincipalType[],
+  ) => Promise<TPrincipalSearchResult[]>;
+  calculateRelevanceScore: (item: TPrincipalSearchResult, query: string) => number;
+  sortPrincipalsByRelevance: (results: ScoredPrincipal[]) => ScoredPrincipal[];
+  entraIdPrincipalFeatureEnabled: (user: PrincipalSearchRequest['user']) => unknown;
+  searchEntraIdPrincipals: (
+    accessToken: string,
+    sub: string | undefined,
+    query: string,
+    type: EntraPrincipalSearchType,
+    limit: number,
+  ) => Promise<TPrincipalSearchResult[]>;
+}
 
 const SEARCHABLE_PRINCIPAL_TYPES: readonly SearchablePrincipalType[] = [
   PrincipalType.USER,
@@ -144,6 +172,136 @@ export function createPeoplePickerAccess({
       return res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to check permissions',
+      });
+    }
+  };
+}
+
+/** Entra ID principals for the resolved types that the local results do not already hold. */
+async function findEntraPrincipals({
+  req,
+  query,
+  types,
+  remaining,
+  localResults,
+  deps,
+}: {
+  req: PrincipalSearchRequest;
+  query: string;
+  types: SearchablePrincipalType[];
+  remaining: number;
+  localResults: TPrincipalSearchResult[];
+  deps: Pick<PrincipalSearchDeps, 'entraIdPrincipalFeatureEnabled' | 'searchEntraIdPrincipals'>;
+}): Promise<TPrincipalSearchResult[]> {
+  const graphType = getEntraPrincipalSearchType(types);
+  if (remaining <= 0 || !graphType || !deps.entraIdPrincipalFeatureEnabled(req.user)) {
+    return [];
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return [];
+  }
+
+  try {
+    const graphResults = await deps.searchEntraIdPrincipals(
+      authHeader.substring(7),
+      req.user?.openidId,
+      query,
+      graphType,
+      remaining,
+    );
+
+    const localEmails = new Set<string>();
+    const localSourceIds = new Set<string>();
+    for (const principal of localResults) {
+      if (principal.email) {
+        localEmails.add(principal.email.toLowerCase());
+      }
+      if (principal.idOnTheSource) {
+        localSourceIds.add(principal.idOnTheSource);
+      }
+    }
+
+    return graphResults.filter(
+      (principal) =>
+        !(principal.email && localEmails.has(principal.email.toLowerCase())) &&
+        !(principal.idOnTheSource && localSourceIds.has(principal.idOnTheSource)),
+    );
+  } catch (error) {
+    logger.warn(
+      'Graph API search failed, falling back to local results:',
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Creates the principal search handler. It searches only `req.principalSearchTypes`, as resolved by
+ * the people picker access check, so a request that skipped the check searches no types.
+ */
+export function createPrincipalSearch(deps: PrincipalSearchDeps): PrincipalSearch {
+  return async (req, res) => {
+    try {
+      const { q: rawQuery, limit = 20 } = req.query;
+
+      if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0) {
+        res.status(400).json({
+          error: 'Query parameter "q" is required and must not be empty',
+        });
+        return;
+      }
+
+      const query = rawQuery.trim();
+
+      if (query.length < 2) {
+        res.status(400).json({
+          error: 'Query must be at least 2 characters long',
+        });
+        return;
+      }
+
+      const searchLimit = Math.min(Math.max(1, parseInt(String(limit)) || 10), 50);
+      const types = req.principalSearchTypes ?? [];
+
+      const localResults = await deps.searchPrincipals(query, searchLimit, types);
+      const entraResults = await findEntraPrincipals({
+        req,
+        query,
+        types,
+        remaining: searchLimit - localResults.length,
+        localResults,
+        deps,
+      });
+
+      const scoredResults = [...localResults, ...entraResults].map((item) => ({
+        ...item,
+        _searchScore: deps.calculateRelevanceScore(item, query),
+      }));
+
+      const sources = { local: 0, entra: 0 };
+      const results = deps
+        .sortPrincipalsByRelevance(scoredResults)
+        .slice(0, searchLimit)
+        .map(({ _searchScore, ...result }) => {
+          sources[result.source] += 1;
+          return result;
+        });
+
+      const response: TPrincipalSearchResponse = {
+        query,
+        limit: searchLimit,
+        types,
+        results,
+        count: results.length,
+        sources,
+      };
+      res.status(200).json(response);
+    } catch (error) {
+      logger.error('Error searching principals:', error);
+      res.status(500).json({
+        error: 'Failed to search principals',
       });
     }
   };
