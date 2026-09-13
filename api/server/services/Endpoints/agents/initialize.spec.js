@@ -896,12 +896,17 @@ describe('initializeClient — subagent loading', () => {
       requestBody,
     });
 
-    expect(mockInitializeAgent.mock.calls[0][0].requestBody).toBe(requestBody);
-    expect(agentClientArgs.mcpRequestBody).toBe(requestBody);
+    const normalizedRequestBody = mockInitializeAgent.mock.calls[0][0].requestBody;
+    expect(normalizedRequestBody).toEqual({
+      ...requestBody,
+      codeEnvironmentMode: 'without_attached',
+      codeWorkspaces: undefined,
+    });
+    expect(agentClientArgs.mcpRequestBody).toBe(normalizedRequestBody);
 
     await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
     expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ requestBody }),
+      expect.objectContaining({ requestBody: normalizedRequestBody }),
     );
   });
 
@@ -1460,20 +1465,74 @@ describe('initializeClient — subagent loading', () => {
     const req = makeSubagentReq();
     req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
     req.config.endpoints.agents.statefulCodeSessions = { allowedEnvironments: ['user'] };
+    process.env.CODE_ENVIRONMENT_DECISION_VERSION = '1';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
 
-    await expect(
-      initializeClient({
+    try {
+      await expect(
+        initializeClient({
+          req,
+          res: {},
+          signal: new AbortController().signal,
+          endpointOption: makeEndpointOption(),
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      });
+
+      expect(agentClientArgs).toBeUndefined();
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
+  it('binds a versioned implicit stateful route into lazy subagent metadata', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Implicit Stateful Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      stateful_code_environment: 'user',
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.body.codeEnvironmentMode = 'without_attached';
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.statefulCodeSessions = { allowedEnvironments: ['user'] };
+    process.env.CODE_ENVIRONMENT_DECISION_VERSION = '1';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+
+    try {
+      await initializeClient({
         req,
         res: {},
         signal: new AbortController().signal,
         endpointOption: makeEndpointOption(),
-      }),
-    ).rejects.toMatchObject({
-      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
-    });
+      });
 
-    expect(agentClientArgs).toBeUndefined();
-    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+      expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
+        expect.objectContaining({
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://stateful-code.example.com/v1',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          }),
+        }),
+      );
+    } finally {
+      delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
   });
 
   it.each([
@@ -1582,7 +1641,8 @@ describe('initializeClient — subagent loading', () => {
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
         });
-        if (!registered) {
+        const defaultsWithoutAttached = source === 'resolved-null' || source === 'other-owner';
+        if (!registered && !defaultsWithoutAttached) {
           await expect(initialization).rejects.toMatchObject({
             code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
           });
@@ -1590,6 +1650,13 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
+        if (defaultsWithoutAttached) {
+          expect(fetchSpy).not.toHaveBeenCalled();
+          expect(agentClientArgs.mcpRequestBody).toEqual(
+            expect.objectContaining({ codeEnvironmentMode: 'without_attached' }),
+          );
+          return;
+        }
         if (source === 'fallback' || source.startsWith('override')) {
           mockInitializeAgent.mockImplementationOnce(async (params) => {
             expect(params.req.resolvedConversation.codeWorkspaces).toEqual([
@@ -2019,6 +2086,19 @@ describe('initializeClient — subagent loading', () => {
       'tool_intents',
       'stateful_code_sessions',
     );
+    req.config.endpoints.agents.statefulCodeSessions = {
+      allowedEnvironments: ['user'],
+      environments: [
+        {
+          id: 'managed-code',
+          name: 'Managed code',
+          type: 'managed',
+          baseURL: 'https://stateful-code.example.com/v1',
+          default: true,
+        },
+      ],
+    };
+    mockGetAppConfig.mockResolvedValue(req.config);
     const { userMCPAuthMap } = await initializeClient({
       req,
       res: {},

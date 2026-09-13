@@ -163,6 +163,18 @@ export function useAgentItems({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  const hasWebSearchAccess = useHasAccess({
+    permissionType: PermissionTypes.WEB_SEARCH,
+    permission: Permissions.USE,
+  });
+  const hasRunCodeAccess = useHasAccess({
+    permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+  const hasFileSearchAccess = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
+    permission: Permissions.USE,
+  });
   const showMemory = useShowMemory();
   const webSearchUserProvided = useWebSearchUserProvided();
   const builtinAuthMap = useBuiltinAuthMap();
@@ -191,7 +203,13 @@ export function useAgentItems({
         mcpServersMap: mcpServersMap ?? new Map(),
         skills,
         actions: agentActions,
-        permissions: { mcp: hasMcpAccess, skills: skillsPermission },
+        permissions: {
+          mcp: hasMcpAccess,
+          skills: skillsPermission,
+          webSearch: hasWebSearchAccess,
+          runCode: hasRunCodeAccess,
+          fileSearch: hasFileSearchAccess,
+        },
         showMemory,
         webSearchUserProvided,
         builtinAuthMap,
@@ -203,6 +221,9 @@ export function useAgentItems({
       skills,
       agentActions,
       hasMcpAccess,
+      hasWebSearchAccess,
+      hasRunCodeAccess,
+      hasFileSearchAccess,
       skillsPermission,
       showMemory,
       webSearchUserProvided,

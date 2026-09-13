@@ -28,7 +28,7 @@ import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
 export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
-  Pick<RequestBody, 'parentMessageId' | 'codeWorkspaces'>;
+  Pick<RequestBody, 'parentMessageId' | 'codeEnvironmentMode' | 'codeWorkspaces'>;
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -272,6 +272,11 @@ export interface UserConnectionContext {
     userId: string;
     serverName: string;
   }) => Promise<() => Promise<string | undefined>>;
+  /**
+   * Receives discovery work the caller stopped waiting for at its deadline or abort, such as an
+   * OAuth token flow still persisting a refresh. The work keeps running; the promise settles with it.
+   */
+  onDiscoveryDetached?: (work: Promise<unknown>) => void;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -337,6 +342,7 @@ export interface ToolDiscoveryOptions {
   deadlineMs?: number;
   onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
   onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
+  onDiscoveryDetached?: UserConnectionContext['onDiscoveryDetached'];
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;

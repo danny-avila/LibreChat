@@ -13,11 +13,14 @@
 
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
+import type { IUser } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
-import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
+import { prepareMCPAuthorizationMutation } from '~/mcp/authorization';
 import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -43,6 +46,19 @@ function bindingMetadata(serverUrl: string) {
     client_source: 'dynamic' as const,
     resource: new URL(serverUrl).href,
   };
+}
+
+async function waitForCondition(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) {
+    if (Date.now() > deadline) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function seedStoredClient(tokenStore: InMemoryTokenStore, serverUrl: string) {
@@ -164,6 +180,166 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         }),
       });
       expect(mcpRes.status).toBe(200);
+    });
+  });
+
+  describe('Discovery budget ends while refreshed tokens wait on the authorization fence', () => {
+    let server: OAuthTestServer;
+    let tokenStore: InMemoryTokenStore;
+
+    beforeEach(async () => {
+      server = await createOAuthMCPServer({
+        tokenTTLMs: 60000,
+        issueRefreshTokens: true,
+        rotateRefreshTokens: true,
+      });
+      tokenStore = new InMemoryTokenStore();
+    });
+
+    afterEach(async () => {
+      await server.close();
+    });
+
+    it('returns within its budget and still stores the rotated tokens once the fence write lands', async () => {
+      const code = await server.getAuthCode();
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}`,
+      });
+      const initial = (await tokenRes.json()) as { access_token: string; refresh_token: string };
+      await tokenStore.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:test-srv',
+        token: `enc:${initial.access_token}`,
+        expiresIn: -1,
+        metadata: tokenMetadata,
+      });
+      await tokenStore.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:test-srv:refresh',
+        token: `enc:${initial.refresh_token}`,
+        expiresIn: 86400,
+        metadata: tokenMetadata,
+      });
+      await seedStoredClient(tokenStore, server.url);
+
+      const tokenEndpoint = `${server.url}token`;
+      /** Redeems at the test provider directly; provider discovery is outside this scenario. */
+      class ProviderRefreshFactory extends MCPConnectionFactory {
+        protected createRefreshTokensFunction() {
+          return async (refreshToken: string): Promise<MCPOAuthTokens> => {
+            const res = await fetch(tokenEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
+            });
+            const data = (await res.json()) as MCPOAuthTokens & { expires_in: number };
+            return {
+              ...data,
+              obtained_at: Date.now(),
+              expires_at: Date.now() + data.expires_in * 1000,
+            };
+          };
+        }
+      }
+
+      let releaseFenceWrite: (() => void) | undefined;
+      const fenceWrite = new Promise<void>((resolve) => {
+        releaseFenceWrite = resolve;
+      });
+      const persistPublicationRetry = jest.fn(async () => {
+        await fenceWrite;
+        return 'retry-v1';
+      });
+      const invalidateRecoveryGeneration = jest.fn().mockResolvedValue('generation-2');
+      const clearLocalRecovery = jest.fn();
+      const onDiscoveryDetached = jest.fn();
+      const flowManager = new FlowStateManager<MCPOAuthTokens | null>(
+        new MockKeyv<MCPOAuthTokens | null>() as unknown as Keyv,
+        { ttl: 30000, ci: true },
+      );
+      const refreshGrants = () =>
+        server.tokenRequests.filter(({ grantType }) => grantType === 'refresh_token');
+      const storedToken = async (type: string, identifier: string) =>
+        (await tokenStore.findToken({ userId: 'u1', type, identifier }))?.token.replace(
+          /^enc:/,
+          '',
+        );
+
+      const budgetMs = 2_000;
+      const startedAt = Date.now();
+      const discovery = ProviderRefreshFactory.discoverTools(
+        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          useOAuth: true,
+          user: { id: 'u1' } as IUser,
+          flowManager,
+          tokenMethods: {
+            findToken: tokenStore.findToken,
+            createToken: tokenStore.createToken,
+            updateToken: tokenStore.updateToken,
+            deleteTokens: tokenStore.deleteTokens,
+          },
+          deadlineMs: startedAt + budgetMs,
+          onDiscoveryDetached,
+          onOAuthCredentialsChanging: (scope) =>
+            prepareMCPAuthorizationMutation(scope, {
+              invalidateRecoveryGeneration,
+              clearLocalRecovery,
+              persistPublicationRetry,
+              retryDelaysMs: [0],
+            }),
+        },
+      );
+
+      await waitForCondition(() => persistPublicationRetry.mock.calls.length === 1);
+      expect(refreshGrants()).toHaveLength(1);
+      expect(server.issuedRefreshTokens.has(initial.refresh_token)).toBe(false);
+
+      await expect(discovery).resolves.toEqual({
+        tools: null,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+      expect(Date.now() - startedAt).toBeLessThan(budgetMs + 1_000);
+      expect(await storedToken('mcp_oauth_refresh', 'mcp:test-srv:refresh')).toBe(
+        initial.refresh_token,
+      );
+      expect(onDiscoveryDetached).toHaveBeenCalledTimes(1);
+      const [tokenWork] = onDiscoveryDetached.mock.calls[0] as [Promise<unknown>];
+
+      releaseFenceWrite?.();
+      await Promise.allSettled([tokenWork]);
+      const tokenFlowId = MCPOAuthHandler.generateTokenFlowId('u1', 'test-srv');
+      expect((await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status).toBe(
+        'COMPLETED',
+      );
+
+      const rotatedRefreshToken = await storedToken('mcp_oauth_refresh', 'mcp:test-srv:refresh');
+      const refreshedAccessToken = await storedToken('mcp_oauth', 'mcp:test-srv');
+      expect(server.issuedRefreshTokens.has(rotatedRefreshToken ?? '')).toBe(true);
+      expect(server.issuedTokens.has(refreshedAccessToken ?? '')).toBe(true);
+      expect(invalidateRecoveryGeneration).toHaveBeenCalledWith({
+        userId: 'u1',
+        serverName: 'test-srv',
+      });
+      expect(clearLocalRecovery).toHaveBeenCalledWith('u1', 'test-srv', 'generation-2');
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'test-srv',
+          findToken: tokenStore.findToken,
+        }),
+      ).resolves.toMatchObject({
+        access_token: refreshedAccessToken,
+        refresh_token: rotatedRefreshToken,
+      });
+      expect(refreshGrants()).toHaveLength(1);
     });
   });
 

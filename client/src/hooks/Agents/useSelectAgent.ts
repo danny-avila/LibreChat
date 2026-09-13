@@ -44,6 +44,7 @@ export default function useSelectAgent() {
         conversation: {
           ...(conversation ?? {}),
           agent_id: agent.id,
+          codeEnvironmentMode: switchesAgent ? undefined : conversation?.codeEnvironmentMode,
           codeWorkspaces: switchesAgent ? undefined : conversation?.codeWorkspaces,
           ...specDisplayFieldReset,
         },
@@ -51,6 +52,7 @@ export default function useSelectAgent() {
       });
       const currentConvo = {
         ...resolvedConvo,
+        codeEnvironmentMode: switchesAgent ? undefined : conversation?.codeEnvironmentMode,
         codeWorkspaces: switchesAgent ? undefined : conversation?.codeWorkspaces,
       };
       newConversation({
@@ -73,6 +75,7 @@ export default function useSelectAgent() {
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         conversationId: Constants.NEW_CONVO as string,
+        codeEnvironmentMode: undefined,
         codeWorkspaces: undefined,
         ...specDisplayFieldReset,
       };

@@ -110,20 +110,30 @@ export class MCPManager extends UserConnectionManager {
     }
   >();
 
-  constructor(catalogRecoveryMaxStateEntries?: number) {
+  constructor(
+    catalogRecoveryMaxStateEntries?: number,
+    catalogRecoveryMaxDetachedDiscoveries?: number,
+  ) {
     super();
     this.catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker(
       catalogRecoveryMaxStateEntries,
+      catalogRecoveryMaxDetachedDiscoveries,
     );
   }
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(
     configs: t.MCPServers,
-    options?: { catalogRecoveryMaxStateEntries?: number },
+    options?: {
+      catalogRecoveryMaxStateEntries?: number;
+      catalogRecoveryMaxDetachedDiscoveries?: number;
+    },
   ): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
-    MCPManager.instance = new MCPManager(options?.catalogRecoveryMaxStateEntries);
+    MCPManager.instance = new MCPManager(
+      options?.catalogRecoveryMaxStateEntries,
+      options?.catalogRecoveryMaxDetachedDiscoveries,
+    );
     await MCPManager.instance.initialize(configs);
     return MCPManager.instance;
   }
@@ -144,8 +154,8 @@ export class MCPManager extends UserConnectionManager {
     return this.catalogRecoveryTracker;
   }
 
-  public clearCatalogRecoveryState(userId: string, serverName?: string): void {
-    this.catalogRecoveryTracker.clear(userId, serverName);
+  public clearCatalogRecoveryState(userId: string, serverName?: string, generation?: string): void {
+    this.catalogRecoveryTracker.clear(userId, serverName, generation);
   }
 
   public override async disconnectUserConnection(
@@ -521,6 +531,7 @@ export class MCPManager extends UserConnectionManager {
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
+      onDiscoveryDetached: args.onDiscoveryDetached,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,

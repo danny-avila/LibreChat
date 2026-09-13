@@ -3,7 +3,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
+import { hasCustomUserVars, waitUntilDeadline, getMissingCustomUserVars } from '../utils';
 import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
@@ -15,15 +15,20 @@ const pendingCatalogLanes: CatalogWorkLane[] = [];
 let activeCatalogWork = 0;
 /**
  * Bounds one server's discovery end to end — connect, `tools/list` pagination, and the
- * unauthenticated fallback all draw down this single budget, so a slot is held for at most this
- * long regardless of where the server stalls. Recovery targets a server that is reachable and
- * authorized but whose catalog cache expired, and such a server answers well inside this window.
+ * unauthenticated fallback all draw down this single budget. Recovery targets a server that is
+ * reachable and authorized but whose catalog cache expired, and such a server answers well inside
+ * this window. The settle grace lets a discovery that honored the budget finish closing its
+ * connections; past it, recovery releases the slot even if some dependency is still stalled. By
+ * default no more released discoveries may still run than there are catalog slots, the most work a
+ * stalled dependency could hold before discoveries were released.
  */
 const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
   discoveryTimeoutMs: 3_000,
+  discoverySettleGraceMs: 10_000,
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
+  maxDetachedDiscoveries: CATALOG_FANOUT_CONCURRENCY,
   generationReadTimeoutMs: 500,
   authorizationFenceRetryMs: [0, 50, 200],
   authorizationFenceTimeoutMs: 1_000,
@@ -49,6 +54,8 @@ export interface MCPServerCatalogRecoveryDeps {
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
   recoveryTracker?: MCPServerCatalogRecoveryTracker;
   getRecoveryGeneration?: MCPRecoveryGenerationReader;
+  /** Fences a credential refresh performed during discovery; recovery observes what it publishes. */
+  onOAuthCredentialsChanging?: ToolDiscoveryOptions['onOAuthCredentialsChanging'];
 }
 
 export interface MCPRecoveryGenerationScope {
@@ -62,11 +69,31 @@ export type MCPRecoveryGenerationReader = (
 
 const AUTHORIZATION_FENCE_RETRY_DELAYS_MS = [0, 50, 200] as const;
 
+/** Rejects with `message` when `operation` has not settled within `timeoutMs`. */
+async function withinTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId != null) clearTimeout(timeoutId);
+  }
+}
+
 export async function publishMCPAuthorizationMutation(
   scope: MCPRecoveryGenerationScope,
   deps: {
     invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-    clearLocalRecovery?: (userId: string, serverName: string) => void;
+    /** Receives the generation the publication wrote, when it reports one. */
+    clearLocalRecovery?: (userId: string, serverName: string, generation?: string) => void;
     persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
     clearPublicationRetry?: (
       scope: MCPRecoveryGenerationScope,
@@ -80,42 +107,39 @@ export async function publishMCPAuthorizationMutation(
    * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
    * durable path to fence other replicas. */
   const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
+  const attemptTimeoutMs =
+    deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
   let lastError: unknown;
   for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
-      const attemptTimeoutMs =
-        deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      let published: unknown;
+      const published = await withinTimeout(
+        deps.invalidateRecoveryGeneration(scope),
+        attemptTimeoutMs,
+        'MCP authorization generation publication timed out',
+      );
+      const generation =
+        typeof published === 'string' && published.length > 0 ? published : undefined;
       try {
-        published = await Promise.race([
-          deps.invalidateRecoveryGeneration(scope),
-          new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new Error('MCP authorization generation publication timed out')),
-              attemptTimeoutMs,
-            );
-          }),
-        ]);
-      } finally {
-        if (timeoutId != null) clearTimeout(timeoutId);
-      }
-      try {
-        if (publicationRetryVersion != null) {
-          await deps.clearPublicationRetry?.(scope, publicationRetryVersion);
+        if (publicationRetryVersion != null && deps.clearPublicationRetry != null) {
+          await withinTimeout(
+            deps.clearPublicationRetry(scope, publicationRetryVersion),
+            attemptTimeoutMs,
+            'MCP authorization retry intent cleanup timed out',
+          );
         }
       } catch (error) {
-        /** A leftover retry only advances the opaque generation again and is therefore safe. */
+        /** A leftover retry only advances the opaque generation again and is therefore safe, so
+         *  cleanup is bounded rather than allowed to hold every waiter on this publication. */
         logger.warn(
           `[MCP authorization] Published generation for ${scope.serverName} but could not clear its retry intent`,
           error,
         );
       }
-      deps.clearLocalRecovery?.(scope.userId, scope.serverName);
-      return typeof published === 'string' && published.length > 0 ? published : undefined;
+      deps.clearLocalRecovery?.(scope.userId, scope.serverName, generation);
+      return generation;
     } catch (error) {
       lastError = error;
       logger.warn(
@@ -130,8 +154,12 @@ export async function publishMCPAuthorizationMutation(
 export interface MCPServerCatalogRecoveryPolicy {
   discoveryBackoffMs: readonly number[];
   discoveryTimeoutMs: number;
+  /** How long past its budget a discovery may keep its catalog slot and coalesced requests. */
+  discoverySettleGraceMs: number;
   reauthRetryMs: number;
   maxStateEntries: number;
+  /** How many released discoveries may still run before no new discovery starts. */
+  maxDetachedDiscoveries: number;
   generationReadTimeoutMs: number;
   authorizationFenceRetryMs: readonly number[];
   authorizationFenceTimeoutMs: number;
@@ -195,6 +223,10 @@ type RecoveryOutcome = {
   tools: LCAvailableTools | null;
   state?: 'reauth_required' | 'backoff';
   recoveryGeneration?: string;
+  /** Marks a flight's own result when its generation came from its own publication; never retained. */
+  adopted?: boolean;
+  /** Marks a flight's own result when a clear for another generation spared it; never retained. */
+  unconfirmed?: boolean;
 };
 
 interface RecoveryStateEntry {
@@ -205,6 +237,24 @@ interface RecoveryStateEntry {
   lastTouchedAt: number;
   outcome?: RecoveryOutcome;
   inFlight?: Promise<RecoveryOutcome>;
+  /** Whether this flight's own discovery has a credential publication open. */
+  publishing?: boolean;
+  /** Generations carried by publication clears that spared this flight while it was in flight. */
+  sparedClears?: string[];
+}
+
+/** Runs a credential publication made by a flight's own discovery and returns what it wrote. */
+type PublicationTracker = (
+  publish: () => Promise<string | undefined>,
+) => Promise<string | undefined>;
+
+/** Hands the tracker a discovery released past its settle grace that is still running. */
+type DiscoveryDetacher = (discovery: Promise<unknown>) => void;
+
+/** The observed state a released discovery ran under; it holds only an attempt that matches it. */
+interface DetachedDiscovery {
+  configFingerprint: string;
+  recoveryGeneration?: string;
 }
 
 interface CatalogWorkLane {
@@ -305,8 +355,96 @@ function getRecoveryFingerprint(
 
 export class MCPServerCatalogRecoveryTracker {
   private readonly states = new Map<string, RecoveryStateEntry>();
+  /** Discoveries released past their settle grace that are still running, by recovery key. */
+  private readonly detachedDiscoveries = new Map<string, DetachedDiscovery[]>();
+  private detachedDiscoveryCount = 0;
 
-  constructor(private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries) {}
+  constructor(
+    private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries,
+    private readonly maxDetachedDiscoveries: number = DEFAULT_RECOVERY_POLICY.maxDetachedDiscoveries,
+  ) {}
+
+  /** Whether a request-bound discovery, which never joins a flight, may start. */
+  public admitsDiscovery(
+    user: IUser,
+    candidate: RecoveryCandidate,
+    policy: MCPServerCatalogRecoveryPolicy,
+  ): boolean {
+    return !this.isDiscoveryHeld(
+      getRecoveryKey(user.id, candidate.serverName),
+      getRecoveryFingerprint(candidate.serverConfig, policy),
+      undefined,
+    );
+  }
+
+  /** Counts a request-bound discovery released past its settle grace until it settles. */
+  public detachDiscovery(
+    user: IUser,
+    candidate: RecoveryCandidate,
+    policy: MCPServerCatalogRecoveryPolicy,
+    discovery: Promise<unknown>,
+  ): void {
+    this.detach(
+      getRecoveryKey(user.id, candidate.serverName),
+      { configFingerprint: getRecoveryFingerprint(candidate.serverConfig, policy) },
+      discovery,
+    );
+  }
+
+  /**
+   * A released discovery keeps running, so another attempt under the same observed state would stack
+   * on the same stuck dependency. Released discoveries also share one process-wide limit: once that
+   * many still run, no new discovery starts until one settles. A changed configuration or credential
+   * generation is new state and may discover within that limit. Only settling lifts a hold; clears
+   * do not. Discoveries already running when the limit fills can still be released, so the count
+   * can exceed it by at most the catalog concurrency.
+   */
+  private isDiscoveryHeld(
+    key: string,
+    configFingerprint: string,
+    recoveryGeneration: string | undefined,
+  ): boolean {
+    if (this.detachedDiscoveryCount >= this.maxDetachedDiscoveries) {
+      return true;
+    }
+    return (
+      this.detachedDiscoveries
+        .get(key)
+        ?.some(
+          (detached) =>
+            detached.configFingerprint === configFingerprint &&
+            (recoveryGeneration == null || detached.recoveryGeneration === recoveryGeneration),
+        ) === true
+    );
+  }
+
+  private detach(key: string, detached: DetachedDiscovery, discovery: Promise<unknown>): void {
+    const held = this.detachedDiscoveries.get(key);
+    if (held == null) {
+      this.detachedDiscoveries.set(key, [detached]);
+    } else {
+      held.push(detached);
+    }
+    this.detachedDiscoveryCount += 1;
+    if (this.detachedDiscoveryCount === this.maxDetachedDiscoveries) {
+      logger.warn(
+        `[MCP catalog recovery] Released discoveries still running reached the limit of ${this.maxDetachedDiscoveries}; starting no new discovery until one settles`,
+      );
+    }
+    const release = () => {
+      const current = this.detachedDiscoveries.get(key);
+      const index = current?.indexOf(detached) ?? -1;
+      if (current == null || index < 0) {
+        return;
+      }
+      current.splice(index, 1);
+      if (current.length === 0) {
+        this.detachedDiscoveries.delete(key);
+      }
+      this.detachedDiscoveryCount -= 1;
+    };
+    discovery.then(release, release);
+  }
 
   private touch(key: string, entry: RecoveryStateEntry): void {
     if (this.states.get(key) !== entry) {
@@ -316,18 +454,44 @@ export class MCPServerCatalogRecoveryTracker {
     this.states.set(key, entry);
   }
 
-  /** Clears suppression after a credential/config mutation commits. */
-  public clear(userId: string, serverName?: string): void {
+  /**
+   * Clears suppression after a credential/config mutation commits. A clear from a publication
+   * carries the generation it wrote; see `clearState` for the state it spares.
+   */
+  public clear(userId: string, serverName?: string, generation?: string): void {
     if (serverName != null) {
-      this.states.delete(getRecoveryKey(userId, serverName));
+      this.clearState(getRecoveryKey(userId, serverName), generation);
       return;
     }
     const prefix = `${userId}\u0000`;
     for (const key of this.states.keys()) {
       if (key.startsWith(prefix)) {
-        this.states.delete(key);
+        this.clearState(key, generation);
       }
     }
+  }
+
+  /**
+   * A clear from a publication carries the generation it wrote, which only signals that the shared
+   * generation advanced. Generations carry no order, so that signal cannot tell whether a flight
+   * still in flight predates it: such a flight, when it has a known generation or is publishing its
+   * own change, is spared and records the generation, and settles against it once it finishes
+   * (see `run`). Any other state is cleared, as is everything on a clear that carries no generation.
+   */
+  private clearState(key: string, generation: string | undefined): void {
+    const entry = this.states.get(key);
+    if (entry == null) {
+      return;
+    }
+    if (
+      generation != null &&
+      entry.inFlight != null &&
+      (entry.recoveryGeneration != null || entry.publishing === true)
+    ) {
+      entry.sparedClears = [...(entry.sparedClears ?? []), generation];
+      return;
+    }
+    this.states.delete(key);
   }
 
   public run(
@@ -335,24 +499,33 @@ export class MCPServerCatalogRecoveryTracker {
     candidate: RecoveryCandidate,
     policy: MCPServerCatalogRecoveryPolicy,
     recoveryGeneration: string | undefined,
-    discover: () => Promise<RecoveryOutcome>,
+    discover: (
+      trackPublication: PublicationTracker,
+      detach: DiscoveryDetacher,
+    ) => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
     const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
     const now = Date.now();
     const existing = this.states.get(key);
+    const held = this.isDiscoveryHeld(key, configFingerprint, recoveryGeneration);
     const sameObservedState =
       existing?.configFingerprint === configFingerprint &&
-      (recoveryGeneration == null || existing.recoveryGeneration === recoveryGeneration);
+      (recoveryGeneration == null ||
+        existing.recoveryGeneration === recoveryGeneration ||
+        (existing.inFlight != null && existing.publishing === true));
     if (sameObservedState) {
       existing.lastTouchedAt = now;
       this.touch(key, existing);
       if (existing.inFlight != null) {
         return existing.inFlight;
       }
-      if (existing.outcome != null && existing.nextRetryAt > now) {
+      if (existing.outcome != null && (held || existing.nextRetryAt > now)) {
         return Promise.resolve(existing.outcome);
       }
+    }
+    if (held) {
+      return Promise.resolve({ serverName: candidate.serverName, tools: null });
     }
 
     const entry: RecoveryStateEntry = {
@@ -363,7 +536,43 @@ export class MCPServerCatalogRecoveryTracker {
       nextRetryAt: 0,
       lastTouchedAt: now,
     };
-    const flight = discover()
+    let settled = false;
+    let adopted = false;
+    /**
+     * A credential refresh inside discovery writes a new shared generation, then clears local
+     * recovery state with it, and only then reports what it wrote. While that bounded publication is
+     * open, requests for the same server join this flight, so a request that already reads the new
+     * generation does not start a second discovery; the refresh's own clear spares the flight (see
+     * `clearState`). A flight that is still current once the publication completes adopts the
+     * generation it wrote.
+     */
+    const trackPublication: PublicationTracker = async (publish) => {
+      if (settled || entry.publishing === true || this.states.get(key) !== entry) {
+        return publish();
+      }
+      entry.publishing = true;
+      try {
+        const published = await publish();
+        if (published != null && !settled && this.states.get(key) === entry) {
+          entry.recoveryGeneration = published;
+          adopted = true;
+        }
+        return published;
+      } finally {
+        entry.publishing = false;
+      }
+    };
+    const detach: DiscoveryDetacher = (discovery) =>
+      this.detach(
+        key,
+        { configFingerprint, recoveryGeneration: entry.recoveryGeneration },
+        discovery,
+      );
+    const flight = Promise.resolve()
+      .then(() => discover(trackPublication, detach))
+      .finally(() => {
+        settled = true;
+      })
       .then((outcome) => {
         if (this.states.get(key) !== entry) {
           return { serverName: candidate.serverName, tools: null };
@@ -371,7 +580,17 @@ export class MCPServerCatalogRecoveryTracker {
         entry.lastTouchedAt = Date.now();
         this.touch(key, entry);
         outcome.recoveryGeneration = entry.recoveryGeneration;
-        if (outcome.state === 'reauth_required') {
+        /** A clear for a generation this flight did not finish under may be newer than it, so the
+         *  outcome must be confirmed against the shared generation and is never retained. */
+        const unconfirmed = (entry.sparedClears ?? []).some(
+          (generation) => generation !== entry.recoveryGeneration,
+        );
+        if (unconfirmed) {
+          this.states.delete(key);
+          if (entry.recoveryGeneration == null) {
+            return { serverName: candidate.serverName, tools: null };
+          }
+        } else if (outcome.state === 'reauth_required') {
           entry.failureCount = 0;
           entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
           /** Keep the authorization decision, but never promote an unfenced discovery catalog
@@ -388,7 +607,10 @@ export class MCPServerCatalogRecoveryTracker {
         } else {
           this.states.delete(key);
         }
-        return outcome;
+        if (!adopted && !unconfirmed) {
+          return outcome;
+        }
+        return { ...outcome, ...(adopted && { adopted }), ...(unconfirmed && { unconfirmed }) };
       })
       .finally(() => {
         if (this.states.get(key) === entry) {
@@ -418,22 +640,63 @@ export class MCPServerCatalogRecoveryTracker {
   }
 }
 
+/** Routes each fence publication a discovery's own refresh makes through its recovery flight. */
+function trackPublications(
+  onOAuthCredentialsChanging: ToolDiscoveryOptions['onOAuthCredentialsChanging'],
+  trackPublication?: PublicationTracker,
+): ToolDiscoveryOptions['onOAuthCredentialsChanging'] {
+  if (onOAuthCredentialsChanging == null || trackPublication == null) {
+    return onOAuthCredentialsChanging;
+  }
+  return async (scope) => {
+    const publish = await onOAuthCredentialsChanging(scope);
+    return () => trackPublication(publish);
+  };
+}
+
 async function discoverCandidate(
   user: IUser,
   { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
   policy: MCPServerCatalogRecoveryPolicy,
-  signal?: AbortSignal,
+  {
+    signal,
+    trackPublication,
+    onDetached,
+  }: {
+    signal?: AbortSignal;
+    trackPublication?: PublicationTracker;
+    onDetached?: DiscoveryDetacher;
+  } = {},
 ): Promise<RecoveryOutcome> {
+  const deadlineMs = Date.now() + resolveBudget(serverConfig, policy);
   try {
-    const result = await deps.discoverServerTools({
+    const pending = deps.discoverServerTools({
       user,
       serverName,
       configServers: { [serverName]: serverConfig },
       customUserVars,
-      deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
+      deadlineMs,
       signal,
+      onOAuthCredentialsChanging: trackPublications(
+        deps.onOAuthCredentialsChanging,
+        trackPublication,
+      ),
+      onDiscoveryDetached: onDetached,
     });
+    /** Discovery can await work that ignores its budget — a token refresh persisting behind a
+     *  stalled write — and a shared flight has no request signal to end that wait, so it would hold
+     *  every coalesced request and its slot indefinitely. Stop waiting instead of cancelling: that
+     *  work still commits what it redeemed. */
+    const discovery = await waitUntilDeadline(pending, deadlineMs + policy.discoverySettleGraceMs);
+    if (!discovery.settled) {
+      onDetached?.(pending);
+      logger.warn(
+        `[MCP catalog recovery] Discovery for ${serverName} is still running ${policy.discoverySettleGraceMs}ms past its budget; releasing its catalog slot while it finishes in the background`,
+      );
+      return { serverName, tools: null, ...(!signal?.aborted && { state: 'backoff' as const }) };
+    }
+    const result = discovery.value;
     const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
     if (signal?.aborted) {
       return { serverName, tools: null };
@@ -642,7 +905,13 @@ async function recoverMCPServerCatalogsWithState(
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
       if (usesRequestCredential) {
-        results[index] = await discoverCandidate(user, candidate, deps, policy, signal);
+        results[index] = tracker.admitsDiscovery(user, candidate, policy)
+          ? await discoverCandidate(user, candidate, deps, policy, {
+              signal,
+              onDetached: (discovery) =>
+                tracker.detachDiscovery(user, candidate, policy, discovery),
+            })
+          : { serverName: candidate.serverName, tools: null };
         return;
       }
       const observedGeneration = await readMCPRecoveryGeneration(
@@ -663,8 +932,16 @@ async function recoverMCPServerCatalogsWithState(
         return;
       }
       const recoveryGeneration = observedGeneration ?? snapshotGeneration;
-      const outcome = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
-        discoverCandidate(user, candidate, deps, policy),
+      const outcome = await tracker.run(
+        user,
+        candidate,
+        policy,
+        recoveryGeneration,
+        (trackPublication, detach) =>
+          discoverCandidate(user, candidate, deps, policy, {
+            trackPublication,
+            onDetached: detach,
+          }),
       );
       const finalGeneration = await readMCPRecoveryGeneration(
         { userId: user.id, serverName: candidate.serverName },
@@ -672,11 +949,21 @@ async function recoverMCPServerCatalogsWithState(
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
       const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
-      if (
+      /** An outcome stands without a final read only under a generation this request observed and
+       *  no clear has contested. A flight can finish under a generation its own refresh published or
+       *  one this request never read, and a clear for another generation can spare it; any of those
+       *  stands only while the shared generation still confirms it. A request that read nothing
+       *  keeps a generation the tracker merely carried over, so a cache outage keeps retained state. */
+      const requiresConfirmation =
+        outcome.unconfirmed === true ||
+        (outcomeGeneration !== recoveryGeneration &&
+          (recoveryGeneration != null || outcome.adopted === true));
+      const superseded =
         outcomeGeneration != null &&
-        finalGeneration != null &&
-        outcomeGeneration !== finalGeneration
-      ) {
+        (requiresConfirmation
+          ? finalGeneration !== outcomeGeneration
+          : finalGeneration != null && finalGeneration !== outcomeGeneration);
+      if (superseded) {
         tracker.clear(user.id, candidate.serverName);
         results[index] = { serverName: candidate.serverName, tools: null };
         return;

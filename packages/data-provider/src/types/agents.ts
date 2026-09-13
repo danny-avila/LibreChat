@@ -539,6 +539,8 @@ export namespace Agents {
      * so the id check can't.
      */
     requestFingerprint?: string;
+    /** Current-version fingerprint; server-only and omitted from client projections. */
+    requestFingerprintV2?: string;
     /**
      * Graph-determining request fields (endpoint, agent_id, model, spec, promptPrefix,
      * ephemeralAgent) captured at pause. The resume route REPLAYS these onto the request

@@ -164,7 +164,7 @@ describe('finalizeMCPAuthorizationMutation', () => {
     expect(invalidateRecoveryGeneration).toHaveBeenCalledWith(scope);
     expect(persistPublicationRetry).not.toHaveBeenCalled();
     expect(clearPublicationRetry).toHaveBeenCalledWith(scope, 'prepared-v1');
-    expect(clearLocalRecovery).toHaveBeenCalledWith(scope.userId, scope.serverName);
+    expect(clearLocalRecovery).toHaveBeenCalledWith(scope.userId, scope.serverName, undefined);
     expect(disconnectUserConnection).toHaveBeenCalledWith(scope.userId, scope.serverName);
   });
 

@@ -302,6 +302,8 @@ export type AgentSubagentsConfig = {
   enabled?: boolean;
   /** When true (default), the agent may spawn itself in an isolated context. */
   allowSelf?: boolean;
+  /** Share current-turn files with authorized descendants. Off unless explicitly enabled. */
+  shareFiles?: boolean;
   /** Specific agents that may be spawned as subagents. */
   agent_ids?: string[];
   /** Explicit saved-agent teams that may be spawned as bounded child graphs. */

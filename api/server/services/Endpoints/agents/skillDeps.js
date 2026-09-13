@@ -289,6 +289,13 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
 function buildAgentToolContext({ agent, config }) {
   return {
     agent,
+    fileEncodingAgent: {
+      provider: config.provider,
+      endpoint: config.endpoint,
+      model_parameters: config.model_parameters,
+      imageDetail: config.imageDetail,
+      agentContextAttachments: config.agentContextAttachments,
+    },
     /** Per-agent resolved endpoint token/pricing config. Retained here because
      *  `agentToolContexts` is the one map that holds every agent — including
      *  pure subagents pruned from `agentConfigs` — so usage can be priced with

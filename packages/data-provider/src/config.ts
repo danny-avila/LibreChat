@@ -18,6 +18,7 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
+import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -1201,6 +1202,23 @@ export const agentsEndpointSchema = baseEndpointSchema
         .max(MAX_SUBAGENTS_CEILING)
         .optional()
         .default(MAX_SUBAGENTS),
+      /** Run-scoped file access for explicitly opted-in subagent delegations. */
+      fileSharing: z
+        .object({
+          enabled: z.boolean().optional().default(false),
+          allowSiblingSharing: z.boolean().optional().default(false),
+          maxFiles: z.number().int().min(1).max(1_000).optional().default(100),
+          /** Aggregate disk budget for private output versions retained during a run. */
+          maxPrivateBytes: z
+            .number()
+            .int()
+            .min(1)
+            .max(10_737_418_240)
+            .optional()
+            .default(268_435_456),
+          ttlMs: z.number().int().min(1).max(86_400_000).optional().default(3_600_000),
+        })
+        .optional(),
       /** Maximum concurrent Code API uploads per route and authenticated principal. */
       codeApiUploadConcurrency: z.number().int().min(1).max(100).optional().default(3),
       /** Maximum wall-clock time spent waiting on Code API rate limits per operation. */
@@ -2175,6 +2193,9 @@ export type TStartupConfig = {
   /** Manual context compaction, gated by the same `summarization.enabled`
    *  switch that governs the automatic detour. */
   compactionEnabled?: boolean;
+  /** Conversation-owned code-environment decision protocol supported by the API.
+   * Clients must not emit selection-less decisions unless this is advertised. */
+  codeEnvironmentDecisionVersion?: typeof CODE_ENVIRONMENT_DECISION_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -2785,6 +2806,15 @@ export const configSchema = z.object({
             .positive()
             .max(5 * 60_000)
             .default(3_000),
+          /** How long past `discoveryTimeoutMs` a stalled discovery may hold its catalog slot and
+           * coalesced requests. It is never cancelled, so OAuth tokens it redeemed still persist,
+           * and no other discovery for the same server state starts until it settles. */
+          discoverySettleGraceMs: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(5 * 60_000)
+            .default(10_000),
           reauthRetryMs: z
             .number()
             .int()
@@ -2792,6 +2822,10 @@ export const configSchema = z.object({
             .max(24 * 60 * 60_000)
             .default(30 * 60_000),
           maxStateEntries: z.number().int().positive().max(1_000_000).default(10_000),
+          /** Process-wide: how many discoveries released past `discoverySettleGraceMs` may still be
+           * running before recovery starts no new discovery until one settles. The default matches
+           * the three catalog slots a stalled dependency could hold before discoveries were released. */
+          maxDetachedDiscoveries: z.number().int().positive().max(1_000).default(3),
           generationReadTimeoutMs: z.number().int().positive().max(10_000).default(500),
           authorizationFenceRetryMs: z
             .array(z.number().int().nonnegative().max(60_000))
@@ -3578,6 +3612,10 @@ export enum ErrorTypes {
    * Provider throttled or refused the request for exceeding a rate/spend allowance
    */
   MODEL_RATE_LIMIT = 'model_rate_limit',
+  /**
+   * An agent model provider failed and the run could not recover.
+   */
+  UPSTREAM_MODEL_ERROR = 'upstream_model_error',
   /**
    * Context pruning removed every message; nothing fits the configured context window
    */

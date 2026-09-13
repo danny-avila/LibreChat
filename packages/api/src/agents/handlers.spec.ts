@@ -446,6 +446,7 @@ describe('createToolExecuteHandler', () => {
         undefined,
         undefined,
         controller.signal,
+        undefined,
       );
     });
 
@@ -893,6 +894,7 @@ describe('createToolExecuteHandler', () => {
         ['allowed_tool'],
         undefined,
         configurable,
+        undefined,
         undefined,
         undefined,
       );
@@ -1425,6 +1427,7 @@ describe('createToolExecuteHandler', () => {
         undefined,
         undefined,
         callerCapabilityProjection,
+        undefined,
         undefined,
       );
       expect(capturedConfigs[0].toolDefs).toEqual([

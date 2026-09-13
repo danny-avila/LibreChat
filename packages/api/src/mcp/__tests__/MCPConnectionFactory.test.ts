@@ -4701,6 +4701,156 @@ describe('MCPConnectionFactory', () => {
         expect(result.tools).toBeNull();
         expect(Date.now() - start).toBeLessThan(2000);
       });
+
+      describe('OAuth token loading', () => {
+        const oauthDiscoveryOptions = (bounds: {
+          deadlineMs?: number;
+          signal?: AbortSignal;
+          onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
+        }) => ({
+          useOAuth: true as const,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          ...bounds,
+        });
+        const cancelledDiscovery = {
+          tools: null,
+          connection: null,
+          oauthRequired: false,
+          oauthUrl: null,
+        };
+        const refreshUnavailable = () => {
+          const error = new Error(
+            'OAuth token refresh is temporarily unavailable for "test-server"',
+          );
+          error.name = 'MCPTokenRefreshUnavailableError';
+          return error;
+        };
+        const deferTokenFlow = () => {
+          let resolve!: (tokens: MCPOAuthTokens | null) => void;
+          let reject!: (error: Error) => void;
+          const promise = new Promise<MCPOAuthTokens | null>((resolveFlow, rejectFlow) => {
+            resolve = resolveFlow;
+            reject = rejectFlow;
+          });
+          return { promise, resolve, reject };
+        };
+        type DeferredTokenFlow = ReturnType<typeof deferTokenFlow>;
+
+        it.each<
+          [string, (flow: DeferredTokenFlow) => void, PromiseSettledResult<unknown>['status']]
+        >([
+          [
+            'stores its tokens',
+            (flow) =>
+              flow.resolve({
+                access_token: 'late-access',
+                token_type: 'Bearer',
+                obtained_at: Date.now(),
+                credential_set_id: 'persisted-generation',
+              }),
+            'fulfilled',
+          ],
+          ['fails', (flow) => flow.reject(refreshUnavailable()), 'rejected'],
+        ])(
+          'stops waiting at the deadline for a stalled token flow that later %s, handing it off',
+          async (_outcome, finish, settlement) => {
+            const flow = deferTokenFlow();
+            const onDiscoveryDetached = jest.fn();
+            mockFlowManager.createFlowWithHandler.mockReturnValue(flow.promise);
+
+            const start = Date.now();
+            const result = await MCPConnectionFactory.discoverTools(
+              { serverName: 'test-server', serverConfig: mockServerConfig },
+              oauthDiscoveryOptions({ deadlineMs: Date.now() + 50, onDiscoveryDetached }),
+            );
+
+            expect(result).toEqual(cancelledDiscovery);
+            expect(Date.now() - start).toBeLessThan(2000);
+            expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+              expect.any(String),
+              'mcp_get_tokens',
+              expect.any(Function),
+              undefined,
+            );
+            expect(mockMCPConnection).not.toHaveBeenCalled();
+            expect(onDiscoveryDetached).toHaveBeenCalledTimes(1);
+            const [detachedWork] = onDiscoveryDetached.mock.calls[0] as [Promise<unknown>];
+
+            finish(flow);
+            await expect(Promise.allSettled([detachedWork])).resolves.toEqual([
+              expect.objectContaining({ status: settlement }),
+            ]);
+            expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
+            expect(mockMCPConnection).not.toHaveBeenCalled();
+          },
+        );
+
+        it('stops waiting for the token flow when the caller aborts, handing it off', async () => {
+          const controller = new AbortController();
+          const onDiscoveryDetached = jest.fn();
+          mockFlowManager.createFlowWithHandler.mockImplementation(() => {
+            setTimeout(() => controller.abort(), 20);
+            return new Promise<MCPOAuthTokens | null>(() => undefined);
+          });
+
+          const start = Date.now();
+          const result = await MCPConnectionFactory.discoverTools(
+            { serverName: 'test-server', serverConfig: mockServerConfig },
+            oauthDiscoveryOptions({ signal: controller.signal, onDiscoveryDetached }),
+          );
+
+          expect(result).toEqual(cancelledDiscovery);
+          expect(Date.now() - start).toBeLessThan(2000);
+          expect(mockMCPConnection).not.toHaveBeenCalled();
+          expect(onDiscoveryDetached).toHaveBeenCalledWith(expect.any(Promise));
+        });
+
+        it('still surfaces a token failure that lands inside the budget', async () => {
+          mockFlowManager.createFlowWithHandler.mockRejectedValue(refreshUnavailable());
+
+          await expect(
+            MCPConnectionFactory.discoverTools(
+              { serverName: 'test-server', serverConfig: mockServerConfig },
+              oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000 }),
+            ),
+          ).rejects.toThrow('OAuth token refresh is temporarily unavailable');
+          expect(mockMCPConnection).not.toHaveBeenCalled();
+        });
+
+        it('connects with tokens that load inside the budget', async () => {
+          const tokens: MCPOAuthTokens = {
+            access_token: 'fresh-access',
+            token_type: 'Bearer',
+            obtained_at: Date.now(),
+            credential_set_id: 'persisted-generation',
+          };
+          mockFlowManager.createFlowWithHandler.mockResolvedValue(tokens);
+          mockConnectionInstance.connect.mockResolvedValue(undefined);
+          mockConnectionInstance.isConnected.mockResolvedValue(true);
+          mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+            .fn()
+            .mockResolvedValue({ tools: mockTools, complete: true });
+
+          const onDiscoveryDetached = jest.fn();
+          const result = await MCPConnectionFactory.discoverTools(
+            { serverName: 'test-server', serverConfig: mockServerConfig },
+            oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000, onDiscoveryDetached }),
+          );
+
+          expect(result.tools).toEqual(mockTools);
+          expect(mockMCPConnection).toHaveBeenCalledWith(
+            expect.objectContaining({ oauthTokens: tokens }),
+          );
+          expect(onDiscoveryDetached).not.toHaveBeenCalled();
+        });
+      });
     });
   });
 

@@ -22,9 +22,8 @@ jest.mock('@librechat/api', () => ({
         }
       : null,
   ),
-  isCodeSessionToolName: jest.fn((name) =>
-    ['execute_code', 'bash_tool', 'read_file'].includes(name),
-  ),
+  isCodeArtifactToolOutput: jest.requireActual('@librechat/api').isCodeArtifactToolOutput,
+  isCodeSessionToolName: jest.requireActual('@librechat/api').isCodeSessionToolName,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({

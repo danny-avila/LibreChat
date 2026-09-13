@@ -43,8 +43,8 @@ const {
   buildPendingAction,
   toClientPendingAction,
   captureCodeExecutionApprovalBinding,
-  getCodeWorkspaceSelections,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
   pickResumeContext,
@@ -169,6 +169,8 @@ const {
   createContextMetaPublisher,
   selectRunContextMetaToPublish,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
+  isAgentRunCancellation,
 } = require('@librechat/api');
 const {
   Run,
@@ -1997,6 +1999,7 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
+    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
 
     return removeNullishValues(
       Object.assign(
@@ -2011,9 +2014,12 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeWorkspaces: getCodeWorkspaceSelections(
-            collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
-          ),
+          codeEnvironmentMode:
+            codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
+          codeWorkspaces:
+            codeEnvironmentDecision != null
+              ? codeEnvironmentDecision.codeWorkspaces
+              : this.options.req.body.codeWorkspaces,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -3317,6 +3323,7 @@ class AgentClient extends BaseClient {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        getRoleByName: db.getRoleByName,
       },
     );
 
@@ -4308,7 +4315,11 @@ class AgentClient extends BaseClient {
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
-      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Keep the legacy digest in its established field so an old replica can
+      // resume pauses written during a rolling deploy; current replicas also
+      // enforce the stricter code-environment-aware digest below.
+      requestFingerprint: computeLegacyAgentRequestFingerprint(this.options.req?.body ?? {}),
+      requestFingerprintV2: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
       // Persist those same fields verbatim so the resume route can REPLAY them — a
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
@@ -4375,6 +4386,12 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #sendCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -4508,6 +4525,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -4854,6 +4874,7 @@ class AgentClient extends BaseClient {
           modelCallbacks: [
             modelBoundCallback,
             createAgentMemoryCallback(this.attachmentMemoryContext ?? {}),
+            terminalRunError.modelCallback,
           ],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
@@ -4912,6 +4933,7 @@ class AgentClient extends BaseClient {
             this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
           ),
           subagentTasks: this.options.subagentTasks,
+          runFiles: this.options.runFiles,
         }).then((createdRun) => {
           if (!createdRun) {
             throw new Error('Failed to create run');
@@ -5075,7 +5097,7 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: err.message,
         });
-      } else if (abortController.signal.aborted) {
+      } else if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
@@ -5100,10 +5122,7 @@ class AgentClient extends BaseClient {
           },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -5113,16 +5132,19 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]:
             videoError ??
-            getUserFacingRequestError(
-              'An error occurred while processing the request',
-              err,
-              this.options.req.config,
+            terminalRunError.getUserFacingError(err, () =>
+              getUserFacingRequestError(
+                'An error occurred while processing the request',
+                err,
+                this.options.req.config,
+              ),
             ),
         });
       }
     } finally {
       /** An aborted/erroring run can still have completed compaction before
        * the failure; retain that model-visible state for actor reconciliation. */
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the
@@ -5237,6 +5259,12 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #resumeCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -5284,6 +5312,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -5613,7 +5644,11 @@ class AgentClient extends BaseClient {
       run = await createRun({
         agents,
         conversationId: this.conversationId,
-        modelCallbacks: [modelBoundCallback, attachmentMemoryCallback],
+        modelCallbacks: [
+          modelBoundCallback,
+          attachmentMemoryCallback,
+          terminalRunError.modelCallback,
+        ],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
@@ -5664,6 +5699,7 @@ class AgentClient extends BaseClient {
           this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
         ),
         subagentTasks: this.options.subagentTasks,
+        runFiles: this.options.runFiles,
       });
 
       if (!run) {
@@ -5755,7 +5791,7 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-      if (abortController.signal.aborted) {
+      if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
           {
@@ -5773,20 +5809,20 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: getUserFacingRequestError(
-            'An error occurred while resuming the request',
-            err,
-            appConfig,
+          [ContentTypes.ERROR]: terminalRunError.getUserFacingError(err, () =>
+            getUserFacingRequestError(
+              'An error occurred while resuming the request',
+              err,
+              appConfig,
+            ),
           ),
         });
       }
     } finally {
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the

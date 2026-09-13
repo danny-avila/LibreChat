@@ -1,5 +1,6 @@
 import type {
   CodeApprovalMode,
+  CodeEnvironmentMode,
   CodeWorkspaceSelection,
   TEndpointOption,
   Agents,
@@ -25,6 +26,7 @@ export type RequestBody = {
   /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */
   timezone?: string;
   codeApprovalMode?: CodeApprovalMode;
+  codeEnvironmentMode?: CodeEnvironmentMode;
   codeWorkspaces?: CodeWorkspaceSelection[];
 };
 

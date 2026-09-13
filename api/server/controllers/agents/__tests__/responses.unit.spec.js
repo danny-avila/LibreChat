@@ -187,6 +187,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   Callback: { TOOL_ERROR: 'TOOL_ERROR' },
   ToolEndHandler: jest.fn(),
   formatAgentMessages: jest.fn().mockReturnValue({
@@ -200,7 +201,11 @@ jest.mock('@librechat/api', () => ({
   createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   /** Grants both by default; the capability set is what these specs vary. */
-  resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
+  resolveToolRoleGrants: jest.fn(async () => ({
+    runCode: true,
+    fileSearch: true,
+    webSearch: true,
+  })),
   SAFE_CONVERSATION_TITLE: 'New Chat',
   resolveConversationTitle: (...args) => mockResolveConversationTitle(...args),
   /** Pass-through: the controller strips UI-only activity-label parts
@@ -228,20 +233,35 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
+  createTerminalRunErrorObserver: (...args) =>
+    jest.requireActual('@librechat/api').createTerminalRunErrorObserver(...args),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  resolveConversationCodeEnvironmentDecision: ({
+    requestedMode,
+    requestedSelections,
+    conversation,
+  }) => {
+    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
+    return {
+      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
+      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+    };
+  },
   getCodeWorkspaceSelections: jest.fn(),
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
     parentMessageId,
+    codeEnvironmentMode,
     codeWorkspaces,
   }) => ({
     messageId,
     conversationId,
+    ...(codeEnvironmentMode !== undefined && { codeEnvironmentMode }),
     ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
@@ -417,7 +437,7 @@ jest.mock('@librechat/api', () => ({
       return await execute(execution);
     } catch (error) {
       executionError = error;
-      if (handleExecutionError) return await handleExecutionError(error);
+      if (handleExecutionError) return await handleExecutionError(error, execution?.signal);
       throw error;
     } finally {
       removeCloseListener();
@@ -605,6 +625,38 @@ describe('createResponse controller', () => {
       );
       if (continuation)
         expect(require('~/models').getConvo).toHaveBeenCalledWith('user-123', 'previous');
+    },
+  );
+
+  it.each([false, true])(
+    'persists the normalized no-attached decision atomically: stream=%s',
+    async (stream) => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.getCodeWorkspaceSelections.mockReturnValueOnce([
+        { environmentId: 'machine', workspaceId: 'stale-project' },
+      ]);
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream,
+          store: true,
+          code_environment_mode: 'without_attached',
+        },
+      });
+
+      await createResponse(req, res);
+
+      expect(db.saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          codeEnvironmentMode: 'without_attached',
+        }),
+        expect.anything(),
+      );
+      expect(db.saveConvo.mock.calls.at(-1)[1]).not.toHaveProperty('codeWorkspaces');
+      expect(api.getCodeWorkspaceSelections).not.toHaveBeenCalled();
     },
   );
 
@@ -902,6 +954,7 @@ describe('createResponse controller', () => {
           requestBody: {
             messageId: 'resp_mock-123',
             conversationId: expect.any(String),
+            codeEnvironmentMode: 'without_attached',
           },
         }),
         expect.anything(),
@@ -1638,6 +1691,29 @@ describe('createResponse controller', () => {
   });
 
   describe('safe error logging', () => {
+    it('does not classify a client disconnect as an upstream model error', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
+      api.createRun.mockImplementationOnce(async (options) => ({
+        processStream: jest.fn(async () => {
+          options.modelCallbacks
+            .find(({ name }) => name === 'librechat-upstream-model-error-tracker')
+            .handleLLMError(abortError);
+          res.once.mock.calls.find(([event]) => event === 'close')[1]();
+          throw abortError;
+        }),
+      }));
+
+      await createResponse(req, res);
+
+      expect(mockExecution.signal.aborted).toBe(true);
+      expect(logger.error).not.toHaveBeenCalledWith(
+        '[Responses API] Upstream model error',
+        expect.anything(),
+      );
+    });
+
     it('logs bounded metadata and returns a raw-free provider error', async () => {
       const api = require('@librechat/api');
       const { logger } = require('@librechat/data-schemas');
@@ -1655,7 +1731,6 @@ describe('createResponse controller', () => {
 
       await createResponse(req, res);
 
-      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
       const errorLog = logger.error.mock.calls.find(
         ([message]) => message === '[Responses API] Error:',
       );
@@ -1669,6 +1744,50 @@ describe('createResponse controller', () => {
       );
       expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(rawValue);
     });
+
+    it.each([false, true])(
+      'classifies a terminal model callback failure and correlates its trace: stream=%s',
+      async (stream) => {
+        const api = require('@librechat/api');
+        const { logger } = require('@librechat/data-schemas');
+        const rawValue = 'PRIVATE-RESPONSES-UPSTREAM-PAYLOAD';
+        const providerError = Object.assign(new Error(`Provider echoed ${rawValue}`), {
+          code: 'ERR_REMOTE',
+          response: { status: 503, data: { prompt: rawValue } },
+        });
+        req.config.filters = { messages: { pii: {} } };
+        api.validateResponseRequest.mockReturnValueOnce({
+          request: { model: 'agent-123', input: 'Hello', stream },
+        });
+        api.createRun.mockImplementationOnce(async (options) => ({
+          processStream: jest.fn(async () => {
+            options.modelCallbacks
+              .find(({ name }) => name === 'librechat-upstream-model-error-tracker')
+              .handleLLMError(providerError);
+            throw new Error('graph failed', { cause: providerError });
+          }),
+        }));
+
+        await createResponse(req, res);
+
+        const errorLog = logger.error.mock.calls.find(
+          ([message]) => message === '[Responses API] Upstream model error',
+        );
+        expect(errorLog).toEqual([
+          '[Responses API] Upstream model error',
+          {
+            type: 'Error',
+            status: 503,
+            errorCode: 'UPSTREAM_MODEL_ERROR',
+            errorOrigin: 'model_provider',
+            errorType: '503',
+            traceId: 'da34f2d846b1b1b770afe89e670770d5',
+          },
+        ]);
+        expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+        expect(JSON.stringify(errorLog)).not.toContain('ERR_REMOTE');
+      },
+    );
 
     it('preserves the legacy provider error when protection is inactive', async () => {
       const api = require('@librechat/api');
@@ -2325,6 +2444,45 @@ describe('createResponse controller', () => {
         expect.objectContaining({ fileSearchAvailable: true, codeEnvAvailable: true }),
         expect.anything(),
       );
+    });
+  });
+
+  describe('web search role gating', () => {
+    const setCapabilities = (capabilities) => {
+      req.config.endpoints.agents.capabilities = capabilities;
+    };
+
+    const passedResolver = () => {
+      const { initializeAgent } = require('@librechat/api');
+      return initializeAgent.mock.calls[0][0].resolveWebSearchGrant;
+    };
+
+    /** Provider-native search is a model parameter with no capability of its own,
+     *  so the resolver is handed over whatever the capabilities — but it reads
+     *  nothing until the initializer finds native search in the built config. */
+    it('hands initializeAgent a grant resolver without reading the role', async () => {
+      const { resolveToolRoleGrants } = require('@librechat/api');
+      setCapabilities([]);
+
+      await createResponse(req, res);
+
+      expect(passedResolver()).toEqual(expect.any(Function));
+      expect(resolveToolRoleGrants).not.toHaveBeenCalled();
+    });
+
+    it('resolves the WEB_SEARCH grant against this request when called', async () => {
+      const { resolveToolRoleGrants } = require('@librechat/api');
+      resolveToolRoleGrants.mockResolvedValueOnce({
+        runCode: true,
+        fileSearch: true,
+        webSearch: false,
+      });
+      setCapabilities([]);
+
+      await createResponse(req, res);
+
+      await expect(passedResolver()()).resolves.toBe(false);
+      expect(resolveToolRoleGrants).toHaveBeenCalledWith(expect.objectContaining({ req }));
     });
   });
 });
