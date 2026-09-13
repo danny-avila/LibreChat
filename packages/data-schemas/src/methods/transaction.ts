@@ -641,17 +641,31 @@ export function createTransactionMethods(
     }
   }
 
-  /** Retrieves a user's balance record, optionally with the credits in-flight requests hold. */
+  /**
+   * Retrieves a user's balance record. With `includeReservedCredits`, `reservedCredits` is the
+   * total of the reservations that have not expired, so a reservation left by a crashed request
+   * stops counting at its expiry even before a reservation write prunes it.
+   */
   async function findBalanceByUser(
     user: string,
     options?: { includeReservedCredits?: boolean },
   ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     const query = Balance.findOne({ user }).sort(oldestFirst);
-    if (options?.includeReservedCredits) {
-      query.select('+reservedCredits');
+    if (!options?.includeReservedCredits) {
+      return query.lean<IBalance>();
     }
-    return query.lean<IBalance>();
+    const record = await query.select('+reservations').lean<IBalance>();
+    if (!record) {
+      return null;
+    }
+    const now = new Date();
+    const { reservations, ...balance } = record;
+    const reservedCredits = (reservations ?? []).reduce(
+      (sum, reservation) => (reservation.expiresAt > now ? sum + reservation.amount : sum),
+      0,
+    );
+    return { ...balance, reservedCredits } as IBalance;
   }
 
   /** Upserts balance fields for a user; `insertOnly` fields apply only when the record is created. */

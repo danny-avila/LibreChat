@@ -1331,6 +1331,25 @@ describe('Balance Reservations', () => {
     expect(stored?.reservedCredits).toBeUndefined();
   });
 
+  test('reports only unexpired reservations when a read asks for the reserved credits', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({
+      user,
+      tokenCredits: 1000,
+      reservedCredits: 1200,
+      reservations: [
+        { id: 'live', amount: 300, expiresAt: inFuture() },
+        { id: 'stale', amount: 900, expiresAt: new Date(Date.now() - 1000) },
+      ],
+    });
+
+    const record = await findBalanceByUser(user.toString(), { includeReservedCredits: true });
+
+    expect(record?.tokenCredits).toBe(1000);
+    expect(record?.reservedCredits).toBe(300);
+    expect(record).not.toHaveProperty('reservations');
+  });
+
   test('keeps reservation state out of ordinary balance reads and writes', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });

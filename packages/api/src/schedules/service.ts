@@ -144,7 +144,7 @@ export interface SchedulesServiceDeps {
   findUserById: (
     userId: string | Types.ObjectId,
   ) => Promise<{ _id: Types.ObjectId; tenantId?: string; role?: string } | null>;
-  /** Reads the balance record together with the credits in-flight requests hold. */
+  /** Reads the balance record together with the credits unexpired in-flight reservations hold. */
   findBalance: (userId: string) => Promise<IBalance | null>;
   /**
    * Upserts a balance record. `setOnInsert` carries fields that must ONLY apply to a
