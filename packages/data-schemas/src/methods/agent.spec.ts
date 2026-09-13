@@ -60,6 +60,7 @@ let getAgent: AgentMethods['getAgent'];
 let getAgentVersions: AgentMethods['getAgentVersions'];
 let getAgentWithVersionCount: AgentMethods['getAgentWithVersionCount'];
 let updateAgent: AgentMethods['updateAgent'];
+let updateAgentAvatar: AgentMethods['updateAgentAvatar'];
 let deleteAgent: AgentMethods['deleteAgent'];
 let deleteUserAgents: AgentMethods['deleteUserAgents'];
 let revertAgentVersion: AgentMethods['revertAgentVersion'];
@@ -113,6 +114,7 @@ beforeAll(async () => {
   getAgentVersions = methods.getAgentVersions;
   getAgentWithVersionCount = methods.getAgentWithVersionCount;
   updateAgent = methods.updateAgent;
+  updateAgentAvatar = methods.updateAgentAvatar;
   deleteAgent = methods.deleteAgent;
   deleteUserAgents = methods.deleteUserAgents;
   revertAgentVersion = methods.revertAgentVersion;
@@ -5452,6 +5454,33 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
     await AclEntry.deleteMany({});
   });
 
+  test('updates an avatar without advancing updatedAt', async () => {
+    const agent = await createAgent({
+      id: `agent_${uuidv4().slice(0, 12)}`,
+      name: 'Avatar maintenance',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      avatar: { filepath: 'old-path.jpg', source: 's3' },
+    });
+    const originalUpdatedAt = new Date('2024-01-01T00:00:00Z');
+    await setUpdatedAt(agent._id, originalUpdatedAt);
+
+    await expect(
+      updateAgentAvatar({
+        id: agent.id,
+        avatar: { filepath: 'new-path.jpg', source: 's3' },
+      }),
+    ).resolves.toBe(true);
+
+    const refreshed = (await Agent.findById(agent._id).lean()) as {
+      avatar?: { filepath: string; source: string };
+      updatedAt?: Date;
+    } | null;
+    expect(refreshed?.avatar).toEqual({ filepath: 'new-path.jpg', source: 's3' });
+    expect(refreshed?.updatedAt).toEqual(originalUpdatedAt);
+  });
+
   describe('newest / oldest', () => {
     test('newest (default) orders by createdAt desc', async () => {
       const author = new mongoose.Types.ObjectId();
@@ -6693,6 +6722,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
     test.each([
       ['a null primary', () => encode({ primary: null, secondary: validObjectId() })],
+
       [
         'an unparseable date primary',
         () => encode({ primary: 'not-a-date', secondary: validObjectId() }),
@@ -6744,7 +6774,35 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
       // Both agents have a real date, so the "still inside the undated group" branch
       // legitimately matches nothing - the point is that it is not rejected as garbage.
+
       expect(result.data).toHaveLength(0);
+    });
+
+    test('accepts a legacy cursor for recent and rejects it for non-recent modes', async () => {
+      const { older, newer, accessibleIds } = await seedTwoAgents();
+      const newerUpdatedAt = new Date('2025-06-01T00:00:00Z');
+      await setUpdatedAt(older._id, new Date('2025-01-01T00:00:00Z'));
+      await setUpdatedAt(newer._id, newerUpdatedAt);
+      const legacyCursor = encode({
+        updatedAt: newerUpdatedAt.toISOString(),
+        _id: newer._id.toString(),
+      });
+
+      const recent = await getListAgentsByAccess({
+        accessibleIds,
+        sort: 'recent',
+        limit: null,
+        after: legacyCursor,
+      });
+      expect(recent.data.map((agent) => agent.id)).toEqual([older.id]);
+
+      const newest = await getListAgentsByAccess({
+        accessibleIds,
+        sort: 'newest',
+        limit: null,
+        after: legacyCursor,
+      });
+      expect(newest.data.map((agent) => agent.id)).toEqual([newer.id, older.id]);
     });
 
     /**
