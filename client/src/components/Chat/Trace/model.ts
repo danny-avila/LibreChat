@@ -204,7 +204,7 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
       summary.inputTokens += input;
       summary.outputTokens += output;
       summary.totalTokens += total;
-      if (record.cost == null && total > 0) {
+      if (record.cost == null) {
         unpricedRecords++;
       }
     }
@@ -235,7 +235,7 @@ export function buildTraceModel(records: readonly TTraceRecord[]): TraceModel {
 
   summary.turns = turns.length;
   summary.duration = end - start;
-  /** A total that silently skips unpriced model calls would under-report spend, so there is none. */
+  /** A total that silently skips a model call without a price, with or without usage, would under-report spend, so there is none. */
   if (pricedRecords > 0 && unpricedRecords === 0) {
     summary.cost = cost;
   }

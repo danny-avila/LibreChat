@@ -162,14 +162,19 @@ describe('buildTraceModel', () => {
     expect(model.turns[0].errorCount).toBe(1);
   });
 
-  it('withholds the cost total when any model call with usage has no price', () => {
-    const model = buildTraceModel([
-      record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 }),
+  it('withholds the cost total when any model call has no price, with or without usage', () => {
+    const priced = record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 });
+    const withUsage = buildTraceModel([
+      priced,
       record({ id: 'unpriced', kind: 'generation', usage: { total: 50 } }),
     ]);
+    const withoutUsage = buildTraceModel([priced, record({ id: 'bare', kind: 'generation' })]);
+    const toolOnly = buildTraceModel([priced, record({ id: 'tool', kind: 'tool' })]);
 
-    expect(model.summary.cost).toBeUndefined();
-    expect(model.summary.totalTokens).toBe(150);
+    expect(withUsage.summary.cost).toBeUndefined();
+    expect(withUsage.summary.totalTokens).toBe(150);
+    expect(withoutUsage.summary.cost).toBeUndefined();
+    expect(toolOnly.summary.cost).toBeCloseTo(0.02);
   });
 
   it('keeps the last copy of a record loaded twice', () => {

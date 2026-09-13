@@ -83,17 +83,33 @@ function observation(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+type RoutedRequest = { origin: string; probe: boolean; traceIds: string[]; cursor: string | null };
+
+function routeOf(url: string): RoutedRequest {
+  const parsed = new URL(url);
+  const filter: FilterCondition[] = JSON.parse(parsed.searchParams.get('filter') ?? '[]');
+  return {
+    origin: parsed.origin,
+    probe: filter.some(({ column }) => column === 'parentObservationId'),
+    traceIds: (filter.find(({ column }) => column === 'traceId')?.value as string[]) ?? [],
+    cursor: parsed.searchParams.get('cursor'),
+  };
+}
+
 function setup({
   refs = createRefs(),
   destinations = [central, connection],
   responses = [] as Array<Response | Error>,
+  route,
 }: {
   refs?: ConversationTraceRefs;
   destinations?: LangfuseScoreDestination[];
   responses?: Array<Response | Error>;
+  /** Answers each Langfuse request by what it asks for, instead of by arrival order. */
+  route?: (request: RoutedRequest) => Response | Error;
 } = {}) {
-  const fetchMock = jest.fn(async (_url: string, _init: RequestInit): Promise<Response> => {
-    const next = responses.shift();
+  const fetchMock = jest.fn(async (url: string, _init: RequestInit): Promise<Response> => {
+    const next = route ? route(routeOf(url)) : responses.shift();
     if (next == null) {
       throw new Error('unexpected fetch');
     }
@@ -145,6 +161,37 @@ function requestedTraceIds(fetchMock: jest.Mock, call = 0): string[] {
 
 function tracesOf(...messageIds: string[]): string[] {
   return messageIds.flatMap((id) => [traceIdForMessage(id), traceIdForMessage(`title-${id}`)]);
+}
+
+const TENANT = 'https://tenant.langfuse.test';
+const CENTRAL = 'https://central.langfuse.test';
+
+/** A probe answer: one root observation per trace the project holds. */
+function rootsFor(request: RoutedRequest, ...messageIds: string[]): Response {
+  const held = new Set(messageIds.map((id) => traceIdForMessage(id)));
+  return jsonResponse({
+    data: request.traceIds
+      .filter((traceId) => held.has(traceId))
+      .map((traceId) => ({ id: `root-${traceId}`, traceId })),
+  });
+}
+
+/** A read answer: one observation per requested turn the project holds. */
+function recordsFor(request: RoutedRequest, ...messageIds: string[]): Response {
+  return jsonResponse({
+    data: messageIds
+      .filter((id) => request.traceIds.includes(traceIdForMessage(id)))
+      .map((id) => observation({ id, traceId: traceIdForMessage(id) })),
+  });
+}
+
+/** Every request, as a readable line, in the order the reader made them. */
+function calls(fetchMock: jest.Mock): string[] {
+  return fetchMock.mock.calls.map(([url]) => {
+    const request = routeOf(String(url));
+    const host = request.origin === TENANT ? 'tenant' : 'central';
+    return `${request.probe ? 'probe' : 'read'} ${host}${request.cursor ? ` @${request.cursor}` : ''}`;
+  });
 }
 
 function encodeTestCursor(cursor: Record<string, unknown>): string {
@@ -256,40 +303,12 @@ describe('createLangfuseTraceReader', () => {
       expect(init.redirect).toBe('error');
     });
 
-    it('prefers the tenant connection over central when both hold the trace', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
-        responses: [jsonResponse({ data: [observation()] })],
-      });
-
-      await reader.listRecords(createQuery());
-
-      expect(requestedUrl(fetchMock).origin).toBe('https://tenant.langfuse.test');
-    });
-
     it('reads central when it is the only destination recorded on the messages', async () => {
       const { reader, fetchMock } = setup({
         refs: createRefs({
           sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['central-id'] }],
         }),
         responses: [jsonResponse({ data: [] })],
-      });
-
-      await reader.listRecords(createQuery());
-
-      expect(requestedUrl(fetchMock).origin).toBe('https://central.langfuse.test');
-    });
-
-    it('reads the project that holds the most responses when a connection arrived mid-conversation', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({
-          sampledMessages: [
-            { messageId: 'response-0', langfuseDestinationIds: ['central-id'] },
-            { messageId: 'response-1', langfuseDestinationIds: ['central-id'] },
-            { messageId: 'response-2', langfuseDestinationIds: ['central-id', 'connection-id'] },
-          ],
-        }),
-        responses: [jsonResponse({ data: [observation()] })],
       });
 
       await reader.listRecords(createQuery());
@@ -325,50 +344,84 @@ describe('createLangfuseTraceReader', () => {
       expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
     });
 
-    it('pages turns in order when responses went back and forth between projects', async () => {
+    it('reads a turn only its preferred project holds without asking any project first', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({
+          sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['connection-id'] }],
+        }),
+        route: (request) => recordsFor(request, 'response-1'),
+      });
+
+      await reader.listRecords(createQuery());
+
+      expect(calls(fetchMock)).toEqual(['read tenant']);
+    });
+
+    it('reads a turn two projects could hold from the preferred one that holds it', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const both = setup({
+        refs,
+        route: (request) =>
+          request.probe ? rootsFor(request, 'response-1') : recordsFor(request, 'response-1'),
+      });
+      const onlyCentral = setup({
+        refs,
+        route: (request) => {
+          const held = request.origin === CENTRAL ? ['response-1'] : [];
+          return request.probe ? rootsFor(request, ...held) : recordsFor(request, ...held);
+        },
+      });
+
+      await both.reader.listRecords(createQuery());
+      const page = await onlyCentral.reader.listRecords(createQuery());
+
+      expect(calls(both.fetchMock)).toEqual(['probe tenant', 'read tenant']);
+      expect(calls(onlyCentral.fetchMock)).toEqual([
+        'probe tenant',
+        'probe central',
+        'read central',
+      ]);
+      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'response-1' }] });
+    });
+
+    it('pages turns in order whichever projects hold them', async () => {
       const refs = createRefs({
         sampledMessages: [
           { messageId: 'response-0', langfuseDestinationIds: ['central-id'] },
-          { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
-          { messageId: 'response-2', langfuseDestinationIds: ['central-id'] },
+          { messageId: 'legacy-1' },
+          { messageId: 'response-2', langfuseDestinationIds: ['connection-id'] },
           { messageId: 'response-3', langfuseDestinationIds: ['central-id'] },
+          { messageId: 'response-4', langfuseDestinationIds: ['central-id'] },
         ],
       });
-      const turn = (messageId: string) =>
-        jsonResponse({
-          data: [observation({ id: messageId, traceId: traceIdForMessage(messageId) })],
-        });
-      const reads: Array<{ origin: string; traceIds: string[]; records: string[] }> = [];
+      const held: Record<string, string[]> = {
+        [TENANT]: ['response-2'],
+        [CENTRAL]: ['response-0', 'legacy-1', 'response-3', 'response-4'],
+      };
+      const pages: Array<{ sourceId?: string; records: string[] }> = [];
       let cursor: string | undefined;
-      for (const response of ['response-2', 'response-1', 'response-0']) {
-        const { reader, fetchMock } = setup({ refs, responses: [turn(response)] });
-        const page = await reader.listRecords({ ...createQuery(), cursor });
-        reads.push({
-          origin: requestedUrl(fetchMock).origin,
-          traceIds: requestedTraceIds(fetchMock),
-          records: page.records.map(({ id }) => id),
+      do {
+        const { reader } = setup({
+          refs,
+          route: (request) =>
+            request.probe
+              ? rootsFor(request, ...held[request.origin])
+              : recordsFor(request, ...held[request.origin]),
         });
+        const page = await reader.listRecords({ ...createQuery(), cursor });
+        pages.push({ sourceId: page.sourceId, records: page.records.map(({ id }) => id).sort() });
         cursor = page.nextCursor;
-      }
+      } while (cursor);
 
-      expect(reads).toEqual([
-        {
-          origin: 'https://central.langfuse.test',
-          traceIds: tracesOf('response-2', 'response-3'),
-          records: ['response-2'],
-        },
-        {
-          origin: 'https://tenant.langfuse.test',
-          traceIds: tracesOf('response-1'),
-          records: ['response-1'],
-        },
-        {
-          origin: 'https://central.langfuse.test',
-          traceIds: tracesOf('response-0'),
-          records: ['response-0'],
-        },
+      expect(pages).toEqual([
+        { sourceId: 'central-id', records: ['response-3', 'response-4'] },
+        { sourceId: 'connection-id', records: ['response-2'] },
+        { sourceId: 'central-id', records: ['legacy-1', 'response-0'] },
       ]);
-      expect(cursor).toBeUndefined();
     });
 
     it('bounds how many turns one read asks a project for', async () => {
@@ -381,12 +434,177 @@ describe('createLangfuseTraceReader', () => {
 
       const page = await first.reader.listRecords(createQuery());
 
-      expect(requestedTraceIds(first.fetchMock)).toEqual(
-        tracesOf(...sampledMessages.slice(1).map(({ messageId }) => messageId)),
+      expect(requestedTraceIds(first.fetchMock).sort()).toEqual(
+        tracesOf(...sampledMessages.slice(1).map(({ messageId }) => messageId)).sort(),
       );
       const later = setup({ refs, responses: [jsonResponse({ data: [] })] });
       await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
       expect(requestedTraceIds(later.fetchMock)).toEqual(tracesOf('response-0'));
+    });
+
+    it('fails over when the preferred project fails to answer or to read', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const probeFails = setup({
+        refs,
+        route: (request) => {
+          if (request.origin === TENANT) {
+            return jsonResponse({ message: 'expired key' }, 401);
+          }
+          return request.probe
+            ? rootsFor(request, 'response-1')
+            : recordsFor(request, 'response-1');
+        },
+      });
+      const readFails = setup({
+        refs,
+        route: (request) => {
+          if (request.probe) {
+            return rootsFor(request, 'response-1');
+          }
+          return request.origin === TENANT
+            ? jsonResponse({ message: 'down' }, 503)
+            : recordsFor(request, 'response-1');
+        },
+      });
+
+      const afterProbe = await probeFails.reader.listRecords(createQuery());
+      const afterRead = await readFails.reader.listRecords(createQuery());
+
+      expect(calls(probeFails.fetchMock)).toEqual([
+        'probe tenant',
+        'probe central',
+        'read central',
+      ]);
+      expect(calls(readFails.fetchMock)).toEqual([
+        'probe tenant',
+        'read tenant',
+        'probe central',
+        'read central',
+      ]);
+      expect(afterProbe).toMatchObject({ sourceId: 'central-id', records: [{ id: 'response-1' }] });
+      expect(afterRead).toMatchObject({ sourceId: 'central-id', records: [{ id: 'response-1' }] });
+    });
+
+    it('reports a failure that could hide a turn instead of a partial or empty trace', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-0', langfuseDestinationIds: ['central-id', 'connection-id'] },
+          { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
+        ],
+      });
+      const route = (request: RoutedRequest) => {
+        if (request.origin === CENTRAL) {
+          return jsonResponse({ message: 'down' }, 503);
+        }
+        return request.probe ? rootsFor(request) : recordsFor(request, 'response-1');
+      };
+      const first = setup({ refs, route });
+
+      const page = await first.reader.listRecords(createQuery());
+
+      expect(page.records.map(({ id }) => id)).toEqual(['response-1']);
+      const later = setup({ refs, route });
+      await expect(
+        later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
+    });
+
+    it('starts a segment over on another project when the one a cursor names fails', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const first = setup({
+        refs,
+        route: (request) =>
+          request.probe
+            ? rootsFor(request, 'response-1')
+            : jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'next' } }),
+      });
+      const { nextCursor } = await first.reader.listRecords(
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+      );
+      const later = setup({
+        refs,
+        route: (request) => {
+          if (request.probe) {
+            return rootsFor(request, 'response-1');
+          }
+          return request.origin === TENANT
+            ? jsonResponse({ message: 'down' }, 503)
+            : recordsFor(request, 'response-1');
+        },
+      });
+
+      const page = await later.reader.listRecords({ ...createQuery(), cursor: nextCursor });
+
+      expect(calls(later.fetchMock)).toEqual([
+        'probe tenant',
+        'read tenant @next',
+        'probe central',
+        'read central',
+      ]);
+      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'response-1' }] });
+    });
+
+    it('reads a turn no project shows a root for yet from the preferred one, since a running turn has none', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'legacy-response' }] }),
+        route: (request) =>
+          request.probe
+            ? rootsFor(request)
+            : jsonResponse({
+                data: [
+                  observation({
+                    id: 'streaming-call',
+                    parentObservationId: 'root-not-exported',
+                    traceId: traceIdForMessage('legacy-response'),
+                    endTime: null,
+                  }),
+                ],
+              }),
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(calls(fetchMock)).toEqual(['probe tenant', 'probe central', 'read tenant']);
+      expect(page.records).toEqual([
+        expect.objectContaining({ id: 'streaming-call', status: 'running' }),
+      ]);
+    });
+
+    it('starts a segment over when its cursor no longer matches the segment or Langfuse rejects it', async () => {
+      const refs = createRefs({
+        sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['connection-id'] }],
+      });
+      const stale = encodeTestCursor({ m: 'response-1', s: 'connection-id', c: 'old', h: 'other' });
+      const staleSegment = setup({ refs, route: (request) => recordsFor(request, 'response-1') });
+      const rejected = setup({
+        refs,
+        route: (request) =>
+          request.cursor != null
+            ? jsonResponse({ message: 'bad cursor' }, 400)
+            : recordsFor(request, 'response-1'),
+      });
+      const first = setup({
+        refs,
+        responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'next' } })],
+      });
+      const { nextCursor } = await first.reader.listRecords(
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+      );
+
+      await staleSegment.reader.listRecords({ ...createQuery(), cursor: stale });
+      const restarted = await rejected.reader.listRecords({ ...createQuery(), cursor: nextCursor });
+
+      expect(calls(staleSegment.fetchMock)).toEqual(['read tenant']);
+      expect(calls(rejected.fetchMock)).toEqual(['read tenant @next', 'read tenant']);
+      expect(restarted.records.map(({ id }) => id)).toEqual(['response-1']);
     });
 
     it('reads a failed turn from the trace of the run its error row stands for', async () => {
@@ -429,135 +647,6 @@ describe('createLangfuseTraceReader', () => {
       });
     });
 
-    it('tries the next readable project when legacy responses left the first one empty', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
-        responses: [
-          jsonResponse({ data: [] }),
-          jsonResponse({ data: [observation({ id: 'legacy' })] }),
-        ],
-      });
-
-      const page = await reader.listRecords(createQuery());
-
-      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
-      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
-      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'legacy' }] });
-    });
-
-    it('loads every project a segment reads before returning, so a newer legacy turn is not left behind', async () => {
-      const refs = createRefs({
-        sampledMessages: [
-          { messageId: 'response-0', langfuseDestinationIds: ['connection-id'] },
-          { messageId: 'legacy-response' },
-          { messageId: 'response-2', langfuseDestinationIds: ['connection-id'] },
-        ],
-      });
-      const { reader, fetchMock } = setup({
-        refs,
-        responses: [
-          jsonResponse({
-            data: [
-              observation({ id: 'newest', traceId: traceIdForMessage('response-2') }),
-              observation({ id: 'oldest', traceId: traceIdForMessage('response-0') }),
-            ],
-          }),
-          jsonResponse({
-            data: [observation({ id: 'middle', traceId: traceIdForMessage('legacy-response') })],
-          }),
-        ],
-      });
-
-      const page = await reader.listRecords(createQuery());
-
-      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
-      expect(requestedTraceIds(fetchMock, 0)).toEqual(
-        tracesOf('response-0', 'legacy-response', 'response-2'),
-      );
-      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
-      expect(requestedTraceIds(fetchMock, 1)).toEqual(tracesOf('legacy-response'));
-      expect(page.records.map(({ id }) => id)).toEqual(['newest', 'oldest', 'middle']);
-      expect(page).not.toHaveProperty('sourceId');
-      expect(page.nextCursor).toBeUndefined();
-    });
-
-    it('cuts a page drawn from several projects at the oldest start time all of them loaded', async () => {
-      const refs = createRefs({
-        sampledMessages: [
-          { messageId: 'legacy-response' },
-          { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
-        ],
-      });
-      const settings = resolveTraceViewerConfig({ enabled: true, maxRecords: 2 });
-      const legacy = traceIdForMessage('legacy-response');
-      const at = (second: number) => `2026-09-12T11:30:0${second}.000Z`;
-      const first = setup({
-        refs,
-        responses: [
-          jsonResponse({
-            data: [
-              observation({ id: 'c5', startTime: at(5) }),
-              observation({ id: 'c1', startTime: at(1) }),
-            ],
-          }),
-          jsonResponse({
-            data: [
-              observation({ id: 'l4', traceId: legacy, startTime: at(4) }),
-              observation({ id: 'l3', traceId: legacy, startTime: at(3) }),
-            ],
-            meta: { cursor: 'more' },
-          }),
-        ],
-      });
-
-      const page = await first.reader.listRecords(createQuery({ settings }));
-
-      expect(page.records.map(({ id }) => id)).toEqual(['c5', 'l4', 'l3']);
-      expect(requestedFilter(first.fetchMock, 1)).not.toContainEqual(
-        expect.objectContaining({ operator: '<=' }),
-      );
-      const later = setup({
-        refs,
-        responses: [
-          jsonResponse({ data: [observation({ id: 'c1', startTime: at(1) })] }),
-          jsonResponse({
-            data: [
-              observation({ id: 'l3', traceId: legacy, startTime: at(3) }),
-              observation({ id: 'l2', traceId: legacy, startTime: at(2) }),
-            ],
-          }),
-        ],
-      });
-      const older = await later.reader.listRecords({
-        ...createQuery({ settings }),
-        cursor: page.nextCursor,
-      });
-
-      for (const call of [0, 1]) {
-        expect(requestedFilter(later.fetchMock, call)).toContainEqual(
-          expect.objectContaining({ column: 'startTime', operator: '<=', value: at(3) }),
-        );
-      }
-      expect(older.records.map(({ id }) => id)).toEqual(['c1', 'l3', 'l2']);
-      expect(older.nextCursor).toBeUndefined();
-    });
-
-    it('does not visit a project whose turns an earlier project provably holds', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({
-          sampledMessages: [
-            { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
-          ],
-        }),
-        responses: [jsonResponse({ data: [observation()] })],
-      });
-
-      const page = await reader.listRecords(createQuery());
-
-      expect(page.nextCursor).toBeUndefined();
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    });
-
     it('passes the tenant scope to both conversation reads', async () => {
       const { reader, getConversationTraceRefs, hasSampledTraceMessage } = setup({
         responses: [jsonResponse({ data: [observation()] })],
@@ -572,129 +661,6 @@ describe('createLangfuseTraceReader', () => {
       expect(getConversationTraceRefs).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: 'tenant-a' }),
       );
-    });
-
-    it('fails over to a project holding the same turns when the preferred one fails', async () => {
-      const refs = createRefs({
-        sampledMessages: [
-          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
-        ],
-      });
-      const { reader, fetchMock } = setup({
-        refs,
-        responses: [
-          jsonResponse({ message: 'expired key' }, 401),
-          jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'more' } }),
-        ],
-      });
-
-      const page = await reader.listRecords(
-        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
-      );
-
-      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
-      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
-      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'a' }] });
-
-      const later = setup({
-        refs,
-        responses: [jsonResponse({ data: [observation({ id: 'b' })] })],
-      });
-      const older = await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
-
-      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
-      expect(requestedUrl(later.fetchMock).searchParams.has('cursor')).toBe(false);
-      expect(requestedFilter(later.fetchMock)).toContainEqual(
-        expect.objectContaining({ operator: '<=', value: '2026-09-12T11:30:00.000Z' }),
-      );
-      expect(older.records.map(({ id }) => id)).toEqual(['b']);
-    });
-
-    it('fails over on a later page too, and reports the failure when every project holding the turns fails', async () => {
-      const refs = createRefs({
-        sampledMessages: [
-          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
-        ],
-      });
-      const allFail = setup({
-        refs,
-        responses: [
-          jsonResponse({ message: 'expired key' }, 401),
-          jsonResponse({ message: 'down' }, 503),
-        ],
-      });
-      const laterPage = setup({
-        refs,
-        responses: [
-          jsonResponse({ message: 'down' }, 503),
-          jsonResponse({ data: [observation({ id: 'b' })] }),
-        ],
-      });
-      const cursor = encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' });
-
-      await expect(allFail.reader.listRecords(createQuery())).rejects.toMatchObject({
-        code: 'upstream_error',
-      });
-      await expect(
-        laterPage.reader.listRecords({ ...createQuery(), cursor }),
-      ).resolves.toMatchObject({ sourceId: 'central-id', records: [{ id: 'b' }] });
-      expect(requestedUrl(laterPage.fetchMock, 1).origin).toBe('https://central.langfuse.test');
-    });
-
-    it('reports a failed project that could hold a turn the empty ones do not', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({ sampledMessages: [{ messageId: 'legacy-response' }] }),
-        responses: [jsonResponse({ data: [] }), jsonResponse({ message: 'down' }, 503)],
-      });
-
-      await expect(reader.listRecords(createQuery())).rejects.toMatchObject({
-        code: 'upstream_error',
-      });
-      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
-      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
-    });
-
-    it('answers empty when a project that answered provably holds every turn of the failed one', async () => {
-      const { reader, fetchMock } = setup({
-        refs: createRefs({
-          sampledMessages: [
-            { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
-          ],
-        }),
-        responses: [jsonResponse({ message: 'expired key' }, 401), jsonResponse({ data: [] })],
-      });
-
-      await expect(reader.listRecords(createQuery())).resolves.toEqual({
-        records: [],
-        sourceId: 'central-id',
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-
-    it('retries a project that failed for newer turns when it is the only one holding older turns', async () => {
-      const refs = createRefs({
-        sampledMessages: [
-          { messageId: 'response-0', langfuseDestinationIds: ['connection-id'] },
-          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
-        ],
-      });
-      const first = setup({
-        refs,
-        responses: [
-          jsonResponse({ message: 'down' }, 503),
-          jsonResponse({ data: [observation({ traceId: traceIdForMessage('response-1') })] }),
-        ],
-      });
-
-      const page = await first.reader.listRecords(createQuery());
-
-      expect(requestedUrl(first.fetchMock, 1).origin).toBe('https://central.langfuse.test');
-      expect(requestedTraceIds(first.fetchMock, 1)).toEqual(tracesOf('response-1'));
-      const later = setup({ refs, responses: [jsonResponse({ message: 'still down' }, 503)] });
-      await expect(
-        later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor }),
-      ).rejects.toMatchObject({ code: 'upstream_error' });
-      expect(requestedUrl(later.fetchMock).origin).toBe('https://tenant.langfuse.test');
     });
 
     it('treats two credentials for one project as one source instead of replaying its page', async () => {
@@ -852,27 +818,16 @@ describe('createLangfuseTraceReader', () => {
       );
 
       expect(page.records.map(({ id }) => id)).toEqual(['a', 'b', 'c']);
-      expect(page.nextCursor).toBe(
-        encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' }),
-      );
+      expect(JSON.parse(Buffer.from(page.nextCursor ?? '', 'base64url').toString())).toEqual({
+        m: 'response-1',
+        s: 'connection-id',
+        c: 'cursor-2',
+        h: expect.any(String),
+      });
       expect(requestedUrl(fetchMock, 0).searchParams.get('limit')).toBe('3');
       expect(requestedUrl(fetchMock, 0).searchParams.has('cursor')).toBe(false);
       expect(requestedUrl(fetchMock, 1).searchParams.get('limit')).toBe('1');
       expect(requestedUrl(fetchMock, 1).searchParams.get('cursor')).toBe('cursor-1');
-    });
-
-    it('refuses to repeat a page whose records all share the start time it continues from', async () => {
-      const { reader } = setup({
-        responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'more' } })],
-      });
-      const cursor = encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' });
-
-      await expect(
-        reader.listRecords({
-          ...createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
-          cursor,
-        }),
-      ).rejects.toMatchObject({ code: 'upstream_error' });
     });
 
     it('continues a page from the same segment after newer turns arrive', async () => {
@@ -927,14 +882,10 @@ describe('createLangfuseTraceReader', () => {
       expect(page.records.map(({ id }) => id)).toEqual(['b']);
     });
 
-    it('rejects a forged cursor, a malformed bound and a turn the conversation no longer has', async () => {
+    it('rejects a forged cursor and a turn the conversation no longer has', async () => {
       const { reader, fetchMock } = setup();
 
-      for (const cursor of [
-        'bm90IGpzb24',
-        encodeTestCursor({ m: 'response-1', t: 'not-a-time' }),
-        encodeTestCursor({ m: 'deleted-response' }),
-      ]) {
+      for (const cursor of ['bm90IGpzb24', encodeTestCursor({ m: 'deleted-response' })]) {
         await expect(reader.listRecords({ ...createQuery(), cursor })).rejects.toMatchObject({
           code: 'invalid_request',
         });
@@ -1195,14 +1146,14 @@ describe('createLangfuseTraceReader', () => {
       expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
     });
 
-    it('skips a project whose turns an answered one provably holds, and reports a failure that could hide the record', async () => {
+    it('asks every project for a detail no project has answered with, and reports a failure that could hide it', async () => {
       const fanout = setup({
         refs: createRefs({
           sampledMessages: [
             { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
           ],
         }),
-        responses: [jsonResponse({ data: [] })],
+        responses: [jsonResponse({ data: [] }), jsonResponse({ data: [] })],
       });
       const legacy = setup({
         refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
@@ -1212,7 +1163,7 @@ describe('createLangfuseTraceReader', () => {
       await expect(
         fanout.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
       ).resolves.toBeNull();
-      expect(fanout.fetchMock).toHaveBeenCalledTimes(1);
+      expect(fanout.fetchMock).toHaveBeenCalledTimes(2);
       await expect(
         legacy.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
       ).rejects.toMatchObject({ code: 'upstream_error' });
