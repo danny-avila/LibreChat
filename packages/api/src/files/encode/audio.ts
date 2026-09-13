@@ -4,6 +4,7 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, AudioResult } from '~/types';
 import {
   getFileStream,
+  getAudioFormat,
   getConfiguredFileSizeLimit,
   isAttachmentObjectNotFoundError,
   isConfiguredProviderMediaType,
@@ -100,12 +101,14 @@ export async function encodeAndFormatAudios(
       /** OpenAI-compatible `input_audio` part (OpenRouter, vLLM, and other gateways).
        * Custom endpoints only get here when the admin listed audio types in the
        * endpoint's `supportedMimeTypes`, since not every gateway accepts audio. */
-      // Extract format from filename extension (e.g., 'audio.mp3' -> 'mp3')
-      // OpenRouter expects format values like: wav, mp3, aiff, aac, ogg, flac, m4a, pcm16, pcm24
-      // Note: MIME types don't always match (e.g., 'audio/mpeg' is mp3, not mpeg), so that is why we are using the file extension instead
-      const format = file.filename.split('.').pop()?.toLowerCase();
+      /** Canonicalized from the MIME type: the accepted MIME list contains aliases
+       * (`audio/wave`, `audio/mpeg`) that are not valid format values, and the filename
+       * may carry no extension at all. */
+      const format = getAudioFormat(file.type, file.filename);
       if (!format) {
-        throw new Error(`Could not extract audio format from filename: ${file.filename}`);
+        throw new Error(
+          `Could not determine a supported audio format for "${file.filename}" (${file.type})`,
+        );
       }
       result.audios.push({
         type: 'input_audio',
