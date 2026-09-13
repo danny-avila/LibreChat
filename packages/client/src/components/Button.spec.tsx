@@ -79,18 +79,16 @@ describe('Button', () => {
       </Button>,
     );
 
-    expect(screen.getByRole('button', { name: 'Open' })).toHaveClass(
-      'size-8',
-      'p-0',
-      'rounded-lg',
-      'hover:bg-surface-hover-alt',
-    );
+    const button = screen.getByRole('button', { name: 'Open' });
+
+    expect(button).toHaveClass('size-8', 'p-0', 'rounded-md', 'hover:bg-surface-hover-alt');
+    expect(button).not.toHaveClass('rounded-lg');
   });
 
   /**
    * Section actions sit close enough to their heading and to each other that
    * the default offset ring crosses a neighbour, so this variant has to win
-   * both radius and ring — and stay distinct from `row-action` above.
+   * both radius and ring.
    */
   it('gives section actions an inset ring and a tighter radius', () => {
     render(
@@ -130,6 +128,8 @@ describe('Button', () => {
     expect(header).toContain('h-auto');
     expect(header).not.toContain('h-10');
     expect(header).not.toContain('px-4');
+    /** A heading is not a control: nothing fills under the pointer. */
+    expect(header).not.toContain('hover:bg-');
   });
 
   it('still takes a size when a caller asks for one', () => {
