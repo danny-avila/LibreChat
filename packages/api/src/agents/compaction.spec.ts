@@ -10,9 +10,9 @@ import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@
 import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
-  createCompactionFailureContent,
   createCompactionSemanticIndexProjection,
   markCompactionOutcome,
+  resolveFailedTurnContent,
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
 } from './compaction';
@@ -212,10 +212,22 @@ describe('markCompactionOutcome', () => {
     );
     expect(parts).toHaveLength(0);
   });
+});
 
-  it('marks the content a failed compaction turn persists', () => {
-    expect(createCompactionFailureContent('Summarization failed')).toEqual([
-      { type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' },
-    ]);
+describe('resolveFailedTurnContent', () => {
+  /** A thrown failure leaves the turn with no content of its own, so the row a
+   *  compaction persists carries the marked failure instead. */
+  it('gives a failed compaction turn its marked failure content', () => {
+    expect(resolveFailedTurnContent({ compact: true }, 'Summarization failed')).toEqual({
+      content: [{ type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' }],
+    });
+  });
+
+  it.each([
+    ['an ordinary turn', { compact: false }],
+    ['a turn that never asked to compact', {}],
+    ['a request with no body', undefined],
+  ])('leaves %s with its text-only shape', (_label, requestBody) => {
+    expect(resolveFailedTurnContent(requestBody, 'Something failed')).toEqual({});
   });
 });

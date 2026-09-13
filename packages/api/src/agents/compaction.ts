@@ -38,10 +38,26 @@ const COMPACTION_FAILED_ERROR = JSON.stringify({ type: ErrorTypes.COMPACTION_FAI
  * content of its own, so without this the row is indistinguishable from an
  * answer to the message it hangs off and keeps that message's rerun controls.
  */
-export function createCompactionFailureContent(
+function compactionFailureContent(
   errorText: string = COMPACTION_FAILED_ERROR,
 ): TMessageContentParts[] {
   return [{ type: ContentTypes.ERROR, error: errorText, initiatedBy: 'user' }];
+}
+
+/**
+ * The content fields a failed turn is persisted with. A manual compaction owns
+ * its identity through content, so its row carries the marked failure; every
+ * other failed turn contributes nothing and keeps its text-only shape. Callers
+ * spread the result rather than deciding which turns are compactions.
+ */
+export function resolveFailedTurnContent(
+  requestBody: { compact?: boolean } | null | undefined,
+  errorText: string,
+): { content?: TMessageContentParts[] } {
+  if (requestBody?.compact !== true) {
+    return {};
+  }
+  return { content: compactionFailureContent(errorText) };
 }
 
 /**
@@ -84,7 +100,7 @@ export function markCompactionOutcome(
   if (aborted) {
     throw Object.assign(new Error(COMPACTION_FAILED_ERROR), { code: 'COMPACTION_FAILED' });
   }
-  contentParts.push(...createCompactionFailureContent());
+  contentParts.push(...compactionFailureContent());
 }
 
 function snapshotEntry(
