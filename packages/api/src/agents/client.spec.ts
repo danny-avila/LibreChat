@@ -102,7 +102,9 @@ describe('countRetainedToolTokens', () => {
       .spyOn(Tokenizer, 'countExactTokens')
       .mockReturnValueOnce(undefined as unknown as number);
     try {
-      expect(countRetainedToolTokens([toolPart('grep', 'result')], 0, 'o200k_base')).toBeUndefined();
+      expect(
+        countRetainedToolTokens([toolPart('grep', 'result')], 0, 'o200k_base'),
+      ).toBeUndefined();
     } finally {
       count.mockRestore();
     }
