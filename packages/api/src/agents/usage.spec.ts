@@ -11,6 +11,7 @@ import {
   recordCollectedUsage,
   resolveAgentTokenConfig,
   resolveRunUsageContext,
+  hasRecordedProviderUsage,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
   computeSummaryUsedTokens,
@@ -2510,5 +2511,19 @@ describe('resolveRunUsageContext', () => {
   it('labels a stopped run as an abort and a completed run as a message', () => {
     expect(resolveRunUsageContext(true)).toBe('abort');
     expect(resolveRunUsageContext(false)).toBe('message');
+  });
+});
+
+describe('hasRecordedProviderUsage', () => {
+  it('is true once the provider reported any consumption, even with no output', () => {
+    expect(hasRecordedProviderUsage({ input_tokens: 10, output_tokens: 0 })).toBe(true);
+    expect(hasRecordedProviderUsage({ input_tokens: 0, output_tokens: 5 })).toBe(true);
+  });
+
+  it('is false when nothing was recorded or the report is all zero', () => {
+    expect(hasRecordedProviderUsage(undefined)).toBe(false);
+    expect(hasRecordedProviderUsage(null)).toBe(false);
+    expect(hasRecordedProviderUsage({ input_tokens: 0, output_tokens: 0 })).toBe(false);
+    expect(hasRecordedProviderUsage({})).toBe(false);
   });
 });

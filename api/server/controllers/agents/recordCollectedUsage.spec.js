@@ -89,6 +89,40 @@ describe('AgentClient - recordCollectedUsage', () => {
     client.user = 'user-123';
   });
 
+  describe('recordTokenUsage fallback', () => {
+    const estimate = { promptTokens: 40, completionTokens: 7 };
+
+    it('does not bill the estimate when provider usage was already recorded', async () => {
+      await client.recordTokenUsage({
+        ...estimate,
+        usage: { input_tokens: 40, output_tokens: 0 },
+        model: 'gpt-4',
+      });
+
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+    });
+
+    it('bills the estimate when no provider usage was recorded', async () => {
+      await client.recordTokenUsage({ ...estimate, usage: undefined, model: 'gpt-4' });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-4', context: 'message' }),
+        estimate,
+      );
+    });
+
+    it('still bills the estimate when the recorded report is all zero', async () => {
+      await client.recordTokenUsage({
+        ...estimate,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        model: 'gpt-4',
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('basic functionality', () => {
     it('should delegate to recordCollectedUsage with full deps', async () => {
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];

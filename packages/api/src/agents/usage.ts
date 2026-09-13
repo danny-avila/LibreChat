@@ -613,6 +613,19 @@ export function resolveRunUsageContext(aborted: boolean): 'abort' | 'message' {
   return aborted ? 'abort' : 'message';
 }
 
+/**
+ * Whether a run already recorded provider-reported consumption for this response.
+ * `BaseClient` falls back to text-count billing whenever the recorded usage has no
+ * positive output count, which would charge the prompt a second time after
+ * {@link recordCollectedUsage} debited it — a stopped call may report input tokens
+ * and no output. An all-zero report is treated as unreported so the estimate still applies.
+ */
+export function hasRecordedProviderUsage(
+  usage: Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> | null | undefined,
+): boolean {
+  return usage != null && ((usage.input_tokens ?? 0) > 0 || (usage.output_tokens ?? 0) > 0);
+}
+
 export interface RecordUsageParams {
   user: string;
   conversationId: string;

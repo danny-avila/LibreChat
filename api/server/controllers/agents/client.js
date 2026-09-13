@@ -27,6 +27,7 @@ const {
   isMemoryAgentEnabled,
   recordCollectedUsage,
   resolveRunUsageContext,
+  hasRecordedProviderUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
@@ -6149,6 +6150,12 @@ class AgentClient extends BaseClient {
     completionTokens,
     context = 'message',
   }) {
+    /** `BaseClient` reaches this fallback whenever the recorded usage lacks a positive
+     *  output count, but a recorded usage means `recordCollectedUsage` already billed the
+     *  provider's numbers (a stopped call can report input and no output). */
+    if (hasRecordedProviderUsage(usage)) {
+      return;
+    }
     try {
       await db.spendTokens(
         {
