@@ -22,6 +22,7 @@ import {
   markExternalHover,
   useAssignDroppedConversation,
   useEffectiveProjectId,
+  useUnpinDroppedConversation,
 } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversations, cn } from '~/utils';
@@ -195,9 +196,11 @@ const Conversations: FC<ConversationsProps> = ({
   const filterTags = useAtomValue(chatFilterTagsAtom);
   const resetFilters = useSetAtom(resetChatFiltersAtom);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  /* Dropping a project conversation on the Chats section files it back out of
-   * its project. Root-list chats already live here, so they are rejected. */
+  /* Dropping a chat on the Chats section makes it an ordinary chat: out of its
+   * project, and unpinned. A root-list chat that is not pinned already is one,
+   * so it is rejected rather than given a drop that would do nothing. */
   const assignDropped = useAssignDroppedConversation();
+  const unpinDropped = useUnpinDroppedConversation();
   const effectiveProjectId = useEffectiveProjectId();
   const chatsRegionRef = useRef<HTMLDivElement>(null);
   const [{ isDropOver, canDrop }, dropRef] = useDrop<
@@ -206,11 +209,16 @@ const Conversations: FC<ConversationsProps> = ({
     { isDropOver: boolean; canDrop: boolean }
   >({
     accept: CONVERSATION_DRAG_TYPE,
-    canDrop: (item) => effectiveProjectId(item) != null,
+    canDrop: (item) => effectiveProjectId(item) != null || item.pinned === true,
     /* Reported even when refused, so a root chat dropped back on Chats does not
      * save the shift its pointer caused on the way out of the pinned list. */
     hover: () => markExternalHover(),
-    drop: (item) => assignDropped(item, null),
+    drop: (item) => {
+      /* Both, for a pinned chat that also sits in a project: each call is a
+       * no-op for the half that already holds. */
+      assignDropped(item, null);
+      unpinDropped(item);
+    },
     collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
   });
   dropRef(chatsRegionRef);

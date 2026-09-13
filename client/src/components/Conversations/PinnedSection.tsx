@@ -107,7 +107,11 @@ const DraggablePinnedRow = ({
   const ref = useRef<HTMLDivElement>(null);
   const hasHoverPointer = useMediaQuery('(hover: hover)');
   const [{ handlerId }, drop] = useDrop<PinnedRowDragItem, unknown, { handlerId: unknown }>({
-    accept: PINNED_ROW_ACCEPTS,
+    /* A row only takes a drag of its own kind, so a pinned chat never shifts a
+     * pinned agent or model out of the way — not even as a preview. The two
+     * groups are ordered independently, and the drag layer shows no
+     * displacement for a target that cannot receive it. */
+    accept: entry.kind === 'convo' ? CONVERSATION_DRAG_TYPE : FAVORITE_ROW_DRAG_TYPE,
     collect(monitor) {
       return { handlerId: monitor.getHandlerId() };
     },
@@ -400,7 +404,11 @@ const PinnedSection = ({
   }, [favoritesData.favorites, conversations]);
 
   /** Stored keys order the entries they still resolve to; the rest append in
-   *  natural order, so a stale order never hides an item. */
+   *  natural order, so a stale order never hides an item. Kinds stay grouped —
+   *  pinned agents and models first, then pinned chats — because neither kind
+   *  can be dragged through the other: an order saved before that rule, with
+   *  the two interleaved, would otherwise leave a row walled in by neighbours
+   *  it is not allowed to swap with. */
   const orderedEntries = useMemo<PinnedEntry[]>(() => {
     if (!storedOrder || storedOrder.length === 0) {
       return naturalEntries;
@@ -420,7 +428,10 @@ const PinnedSection = ({
         ordered.push(entry);
       }
     }
-    return ordered;
+    return [
+      ...ordered.filter((entry) => entry.kind === 'favorite'),
+      ...ordered.filter((entry) => entry.kind === 'convo'),
+    ];
   }, [storedOrder, naturalEntries]);
 
   /* The live list the drag mutates; keyed ordering only, so a refetch under a
@@ -477,11 +488,14 @@ const PinnedSection = ({
    * still holds, and releasing would save something no longer on screen. */
   const arrangementRef = useRef(0);
 
+  /** A move only ever swaps two rows of the same kind. Chats and favorites are
+   *  two independently ordered groups, so the position announced for the
+   *  keyboard path counts within the moved row's own group. */
   const moveEntry = useCallback((dragKey: string, hoverKey: string) => {
     const list = [...dragEntriesRef.current];
     const from = list.findIndex((entry) => entry.key === dragKey);
     const to = list.findIndex((entry) => entry.key === hoverKey);
-    if (from < 0 || to < 0 || from === to) {
+    if (from < 0 || to < 0 || from === to || list[from].kind !== list[to].kind) {
       return;
     }
     const [moved] = list.splice(from, 1);
@@ -494,7 +508,8 @@ const PinnedSection = ({
 
   /** Keyboard reorder: one step per keypress, persisted immediately, with the
    *  new position announced because nothing visual conveys it to a screen
-   *  reader. */
+   *  reader. A step that would leave the row's own group does nothing, matching
+   *  what the pointer can do. */
   const moveEntryBy = useCallback(
     (key: string, delta: number) => {
       if (!orderLoadedRef.current) {
@@ -503,17 +518,20 @@ const PinnedSection = ({
       const list = [...dragEntriesRef.current];
       const from = list.findIndex((entry) => entry.key === key);
       const to = from + delta;
-      if (from < 0 || to < 0 || to >= list.length) {
+      if (from < 0 || to < 0 || to >= list.length || list[from].kind !== list[to].kind) {
         return;
       }
+      const kind = list[from].kind;
       const [moved] = list.splice(from, 1);
       list.splice(to, 0, moved);
       dragEntriesRef.current = list;
       hasReorderedRef.current = true;
       arrangementRef.current += 1;
       setLiveEntries(list);
+      const group = list.filter((entry) => entry.kind === kind);
+      const position = group.findIndex((entry) => entry.key === key) + 1;
       setAnnouncement(
-        localize('com_ui_moved_to_position', { 0: `${to + 1}`, 1: `${list.length}` }),
+        localize('com_ui_moved_to_position', { 0: `${position}`, 1: `${group.length}` }),
       );
       commitOrderRef.current();
     },

@@ -4,7 +4,10 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import { getPendingAssignment } from '~/data-provider/Projects/mutations';
-import { useAssignConversationToProjectMutation } from '~/data-provider';
+import {
+  useAssignConversationToProjectMutation,
+  usePinConversationMutation,
+} from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
@@ -111,6 +114,37 @@ export const useAssignDroppedConversation = () => {
       );
     },
     [assignConversation, effectiveProjectId, localize, showToast],
+  );
+};
+
+/** Unpins a dragged conversation, for a drop on the plain Chats list: a chat
+ *  landing there is being asked to be an ordinary chat, which a pinned one is
+ *  not. Silent on success — the row leaving the pinned section is the feedback
+ *  — and reports only the failure, as the row badge does. */
+export const useUnpinDroppedConversation = () => {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const pinConversation = usePinConversationMutation();
+
+  return useCallback(
+    (item: ConversationDragItem) => {
+      const conversationId = item.conversationId;
+      if (!conversationId || item.pinned !== true) {
+        return;
+      }
+      pinConversation.mutate(
+        { conversationId, pinned: false },
+        {
+          onError: () =>
+            showToast({
+              message: localize('com_ui_unpin_error'),
+              severity: NotificationSeverity.ERROR,
+              showIcon: true,
+            }),
+        },
+      );
+    },
+    [pinConversation, localize, showToast],
   );
 };
 
