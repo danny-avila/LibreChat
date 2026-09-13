@@ -345,7 +345,7 @@ describe('createLangfuseTraceReader', () => {
       expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
     });
 
-    it('asks for only the observations exported for the requesting user, by internal or configured id', async () => {
+    it('asks for only the observations exported under the requesting user id', async () => {
       const refs = createRefs({
         sampledMessages: [
           { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
@@ -356,24 +356,35 @@ describe('createLangfuseTraceReader', () => {
         route: (request) =>
           request.probe ? rootsFor(request, 'response-1') : recordsFor(request, 'response-1'),
       });
-      const query = createQuery({
-        appConfig: { langfuse: { trace: { userIdField: 'email' } } } as AppConfig,
-        user: { id: 'owner', email: 'owner@example.com' },
-      });
 
-      await reader.listRecords(query);
-      await reader.getRecord({ ...query, recordId: 'response-1' });
+      await reader.listRecords(createQuery());
+      await reader.getRecord({ ...createQuery(), recordId: 'response-1' });
 
       const owner = {
         type: 'stringOptions',
         column: 'userId',
         operator: 'any of',
-        value: ['owner', 'owner@example.com'],
+        value: ['owner'],
       };
       expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(4);
       fetchMock.mock.calls.forEach((_call, index) => {
         expect(requestedFilter(fetchMock, index)).toContainEqual(owner);
       });
+    });
+
+    it('shows no trace while traces are exported under a user field that is not the internal id', async () => {
+      const { reader, fetchMock, hasSampledTraceMessage } = setup({
+        responses: [jsonResponse({ data: [observation()] })],
+      });
+      const query = createQuery({
+        appConfig: { langfuse: { trace: { userIdField: 'name' } } } as AppConfig,
+      });
+
+      await expect(reader.isAvailable(query)).resolves.toEqual({ available: false });
+      await expect(reader.listRecords(query)).rejects.toMatchObject({ code: 'not_found' });
+      await expect(reader.getRecord({ ...query, recordId: 'obs-root' })).resolves.toBeNull();
+      expect(hasSampledTraceMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('reads a turn only its preferred project holds without asking any project first', async () => {
@@ -527,6 +538,41 @@ describe('createLangfuseTraceReader', () => {
       } while (cursor);
 
       expect(pages).toEqual([[titleTrace], [runTrace, olderTrace]]);
+    });
+
+    it('reports a failed read of a title run a probe found, instead of dropping it', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const runTrace = traceIdForMessage('response-1');
+      const titleTrace = traceIdForMessage('title-response-1');
+      const route = (request: RoutedRequest) => {
+        const held = request.origin === TENANT ? runTrace : titleTrace;
+        if (request.probe) {
+          return jsonResponse({
+            data: request.traceIds.includes(held) ? [{ id: `root-${held}`, traceId: held }] : [],
+          });
+        }
+        if (request.origin === CENTRAL) {
+          return jsonResponse({ message: 'down' }, 503);
+        }
+        return jsonResponse({
+          data: request.traceIds.includes(runTrace)
+            ? [observation({ id: 'run', traceId: runTrace })]
+            : [],
+        });
+      };
+      const first = setup({ refs, route });
+
+      const page = await first.reader.listRecords(createQuery());
+
+      expect(page.records.map(({ id }) => id)).toEqual(['run']);
+      const later = setup({ refs, route });
+      await expect(
+        later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
     });
 
     it('bounds how many turns one read asks a project for', async () => {

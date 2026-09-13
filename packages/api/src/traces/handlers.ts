@@ -146,7 +146,6 @@ export function createTraceHandlers({
     return {
       query: {
         userId,
-        user: req.user,
         tenantId,
         conversationId,
         appConfig: req.config,

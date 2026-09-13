@@ -253,6 +253,8 @@ interface:
   # needs a Langfuse release that serves the v2 Observations API.
   # traceViewer:
   #   enabled: false
+  #   # Traces are matched to users by the internal user id, so no trace is shown while
+  #   # langfuse.trace.userIdField exports another user field.
   #   # Return observation input, output and metadata in the record inspector. Input
   #   # carries system prompts, agent instructions and tool definitions, which a
   #   # user chatting with a shared agent cannot otherwise see.

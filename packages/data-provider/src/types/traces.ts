@@ -73,7 +73,11 @@ export type TTraceRecordParams = {
   sourceId?: string;
 };
 
-/** Newest records first; `nextCursor` loads the next older page from the same source. */
+/**
+ * Newest turns first; `nextCursor` loads the next older page. A turn's records
+ * may continue on the following page, and their order within a turn is not
+ * defined, so a client groups records by turn and orders them by time.
+ */
 export type TTracePage = {
   records: TTraceRecord[];
   nextCursor?: string;

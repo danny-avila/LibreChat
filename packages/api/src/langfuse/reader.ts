@@ -15,7 +15,6 @@ import type {
 } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery, TraceReader } from '~/traces/types';
-import { resolveLangfuseTraceUserId } from './identity';
 import { getScoreDestinations } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
@@ -348,14 +347,28 @@ const KIND_BY_CODE: Record<'r' | 't', TraceKind> = { r: 'run', t: 'title' };
  * Observations exported for the requesting user. The trace ids a conversation
  * owns derive from message ids, which a request can influence, so a colliding
  * id must still never return someone else's trace: every read also requires
- * the user id the server stamped on the trace at export, the internal id or
- * the configured `langfuse.trace.userIdField` value.
+ * the internal user id the server stamped on the trace at export.
  */
 function ownerFilter(query: TraceQuery): LangfuseFilter[number] {
-  const configured = resolveLangfuseTraceUserId(query.appConfig?.langfuse?.trace, query.user);
-  const userIds =
-    configured != null && configured !== query.userId ? [query.userId, configured] : [query.userId];
-  return { type: 'stringOptions', column: 'userId', operator: 'any of', value: userIds };
+  return { type: 'stringOptions', column: 'userId', operator: 'any of', value: [query.userId] };
+}
+
+/**
+ * Whether traces carry the internal user id. A deployment that exports another
+ * user field as the trace `userId` has no immutable principal on its traces:
+ * names and usernames repeat, and emails and provider ids repeat across
+ * tenants. So its traces are never shown.
+ */
+function keyedByInternalId(appConfig?: AppConfig): boolean {
+  const field = appConfig?.langfuse?.trace?.userIdField;
+  if (field == null || field === 'id') {
+    return true;
+  }
+  warnOnce(
+    `user_id_field:${field}`,
+    `[traces] The trace viewer shows no traces while langfuse.trace.userIdField is "${field}": only the internal user id identifies who a trace belongs to.`,
+  );
+  return false;
 }
 
 function startTimeFilter(window: { from?: string; to: string }): LangfuseFilter {
@@ -526,7 +539,7 @@ export function createLangfuseTraceReader({
   return {
     async isAvailable(query) {
       const destinations = await readableDestinations(query.appConfig);
-      if (destinations.length === 0) {
+      if (destinations.length === 0 || !keyedByInternalId(query.appConfig)) {
         return { available: false };
       }
       const available = await hasSampledTraceMessage({
@@ -547,6 +560,9 @@ export function createLangfuseTraceReader({
 
     async listRecords(query) {
       const continuation = query.cursor != null ? decodeCursor(query.cursor) : undefined;
+      if (!keyedByInternalId(query.appConfig)) {
+        throw new TraceReadError('not_found', 'Traces here are not keyed by the internal user id');
+      }
       const { refs, sources } = await loadConversation(query);
       const messages = refs.sampledMessages;
       const owners = buildTraceOwners(messages);
@@ -730,7 +746,13 @@ export function createLangfuseTraceReader({
         if (holding.length > 0) {
           return prefer != null && holding.includes(prefer) ? prefer : holding[0];
         }
-        const failed = unit.kind === 'run' ? candidates.find(isFailed) : undefined;
+        /** A run could be in any failed project; a title run only where a probe found it, since
+         *  most turns never had one. */
+        const failed = candidates.find(
+          (source) =>
+            isFailed(source) &&
+            (unit.kind === 'run' || (found.get(sourceIdOf(source))?.has(unit.traceId) ?? false)),
+        );
         if (failed != null) {
           throw failures.get(sourceIdOf(failed));
         }
@@ -904,6 +926,9 @@ export function createLangfuseTraceReader({
     },
 
     async getRecord(query) {
+      if (!keyedByInternalId(query.appConfig)) {
+        return null;
+      }
       const { refs, sources } = await loadConversation(query);
       const pinned = sources.find((candidate) => isSource(candidate, query.sourceId));
       const candidates = pinned

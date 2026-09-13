@@ -91,7 +91,6 @@ describe('trace handlers', () => {
     expect(reader.listRecords).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'owner',
-        user: expect.objectContaining({ id: 'owner' }),
         conversationId: 'convo-1',
         cursor: 'abc=',
         settings: expect.objectContaining({ enabled: true, maxRecords: 50 }),
