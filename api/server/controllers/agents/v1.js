@@ -1463,6 +1463,7 @@ const duplicateAgentHandler = async (req, res) => {
       author: userId,
     });
     if (
+      newAgentData.stateful_code_sessions === true &&
       !validateStatefulCodeEnvironment(
         req,
         res,
@@ -2071,7 +2072,7 @@ const revertAgentVersionHandler = async (req, res) => {
 
     const revertVersion = existingAgent.versions?.[version_index];
     if (
-      revertVersion &&
+      revertVersion?.stateful_code_sessions === true &&
       !validateStatefulCodeEnvironment(
         req,
         res,
