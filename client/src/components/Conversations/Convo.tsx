@@ -288,8 +288,11 @@ function Conversation({
     /** Touch has no hover, so a reveal-on-hover menu is unreachable there. */
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
     /** Shift over the active row swaps the menu for archive and delete. */
-    actionWidthClassName =
-      !isPopoverActive && isActiveConvo && isShiftHeld ? 'w-[60px]' : isSmallScreen ? 'w-9' : 'w-7';
+    if (!isPopoverActive && isActiveConvo && isShiftHeld) {
+      actionWidthClassName = 'w-[60px]';
+    } else {
+      actionWidthClassName = isSmallScreen ? 'w-9' : 'w-7';
+    }
   }
 
   let actionContent: React.ReactNode = null;

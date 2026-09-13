@@ -290,9 +290,10 @@ interface PinnedSectionProps {
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
- *  reorderable list: favorites and conversations interleave freely, the order
- *  persists per user, and the section opens with the same collapse motion as
- *  the Projects section above it. */
+ *  reorderable list, kept in two groups — favorites first, then chats — because
+ *  a row only reorders against its own kind. The order persists per user, and
+ *  the section opens with the same collapse motion as the Projects section
+ *  above it. */
 const PinnedSection = ({
   conversations,
   toggleNav,

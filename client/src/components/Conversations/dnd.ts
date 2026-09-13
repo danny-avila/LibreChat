@@ -3,11 +3,11 @@ import { useToastContext } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
-import { getPendingAssignment } from '~/data-provider/Projects/mutations';
 import {
   useAssignConversationToProjectMutation,
   usePinConversationMutation,
 } from '~/data-provider';
+import { getPendingAssignment } from '~/data-provider/Projects/mutations';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
