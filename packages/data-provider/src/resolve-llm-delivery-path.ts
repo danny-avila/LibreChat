@@ -1,13 +1,39 @@
 import type { TDefaultLLMDeliveryPath, TDefaultLLMDeliveryPathConfig } from './file-config';
-import type { EndpointFileConfig, FileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
+import {
+  retrievalMimeTypes,
+  isExplicitMimeConfig,
+  isBedrockDocumentType,
+  codeInterpreterMimeTypes,
+  fileConfig as baseFileConfig,
+} from './file-config';
 import {
   EModelEndpoint,
-  isDocumentSupportedProvider,
+  isOpenAILikeProvider,
   isKnownProviderIdentifier,
   isMediaSupportedProvider,
+  isDocumentSupportedProvider,
 } from './schemas';
-import { retrievalMimeTypes, isBedrockDocumentType, codeInterpreterMimeTypes } from './file-config';
 import { EToolResources } from './types/assistants';
+
+/** An OpenAI-compatible endpoint emits OpenAI-format media parts only for the types the
+ *  admin listed in its `supportedMimeTypes`; the inherited default list is not an opt-in.
+ *  A name that is not a known provider is a custom endpoint, which runs as OpenAI at
+ *  request time. Mirrors `isConfiguredProviderMediaType` on the encoder side, so the
+ *  route and the encoder agree on which uploads the provider actually receives. */
+const isConfiguredMediaEndpoint = (
+  mimeType: string,
+  endpoint: string,
+  supportedMimeTypes?: RegexLike[],
+): boolean => {
+  if (!isExplicitMimeConfig(supportedMimeTypes)) {
+    return false;
+  }
+  if (!isOpenAILikeProvider(endpoint) && isKnownProviderIdentifier(endpoint)) {
+    return false;
+  }
+  return baseFileConfig.checkType(mimeType, supportedMimeTypes);
+};
 
 /** Audio and video reach the model only through the media encoders, which support a
  *  narrower provider set than documents. Images use the broadly supported vision
@@ -16,9 +42,13 @@ const isProviderCapable = (
   mimeType: string,
   endpoint: string,
   useResponsesApi?: boolean,
+  supportedMimeTypes?: RegexLike[],
 ): boolean => {
   if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
-    return isMediaSupportedProvider(endpoint);
+    return (
+      isMediaSupportedProvider(endpoint) ||
+      isConfiguredMediaEndpoint(mimeType, endpoint, supportedMimeTypes)
+    );
   }
   if (mimeType === 'application/pdf') {
     /* Azure is out of the document set because it needs the Responses API for native
@@ -104,6 +134,7 @@ export function resolveDefaultLLMDeliveryPath(
   endpoint?: string,
   useResponsesApi?: boolean,
   sttConfigured?: boolean,
+  supportedMimeTypes?: RegexLike[],
 ): TDefaultLLMDeliveryPath {
   const wildcard = mimeType.split('/')[0] + '/*';
 
@@ -149,10 +180,11 @@ export function resolveDefaultLLMDeliveryPath(
   const namedEndpoint = endpoint != null && endpoint !== EModelEndpoint.agents;
   const providerKnown = namedEndpoint && isKnownProviderIdentifier(endpoint);
   /* Media is judged for any named endpoint, identified or not. The media encoders emit a
-   * payload only for the providers they name, so a custom endpoint gets nothing whatever
-   * it proxies to, and leaving it on the provider path delivers neither media nor text.
-   * Documents keep the narrower rule: an unidentified endpoint is usually OpenAI- or
-   * Anthropic-compatible, both of which do carry them. */
+   * payload only for the providers they name, or for an OpenAI-compatible endpoint whose
+   * admin listed the type in its `supportedMimeTypes`; any other custom endpoint gets
+   * nothing whatever it proxies to, and leaving it on the provider path delivers neither
+   * media nor text. Documents keep the narrower rule: an unidentified endpoint is usually
+   * OpenAI- or Anthropic-compatible, both of which do carry them. */
   const isMedia = mimeType.startsWith('audio/') || mimeType.startsWith('video/');
   /* Audio's text path is transcription, so on a deployment with no speech provider it is
    * not recoverable at all. Routing it to text there sends the upload to a service that
@@ -164,7 +196,7 @@ export function resolveDefaultLLMDeliveryPath(
   if (
     systemDefault === 'provider' &&
     canJudgeCapability &&
-    !isProviderCapable(mimeType, endpoint as string, useResponsesApi)
+    !isProviderCapable(mimeType, endpoint as string, useResponsesApi, supportedMimeTypes)
   ) {
     /* Downgrading is only useful where text can actually be recovered. Video has no
      * extraction step: speech-to-text covers audio, and the default text matcher accepts
@@ -226,6 +258,7 @@ export function resolveDefaultUploadLLMDeliveryPath({
     endpoint,
     useResponsesApi,
     sttConfigured,
+    endpointConfig?.supportedMimeTypes,
   );
 }
 
