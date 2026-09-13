@@ -4303,12 +4303,14 @@ describe('MCPManager', () => {
         oauthUrl: 'https://auth.example.com/authorize',
       });
 
+      const onDiscoveryDetached = jest.fn();
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({
         serverName,
         user: mockUser,
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
         graphTokenResolver: jest.fn(),
+        onDiscoveryDetached,
       });
 
       expect(result.tools).toEqual(mockTools);
@@ -4321,6 +4323,7 @@ describe('MCPManager', () => {
           user: mockUser,
           useOAuth: true,
           graphTokenResolver: expect.any(Function),
+          onDiscoveryDetached,
         }),
       );
     });

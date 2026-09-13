@@ -531,6 +531,7 @@ export class MCPManager extends UserConnectionManager {
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
+      onDiscoveryDetached: args.onDiscoveryDetached,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,

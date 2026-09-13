@@ -682,6 +682,7 @@ async function discoverCandidate(
         deps.onOAuthCredentialsChanging,
         trackPublication,
       ),
+      onDiscoveryDetached: onDetached,
     });
     /** Discovery can await work that ignores its budget — a token refresh persisting behind a
      *  stalled write — and a shared flight has no request signal to end that wait, so it would hold

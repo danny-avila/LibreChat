@@ -2051,6 +2051,58 @@ describe('recoverMCPServerCatalogs — discovery that outlives its budget', () =
     }
   });
 
+  it('counts token work a discovery hands off at its deadline toward the hold and the limit', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker(undefined, 1);
+    let settleTokenWork: () => void = () => undefined;
+    const tokenWork = new Promise<void>((resolve) => {
+      settleTokenWork = resolve;
+    });
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      if (options.serverName !== 'refreshing') {
+        return { tools: [] };
+      }
+      options.onDiscoveryDetached?.(tokenWork);
+      return { tools: null };
+    });
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue(availableTools('fresh-tool')),
+      recoveryTracker: tracker,
+    };
+    const policy = { ...recoveryPolicy, discoveryBackoffMs: [10] };
+    const named = (serverName: string) => [{ serverName, serverConfig: serverConfig(serverName) }];
+
+    try {
+      await expect(
+        recoverMCPServerCatalogs(
+          { user, servers: named('refreshing'), recoveryPolicy: policy },
+          deps,
+        ),
+      ).resolves.toEqual(new Map());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await expect(
+        recoverMCPServerCatalogs(
+          { user, servers: named('refreshing'), recoveryPolicy: policy },
+          deps,
+        ),
+      ).resolves.toEqual(new Map());
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: named('other'), recoveryPolicy: policy }, deps),
+      ).resolves.toEqual(new Map());
+      expect(discoverServerTools).toHaveBeenCalledTimes(1);
+
+      settleTokenWork();
+      await new Promise((resolve) => setImmediate(resolve));
+      await expect(
+        recoverMCPServerCatalogs({ user, servers: named('other'), recoveryPolicy: policy }, deps),
+      ).resolves.toEqual(new Map([['other', availableTools('fresh-tool')]]));
+      expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    } finally {
+      settleTokenWork();
+    }
+  });
+
   it('lets a discovery that settles just past its budget keep its slot and its catalog', async () => {
     const discoverServerTools = jest.fn(async ({ deadlineMs }: ToolDiscoveryOptions) => {
       const remainingMs = Math.max(0, (deadlineMs ?? Date.now()) - Date.now());

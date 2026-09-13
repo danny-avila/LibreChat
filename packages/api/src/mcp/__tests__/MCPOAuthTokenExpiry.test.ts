@@ -256,6 +256,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       });
       const invalidateRecoveryGeneration = jest.fn().mockResolvedValue('generation-2');
       const clearLocalRecovery = jest.fn();
+      const onDiscoveryDetached = jest.fn();
       const flowManager = new FlowStateManager<MCPOAuthTokens | null>(
         new MockKeyv<MCPOAuthTokens | null>() as unknown as Keyv,
         { ttl: 30000, ci: true },
@@ -283,6 +284,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
             deleteTokens: tokenStore.deleteTokens,
           },
           deadlineMs: startedAt + budgetMs,
+          onDiscoveryDetached,
           onOAuthCredentialsChanging: (scope) =>
             prepareMCPAuthorizationMutation(scope, {
               invalidateRecoveryGeneration,
@@ -307,12 +309,14 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       expect(await storedToken('mcp_oauth_refresh', 'mcp:test-srv:refresh')).toBe(
         initial.refresh_token,
       );
+      expect(onDiscoveryDetached).toHaveBeenCalledTimes(1);
+      const [tokenWork] = onDiscoveryDetached.mock.calls[0] as [Promise<unknown>];
 
       releaseFenceWrite?.();
+      await Promise.allSettled([tokenWork]);
       const tokenFlowId = MCPOAuthHandler.generateTokenFlowId('u1', 'test-srv');
-      await waitForCondition(
-        async () =>
-          (await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status === 'COMPLETED',
+      expect((await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status).toBe(
+        'COMPLETED',
       );
 
       const rotatedRefreshToken = await storedToken('mcp_oauth_refresh', 'mcp:test-srv:refresh');

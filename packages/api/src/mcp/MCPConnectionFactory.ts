@@ -97,6 +97,7 @@ export class MCPConnectionFactory {
   protected readonly deadlineMs?: number;
   protected readonly onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
   protected readonly onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
+  protected readonly onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
@@ -360,9 +361,12 @@ export class MCPConnectionFactory {
     } else if (this.useOAuth) {
       /** The token flow is shared, and a refresh inside it may already be redeemed at the provider
        *  while its rotation persists. Stop waiting when the budget ends rather than cancelling that
-       *  work, so the flow still stores the new tokens for the next caller. */
-      const loaded = await waitUntilDeadline(this.getOAuthTokens(), this.deadlineMs, this.signal);
+       *  work, so the flow still stores the new tokens for the next caller, and hand the caller the
+       *  work that keeps running so it can account for it. */
+      const tokenLoad = this.getOAuthTokens();
+      const loaded = await waitUntilDeadline(tokenLoad, this.deadlineMs, this.signal);
       if (!loaded.settled) {
+        this.onDiscoveryDetached?.(tokenLoad);
         logger.debug(
           `${this.logPrefix} [Discovery] Cancelled or out of budget while loading OAuth tokens; leaving the token flow to finish`,
         );
@@ -596,6 +600,7 @@ export class MCPConnectionFactory {
     this.deadlineMs = options?.deadlineMs;
     this.onOAuthCredentialsChanged = options?.onOAuthCredentialsChanged;
     this.onOAuthCredentialsChanging = options?.onOAuthCredentialsChanging;
+    this.onDiscoveryDetached = options?.onDiscoveryDetached;
     this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();

@@ -4703,7 +4703,11 @@ describe('MCPConnectionFactory', () => {
       });
 
       describe('OAuth token loading', () => {
-        const oauthDiscoveryOptions = (bounds: { deadlineMs?: number; signal?: AbortSignal }) => ({
+        const oauthDiscoveryOptions = (bounds: {
+          deadlineMs?: number;
+          signal?: AbortSignal;
+          onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
+        }) => ({
           useOAuth: true as const,
           user: mockUser,
           flowManager: mockFlowManager,
@@ -4739,7 +4743,9 @@ describe('MCPConnectionFactory', () => {
         };
         type DeferredTokenFlow = ReturnType<typeof deferTokenFlow>;
 
-        it.each<[string, (flow: DeferredTokenFlow) => void]>([
+        it.each<
+          [string, (flow: DeferredTokenFlow) => void, PromiseSettledResult<unknown>['status']]
+        >([
           [
             'stores its tokens',
             (flow) =>
@@ -4749,18 +4755,20 @@ describe('MCPConnectionFactory', () => {
                 obtained_at: Date.now(),
                 credential_set_id: 'persisted-generation',
               }),
+            'fulfilled',
           ],
-          ['fails', (flow) => flow.reject(refreshUnavailable())],
+          ['fails', (flow) => flow.reject(refreshUnavailable()), 'rejected'],
         ])(
-          'stops waiting at the deadline for a stalled token flow that later %s',
-          async (_outcome, finish) => {
+          'stops waiting at the deadline for a stalled token flow that later %s, handing it off',
+          async (_outcome, finish, settlement) => {
             const flow = deferTokenFlow();
+            const onDiscoveryDetached = jest.fn();
             mockFlowManager.createFlowWithHandler.mockReturnValue(flow.promise);
 
             const start = Date.now();
             const result = await MCPConnectionFactory.discoverTools(
               { serverName: 'test-server', serverConfig: mockServerConfig },
-              oauthDiscoveryOptions({ deadlineMs: Date.now() + 50 }),
+              oauthDiscoveryOptions({ deadlineMs: Date.now() + 50, onDiscoveryDetached }),
             );
 
             expect(result).toEqual(cancelledDiscovery);
@@ -4772,17 +4780,21 @@ describe('MCPConnectionFactory', () => {
               undefined,
             );
             expect(mockMCPConnection).not.toHaveBeenCalled();
+            expect(onDiscoveryDetached).toHaveBeenCalledTimes(1);
+            const [detachedWork] = onDiscoveryDetached.mock.calls[0] as [Promise<unknown>];
 
-            /** Jest fails the test if a late rejection from the abandoned flow goes unhandled. */
             finish(flow);
-            await new Promise((resolve) => setImmediate(resolve));
+            await expect(Promise.allSettled([detachedWork])).resolves.toEqual([
+              expect.objectContaining({ status: settlement }),
+            ]);
             expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
             expect(mockMCPConnection).not.toHaveBeenCalled();
           },
         );
 
-        it('stops waiting for the token flow when the caller aborts', async () => {
+        it('stops waiting for the token flow when the caller aborts, handing it off', async () => {
           const controller = new AbortController();
+          const onDiscoveryDetached = jest.fn();
           mockFlowManager.createFlowWithHandler.mockImplementation(() => {
             setTimeout(() => controller.abort(), 20);
             return new Promise<MCPOAuthTokens | null>(() => undefined);
@@ -4791,12 +4803,13 @@ describe('MCPConnectionFactory', () => {
           const start = Date.now();
           const result = await MCPConnectionFactory.discoverTools(
             { serverName: 'test-server', serverConfig: mockServerConfig },
-            oauthDiscoveryOptions({ signal: controller.signal }),
+            oauthDiscoveryOptions({ signal: controller.signal, onDiscoveryDetached }),
           );
 
           expect(result).toEqual(cancelledDiscovery);
           expect(Date.now() - start).toBeLessThan(2000);
           expect(mockMCPConnection).not.toHaveBeenCalled();
+          expect(onDiscoveryDetached).toHaveBeenCalledWith(expect.any(Promise));
         });
 
         it('still surfaces a token failure that lands inside the budget', async () => {
@@ -4825,15 +4838,17 @@ describe('MCPConnectionFactory', () => {
             .fn()
             .mockResolvedValue({ tools: mockTools, complete: true });
 
+          const onDiscoveryDetached = jest.fn();
           const result = await MCPConnectionFactory.discoverTools(
             { serverName: 'test-server', serverConfig: mockServerConfig },
-            oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000 }),
+            oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000, onDiscoveryDetached }),
           );
 
           expect(result.tools).toEqual(mockTools);
           expect(mockMCPConnection).toHaveBeenCalledWith(
             expect.objectContaining({ oauthTokens: tokens }),
           );
+          expect(onDiscoveryDetached).not.toHaveBeenCalled();
         });
       });
     });
