@@ -264,13 +264,23 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       />
     );
     listPlaceholder = hasData ? (
-      /* This is before the rows for direct keyboard access; the top pin is intentional because
-         a bottom pin on an element before the list would scroll away with its flow position.
-         The wrapper takes no pointer events so the rows it overlaps stay clickable; the card
-         itself takes them back for its retry and reload controls. */
-      <div className="pointer-events-none sticky top-0 z-10 flex justify-center pb-5">
-        <div className="pointer-events-auto w-full max-w-xl rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
-          {errorCard}
+      /* This wrapper has three jobs that pull in different layout directions: it must come
+         first in keyboard order so Retry is one Tab away, stay sticky so recovery remains
+         visible while rows scroll under it, and take no layout space so a late page failure
+         cannot move the rows under the user's scroll position. A zero-height sticky host
+         with an overflowing card satisfies all three; putting the card itself in flow would
+         preserve the first two but make every loaded row jump by the card height.
+
+         `items-start` is load-bearing: a flex child stretches to its container's cross size,
+         so inside an `h-0` host the card's box would collapse to zero height and paint no
+         background — its text would read on top of the rows it is supposed to cover. The
+         stacking level has to clear the cards' own click overlay and the lifted row a morph
+         promotes, while staying under the detail dialog and its scrim. */
+      <div className="pointer-events-none sticky top-0 z-30 flex h-0 items-start justify-center">
+        <div className="pointer-events-auto w-full max-w-xl pb-5">
+          <div className="rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
+            {errorCard}
+          </div>
         </div>
       </div>
     ) : (

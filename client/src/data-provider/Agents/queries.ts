@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
 import type {
@@ -23,6 +24,30 @@ export const defaultAgentParams: t.AgentListParams = {
  * it: this is a transport detail, and a caller limit never bounds what the walk returns.
  */
 const WALK_PAGE_SIZE = 1000;
+
+/**
+ * A cursor is bound to the sort/filter request that produced it. During a rolling
+ * deploy, an old page can therefore be rejected by the newer server; that is a
+ * recoverable mixed-version condition, not a list failure to show the user.
+ */
+const isCursorOrderingMismatch = (error: unknown): boolean => {
+  if (
+    error == null ||
+    typeof error !== 'object' ||
+    !('response' in error) ||
+    error.response == null ||
+    typeof error.response !== 'object' ||
+    !('status' in error.response) ||
+    error.response.status !== 409 ||
+    !('data' in error.response) ||
+    error.response.data == null ||
+    typeof error.response.data !== 'object' ||
+    !('error' in error.response.data)
+  ) {
+    return false;
+  }
+  return error.response.data.error === 'cursor_ordering_mismatch';
+};
 
 /** Walk the cursor pagination and return all pages flattened into one `AgentListResponse`. */
 async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
@@ -198,8 +223,33 @@ export const useMarketplaceAgentsInfiniteQuery = (
   params: t.AgentListParams,
   config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
 ) => {
+  const queryClient = useQueryClient();
+  const queryKey = [QueryKeys.marketplaceAgents, params] as const;
+  const requestSignature = JSON.stringify(params);
+  const mismatchRecovery = useRef<{ signature: string; attempted: boolean }>({
+    signature: requestSignature,
+    attempted: false,
+  });
+  if (mismatchRecovery.current.signature !== requestSignature) {
+    mismatchRecovery.current = { signature: requestSignature, attempted: false };
+  }
+
+  const onError = (error: unknown) => {
+    if (isCursorOrderingMismatch(error) && !mismatchRecovery.current.attempted) {
+      mismatchRecovery.current.attempted = true;
+      /*
+       * `fetchNextPage` normally preserves old pages and appends its result. Resetting
+       * this exact query first discards the foreign-ordered prefix; the active observer
+       * then refetches page one with no cursor. The per-signature guard makes a server
+       * that keeps returning 409 surface one ordinary error instead of looping forever.
+       */
+      void queryClient.resetQueries({ queryKey, exact: true });
+    }
+    config?.onError?.(error);
+  };
+
   return useInfiniteQuery<t.AgentListResponse>({
-    queryKey: [QueryKeys.marketplaceAgents, params],
+    queryKey,
     queryFn: ({ pageParam }) => {
       const queryParams = { ...params };
       if (pageParam) {
@@ -236,5 +286,6 @@ export const useMarketplaceAgentsInfiniteQuery = (
     // Revisit invalidated popularity pages without reordering the active list after a pin.
     refetchOnMount: true,
     ...config,
+    onError,
   });
 };

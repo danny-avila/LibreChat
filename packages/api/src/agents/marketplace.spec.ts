@@ -1,5 +1,7 @@
 import {
+  AGENT_SORT_CURSOR_ERROR_CODE,
   AGENT_SORT_OPTIONS,
+  mapMarketplaceListError,
   marketplaceMineFilter,
   resolveMarketplaceListQuery,
 } from './marketplace';
@@ -42,5 +44,23 @@ describe('marketplaceMineFilter', () => {
         marketplaceMineFilter(resolveMarketplaceListQuery({ mine } as { mine?: string }), 'user_1'),
       ).toEqual({});
     }
+  });
+});
+
+describe('mapMarketplaceListError', () => {
+  test('maps both cursor failure kinds to the conflict response', () => {
+    for (const failure of ['ordering-mismatch', 'unreadable'] as const) {
+      const error = Object.assign(new Error(`cursor ${failure}`), {
+        code: AGENT_SORT_CURSOR_ERROR_CODE,
+      });
+      expect(mapMarketplaceListError(error)).toEqual({
+        status: 409,
+        body: { error: 'cursor_ordering_mismatch' },
+      });
+    }
+  });
+
+  test('leaves unrelated failures on the controller error path', () => {
+    expect(mapMarketplaceListError(new Error('database unavailable'))).toBeUndefined();
   });
 });

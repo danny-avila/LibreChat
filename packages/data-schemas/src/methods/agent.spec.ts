@@ -5977,6 +5977,55 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(page2.has_more).toBe(false);
     });
 
+    test('normalizes creator names for sorting and cursor pagination', async () => {
+      const names = ['alice', 'Zoe', 'mike'];
+      const users = await Promise.all(
+        names.map((name) =>
+          User.create({
+            _id: new mongoose.Types.ObjectId(),
+            name,
+            email: `${name}-${uuidv4()}@example.com`,
+            provider: 'local',
+          }),
+        ),
+      );
+      const agents = await Promise.all(
+        users.map((user, index) =>
+          createAgent({
+            id: `agent_${uuidv4().slice(0, 12)}`,
+            name: `Agent ${index}`,
+            provider: 'openai',
+            model: 'gpt-4',
+            author: user._id,
+          }),
+        ),
+      );
+      const accessibleIds = agents.map((agent) => agent._id) as mongoose.Types.ObjectId[];
+
+      const page1 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 2,
+      });
+      const page2 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 2,
+        after: page1.after,
+      });
+
+      expect(page1.data.map((agent) => agent.author)).toEqual([
+        users[0]._id.toString(),
+        users[2]._id.toString(),
+      ]);
+      expect(page2.data.map((agent) => agent.author)).toEqual([users[1]._id.toString()]);
+      expect(new Set([...page1.data, ...page2.data].map((agent) => agent.id)).size).toBe(3);
+      const cursor = JSON.parse(Buffer.from(page1.after as string, 'base64').toString('utf8'));
+      expect(cursor).toMatchObject({ sort: 'author', primary: 'mike' });
+    });
+
     test('paginates across multiple pages without duplicates or gaps', async () => {
       const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
       const agents = [];
@@ -6721,45 +6770,83 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
     const validObjectId = () => new mongoose.Types.ObjectId().toString();
 
     test.each([
-      ['a null primary', () => encode({ primary: null, secondary: validObjectId() })],
-
+      [
+        'a null primary',
+        () => encode({ sort: 'newest', primary: null, secondary: validObjectId() }),
+      ],
       [
         'an unparseable date primary',
-        () => encode({ primary: 'not-a-date', secondary: validObjectId() }),
+        () => encode({ sort: 'newest', primary: 'not-a-date', secondary: validObjectId() }),
       ],
       [
         'a secondary that is not an ObjectId',
-        () => encode({ primary: '2024-01-01', secondary: 'nope' }),
+        () => encode({ sort: 'newest', primary: '2024-01-01', secondary: 'nope' }),
       ],
       [
-        'a pre-sort-modes cursor with no primary key',
+        'a pre-sort-modes cursor with no ordering identity',
         () => encode({ createdAt: '2024-01-01', _id: validObjectId() }),
       ],
       ['a payload that is not base64 JSON', () => 'definitely-not-a-cursor'],
-    ])('falls back to page one for %s', async (_label, buildCursor) => {
-      const { older, newer, accessibleIds } = await seedTwoAgents();
+    ])('rejects an unreadable cursor for %s', async (_label, buildCursor) => {
+      const { accessibleIds } = await seedTwoAgents();
 
-      const result = await getListAgentsByAccess({
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'newest',
+          after: buildCursor(),
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
+    });
+
+    test('rejects a cursor from another sort mode instead of restarting from page one', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+      const newestPage = await getListAgentsByAccess({
         accessibleIds,
         otherParams: {},
         sort: 'newest',
-        after: buildCursor(),
+        limit: 1,
       });
 
-      expect(result.data.map((a) => a.id)).toEqual([newer.id, older.id]);
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'oldest',
+          after: newestPage.after,
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
     });
 
-    test('falls back to page one for a non-numeric primary in a numeric sort mode', async () => {
-      const { older, newer, accessibleIds } = await seedTwoAgents();
-
-      const result = await getListAgentsByAccess({
-        accessibleIds,
-        otherParams: {},
-        sort: 'popular',
-        after: encode({ primary: 'not-a-number', secondary: validObjectId() }),
+    test('rejects a legacy cursor for a sorted request instead of restarting from page one', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+      const legacyCursor = encode({
+        updatedAt: new Date('2025-06-01T00:00:00Z').toISOString(),
+        _id: validObjectId(),
       });
 
-      expect(new Set(result.data.map((a) => a.id))).toEqual(new Set([newer.id, older.id]));
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'newest',
+          after: legacyCursor,
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
+    });
+
+    test('rejects a non-numeric primary in a numeric sort mode', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'popular',
+          after: encode({ sort: 'popular', primary: 'not-a-number', secondary: validObjectId() }),
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
     });
 
     test('accepts the empty primary reserved for the missing-createdAt tier', async () => {
@@ -6767,9 +6854,8 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
       const result = await getListAgentsByAccess({
         accessibleIds,
-        otherParams: {},
         sort: 'newest',
-        after: encode({ primary: '', secondary: validObjectId() }),
+        after: encode({ sort: 'newest', primary: '', secondary: validObjectId() }),
       });
 
       // Both agents have a real date, so the "still inside the undated group" branch
@@ -6796,13 +6882,14 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       });
       expect(recent.data.map((agent) => agent.id)).toEqual([older.id]);
 
-      const newest = await getListAgentsByAccess({
-        accessibleIds,
-        sort: 'newest',
-        limit: null,
-        after: legacyCursor,
-      });
-      expect(newest.data.map((agent) => agent.id)).toEqual([newer.id, older.id]);
+      await expect(
+        getListAgentsByAccess({
+          accessibleIds,
+          sort: 'newest',
+          limit: null,
+          after: legacyCursor,
+        }),
+      ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
     });
 
     /**
@@ -6827,6 +6914,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           Buffer.from(result.after as string, 'base64').toString('utf8'),
         ) as Record<string, unknown>;
 
+        expect(cursor.sort).toBe(sort);
         expect(typeof cursor.primary).toBe('string');
         expect(typeof cursor.secondary).toBe('string');
         if (sort === 'recent') {
@@ -6878,6 +6966,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         expect(result.data[0]).not.toHaveProperty('createdAt');
         expect(result.data[0]).not.toHaveProperty('favoriteCount');
         expect(result.data[0]).not.toHaveProperty('authorDisplayName');
+        expect(result.data[0]).not.toHaveProperty('authorSortKey');
         /* The author sort hands over the owner contact it had to join anyway, and
            `attachOwnerContacts` (`api/server/services/Agents/ownerContact.js`) either
            strips that marker or resolves the same contact itself, so a client receives

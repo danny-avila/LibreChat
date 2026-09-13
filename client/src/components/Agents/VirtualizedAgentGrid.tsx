@@ -11,9 +11,24 @@ import {
   MORPH_HANDOFF_MS,
   readSurfaceRadius,
 } from './morph';
+import { useGetAgentByIdQuery } from '~/data-provider/Agents';
 import AgentDetailContent from './AgentDetailContent';
 import AgentCard from './AgentCard';
 import { cn } from '~/utils';
+
+const isAgentUnavailableError = (error: unknown): boolean => {
+  if (
+    error == null ||
+    typeof error !== 'object' ||
+    !('response' in error) ||
+    error.response == null ||
+    typeof error.response !== 'object' ||
+    !('status' in error.response)
+  ) {
+    return false;
+  }
+  return error.response.status === 403 || error.response.status === 404;
+};
 
 interface VirtualizedAgentGridProps {
   agents: t.Agent[];
@@ -131,6 +146,30 @@ export default function VirtualizedAgentGrid({
     selectedIndex == null ? undefined : Math.floor(selectedIndex / layout.columns);
   const liftedIndex = liftedAgentId == null ? undefined : indexById.get(liftedAgentId);
   const liftedRow = liftedIndex == null ? undefined : Math.floor(liftedIndex / layout.columns);
+  /**
+   * Missing from the cursor window is not proof of deletion: sorting, paging, and scope
+   * changes can all move a row out of the loaded pages. Ask the per-agent endpoint instead;
+   * it enforces the current access check. While that request is in flight, action controls
+   * stay inert, but a transient non-403/404 failure does not permanently mark the agent gone.
+   */
+  const selectedAgentQuery = useGetAgentByIdQuery(selection?.agent.id, {
+    enabled: selection != null,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+  const selectedAgentUnavailable =
+    selection != null && isAgentUnavailableError(selectedAgentQuery.error);
+  const selectedAgentChecking =
+    selection != null && selectedAgentQuery.isFetching && !selectedAgentUnavailable;
+  const revalidateSelectedAgent = selectedAgentQuery.refetch;
+  const selectedAgentId = selection?.agent.id;
+  useEffect(() => {
+    if (selectedAgentId != null && selectedIndex == null) {
+      /* A missing cursor-window row may just have moved pages, so revalidate the
+         captured id when the refresh actually removes it instead of inferring deletion. */
+      void revalidateSelectedAgent();
+    }
+  }, [revalidateSelectedAgent, selectedAgentId, selectedIndex]);
   /** No source card in the list, or reduced motion: the dialog just fades. */
   const morphing = reducedMotion !== true && selection != null && selectedIndex != null;
   /**
@@ -503,6 +542,8 @@ export default function VirtualizedAgentGrid({
           morph={morphing ? selection.phase : undefined}
           surfaceRadius={surfaceRadius}
           descriptionSource={findDescription}
+          actionsUnavailable={selectedAgentUnavailable}
+          actionsDisabled={selectedAgentChecking}
         />
       )}
     </OGDialog>
