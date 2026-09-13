@@ -13,8 +13,10 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
+let mockPendingAssignment: { token: number; projectId: string | null } | undefined;
+
 jest.mock('~/data-provider/Projects/mutations', () => ({
-  getPendingAssignment: () => undefined,
+  getPendingAssignment: () => mockPendingAssignment,
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -79,6 +81,7 @@ describe('a drop on Chats, filing and unpinning together', () => {
   beforeEach(() => {
     mockPin.mockReset();
     mockAssign.mockReset();
+    mockPendingAssignment = undefined;
   });
 
   /* The drop handler the Chats section installs, kept in one place so the two
@@ -138,6 +141,28 @@ describe('a drop on Chats, filing and unpinning together', () => {
     });
 
     await waitFor(() => expect(mockAssign).toHaveBeenCalled());
+    expect(mockPin).not.toHaveBeenCalled();
+  });
+
+  /* Dropping the same chat again while its first assignment is still in flight
+   * asks a question the pending write cannot answer yet: that write can still
+   * fail, and the drop that started it already owns the unpin. Treating its
+   * destination as an outcome is what unpinned a chat that stayed in its
+   * project. */
+  it('does not unpin again while an assignment to the same place is in flight', async () => {
+    mockPendingAssignment = { token: 1, projectId: null };
+    const { result } = renderHook(() => ({
+      assign: useAssignDroppedConversation(),
+      unpin: useUnpinDroppedConversation(),
+    }));
+
+    await drop(result.current.assign, result.current.unpin, {
+      conversationId: 'c1',
+      chatProjectId: 'p1',
+      pinned: true,
+    });
+
+    expect(mockAssign).not.toHaveBeenCalled();
     expect(mockPin).not.toHaveBeenCalled();
   });
 });

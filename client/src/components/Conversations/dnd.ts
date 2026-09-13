@@ -95,9 +95,10 @@ export type UnpinDroppedConversation = (item: ConversationDragItem) => void;
  *  (chats, pinned rows, project stats); this adds the toast feedback the
  *  options-menu path already shows for the same action.
  *
- *  Resolves to whether the chat now sits where the drop asked — `true` for a
- *  drop that had nothing to file — so a caller with a second half to apply can
- *  wait for this one instead of racing it. */
+ *  Resolves to whether the chat now sits where the drop asked: `true` for a
+ *  drop that had nothing to file, `false` while another write is still on its
+ *  way there. A caller with a second half to apply can therefore wait for this
+ *  one instead of racing it. */
 export const useAssignDroppedConversation = (): AssignDroppedConversation => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -107,7 +108,21 @@ export const useAssignDroppedConversation = (): AssignDroppedConversation => {
   return useCallback(
     (item: ConversationDragItem, projectId: string | null): Promise<boolean> => {
       const conversationId = item.conversationId;
-      if (!conversationId || effectiveProjectId(item) === projectId) {
+      if (!conversationId) {
+        return Promise.resolve(false);
+      }
+      /* A write for this chat is already heading where this drop asks. Its
+       * destination is a request, not an outcome — the write can still fail —
+       * and the drop that started it owns whatever follows it. Reporting
+       * success here is what let a repeated drop unpin a chat whose assignment
+       * then failed, leaving it in its project and out of the pinned list. */
+      const pending = getPendingAssignment(conversationId);
+      if (pending?.projectId === projectId) {
+        return Promise.resolve(false);
+      }
+      /* No write in flight, and the chat already sits where the drop asks: the
+       * filing half is done, whatever else the drop goes on to do. */
+      if (!pending && effectiveProjectId(item) === projectId) {
         return Promise.resolve(true);
       }
       /* The mutation serializes these per conversation and records where each
@@ -194,26 +209,47 @@ export const shouldSwapOnHover = ({
   return offsetY <= middleY;
 };
 
-/** Rewrites only the slots the visible keys occupy in the stored order, so a
- *  reorder performed while a filter hides part of the list keeps every hidden
- *  key exactly where it was instead of dropping it. Visible keys the stored
- *  order does not know about append at the end. */
+/** Which group of the Pinned section a stored key belongs to. The section
+ *  orders its two kinds independently, so a merge has to know them apart. */
+const keyKind = (key: string): 'convo' | 'favorite' =>
+  key.startsWith('convo:') ? 'convo' : 'favorite';
+
+/**
+ * Rewrites only the slots the visible keys occupy in the stored order, so a
+ * reorder performed while a filter hides part of the list keeps every hidden
+ * key exactly where it was instead of dropping it. Visible keys the stored
+ * order does not know about append after their own kind.
+ *
+ * The stored order is grouped first, because that is how the section reads it
+ * back, and each kind is then substituted within its own run. An order saved
+ * before the kinds were kept apart can interleave them, and merging across that
+ * interleaving let a reorder of two visible chats carry a hidden chat between
+ * them across a favorite — moving a row nobody had touched once the rest of the
+ * pinned list finally arrived.
+ */
 export const mergeVisibleOrder = (stored: string[], visible: string[]): string[] => {
   const visibleSet = new Set(visible);
-  const merged: string[] = [];
-  let next = 0;
-  for (const key of stored) {
-    if (!visibleSet.has(key)) {
-      merged.push(key);
-      continue;
+  const kinds: Array<'favorite' | 'convo'> = ['favorite', 'convo'];
+  return kinds.flatMap((kind) => {
+    const slots = stored.filter((key) => keyKind(key) === kind);
+    const incoming = visible.filter((key) => keyKind(key) === kind);
+    const merged: string[] = [];
+    let next = 0;
+    for (const key of slots) {
+      if (!visibleSet.has(key)) {
+        merged.push(key);
+        continue;
+      }
+      if (next < incoming.length) {
+        merged.push(incoming[next]);
+        next += 1;
+      }
     }
-    if (next < visible.length) {
-      merged.push(visible[next]);
-      next++;
+    /* Keys the stored order never held, such as a row pinned since it was
+     * written. */
+    for (; next < incoming.length; next += 1) {
+      merged.push(incoming[next]);
     }
-  }
-  for (; next < visible.length; next++) {
-    merged.push(visible[next]);
-  }
-  return merged;
+    return merged;
+  });
 };

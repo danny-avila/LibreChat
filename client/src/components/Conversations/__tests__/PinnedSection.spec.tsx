@@ -382,7 +382,10 @@ describe('PinnedSection unified list', () => {
     /* Rows can be missing from view for reasons the section cannot tell apart:
      * a bookmark filter hides them, or the pinned query is still draining its
      * cursor. Persisting only what is on screen would drop those keys and lose
-     * their positions, so the order is always merged, never replaced. */
+     * their positions, so the order is always merged, never replaced — and an
+     * order saved while the two kinds interleaved is normalized on the way out,
+     * so the hidden chat keeps its place among chats rather than being carried
+     * across the favorite that used to sit above it. */
     it('keeps keys it cannot see in the stored order', () => {
       mockPinnedOrder = ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c1', 'convo:c2'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
@@ -391,7 +394,7 @@ describe('PinnedSection unified list', () => {
       moveFocusedRow('Pinned Chat', 'ArrowDown');
 
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c2', 'convo:c1'],
+        ['model:6:openAI:gpt-4o', 'convo:hidden', 'convo:c2', 'convo:c1'],
         expect.anything(),
       );
     });

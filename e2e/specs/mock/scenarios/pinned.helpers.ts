@@ -194,11 +194,40 @@ export async function ensureSidebarOnScreen(page: Page): Promise<void> {
   await expect.poll(() => sidebarPlacement(page), { timeout: 15_000 }).toBe('on-screen');
 }
 
+/**
+ * Waits until the rows will actually accept a move. Reordering is gated on the
+ * saved order having arrived — a drag started before that is disconnected and a
+ * keystroke is ignored — and the rows say so themselves: each one advertises
+ * `Alt+ArrowUp Alt+ArrowDown` once the section is ready to move it. A test that
+ * dragged without waiting would pass or fail on how fast the order query came
+ * back.
+ */
+export async function waitForReorderReady(page: Page): Promise<void> {
+  const rows = pinnedRows(page);
+  if ((await rows.count()) === 0) {
+    return;
+  }
+  await expect
+    .poll(
+      async () =>
+        pinnedSection(page).evaluate(
+          (section) =>
+            section.querySelectorAll('ul > li').length > 0 &&
+            Array.from(section.querySelectorAll('ul > li')).every(
+              (row) => row.querySelector('[aria-keyshortcuts]') !== null,
+            ),
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
 /** Opens a fresh chat route and waits for the Pinned section to be reachable. */
 export async function openWithPinnedSection(page: Page): Promise<void> {
   await page.goto('/c/new', { timeout: 30_000 });
   await expect(pinnedSection(page)).toBeVisible({ timeout: 30_000 });
   await ensureSidebarOnScreen(page);
+  await waitForReorderReady(page);
 }
 
 /** Reloads and waits for the Pinned section to be reachable again: a reload
@@ -207,6 +236,7 @@ export async function reloadWithPinnedSection(page: Page): Promise<void> {
   await page.reload({ timeout: 30_000 });
   await expect(pinnedSection(page)).toBeVisible({ timeout: 30_000 });
   await ensureSidebarOnScreen(page);
+  await waitForReorderReady(page);
 }
 
 /** The rendered order of the Pinned section as row kinds, for the grouping the
