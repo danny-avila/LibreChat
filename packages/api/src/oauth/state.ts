@@ -10,6 +10,8 @@ const HOST_ONLY_COOKIE_PREFIX = '__Host-';
 /** Separates this HMAC from other values signed with the same secret. */
 const SIGNATURE_CONTEXT = 'librechat:oauth-login-state';
 const BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+/** Each binding cookie is `<prefix>.<id>`, so bindings created by concurrent first starts coexist. */
+const BINDING_ID_BYTES = 6;
 /** `<issued-at, base 36>.<nonce>.<signature>` */
 const STATE_PATTERN = /^([0-9a-z]{1,11})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/;
 const MISSING_BINDING_MESSAGE = 'Unable to verify authorization request state.';
@@ -64,9 +66,10 @@ function signaturesMatch(expected: string, provided: string): boolean {
  * Binds an OAuth login to the browser that started it. The browser holds a random binding in an
  * HttpOnly cookie, reused by every flow it starts, and each `state` is an HMAC over that binding
  * and the time the flow started. The callback proceeds only when the returned `state` was signed
- * for this browser's binding and is younger than `maxAgeMs`, so a callback reaching a browser
- * that did not start the flow ends before its code is exchanged. Nothing is stored per flow, so
- * logins started in separate tabs complete independently.
+ * for one of this browser's bindings and is younger than `maxAgeMs`, so a callback reaching a
+ * browser that did not start the flow ends before its code is exchanged. Nothing is stored per
+ * flow, so logins started in separate tabs complete independently. A browser without a binding
+ * gets one under a fresh cookie name, so first starts racing in two tabs each keep their own.
  */
 export function createOAuthStateStore({
   provider,
@@ -80,7 +83,7 @@ export function createOAuthStateStore({
   }
 
   const secure = crossSiteCallback || secureCookie;
-  const cookieName = `${secure ? HOST_ONLY_COOKIE_PREFIX : ''}${OAUTH_STATE_COOKIE_PREFIX}${provider}`;
+  const cookiePrefix = `${secure ? HOST_ONLY_COOKIE_PREFIX : ''}${OAUTH_STATE_COOKIE_PREFIX}${provider}.`;
   const cookieOptions: CookieOptions = {
     httpOnly: true,
     path: '/',
@@ -89,10 +92,10 @@ export function createOAuthStateStore({
     maxAge: maxAgeMs,
   };
 
-  const readBinding = (req: Request): string | undefined => {
-    const value = (req.cookies as Record<string, string> | undefined)?.[cookieName];
-    return value && BINDING_PATTERN.test(value) ? value : undefined;
-  };
+  const readBindings = (req: Request): Array<[name: string, binding: string]> =>
+    Object.entries((req.cookies as Record<string, string> | undefined) ?? {}).filter(
+      ([name, value]) => name.startsWith(cookiePrefix) && BINDING_PATTERN.test(value),
+    );
 
   const sign = (binding: string, issuedAt: string, nonce: string): string =>
     crypto
@@ -114,9 +117,12 @@ export function createOAuthStateStore({
         callback(new Error('OAuth state store requires an Express response'));
         return;
       }
-      const binding = readBinding(req) ?? randomToken(32);
+      const [name, binding] = readBindings(req)[0] ?? [
+        `${cookiePrefix}${randomToken(BINDING_ID_BYTES)}`,
+        randomToken(32),
+      ];
       /** Re-issuing the same binding keeps it alive past the newest state it signs. */
-      req.res.cookie(cookieName, binding, cookieOptions);
+      req.res.cookie(name, binding, cookieOptions);
       const issuedAt = Date.now().toString(36);
       const nonce = randomToken(16);
       callback(null, `${issuedAt}.${nonce}.${sign(binding, issuedAt, nonce)}`);
@@ -124,8 +130,8 @@ export function createOAuthStateStore({
 
     verify(req, providedState, callback) {
       const hasState = typeof providedState === 'string' && providedState.length > 0;
-      const binding = readBinding(req);
-      if (!binding) {
+      const bindings = readBindings(req);
+      if (bindings.length === 0) {
         reject(callback, MISSING_BINDING_MESSAGE, hasState);
         return;
       }
@@ -137,7 +143,10 @@ export function createOAuthStateStore({
       }
 
       const [, issuedAt, nonce, signature] = parsed;
-      if (!signaturesMatch(sign(binding, issuedAt, nonce), signature)) {
+      const signed = bindings.some(([, binding]) =>
+        signaturesMatch(sign(binding, issuedAt, nonce), signature),
+      );
+      if (!signed) {
         reject(callback, INVALID_STATE_MESSAGE, hasState);
         return;
       }

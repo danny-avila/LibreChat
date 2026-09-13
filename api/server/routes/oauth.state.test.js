@@ -51,8 +51,13 @@ function parseSetCookie(header) {
 
 function getStateCookie(response, provider) {
   const headers = response.headers['set-cookie'] ?? [];
-  return headers.map(parseSetCookie).find(({ name }) => name === `__Host-oauth_state_${provider}`);
+  return headers
+    .map(parseSetCookie)
+    .find(({ name }) => name.startsWith(`__Host-oauth_state_${provider}.`));
 }
+
+/** The `name=value` pair a browser sends back for a cookie the server set. */
+const asCookie = ({ name, value }) => `${name}=${value}`;
 
 const stateLocation = (response) => new URL(response.headers.location).searchParams.get('state');
 const BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -173,7 +178,7 @@ describe('OAuth login state binding', () => {
 
       const response = await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${ownCookie.value}`)
+        .set('Cookie', asCookie(ownCookie))
         .query({ code: 'unrelated-code', state: otherState })
         .expect(302);
 
@@ -187,7 +192,7 @@ describe('OAuth login state binding', () => {
 
       const response = await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${ownCookie.value}`)
+        .set('Cookie', asCookie(ownCookie))
         .query({ code: 'unrelated-code' })
         .expect(302);
 
@@ -202,7 +207,7 @@ describe('OAuth login state binding', () => {
 
       const response = await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${cookie.value}`)
+        .set('Cookie', asCookie(cookie))
         .query({ code: 'own-code', state })
         .expect(200);
 
@@ -223,7 +228,7 @@ describe('OAuth login state binding', () => {
 
       const unrelated = await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${ownCookie.value}`)
+        .set('Cookie', asCookie(ownCookie))
         .query({ code: 'unrelated-code', state: stateLocation(otherFlow) })
         .expect(302);
 
@@ -232,7 +237,7 @@ describe('OAuth login state binding', () => {
 
       await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${ownCookie.value}`)
+        .set('Cookie', asCookie(ownCookie))
         .query({ code: 'own-code', state: stateLocation(ownFlow) })
         .expect(200);
 
@@ -248,23 +253,48 @@ describe('OAuth login state binding', () => {
       const firstTab = await request(app).get('/oauth/github').expect(302);
       const secondTab = await request(app)
         .get('/oauth/github')
-        .set('Cookie', `__Host-oauth_state_github=${getStateCookie(firstTab, 'github').value}`)
+        .set('Cookie', asCookie(getStateCookie(firstTab, 'github')))
         .expect(302);
-      const binding = getStateCookie(secondTab, 'github').value;
+      const binding = asCookie(getStateCookie(secondTab, 'github'));
 
-      expect(binding).toBe(getStateCookie(firstTab, 'github').value);
+      expect(binding).toBe(asCookie(getStateCookie(firstTab, 'github')));
 
       await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${binding}`)
+        .set('Cookie', binding)
         .query({ code: 'first-code', state: stateLocation(firstTab) })
         .expect(200);
 
       await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${binding}`)
+        .set('Cookie', binding)
         .query({ code: 'second-code', state: stateLocation(secondTab) })
         .expect(200);
+
+      expect(github._oauth2.getOAuthAccessToken).toHaveBeenCalledTimes(2);
+    });
+
+    it('completes both logins when two tabs start before either has a binding', async () => {
+      const [firstTab, secondTab] = await Promise.all([
+        request(app).get('/oauth/github').expect(302),
+        request(app).get('/oauth/github').expect(302),
+      ]);
+      const firstCookie = getStateCookie(firstTab, 'github');
+      const secondCookie = getStateCookie(secondTab, 'github');
+      const browserCookies = `${asCookie(firstCookie)}; ${asCookie(secondCookie)}`;
+
+      expect(firstCookie.name).not.toBe(secondCookie.name);
+
+      for (const [tab, code] of [
+        [secondTab, 'second-code'],
+        [firstTab, 'first-code'],
+      ]) {
+        await request(app)
+          .get('/oauth/github/callback')
+          .set('Cookie', browserCookies)
+          .query({ code, state: stateLocation(tab) })
+          .expect(200);
+      }
 
       expect(github._oauth2.getOAuthAccessToken).toHaveBeenCalledTimes(2);
     });
@@ -318,7 +348,7 @@ describe('OAuth login state binding', () => {
 
       await request(app)
         .post('/oauth/apple/callback')
-        .set('Cookie', `__Host-oauth_state_apple=${cookie.value}`)
+        .set('Cookie', asCookie(cookie))
         .type('form')
         .send({ code: 'own-code', state })
         .expect(500);
