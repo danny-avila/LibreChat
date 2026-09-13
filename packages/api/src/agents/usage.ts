@@ -627,11 +627,37 @@ export function hasRecordedProviderUsage(
   return usage != null && ((usage.input_tokens ?? 0) > 0 || (usage.output_tokens ?? 0) > 0);
 }
 
+const NON_PRIMARY_USAGE_TYPES: ReadonlySet<string> = new Set([
+  'summarization',
+  'subagent',
+  'sequential',
+]);
+
+/**
+ * Whether any primary (response) call in the collected usage reported consumption. The stream
+ * aggregate {@link recordCollectedUsage} returns takes its input from the first primary entry
+ * only, so a later cancelled call that reported input alone is billed yet invisible there.
+ */
+export function hasRecordedPrimaryUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined> | null | undefined,
+): boolean {
+  return (
+    collectedUsage?.some(
+      (usage) =>
+        usage != null &&
+        !NON_PRIMARY_USAGE_TYPES.has(usage.usage_type ?? '') &&
+        hasRecordedProviderUsage(usage),
+    ) === true
+  );
+}
+
 export interface FallbackTokenUsageParams {
   /** Usage the run already recorded for this response, when it recorded any. */
   usage?:
     | (Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> & { reasoning_tokens?: number })
     | null;
+  /** Every entry the run collected; a billed call the aggregate hides still suppresses the estimate. */
+  collectedUsage?: ReadonlyArray<UsageMetadata | null | undefined> | null;
   promptTokens?: number;
   completionTokens?: number;
   /** Whether the run was stopped; labels the row when no explicit `context` is given. */
@@ -654,6 +680,7 @@ export async function recordFallbackTokenUsage(
   deps: Pick<RecordUsageDeps, 'spendTokens'>,
   {
     usage,
+    collectedUsage,
     promptTokens,
     completionTokens,
     aborted = false,
@@ -661,7 +688,7 @@ export async function recordFallbackTokenUsage(
     txMetadata,
   }: FallbackTokenUsageParams,
 ): Promise<void> {
-  if (hasRecordedProviderUsage(usage)) {
+  if (hasRecordedPrimaryUsage(collectedUsage) || hasRecordedProviderUsage(usage)) {
     return;
   }
   try {

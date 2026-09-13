@@ -134,6 +134,21 @@ describe('AgentClient - recordCollectedUsage', () => {
       );
     });
 
+    it('does not bill the estimate when a later primary call was billed but the aggregate hides it', async () => {
+      client.collectedUsage = [
+        { input_tokens: 0, output_tokens: 0 },
+        { input_tokens: 5, output_tokens: 0 },
+      ];
+
+      await client.recordTokenUsage({
+        ...estimate,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        model: 'gpt-4',
+      });
+
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+    });
+
     it('still bills the estimate when the recorded report is all zero', async () => {
       await client.recordTokenUsage({
         ...estimate,

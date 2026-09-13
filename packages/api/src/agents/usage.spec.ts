@@ -12,6 +12,7 @@ import {
   resolveAgentTokenConfig,
   resolveRunUsageContext,
   hasRecordedProviderUsage,
+  hasRecordedPrimaryUsage,
   recordFallbackTokenUsage,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
@@ -2585,6 +2586,44 @@ describe('recordFallbackTokenUsage', () => {
     expect(spendTokens).toHaveBeenCalledWith({ ...txMetadata, context: 'incomplete' }, estimate);
   });
 
+  it('records nothing when a later primary call was billed but the aggregate hides it', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage(
+      { spendTokens },
+      {
+        ...estimate,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        collectedUsage: [
+          { input_tokens: 0, output_tokens: 0 },
+          { input_tokens: 5, output_tokens: 0 },
+        ],
+        txMetadata,
+      },
+    );
+
+    expect(spendTokens).not.toHaveBeenCalled();
+  });
+
+  it('still bills the estimate when only non-primary calls were collected', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage(
+      { spendTokens },
+      {
+        ...estimate,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        collectedUsage: [
+          { input_tokens: 9, output_tokens: 3, usage_type: 'summarization' },
+          { input_tokens: 9, output_tokens: 3, usage_type: 'subagent' },
+        ],
+        txMetadata,
+      },
+    );
+
+    expect(spendTokens).toHaveBeenCalledTimes(1);
+  });
+
   it('bills a reasoning count the estimate cannot see as its own row', async () => {
     const spendTokens = jest.fn().mockResolvedValue(undefined);
 
@@ -2610,5 +2649,33 @@ describe('recordFallbackTokenUsage', () => {
     await expect(
       recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('hasRecordedPrimaryUsage', () => {
+  it('finds a billed primary call anywhere in the collected entries', () => {
+    expect(
+      hasRecordedPrimaryUsage([
+        { input_tokens: 0, output_tokens: 0 },
+        null,
+        { input_tokens: 5, output_tokens: 0 },
+      ]),
+    ).toBe(true);
+    expect(
+      hasRecordedPrimaryUsage([{ input_tokens: 0, output_tokens: 7, usage_type: 'message' }]),
+    ).toBe(true);
+  });
+
+  it('ignores non-primary entries and empty input', () => {
+    expect(
+      hasRecordedPrimaryUsage([
+        { input_tokens: 9, output_tokens: 3, usage_type: 'summarization' },
+        { input_tokens: 9, output_tokens: 3, usage_type: 'subagent' },
+        { input_tokens: 9, output_tokens: 3, usage_type: 'sequential' },
+      ]),
+    ).toBe(false);
+    expect(hasRecordedPrimaryUsage([{ input_tokens: 0, output_tokens: 0 }])).toBe(false);
+    expect(hasRecordedPrimaryUsage([])).toBe(false);
+    expect(hasRecordedPrimaryUsage(undefined)).toBe(false);
   });
 });

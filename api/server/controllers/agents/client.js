@@ -6155,6 +6155,7 @@ class AgentClient extends BaseClient {
       {
         usage,
         context,
+        collectedUsage: this.collectedUsage,
         aborted: this.abortController?.signal?.aborted === true,
         promptTokens,
         completionTokens,
