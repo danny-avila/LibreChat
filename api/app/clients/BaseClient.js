@@ -42,6 +42,7 @@ const {
   resolveUploadLLMDeliveryPath,
   isSpeechProviderConfigured,
   resolveUseResponsesApi,
+  getCustomEndpointProvider,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1837,6 +1838,12 @@ class BaseClient {
           endpointConfig: this._endpointFileConfig,
           fileConfig: this._mergedFileConfig,
           endpoint: this._deliveryEndpoint,
+          endpointProvider:
+            this.options.agent?.provider ??
+            getCustomEndpointProvider(
+              this.options.req?.config?.endpoints?.custom,
+              this._deliveryEndpoint,
+            ),
           useResponsesApi: this.usesResponsesApi(),
           sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
         });
