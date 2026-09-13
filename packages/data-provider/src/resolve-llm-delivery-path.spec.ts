@@ -4,8 +4,10 @@ import {
   canToolResourceConsume,
   resolveUploadDestination,
   resolveDefaultLLMDeliveryPath,
+  resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
+import { mergeFileConfig, supportedMimeTypes, getEndpointFileConfig } from './file-config';
 
 describe('resolveDefaultLLMDeliveryPath', () => {
   it('should return system default for images when no config provided', () => {
@@ -298,6 +300,76 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'MyOpenAI')).toBe(
       'none',
     );
+  });
+
+  describe('media a custom endpoint opted into', () => {
+    /* The encoders emit OpenAI-format media parts for an OpenAI-compatible endpoint only
+     * when the admin listed the type in its `supportedMimeTypes`, so the route has to
+     * agree: an explicit match is provider-capable, the inherited default list is not. */
+    const explicit = [/^image\/.*$/, /^application\/pdf$/, /^video\/.*$/, /^audio\/wav$/];
+    const resolve = (mimeType: string, endpoint: string, types?: RegExp[]) =>
+      resolveDefaultLLMDeliveryPath(
+        mimeType,
+        undefined,
+        undefined,
+        endpoint,
+        undefined,
+        true,
+        types,
+      );
+
+    it('keeps an explicitly allowed type on the provider path for a custom endpoint', () => {
+      expect(resolve('video/mp4', 'MyGateway', explicit)).toBe('provider');
+      expect(resolve('audio/wav', 'MyGateway', explicit)).toBe('provider');
+    });
+
+    it('still downgrades a media type the allowlist does not name', () => {
+      expect(resolve('audio/mpeg', 'MyGateway', explicit)).toBe('text');
+    });
+
+    it('does not read the inherited default list as an opt-in', () => {
+      expect(resolve('video/mp4', 'MyGateway', supportedMimeTypes)).toBe('none');
+      expect(resolve('video/mp4', 'MyGateway', [])).toBe('none');
+    });
+
+    it('applies to the built-in OpenAI-compatible endpoints as well', () => {
+      expect(resolve('video/mp4', 'openAI', explicit)).toBe('provider');
+      expect(resolve('video/mp4', 'azureOpenAI', explicit)).toBe('provider');
+    });
+
+    it('does not opt in a known provider whose encoder emits nothing for media', () => {
+      /* Anthropic and Bedrock are identified, and their encoders have no media branch, so
+       * an allowlist naming video would leave the model with neither media nor text. */
+      expect(resolve('video/mp4', 'anthropic', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'bedrock', explicit)).toBe('none');
+    });
+
+    it('reaches the upload resolver through the merged endpoint config', () => {
+      /* The real merge, so the identity check that separates a configured list from the
+       * inherited default is exercised the way the upload route exercises it. */
+      const fileConfig = mergeFileConfig({
+        endpoints: { MyGateway: { supportedMimeTypes: ['image/.*', 'video/.*'] } },
+      });
+      const configured = getEndpointFileConfig({ fileConfig, endpoint: 'MyGateway' });
+      const inherited = getEndpointFileConfig({ fileConfig, endpoint: 'OtherGateway' });
+
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: configured,
+          fileConfig,
+          endpoint: 'MyGateway',
+        }),
+      ).toBe('provider');
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: inherited,
+          fileConfig,
+          endpoint: 'OtherGateway',
+        }),
+      ).toBe('none');
+    });
   });
 
   it('leaves media alone when no endpoint is resolved at all', () => {
