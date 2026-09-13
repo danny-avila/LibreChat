@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef } from 'react';
+import React, { useCallback, useId, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useHref, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -27,6 +27,7 @@ import {
 import AgentContact, { resolveAgentContact } from './AgentContact';
 import { clearMessagesCache } from '~/utils/messages';
 import { useFavorites, useLocalize } from '~/hooks';
+import DescriptionWords from './DescriptionWords';
 import { cn, renderAgentAvatar } from '~/utils';
 import AgentCategoryBadge from './Category';
 import CopyLink from './CopyLink';
@@ -46,9 +47,22 @@ interface AgentDetailContentProps {
    * rest the stylesheet's `rounded-theme-surface` governs.
    */
   surfaceRadius?: number;
+  /**
+   * Looks up the description paragraph of the card an agent is shown on,
+   * supplied with `morph`. The dialog's copy starts from that wrapping and
+   * re-wraps into this one word by word, instead of the card's three clamped
+   * lines being swapped for all of it. A lookup rather than a ref: it is read
+   * while the morph runs, after the grid has long since mounted the card.
+   */
+  descriptionSource?: (agentId: string) => HTMLElement | null;
 }
 
-const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, surfaceRadius }) => {
+const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
+  agent,
+  morph,
+  surfaceRadius,
+  descriptionSource,
+}) => {
   const localize = useLocalize();
   const navigate = useNavigate();
   const reducedMotion = useReducedMotion();
@@ -128,6 +142,13 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
     ? { initial: DETAIL_INITIAL, animate: morph === 'closing' ? DETAIL_EXIT : DETAIL_ENTER }
     : { initial: DETAIL_FADE_INITIAL, animate: DETAIL_FADE_ENTER };
   const contact = resolveAgentContact(agent);
+  const description = agent.description?.trim() || localize('com_agents_description_empty');
+  /* Nothing to morph the copy out of without the card that owns it. */
+  const morphedDescription = morphing && descriptionSource != null;
+  const readDescriptionSource = useCallback(
+    () => descriptionSource?.(agent.id) ?? null,
+    [agent.id, descriptionSource],
+  );
 
   return (
     <OGDialogContent
@@ -149,7 +170,14 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
     >
       <motion.div
         layoutId={morphing ? agentMorphId('surface', agent.id) : undefined}
-        style={surfaceRadius == null ? undefined : { borderRadius: surfaceRadius }}
+        /* The surface is the largest thing in flight and the animation loop
+           does not promote it on its own. The hint stands for as long as this
+           dialog shares the card's surface, and is never set on a dialog that
+           has no morph to run. */
+        style={{
+          borderRadius: surfaceRadius,
+          willChange: morphing ? 'transform' : undefined,
+        }}
         className="relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-theme-surface bg-surface-dialog shadow-lg high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none"
         {...shared}
       >
@@ -163,37 +191,52 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
           className="pointer-events-none absolute inset-0 border border-border-light bg-surface-secondary"
         />
 
-        <motion.div {...pinned} className="relative z-10 shrink-0 px-5 pb-6 pt-5 sm:px-6 sm:pt-6">
-          <div className="flex items-start justify-between gap-4">
-            {agent.category != null && agent.category !== '' && (
-              /* The box has to hug the pill on both sides of the morph: a
-                 full-width box here would put the pill's travel on the box's
-                 centre and throw it across the header on the first frame. */
-              <motion.div
-                layout="position"
-                layoutId={morphing ? agentMorphId('category', agent.id) : undefined}
-                className="min-w-0"
-                {...shared}
-              >
-                <AgentCategoryBadge category={agent.category} />
-              </motion.div>
-            )}
-            <motion.div {...detail} className="ms-auto shrink-0">
-              <OGDialogClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="-mr-2 -mt-2 shrink-0 self-start rtl:-ml-2 rtl:mr-0"
-                  aria-label={localize('com_ui_close')}
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
-              </OGDialogClose>
+        {/* Only the category and the close control are pinned above the scroll:
+            the identity block carries the description now, and a long one has
+            to scroll rather than push the dialog past its own height. */}
+        <motion.div
+          {...pinned}
+          className="relative z-10 flex shrink-0 items-start justify-between gap-4 px-5 pt-5 sm:px-6 sm:pt-6"
+        >
+          {agent.category != null && agent.category !== '' && (
+            /* The box has to hug the pill on both sides of the morph: a
+               full-width box here would put the pill's travel on the box's
+               centre and throw it across the header on the first frame. */
+            <motion.div
+              layout="position"
+              layoutId={morphing ? agentMorphId('category', agent.id) : undefined}
+              className="min-w-0"
+              {...shared}
+            >
+              <AgentCategoryBadge category={agent.category} />
             </motion.div>
-          </div>
+          )}
+          <motion.div {...detail} className="ms-auto shrink-0">
+            <OGDialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="-mr-2 -mt-2 shrink-0 rtl:-ml-2 rtl:mr-0"
+                aria-label={localize('com_ui_close')}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </Button>
+            </OGDialogClose>
+          </motion.div>
+        </motion.div>
 
-          <OGDialogHeader className="mt-5 text-left sm:text-left rtl:text-right sm:rtl:text-right">
-            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+        <motion.div
+          {...pinned}
+          layoutScroll
+          className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 sm:px-6 sm:pb-6"
+        >
+          <OGDialogHeader className="space-y-0 text-left sm:text-left rtl:text-right sm:rtl:text-right">
+            {/* The avatar holds the top of the row and the copy centres on it,
+                so a title with a line or two of description reads as one block
+                beside it. Once the copy is the taller of the two there is
+                nothing left for `self-center` to move, and the block stays
+                aligned with the top of the avatar and grows downwards. */}
+            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
               <motion.div
                 layoutId={morphing ? agentMorphId('avatar', agent.id) : undefined}
                 className="shrink-0"
@@ -205,7 +248,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
                   className: 'rounded-full bg-surface-tertiary ring-1 ring-border-light',
                 })}
               </motion.div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 sm:self-center">
                 <motion.div
                   layout
                   layoutId={morphing ? agentMorphId('title', agent.id) : undefined}
@@ -219,50 +262,35 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
                     {agent.name?.trim() || localize('com_ui_agent')}
                   </OGDialogTitle>
                 </motion.div>
-                {contact != null && (
-                  <motion.div
-                    layout="position"
-                    layoutId={morphing ? agentMorphId('owner', agent.id) : undefined}
-                    className="mt-3"
-                    {...shared}
-                  >
-                    <AgentContact agent={agent} compact className="text-sm" />
-                  </motion.div>
-                )}
+                {/* The same copy the card shows, handed over rather than
+                    introduced. `relative` makes this the offset parent the word
+                    morph measures against. */}
+                <motion.p
+                  layout="position"
+                  layoutId={morphing ? agentMorphId('description', agent.id) : undefined}
+                  style={{ willChange: morphing ? 'transform' : undefined }}
+                  className="relative mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-text-secondary sm:text-base"
+                  {...shared}
+                >
+                  {morphedDescription ? (
+                    <DescriptionWords
+                      text={description}
+                      source={readDescriptionSource}
+                      phase={morph === 'closing' ? 'closing' : 'open'}
+                    />
+                  ) : (
+                    description
+                  )}
+                </motion.p>
               </div>
             </div>
             <OGDialogDescription className="sr-only">
               {localize('com_agents_details_hint')}
             </OGDialogDescription>
           </OGDialogHeader>
-        </motion.div>
-
-        <motion.div
-          {...pinned}
-          layoutScroll
-          className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-6 sm:pb-6"
-        >
-          <section aria-labelledby={`${id}-about`}>
-            <motion.div {...detail} className="border-t border-border-light pt-5">
-              <h3 id={`${id}-about`} className="text-sm font-semibold text-text-secondary">
-                {localize('com_agents_about')}
-              </h3>
-            </motion.div>
-            {/* Same copy as the card's blurb, so it is handed over rather than
-                introduced: the surface's clip reveals the extra lines the card
-                had no room for as it expands. */}
-            <motion.p
-              layout="position"
-              layoutId={morphing ? agentMorphId('description', agent.id) : undefined}
-              className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-text-primary sm:text-base"
-              {...shared}
-            >
-              {agent.description?.trim() || localize('com_agents_description_empty')}
-            </motion.p>
-          </section>
 
           {conversationStarters.length > 0 && (
-            <motion.section {...detail} className="mt-6" aria-labelledby={`${id}-starters`}>
+            <motion.section {...detail} className="mt-8" aria-labelledby={`${id}-starters`}>
               <h3 id={`${id}-starters`} className="text-sm font-semibold text-text-primary">
                 {localize('com_agents_starters_heading')}
               </h3>
@@ -287,34 +315,48 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, s
         </motion.div>
 
         <motion.div {...pinned} className="relative z-10 shrink-0">
-          <motion.div
-            {...detail}
-            className="grid gap-3 p-5 sm:flex sm:items-center sm:justify-between sm:p-6"
-          >
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              <Button
-                variant="outline"
-                aria-label={favoriteLabel}
-                aria-pressed={isFavorite}
-                aria-busy={isUpdating}
-                disabled={isUpdating}
-                onClick={() => toggleFavoriteAgent(agent.id)}
-                className="min-w-0 px-3"
+          <div className="grid gap-3 p-5 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-6">
+            {/* The contact keeps the card's corner, so it travels instead of
+                being faded in with the controls that only exist here. */}
+            {contact != null && (
+              <motion.div
+                layout="position"
+                layoutId={morphing ? agentMorphId('owner', agent.id) : undefined}
+                className="min-w-0"
+                {...shared}
               >
-                {isUpdating ? (
-                  <Spinner className="size-4 shrink-0" aria-hidden="true" />
-                ) : (
-                  <FavoriteIcon className="size-4 shrink-0" aria-hidden="true" />
-                )}
-                <span className="truncate">{favoriteLabel}</span>
+                <AgentContact agent={agent} compact className="text-sm" />
+              </motion.div>
+            )}
+            <motion.div
+              {...detail}
+              className="grid gap-2 sm:ms-auto sm:flex sm:items-center sm:gap-2"
+            >
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                <Button
+                  variant="outline"
+                  aria-label={favoriteLabel}
+                  aria-pressed={isFavorite}
+                  aria-busy={isUpdating}
+                  disabled={isUpdating}
+                  onClick={() => toggleFavoriteAgent(agent.id)}
+                  className="min-w-0 px-3"
+                >
+                  {isUpdating ? (
+                    <Spinner className="size-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <FavoriteIcon className="size-4 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="truncate">{favoriteLabel}</span>
+                </Button>
+                <CopyLink url={shareUrl} />
+              </div>
+              <Button className="w-full sm:w-auto" onClick={() => handleStartChat()}>
+                <MessageSquarePlus className="size-4" aria-hidden="true" />
+                {localize('com_agents_start_chat')}
               </Button>
-              <CopyLink url={shareUrl} />
-            </div>
-            <Button className="w-full sm:w-auto" onClick={() => handleStartChat()}>
-              <MessageSquarePlus className="size-4" aria-hidden="true" />
-              {localize('com_agents_start_chat')}
-            </Button>
-          </motion.div>
+            </motion.div>
+          </div>
         </motion.div>
       </motion.div>
     </OGDialogContent>

@@ -2,7 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OGDialog, OGDialogTrigger, useToastContext } from '@librechat/client';
 import type t from 'librechat-data-provider';
@@ -28,7 +28,6 @@ jest.mock('~/hooks', () => ({
   }),
   useLocalize: () => (key: string, values?: Record<string, string>) => {
     const translations: Record<string, string> = {
-      com_agents_about: 'About this agent',
       com_agents_category_general: 'General',
       com_agents_contact: 'Contact',
       com_agents_copy_link: 'Copy link',
@@ -88,26 +87,42 @@ const LocationProbe = () => {
   );
 };
 
-const DetailDialog = ({ agent = baseAgent }: { agent?: t.Agent }) => {
+const DetailDialog = ({
+  agent = baseAgent,
+  morph,
+}: {
+  agent?: t.Agent;
+  morph?: 'open' | 'closing';
+}) => {
   const [open, setOpen] = React.useState(true);
+  /* Stands in for the grid card the dialog morphs out of: the copy the words
+     are measured against lives there, not in the dialog. */
+  const cardDescription = React.useRef<HTMLParagraphElement>(null);
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
       <OGDialogTrigger asChild>
         <button type="button">{mockOpenerLabel}</button>
       </OGDialogTrigger>
-      {open && <AgentDetailContent agent={agent} />}
+      {morph != null && <p ref={cardDescription}>{agent.description}</p>}
+      {open && (
+        <AgentDetailContent
+          agent={agent}
+          morph={morph}
+          descriptionSource={morph == null ? undefined : () => cardDescription.current}
+        />
+      )}
     </OGDialog>
   );
 };
 
-const renderDetail = (agent = baseAgent, basename = '/app') => {
+const renderDetail = (agent = baseAgent, basename = '/app', morph?: 'open' | 'closing') => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   queryClients.add(queryClient);
   const toastContext = { showToast: jest.fn() };
   jest.mocked(useToastContext).mockReturnValue(toastContext);
-  const view = render(
+  const tree = (phase?: 'open' | 'closing') => (
     /* The start-chat path drops the parallel conversations a multi-conversation session
        left open, which is Recoil state. */
     <RecoilRoot>
@@ -116,13 +131,18 @@ const renderDetail = (agent = baseAgent, basename = '/app') => {
         initialEntries={[`${basename}/agents/all?q=invoice&sort=popular&mine=1`]}
       >
         <QueryClientProvider client={queryClient}>
-          <DetailDialog agent={agent} />
+          <DetailDialog agent={agent} morph={phase} />
           <LocationProbe />
         </QueryClientProvider>
       </MemoryRouter>
-    </RecoilRoot>,
+    </RecoilRoot>
   );
-  return { ...view, showToast: toastContext.showToast };
+  const view = render(tree(morph));
+  return {
+    ...view,
+    showToast: toastContext.showToast,
+    setMorph: (phase: 'open' | 'closing') => view.rerender(tree(phase)),
+  };
 };
 
 describe('AgentDetailContent', () => {
@@ -158,6 +178,49 @@ describe('AgentDetailContent', () => {
       'mailto:support@example.com',
     );
     expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
+  });
+
+  it('renders the morphed copy word by word without reading it twice', () => {
+    const description = 'Compare sources quickly.';
+    renderDetail({ ...baseAgent, description }, '/app', 'open');
+    const dialog = within(screen.getByRole('dialog'));
+
+    /* Assistive technology gets the description once, as one string ... */
+    const copies = dialog.getAllByText(description);
+    expect(copies).toHaveLength(1);
+    /* ... while the animation gets a node per word, hidden from it. */
+    const words = copies[0].parentElement?.querySelectorAll('[aria-hidden="true"] > span');
+    expect(Array.from(words ?? [], (word) => word.textContent)).toEqual([
+      'Compare',
+      'sources',
+      'quickly.',
+    ]);
+  });
+
+  it('keeps the description while the morph hands the surface back', () => {
+    const description = 'Compare sources quickly.';
+    renderDetail({ ...baseAgent, description }, '/app', 'closing');
+
+    expect(within(screen.getByRole('dialog')).getByText(description)).toBeInTheDocument();
+  });
+
+  it('turns the words around when a reopen interrupts the close', async () => {
+    /* The close sends the copy back to the card's wrapping and takes the lines
+       the card cannot show away with it. Reopening mid-flight has to bring them
+       back, not leave the paragraph stuck on its way out. */
+    const description = 'Compare sources quickly.';
+    const { setMorph } = renderDetail({ ...baseAgent, description }, '/app', 'open');
+    const paragraph = () => within(screen.getByRole('dialog')).getByText(description).parentElement;
+    const words = () =>
+      Array.from(paragraph()?.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span') ?? []);
+    await waitFor(() => expect(words().every((word) => word.style.opacity !== '0')).toBe(true));
+    expect(words()).toHaveLength(3);
+
+    setMorph('closing');
+    expect(words().every((word) => word.style.opacity === '0')).toBe(true);
+
+    setMorph('open');
+    await waitFor(() => expect(words().every((word) => word.style.opacity !== '0')).toBe(true));
   });
 
   it('uses the public owner name when no support contact is configured', () => {
