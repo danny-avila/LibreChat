@@ -1,5 +1,5 @@
 import React from 'react';
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { FileCitation, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import EditContentParts from '../EditContentParts';
@@ -127,6 +127,41 @@ describe('EditContentParts', () => {
     expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
     expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+    /** The footer's status slot answers why the action it usually carries is gone. */
+    expect(screen.getByText('com_ui_rerun_needs_user_turn')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ctrlKey: true });
+    expect(mockAsk).not.toHaveBeenCalled();
+  });
+
+  /** The importer chains each saved message onto the previous one, so a thread whose
+   *  first human message was empty leaves its reply at the root: the rerun has no
+   *  parent in the thread at all, not merely a model one. */
+  it('offers no rerun when the response has no parent turn in the thread', () => {
+    const rootAnswer = {
+      messageId: 'assistant-root',
+      parentMessageId: Constants.NO_PARENT,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+    } as TMessage;
+    mockThread = [rootAnswer];
+
+    render(
+      <EditContentParts
+        content={content}
+        messageId={rootAnswer.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+    expect(screen.getByText('com_ui_rerun_needs_user_turn')).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ctrlKey: true });
     expect(mockAsk).not.toHaveBeenCalled();

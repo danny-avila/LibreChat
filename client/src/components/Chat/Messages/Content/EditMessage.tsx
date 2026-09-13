@@ -1,11 +1,11 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { findMessageById } from 'librechat-data-provider';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
+import { findRerunParent } from './rerunParent';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -33,12 +33,11 @@ const EditMessage = ({
   /** Only a user turn's draft becomes the submission; an assistant turn's is discarded
    *  by the rerun (see `resubmitMessage`), so it must not be labelled as an update. */
   const isUserTurn = message.isCreatedByUser === true;
-  /** A rerun replays the parent as the turn's user message, so a model turn chained
-   *  onto another model turn — an imported or restored thread — has none. The action
-   *  is withheld rather than offered and silently refused; Save still applies. An
-   *  unresolvable parent keeps it, matching the hover row. */
-  const canRerun =
-    isUserTurn || findMessageById(getMessages(), parentMessageId)?.isCreatedByUser !== false;
+  /** A rerun replays the parent as the turn's user message, so a model turn with no
+   *  user turn behind it — chained onto another model turn, or left at the root by an
+   *  import — has none. The action is withheld rather than offered and silently
+   *  refused, the footer says why, and Save still applies. */
+  const canRerun = isUserTurn || findRerunParent(getMessages(), parentMessageId) != null;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -107,13 +106,10 @@ const EditMessage = ({
    *  required so Save cannot blank a response, and a response that is already empty (a
    *  cancellation before the first token) is exactly what needs rerunning. */
   const rerunResponse = () => {
-    const parentMessage = getMessages()?.find((msg) => msg.messageId === parentMessageId);
-
-    /** A rerun replays the parent as the turn's user message. A manual compaction
-     *  hangs off the leaf it summarized and never opens this editor, but an imported
-     *  chain can also put a model turn under a model turn; refuse rather than submit
-     *  that parent in the user slot. */
-    if (!parentMessage || parentMessage.isCreatedByUser !== true) {
+    /** The same resolution the withheld button is gated on, so a rendered Rerun and
+     *  the submission it runs cannot disagree about the turn being replayed. */
+    const parentMessage = findRerunParent(getMessages(), parentMessageId);
+    if (!parentMessage) {
       return;
     }
     const submitted = ask(
@@ -212,6 +208,21 @@ const EditMessage = ({
     },
   });
 
+  /** The footer carries one status line, so it reports the most actionable state:
+   *  an unsaved draft first, because Cancel discards it, then why the footer offers
+   *  no rerun — the question a Save-only editor otherwise leaves unanswered. */
+  const getStatusMessage = () => {
+    if (isDirty) {
+      return localize(
+        isUserTurn || !canRerun ? 'com_ui_unsaved_changes' : 'com_ui_rerun_discards_changes',
+      );
+    }
+    if (!canRerun) {
+      return localize('com_ui_rerun_needs_user_turn');
+    }
+    return '';
+  };
+
   return (
     <Container message={message}>
       <section
@@ -252,15 +263,7 @@ const EditMessage = ({
             className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
             aria-live="polite"
           >
-            {/* An answer's draft is discarded by the rerun, which is worth saying only
-                while a rerun is on offer; a save-only editor reports unsaved changes. */}
-            {isDirty
-              ? localize(
-                  isUserTurn || !canRerun
-                    ? 'com_ui_unsaved_changes'
-                    : 'com_ui_rerun_discards_changes',
-                )
-              : ''}
+            {getStatusMessage()}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
