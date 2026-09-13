@@ -46,10 +46,19 @@ test.describe('chat projects', () => {
     await createProject(page, name);
     await expect(page.getByRole('region', { name: 'Files', exact: true })).toHaveCount(0);
     const instructions = page.getByRole('region', { name: 'Instructions', exact: true });
-    const widths = await instructions.evaluate((element) => ({
-      instructions: element.getBoundingClientRect().width,
-      available: element.parentElement!.getBoundingClientRect().width,
-    }));
+    const widths = await instructions.evaluate((element) => {
+      const parent = element.parentElement!;
+      const padding = getComputedStyle(parent);
+      return {
+        instructions: element.getBoundingClientRect().width,
+        /** The gutter that separates the column from the workspace separator lives on
+         *  this wrapper, so "full width" means the wrapper's content box. */
+        available:
+          parent.getBoundingClientRect().width -
+          Number.parseFloat(padding.paddingLeft) -
+          Number.parseFloat(padding.paddingRight),
+      };
+    });
     expect(widths.instructions).toBeCloseTo(widths.available, 0);
 
     const header = page.getByRole('main').locator('header');
@@ -102,6 +111,7 @@ test.describe('chat projects', () => {
      *  editor, and the options menu carries only destructive actions. */
     await page
       .getByRole('main')
+      .getByRole('heading', { name: new RegExp(escapeRegExp(initialName)) })
       .getByRole('button', { name: new RegExp(escapeRegExp(initialName)) })
       .click();
 
