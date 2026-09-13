@@ -144,13 +144,13 @@ describe('a drop on Chats, filing and unpinning together', () => {
     expect(mockPin).not.toHaveBeenCalled();
   });
 
-  /* Dropping the same chat again while its first assignment is still in flight
-   * asks a question the pending write cannot answer yet: that write can still
-   * fail, and the drop that started it already owns the unpin. Treating its
-   * destination as an outcome is what unpinned a chat that stayed in its
-   * project. */
-  it('does not unpin again while an assignment to the same place is in flight', async () => {
+  /* A write already in flight cannot answer for this drop: it can still fail,
+   * and the path that started it may own no unpin at all — the row menu unfiles
+   * a chat without unpinning it. The drop issues its own write and waits for
+   * that one, which the per-conversation queue runs after the first. */
+  it('issues its own write rather than trusting one already in flight', async () => {
     mockPendingAssignment = { token: 1, projectId: null };
+    mockAssign.mockResolvedValue(undefined);
     const { result } = renderHook(() => ({
       assign: useAssignDroppedConversation(),
       unpin: useUnpinDroppedConversation(),
@@ -162,7 +162,30 @@ describe('a drop on Chats, filing and unpinning together', () => {
       pinned: true,
     });
 
-    expect(mockAssign).not.toHaveBeenCalled();
+    expect(mockAssign).toHaveBeenCalledWith({ conversationId: 'c1', projectId: null });
+    expect(mockPin).toHaveBeenCalledWith(
+      { conversationId: 'c1', pinned: false },
+      expect.anything(),
+    );
+  });
+
+  /* The same drop, when that in-flight write fails: the chat is still in its
+   * project, so it keeps its pin too. */
+  it('keeps the chat pinned when the write it waited for fails', async () => {
+    mockPendingAssignment = { token: 1, projectId: null };
+    mockAssign.mockRejectedValue(new Error('network'));
+    const { result } = renderHook(() => ({
+      assign: useAssignDroppedConversation(),
+      unpin: useUnpinDroppedConversation(),
+    }));
+
+    await drop(result.current.assign, result.current.unpin, {
+      conversationId: 'c1',
+      chatProjectId: 'p1',
+      pinned: true,
+    });
+
+    expect(mockAssign).toHaveBeenCalled();
     expect(mockPin).not.toHaveBeenCalled();
   });
 });

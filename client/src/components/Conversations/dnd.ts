@@ -111,22 +111,22 @@ export const useAssignDroppedConversation = (): AssignDroppedConversation => {
       if (!conversationId) {
         return Promise.resolve(false);
       }
-      /* A write for this chat is already heading where this drop asks. Its
-       * destination is a request, not an outcome — the write can still fail —
-       * and the drop that started it owns whatever follows it. Reporting
-       * success here is what let a repeated drop unpin a chat whose assignment
-       * then failed, leaving it in its project and out of the pinned list. */
+      /* A write already in flight for this chat cannot answer for this drop.
+       * Its destination is a request rather than an outcome — it can still
+       * fail — and the path that started it may own no continuation at all: the
+       * row menu unfiles a chat without unpinning it. So a pending entry is not
+       * read as "already there"; this drop issues its own write and waits for
+       * that one. The mutation queues them per conversation, so the second
+       * lands after the first and repeats what it asked for, which the server
+       * takes as the no-op it is. */
       const pending = getPendingAssignment(conversationId);
-      if (pending?.projectId === projectId) {
-        return Promise.resolve(false);
-      }
-      /* No write in flight, and the chat already sits where the drop asks: the
+      /* Nothing in flight, and the chat already sits where the drop asks: the
        * filing half is done, whatever else the drop goes on to do. */
       if (!pending && effectiveProjectId(item) === projectId) {
         return Promise.resolve(true);
       }
-      /* The mutation serializes these per conversation and records where each
-       * is headed, so this only has to report the outcome. */
+      /* Reports only the outcome: the mutation owns the cache invalidations and
+       * records where each write is headed. */
       return assignConversation.mutateAsync({ conversationId, projectId }).then(
         () => {
           showToast({
