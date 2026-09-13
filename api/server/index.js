@@ -373,7 +373,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    await configureSocialLogins(app);
+    await configureSocialLogins(app, appConfig);
   }
 
   /* Per-request capability cache — must be registered before any route that calls hasCapability */

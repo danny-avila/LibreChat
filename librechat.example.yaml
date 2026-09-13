@@ -344,6 +344,8 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
+  # How long a started social login may take to return from the provider (ms, default 600000)
+  # oauthStateTtlMs: 600000
 
 # Example Balance settings
 # balance:
