@@ -47,6 +47,8 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   chatProjectContext?: ResolvedChatProjectContext | null;
   /** Metadata-only project files hydrated once per request. */
   chatProjectFiles?: TFile[];
+  /** Request-scoped in-flight project-context resource hydration. */
+  chatProjectContextResourcesPromise?: Promise<ResolvedChatProjectContext>;
   /** Request-scoped in-flight hydration shared by connected graph agents. */
   chatProjectFilesPromise?: Promise<TFile[]>;
   /** Internal opt-in marker for conversation graph agent initialization. */

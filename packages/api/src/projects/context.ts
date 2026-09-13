@@ -45,13 +45,39 @@ export interface AgentProjectContextRequest {
   user: { id: string; tenantId?: string | null };
   body?: { chatProjectId?: string | null };
   chatProjectContext?: ResolvedChatProjectContext | null;
-  chatProjectContextEnabled?: boolean;
   chatProjectContextPromise?: Promise<ResolvedChatProjectContext | null>;
+  chatProjectContextResourcesPromise?: Promise<ResolvedChatProjectContext>;
+  chatProjectContextEnabled?: boolean;
   resolvedConversation?: ConversationSnapshot | null;
   _agentEventBindingParentConversationId?: string | null;
   _agentEventBindingTenantId?: string | null;
 }
 
+export async function hydrateChatProjectContextResources(
+  context: ResolvedChatProjectContext,
+  {
+    userId,
+    tenantId,
+    getProjectFiles,
+  }: {
+    userId: string;
+    tenantId?: string | null;
+    getProjectFiles: GetProjectFiles;
+  },
+): Promise<ResolvedChatProjectContext> {
+  if (context.resources.length === new Set(context.file_ids).size) {
+    return context;
+  }
+  return {
+    ...context,
+    resources: await resolveChatProjectResources({
+      project: { file_ids: context.file_ids },
+      userId,
+      tenantId: tenantId ?? undefined,
+      getProjectFiles,
+    }),
+  };
+}
 export function startAgentProjectContextResolution({
   req,
   endpointOption,
@@ -100,6 +126,7 @@ export function startAgentProjectContextResolution({
           conversationId,
           requestedProjectId,
           resolvedConversation: isNewConvo ? (conversation ?? null) : conversation,
+          includeResources: false,
         },
         {
           getConvo: async (...args) => {

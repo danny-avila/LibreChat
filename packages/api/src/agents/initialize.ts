@@ -107,6 +107,10 @@ import {
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
 import {
+  formatChatProjectInstructions,
+  hydrateChatProjectContextResources,
+} from '../projects/context';
+import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
@@ -118,7 +122,6 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { PARTIAL_RESOLVED_CONVERSATION } from './conversationSymbols';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
-import { formatChatProjectInstructions } from '../projects/context';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
@@ -1806,6 +1809,20 @@ export async function initializeAgent(
     );
   let projectRuntimeFiles: TFile[] = [];
   if (canUseProjectFileSearch && runtime.chatProjectContext != null && requestFileOwnerScope) {
+    runtime.chatProjectContextResourcesPromise ??=
+      params.req?.chatProjectContextResourcesPromise ??
+      hydrateChatProjectContextResources(runtime.chatProjectContext, {
+        userId: requestFileOwnerScope.userId,
+        tenantId: requestFileOwnerScope.tenantId,
+        getProjectFiles: db.getProjectFiles,
+      });
+    if (params.req) {
+      params.req.chatProjectContextResourcesPromise = runtime.chatProjectContextResourcesPromise;
+    }
+    runtime.chatProjectContext = await runtime.chatProjectContextResourcesPromise;
+    if (params.req) {
+      params.req.chatProjectContext = runtime.chatProjectContext;
+    }
     runtime.chatProjectFilesPromise ??=
       params.req?.chatProjectFilesPromise ??
       resolveRuntimeProjectFiles({

@@ -626,10 +626,22 @@ describe('initializeAgent: ChatProject context', () => {
       author: { toString: () => 'user-1' } as unknown as import('mongoose').Types.ObjectId,
       allowedTools: [Tools.file_search],
     });
+    const projectDb = {
+      ...db,
+      getProjectFiles: jest
+        .fn()
+        .mockRejectedValue(new Error('Project resource lookup unavailable')),
+      listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      getSkillByName,
+    };
 
     const result = await initializeAgent(
       {
-        runtime: { ...projectRuntime(), chatProjectFiles: undefined },
+        runtime: {
+          ...projectRuntime(),
+          chatProjectContext: { ...projectContext, resources: [] },
+          chatProjectFiles: undefined,
+        },
         agent,
         loadTools,
         endpointOption: { endpoint: EModelEndpoint.agents },
@@ -639,13 +651,10 @@ describe('initializeAgent: ChatProject context', () => {
         manualSkills: ['denied-project-file-search'],
         fileSearchAvailable: false,
       },
-      {
-        ...db,
-        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
-        getSkillByName,
-      },
+      projectDb,
     );
 
+    expect(projectDb.getProjectFiles).not.toHaveBeenCalled();
     expect(db.getFiles).not.toHaveBeenCalled();
     expect(result.tool_resources).toBeUndefined();
   });

@@ -699,6 +699,7 @@ const executeResponse = async (envelope, { req, res }) => {
               tenantId: principal.tenantId,
               conversationId: request.previous_response_id,
               resolvedConversation,
+              includeResources: false,
             },
             {
               getConvo: db.getConvo,
