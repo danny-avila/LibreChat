@@ -133,6 +133,21 @@ describe('Startup readiness wiring', () => {
     ).toHaveLength(1);
   });
 
+  it('configures social logins with the app config loaded at startup in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const appConfigIndex = contents.indexOf('const appConfig = await getAppConfig(');
+      const socialLoginsIndex = contents.indexOf('await configureSocialLogins(app, appConfig);');
+
+      expect([name, appConfigIndex > -1]).toEqual([name, true]);
+      expect([name, socialLoginsIndex > appConfigIndex]).toEqual([name, true]);
+    }
+  });
+
   it('awaits the shared Redis client before startup cache access', () => {
     const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
     const connectDbIndex = source.indexOf('await connectDb();');

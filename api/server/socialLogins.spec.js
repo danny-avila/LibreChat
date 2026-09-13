@@ -141,3 +141,49 @@ describe('configureSocialLogins OpenID session expiry', () => {
     expect(mockPassportUse).not.toHaveBeenCalled();
   });
 });
+
+describe('configureSocialLogins OAuth state options', () => {
+  const ORIGINAL_ENV = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = {
+      JWT_SECRET: 'jwt-secret',
+      GITHUB_CLIENT_ID: 'github-client',
+      GITHUB_CLIENT_SECRET: 'github-secret',
+      APPLE_CLIENT_ID: 'apple-client',
+      APPLE_PRIVATE_KEY_PATH: '/keys/apple.p8',
+    };
+    mockIsEnabled.mockReturnValue(false);
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('passes the cookie security setting and configured state lifetime to user strategies', async () => {
+    const strategies = require('~/strategies');
+    const app = { use: jest.fn() };
+
+    await configureSocialLogins(app, { registration: { oauthStateTtlMs: 120000 } });
+
+    const expected = { secret: 'jwt-secret', secureCookie: true, maxAgeMs: 120000 };
+    expect(strategies.githubLogin).toHaveBeenCalledWith(expected);
+    expect(strategies.appleLogin).toHaveBeenCalledWith(expected);
+    expect(strategies.githubAdminLogin).toHaveBeenCalledWith();
+    expect(strategies.appleAdminLogin).toHaveBeenCalledWith();
+  });
+
+  it('leaves the state lifetime to the store default when the config omits it', async () => {
+    const strategies = require('~/strategies');
+    mockShouldUseSecureCookie.mockReturnValueOnce(false);
+
+    await configureSocialLogins({ use: jest.fn() });
+
+    expect(strategies.githubLogin).toHaveBeenCalledWith({
+      secret: 'jwt-secret',
+      secureCookie: false,
+      maxAgeMs: undefined,
+    });
+  });
+});

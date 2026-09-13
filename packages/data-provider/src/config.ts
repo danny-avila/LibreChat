@@ -18,6 +18,11 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import {
+  REFILL_INTERVAL_UNITS,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from './balance';
+import {
   DEFAULT_MCP_APP_CSP_LIMITS,
   resolveMCPAppCspLimits,
   type MCPAppCspLimits,
@@ -28,7 +33,6 @@ import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';
-import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -44,6 +48,9 @@ export {
 } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+
+/** How long a started social login may take to return to its callback before its `state` expires. */
+export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 /** Sections that may be stored in the tenant's base config document but must
@@ -2553,6 +2560,12 @@ export const balanceSchema = z.object({
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
+  reservationTtlMs: z
+    .number()
+    .int()
+    .min(MIN_BALANCE_RESERVATION_TTL_MS)
+    .optional()
+    .default(DEFAULT_BALANCE_RESERVATION_TTL_MS),
 });
 
 export const transactionsSchema = z.object({
@@ -2965,6 +2978,8 @@ export const configSchema = z.object({
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
+      /** Milliseconds a started social login may take to reach its callback; defaults to `DEFAULT_OAUTH_STATE_TTL_MS`. */
+      oauthStateTtlMs: z.number().int().min(60_000).max(3_600_000).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
@@ -3702,6 +3717,10 @@ export enum ErrorTypes {
    * Authentication rejected because the account or IP is banned
    */
   AUTH_BANNED = 'auth_banned',
+  /**
+   * Authentication request was not sent from this application's origin
+   */
+  AUTH_CROSS_ORIGIN = 'auth_cross_origin',
   /**
    * Model refused to respond (content policy violation)
    */

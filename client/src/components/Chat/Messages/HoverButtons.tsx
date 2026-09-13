@@ -152,13 +152,19 @@ const HoverButtons = ({
    *  indexed once for all its rows rather than scanned once per row, and the memo
    *  is keyed on the parent id: `getMessages` is a cache read, not a subscription,
    *  and a parent's authorship never changes. Outside the messages view (a search
-   *  row) the thread is unavailable and the answer stays unknown. */
+   *  row) the thread is unavailable and the answer stays unknown; with the thread
+   *  in hand a parent that does not resolve is absent — an imported reply the
+   *  lineage left at the root — and there is no turn to replay, which `regenerate`
+   *  can only log about once the button is pressed. */
   const parentIsUserMessage = useMemo(() => {
-    if (message.isCreatedByUser === true || message.parentMessageId == null) {
+    if (message.isCreatedByUser === true) {
       return undefined;
     }
-    const parent = findMessageById(getMessages(), message.parentMessageId);
-    return parent == null ? undefined : parent.isCreatedByUser === true;
+    const messages = getMessages();
+    if (messages == null) {
+      return undefined;
+    }
+    return findMessageById(messages, message.parentMessageId)?.isCreatedByUser === true;
   }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
 
   /** Resolved only if the row has nothing to replay, because the artifact check

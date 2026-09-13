@@ -76,6 +76,7 @@ jest.mock('@librechat/client', () => ({
 jest.mock('~/data-provider', () => ({
   useActiveJobs: () => ({ data: undefined }),
   useAssignConversationToProjectMutation: () => ({ mutate: jest.fn() }),
+  usePinConversationMutation: () => ({ mutate: jest.fn() }),
 }));
 
 jest.mock('~/utils', () => ({
