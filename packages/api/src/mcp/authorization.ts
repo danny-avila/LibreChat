@@ -154,8 +154,8 @@ export async function prepareMCPAuthorizationMutation(
 
 /**
  * Owns the OAuth authorization transaction while the token store's rollback journal is live. The
- * tokens released to the authorization flow and to pending token waiters carry the generation the
- * publication wrote, so a connection built on them leases under that generation.
+ * tokens released to the authorization flow, to pending token waiters, and to the caller carry the
+ * generation the publication wrote, so a connection built on them leases under that generation.
  */
 export async function persistMCPAuthorizationTransaction<TTokens extends object>(
   params: PersistMCPAuthorizationTransactionParams<TTokens>,
@@ -165,23 +165,26 @@ export async function persistMCPAuthorizationTransaction<TTokens extends object>
     throw deps.inactiveServerError();
   }
   const publishPreparedMutation = await prepareMCPAuthorizationMutation(params.scope, deps);
-  return params.persistTokens(params.tokens, async (committedTokens) => {
+  let releasedTokens: TTokens | undefined;
+  const storedTokens = await params.persistTokens(params.tokens, async (committedTokens) => {
     if (!(await deps.ensureServerActive())) {
       throw deps.inactiveServerError();
     }
     const publicationGeneration = await publishPreparedMutation();
+    releasedTokens =
+      publicationGeneration == null
+        ? committedTokens
+        : { ...committedTokens, publication_generation: publicationGeneration };
     await completeMCPAuthorizationWithTokenWaiters(
       {
         flowIds: params.flowIds,
-        tokens:
-          publicationGeneration == null
-            ? committedTokens
-            : { ...committedTokens, publication_generation: publicationGeneration },
+        tokens: releasedTokens,
         completeAuthorization: params.completeAuthorization,
       },
       deps,
     );
   });
+  return releasedTokens ?? storedTokens;
 }
 
 /**

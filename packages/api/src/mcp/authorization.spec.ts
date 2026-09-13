@@ -152,23 +152,26 @@ describe('persistMCPAuthorizationTransaction', () => {
       settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
     };
 
-    await expect(
-      persistMCPAuthorizationTransaction(
-        { scope, flowIds: ['token-flow'], tokens, completeAuthorization, persistTokens },
-        {
-          ensureServerActive: jest.fn().mockResolvedValue(true),
-          inactiveServerError: () => new Error('deleted'),
-          invalidateRecoveryGeneration: jest.fn().mockResolvedValue('generation-b'),
-          persistPublicationRetry: jest.fn().mockResolvedValue('prepared-v1'),
-          clearPublicationRetry: jest.fn().mockResolvedValue(undefined),
-          flowManager,
-          retryDelaysMs: [0],
-        },
-      ),
-    ).resolves.toBe(tokens);
+    const transactionResult = await persistMCPAuthorizationTransaction(
+      { scope, flowIds: ['token-flow'], tokens, completeAuthorization, persistTokens },
+      {
+        ensureServerActive: jest.fn().mockResolvedValue(true),
+        inactiveServerError: () => new Error('deleted'),
+        invalidateRecoveryGeneration: jest.fn().mockResolvedValue('generation-b'),
+        persistPublicationRetry: jest.fn().mockResolvedValue('prepared-v1'),
+        clearPublicationRetry: jest.fn().mockResolvedValue(undefined),
+        flowManager,
+        retryDelaysMs: [0],
+      },
+    );
+    expect(transactionResult).toEqual({
+      access_token: 'fresh',
+      publication_generation: 'generation-b',
+    });
 
     const released = { access_token: 'fresh', publication_generation: 'generation-b' };
     expect(completeAuthorization).toHaveBeenCalledWith(released);
+    expect(completeAuthorization.mock.calls[0][0]).toBe(transactionResult);
     expect(flowManager.settleFlowIfCurrent).toHaveBeenCalledWith(
       'token-flow',
       'mcp_get_tokens',
