@@ -10,6 +10,7 @@ import {
   aggregateCollectedUsage,
   recordCollectedUsage,
   resolveAgentTokenConfig,
+  resolveRunUsageContext,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
   computeSummaryUsedTokens,
@@ -2502,5 +2503,12 @@ describe('createDetachedSubagentUsageRecorder', () => {
     expect(spendTokens).not.toHaveBeenCalled();
     expect(updateBalance).not.toHaveBeenCalled();
     expect(insertMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveRunUsageContext', () => {
+  it('labels a stopped run as an abort and a completed run as a message', () => {
+    expect(resolveRunUsageContext(true)).toBe('abort');
+    expect(resolveRunUsageContext(false)).toBe('message');
   });
 });

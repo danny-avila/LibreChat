@@ -604,6 +604,15 @@ export function resolveAgentTokenConfig({
   return fallback;
 }
 
+/**
+ * The `context` a run stamps on the usage transactions it records on exit. A stopped run
+ * still owns what it consumed — the abort route only signals — so it records under
+ * `'abort'` rather than skipping, and a completed run under `'message'`.
+ */
+export function resolveRunUsageContext(aborted: boolean): 'abort' | 'message' {
+  return aborted ? 'abort' : 'message';
+}
+
 export interface RecordUsageParams {
   user: string;
   conversationId: string;

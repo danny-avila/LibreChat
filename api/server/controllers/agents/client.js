@@ -26,6 +26,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  resolveRunUsageContext,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
@@ -5173,9 +5174,8 @@ class AgentClient extends BaseClient {
         /** The run owns its usage even when stopped: `/api/agents/chat/abort`
          *  only signals the abort, so nothing else records what was consumed.
          *  A stopped turn is labelled as such on its transactions. */
-        const wasAborted = abortController?.signal?.aborted === true;
         await this.recordCollectedUsage({
-          context: wasAborted ? 'abort' : 'message',
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
           balance: balanceConfig,
           transactions: transactionsConfig,
         });
@@ -5835,9 +5835,8 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted === true;
         await this.recordCollectedUsage({
-          context: wasAborted ? 'abort' : 'message',
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
           balance: balanceConfig,
           transactions: transactionsConfig,
         });
