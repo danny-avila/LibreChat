@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { getE2EUser } from '../../../setup/user';
 import {
@@ -10,7 +10,7 @@ import {
   withMongo,
 } from '../db';
 import type { SeedMessage } from '../db';
-import { messagesView } from '../helpers';
+import { messagesView, sendMessageAndWaitForCompletion } from '../helpers';
 
 const userEmail = getE2EUser().email;
 const ROOT_PARENT = '00000000-0000-0000-0000-000000000000';
@@ -78,52 +78,49 @@ function precedingTurns(label: string) {
   };
 }
 
-/**
- * A branch whose next model call returns nothing: the marker makes the mock
- * model answer with no content, which is the shape a summarizer takes when it
- * produces no checkpoint. Seeding cannot stand in for this — the point is what
- * a real compaction run persists when it has neither a summary nor an
- * explanation to carry.
- */
-async function seedEmptySummarizerBranch(label: string) {
-  const userMessageId = randomUUID();
-  const answerId = randomUUID();
-  const conversationId = await seedBranch([
-    {
-      messageId: userMessageId,
-      parentMessageId: ROOT_PARENT,
-      text: `E2E_EMPTY_REPLY:${label} tell me about ${label}`,
-      isCreatedByUser: true,
-      sender: 'User',
-    },
-    {
-      messageId: answerId,
-      parentMessageId: userMessageId,
-      text: `The long answer about ${label}`,
-      isCreatedByUser: false,
-      sender: 'OpenAI',
-    },
-  ]);
-  return { conversationId, answerId };
-}
+/** The summarizer the mock deployment's endpoints call. */
+const LABEL_SERVER = `http://127.0.0.1:${process.env.E2E_LABEL_PORT || '8889'}`;
 
-/** Runs Compact context from the context indicator and returns the turn it produced. */
-async function compactAndAwaitFailure(page: Page, conversationId: string, answerId: string) {
-  await page.goto(`/c/${conversationId}`);
-  await expect(messagesView(page).getByText('The long answer', { exact: false })).toBeVisible();
+/**
+ * A real conversation whose manual compaction produces nothing: the summarizer
+ * is switched to blank output for the compaction run, which is what a model
+ * returning no checkpoint looks like. Seeding cannot stand in for this — the
+ * point is what a compaction run records when it has neither a summary nor an
+ * explanation to carry, and only a real run reaches that path.
+ *
+ * Returns the conversation and the turn the compaction produced.
+ */
+async function compactWithEmptySummarizer(page: Page, request: APIRequestContext, label: string) {
+  await page.goto('/c/new');
+  await sendMessageAndWaitForCompletion(page, `tell me about ${label}`);
+  const conversationId = new URL(page.url()).pathname.replace('/c/', '');
+  expect(conversationId).not.toBe('new');
+
+  const behavior = await request.post(`${LABEL_SERVER}/__e2e/behavior`, {
+    data: { mode: 'blank' },
+  });
+  expect(behavior.ok()).toBeTruthy();
+
   await page.getByTestId('token-usage').click();
   await page.getByRole('button', { name: 'Compact context' }).click();
   await expect(
     messagesView(page).getByText('Could not compact the context', { exact: false }),
   ).toBeVisible({ timeout: 60_000 });
+
   const compactionId = await withMongo(async (db) => {
     const row = await db
       .collection('messages')
-      .findOne({ conversationId, parentMessageId: answerId, isCreatedByUser: false });
+      .findOne({ conversationId, 'content.type': 'error' });
     return row?.messageId as string | undefined;
   });
   expect(compactionId).toBeTruthy();
-  return compactionId as string;
+  return { conversationId, compactionId: compactionId as string };
+}
+
+/** The blank summarizer is global to the fixture server; restore it. */
+async function resetSummarizer(request: APIRequestContext) {
+  const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
+  expect(response.ok()).toBeTruthy();
 }
 
 test.describe('compaction rerun controls', () => {
@@ -272,11 +269,14 @@ test.describe('compaction rerun controls', () => {
      answer to the message it hangs off. */
   test('a compaction whose summarizer returns nothing offers no rerun controls @scenario:empty-compaction-run-offers-no-rerun-controls', async ({
     page,
+    request,
   }) => {
-    const { conversationId, answerId } = await seedEmptySummarizerBranch('empty-compaction');
+    const { conversationId, compactionId } = await compactWithEmptySummarizer(
+      page,
+      request,
+      'empty-compaction',
+    );
     try {
-      const compactionId = await compactAndAwaitFailure(page, conversationId, answerId);
-
       await page.locator(`[id="${compactionId}"]`).hover();
       await expect(page.locator(`[id="edit-${compactionId}"]`)).toHaveCount(0);
       await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
@@ -285,6 +285,7 @@ test.describe('compaction rerun controls', () => {
       await page.getByTestId('token-usage').click();
       await expect(page.getByRole('button', { name: 'Compact context' })).toBeEnabled();
     } finally {
+      await resetSummarizer(request);
       await cleanup(conversationId);
     }
   });
@@ -293,11 +294,14 @@ test.describe('compaction rerun controls', () => {
      the server persisted, so the marker has to survive the round trip. */
   test('a compaction that produced nothing stays free of rerun controls after a reload @scenario:empty-compaction-run-survives-reload-without-rerun-controls', async ({
     page,
+    request,
   }) => {
-    const { conversationId, answerId } = await seedEmptySummarizerBranch('reloaded-compaction');
+    const { conversationId, compactionId } = await compactWithEmptySummarizer(
+      page,
+      request,
+      'reloaded-compaction',
+    );
     try {
-      const compactionId = await compactAndAwaitFailure(page, conversationId, answerId);
-
       const row = await openRow(page, conversationId, compactionId);
 
       await expect(row.getByText('Could not compact the context', { exact: false })).toBeVisible();
@@ -305,6 +309,7 @@ test.describe('compaction rerun controls', () => {
       await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
       await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
     } finally {
+      await resetSummarizer(request);
       await cleanup(conversationId);
     }
   });
