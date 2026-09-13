@@ -2,13 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Check, Info, Minus, Search } from 'lucide-react';
-import {
-  Button,
-  Input,
-  MultiSelect,
-  Spinner,
-  TooltipAnchor,
-} from '@librechat/client';
+import { Button, Input, MultiSelect, Spinner, TooltipAnchor } from '@librechat/client';
 import {
   INSIGHTS_MAX_RANGE_DAYS,
   INSIGHTS_SEARCH_MAX_LENGTH,
