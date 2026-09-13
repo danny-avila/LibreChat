@@ -55,6 +55,12 @@ export interface BalanceReservationRequest {
   initialBalance?: IBalanceUpdate;
 }
 
+export interface BalanceReservationRenewal {
+  user: string;
+  reservationId: string;
+  expiresAt: Date;
+}
+
 export interface BalanceReservationRelease {
   user: string;
   reservationId: string;

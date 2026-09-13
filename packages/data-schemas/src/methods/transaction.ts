@@ -2,6 +2,7 @@ import { getRefillEligibilityDate } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
   BalanceReservationRequest,
+  BalanceReservationRenewal,
   BalanceReservationRelease,
   BalanceReservationResult,
   IBalancePendingRefill,
@@ -111,6 +112,7 @@ export function createTransactionMethods(
   deleteBalances: (filter: FilterQuery<IBalance>) => Promise<import('mongodb').DeleteResult>;
   createTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
   reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
+  renewBalanceReservation: (params: BalanceReservationRenewal) => Promise<void>;
   releaseBalanceReservation: (params: BalanceReservationRelease) => Promise<void>;
   createStructuredTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
 } {
@@ -393,16 +395,26 @@ export function createTransactionMethods(
     return true;
   }
 
-  /** Removes reservations and their credits from the running total, each in one atomic write. */
+  /**
+   * Removes reservations and their credits from the running total, each in one atomic write.
+   * With `expiredBy`, a reservation is removed only while it is still expired at that instant, so a
+   * reservation renewed after it was read survives.
+   */
   async function removeReservations(
     filter: FilterQuery<IBalance>,
     reservations: Array<Pick<IBalanceReservation, 'id' | 'amount'>>,
+    expiredBy?: Date,
   ): Promise<void> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     await Promise.all(
       reservations.map(({ id, amount }) =>
         Balance.updateOne(
-          { ...filter, reservations: { $elemMatch: { id, amount } } },
+          {
+            ...filter,
+            reservations: {
+              $elemMatch: { id, amount, ...(expiredBy ? { expiresAt: { $lte: expiredBy } } : {}) },
+            },
+          },
           { $pull: { reservations: { id } }, $inc: { reservedCredits: -amount } },
         ),
       ),
@@ -495,7 +507,7 @@ export function createTransactionMethods(
         (reservation) => reservation.expiresAt <= now,
       );
       if (expired.length > 0) {
-        await removeReservations({ _id: record._id }, expired);
+        await removeReservations({ _id: record._id }, expired, now);
         continue;
       }
 
@@ -537,6 +549,20 @@ export function createTransactionMethods(
     }
 
     throw new Error(`Balance reservation for user ${user} exceeded its retry bound.`);
+  }
+
+  /** Extends an in-flight reservation's expiry; a reservation already released or pruned stays gone. */
+  async function renewBalanceReservation({
+    user,
+    reservationId,
+    expiresAt,
+  }: BalanceReservationRenewal): Promise<void> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    await Balance.updateOne(
+      { user, 'reservations.id': reservationId },
+      { $set: { 'reservations.$[held].expiresAt': expiresAt } },
+      { arrayFilters: [{ 'held.id': reservationId }] },
+    );
   }
 
   /** Releases an in-flight reservation; releasing an unknown or already pruned id is a no-op. */
@@ -716,6 +742,7 @@ export function createTransactionMethods(
     deleteBalances,
     createTransaction,
     reserveBalance,
+    renewBalanceReservation,
     releaseBalanceReservation,
     createStructuredTransaction,
   };

@@ -1004,6 +1004,7 @@ class BaseClient {
             logViolation,
             getMultiplier: db.getMultiplier,
             reserveBalance: db.reserveBalance,
+            renewBalanceReservation: db.renewBalanceReservation,
             releaseBalanceReservation: db.releaseBalanceReservation,
             balanceConfig,
           },

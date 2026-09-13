@@ -46,6 +46,7 @@ const {
   getMultiplier,
   getTransactions,
   reserveBalance,
+  renewBalanceReservation,
   releaseBalanceReservation,
   getFiles,
 } = require('~/models');
@@ -190,6 +191,7 @@ const chatV2 = async (req, res) => {
         {
           getMultiplier,
           reserveBalance,
+          renewBalanceReservation,
           releaseBalanceReservation,
           logViolation,
           balanceConfig,

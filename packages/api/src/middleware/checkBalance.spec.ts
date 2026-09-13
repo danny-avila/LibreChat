@@ -20,6 +20,7 @@ jest.mock('@librechat/data-schemas', () => ({
 describe('checkBalance', () => {
   const createMockDeps = (overrides: Partial<CheckBalanceDeps> = {}): CheckBalanceDeps => ({
     reserveBalance: jest.fn().mockResolvedValue({ reserved: true, balance: 1000 }),
+    renewBalanceReservation: jest.fn().mockResolvedValue(undefined),
     releaseBalanceReservation: jest.fn().mockResolvedValue(undefined),
     getMultiplier: jest.fn().mockReturnValue(1),
     logViolation: jest.fn().mockResolvedValue(undefined),
@@ -149,6 +150,50 @@ describe('checkBalance', () => {
       }
 
       expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('reservation renewal', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('renews a held reservation every half TTL until it is released', async () => {
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 10_000 } });
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+      const { reservationId } = reserveRequest(deps);
+
+      jest.advanceTimersByTime(5_000);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledWith({
+        user: 'user-1',
+        reservationId,
+        expiresAt: new Date(Date.now() + 10_000),
+      });
+      jest.advanceTimersByTime(5_000);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+
+      await reservation.release();
+      jest.advanceTimersByTime(50_000);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not renew a zero-cost admission, which holds nothing', async () => {
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 10_000 } });
+
+      const reservation = await checkBalance(
+        { req, res, txData: { ...baseTxData, amount: 0 } },
+        deps,
+      );
+      jest.advanceTimersByTime(50_000);
+
+      expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
+      await reservation.release();
     });
   });
 
@@ -317,6 +362,7 @@ describe('checkBalance', () => {
     const realDeps = (balanceConfig?: BalanceConfig): CheckBalanceDeps => ({
       getMultiplier: () => 1,
       reserveBalance: methods.reserveBalance,
+      renewBalanceReservation: methods.renewBalanceReservation,
       releaseBalanceReservation: methods.releaseBalanceReservation,
       logViolation: jest.fn().mockResolvedValue(undefined),
       balanceConfig,

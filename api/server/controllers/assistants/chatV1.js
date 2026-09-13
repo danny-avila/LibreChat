@@ -49,6 +49,7 @@ const { sendResponse } = require('~/server/middleware/error');
 const setHeaders = require('~/server/middleware/setHeaders');
 const {
   releaseBalanceReservation,
+  renewBalanceReservation,
   getTransactions,
   reserveBalance,
   getMultiplier,
@@ -319,6 +320,7 @@ const chatV1 = async (req, res) => {
         {
           getMultiplier,
           reserveBalance,
+          renewBalanceReservation,
           releaseBalanceReservation,
           logViolation,
           balanceConfig,

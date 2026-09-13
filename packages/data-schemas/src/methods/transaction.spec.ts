@@ -26,6 +26,7 @@ let createStructuredTransaction: ReturnType<
   typeof createTransactionMethods
 >['createStructuredTransaction'];
 let reserveBalance: ReturnType<typeof createTransactionMethods>['reserveBalance'];
+let renewBalanceReservation: ReturnType<typeof createTransactionMethods>['renewBalanceReservation'];
 let releaseBalanceReservation: ReturnType<
   typeof createTransactionMethods
 >['releaseBalanceReservation'];
@@ -58,6 +59,7 @@ beforeAll(async () => {
   createTransaction = transactionMethods.createTransaction;
   createStructuredTransaction = transactionMethods.createStructuredTransaction;
   reserveBalance = transactionMethods.reserveBalance;
+  renewBalanceReservation = transactionMethods.renewBalanceReservation;
   releaseBalanceReservation = transactionMethods.releaseBalanceReservation;
   findBalanceByUser = transactionMethods.findBalanceByUser;
   upsertBalanceFields = transactionMethods.upsertBalanceFields;
@@ -1318,6 +1320,62 @@ describe('Balance Reservations', () => {
     const stored = await readState(user);
     expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([reservationId]);
     expect(stored?.reservedCredits).toBe(600);
+  });
+
+  test('renews a live reservation and never resurrects a released one', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    const liveId = newId();
+    const releasedId = newId();
+    await reserve(user.toString(), 300, liveId);
+    await reserve(user.toString(), 200, releasedId);
+    await releaseBalanceReservation({
+      user: user.toString(),
+      reservationId: releasedId,
+      amount: 200,
+    });
+
+    const renewedUntil = new Date(Date.now() + 3_600_000);
+    await renewBalanceReservation({
+      user: user.toString(),
+      reservationId: liveId,
+      expiresAt: renewedUntil,
+    });
+    await renewBalanceReservation({
+      user: user.toString(),
+      reservationId: releasedId,
+      expiresAt: renewedUntil,
+    });
+
+    const stored = await readState(user);
+    expect(stored?.reservations).toEqual([{ id: liveId, amount: 300, expiresAt: renewedUntil }]);
+    expect(stored?.reservedCredits).toBe(300);
+  });
+
+  test('keeps a reservation that was renewed after a pruning read saw it expired', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({
+      user,
+      tokenCredits: 1000,
+      reservedCredits: 900,
+      reservations: [{ id: 'renewed', amount: 900, expiresAt: new Date(Date.now() - 1000) }],
+    });
+
+    interleaveBeforeNextWrite(() =>
+      renewBalanceReservation({
+        user: user.toString(),
+        reservationId: 'renewed',
+        expiresAt: inFuture(),
+      }),
+    );
+
+    await expect(reserve(user.toString(), 600)).resolves.toEqual({
+      reserved: false,
+      balance: 100,
+    });
+    const stored = await readState(user);
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual(['renewed']);
+    expect(stored?.reservedCredits).toBe(900);
   });
 
   test('admits a zero-cost request without storing a reservation', async () => {

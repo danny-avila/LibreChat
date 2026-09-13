@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
 import type {
   BalanceReservationRequest,
+  BalanceReservationRenewal,
   BalanceReservationRelease,
   BalanceReservationResult,
   IBalanceUpdate,
@@ -25,6 +26,7 @@ interface TxData {
 export interface CheckBalanceDeps {
   getMultiplier: (params: Record<string, unknown>) => number;
   reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
+  renewBalanceReservation: (params: BalanceReservationRenewal) => Promise<void>;
   releaseBalanceReservation: (params: BalanceReservationRelease) => Promise<void>;
   logViolation: (
     req: unknown,
@@ -37,9 +39,12 @@ export interface CheckBalanceDeps {
   balanceConfig?: BalanceConfig;
 }
 
-/** Credits held for an admitted request until its usage has been recorded. */
+/**
+ * Credits held for an admitted request until its usage has been recorded. The reservation is
+ * renewed every half TTL until released, so only a reservation whose process stopped expires.
+ */
 export interface BalanceReservation {
-  /** Idempotent; a failed release is logged and left to expire. */
+  /** Idempotent; stops renewal. A failed release is logged and left to expire. */
   release: () => Promise<void>;
 }
 
@@ -142,6 +147,7 @@ export async function checkBalance(
   });
   const tokenCost = amount * multiplier;
   const reservationId = randomUUID();
+  const ttlMs = getReservationTtlMs(deps.balanceConfig);
 
   logger.debug('[Balance.check] Reserving token cost', {
     user,
@@ -159,14 +165,33 @@ export async function checkBalance(
     user,
     reservationId,
     amount: tokenCost,
-    expiresAt: new Date(Date.now() + getReservationTtlMs(deps.balanceConfig)),
+    expiresAt: new Date(Date.now() + ttlMs),
     initialBalance: buildInitialBalance(user, deps.balanceConfig),
   });
 
   if (result?.reserved) {
+    const renewal =
+      tokenCost > 0
+        ? setInterval(() => {
+            deps
+              .renewBalanceReservation({
+                user,
+                reservationId,
+                expiresAt: new Date(Date.now() + ttlMs),
+              })
+              .catch((error) => {
+                logger.error('[Balance.check] Failed to renew balance reservation', {
+                  user,
+                  error,
+                });
+              });
+          }, ttlMs / 2)
+        : undefined;
+    renewal?.unref();
     let released: Promise<void> | undefined;
     return {
       release: () => {
+        clearInterval(renewal);
         released ??= deps
           .releaseBalanceReservation({ user, reservationId, amount: tokenCost })
           .catch((error) => {

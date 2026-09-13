@@ -50,6 +50,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
   getMultiplier: jest.fn(),
   reserveBalance: jest.fn(),
+  renewBalanceReservation: jest.fn(),
   releaseBalanceReservation: jest.fn(),
 }));
 
