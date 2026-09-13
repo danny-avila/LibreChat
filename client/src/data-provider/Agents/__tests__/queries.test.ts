@@ -105,6 +105,56 @@ describe('useListAgentsQuery', () => {
     expect(result.current.data?.has_more).toBe(false);
   });
 });
+describe('marketplace cursor recovery', () => {
+  const marketplace = jest.mocked(dataService.getMarketplaceAgents);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('restarts from page one after a cursor ordering mismatch instead of appending it', async () => {
+    const mismatch = Object.assign(new Error('Cursor ordering mismatch'), {
+      response: {
+        status: 409,
+        data: { error: 'cursor_ordering_mismatch' },
+      },
+    });
+    marketplace
+      .mockResolvedValueOnce(page(['a'], 'foreign-order'))
+      .mockRejectedValueOnce(mismatch)
+      .mockResolvedValueOnce(page(['b'], null));
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+      logger: { log: console.log, warn: console.warn, error: () => {} },
+    });
+    const { result } = renderHook(
+      () =>
+        useMarketplaceAgentsInfiniteQuery({
+          requiredPermission: PermissionBits.VIEW,
+          sort: 'popular',
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.data?.pages[0].data.map((agent) => agent.id)).toEqual(['a']),
+    );
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+
+    await waitFor(() => {
+      expect(marketplace).toHaveBeenCalledTimes(3);
+      expect(result.current.data?.pages).toHaveLength(1);
+      expect(result.current.data?.pages[0].data.map((agent) => agent.id)).toEqual(['b']);
+      expect(result.current.error).toBeNull();
+    });
+    expect(marketplace.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ cursor: 'foreign-order', sort: 'popular' }),
+    );
+    expect(marketplace.mock.calls[2][0]).not.toHaveProperty('cursor');
+  });
+});
 
 describe('marketplace popularity cache', () => {
   const marketplace = jest.mocked(dataService.getMarketplaceAgents);

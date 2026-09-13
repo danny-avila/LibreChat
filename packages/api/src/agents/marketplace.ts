@@ -60,3 +60,24 @@ export function marketplaceMineFilter(
 ): { author?: string } {
   return selection.mineOnly ? { author: callerId } : {};
 }
+
+export interface MarketplaceListErrorResponse {
+  status: 409;
+  body: { error: 'cursor_ordering_mismatch' };
+}
+
+export const AGENT_SORT_CURSOR_ERROR_CODE = 'AGENT_SORT_CURSOR_INVALID';
+
+/**
+ * Maps the database cursor contract failure to the marketplace HTTP response. Keeping
+ * this translation here leaves the legacy CJS controller as route wiring only.
+ */
+export function mapMarketplaceListError(error: unknown): MarketplaceListErrorResponse | undefined {
+  const code =
+    error instanceof Error && 'code' in error
+      ? (error as Error & { code?: unknown }).code
+      : undefined;
+  return code === AGENT_SORT_CURSOR_ERROR_CODE
+    ? { status: 409, body: { error: 'cursor_ordering_mismatch' } }
+    : undefined;
+}

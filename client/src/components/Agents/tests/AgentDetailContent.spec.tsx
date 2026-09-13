@@ -36,6 +36,7 @@ jest.mock('~/hooks', () => ({
       com_agents_details_hint: 'Explore this agent and choose how to start your conversation.',
       com_agents_link_copied: 'Link copied',
       com_agents_link_copy_failed: 'Link copy failed',
+      com_agents_not_available: 'Agent not available',
       com_agents_starters_heading: 'Try a conversation starter',
       com_agents_starters_hint:
         'Choose a prompt to open a new chat. You can edit it before sending.',
@@ -87,13 +88,14 @@ const LocationProbe = () => {
     </output>
   );
 };
-
 const DetailDialog = ({
   agent = baseAgent,
   morph,
+  actionsUnavailable = false,
 }: {
   agent?: t.Agent;
   morph?: 'open' | 'closing';
+  actionsUnavailable?: boolean;
 }) => {
   const [open, setOpen] = React.useState(true);
   /* Stands in for the grid card the dialog morphs out of: the copy the words
@@ -110,13 +112,19 @@ const DetailDialog = ({
           agent={agent}
           morph={morph}
           descriptionSource={morph == null ? undefined : () => cardDescription.current}
+          actionsUnavailable={actionsUnavailable}
         />
       )}
     </OGDialog>
   );
 };
 
-const renderDetail = (agent = baseAgent, basename = '/app', morph?: 'open' | 'closing') => {
+const renderDetail = (
+  agent = baseAgent,
+  basename = '/app',
+  morph?: 'open' | 'closing',
+  actionsUnavailable = false,
+) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -135,7 +143,7 @@ const renderDetail = (agent = baseAgent, basename = '/app', morph?: 'open' | 'cl
       >
         <QueryClientProvider client={queryClient}>
           <MarketplaceHostContext.Provider value={host}>
-            <DetailDialog agent={agent} morph={phase} />
+            <DetailDialog agent={agent} morph={phase} actionsUnavailable={actionsUnavailable} />
           </MarketplaceHostContext.Provider>
           <LocationProbe />
         </QueryClientProvider>
@@ -337,6 +345,14 @@ describe('AgentDetailContent', () => {
     renderDetail();
     expect(screen.getByRole('button', { name: 'Unpin' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Unpin' })).toHaveAttribute('aria-busy', 'true');
+  });
+  it('keeps the captured dialog open but removes actions for an inaccessible agent', () => {
+    renderDetail(baseAgent, '/app', undefined, true);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Agent not available');
+    expect(screen.queryByRole('button', { name: 'Pin' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start chat' })).not.toBeInTheDocument();
   });
   it('dismisses with the localized close control and restores opener focus', async () => {
     const user = userEvent.setup();

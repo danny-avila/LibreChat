@@ -2,10 +2,12 @@ import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Agent, AgentAvatar } from 'librechat-data-provider';
 
-const MAX_AVATAR_REFRESH_AGENTS = 1000;
-const AVATAR_REFRESH_BATCH_SIZE = 20;
+const MAX_AVATAR_REFRESH_AGENTS: number = 1000;
+const AVATAR_REFRESH_BATCH_SIZE: number = 20;
+/** Maximum number of per-agent coverage deadlines retained for one user. */
+const MAX_AVATAR_REFRESH_COVERAGE_IDS: number = MAX_AVATAR_REFRESH_AGENTS;
 
-export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE };
+export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE, MAX_AVATAR_REFRESH_COVERAGE_IDS };
 
 /**
  * Selects the agents whose S3 avatar URLs should be refreshed for one list response.
@@ -30,20 +32,51 @@ export const selectAvatarRefreshAgents = (
 
 export type AvatarRefreshCacheEntry = {
   urlCache: Record<string, string>;
-  coveredIds: string[];
+  /** Maps each covered agent ID to the absolute time at which its coverage expires. */
+  coveredIds: Record<string, number>;
 };
 
-export const getAvatarRefreshCoveredIds = (entry: unknown): string[] => {
+type LegacyAvatarRefreshCacheEntry = {
+  urlCache?: Record<string, string>;
+  coveredIds?: string[] | Record<string, number>;
+};
+
+const getAvatarRefreshCoverage = (
+  entry: unknown,
+  now: number,
+  coverageTtl: number,
+): Record<string, number> => {
   if (!entry || typeof entry !== 'object') {
-    return [];
+    return {};
   }
 
-  const cacheEntry = entry as Partial<AvatarRefreshCacheEntry>;
-  if (Array.isArray(cacheEntry.coveredIds)) {
-    return cacheEntry.coveredIds;
+  const cacheEntry = entry as LegacyAvatarRefreshCacheEntry;
+  const coveredIds = cacheEntry.coveredIds;
+  if (coveredIds && !Array.isArray(coveredIds) && typeof coveredIds === 'object') {
+    return Object.fromEntries(
+      Object.entries(coveredIds).filter(
+        ([, expiresAt]) => Number.isFinite(expiresAt) && expiresAt > now,
+      ),
+    );
   }
 
-  return Object.keys(cacheEntry.urlCache ?? {});
+  const legacyIds = Array.isArray(coveredIds) ? coveredIds : Object.keys(cacheEntry.urlCache ?? {});
+  const expiresAt = now + Math.max(0, coverageTtl);
+  return Object.fromEntries(
+    legacyIds.filter((id) => typeof id === 'string').map((id) => [id, expiresAt]),
+  );
+};
+
+export const getAvatarRefreshCoveredIds = (entry: unknown, now: number = Date.now()): string[] =>
+  Object.keys(getAvatarRefreshCoverage(entry, now, 0));
+
+const getAvatarRefreshCacheTtl = (
+  entry: AvatarRefreshCacheEntry,
+  now: number,
+  fallbackTtl: number,
+): number => {
+  const furthestExpiry = Math.max(...Object.values(entry.coveredIds), now);
+  return Math.max(1, furthestExpiry - now || fallbackTtl);
 };
 
 export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
@@ -100,18 +133,27 @@ export const resolveAvatarRefresh = async ({
   refreshS3Url,
   updateAgent,
 }: ResolveAvatarRefreshParams): Promise<AvatarRefreshCacheEntry | null> => {
+  const now = Date.now();
   const isValidCachedRefresh =
     cachedRefreshEntry != null &&
     typeof cachedRefreshEntry === 'object' &&
     (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache != null;
-  const cachedCoveredIds = getAvatarRefreshCoveredIds(cachedRefreshEntry);
+  const cachedCoverage = getAvatarRefreshCoverage(cachedRefreshEntry, now, cacheTtl);
+  const cachedCoveredIds = Object.keys(cachedCoverage);
   const refreshAgents = selectAvatarRefreshAgents(agents, cachedCoveredIds);
 
   if (!refreshAgents.length && isValidCachedRefresh) {
     logger.debug(
       '[resolveAvatarRefresh] S3 avatar refresh already checked for this page, skipping',
     );
-    return cachedRefreshEntry as AvatarRefreshCacheEntry;
+    return {
+      urlCache: Object.fromEntries(
+        Object.entries(
+          (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache ?? {},
+        ).filter(([id]) => cachedCoverage[id] != null),
+      ),
+      coveredIds: cachedCoverage,
+    };
   }
 
   try {
@@ -121,30 +163,58 @@ export const resolveAvatarRefresh = async ({
       refreshS3Url,
       updateAgent,
     });
-    const refreshEntry = mergeAvatarRefreshCacheEntry(cachedRefreshEntry, {
-      urlCache,
-      coveredIds,
-    });
-    await cache.set(refreshKey, refreshEntry, cacheTtl);
+    const refreshEntry = mergeAvatarRefreshCacheEntry(
+      cachedRefreshEntry,
+      { urlCache, coveredIds },
+      cacheTtl,
+    );
+    const refreshedAt = Date.now();
+    await cache.set(
+      refreshKey,
+      refreshEntry,
+      getAvatarRefreshCacheTtl(refreshEntry, refreshedAt, cacheTtl),
+    );
     return refreshEntry;
   } catch (err) {
     logger.error('[resolveAvatarRefresh] Error refreshing avatars for list page: %o', err);
     return null;
   }
 };
+
 export const mergeAvatarRefreshCacheEntry = (
   previous: unknown,
   stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'>,
+  coverageTtl: number = 30 * 60 * 1000,
+  now: number = Date.now(),
 ): AvatarRefreshCacheEntry => {
   const previousEntry =
     previous && typeof previous === 'object'
       ? (previous as Partial<AvatarRefreshCacheEntry>)
       : undefined;
-  const coveredIds = getAvatarRefreshCoveredIds(previous);
-  return {
-    urlCache: { ...(previousEntry?.urlCache ?? {}), ...stats.urlCache },
-    coveredIds: [...new Set([...coveredIds, ...stats.coveredIds])],
-  };
+  const coverage = getAvatarRefreshCoverage(previous, now, coverageTtl);
+  const expiresAt = now + Math.max(0, coverageTtl);
+  for (const id of stats.coveredIds) {
+    delete coverage[id];
+    coverage[id] = expiresAt;
+  }
+  // Expired entries are removed first; when full, retain the furthest deadlines.
+
+  const retainedCoverage = Object.entries(coverage)
+    .filter(([, deadline]) => deadline > now)
+    .sort(([, firstDeadline], [, secondDeadline]) => firstDeadline - secondDeadline)
+    .slice(-MAX_AVATAR_REFRESH_COVERAGE_IDS);
+  const coveredIds = Object.fromEntries(retainedCoverage);
+  const retainedIds = new Set(Object.keys(coveredIds));
+  const urlCache = Object.fromEntries(
+    Object.entries(previousEntry?.urlCache ?? {}).filter(([id]) => retainedIds.has(id)),
+  );
+  for (const [id, url] of Object.entries(stats.urlCache)) {
+    if (retainedIds.has(id)) {
+      urlCache[id] = url;
+    }
+  }
+
+  return { urlCache, coveredIds };
 };
 
 /**

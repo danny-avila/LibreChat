@@ -15,6 +15,13 @@ jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/agents'),
   cn: (...classes: Array<string | false | undefined | null>) => classes.filter(Boolean).join(' '),
 }));
+jest.mock('~/data-provider/Agents', () => ({
+  useGetAgentByIdQuery: jest.fn(() => ({
+    error: null,
+    isFetching: false,
+    refetch: jest.fn(),
+  })),
+}));
 jest.mock('../AgentDetailContent', () => {
   const { OGDialogContent, OGDialogTitle, OGDialogClose } = jest.requireActual('@librechat/client');
   const close = 'Close preview';

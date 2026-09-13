@@ -202,13 +202,15 @@ describe('AgentGrid pagination', () => {
       .mockRejectedValueOnce(new Error('Cursor page unavailable'));
     renderGrid();
     await screen.findByRole('button', { name: 'Agent 0' });
-
+    const firstRow = screen.getAllByRole('listitem')[0];
     const frame = screen.getByTestId('viewport');
     act(() => {
       frame.scrollTop = frame.scrollHeight - frame.clientHeight;
       fireEvent.scroll(frame);
     });
+    const rowTopBeforeFailure = firstRow.getBoundingClientRect().top;
     await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(firstRow.getBoundingClientRect().top).toBe(rowTopBeforeFailure);
 
     await user.tab();
     expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus();

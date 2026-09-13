@@ -47,12 +47,16 @@ interface AgentDetailContentProps {
   surfaceRadius?: number;
   /**
    * Looks up the description paragraph of the card an agent is shown on,
-   * supplied with `morph`. The dialog's copy starts from that wrapping and
-   * re-wraps into this one word by word, instead of the card's three clamped
-   * lines being swapped for all of it. A lookup rather than a ref: it is read
-   * while the morph runs, after the grid has long since mounted the card.
+   * allowing the dialog to hand the words back to the card as it closes.
    */
   descriptionSource?: (agentId: string) => HTMLElement | null;
+  /**
+   * True only after the per-agent access check returns 403/404. The selected snapshot
+   * remains mounted for focus and dismissal, but controls that would act on it disappear.
+   */
+  actionsUnavailable?: boolean;
+  /** Keep controls inert while the per-agent access check is still in flight. */
+  actionsDisabled?: boolean;
 }
 
 const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
@@ -60,6 +64,8 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
   morph,
   surfaceRadius,
   descriptionSource,
+  actionsUnavailable = false,
+  actionsDisabled = false,
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -286,7 +292,13 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
             </OGDialogDescription>
           </OGDialogHeader>
 
-          {conversationStarters.length > 0 && (
+          {actionsUnavailable && (
+            <p className="mt-8 text-sm text-text-secondary" role="status">
+              {localize('com_agents_not_available')}
+            </p>
+          )}
+
+          {!actionsUnavailable && !actionsDisabled && conversationStarters.length > 0 && (
             <motion.section {...detail} className="mt-8" aria-labelledby={`${id}-starters`}>
               <h3 id={`${id}-starters`} className="text-sm font-semibold text-text-primary">
                 {localize('com_agents_starters_heading')}
@@ -325,34 +337,36 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                 <AgentContact agent={agent} compact className="text-sm" />
               </motion.div>
             )}
-            <motion.div
-              {...detail}
-              className="grid gap-2 sm:ms-auto sm:flex sm:items-center sm:gap-2"
-            >
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
-                <Button
-                  variant="outline"
-                  aria-label={favoriteLabel}
-                  aria-pressed={isFavorite}
-                  aria-busy={isUpdating}
-                  disabled={isUpdating}
-                  onClick={() => toggleFavoriteAgent(agent.id)}
-                  className="min-w-0 px-3"
-                >
-                  {isUpdating ? (
-                    <Spinner className="size-4 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <FavoriteIcon className="size-4 shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="truncate">{favoriteLabel}</span>
+            {!actionsUnavailable && !actionsDisabled && (
+              <motion.div
+                {...detail}
+                className="grid gap-2 sm:ms-auto sm:flex sm:items-center sm:gap-2"
+              >
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                  <Button
+                    variant="outline"
+                    aria-label={favoriteLabel}
+                    aria-pressed={isFavorite}
+                    aria-busy={isUpdating}
+                    disabled={isUpdating}
+                    onClick={() => toggleFavoriteAgent(agent.id)}
+                    className="min-w-0 px-3"
+                  >
+                    {isUpdating ? (
+                      <Spinner className="size-4 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <FavoriteIcon className="size-4 shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="truncate">{favoriteLabel}</span>
+                  </Button>
+                  <CopyLink url={shareUrl} />
+                </div>
+                <Button className="w-full sm:w-auto" onClick={() => handleStartChat()}>
+                  <MessageSquarePlus className="size-4" aria-hidden="true" />
+                  {localize('com_agents_start_chat')}
                 </Button>
-                <CopyLink url={shareUrl} />
-              </div>
-              <Button className="w-full sm:w-auto" onClick={() => handleStartChat()}>
-                <MessageSquarePlus className="size-4" aria-hidden="true" />
-                {localize('com_agents_start_chat')}
-              </Button>
-            </motion.div>
+              </motion.div>
+            )}
           </div>
         </motion.div>
       </motion.div>
