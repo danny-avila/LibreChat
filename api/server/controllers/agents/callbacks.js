@@ -31,6 +31,7 @@ const {
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
   captureSubagentIdentity,
+  getAttachmentOwnership,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -39,15 +40,6 @@ const { saveBase64Image } = require('~/server/services/Files/process');
 
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
-}
-
-function getAttachmentOwnership(metadata) {
-  const agentId = metadata?.executingAgentId ?? metadata?.agentId ?? metadata?.agent_id;
-  const stepId = metadata?.stepId;
-  return {
-    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
-    ...(typeof stepId === 'string' && stepId.length > 0 ? { stepId } : {}),
-  };
 }
 
 function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
@@ -992,6 +984,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.ui_resources,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
@@ -1359,6 +1352,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           const attachment = {
             type: Tools.ui_resources,
             toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
             [Tools.ui_resources]: output.artifact[Tools.ui_resources].data,
           };
           // For Responses API, always emit attachment during streaming

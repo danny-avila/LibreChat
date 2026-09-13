@@ -15,12 +15,15 @@ const serverPath = path.resolve(
 const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
 const mcpOAuthServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-oauth-server.js');
 const dynamicMcpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-dynamic-network-server.js');
+const mcpAppServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-app-server.mjs');
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
 /** Must match the protected OAuth MCP fixture in e2e/config/librechat.e2e.yaml. */
 const MCP_OAUTH_PORT = process.env.E2E_MCP_OAUTH_PORT || '8767';
 /** Must match the dynamic Streamable HTTP and SSE URLs in the e2e config template. */
 const MCP_DYNAMIC_PORT = process.env.E2E_MCP_DYNAMIC_PORT || '8766';
+/** Used only by the dedicated MCP Apps browser profile. */
+const MCP_APP_PORT = process.env.E2E_MCP_APP_PORT || '8768';
 const MCP_STATE_PATH =
   process.env.E2E_MCP_STATE_PATH ||
   path.resolve(rootPath, 'e2e/specs/.test-results/mcp-tool-state.json');
@@ -103,6 +106,29 @@ const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
 const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
 const enableDynamicMcp = process.env.E2E_MCP_LIST_CHANGED === 'true';
+const enableMcpApps = process.env.E2E_MCP_APPS === 'true';
+const mcpAppsPolicy = process.env.E2E_MCP_APPS_POLICY;
+if (mcpAppsPolicy && !['true', 'false', 'omitted'].includes(mcpAppsPolicy)) {
+  throw new Error(`E2E_MCP_APPS_POLICY must be true, false, or omitted; got ${mcpAppsPolicy}`);
+}
+
+function positiveIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer; got ${raw}`);
+  }
+  return value;
+}
+
+const mcpAppResourceLimit = positiveIntegerEnv('E2E_MCP_APP_RESOURCE_LIMIT');
+const mcpAppToolCallLimit = positiveIntegerEnv('E2E_MCP_APP_TOOL_CALL_LIMIT');
+if ((mcpAppResourceLimit == null) !== (mcpAppToolCallLimit == null)) {
+  throw new Error('MCP App resource and tool-call fixture limits must be supplied together');
+}
 
 const baseURL = getE2EBaseURL();
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
@@ -149,6 +175,13 @@ const baseEnv = {
       }
     : {}),
   ...(enableDynamicMcp ? { E2E_MCP_LIST_CHANGED: 'true', E2E_MCP_STATE_PATH: MCP_STATE_PATH } : {}),
+  ...(enableMcpApps
+    ? {
+        E2E_MCP_APPS: 'true',
+        MCP_SANDBOX_FRAME_ANCESTORS:
+          process.env.MCP_SANDBOX_FRAME_ANCESTORS ?? 'http://127.0.0.1:3080',
+      }
+    : {}),
   /** The Assistants runtime uses the OpenAI SDK directly, outside the agents run hook. */
   ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
   ASSISTANTS_BASE_URL: `http://127.0.0.1:${ASSISTANTS_PORT}/v1`,
@@ -210,6 +243,32 @@ function writeRuntimeMockConfig() {
         ].join('\n'),
       }
     : { allowedDomain: '', stdioEnv: '', networkServers: '' };
+  const mcpAppsConfig = enableMcpApps
+    ? {
+        setting:
+          mcpAppsPolicy === 'omitted'
+            ? ''
+            : `apps: ${mcpAppsPolicy === 'false' ? 'false' : 'true'}`,
+        allowedDomain: `- http://127.0.0.1:${MCP_APP_PORT}`,
+        server: [
+          'e2e-app:',
+          '  type: streamable-http',
+          `  url: http://127.0.0.1:${MCP_APP_PORT}/mcp`,
+          '  title: E2E MCP App',
+          '  description: Official-SDK MCP App fixture for browser integration tests.',
+          '  timeout: 30000',
+        ].join('\n  '),
+      }
+    : { setting: '', allowedDomain: '', server: '' };
+  const mcpAppsRateLimits =
+    mcpAppResourceLimit != null && mcpAppToolCallLimit != null
+      ? [
+          'rateLimits:',
+          '  mcpApps:',
+          `    resourcesPerMinute: ${mcpAppResourceLimit}`,
+          `    toolCallsPerMinute: ${mcpAppToolCallLimit}`,
+        ].join('\n')
+      : '';
   const recordProviderBlock = modelFixtureRecording
     ? [
         `- name: 'Replay Record Provider'`,
@@ -233,7 +292,11 @@ function writeRuntimeMockConfig() {
     )
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
-    .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
+    .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers)
+    .replace('# __E2E_MCP_APPS_SETTING__', mcpAppsConfig.setting)
+    .replace('# __E2E_MCP_APPS_ALLOWED_DOMAIN__', mcpAppsConfig.allowedDomain)
+    .replace('# __E2E_MCP_APPS_SERVER__', mcpAppsConfig.server)
+    .replace('# __E2E_MCP_APP_RATE_LIMITS__', mcpAppsRateLimits);
   const codeBridgeURL = process.env.E2E_CODE_BRIDGE_URL;
   const codeBridgePairing = process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
     ? [
@@ -395,6 +458,19 @@ export default defineConfig({
               E2E_MCP_STATE_PATH: MCP_STATE_PATH,
             },
             url: `http://127.0.0.1:${MCP_DYNAMIC_PORT}/`,
+            stdout: 'pipe' as const,
+            timeout: 60_000,
+            reuseExistingServer: false,
+          },
+        ]
+      : []),
+    ...(enableMcpApps
+      ? [
+          {
+            command: `node ${mcpAppServerPath}`,
+            cwd: rootPath,
+            env: { ...process.env, E2E_MCP_APP_PORT: MCP_APP_PORT },
+            url: `http://127.0.0.1:${MCP_APP_PORT}/`,
             stdout: 'pipe' as const,
             timeout: 60_000,
             reuseExistingServer: false,

@@ -2,7 +2,9 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes, Tools } from 'librechat-data-provider';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import type { EventSubmission, TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
+import useAttachments from '~/hooks/Messages/useAttachments';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
@@ -31,6 +33,25 @@ jest.mock('~/hooks/MCP', () => {
     useMCPServerNames: () => mcpServerNames,
   };
 });
+
+jest.mock('~/components/MCPUIResource', () => ({
+  MCPAppViews: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div
+      data-testid="mcp-app-attachments"
+      data-owners={(attachments ?? [])
+        .map((attachment) => {
+          const owned = attachment as TAttachment & { agentId?: string; stepId?: string };
+          const resources = (attachment.ui_resources ?? []) as Array<{
+            resourceId: string;
+          }>;
+          return `${owned.agentId ?? 'none'}/${owned.stepId ?? 'none'}/${resources
+            .map((resource) => resource.resourceId)
+            .join('+')}`;
+        })
+        .join(',')}
+    />
+  ),
+}));
 
 jest.mock('../ToolOutput', () => ({
   StackedToolIcons: () => <span data-testid="stacked-icons" />,
@@ -398,6 +419,116 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       '1',
     ]);
   });
+
+  it('routes repeated App call ids by agent and exact-or-fallback host step', () => {
+    const content = [
+      makeMcpToolCall('call_0', true, 'step-1', 'agent-a'),
+      makeTextPart('between calls'),
+      makeMcpToolCall('call_0', true, undefined, 'agent-a'),
+      makeTextPart('between agents'),
+      makeMcpToolCall('call_0', true, 'step-1', 'agent-b'),
+    ];
+    const appResource = (resourceId: string) => ({
+      resourceId,
+      uri: 'ui://demo/view',
+      mimeType: 'text/html;profile=mcp-app',
+      toolName: 'show_app',
+      serverName: 'demo',
+    });
+    const attachments = [
+      {
+        type: Tools.ui_resources,
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-1',
+        [Tools.ui_resources]: [appResource('alpha')],
+      },
+      {
+        type: Tools.ui_resources,
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-2',
+        [Tools.ui_resources]: [appResource('beta')],
+      },
+      {
+        type: Tools.ui_resources,
+        toolCallId: 'call_0',
+        agentId: 'agent-b',
+        stepId: 'step-1',
+        [Tools.ui_resources]: [appResource('gamma')],
+      },
+    ] as unknown as TAttachment[];
+
+    renderContentParts({ ...baseProps, content, attachments });
+
+    expect(screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.owners)).toEqual(
+      ['agent-a/step-1/alpha', 'agent-a/step-2/beta', 'agent-b/step-1/gamma'],
+    );
+  });
+
+  it('retains resumed App steps through the SSE atom, merge hook, and content router', () => {
+    const content = [
+      makeMcpToolCall('call_0', true, 'step-1', 'agent-a'),
+      makeTextPart('resume boundary'),
+      makeMcpToolCall('call_0', true, 'step-2', 'agent-a'),
+    ];
+    const appResource = (resourceId: string) => ({
+      resourceId,
+      uri: 'ui://demo/view',
+      mimeType: 'text/html;profile=mcp-app',
+      toolName: 'show_app',
+      serverName: 'demo',
+    });
+    const alpha = {
+      type: Tools.ui_resources,
+      messageId: 'msg1',
+      toolCallId: 'call_0',
+      agentId: 'agent-a',
+      stepId: 'step-1',
+      [Tools.ui_resources]: [appResource('alpha')],
+    } as unknown as TAttachment;
+    const beta = {
+      type: Tools.ui_resources,
+      messageId: 'msg1',
+      toolCallId: 'call_0',
+      agentId: 'agent-a',
+      stepId: 'step-2',
+      [Tools.ui_resources]: [appResource('beta')],
+    } as unknown as TAttachment;
+
+    const ResumeHarness = () => {
+      const handleAttachment = useAttachmentHandler();
+      const { attachments } = useAttachments({ messageId: 'msg1', attachments: [alpha] });
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => handleAttachment({ data: beta, submission: {} as EventSubmission })}
+          >
+            {'stream beta'}
+          </button>
+          <ContentParts {...baseProps} content={content} attachments={attachments} />
+        </>
+      );
+    };
+
+    render(
+      <RecoilRoot>
+        <ResumeHarness />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.owners)).toEqual(
+      ['agent-a/step-1/alpha'],
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'stream beta' }));
+
+    expect(screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.owners)).toEqual(
+      ['agent-a/step-1/alpha', 'agent-a/step-2/beta'],
+    );
+  });
+
   it('keeps a manually expanded completed tool group open when its content index shifts', () => {
     const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
     const nextContent = [makeTextPart('streamed preface'), ...content];

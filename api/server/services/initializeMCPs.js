@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { resolveMCPAppsPolicy } = require('librechat-data-provider');
 const {
   registerShutdownTask,
   setMCPToolsChangedHandler,
@@ -26,10 +27,15 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
  * @param {{ userId?: string, role?: string }} [ctx]
  */
 async function resolveMCPAllowlists(ctx) {
-  const appConfig = await getAppConfig({ role: ctx?.role, userId: ctx?.userId });
+  const appConfig = await getAppConfig({
+    role: ctx?.role,
+    userId: ctx?.userId,
+    failClosed: true,
+  });
   return {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
+    mcpApps: resolveMCPAppsPolicy(appConfig?.mcpSettings?.apps),
   };
 }
 
@@ -107,6 +113,7 @@ async function initializeMCPs() {
       appConfig?.mcpSettings?.allowedDomains,
       appConfig?.mcpSettings?.allowedAddresses,
       resolveMCPAllowlists,
+      resolveMCPAppsPolicy(appConfig?.mcpSettings?.apps),
     );
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);

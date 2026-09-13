@@ -93,6 +93,7 @@ export type MCPToolCallResponse =
       _meta?: Record<string, unknown>;
       content?: Array<ToolContentPart>;
       isError?: boolean;
+      structuredContent?: Record<string, unknown>;
     };
 
 export type Provider =
@@ -320,26 +321,35 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   oboIdentityContext?: AuthIdentityContext;
 }
 
-/** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
-export interface UserMCPConnectionOptions extends UserConnectionContext {
-  serverName: string;
-  forceNew?: boolean;
-  ephemeralConnection?: boolean;
-  serverConfig?: ParsedServerConfig;
-  /** Internal one-shot fence shared across connection initialization and initial tools/list. */
-  directBearerRecoveryState?: DirectBearerRecoveryState;
-  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
-  /** Request-local resolved credentials; serverConfig remains the authoritative definition. */
-  directBearerResolvedConfig?: MCPOptions;
-  tokenMethods?: TokenMethods;
-  signal?: AbortSignal;
-  oauthStart?: OAuthStartHandler;
-  oauthEnd?: () => Promise<void>;
-  returnOnOAuth?: boolean;
-  oboTokenResolver?: OboTokenResolver;
-  oboTrustChecker?: OboTrustChecker;
-  oboIdentityContext?: AuthIdentityContext;
+export interface MCPConnectionTarget {
+  serverConfig: ParsedServerConfig;
+  connectionOwner: 'operator' | 'principal';
 }
+
+type MCPConnectionTargetInput =
+  | { connectionTarget: MCPConnectionTarget; serverConfig?: never }
+  | { connectionTarget?: never; serverConfig?: ParsedServerConfig };
+
+/** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
+export type UserMCPConnectionOptions = UserConnectionContext &
+  MCPConnectionTargetInput & {
+    serverName: string;
+    forceNew?: boolean;
+    ephemeralConnection?: boolean;
+    /** Internal one-shot fence shared across connection initialization and initial tools/list. */
+    directBearerRecoveryState?: DirectBearerRecoveryState;
+    flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+    /** Request-local resolved credentials; serverConfig remains the authoritative definition. */
+    directBearerResolvedConfig?: MCPOptions;
+    tokenMethods?: TokenMethods;
+    signal?: AbortSignal;
+    oauthStart?: OAuthStartHandler;
+    oauthEnd?: () => Promise<void>;
+    returnOnOAuth?: boolean;
+    oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
+    oboIdentityContext?: AuthIdentityContext;
+  };
 
 export interface ToolDiscoveryOptions {
   serverName: string;

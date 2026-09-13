@@ -150,6 +150,7 @@ describe('initializeMCPs', () => {
         ['localhost'],
         undefined,
         expect.any(Function), // per-request allowlist resolver
+        { enabled: false, legacyHtmlEnabled: true },
       );
     });
 
@@ -167,6 +168,7 @@ describe('initializeMCPs', () => {
         allowedDomains,
         undefined,
         expect.any(Function),
+        { enabled: false, legacyHtmlEnabled: true },
       );
     });
 
@@ -183,7 +185,19 @@ describe('initializeMCPs', () => {
         undefined,
         undefined,
         expect.any(Function),
+        { enabled: false, legacyHtmlEnabled: true },
       );
+    });
+
+    it.each([
+      [true, { enabled: true, legacyHtmlEnabled: true }],
+      [false, { enabled: false, legacyHtmlEnabled: false }],
+    ])('normalizes the startup MCP Apps policy for apps=%s', async (apps, expected) => {
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: { apps } });
+
+      await initializeMCPs();
+
+      expect(mockCreateMCPServersRegistry.mock.calls[0][4]).toEqual(expected);
     });
 
     it('wires a per-request resolver that reads the merged (non-baseOnly) config', async () => {
@@ -199,14 +213,23 @@ describe('initializeMCPs', () => {
 
       // The resolver resolves the request's merged allowlists — not the boot YAML base.
       mockGetAppConfig.mockResolvedValue({
-        mcpSettings: { allowedDomains: ['merged.com'], allowedAddresses: ['10.0.0.0/8'] },
+        mcpSettings: {
+          apps: true,
+          allowedDomains: ['merged.com'],
+          allowedAddresses: ['10.0.0.0/8'],
+        },
       });
       const resolved = await resolver({ userId: 'u1', role: 'ADMIN' });
 
-      expect(mockGetAppConfig).toHaveBeenLastCalledWith({ role: 'ADMIN', userId: 'u1' });
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith({
+        role: 'ADMIN',
+        userId: 'u1',
+        failClosed: true,
+      });
       expect(resolved).toEqual({
         allowedDomains: ['merged.com'],
         allowedAddresses: ['10.0.0.0/8'],
+        mcpApps: { enabled: true, legacyHtmlEnabled: true },
       });
     });
 

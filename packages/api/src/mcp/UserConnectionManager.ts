@@ -3,6 +3,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type * as t from './types';
 import {
   canBackfillSharedServerInstructions,
+  canUseAppConnection,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
@@ -34,7 +35,15 @@ type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: OAuthLifecycleRelay;
   directBearerRecoveryState: t.DirectBearerRecoveryState;
+  configGeneration: string;
   signal?: AbortSignal;
+};
+
+type ResolvedUserMCPConnectionOptions = Omit<
+  t.UserMCPConnectionOptions,
+  'connectionTarget' | 'serverConfig'
+> & {
+  connectionTarget: t.MCPConnectionTarget;
 };
 
 /**
@@ -123,6 +132,42 @@ export abstract class UserConnectionManager {
   /** Returns the config identity captured when a durable connection was created. */
   public getToolConfigGeneration(connection: MCPConnection): string | undefined {
     return this.toolConfigGenerations.get(connection);
+  }
+
+  protected getSuppliedConnectionTarget({
+    connectionTarget,
+    serverConfig,
+  }: {
+    connectionTarget?: t.MCPConnectionTarget;
+    serverConfig?: t.ParsedServerConfig;
+  }): t.MCPConnectionTarget | undefined {
+    if (connectionTarget) {
+      return connectionTarget;
+    }
+    if (serverConfig) {
+      return {
+        serverConfig,
+        connectionOwner: 'principal',
+      };
+    }
+    return undefined;
+  }
+
+  protected async resolveConnectionTarget({
+    serverName,
+    user,
+  }: {
+    serverName: string;
+    user?: { id?: string };
+  }): Promise<t.MCPConnectionTarget | undefined> {
+    const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, user?.id);
+    if (!config) {
+      return undefined;
+    }
+    return {
+      serverConfig: config,
+      connectionOwner: 'principal',
+    };
   }
 
   private runWithForceNewConnectionQueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -297,7 +342,7 @@ export abstract class UserConnectionManager {
    * a newer connection later.
    */
   private async createUserConnectionWithLifecycleRestarts(
-    options: t.UserMCPConnectionOptions,
+    options: ResolvedUserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
     creationGuard: ConnectionCreationGuard,
@@ -332,17 +377,44 @@ export abstract class UserConnectionManager {
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
-  public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
-    const { serverName, forceNew, user } = opts;
-    const directBearerRecoveryState = opts.directBearerRecoveryState ?? { attempted: false };
-    const userId = user?.id;
+  public getUserConnection(inputOpts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+    const userId = inputOpts.user?.id;
     if (!userId) {
-      throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
+      return Promise.reject(
+        new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`),
+      );
     }
+    const connectionTarget = this.getSuppliedConnectionTarget(inputOpts);
+    if (connectionTarget) {
+      return this.getUserConnectionForTarget(inputOpts, connectionTarget, userId);
+    }
+    return this.resolveConnectionTarget(inputOpts).then((resolvedTarget) => {
+      inputOpts.signal?.throwIfAborted();
+      if (!resolvedTarget) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `[MCP] Configuration for server "${inputOpts.serverName}" not found.`,
+        );
+      }
+      return this.getUserConnectionForTarget(inputOpts, resolvedTarget, userId);
+    });
+  }
 
-    const config =
-      opts.serverConfig ??
-      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+  private async getUserConnectionForTarget(
+    inputOpts: t.UserMCPConnectionOptions,
+    connectionTarget: t.MCPConnectionTarget,
+    userId: string,
+  ): Promise<MCPConnection> {
+    const { serverConfig: _serverConfig, ...targetOptions } = inputOpts;
+    const opts = {
+      ...targetOptions,
+      connectionTarget,
+    } as ResolvedUserMCPConnectionOptions;
+    const { serverName, forceNew } = opts;
+    const directBearerRecoveryState = opts.directBearerRecoveryState ?? { attempted: false };
+
+    const config = connectionTarget.serverConfig;
+    const configGeneration = getMCPAppToolsPublicationGeneration(config);
     const missingBodyFields = config
       ? getMissingRuntimeBodyPlaceholderFields(config, opts.requestBody)
       : [];
@@ -426,7 +498,7 @@ export abstract class UserConnectionManager {
           ...opts,
           forceNew: true,
           ephemeralConnection: true,
-          serverConfig: config,
+          connectionTarget,
           directBearerRecoveryState,
           oauthStart: pendingOAuth.start,
           oauthEnd: pendingOAuth.end,
@@ -479,6 +551,17 @@ export abstract class UserConnectionManager {
     if (!forceNewConnection) {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
+        if (pending.configGeneration !== configGeneration) {
+          await this.waitForConnectionRecovery(
+            pending.promise.then(
+              () => undefined,
+              () => undefined,
+            ),
+            opts.signal,
+          );
+          opts.signal?.throwIfAborted();
+          return this.getUserConnection(opts);
+        }
         logger.debug(`[MCP][User: ${userId}] Joining in-flight connection attempt`);
         const mutationFence = this.createConnectionMutationFence(userId, serverName);
         try {
@@ -534,7 +617,7 @@ export abstract class UserConnectionManager {
           ...opts,
           forceNew: forceNewConnection,
           ephemeralConnection,
-          serverConfig: config,
+          connectionTarget,
           directBearerRecoveryState,
           oauthStart: pendingOAuth.start,
           oauthEnd: pendingOAuth.end,
@@ -552,6 +635,7 @@ export abstract class UserConnectionManager {
         promise: connectionPromise,
         oauth: pendingOAuth,
         directBearerRecoveryState,
+        configGeneration,
         signal: opts.signal,
       });
     }
@@ -591,26 +675,27 @@ export abstract class UserConnectionManager {
       connectionTimeout,
       graphTokenResolver,
       ephemeralConnection = false,
-      serverConfig: providedConfig,
+      connectionTarget,
       directBearerRecoveryState = { attempted: false },
       directBearerResolvedConfig,
-    }: t.UserMCPConnectionOptions,
+    }: ResolvedUserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
     creationGuard?: ConnectionCreationGuard,
   ): Promise<MCPConnection> {
     signal?.throwIfAborted();
     this.assertCreationNotCancelled(creationGuard, userId, serverName);
-    if (await this.appConnections!.has(serverName)) {
+    if (
+      connectionTarget.connectionOwner === 'operator' &&
+      canUseAppConnection(connectionTarget.serverConfig)
+    ) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
       );
     }
 
-    const config =
-      providedConfig ??
-      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    const config = connectionTarget.serverConfig;
 
     /** Capture before resolving credentials/creating the connection. If another replica rotates
      *  the generation while creation is in flight, this connection's publications are fenced. */
@@ -644,12 +729,7 @@ export abstract class UserConnectionManager {
     const existingConfigGeneration = connection
       ? this.toolConfigGenerations.get(connection)
       : undefined;
-    if (
-      connection &&
-      configGeneration &&
-      existingConfigGeneration &&
-      configGeneration !== existingConfigGeneration
-    ) {
+    if (connection && existingConfigGeneration && configGeneration !== existingConfigGeneration) {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Config identity changed, disconnecting stale connection`,
       );
@@ -954,7 +1034,7 @@ export abstract class UserConnectionManager {
               connectionTimeout,
               graphTokenResolver,
               ephemeralConnection,
-              serverConfig: config,
+              connectionTarget,
               directBearerRecoveryState,
               directBearerResolvedConfig: refreshedConfig,
             },

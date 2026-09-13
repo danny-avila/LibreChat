@@ -28,6 +28,7 @@ import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { isBashProgrammaticToolCall } from './routing';
 import SearchVerticals from './verticals';
 import { ROW_GLYPH_SLOT } from './rows';
@@ -742,6 +743,7 @@ export default function ToolCallGroup({
         <>
           <SearchVerticals attachments={groupAttachments} />
           <AttachmentGroup attachments={groupAttachments} />
+          <MCPAppViews attachments={groupAttachments} />
         </>
       )}
     </div>

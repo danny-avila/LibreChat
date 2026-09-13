@@ -37,10 +37,12 @@ const mockRegistryInstance = {
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
   getAllowedDomains: mockGetAllowedDomains,
   getAllowedAddresses: mockGetAllowedAddresses,
+  getMCPAppsPolicy: jest.fn().mockReturnValue({ enabled: true, legacyHtmlEnabled: true }),
   resolveAllowlists: jest.fn(async () => ({
     allowedDomains: mockGetAllowedDomains(),
     allowedAddresses: mockGetAllowedAddresses(),
     useSSRFProtection: mockShouldEnableSSRFProtection(),
+    mcpApps: { enabled: true, legacyHtmlEnabled: true },
   })),
 };
 
@@ -149,6 +151,54 @@ describe('ConnectionsRepository', () => {
       expect(repository['connections'].get('server1')).toBe(mockConnection);
       expect(mockConnection.fetchToolsSnapshot).toHaveBeenCalledTimes(1);
       expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
+    });
+
+    it('creates an operator connection only for the expected current config', async () => {
+      const expectedConfig = mockServerConfigs.server1;
+
+      await expect(repository.get('server1', { expectedConfig })).resolves.toBe(mockConnection);
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverConfig: expectedConfig }),
+        undefined,
+      );
+    });
+
+    it('rejects a stale expected config without evicting the current pooled connection', async () => {
+      repository['connections'].set('server1', mockConnection);
+      const staleConfig = { ...mockServerConfigs.server1, url: 'http://localhost:3999' };
+
+      await expect(repository.get('server1', { expectedConfig: staleConfig })).rejects.toThrow(
+        'changed during connection checkout',
+      );
+
+      expect(repository.getPooledConnection('server1')).toBe(mockConnection);
+      expect(mockConnection.dispose).not.toHaveBeenCalled();
+    });
+
+    it('disposes a new connection when the current config changes before publication', async () => {
+      let releaseCreation!: () => void;
+      let markCreationStarted!: () => void;
+      const creationHeld = new Promise<void>((resolve) => {
+        releaseCreation = resolve;
+      });
+      const creationStarted = new Promise<void>((resolve) => {
+        markCreationStarted = resolve;
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockImplementationOnce(async () => {
+        markCreationStarted();
+        await creationHeld;
+        return mockConnection;
+      });
+
+      const load = repository.get('server1', { expectedConfig: mockServerConfigs.server1 });
+      await creationStarted;
+      mockServerConfigs.server1 = { ...mockServerConfigs.server1, url: 'http://localhost:3999' };
+      releaseCreation();
+
+      await expect(load).rejects.toThrow('changed during connection checkout');
+      expect(mockConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(repository.getPooledConnection('server1')).toBeUndefined();
     });
 
     it('serializes concurrent creation so only one connection is retained', async () => {
