@@ -1954,8 +1954,9 @@ export function createAgentMethods(
       /* Counts are recomputed for each request. The order and cursor are stable within a
          count bucket while counts stay unchanged; client-side dedup can absorb rows that
          drift backward. An unseen row that gains favorites can cross upward between
-         requests and be missed. A snapshot/revision requires a materialized favorite
-         counter (berry-13/LibreChat#11); favorites carry no per-favorite timestamp. */
+         requests and be missed (berry-13/LibreChat#31). Pinning a ranking needs a
+         materialized favorite counter and a revision to pin it against
+         (berry-13/LibreChat#11); favorites carry no per-favorite timestamp. */
       let startIndex = favorited.length;
       if (cursorCount === null) {
         startIndex = 0;
