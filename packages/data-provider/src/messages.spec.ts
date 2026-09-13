@@ -1,3 +1,4 @@
+import type { SummaryContentPart } from './types/assistants';
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
@@ -251,7 +252,7 @@ describe('findMessageById', () => {
 });
 
 describe('isUserInitiatedCompaction', () => {
-  const summary = (overrides: Record<string, unknown> = {}) => ({
+  const summary = (overrides: Partial<SummaryContentPart> = {}): SummaryContentPart => ({
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
     ...overrides,

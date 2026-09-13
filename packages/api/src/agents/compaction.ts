@@ -16,9 +16,7 @@ import type {
   ICompactionSemanticIndexProjection,
   TCompactionSemanticIndexEntry,
 } from '@librechat/data-schemas';
-import type { TMessageContentParts } from 'librechat-data-provider';
-
-type SummaryPart = Extract<TMessageContentParts, { type: ContentTypes.SUMMARY }>;
+import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 
 /** Text of a summary content part; empty for anything else. */
 export function getSummaryPartText(part: TMessageContentParts | null | undefined): string {
@@ -45,7 +43,7 @@ export function getSummaryPartText(part: TMessageContentParts | null | undefined
  */
 export function markCompactionOutcome(contentParts: TMessageContentParts[]): void {
   const summary = contentParts.find(
-    (part): part is SummaryPart =>
+    (part): part is SummaryContentPart =>
       part?.type === ContentTypes.SUMMARY &&
       part.failed !== true &&
       getSummaryPartText(part).length > 0,

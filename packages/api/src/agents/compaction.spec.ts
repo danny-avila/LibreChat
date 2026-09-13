@@ -7,8 +7,8 @@ import {
   MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
 } from '@librechat/data-schemas';
 import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
+import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
-import type { TMessageContentParts } from 'librechat-data-provider';
 import {
   createCompactionSemanticIndexProjection,
   markCompactionOutcome,
@@ -142,14 +142,15 @@ describe('compaction semantic index continuation projection', () => {
 });
 
 describe('markCompactionOutcome', () => {
-  const summary = (text: string, overrides: Record<string, unknown> = {}) =>
-    ({
-      type: ContentTypes.SUMMARY,
-      content: [{ type: ContentTypes.TEXT, text }],
-      ...overrides,
-    }) as TMessageContentParts;
-  const failure = (error: string) =>
-    ({ type: ContentTypes.ERROR, [ContentTypes.ERROR]: error }) as TMessageContentParts;
+  const summary = (
+    text: string,
+    overrides: Partial<SummaryContentPart> = {},
+  ): TMessageContentParts => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text }],
+    ...overrides,
+  });
+  const failure = (error: string): TMessageContentParts => ({ type: ContentTypes.ERROR, error });
 
   it('marks the summary a compaction produced', () => {
     const parts = [summary('Earlier turns, compacted.')];
