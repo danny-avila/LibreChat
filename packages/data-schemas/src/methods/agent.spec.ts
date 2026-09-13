@@ -6746,6 +6746,41 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       // legitimately matches nothing - the point is that it is not rejected as garbage.
       expect(result.data).toHaveLength(0);
     });
+
+    /**
+     * A rolling deployment can send the next page to an instance that predates sort
+     * modes, and that instance reads two keys and nothing else: `updatedAt` and `_id`.
+     * Absent, it builds an `Invalid Date`, which Mongo rejects and the endpoint reports
+     * as a 500 in the middle of someone's scroll.
+     */
+    test.each(['recent', 'newest', 'oldest', 'popular', 'author'] as const)(
+      'emits a cursor an instance that predates sort modes can still read (%s)',
+      async (sort) => {
+        const { accessibleIds } = await seedTwoAgents();
+
+        const result = await getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort,
+          limit: 1,
+        });
+
+        expect(result.has_more).toBe(true);
+        const cursor = JSON.parse(
+          Buffer.from(result.after as string, 'base64').toString('utf8'),
+        ) as Record<string, string>;
+
+        expect(Number.isNaN(new Date(cursor.updatedAt).getTime())).toBe(false);
+        expect(mongoose.Types.ObjectId.isValid(cursor._id)).toBe(true);
+        /* The same row the mode's own cursor names, so the older instance continues its
+           updated-time ordering from where this page ended rather than somewhere else. */
+        expect(cursor._id).toBe(cursor.secondary);
+        const lastRow = (await Agent.findById(cursor._id).lean()) as unknown as {
+          updatedAt: Date;
+        } | null;
+        expect(new Date(cursor.updatedAt).toISOString()).toBe(lastRow?.updatedAt.toISOString());
+      },
+    );
   });
 
   describe('response contract', () => {

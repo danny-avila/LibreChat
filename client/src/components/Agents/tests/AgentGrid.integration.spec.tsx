@@ -203,8 +203,12 @@ describe('AgentGrid pagination', () => {
     renderGrid();
     await screen.findByRole('alert', {}, { timeout: 5000 });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    // react-query clears `error` while refetching; the state must not flip to a
-    // skeleton, because remounting it would reset the automatic backoff.
+    /* Waits for the retry to actually be in flight — `aria-busy` is the only thing that
+       says so from outside — because that is the state the card has to survive:
+       react-query clears `error` for the duration, and neither a skeleton nor a remount
+       may take the card's place. A skeleton fills the viewport above it and pushes its
+       status, countdown and action below the fold; a remount resets the backoff. */
+    await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true'));
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.queryByRole('status', { name: 'com_agents_loading' })).not.toBeInTheDocument();
     await act(async () => {
