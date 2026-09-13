@@ -4,6 +4,10 @@ import type { Request, RequestHandler } from 'express';
 
 const SAME_ORIGIN_FETCH_SITES: ReadonlySet<string> = new Set(['same-origin', 'none']);
 const MAX_LOGGED_HEADER_LENGTH = 200;
+/** The `Origin` header is attacker-set on a non-browser request; strip ASCII control
+ * characters (CR, LF, NUL and the rest) so a rejected request cannot forge a log line. */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_LOG_CHARS = new RegExp('[\x00-\x1f\x7f]', 'g');
 
 export interface SameOriginGuardOptions {
   /** Origins allowed to submit from another origin, such as `DOMAIN_CLIENT` and `DOMAIN_SERVER`. */
@@ -50,8 +54,8 @@ function isCrossSiteRequest(req: Request, trustedOrigins: ReadonlySet<string>): 
   return !origin || !matchesRequestOrigin(origin, req);
 }
 
-const truncate = (value: string | undefined): string | undefined =>
-  value?.slice(0, MAX_LOGGED_HEADER_LENGTH);
+const sanitize = (value: string | undefined): string | undefined =>
+  value?.replace(UNSAFE_LOG_CHARS, '_').slice(0, MAX_LOGGED_HEADER_LENGTH);
 
 /**
  * Accepts a request only when the browser sent it from this application's own origin (or a
@@ -71,9 +75,9 @@ export function createSameOriginGuard({ trustedOrigins }: SameOriginGuardOptions
 
     logger.warn('[requireSameOrigin] Rejected cross-site request', {
       method: req.method,
-      path: `${req.baseUrl}${req.path}`,
-      fetch_site: truncate(req.get('sec-fetch-site')),
-      origin: truncate(req.get('origin')),
+      path: sanitize(`${req.baseUrl}${req.path}`),
+      fetch_site: sanitize(req.get('sec-fetch-site')),
+      origin: sanitize(req.get('origin')),
     });
     res.status(403).json({
       message: 'Cross-site request rejected',

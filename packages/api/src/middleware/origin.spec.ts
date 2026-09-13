@@ -83,6 +83,39 @@ describe('createSameOriginGuard', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  // Node's HTTP parser strips control characters before they reach Express, so the guard is
+  // driven directly here to prove the log-sanitization branch neutralizes them anyway.
+  it('strips control characters from request-derived values before logging', () => {
+    const guard = createSameOriginGuard({ trustedOrigins: [] });
+    const headers: Record<string, string> = {
+      origin: 'https://evil.example.com\r\ninjected: 1',
+      'sec-fetch-site': 'cross-site',
+      host: HOST,
+    };
+    const req = {
+      method: 'POST',
+      baseUrl: '/api/auth',
+      path: `/login\r\n${String.fromCharCode(0)}`,
+      get: (name: string) => headers[name.toLowerCase()],
+    } as unknown as express.Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as express.Response;
+    const next = jest.fn();
+
+    guard(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const logged = (logger.warn as jest.Mock).mock.calls[0][1];
+    for (const field of [logged.origin, logged.path, logged.fetch_site] as string[]) {
+      for (const code of [13, 10, 0]) {
+        expect(field).not.toContain(String.fromCharCode(code));
+      }
+    }
+    expect(logged.origin).toContain('__injected');
+  });
+
   it('passes a request without browser fetch metadata or an Origin, such as a server-side call', async () => {
     const { app, handler } = createApp();
 
