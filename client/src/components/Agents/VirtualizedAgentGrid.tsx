@@ -91,6 +91,17 @@ export default function VirtualizedAgentGrid({
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
   /**
+   * Each mounted card's description paragraph, by agent. The dialog morphs its
+   * copy out of the wrapping the card gave it, and asks for the paragraph again
+   * on the way out, so the lookup is by agent rather than a ref that follows
+   * the selection: a card reports its paragraph when it mounts, which is the
+   * only time `motion.p` resolves the ref it forwards.
+   */
+  const descriptionNodes = useRef(new Map<string, HTMLParagraphElement>());
+  const findDescription = useCallback((agentId: string) => {
+    return descriptionNodes.current.get(agentId) ?? null;
+  }, []);
+  /**
    * Where focus goes when the dialog closes. Normally the card it expanded from, but that
    * card can be gone before the dialog is — a refresh that revoked access, deleted the
    * agent, or reordered it out of the cached pages — and the dialog deliberately stays
@@ -384,6 +395,13 @@ export default function VirtualizedAgentGrid({
                       morphing={agent.id === liftedAgentId}
                       surfaceRadius={surfaceRadius}
                       ref={selected ? selectedTriggerRef : undefined}
+                      descriptionRef={(node) => {
+                        if (node == null) {
+                          descriptionNodes.current.delete(agent.id);
+                        } else {
+                          descriptionNodes.current.set(agent.id, node);
+                        }
+                      }}
                     />
                   </div>,
                 );
@@ -416,7 +434,12 @@ export default function VirtualizedAgentGrid({
       </div>
       {createPortal(
         <AnimatePresence onExitComplete={() => setLiftedAgentId(null)}>
-          {morphing && (
+          {/* Dropped on the close itself rather than when the dialog unmounts:
+              the surface cannot start contracting until the handover is over, so
+              the dim leaving is what answers the click. Its exit spans the
+              handover and the contraction, which is also what keeps the card
+              lifted above its neighbours until the surface has landed. */}
+          {morphing && selection?.phase === 'open' && (
             <motion.div
               key="agent-detail-backdrop"
               aria-hidden="true"
@@ -437,6 +460,7 @@ export default function VirtualizedAgentGrid({
              — there is nothing to morph from, so the dialog just fades. */
           morph={morphing ? selection.phase : undefined}
           surfaceRadius={surfaceRadius}
+          descriptionSource={findDescription}
         />
       )}
     </OGDialog>
