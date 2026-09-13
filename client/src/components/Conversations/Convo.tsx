@@ -172,8 +172,14 @@ function Conversation({
    * control and remounted it on the next entry, one frame after the row's hover
    * had already revealed its slot — so the button arrived a frame late and
    * restarted its hover fill from transparent every time the pointer crossed
-   * the row's edge, which reads as a flicker. Virtualization still keeps this
-   * bounded: scrolling a row out of view drops the whole row. */
+   * the row's edge, which reads as a flicker.
+   *
+   * The cost is what the row's own lifetime is: the chats list unmounts a row
+   * as it scrolls out, while the Pinned section mounts every pinned row at
+   * once, so there a pointer crossing the list leaves one `ConvoOptions` per
+   * row it touched, standing until the section unmounts. That is bounded by
+   * the pin count the user chose, and a control that unmounts instead is what
+   * this comment's first paragraph describes. */
   const handleMouseEnter = useCallback(() => {
     setHasInteracted(true);
   }, []);
