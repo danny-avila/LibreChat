@@ -30,13 +30,30 @@ interface AgentCardProps {
    * rest the stylesheet's `rounded-theme-surface` governs.
    */
   surfaceRadius?: number;
+  /**
+   * Reports this card's description paragraph, whose wrapping the detail dialog
+   * morphs its own copy out of. It has to be handed over on mount rather than
+   * when the card is selected: `motion.p` resolves the ref it forwards once,
+   * when its visual element is created, so a ref that arrives later is never
+   * attached. The paragraph itself stays plain text — a grid of cards is not
+   * the place to pay for an animation most of them never take part in.
+   */
+  descriptionRef?: React.Ref<HTMLParagraphElement>;
   className?: string;
 }
 
 /** The list owns preview state so recycling a card cannot dismiss its dialog. */
 const AgentCard = memo(
   forwardRef<HTMLButtonElement, AgentCardProps>(function AgentCard(
-    { agent, onSelect, expanded = false, morphing = false, surfaceRadius, className = '' },
+    {
+      agent,
+      onSelect,
+      expanded = false,
+      morphing = false,
+      surfaceRadius,
+      descriptionRef,
+      className = '',
+    },
     ref,
   ) {
     const localize = useLocalize();
@@ -69,7 +86,12 @@ const AgentCard = memo(
         <motion.div
           aria-hidden="true"
           layoutId={agentMorphId('surface', agent.id)}
-          style={surfaceRadius == null ? undefined : { borderRadius: surfaceRadius }}
+          /* Promoted only while this card's surface is in flight; a grid of
+             permanently layered cards is a cost, not a saving. */
+          style={{
+            borderRadius: surfaceRadius,
+            willChange: morphing ? 'transform' : undefined,
+          }}
           className="pointer-events-none absolute inset-0 z-0 rounded-theme-surface border border-border-light bg-surface-secondary transition-colors duration-150 group-hover:border-border-medium group-hover:bg-surface-tertiary"
           {...shared}
         />
@@ -134,13 +156,16 @@ const AgentCard = memo(
             {name}
           </motion.h2>
 
-          {/* The blurb is the same copy the dialog shows in full, so it travels
-              rather than disappearing; the dialog's extra lines are revealed as
-              the surface grows past the card's three-line clamp. */}
+          {/* The blurb is the same copy the dialog shows in full, so it is
+              handed over rather than dropped: the paragraph travels, the words
+              inside it re-wrap into the dialog's setting, and the lines this
+              clamp hid arrive behind them. */}
           <motion.p
+            ref={descriptionRef}
             layout="position"
             layoutId={agentMorphId('description', agent.id)}
             id={descriptionId}
+            style={{ willChange: morphing ? 'transform' : undefined }}
             className="mb-5 mt-2 line-clamp-3 break-words text-sm leading-6 text-text-secondary"
             {...shared}
           >
