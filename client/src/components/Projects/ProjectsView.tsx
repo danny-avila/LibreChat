@@ -4,25 +4,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Ellipsis, Folder, FolderPlus, Pencil, Trash2 } from 'lucide-react';
 import { Button, DropdownPopup, Skeleton, Spinner } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
-import type { LocalizeFunction, MenuItemProps } from '~/common';
-import type { ProjectSort } from './ProjectsNavBar';
+import type { ProjectSort } from './ProjectsSortMenu';
+import type { MenuItemProps } from '~/common';
 import { useProjectsInfiniteQuery } from '~/data-provider';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
+import ProjectsSortMenu from './ProjectsSortMenu';
 import ProjectsNavBar from './ProjectsNavBar';
 import ProjectEditor from './ProjectEditor';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-
-function getProjectCountLabel(count: number, hasMore: boolean, localize: LocalizeFunction) {
-  if (hasMore) {
-    return localize('com_ui_project_count_partial', { count });
-  }
-  if (count === 1) {
-    return localize('com_ui_project_count_single');
-  }
-  return localize('com_ui_project_count', { count });
-}
 
 function formatActivity(project: TChatProject) {
   const value = project.lastConversationAt ?? project.updatedAt ?? project.createdAt;
@@ -197,10 +188,6 @@ export default function ProjectsView() {
 
   const projects = useMemo(() => data?.pages.flatMap((page) => page.projects) ?? [], [data?.pages]);
 
-  /** `projects` only holds the pages fetched so far, so while another page
-   *  exists this is a lower bound rather than the total. */
-  const projectCountLabel = getProjectCountLabel(projects.length, hasNextPage === true, localize);
-
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       setIsCreating(true);
@@ -253,17 +240,15 @@ export default function ProjectsView() {
         onCreate={() => setIsCreating(true)}
         search={search}
         onSearchChange={setSearch}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
       />
 
-      <div className="flex w-full flex-1 flex-col px-4 pb-10 pt-6 md:px-6 md:pt-8">
-        <div className="flex items-baseline justify-between gap-3">
+      <div className="flex w-full flex-1 flex-col px-4 pb-10 pt-3 md:px-6 md:pt-4">
+        <div className="flex min-h-8 items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-text-primary">
             {localize('com_ui_your_projects')}
           </h2>
           {!isLoading && projects.length > 0 ? (
-            <p className="text-sm tabular-nums text-text-secondary">{projectCountLabel}</p>
+            <ProjectsSortMenu sortBy={sortBy} onSortChange={setSortBy} />
           ) : null}
         </div>
 
