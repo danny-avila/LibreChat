@@ -117,13 +117,16 @@ async function compactWithEmptySummarizer(page: Page, request: APIRequestContext
   return { conversationId, compactionId: compactionId as string };
 }
 
-/** The blank summarizer is global to the fixture server; restore it. */
-async function resetSummarizer(request: APIRequestContext) {
-  const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
-  expect(response.ok()).toBeTruthy();
-}
-
 test.describe('compaction rerun controls', () => {
+  /** `compactWithEmptySummarizer` switches the shared fixture summarizer to
+   *  blank output before it returns, so a failure inside it would leave every
+   *  later mock test summarizing to nothing. Restoring here runs whether the
+   *  helper returned, failed, or the test was retried. */
+  test.afterEach(async ({ request }) => {
+    const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
+    expect(response.ok()).toBeTruthy();
+  });
+
   test('a finished compaction offers no rerun controls @scenario:compaction-turn-offers-no-rerun-controls', async ({
     page,
   }) => {
@@ -285,7 +288,6 @@ test.describe('compaction rerun controls', () => {
       await page.getByTestId('token-usage').click();
       await expect(page.getByRole('button', { name: 'Compact context' })).toBeEnabled();
     } finally {
-      await resetSummarizer(request);
       await cleanup(conversationId);
     }
   });
@@ -309,7 +311,6 @@ test.describe('compaction rerun controls', () => {
       await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
       await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
     } finally {
-      await resetSummarizer(request);
       await cleanup(conversationId);
     }
   });

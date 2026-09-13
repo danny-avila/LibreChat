@@ -195,11 +195,15 @@ describe('markCompactionOutcome', () => {
   ])('records a marked typed failure for a run that produced %s', (_label, parts) => {
     markCompactionOutcome(parts);
 
-    expect(parts[parts.length - 1]).toEqual({
-      type: ContentTypes.ERROR,
-      error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
-      initiatedBy: 'user',
-    });
+    /** The typed failure is the turn's whole outcome: a truncated summary left
+     *  beside it would be read back as the conversation's checkpoint. */
+    expect(parts).toEqual([
+      {
+        type: ContentTypes.ERROR,
+        error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+        initiatedBy: 'user',
+      },
+    ]);
   });
 
   /** A cancelled compaction stopped early rather than failing, and the abort

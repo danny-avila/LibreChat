@@ -100,6 +100,16 @@ export function markCompactionOutcome(
   if (aborted) {
     throw Object.assign(new Error(COMPACTION_FAILED_ERROR), { code: 'COMPACTION_FAILED' });
   }
+  /** A failed round keeps whatever deltas it streamed, and history loading
+   *  accepts any nonempty summary as the conversation's checkpoint
+   *  (`BaseClient.findSummaryContentBlock`). Persisting a truncated one would
+   *  replace the history it failed to summarize, so the unusable summary goes
+   *  and the typed failure is the turn's whole outcome. */
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    if (contentParts[index]?.type === ContentTypes.SUMMARY) {
+      contentParts.splice(index, 1);
+    }
+  }
   contentParts.push(...compactionFailureContent());
 }
 
