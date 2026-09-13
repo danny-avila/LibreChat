@@ -49,9 +49,10 @@ describe('Button', () => {
 
   /** `size: 'sm'` carries `rounded-lg`, which is emitted after the variant and
    *  would otherwise win the merge, squaring off a text-bearing header control
-   *  next to the icon-sized ones sharing its row. */
+   *  next to the icon-sized ones sharing its row. A caller that names a shape
+   *  still outranks that repair, the way it does for `subtle`. */
   it('keeps the header-action corner at every size', () => {
-    render(
+    const { rerender } = render(
       <Button variant="header-action" size="sm">
         Back
       </Button>,
@@ -60,6 +61,15 @@ describe('Button', () => {
     const button = screen.getByRole('button', { name: 'Back' });
     expect(button).toHaveClass('rounded-xl', 'h-9', 'bg-presentation');
     expect(button).not.toHaveClass('rounded-lg');
+
+    rerender(
+      <Button variant="header-action" size="sm" shape="theme">
+        Back
+      </Button>,
+    );
+
+    expect(button).toHaveClass('rounded-theme-control', 'h-9');
+    expect(button).not.toHaveClass('rounded-xl');
   });
 
   it('preserves variant geometry until a shape is explicitly selected', () => {

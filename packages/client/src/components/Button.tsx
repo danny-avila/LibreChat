@@ -145,10 +145,14 @@ const buttonVariantRecipe = cva(
       },
       /* `size: 'sm'` brings its own `rounded-lg`, emitted after the variant
        * and so winning the merge. A text-bearing header control keeps the
-       * row's `rounded-xl` corner, matching the icon-sized ones beside it. */
+       * row's `rounded-xl` corner, matching the icon-sized ones beside it.
+       * Gated on `shape: 'unset'` like `subtle` above: a compound is emitted
+       * after the shape recipe, so an ungated one would silently outrank a
+       * caller that asked for `shape="theme"` or `shape="round"`. */
       {
         variant: 'header-action',
         size: 'sm',
+        shape: 'unset',
         class: 'rounded-xl',
       },
     ],
