@@ -73,3 +73,55 @@ describe('agent event rate limiter', () => {
     expect(denyRequest).not.toHaveBeenCalled();
   });
 });
+
+describe('message rate limiter violation payload', () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    jest.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    jest.clearAllMocks();
+  });
+
+  /** The chat client counts down to this timestamp, so the persisted payload has to carry it. */
+  it('persists the window reset alongside the limit it hit', async () => {
+    process.env.MESSAGE_USER_MAX = '40';
+    process.env.MESSAGE_USER_WINDOW = '60';
+    require('./messageLimiters');
+    const denyRequest = require('~/server/middleware/denyRequest');
+    const userOptions = mockRateLimit.mock.calls.at(-1)[0];
+    const resetTime = new Date(Date.now() + 7 * 60 * 1000);
+
+    await userOptions.handler({ rateLimit: { resetTime }, user: { id: 'user-1' } }, {});
+
+    expect(denyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        type: 'message_limit',
+        limiter: 'user',
+        resetAt: resetTime.getTime(),
+        retryAfterSeconds: 420,
+      }),
+    );
+  });
+
+  /** Without a populated `rateLimit`, the payload still has to name a reachable retry moment. */
+  it('falls back to the configured window when the limiter reports no reset time', async () => {
+    process.env.MESSAGE_IP_WINDOW = '1';
+    require('./messageLimiters');
+    const denyRequest = require('~/server/middleware/denyRequest');
+    const ipOptions = mockRateLimit.mock.calls.at(-2)[0];
+
+    await ipOptions.handler({}, {});
+
+    const payload = denyRequest.mock.calls.at(-1)[2];
+    expect(payload.retryAfterSeconds).toBeGreaterThan(0);
+    expect(payload.retryAfterSeconds).toBeLessThanOrEqual(60);
+    expect(payload.resetAt).toBeGreaterThan(Date.now());
+  });
+});
