@@ -1594,6 +1594,26 @@ describe('processAssistantMessage', () => {
     });
   });
 
+  test('should link tens of thousands of citations in one message', () => {
+    const count = 40000;
+    const marker = '【†】';
+    const span = `${'word '.repeat(19)}${marker}`;
+    const citations = Array.from({ length: count }, (_, index) => ({
+      start_ix: (index + 1) * span.length - marker.length,
+      end_ix: (index + 1) * span.length,
+      metadata: { type: 'webpage', title: 'Source', url: 'https://example.com' },
+    }));
+
+    const text = span.repeat(count);
+    const startedAt = performance.now();
+    const result = processAssistantMessage({ metadata: { citations } }, text);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1000);
+    expect(result).not.toContain(marker);
+    expect(result.split(' ([Source](https://example.com))')).toHaveLength(count + 1);
+  });
+
   test('should handle potential ReDoS attack payloads', () => {
     // Test with increasing input sizes to check for exponential behavior
     const sizes = [32, 33, 34]; // Adding more sizes would increase test time
