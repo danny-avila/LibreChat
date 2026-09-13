@@ -93,7 +93,12 @@ function abortOnDisconnect(res: Response): AbortSignal {
   return controller.signal;
 }
 
-function isValidId(value: unknown, maxLength: number): value is string {
+/**
+ * Ids that reach a Langfuse filter keep a length cap; a message id only names a
+ * stored row, which the app persists at any length, so the detail read accepts
+ * whatever the list returned.
+ */
+function isValidId(value: unknown, maxLength = Number.POSITIVE_INFINITY): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }
 
@@ -257,7 +262,7 @@ export function createTraceHandlers({
       const messageId = firstQueryValue(req.query.message);
       if (
         !isValidId(recordId, TRACE_RECORD_ID_MAX_LENGTH) ||
-        !isValidId(messageId, TRACE_RECORD_ID_MAX_LENGTH) ||
+        !isValidId(messageId) ||
         (sourceId != null && !isValidId(sourceId, TRACE_SOURCE_ID_MAX_LENGTH))
       ) {
         return sendTraceError(res, 'invalid_request');

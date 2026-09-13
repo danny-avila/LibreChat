@@ -432,11 +432,11 @@ function traceOrderKey(createdAt: Date, id: Types.ObjectId): string {
 
 function parseTraceOrderKey(key: string): { createdAt: Date; id: string } | undefined {
   const [time, hex] = key.split('.');
-  const milliseconds = Number.parseInt(time ?? '', 36);
-  if (!Number.isFinite(milliseconds) || hex == null || !/^[0-9a-f]{24}$/.test(hex)) {
+  const createdAt = new Date(Number.parseInt(time ?? '', 36));
+  if (Number.isNaN(createdAt.getTime()) || hex == null || !/^[0-9a-f]{24}$/.test(hex)) {
     return undefined;
   }
-  return { createdAt: new Date(milliseconds), id: hex };
+  return { createdAt, id: hex };
 }
 
 /** An explicit tenant scope, so a read without request tenant context still cannot span tenants. */

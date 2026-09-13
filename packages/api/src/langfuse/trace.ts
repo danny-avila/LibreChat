@@ -11,18 +11,20 @@ export function traceIdForMessage(messageId: string): string {
 }
 
 /**
- * Drops a message's trace sampling record. A copied message gets a new id, and
- * its trace id derives from that id, so the source's record would claim a trace
- * the copy never produced — for feedback scores and the trace viewer alike.
+ * Replaces a message's trace sampling record with an explicit "never traced".
+ * A copied or client-authored row carries an id no run was traced under, so the
+ * source's record would claim a trace the row never produced — for feedback
+ * scores and the trace viewer alike — while a missing record would let a
+ * feedback score recompute sampling for a trace that does not exist.
  */
 export function withoutTraceRefs<T extends TraceRefFields>(
   message: T,
-): Omit<T, keyof TraceRefFields> {
+): Omit<T, keyof TraceRefFields> & { langfuseSampled: false } {
   const {
     langfuseSampled: _sampled,
     langfuseDestinationIds: _destinations,
     langfuseRunId: _runId,
     ...rest
   } = message;
-  return rest;
+  return { ...rest, langfuseSampled: false };
 }

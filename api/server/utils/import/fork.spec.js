@@ -216,7 +216,7 @@ describe('forkConversation', () => {
     expect(
       savedMessages.every(
         (message) =>
-          !('langfuseSampled' in message) &&
+          message.langfuseSampled === false &&
           !('langfuseDestinationIds' in message) &&
           !('langfuseRunId' in message),
       ),

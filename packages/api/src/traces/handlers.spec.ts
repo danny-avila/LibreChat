@@ -2,6 +2,7 @@ import http from 'http';
 import express from 'express';
 import request from 'supertest';
 import { MemoryStore } from 'express-rate-limit';
+import { TRACE_RECORD_ID_MAX_LENGTH } from 'librechat-data-provider';
 import type { TTracePage, TTraceRecordDetail, TTraceViewerConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
@@ -314,6 +315,10 @@ describe('trace handlers', () => {
     );
 
     const withoutTurn = await request(app).get('/api/traces/convo-1/records/obs-1');
+    const longTurn = 'r'.repeat(TRACE_RECORD_ID_MAX_LENGTH + 1);
+    const longTurnDetail = await request(app).get(
+      `/api/traces/convo-1/records/obs-1?message=${longTurn}`,
+    );
 
     expect(reader.getRecord).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -324,7 +329,10 @@ describe('trace handlers', () => {
     );
     expect(oversized.status).toBe(400);
     expect(withoutTurn.status).toBe(400);
-    expect(reader.getRecord).toHaveBeenCalledTimes(1);
+    /** A response id is stored at whatever length the request gave it; the turn it listed opens. */
+    expect(longTurnDetail.status).toBe(200);
+    expect(reader.getRecord).toHaveBeenCalledWith(expect.objectContaining({ messageId: longTurn }));
+    expect(reader.getRecord).toHaveBeenCalledTimes(2);
   });
 
   it('aborts the read when the client disconnects before the response', async () => {

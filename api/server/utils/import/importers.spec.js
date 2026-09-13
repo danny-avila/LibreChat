@@ -993,7 +993,7 @@ describe('importLibreChatConvo', () => {
     await importer(jsonData, 'user-123', () => importBatchBuilder);
 
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
-    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseSampled');
+    expect(importBatchBuilder.messages[0].langfuseSampled).toBe(false);
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseDestinationIds');
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseRunId');
     expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);

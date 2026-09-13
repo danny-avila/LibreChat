@@ -168,6 +168,16 @@ describe('getConversationTraceRefs', () => {
     expect(
       ids(await read({ through: { messageId: third.messageId, orderKey: 'forged' }, limit: 2 })),
     ).toEqual([]);
+    /** A time past the Date range parses to a number but not to a date; it resumes nothing. */
+    const beyondDateRange = `${'z'.repeat(16)}.${third.orderKey?.split('.')[1]}`;
+    expect(
+      ids(
+        await read({
+          through: { messageId: third.messageId, orderKey: beyondDateRange },
+          limit: 2,
+        }),
+      ),
+    ).toEqual([]);
     expect(ids(await read({ messageId: 'response-2' }))).toEqual(['response-2']);
     expect(ids(await read({ messageId: 'someone-elses-response' }))).toEqual([]);
     expect(ids(all)).toHaveLength(5);
