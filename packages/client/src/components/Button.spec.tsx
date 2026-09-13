@@ -35,15 +35,31 @@ describe('Button', () => {
   it('renders the header-action toggle from semantic tokens', () => {
     render(<Button variant="header-action">Toggle</Button>);
 
-    /** Transparent so the toggle reads as an icon on the header rather than a
-     *  raised control; the border and hover still mark it as hit-able. */
+    /** Opaque: the chat header is a gradient that fades to nothing with the
+     *  conversation scrolling under it, so a transparent toggle shows message
+     *  text through itself while every neighbour sits on `bg-presentation`. */
     expect(screen.getByRole('button', { name: 'Toggle' })).toHaveClass(
-      'bg-transparent',
+      'bg-presentation',
       'border-border-light',
       'rounded-xl',
       'duration-0',
       'hover:bg-surface-active-alt',
     );
+  });
+
+  /** `size: 'sm'` carries `rounded-lg`, which is emitted after the variant and
+   *  would otherwise win the merge, squaring off a text-bearing header control
+   *  next to the icon-sized ones sharing its row. */
+  it('keeps the header-action corner at every size', () => {
+    render(
+      <Button variant="header-action" size="sm">
+        Back
+      </Button>,
+    );
+
+    const button = screen.getByRole('button', { name: 'Back' });
+    expect(button).toHaveClass('rounded-xl', 'h-9', 'bg-presentation');
+    expect(button).not.toHaveClass('rounded-lg');
   });
 
   it('preserves variant geometry until a shape is explicitly selected', () => {
