@@ -5,6 +5,12 @@ import { getE2EUser } from '../../../setup/user';
 import { deleteConversations, seedConversations } from '../db';
 import { backgroundColor, borderRadius, chatsListRow, isTransparent } from './pinned.helpers';
 
+/* Seeding a pinned list and reloading is the slow part of every test here, and it
+ * runs in hooks, which do not read a `test.setTimeout` call made inside a test
+ * body: a loaded machine timed the `beforeEach` out at the default 30s while the
+ * test itself was allowed 60. Configured once for the file instead. */
+test.describe.configure({ timeout: 60_000 });
+
 /**
  * Keep project creation on the same all-projects route as the existing project
  * coverage, so this scenario exercises the production creation and sidebar path.
@@ -63,7 +69,6 @@ test.afterEach(async ({ page }) => {
 test('project row actions hold their fill while their menu is open @scenario:project-row-actions-hold-their-fill-while-their-menu-is-open', async ({
   page,
 }) => {
-  test.setTimeout(60000);
   const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
   test.skip(!hasHover, 'pointer hover is a desktop-only path');
 
@@ -108,7 +113,6 @@ test('project row actions hold their fill while their menu is open @scenario:pro
 test('renaming a chat fills its save and cancel under the pointer @scenario:renaming-a-chat-fills-its-save-and-cancel-under-the-pointer', async ({
   page,
 }) => {
-  test.setTimeout(60000);
   const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
   test.skip(!hasHover, 'pointer hover is a desktop-only path');
 

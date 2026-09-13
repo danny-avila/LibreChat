@@ -25,6 +25,12 @@ import type { SeededPin } from './pinned.helpers';
 import { getE2EUser } from '../../../setup/user';
 import { deleteConversations, seedConversations } from '../db';
 
+/* Seeding a pinned list and reloading is the slow part of every test here, and it
+ * runs in hooks, which do not read a `test.setTimeout` call made inside a test
+ * body: a loaded machine timed the `beforeEach` out at the default 30s while the
+ * test itself was allowed 60. Configured once for the file instead. */
+test.describe.configure({ timeout: 60_000 });
+
 const MOCK_FAVORITE_A = { endpoint: 'Mock Provider A', model: 'mock-model-a' } as const;
 const MOCK_FAVORITE_B = { endpoint: 'Mock Provider B', model: 'mock-model-b' } as const;
 
@@ -64,7 +70,6 @@ test.describe('pinned drag rules', () => {
   test('dropping a pinned chat on Chats unpins it @scenario:dropping-a-pinned-chat-on-chats-unpins-it', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     await skipWithoutHover(page);
     const [draggedTitle, remainingTitle] = uniqueTitles('drop-to-chats', 2);
     seededPins = await seedPinnedConversations([draggedTitle, remainingTitle]);
@@ -96,7 +101,6 @@ test.describe('pinned drag rules', () => {
   test('dropping an unpinned chat on a pinned row pins it @scenario:dropping-a-chat-on-a-pinned-row-pins-it', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     await skipWithoutHover(page);
     const [pinnedTitle] = uniqueTitles('pin-on-row', 1);
     const plainTitle = `pin-on-row plain ${randomUUID()}`;
@@ -124,7 +128,6 @@ test.describe('pinned drag rules', () => {
   test('a pinned chat cannot be dragged through a pinned model @scenario:a-pinned-chat-cannot-be-dragged-through-a-pinned-model', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     await skipWithoutHover(page);
     /** One chat to start with: a second one below it would be a legitimate
      *  same-kind neighbour for the pointer to swap with on its way up, and the
@@ -184,7 +187,6 @@ test.describe('pinned drag rules', () => {
   test('Alt+Arrow stops a pinned row at its kind edge @scenario:alt-arrow-stops-a-pinned-row-at-its-kinds-edge', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const [firstTitle] = uniqueTitles('keyboard-kind-edge', 1);
     seededPins = await seedPinnedConversations([firstTitle]);
 
@@ -230,7 +232,6 @@ test.describe('pinned drag rules', () => {
   test('a stored interleaved pinned order loads grouped @scenario:a-stored-interleaved-pinned-order-loads-grouped', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const [firstTitle, secondTitle] = uniqueTitles('stored-interleave', 2);
     seededPins = await seedPinnedConversations([firstTitle, secondTitle]);
 

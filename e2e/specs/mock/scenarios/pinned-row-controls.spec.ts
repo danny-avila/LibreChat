@@ -17,6 +17,12 @@ import {
 } from './pinned.helpers';
 import type { ModelFavorite, SeededPin } from './pinned.helpers';
 
+/* Seeding a pinned list and reloading is the slow part of every test here, and it
+ * runs in hooks, which do not read a `test.setTimeout` call made inside a test
+ * body: a loaded machine timed the `beforeEach` out at the default 30s while the
+ * test itself was allowed 60. Configured once for the file instead. */
+test.describe.configure({ timeout: 60_000 });
+
 const FAVORITE: ModelFavorite = {
   endpoint: 'Mock Provider A',
   model: 'mock-model-a',
@@ -75,7 +81,6 @@ test.describe('pinned row controls', () => {
   test('controls draw inside their row @scenario:pinned-row-controls-draw-inside-their-row', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
     test.skip(!hasHover, 'pointer hover is a desktop-only path');
     const row = pinnedConvoRow(page, seededPins[0].title);
@@ -98,7 +103,6 @@ test.describe('pinned row controls', () => {
   test('both pinned kinds show the same unpin badge @scenario:both-pinned-kinds-show-the-same-unpin-badge', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
     test.skip(!hasHover, 'badge reveal comparison is a desktop-only path');
 
@@ -144,7 +148,6 @@ test.describe('pinned row controls', () => {
   test('the unpin badge stays while its row menu is open @scenario:the-unpin-badge-stays-while-its-rows-menu-is-open', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
     test.skip(!hasHover, 'pointer hover is a desktop-only path');
     const row = pinnedConvoRow(page, seededPins[0].title);
@@ -185,7 +188,6 @@ test.describe('pinned row controls', () => {
   test('hovering a pinned chat row holds its controls still @scenario:hovering-a-pinned-chat-row-holds-its-controls-still', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
     test.skip(!hasHover, 'pointer hover is a desktop-only path');
     const row = pinnedConvoRow(page, seededPins[0].title);
@@ -232,7 +234,6 @@ test.describe('pinned row controls', () => {
   test('a touch tap reaches the unpin badge directly @scenario:a-touch-tap-reaches-the-unpin-badge-directly', async ({
     page,
   }) => {
-    test.setTimeout(60000);
     const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
     test.skip(hasHover, 'direct badge tap is a touch-only path');
 
