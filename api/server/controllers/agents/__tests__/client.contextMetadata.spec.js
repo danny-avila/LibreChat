@@ -43,9 +43,9 @@ const primaryFor = (runId, output_tokens) => ({
   runId,
 });
 
-const toolPart = (name, output) => ({
+const toolPart = (id, name, output) => ({
   type: 'tool_call',
-  tool_call: { name, args: '{"path":"a"}', output },
+  tool_call: { id, name, args: '{"path":"a"}', output },
 });
 
 function buildMeta({
@@ -53,7 +53,7 @@ function buildMeta({
   latestUsageIndex,
   usageEvents,
   stepLimitReached = false,
-  latestContentIndex,
+  latestToolCallIds,
   contentParts,
 }) {
   const self = {
@@ -63,7 +63,7 @@ function buildMeta({
     contentParts,
     getEncoding: () => 'o200k_base',
     contextUsageSink: snap
-      ? { latest: snap, count: 1, latestUsageIndex, latestContentIndex }
+      ? { latest: snap, count: 1, latestUsageIndex, latestToolCallIds }
       : { latest: null, count: 0 },
   };
   return AgentClient.prototype.buildResponseMetadata.call(self);
@@ -169,25 +169,26 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
    *  final call ran. The snapshot describing that call precedes them and no further
    *  call is made, so the counted figure has to ride along or the client's gauge
    *  misses the retained result until the next turn. */
-  it('hands the resolver this snapshot’s content boundary and persists its figure', () => {
+  it('hands the resolver this snapshot’s call boundary and persists its figure', () => {
     mockResolveRetainedToolTokens.mockReturnValue(180);
     const contentParts = [
-      toolPart('grep', 'the result the snapshot already counts'),
-      toolPart('read_file', 'the retained result'),
+      toolPart('call_1', 'grep', 'the result the snapshot already counts'),
+      toolPart('call_2', 'read_file', 'the retained result'),
     ];
+    const latestToolCallIds = new Set(['call_1']);
     const meta = buildMeta({
       snap: snapshot(0),
       latestUsageIndex: 0,
       usageEvents: [primary],
       stepLimitReached: true,
-      latestContentIndex: 1,
+      latestToolCallIds,
       contentParts,
     });
     expect(mockResolveRetainedToolTokens).toHaveBeenCalledWith({
       stoppedAtToolLimit: true,
       contentParts,
-      /** The earlier loop step is already inside the snapshot's message tokens. */
-      fromIndex: 1,
+      /** The calls the snapshot already saw; only the rest are retained. */
+      priorToolCallIds: latestToolCallIds,
       encoding: 'o200k_base',
     });
     expect(meta.contextUsage.retainedToolTokens).toBe(180);
@@ -199,8 +200,8 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
       snap: snapshot(0),
       latestUsageIndex: 0,
       usageEvents: [primary],
-      latestContentIndex: 0,
-      contentParts: [toolPart('read_file', 'a result the next call re-counted')],
+      latestToolCallIds: new Set(),
+      contentParts: [toolPart('call_1', 'read_file', 'a result the next call re-counted')],
     });
     expect(mockResolveRetainedToolTokens).toHaveBeenCalledWith(
       expect.objectContaining({ stoppedAtToolLimit: false }),

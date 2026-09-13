@@ -31,6 +31,7 @@ const {
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
   captureSubagentIdentity,
+  collectToolCallIds,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -853,10 +854,13 @@ function getDefaultHandlers({
           contextUsageSink.latest = data;
           contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
           contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
-          /** Where this snapshot's content ends. The parts appended after it are
-           *  the ones its own call produced, so a turn that stops at the tool-call
-           *  limit can count the tool results no later snapshot describes. */
-          contextUsageSink.latestContentIndex = contentParts?.length ?? 0;
+          /** Which tool calls this snapshot already accounts for. A turn that
+           *  stops at the tool-call limit counts the results of the calls missing
+           *  from this set — the ones its own call produced, which no later
+           *  snapshot describes. Ids, not a content index: completion reshapes the
+           *  array (skill cards unshifted, hidden sequential output filtered), so
+           *  an index recorded here would mean something else by save time. */
+          contextUsageSink.latestToolCallIds = collectToolCallIds(contentParts);
         }
         /** Every agent's snapshot publishes the run's context meta, hidden
          *  sequential agents included: their model calls latch tiers too, and a

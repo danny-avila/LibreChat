@@ -24,6 +24,7 @@ jest.mock('@librechat/api', () => ({
   ),
   isCodeArtifactToolOutput: jest.requireActual('@librechat/api').isCodeArtifactToolOutput,
   isCodeSessionToolName: jest.requireActual('@librechat/api').isCodeSessionToolName,
+  collectToolCallIds: jest.requireActual('@librechat/api').collectToolCallIds,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -210,9 +211,12 @@ describe('resumable event generation fencing', () => {
     );
     const contextUsageSink = { latest: null, count: 0, onSnapshot };
     const usageEmitSink = [{ input_tokens: 10 }];
-    /** Two parts already rendered when the snapshot lands: the boundary the save
-     *  path slices at to find the content this snapshot's own call produced. */
-    const contentParts = [{ type: 'text' }, { type: 'tool_call' }];
+    /** The call this snapshot already accounts for: a later tool-limit stop counts
+     *  the results of the calls missing from this set. */
+    const contentParts = [
+      { type: 'text', text: 'answering' },
+      { type: 'tool_call', tool_call: { id: 'call_1', name: 'grep' } },
+    ];
     const data = { contextBudget: 1000, remainingContextTokens: 400 };
     const handlers = getDefaultHandlers({
       res: { write: jest.fn() },
@@ -238,7 +242,7 @@ describe('resumable event generation fencing', () => {
       latest: data,
       count: 1,
       latestUsageIndex: 1,
-      latestContentIndex: 2,
+      latestToolCallIds: new Set(['call_1']),
     });
     expect(onSnapshot).toHaveBeenCalledTimes(1);
     expect(settled).toBe(false);

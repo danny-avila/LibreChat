@@ -362,12 +362,17 @@ export default function useTokenUsage({
          *  the summary block's size so a compacting turn's summarization output —
          *  folded into the response's `tokenCount` but held outside
          *  `messageTokens` — is not subtracted from a total that never carried
-         *  it. While a response streams, `completedOutput` is 0 and the in-flight
-         *  tail is excluded from both sides (it rides on `liveTokens`). */
+         *  it. A retained tool result is added for the same reason: the kept
+         *  exchange counts it, so leaving it out of the total would subtract
+         *  content that was never in it and understate the savings — on a large
+         *  final result, down to zero. While a response streams, `completedOutput`
+         *  is 0 and the in-flight tail is excluded from both sides (it rides on
+         *  `liveTokens`). */
         compactionReclaim: Math.max(
           0,
           normalizeTokenCount(breakdown.messageTokens) +
-            completedOutput -
+            completedOutput +
+            retainedToolTokens -
             latestExchangeTokens(
               conversationKey,
               tailId,

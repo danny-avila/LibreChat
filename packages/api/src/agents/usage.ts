@@ -18,13 +18,13 @@ import type {
 } from './transactions';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { EndpointTokenConfig } from '~/types/tokens';
-import type { EncodingName } from '~/utils/tokenizer';
 import {
   prepareStructuredTokenSpend,
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import Tokenizer, { type EncodingName } from '~/utils/tokenizer';
 import { countRetainedToolTokens } from './client';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
@@ -400,22 +400,34 @@ const normalizePersistedTokenRecord = (
  * text, and a turn whose tools ran gets another call, hence another snapshot.
  * A result that cannot be counted exactly withdraws the whole figure rather than
  * contributing a guess (see `countRetainedToolTokens`).
+ *
+ * `countExact` is the run's own exact counter. It defaults to the shared
+ * tokenizer for the given encoding — the same one the SDK counted the snapshot
+ * with, which is the point — and is a parameter so a caller (or a test) can
+ * supply its own without reaching into module state.
  */
 export function resolveRetainedToolTokens({
   stoppedAtToolLimit,
   contentParts,
-  fromIndex,
+  priorToolCallIds,
   encoding,
+  countExact = (text: string) => Tokenizer.countExactTokens(text, encoding),
 }: {
   stoppedAtToolLimit: boolean;
   contentParts: ReadonlyArray<unknown> | null | undefined;
-  fromIndex: number;
+  priorToolCallIds: ReadonlySet<string> | null | undefined;
   encoding: EncodingName;
+  countExact?: (text: string) => number | undefined;
 }): number | undefined {
   if (!stoppedAtToolLimit) {
     return undefined;
   }
-  return countRetainedToolTokens(contentParts, fromIndex, encoding);
+  return countRetainedToolTokens({
+    contentParts,
+    priorToolCallIds,
+    countExact,
+    isClaude: encoding === 'claude',
+  });
 }
 
 /**

@@ -20,9 +20,9 @@ import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import Tokenizer from '~/utils/tokenizer';
 
 describe('resolveRetainedToolTokens', () => {
-  const toolPart = (output: string) => ({
+  const toolPart = (id: string, output: string) => ({
     type: 'tool_call',
-    tool_call: { name: 'read_file', args: '{"path":"a"}', output },
+    tool_call: { id, name: 'read_file', args: '{"path":"a"}', output },
   });
 
   beforeAll(async () => {
@@ -30,21 +30,19 @@ describe('resolveRetainedToolTokens', () => {
   });
 
   it('counts the results retained past the snapshot when the tool limit stopped the turn', () => {
+    /** Left to its default, the counter is the run's own tokenizer — the one the
+     *  snapshot was measured with — so the figure is the real token count of the
+     *  retained result and nothing else. */
     const retained = resolveRetainedToolTokens({
       stoppedAtToolLimit: true,
-      contentParts: [toolPart('the result the snapshot counted'), toolPart('the retained result')],
-      fromIndex: 1,
+      contentParts: [
+        toolPart('call_1', 'the result the snapshot counted'),
+        toolPart('call_2', 'the retained result'),
+      ],
+      priorToolCallIds: new Set(['call_1']),
       encoding: 'o200k_base',
     });
-    expect(retained).toBe(
-      resolveRetainedToolTokens({
-        stoppedAtToolLimit: true,
-        contentParts: [toolPart('the retained result')],
-        fromIndex: 0,
-        encoding: 'o200k_base',
-      }),
-    );
-    expect(retained).toBeGreaterThan(0);
+    expect(retained).toBe(Tokenizer.countExactTokens('the retained result', 'o200k_base'));
   });
 
   it('reports nothing for every other ending, whatever the turn produced', () => {
@@ -53,11 +51,25 @@ describe('resolveRetainedToolTokens', () => {
     expect(
       resolveRetainedToolTokens({
         stoppedAtToolLimit: false,
-        contentParts: [toolPart('a result the next call re-counted')],
-        fromIndex: 0,
+        contentParts: [toolPart('call_1', 'a result the next call re-counted')],
+        priorToolCallIds: new Set(),
         encoding: 'o200k_base',
       }),
     ).toBeUndefined();
+  });
+
+  it('takes a supplied counter instead of reaching for the shared tokenizer', () => {
+    const countExact = jest.fn((text: string) => text.length);
+    expect(
+      resolveRetainedToolTokens({
+        stoppedAtToolLimit: true,
+        contentParts: [toolPart('call_1', 'result')],
+        priorToolCallIds: new Set(),
+        encoding: 'claude',
+        countExact,
+      }),
+    ).toBe(Math.ceil('result'.length * 1.1));
+    expect(countExact).toHaveBeenCalledWith('result');
   });
 });
 

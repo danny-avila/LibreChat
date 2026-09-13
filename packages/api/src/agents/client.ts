@@ -61,7 +61,7 @@ type ContentBlock = {
   mime_type?: string;
   data?: string;
   text?: string;
-  tool_call?: { name?: string; args?: string; output?: string };
+  tool_call?: { id?: string; name?: string; args?: string; output?: string };
 };
 
 export type FormattedMessageContentPart = {
@@ -387,8 +387,12 @@ export function countFormattedMessageTokens(
  * precede requested are never in them; normally the next call's snapshot carries
  * those results as kept-message context, but a run that stops at the tool-call
  * limit makes no next call — the result stays on the response and in no snapshot.
- * `fromIndex` is the content length recorded when the last snapshot was captured,
- * so parts at or after it belong to that final, unsnapshotted step.
+ * `priorToolCallIds` are the calls the last snapshot already saw, so a call whose
+ * id is absent from it belongs to that final, unsnapshotted step. The boundary is
+ * the call id rather than a content index because completion reshapes the array —
+ * skill cards are unshifted onto the front and `hide_sequential_outputs` replaces
+ * it with a filtered one — so any index recorded mid-run means something else by
+ * the time the turn is saved. A call with no id cannot be placed and is skipped.
  *
  * Only the tool OUTPUT counts. A call's name and arguments are model output,
  * already carried by the snapshot's `completedOutputTokens`, so counting them
@@ -397,37 +401,64 @@ export function countFormattedMessageTokens(
  * exact provider accounting, so it errs low rather than overstating the context.
  * Non-string outputs are skipped, matching {@link countFormattedMessageTokens}.
  *
- * `undefined` rather than a number whenever a result could not be counted exactly
- * (the run's encoding is not loaded): a turn whose gauge is missing the retained
- * result is better than one whose exact figures absorbed a guess. The Claude
- * framing correction is applied, matching the counter that produced the snapshot.
+ * `countExact` returns `undefined` for content it cannot count exactly, and that
+ * withdraws the whole figure: a turn whose gauge is missing the retained result
+ * is better than one whose exact figures absorbed a guess. The Claude framing
+ * correction is applied, matching the counter that produced the snapshot.
  */
-export function countRetainedToolTokens(
-  parts: ReadonlyArray<unknown> | null | undefined,
-  fromIndex: number,
-  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
-): number | undefined {
-  if (!Array.isArray(parts)) {
+export function countRetainedToolTokens({
+  contentParts,
+  priorToolCallIds,
+  countExact,
+  isClaude = false,
+}: {
+  contentParts: ReadonlyArray<unknown> | null | undefined;
+  priorToolCallIds: ReadonlySet<string> | null | undefined;
+  countExact: (text: string) => number | undefined;
+  isClaude?: boolean;
+}): number | undefined {
+  if (!Array.isArray(contentParts)) {
     return 0;
   }
-  const start = Number.isFinite(fromIndex) ? Math.max(0, Math.floor(fromIndex)) : 0;
   let tokens = 0;
-  for (let index = start; index < parts.length; index++) {
-    const part = parts[index] as ContentBlock | null | undefined;
+  for (const candidate of contentParts) {
+    const part = candidate as ContentBlock | null | undefined;
     if (part == null || part.type !== ContentTypes.TOOL_CALL) {
       continue;
     }
-    const output = part.tool_call?.output;
+    const { id, output } = part.tool_call ?? {};
+    if (typeof id !== 'string' || id.length === 0 || priorToolCallIds?.has(id) === true) {
+      continue;
+    }
     if (typeof output !== 'string' || output.length === 0) {
       continue;
     }
-    const counted = Tokenizer.countExactTokens(output, encoding);
+    const counted = countExact(output);
     if (counted == null) {
       return undefined;
     }
     tokens += counted;
   }
-  return encoding === 'claude' ? Math.ceil(tokens * CLAUDE_TOKEN_CORRECTION) : tokens;
+  return isClaude ? Math.ceil(tokens * CLAUDE_TOKEN_CORRECTION) : tokens;
+}
+
+/** The tool calls a content array carries, by provider id — the boundary a later
+ *  save path measures "retained past this snapshot" against. */
+export function collectToolCallIds(
+  contentParts: ReadonlyArray<unknown> | null | undefined,
+): Set<string> {
+  const ids = new Set<string>();
+  if (!Array.isArray(contentParts)) {
+    return ids;
+  }
+  for (const candidate of contentParts) {
+    const part = candidate as ContentBlock | null | undefined;
+    const id = part?.type === ContentTypes.TOOL_CALL ? part.tool_call?.id : undefined;
+    if (typeof id === 'string' && id.length > 0) {
+      ids.add(id);
+    }
+  }
+  return ids;
 }
 
 export function createTokenCounter(

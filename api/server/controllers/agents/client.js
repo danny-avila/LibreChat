@@ -3632,7 +3632,7 @@ class AgentClient extends BaseClient {
         retainedToolTokens: resolveRetainedToolTokens({
           stoppedAtToolLimit: this.stepLimitReached === true,
           contentParts: this.contentParts,
-          fromIndex: this.contextUsageSink?.latestContentIndex ?? 0,
+          priorToolCallIds: this.contextUsageSink?.latestToolCallIds,
           encoding: this.getEncoding(),
         }),
       });

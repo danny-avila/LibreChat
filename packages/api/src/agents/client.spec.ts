@@ -4,6 +4,7 @@ import { Providers, StandardGraph } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type { TMessage } from 'librechat-data-provider';
 import {
+  collectToolCallIds,
   countRetainedToolTokens,
   createCachedTokenCounter,
   prependQuotes,
@@ -12,7 +13,6 @@ import {
   type FormattedMessageWithContent,
 } from './client';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
-import Tokenizer from '~/utils/tokenizer';
 
 describe('createCachedTokenCounter', () => {
   it('enables stable-message reuse in the agents runtime', async () => {
@@ -48,74 +48,111 @@ describe('createCachedTokenCounter', () => {
 });
 
 describe('countRetainedToolTokens', () => {
-  const toolPart = (name: string, output: string) => ({
+  const toolPart = (id: string, name: string, output?: string) => ({
     type: ContentTypes.TOOL_CALL,
-    tool_call: { name, args: '{"path":"a"}', output },
+    tool_call: { id, name, args: '{"path":"a"}', ...(output != null && { output }) },
   });
+  /** Stands in for the run's tokenizer: one token per four characters, so every
+   *  expectation below is a plain arithmetic consequence of what was counted. */
+  const countExact = (text: string) => Math.ceil(text.length / 4);
 
-  beforeAll(async () => {
-    /** The run loads its encoding before the graph starts, so the save path counts
-     *  against a warm tokenizer; a cold one withdraws the figure (below). */
-    await Tokenizer.initEncoding('o200k_base');
-    await Tokenizer.initEncoding('claude');
-  });
-
-  it('counts only the tool results produced after the snapshot boundary', () => {
-    const parts = [
-      toolPart('grep', 'x'.repeat(4000)),
+  it('counts only the results of calls the snapshot had not seen', () => {
+    const contentParts = [
+      toolPart('call_1', 'grep', 'x'.repeat(4000)),
       { type: ContentTypes.TEXT, text: 'calling the tool' },
-      toolPart('read_file', 'the retained result'),
+      toolPart('call_2', 'read_file', 'the retained result'),
     ];
 
-    /** Everything before the boundary is already inside the snapshot's own
-     *  message tokens; counting it again would double the whole loop. */
-    const retained = countRetainedToolTokens(parts, 1, 'o200k_base');
-    expect(retained).toBeGreaterThan(0);
-    expect(retained).toBeLessThan(countRetainedToolTokens(parts, 0, 'o200k_base') ?? 0);
-    expect(retained).toBe(countRetainedToolTokens([parts[2]], 0, 'o200k_base'));
+    /** The earlier call is already inside the snapshot's own message tokens;
+     *  counting it again would double the whole loop. */
+    expect(
+      countRetainedToolTokens({
+        contentParts,
+        priorToolCallIds: new Set(['call_1']),
+        countExact,
+      }),
+    ).toBe(countExact('the retained result'));
+  });
+
+  it('follows the call ids through a reshaped content array', () => {
+    /** Completion unshifts skill cards and can filter hidden sequential output,
+     *  so the retained call moves; its id does not. */
+    const retained = toolPart('call_2', 'read_file', 'the retained result');
+    const reshaped = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'skill_card', name: 'prime' } },
+      retained,
+    ];
+    expect(
+      countRetainedToolTokens({
+        contentParts: reshaped,
+        priorToolCallIds: new Set(['call_1']),
+        countExact,
+      }),
+    ).toBe(countExact('the retained result'));
   });
 
   it('ignores the model-authored call and everything that is not a tool result', () => {
     /** Name and arguments are output tokens the snapshot's `completedOutputTokens`
-     *  already carries, and assistant text is output too. */
-    const args = '{"path":"a"}';
-    const nameAndArgs = [
-      { type: ContentTypes.TOOL_CALL, tool_call: { name: 'read_file', args } },
+     *  already carries, and assistant text is output too. An id-less call cannot be
+     *  placed against the boundary at all. */
+    const contentParts = [
+      toolPart('call_1', 'read_file'),
       { type: ContentTypes.TEXT, text: 'a long assistant explanation of the call' },
       { type: ContentTypes.THINK, think: 'reasoning that never re-enters context' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { name: 'read_file', output: 'unplaceable' } },
     ];
-    expect(countRetainedToolTokens(nameAndArgs, 0, 'o200k_base')).toBe(0);
+    expect(countRetainedToolTokens({ contentParts, priorToolCallIds: new Set(), countExact })).toBe(
+      0,
+    );
+    expect(
+      countRetainedToolTokens({ contentParts: undefined, priorToolCallIds: null, countExact }),
+    ).toBe(0);
   });
 
   it('applies the Claude framing correction, matching the counter the snapshot used', () => {
-    const parts = [toolPart('read_file', 'r'.repeat(500))];
-    const base = countRetainedToolTokens(parts, 0, 'o200k_base') ?? 0;
-    const claude = countRetainedToolTokens(parts, 0, 'claude') ?? 0;
-    expect(base).toBeGreaterThan(0);
-    expect(claude).toBeGreaterThan(base * 1.05);
+    const contentParts = [toolPart('call_1', 'read_file', 'r'.repeat(500))];
+    const base = countRetainedToolTokens({
+      contentParts,
+      priorToolCallIds: new Set(),
+      countExact,
+    });
+    expect(
+      countRetainedToolTokens({
+        contentParts,
+        priorToolCallIds: new Set(),
+        countExact,
+        isClaude: true,
+      }),
+    ).toBe(Math.ceil((base ?? 0) * 1.1));
   });
 
-  it('reports nothing rather than an estimate when the encoding is unavailable', () => {
+  it('reports nothing rather than an estimate when a result cannot be counted', () => {
     /** A gauge missing the retained result is better than exact provider figures
-     *  with a guess folded in, so an uncountable result withdraws the whole value. */
-    const count = jest
-      .spyOn(Tokenizer, 'countExactTokens')
-      .mockReturnValueOnce(undefined as unknown as number);
-    try {
-      expect(
-        countRetainedToolTokens([toolPart('grep', 'result')], 0, 'o200k_base'),
-      ).toBeUndefined();
-    } finally {
-      count.mockRestore();
-    }
+     *  with a guess folded in, so one uncountable result withdraws the whole value. */
+    expect(
+      countRetainedToolTokens({
+        contentParts: [
+          toolPart('call_1', 'read_file', 'countable'),
+          toolPart('call_2', 'grep', 'uncountable'),
+        ],
+        priorToolCallIds: new Set(),
+        countExact: (text) => (text === 'uncountable' ? undefined : countExact(text)),
+      }),
+    ).toBeUndefined();
   });
+});
 
-  it('returns zero for a turn with no content and for an out-of-range boundary', () => {
-    expect(countRetainedToolTokens(undefined, 0, 'o200k_base')).toBe(0);
-    expect(countRetainedToolTokens([toolPart('grep', 'result')], 5, 'o200k_base')).toBe(0);
-    expect(countRetainedToolTokens([toolPart('grep', 'result')], Number.NaN, 'o200k_base')).toBe(
-      countRetainedToolTokens([toolPart('grep', 'result')], 0, 'o200k_base'),
-    );
+describe('collectToolCallIds', () => {
+  it('collects the ids a snapshot has seen and skips everything else', () => {
+    expect(
+      collectToolCallIds([
+        { type: ContentTypes.TOOL_CALL, tool_call: { id: 'call_1', name: 'grep' } },
+        { type: ContentTypes.TEXT, text: 'text carries no call' },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'no id' } },
+        undefined,
+      ]),
+    ).toEqual(new Set(['call_1']));
+    expect(collectToolCallIds(undefined)).toEqual(new Set());
   });
 });
 

@@ -6,6 +6,8 @@ export type EncodingName = 'o200k_base' | 'claude';
 type EncodingData = ConstructorParameters<typeof AiTokenizer>[0];
 
 const MAX_TOKENIZER_INPUT_LENGTH = 4 * 1024;
+/** Beyond this, an exact count is refused rather than paid for: ~60 ms/MB. */
+const MAX_EXACT_COUNT_LENGTH = 8 * 1024 * 1024;
 
 function estimateBoundedTokenCount(text: string): number {
   return Buffer.byteLength(text, 'utf8');
@@ -79,19 +81,26 @@ class Tokenizer {
   }
 
   /**
-   * Token count for content that must not be estimated, or `undefined` when the
-   * encoding is not loaded yet so the caller can omit a figure instead of
-   * publishing a guess. Used for a value that is ADDED to exact provider
-   * accounting — see the retained tool results of a turn stopped at the tool-call
-   * limit — where {@link getTokenCount}'s two fallbacks would corrupt the sum:
-   * the cold-start estimate is a character ratio, and the oversized-input
-   * shortcut returns byte length, which runs several times the real count on
-   * ordinary text. Oversized text is therefore tokenized in bounded slices, cut
-   * on code-point boundaries so a split surrogate pair cannot change the count.
+   * Token count for content that must not be estimated, or `undefined` when it
+   * cannot be produced, so the caller can omit a figure instead of publishing a
+   * guess. Used for a value that is ADDED to exact provider accounting — see the
+   * retained tool results of a turn stopped at the tool-call limit — where
+   * {@link getTokenCount}'s two fallbacks would corrupt the sum: the cold-start
+   * estimate is a character ratio, and the oversized-input shortcut returns byte
+   * length, several times the real count on ordinary text.
+   *
+   * The input is tokenized whole. Counting it in slices would be cheaper but not
+   * exact — a BPE merge spanning a seam is charged twice, ~1 token per 4 KiB
+   * measured — and this is the one caller that needs the real number. Whole-input
+   * tokenization costs ~60 ms/MB here and runs once, at the end of a stopped
+   * turn, so only absurd content is refused outright by {@link MAX_EXACT_COUNT_LENGTH}.
    */
   countExactTokens(text: string, encoding: EncodingName = 'o200k_base'): number | undefined {
     if (text.length === 0) {
       return 0;
+    }
+    if (text.length > MAX_EXACT_COUNT_LENGTH) {
+      return undefined;
     }
     const tokenizer = this.tokenizersCache[encoding];
     if (!tokenizer) {
@@ -99,20 +108,7 @@ class Tokenizer {
       return undefined;
     }
     try {
-      let total = 0;
-      let start = 0;
-      while (start < text.length) {
-        let end = Math.min(text.length, start + MAX_TOKENIZER_INPUT_LENGTH);
-        if (end < text.length) {
-          const code = text.charCodeAt(end - 1);
-          if (code >= 0xd800 && code <= 0xdbff) {
-            end -= 1;
-          }
-        }
-        total += tokenizer.count(text.slice(start, end));
-        start = end;
-      }
-      return total;
+      return tokenizer.count(text);
     } catch (error) {
       this.handleCountError(encoding, tokenizer, error);
       return undefined;
