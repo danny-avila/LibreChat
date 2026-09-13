@@ -93,6 +93,7 @@ export interface BalanceConfig {
   refillIntervalValue?: number;
   refillIntervalUnit?: RefillIntervalUnit;
   refillAmount?: number;
+  reservationTtlMs?: number;
 }
 
 export interface CreateUserRequest extends Partial<IUser> {
