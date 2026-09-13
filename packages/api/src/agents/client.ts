@@ -379,6 +379,10 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
+/** Total characters one turn's retained results may be tokenized for: the same
+ *  order as the tokenizer's own per-string bound, at ~60 ms/MB. */
+const MAX_RETAINED_COUNT_LENGTH = 8 * 1024 * 1024;
+
 /**
  * Exact token count of the tool results a turn retains beyond its last context
  * snapshot.
@@ -421,6 +425,7 @@ export function countRetainedToolTokens({
     return 0;
   }
   let tokens = 0;
+  let charactersCounted = 0;
   for (const candidate of contentParts) {
     const part = candidate as ContentBlock | null | undefined;
     if (part == null || part.type !== ContentTypes.TOOL_CALL) {
@@ -432,6 +437,13 @@ export function countRetainedToolTokens({
     }
     if (typeof output !== 'string' || output.length === 0) {
       continue;
+    }
+    /** The counter bounds one result; a final call that requested several tools in
+     *  parallel would otherwise multiply that bound by the number of results, so
+     *  the turn has a budget of its own and withdraws past it. */
+    charactersCounted += output.length;
+    if (charactersCounted > MAX_RETAINED_COUNT_LENGTH) {
+      return undefined;
     }
     const counted = countExact(output);
     if (counted == null) {

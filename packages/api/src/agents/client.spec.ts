@@ -140,6 +140,22 @@ describe('countRetainedToolTokens', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('withdraws instead of tokenizing an unbounded pile of parallel results', () => {
+    /** The tokenizer bounds one result; several parallel results just under that
+     *  bound would multiply the work, so the turn keeps a budget of its own. */
+    const half = 'a'.repeat(5 * 1024 * 1024);
+    const counted = jest.fn(countExact);
+    expect(
+      countRetainedToolTokens({
+        contentParts: [toolPart('call_1', 'grep', half), toolPart('call_2', 'read_file', half)],
+        priorToolCallIds: new Set(),
+        countExact: counted,
+      }),
+    ).toBeUndefined();
+    /** It stops at the budget rather than counting the rest for nothing. */
+    expect(counted).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('collectToolCallIds', () => {
