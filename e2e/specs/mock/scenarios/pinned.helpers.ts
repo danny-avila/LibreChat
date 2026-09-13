@@ -178,16 +178,16 @@ export async function ensureSidebarOnScreen(page: Page): Promise<void> {
 
 /** Opens a fresh chat route and waits for the Pinned section to be reachable. */
 export async function openWithPinnedSection(page: Page): Promise<void> {
-  await page.goto('/c/new', { timeout: 15_000 });
-  await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+  await page.goto('/c/new', { timeout: 30_000 });
+  await expect(pinnedSection(page)).toBeVisible({ timeout: 30_000 });
   await ensureSidebarOnScreen(page);
 }
 
 /** Reloads and waits for the Pinned section to be reachable again: a reload
  *  puts a narrow viewport's drawer back off screen. */
 export async function reloadWithPinnedSection(page: Page): Promise<void> {
-  await page.reload({ timeout: 15_000 });
-  await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+  await page.reload({ timeout: 30_000 });
+  await expect(pinnedSection(page)).toBeVisible({ timeout: 30_000 });
   await ensureSidebarOnScreen(page);
 }
 

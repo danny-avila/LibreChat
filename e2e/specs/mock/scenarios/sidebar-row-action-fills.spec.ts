@@ -8,8 +8,10 @@ import { backgroundColor, borderRadius, chatsListRow, isTransparent } from './pi
 /* Seeding a pinned list and reloading is the slow part of every test here, and it
  * runs in hooks, which do not read a `test.setTimeout` call made inside a test
  * body: a loaded machine timed the `beforeEach` out at the default 30s while the
- * test itself was allowed 60. Configured once for the file instead. */
-test.describe.configure({ timeout: 60_000 });
+ * test itself was allowed 60. Configured once for the file instead, with room
+ * for the first test of a run, which also pays the app's cold start against a
+ * database that may be a network hop away. */
+test.describe.configure({ timeout: 120_000 });
 
 /**
  * Keep project creation on the same all-projects route as the existing project
