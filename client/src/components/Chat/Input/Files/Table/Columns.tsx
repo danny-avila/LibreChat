@@ -25,6 +25,7 @@ const contextMap: Record<any, TranslationKeys> = {
   [FileContext.assistants_output]: 'com_ui_assistants_output',
   [FileContext.message_attachment]: 'com_ui_attachment',
   [FileContext.run_artifact]: 'com_ui_published_file',
+  [FileContext.public_url]: 'com_ui_public_url',
 };
 
 export const columns: ColumnDef<TFile>[] = [

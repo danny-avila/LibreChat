@@ -414,6 +414,7 @@ export const validateFiles = ({
   fileConfig,
   skipSizeValidation = false,
   skipBatchRules = false,
+  shareAsUrl,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -426,6 +427,7 @@ export const validateFiles = ({
   /** The caller partitions the selection itself, so the rules that would reject the batch as a
    * whole — the file count and duplicates — wait until it has dropped what it can */
   skipBatchRules?: boolean;
+  shareAsUrl?: boolean;
 }) => {
   const { supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
@@ -473,7 +475,7 @@ export const validateFiles = ({
       ];
     }
 
-    if (!checkType(originalFile.type, mimeTypesToCheck)) {
+    if (!shareAsUrl && !checkType(originalFile.type, mimeTypesToCheck)) {
       setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }

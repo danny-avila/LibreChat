@@ -205,13 +205,63 @@ const isValidPath = (req, base, subfolder, filepath) => {
 };
 
 /**
+ * Writes `buffer` under `filename` inside `directory`, appending an incrementing
+ * `-n` suffix before the extension on collision. The write uses the `wx` flag
+ * (fail if the target already exists) so the existence-check and the write are
+ * atomic — two concurrent uploads that land on the same candidate name can't
+ * both "win" and silently overwrite one another the way a separate
+ * check-then-write (`fs.existsSync` followed by `fs.writeFile`) would allow.
+ *
+ * The suffix stays within `sanitizeFilename`'s safe set (`[a-zA-Z0-9._-]`): these
+ * names are handed out as public URLs, so a ` (n)` suffix would both embed a raw
+ * space in the link and be rewritten to `_` by any later re-sanitization, leaving
+ * the advertised name out of sync with the file on disk.
+ *
+ * @param {string} directory
+ * @param {string} filename
+ * @param {Buffer} buffer
+ * @returns {Promise<string>} The filename actually written (may differ from the input on collision).
+ */
+const writeAvailableFile = async (directory, filename, buffer) => {
+  const ext = path.extname(filename);
+  const base = path.basename(filename, ext);
+  let candidate = filename;
+  let counter = 1;
+  for (;;) {
+    try {
+      await fs.promises.writeFile(path.join(directory, candidate), buffer, { flag: 'wx' });
+      return candidate;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        throw error;
+      }
+      candidate = `${base}-${counter}${ext}`;
+      counter += 1;
+    }
+  }
+};
+
+/**
+ * Deletes a file from disk. An already-missing file (`ENOENT`) is treated as a
+ * no-op success, since the desired end state (file gone) is already true. Any
+ * other error (e.g. permissions, EISDIR from a corrupted path) is rethrown so
+ * callers — namely `processDeleteRequest`'s `failedFileIds` tracking — know the
+ * physical delete did not happen and can avoid deleting the DB record for a
+ * file that (for `public_url` shares, still-publicly-reachable file) remains
+ * on disk.
+ *
  * @param {string} filepath
  */
 const unlinkFile = async (filepath) => {
   try {
     await fs.promises.unlink(filepath);
   } catch (error) {
+    if (error?.code === 'ENOENT') {
+      logger.warn('File already deleted:', error);
+      return;
+    }
     logger.error('Error deleting file:', error);
+    throw error;
   }
 };
 
@@ -229,7 +279,7 @@ const unlinkFile = async (filepath) => {
  */
 const deleteLocalFile = async (req, file) => {
   const appConfig = req.config;
-  const { publicPath, uploads } = appConfig.paths;
+  const { publicPath, uploads, publicUploads } = appConfig.paths;
 
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
@@ -247,6 +297,25 @@ const deleteLocalFile = async (req, file) => {
     const filepath = path.join(userUploadDir, basePath);
 
     const rel = path.relative(userUploadDir, filepath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error(`Invalid file path: ${cleanFilepath}`);
+    }
+
+    await unlinkFile(filepath);
+    return;
+  }
+
+  if (cleanFilepath.startsWith(`/public/${req.user.id}`)) {
+    const userPublicDir = path.join(publicUploads, req.user.id);
+    const basePath = cleanFilepath.split(`/public/${req.user.id}/`)[1];
+
+    if (!basePath) {
+      throw new Error(`Invalid file path: ${cleanFilepath}`);
+    }
+
+    const filepath = path.join(userPublicDir, basePath);
+
+    const rel = path.relative(userPublicDir, filepath);
     if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
       throw new Error(`Invalid file path: ${cleanFilepath}`);
     }
@@ -278,33 +347,61 @@ const deleteLocalFile = async (req, file) => {
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
+ * @param {string} [params.basePath='uploads'] - Optional. 'uploads' (auth-gated download) or
+ *                                                'public' (permanent, unauthenticated static URL).
  *
- * @returns {Promise<{ filepath: string, bytes: number }>}
+ * @returns {Promise<{ filepath: string, bytes: number, height: number | undefined, width: number | undefined, filename: string | undefined }>}
  *          A promise that resolves to an object containing:
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
+ *            - filename: For public uploads only, the name actually used on disk (renamed on
+ *              collision), so callers persist and display the name the file was saved under.
  */
-async function uploadLocalFile({ req, file, file_id }) {
+async function uploadLocalFile({ req, file, file_id, basePath = 'uploads' }) {
   const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const bytes = Buffer.byteLength(inputBuffer);
 
-  const { uploads } = appConfig.paths;
-  const userPath = path.join(uploads, req.user.id);
+  const isPublic = basePath === 'public';
+  const rootDir = isPublic ? appConfig.paths.publicUploads : appConfig.paths.uploads;
+  const userPath = path.join(rootDir, req.user.id);
 
   if (!fs.existsSync(userPath)) {
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  /**
+   * A share link is handed out as `/public/<userId>/<filename>`, so unlike a regular upload
+   * it is not salted with the file_id; a collision is resolved with a `-n` suffix instead.
+   * The resolved name (not the requested one) must flow into both `filepath` and the returned
+   * `filename` so the path on disk, the persisted record, and the displayed name agree.
+   */
+  let fileName;
+  let publicFilename;
+  if (isPublic) {
+    fileName = await writeAvailableFile(userPath, path.basename(inputFilePath), inputBuffer);
+    publicFilename = fileName;
+  } else {
+    fileName = `${file_id}__${path.basename(inputFilePath)}`;
+    await fs.promises.writeFile(path.join(userPath, fileName), inputBuffer);
+  }
   const newPath = path.join(userPath, fileName);
+  const filepath = path.posix.join(
+    '/',
+    isPublic ? 'public' : 'uploads',
+    req.user.id,
+    path.basename(newPath),
+  );
 
-  await fs.promises.writeFile(newPath, inputBuffer);
-  const filepath = path.posix.join('/', 'uploads', req.user.id, path.basename(newPath));
-
+  /**
+   * `height` is what `encodeAndFormat` (packages/api/../images/encode) uses to decide whether
+   * a file needs vision/base64 encoding. Public share-link uploads must never be pulled into
+   * that pipeline — they're plain downloadable files whose URL is announced in the prompt text
+   * instead — and `prepareImagesLocal` doesn't know about the `/public/` path layout anyway.
+   */
   let height, width;
-  if (file.mimetype && file.mimetype.startsWith('image/')) {
+  if (!isPublic && file.mimetype && file.mimetype.startsWith('image/')) {
     try {
       const { width: imgWidth, height: imgHeight } = await resizeImageBuffer(inputBuffer, 'high');
       height = imgHeight;
@@ -314,7 +411,7 @@ async function uploadLocalFile({ req, file, file_id }) {
     }
   }
 
-  return { filepath, bytes, height, width };
+  return { filepath, bytes, height, width, filename: publicFilename };
 }
 
 /**
@@ -357,6 +454,24 @@ async function getLocalFileStream(req, filepath) {
       const publicDir = appConfig.paths.imageOutput;
 
       const rel = path.relative(publicDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+        logger.warn(`Invalid relative file path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      return fs.createReadStream(fullPath);
+    } else if (filepath.includes('/public/')) {
+      const basePath = filepath.split('/public/')[1];
+
+      if (!basePath) {
+        logger.warn(`Invalid base path: ${filepath}`);
+        throw new Error(`Invalid file path: ${filepath}`);
+      }
+
+      const fullPath = path.join(appConfig.paths.publicUploads, basePath);
+      const publicUploadsDir = appConfig.paths.publicUploads;
+
+      const rel = path.relative(publicUploadsDir, fullPath);
       if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
         logger.warn(`Invalid relative file path: ${filepath}`);
         throw new Error(`Invalid file path: ${filepath}`);

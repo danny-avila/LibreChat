@@ -190,6 +190,7 @@ const {
   VisionModes,
   ErrorTypes,
   ContentTypes,
+  FileContext,
   FileSources,
   ApprovalEvents,
   EModelEndpoint,
@@ -2504,8 +2505,18 @@ class AgentClient extends BaseClient {
         };
       }
 
+      /* A share link is not model-bound — its bytes reach no encoder and count against no
+       * context limit — but the URL itself is the file's entire contribution to the turn,
+       * so it joins the attachments the message's text context is built from. */
+      const shareLinkAttachments = requestAttachments.filter(
+        (file) => file?.context === FileContext.public_url,
+      );
+
       const [, files] = await Promise.all([
-        this.addFileContextToMessage(latestMessage, modelBoundRequestAttachments),
+        this.addFileContextToMessage(latestMessage, [
+          ...modelBoundRequestAttachments,
+          ...shareLinkAttachments,
+        ]),
         this.processAttachments(latestMessage, attachments),
       ]);
 

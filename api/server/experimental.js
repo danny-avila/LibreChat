@@ -666,6 +666,7 @@ if (cluster.isMaster) {
       }),
       routes.staticRoute,
     );
+    app.use('/public/', routes.publicFilesRoute);
     app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);

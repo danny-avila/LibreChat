@@ -113,6 +113,7 @@ function setupMocks(overrides: { provider?: string } = {}) {
     com_ui_upload_image_input: 'Upload Image',
     com_ui_upload_ocr_text: 'Upload as Text',
     com_ui_upload_provider: 'Upload to Provider',
+    com_ui_upload_share_url: 'Upload and Share as URL',
   };
   mockUseLocalize.mockReturnValue((key: string) => translations[key] || key);
   mockUseAgentCapabilities.mockReturnValue({
@@ -164,14 +165,15 @@ describe('AttachFileMenu', () => {
   beforeEach(jest.clearAllMocks);
 
   describe('unified mode upload sources', () => {
-    it('uses a single upload button when SharePoint is disabled', () => {
+    it('offers the local machine and the share link when SharePoint is disabled', () => {
       setupMocks();
       renderMenu({ isUnifiedMode: true });
 
-      expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
-      expect(
-        screen.queryByRole('button', { name: /attach file options/i }),
-      ).not.toBeInTheDocument();
+      openMenu();
+
+      expect(screen.getByText('From Local Computer')).toBeInTheDocument();
+      expect(screen.getByText('Upload and Share as URL')).toBeInTheDocument();
+      expect(screen.queryByText('Upload from SharePoint')).not.toBeInTheDocument();
     });
 
     it('offers SharePoint alongside local upload when SharePoint is enabled', () => {
@@ -205,6 +207,56 @@ describe('AttachFileMenu', () => {
       expect(screen.queryByText('Upload to Code Environment')).not.toBeInTheDocument();
       expect(screen.queryByText('Upload for File Search')).not.toBeInTheDocument();
       expect(screen.queryByText('Upload as Text')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('share as URL', () => {
+    const clickShareAsUrl = (handleFileChange: jest.Mock, isUnifiedMode: boolean) => {
+      mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange });
+      const originalClick = HTMLInputElement.prototype.click;
+      const file = new File(['data'], 'archive.zip', { type: 'application/zip' });
+
+      HTMLInputElement.prototype.click = function click() {
+        Object.defineProperty(this, 'files', { configurable: true, value: [file] });
+        fireEvent.change(this);
+      };
+
+      try {
+        renderMenu({ isUnifiedMode });
+        openMenu();
+        fireEvent.click(screen.getByText('Upload and Share as URL'));
+      } finally {
+        HTMLInputElement.prototype.click = originalClick;
+      }
+    };
+
+    it('uploads without a tool resource and flags the file as a share link', () => {
+      setupMocks();
+      const handleFileChange = jest.fn();
+
+      clickShareAsUrl(handleFileChange, false);
+
+      expect(handleFileChange).toHaveBeenCalledWith(expect.any(Object), undefined, true);
+    });
+
+    it('is offered in unified mode as well', () => {
+      setupMocks();
+      const handleFileChange = jest.fn();
+
+      clickShareAsUrl(handleFileChange, true);
+
+      expect(handleFileChange).toHaveBeenCalledWith(expect.any(Object), undefined, true);
+    });
+
+    it('does not carry the share flag into the next upload', () => {
+      setupMocks();
+      const handleFileChange = jest.fn();
+
+      clickShareAsUrl(handleFileChange, false);
+      fireEvent.change(screen.getByTestId('file-input'));
+
+      expect(handleFileChange).toHaveBeenNthCalledWith(1, expect.any(Object), undefined, true);
+      expect(handleFileChange).toHaveBeenNthCalledWith(2, expect.any(Object), undefined, false);
     });
   });
 
@@ -327,13 +379,11 @@ describe('AttachFileMenu', () => {
       expect(screen.getByTestId('dropdown-popup')).toHaveAttribute('data-portal', 'true');
     });
 
-    it('renders the unified upload button when legacyFileUploadUX is not true', () => {
+    it('renders the source chooser when legacyFileUploadUX is not true', () => {
       setupMocks();
       renderMenu({ isUnifiedMode: true });
-      expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
-      expect(
-        screen.queryByRole('button', { name: /attach file options/i }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /attach file options/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^attach files$/i })).not.toBeInTheDocument();
     });
   });
 
@@ -452,11 +502,12 @@ describe('AttachFileMenu', () => {
         HTMLInputElement.prototype.click = originalClick;
       }
 
-      expect(handleFileChange).toHaveBeenNthCalledWith(1, expect.any(Object), undefined);
+      expect(handleFileChange).toHaveBeenNthCalledWith(1, expect.any(Object), undefined, false);
       expect(handleFileChange).toHaveBeenNthCalledWith(
         2,
         expect.any(Object),
         EToolResources.file_search,
+        false,
       );
     });
   });

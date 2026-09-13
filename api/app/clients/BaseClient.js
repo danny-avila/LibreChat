@@ -24,6 +24,7 @@ const {
 const {
   Constants,
   FileSources,
+  FileContext,
   Tools,
   ErrorTypes,
   ContentTypes,
@@ -1806,6 +1807,11 @@ class BaseClient {
 
   getTextContextAttachments(attachments) {
     return attachments.filter((file) => {
+      /* A share link is announced as text whatever the file's own delivery path is: the
+       * bytes never reach the provider, the URL is the whole contribution to the turn. */
+      if (file.context === FileContext.public_url) {
+        return true;
+      }
       const deliveryPath = this.getAttachmentDeliveryPath(file);
       /* Records predating delivery paths keep legacy extraction. Current routing is
        * authoritative for inferred uploads, so native provider bytes are not also
@@ -2049,9 +2055,14 @@ class BaseClient {
             continue;
           }
           const authorizedFile = authorizedFilesById.get(file.file_id);
+          /* Historical admission is decided per model-bound attachment, and a share link is
+           * not one: it spends no attachment budget, so it stays announced for every later
+           * turn rather than dropping out of the conversation after the one it arrived in. */
           if (
             authorizedFile &&
-            (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id))
+            (!admittedHistoricalFileIds ||
+              admittedHistoricalFileIds.has(file.file_id) ||
+              authorizedFile.context === FileContext.public_url)
           ) {
             contextFiles.push(authorizedFile);
             contextSeen.add(file.file_id);

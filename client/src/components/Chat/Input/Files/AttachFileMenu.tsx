@@ -2,20 +2,20 @@ import React, { useRef, useState, useMemo, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
-  FileSearch,
-  ImageUpIcon,
-  FileType2Icon,
-  FileImageIcon,
-  TerminalSquareIcon,
-} from 'lucide-react';
-import {
-  IconButton,
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
 } from '@librechat/client';
+import {
+  LinkIcon,
+  FileSearch,
+  ImageUpIcon,
+  FileType2Icon,
+  FileImageIcon,
+  TerminalSquareIcon,
+} from 'lucide-react';
 import {
   Providers,
   EToolResources,
@@ -110,6 +110,7 @@ const AttachFileMenu = ({
     ephemeralAgentByConvoId(conversationId),
   );
   const toolResourceRef = useRef<EToolResources | undefined>();
+  const shareAsUrlRef = useRef(false);
   const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
     files,
     setFiles,
@@ -178,27 +179,51 @@ const AttachFileMenu = ({
     handleUploadClick();
   }, [handleUploadClick]);
 
+  /** A share link is a destination rather than a source, but unified mode keeps only the
+   *  source chooser, so it is offered there as well to stay reachable in both modes. */
+  const handleShareAsUrlUpload = useCallback(() => {
+    toolResourceRef.current = undefined;
+    shareAsUrlRef.current = true;
+    handleUploadClick();
+  }, [handleUploadClick]);
+
   /** Unified mode removed the destination chooser, not the source chooser. SharePoint has
    *  no trigger of its own, so without this the picker becomes unreachable whenever the
-   *  composer is in unified mode. Destination stays implicit on both sources. */
-  const unifiedSourceItems = useMemo<MenuItemProps[]>(
-    () => [
+   *  composer is in unified mode. Destination stays implicit on every source. */
+  const unifiedSourceItems = useMemo<MenuItemProps[]>(() => {
+    const items: MenuItemProps[] = [
       {
         label: localize('com_files_upload_local_machine'),
         onClick: handleUnifiedUpload,
         icon: <FileImageIcon className="icon-md" />,
       },
-      {
+    ];
+
+    if (sharePointEnabled === true) {
+      items.push({
         label: localize('com_files_upload_sharepoint'),
         onClick: () => {
           toolResourceRef.current = undefined;
           setIsSharePointDialogOpen(true);
         },
         icon: <SharePointIcon className="icon-md" />,
-      },
-    ],
-    [localize, handleUnifiedUpload, setIsSharePointDialogOpen],
-  );
+      });
+    }
+
+    items.push({
+      label: localize('com_ui_upload_share_url'),
+      onClick: handleShareAsUrlUpload,
+      icon: <LinkIcon className="icon-md" />,
+    });
+
+    return items;
+  }, [
+    localize,
+    sharePointEnabled,
+    handleUnifiedUpload,
+    handleShareAsUrlUpload,
+    setIsSharePointDialogOpen,
+  ]);
 
   const dropdownItems = useMemo(() => {
     const setToolResource = (value: EToolResources | undefined) => {
@@ -299,6 +324,12 @@ const AttachFileMenu = ({
 
     const localItems = createMenuItems(handleUploadClick);
 
+    localItems.push({
+      label: localize('com_ui_upload_share_url'),
+      onClick: handleShareAsUrlUpload,
+      icon: <LinkIcon className="icon-md" />,
+    });
+
     if (sharePointEnabled) {
       const sharePointItems = createMenuItems(() => {
         setIsSharePointDialogOpen(true);
@@ -324,6 +355,7 @@ const AttachFileMenu = ({
     handleUploadClick,
     setEphemeralAgent,
     sharePointEnabled,
+    handleShareAsUrlUpload,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
@@ -367,44 +399,22 @@ const AttachFileMenu = ({
         <FileUpload
           ref={inputRef}
           handleFileChange={(e) => {
-            handleFileChange(e, toolResourceRef.current);
+            handleFileChange(e, toolResourceRef.current, shareAsUrlRef.current);
+            shareAsUrlRef.current = false;
           }}
         >
-          {sharePointEnabled === true ? (
-            <DropdownPopup
-              menuId="attach-file-menu"
-              className="overflow-visible"
-              isOpen={isPopoverActive}
-              setIsOpen={setIsPopoverActive}
-              modal={false}
-              portal={true}
-              unmountOnHide={true}
-              trigger={menuTrigger}
-              items={unifiedSourceItems}
-              iconClassName="mr-0"
-            />
-          ) : (
-            <TooltipAnchor
-              render={
-                <IconButton
-                  type="button"
-                  size="theme"
-                  shape="theme"
-                  disabled={isUploadDisabled}
-                  id="attach-file-button"
-                  label={localize('com_sidepanel_attach_files')}
-                  onClick={handleUnifiedUpload}
-                  aria-keyshortcuts={uploadFileAriaKey}
-                  className="p-1 hover:bg-surface-composer-hover"
-                >
-                  <AttachmentIcon />
-                </IconButton>
-              }
-              id="attach-file-button"
-              description={uploadFileTooltip}
-              disabled={isUploadDisabled}
-            />
-          )}
+          <DropdownPopup
+            menuId="attach-file-menu"
+            className="overflow-visible"
+            isOpen={isPopoverActive}
+            setIsOpen={setIsPopoverActive}
+            modal={false}
+            portal={true}
+            unmountOnHide={true}
+            trigger={menuTrigger}
+            items={unifiedSourceItems}
+            iconClassName="mr-0"
+          />
         </FileUpload>
         <SharePointPickerDialog
           isOpen={isSharePointDialogOpen}
@@ -423,8 +433,9 @@ const AttachFileMenu = ({
       <FileUpload
         ref={inputRef}
         handleFileChange={(e) => {
-          handleFileChange(e, toolResourceRef.current);
+          handleFileChange(e, toolResourceRef.current, shareAsUrlRef.current);
           toolResourceRef.current = undefined;
+          shareAsUrlRef.current = false;
         }}
       >
         <DropdownPopup
