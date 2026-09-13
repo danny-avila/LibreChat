@@ -533,6 +533,7 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
      * feedback scores treat them as ownership, so a client can never author them. */
     delete message.langfuseSampled;
     delete message.langfuseDestinationIds;
+    delete message.langfuseRunId;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
@@ -720,7 +721,7 @@ router.put(
       // Best-effort: Assistants messages do not have deterministic AgentRun traces.
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
         sendFeedbackScore({
-          traceId: traceIdForMessage(messageId),
+          traceId: traceIdForMessage(updatedMessage.langfuseRunId ?? messageId),
           sampled: updatedMessage.langfuseSampled,
           destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,

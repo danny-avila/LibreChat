@@ -73,6 +73,15 @@ describe('getConversationTraceRefs', () => {
         createdAt: at(3),
         langfuseSampled: false,
       },
+      {
+        messageId: 'user-5_',
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(5),
+        error: true,
+        langfuseSampled: true,
+        langfuseRunId: 'run-5',
+      },
     ]);
 
     const refs = await methods.getConversationTraceRefs({ user: 'owner', conversationId: 'convo' });
@@ -82,6 +91,7 @@ describe('getConversationTraceRefs', () => {
       sampledMessages: [
         { messageId: 'response-1', createdAt: at(2), langfuseDestinationIds: ['destination-a'] },
         { messageId: 'response-2', createdAt: at(4) },
+        { messageId: 'user-5_', createdAt: at(5), langfuseRunId: 'run-5' },
       ],
     });
   });

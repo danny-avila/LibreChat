@@ -974,6 +974,7 @@ describe('importLibreChatConvo', () => {
       isCreatedByUser: false,
       langfuseSampled: true,
       langfuseDestinationIds: ['forged-destination'],
+      langfuseRunId: 'someone-elses-run',
       contextMeta: {
         calibrationRatio: 1,
         encoding: 'claude',
@@ -994,6 +995,7 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseSampled');
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseDestinationIds');
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseRunId');
     expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
   });
 

@@ -90,7 +90,8 @@ const toDomain = (start: number, end: number): Domain => ({
  * scaled to its own response, so a short turn in a long conversation stays
  * legible, until an interval is focused and every row shares that scale. Rows
  * are windowed, and the tree follows the ARIA tree pattern through
- * `aria-activedescendant` so the active row need not be mounted to be announced.
+ * `aria-activedescendant`, which must name a mounted row, so the active row
+ * stays rendered while the window scrolls away from it.
  */
 function Ledger({
   rows,
@@ -343,6 +344,9 @@ function Ledger({
   const visibleRows: JSX.Element[] = [];
   for (let index = first; index <= last && index < rows.length; index++) {
     visibleRows.push(renderRow(rows[index], index));
+  }
+  if (activeRow && (activeIndex < first || activeIndex > last)) {
+    visibleRows.push(renderRow(activeRow, activeIndex));
   }
 
   return (

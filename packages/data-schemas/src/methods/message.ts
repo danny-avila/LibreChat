@@ -447,6 +447,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-contextMeta',
   '-langfuseSampled',
   '-langfuseDestinationIds',
+  '-langfuseRunId',
   '-metadata.thoughtSignatures',
   '-content.tool_call.backgroundTask.resultClaim',
   '-content.tool_call.backgroundTask.completionWakeup',
@@ -594,6 +595,8 @@ export interface SampledTraceMessage {
   createdAt?: Date;
   /** Opaque ids of the tracing destinations eligible to hold the trace, when recorded. */
   langfuseDestinationIds?: string[];
+  /** The run whose trace this response reports, when it is not the message's own id. */
+  langfuseRunId?: string;
 }
 
 export interface ConversationTraceRefs {
@@ -1910,6 +1913,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         endpoint: updatedMessage.endpoint,
         langfuseSampled: updatedMessage.langfuseSampled,
         langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
+        langfuseRunId: updatedMessage.langfuseRunId,
       };
     } catch (err) {
       logger.error('Error updating message:', err);
@@ -3382,18 +3386,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           .sort({ createdAt: 1 })
           .lean<Pick<IMessage, 'createdAt'>>(),
         Message.find({ ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
-          .select('messageId createdAt langfuseDestinationIds -_id')
+          .select('messageId createdAt langfuseDestinationIds langfuseRunId -_id')
           .sort({ createdAt: 1 })
-          .lean<Array<Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds'>>>(),
+          .lean<
+            Array<
+              Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'>
+            >
+          >(),
       ]);
       return {
         firstMessageAt: first?.createdAt,
         sampledMessages: sampled
           .filter((message) => typeof message.messageId === 'string')
-          .map(({ messageId, createdAt, langfuseDestinationIds }) => ({
+          .map(({ messageId, createdAt, langfuseDestinationIds, langfuseRunId }) => ({
             messageId,
             ...(createdAt != null ? { createdAt } : {}),
             ...(Array.isArray(langfuseDestinationIds) ? { langfuseDestinationIds } : {}),
+            ...(typeof langfuseRunId === 'string' && langfuseRunId.length > 0
+              ? { langfuseRunId }
+              : {}),
           })),
       };
     } catch (err) {

@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 type TraceRefFields = {
   langfuseSampled?: boolean | null;
   langfuseDestinationIds?: string[] | null;
+  langfuseRunId?: string | null;
 };
 
 export function traceIdForMessage(messageId: string): string {
@@ -17,6 +18,11 @@ export function traceIdForMessage(messageId: string): string {
 export function withoutTraceRefs<T extends TraceRefFields>(
   message: T,
 ): Omit<T, keyof TraceRefFields> {
-  const { langfuseSampled: _sampled, langfuseDestinationIds: _destinations, ...rest } = message;
+  const {
+    langfuseSampled: _sampled,
+    langfuseDestinationIds: _destinations,
+    langfuseRunId: _runId,
+    ...rest
+  } = message;
   return rest;
 }

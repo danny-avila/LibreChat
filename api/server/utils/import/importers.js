@@ -64,6 +64,7 @@ function sanitizeImportedMessage(message) {
   delete importable.contextMeta;
   delete importable.langfuseSampled;
   delete importable.langfuseDestinationIds;
+  delete importable.langfuseRunId;
   return {
     ...importable,
     isUserSubmitted: true,

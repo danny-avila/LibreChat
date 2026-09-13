@@ -200,6 +200,7 @@ describe('forkConversation', () => {
         text: 'Hi',
         langfuseSampled: true,
         langfuseDestinationIds: ['destination-a'],
+        langfuseRunId: 'run-a',
       },
     ]);
 
@@ -214,7 +215,10 @@ describe('forkConversation', () => {
     expect(savedMessages.map((message) => message.text)).toEqual(['Hello', 'Hi']);
     expect(
       savedMessages.every(
-        (message) => !('langfuseSampled' in message) && !('langfuseDestinationIds' in message),
+        (message) =>
+          !('langfuseSampled' in message) &&
+          !('langfuseDestinationIds' in message) &&
+          !('langfuseRunId' in message),
       ),
     ).toBe(true);
   });

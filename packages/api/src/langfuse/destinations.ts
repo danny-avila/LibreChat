@@ -356,14 +356,24 @@ export async function getLangfuseTraceDestinationIds(
   return destinations.map(({ id }) => id as string);
 }
 
+/**
+ * The sampling record a response stores for its run's trace. `runId` names the
+ * run when it is not the response's own id, as for a failed turn's error row;
+ * it is then stored too, so feedback and the trace viewer follow that run.
+ */
 export async function getLangfuseTraceMessageFields(
   appConfig: AppConfig | undefined,
   messageId: string,
   {
     centralTraceExportEnabled = true,
-  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> = {},
-): Promise<{ langfuseSampled: boolean; langfuseDestinationIds?: string[] }> {
-  const traceId = traceIdForMessage(messageId);
+    runId = messageId,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> & { runId?: string } = {},
+): Promise<{
+  langfuseSampled: boolean;
+  langfuseDestinationIds?: string[];
+  langfuseRunId?: string;
+}> {
+  const traceId = traceIdForMessage(runId);
   const langfuseSampled = isLangfuseTraceSampled(traceId);
   return {
     langfuseSampled,
@@ -373,6 +383,7 @@ export async function getLangfuseTraceMessageFields(
       langfuseSampled,
       { centralTraceExportEnabled },
     ),
+    ...(runId !== messageId ? { langfuseRunId: runId } : {}),
   };
 }
 

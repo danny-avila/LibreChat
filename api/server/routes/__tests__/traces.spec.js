@@ -133,7 +133,12 @@ describe('trace routes', () => {
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(new URL(url).origin).toBe('https://langfuse.route.test');
-    expect(new URL(url).searchParams.get('sessionId')).toBe('convo-1');
+    expect(JSON.parse(new URL(url).searchParams.get('filter'))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ column: 'sessionId', operator: '=', value: 'convo-1' }),
+        expect.objectContaining({ column: 'traceId', operator: 'any of' }),
+      ]),
+    );
     expect(new Headers(init.headers).get('Authorization')).toBe(
       `Basic ${Buffer.from('pk-route:sk-route').toString('base64')}`,
     );

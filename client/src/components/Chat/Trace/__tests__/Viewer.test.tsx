@@ -293,6 +293,43 @@ describe('Trace Viewer', () => {
     expect(screen.getByTestId('trace-inspector')).toBeInTheDocument();
   });
 
+  it('keeps the active row mounted while the ledger scrolls away from it', async () => {
+    const many = [
+      record({
+        id: 'root',
+        kind: 'agent',
+        name: 'AgentGraph',
+        startTime: at(0),
+        endTime: at(9000),
+      }),
+      ...Array.from({ length: 150 }, (_, index) =>
+        record({
+          id: `step-${index}`,
+          parentId: 'root',
+          name: `step-${index}`,
+          startTime: at(index),
+        }),
+      ),
+    ];
+    jest.spyOn(dataService, 'getConversationTraceRecords').mockResolvedValue({ records: many });
+    renderViewer();
+    await treeItem(/AgentGraph/);
+    const tree = screen.getByRole('tree');
+
+    fireEvent.focus(tree);
+    const activeId = await waitFor(() => {
+      const id = tree.getAttribute('aria-activedescendant');
+      expect(id).toBeTruthy();
+      return id as string;
+    });
+    tree.scrollTop = 140 * 32;
+    fireEvent.scroll(tree);
+
+    expect(await treeItem(/step-140/)).toBeInTheDocument();
+    expect(tree.getAttribute('aria-activedescendant')).toBe(activeId);
+    expect(document.getElementById(activeId)).toHaveAttribute('role', 'treeitem');
+  });
+
   it('collapses and expands everything', async () => {
     renderViewer();
     await treeItem(/AgentGraph/);
