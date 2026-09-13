@@ -5,6 +5,7 @@ import {
   MAX_AVATAR_REFRESH_AGENTS,
   AVATAR_REFRESH_BATCH_SIZE,
   refreshListAvatars,
+  selectAvatarRefreshAgents,
 } from './avatars';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -16,6 +17,25 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 import { logger } from '@librechat/data-schemas';
+
+describe('selectAvatarRefreshAgents', () => {
+  const agent = (id: string): Agent =>
+    ({
+      id,
+      avatar: { source: FileSources.s3, filepath: `${id}.jpg` },
+    }) as Agent;
+
+  it('keeps page order, skips covered rows, and enforces the S3 work cap', () => {
+    const agents = Array.from({ length: MAX_AVATAR_REFRESH_AGENTS + 2 }, (_, i) =>
+      agent(`agent${i}`),
+    );
+    const selected = selectAvatarRefreshAgents(agents, ['agent0', 'agent2']);
+
+    expect(selected).toHaveLength(MAX_AVATAR_REFRESH_AGENTS);
+    expect(selected[0].id).toBe('agent1');
+    expect(selected[selected.length - 1]?.id).toBe(`agent${MAX_AVATAR_REFRESH_AGENTS + 1}`);
+  });
+});
 
 describe('refreshListAvatars', () => {
   let mockRefreshS3Url: jest.MockedFunction<RefreshS3UrlFn>;

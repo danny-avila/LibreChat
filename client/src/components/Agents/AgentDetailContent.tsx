@@ -1,5 +1,4 @@
 import React, { useCallback, useId, useMemo, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useHref, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -25,13 +24,12 @@ import {
   MORPH_OPEN_TRANSITION,
 } from './morph';
 import AgentContact, { resolveAgentContact } from './AgentContact';
-import { clearMessagesCache } from '~/utils/messages';
+import { useMarketplaceHost } from './MarketplaceContext';
 import { useFavorites, useLocalize } from '~/hooks';
 import DescriptionWords from './DescriptionWords';
 import { cn, renderAgentAvatar } from '~/utils';
 import AgentCategoryBadge from './Category';
 import CopyLink from './CopyLink';
-import store from '~/store';
 
 interface AgentDetailContentProps {
   agent: t.Agent;
@@ -90,8 +88,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
     () => new URLSearchParams({ endpoint: EModelEndpoint.agents, agent_id: agent.id }).toString(),
     [agent.id],
   );
-  const queryClient = useQueryClient();
-  const clearAllConversations = store.useClearConvoState();
+  const { resetNewConversation } = useMarketplaceHost();
   const chatHref = useHref({ pathname: '/c/new', search: `?${chatSearch}` });
 
   const handleStartChat = (prompt?: string) => {
@@ -103,9 +100,9 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
        keeps added conversations and leaves the new-chat message cache alone. Starting an
        agent from the marketplace is a new conversation with that agent, not another column
        beside whatever was already open and not the transcript the last one left under
-       `NEW_CONVO` — both are dropped here the way `newConversation` used to drop them. */
-    clearAllConversations(true);
-    clearMessagesCache(queryClient, Constants.NEW_CONVO);
+       `NEW_CONVO` — both belong to the app's conversation state, so the host drops them
+       the way `newConversation` used to. */
+    resetNewConversation();
     navigate({ pathname: '/c/new', search: `?${params.toString()}` });
   };
 
