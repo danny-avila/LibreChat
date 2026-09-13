@@ -1,18 +1,14 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { getRefillEligibilityDate, ViolationTypes } from 'librechat-data-provider';
-import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
-import type { RefillIntervalUnit } from 'librechat-data-provider';
+import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
+import type {
+  BalanceReservationRequest,
+  BalanceReservationResult,
+  IBalanceUpdate,
+  BalanceConfig,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
-
-interface BalanceRecord {
-  tokenCredits: number;
-  autoRefillEnabled?: boolean;
-  refillAmount?: number;
-  lastRefill?: Date;
-  refillIntervalValue?: number;
-  refillIntervalUnit?: RefillIntervalUnit;
-}
 
 interface TxData {
   user: string;
@@ -26,11 +22,9 @@ interface TxData {
 }
 
 export interface CheckBalanceDeps {
-  findBalanceByUser: (user: string) => Promise<BalanceRecord | null>;
   getMultiplier: (params: Record<string, unknown>) => number;
-  createAutoRefillTransaction: (
-    data: Record<string, unknown>,
-  ) => Promise<{ balance: number } | undefined>;
+  reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
+  releaseBalanceReservation: (params: { user: string; reservationId: string }) => Promise<void>;
   logViolation: (
     req: unknown,
     res: unknown,
@@ -38,17 +32,97 @@ export interface CheckBalanceDeps {
     errorMessage: Record<string, unknown>,
     score: number,
   ) => Promise<void>;
-  /** Balance config for lazy initialization when no record exists */
+  /** Balance config for lazy initialization when no record exists, and the reservation TTL */
   balanceConfig?: BalanceConfig;
   /** Upsert function for lazy initialization when no record exists */
-  upsertBalanceFields?: (userId: string, fields: IBalanceUpdate) => Promise<BalanceRecord | null>;
+  upsertBalanceFields?: (
+    userId: string,
+    fields: IBalanceUpdate,
+  ) => Promise<{ tokenCredits: number } | null>;
 }
 
-/** Checks a user's balance record and handles auto-refill if needed. */
-async function checkBalanceRecord(
-  txData: TxData,
+/** Credits held for an admitted request until its usage has been recorded. */
+export interface BalanceReservation {
+  /** Idempotent; a failed release is logged and left to expire. */
+  release: () => Promise<void>;
+}
+
+let warnedInvalidReservationTtl = false;
+
+function getReservationTtlMs(config?: BalanceConfig): number {
+  const ttl = config?.reservationTtlMs;
+  if (ttl == null) {
+    return DEFAULT_BALANCE_RESERVATION_TTL_MS;
+  }
+  if (Number.isFinite(ttl) && ttl > 0) {
+    return ttl;
+  }
+  if (!warnedInvalidReservationTtl) {
+    warnedInvalidReservationTtl = true;
+    logger.warn('[Balance.check] Ignoring invalid balance.reservationTtlMs; using the default', {
+      reservationTtlMs: ttl,
+      defaultMs: DEFAULT_BALANCE_RESERVATION_TTL_MS,
+    });
+  }
+  return DEFAULT_BALANCE_RESERVATION_TTL_MS;
+}
+
+function buildInitialBalance(user: string, config: BalanceConfig): IBalanceUpdate {
+  const fields: IBalanceUpdate = { user, tokenCredits: config.startBalance };
+  if (
+    config.autoRefillEnabled &&
+    config.refillIntervalValue != null &&
+    config.refillIntervalUnit != null &&
+    config.refillAmount != null
+  ) {
+    fields.autoRefillEnabled = config.autoRefillEnabled;
+    fields.refillIntervalValue = config.refillIntervalValue;
+    fields.refillIntervalUnit = config.refillIntervalUnit;
+    fields.refillAmount = config.refillAmount;
+    fields.lastRefill = new Date();
+  }
+  return fields;
+}
+
+/** Reserves against the user's balance record, lazily creating it from config when absent. */
+async function reserveBalanceRecord(
+  request: BalanceReservationRequest,
   deps: CheckBalanceDeps,
-): Promise<{ canSpend: boolean; balance: number; tokenCost: number }> {
+): Promise<BalanceReservationResult> {
+  const { user } = request;
+  const result = await deps.reserveBalance(request);
+  if (result) {
+    return result;
+  }
+
+  const config = deps.balanceConfig;
+  if (config?.startBalance == null || !deps.upsertBalanceFields) {
+    logger.debug('[Balance.check] No balance record found for user', { user });
+    return { reserved: false, balance: 0 };
+  }
+
+  logger.debug('[Balance.check] Lazy-initializing balance record for user', {
+    user,
+    startBalance: config.startBalance,
+  });
+  try {
+    await deps.upsertBalanceFields(user, buildInitialBalance(user, config));
+  } catch (error) {
+    logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
+    return { reserved: false, balance: 0 };
+  }
+  return (await deps.reserveBalance(request)) ?? { reserved: false, balance: 0 };
+}
+
+/**
+ * Admits a request against the user's balance and holds its token cost until the returned
+ * reservation is released, so concurrent requests are admitted only against credits that no
+ * other in-flight request holds. Throws with the balance info if the credits are insufficient.
+ */
+export async function checkBalance(
+  { req, res, txData }: { req: ServerRequest; res: Response; txData: TxData },
+  deps: CheckBalanceDeps,
+): Promise<BalanceReservation> {
   const { user, model, endpoint, valueKey, tokenType, amount, endpointTokenConfig } = txData;
   const multiplier = deps.getMultiplier({
     valueKey,
@@ -58,105 +132,40 @@ async function checkBalanceRecord(
     endpointTokenConfig,
   });
   const tokenCost = amount * multiplier;
+  const reservationId = randomUUID();
 
-  const record = await deps.findBalanceByUser(user);
-  if (!record) {
-    if (deps.balanceConfig?.startBalance != null && deps.upsertBalanceFields) {
-      logger.debug('[Balance.check] Lazy-initializing balance record for user', {
-        user,
-        startBalance: deps.balanceConfig.startBalance,
-      });
-      try {
-        const fields: IBalanceUpdate = {
-          user,
-          tokenCredits: deps.balanceConfig.startBalance,
-        };
-        const config = deps.balanceConfig;
-        if (
-          config.autoRefillEnabled &&
-          config.refillIntervalValue != null &&
-          config.refillIntervalUnit != null &&
-          config.refillAmount != null
-        ) {
-          fields.autoRefillEnabled = config.autoRefillEnabled;
-          fields.refillIntervalValue = config.refillIntervalValue;
-          fields.refillIntervalUnit = config.refillIntervalUnit;
-          fields.refillAmount = config.refillAmount;
-          fields.lastRefill = new Date();
-        }
-        const created = await deps.upsertBalanceFields(user, fields);
-        const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
-        return { canSpend: balance >= tokenCost, balance, tokenCost };
-      } catch (error) {
-        logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
-        return { canSpend: false, balance: 0, tokenCost };
-      }
-    }
-    logger.debug('[Balance.check] No balance record found for user', { user });
-    return { canSpend: false, balance: 0, tokenCost };
-  }
-  let balance = record.tokenCredits;
-
-  logger.debug('[Balance.check] Initial state', {
+  logger.debug('[Balance.check] Reserving token cost', {
     user,
     model,
     endpoint,
     valueKey,
     tokenType,
     amount,
-    balance,
     multiplier,
+    tokenCost,
     endpointTokenConfig: !!endpointTokenConfig,
   });
 
-  if (
-    balance - tokenCost <= 0 &&
-    record.autoRefillEnabled &&
-    record.refillAmount &&
-    record.refillAmount > 0
-  ) {
-    const lastRefillDate = new Date(record.lastRefill ?? 0);
-    const now = new Date();
-    if (
-      isNaN(lastRefillDate.getTime()) ||
-      now >=
-        getRefillEligibilityDate(
-          lastRefillDate,
-          record.refillIntervalValue ?? 0,
-          record.refillIntervalUnit ?? 'days',
-        )
-    ) {
-      try {
-        const result = await deps.createAutoRefillTransaction({
-          user,
-          tokenType: 'credits',
-          context: 'autoRefill',
-          rawAmount: record.refillAmount,
+  const { reserved, balance } = await reserveBalanceRecord(
+    {
+      user,
+      reservationId,
+      amount: tokenCost,
+      expiresAt: new Date(Date.now() + getReservationTtlMs(deps.balanceConfig)),
+    },
+    deps,
+  );
+
+  if (reserved) {
+    let released: Promise<void> | undefined;
+    return {
+      release: () => {
+        released ??= deps.releaseBalanceReservation({ user, reservationId }).catch((error) => {
+          logger.error('[Balance.check] Failed to release balance reservation', { user, error });
         });
-        if (result) {
-          balance = result.balance;
-        }
-      } catch (error) {
-        logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
-      }
-    }
-  }
-
-  logger.debug('[Balance.check] Token cost', { tokenCost });
-  return { canSpend: balance >= tokenCost, balance, tokenCost };
-}
-
-/**
- * Checks balance for a user and logs a violation if they cannot spend.
- * Throws an error with the balance info if insufficient funds.
- */
-export async function checkBalance(
-  { req, res, txData }: { req: ServerRequest; res: Response; txData: TxData },
-  deps: CheckBalanceDeps,
-): Promise<boolean> {
-  const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData, deps);
-  if (canSpend) {
-    return true;
+        return released;
+      },
+    };
   }
 
   const type = ViolationTypes.TOKEN_BALANCE;

@@ -44,9 +44,9 @@ const {
   getConvo,
   getMultiplier,
   getTransactions,
-  findBalanceByUser,
+  reserveBalance,
   upsertBalanceFields,
-  createAutoRefillTransaction,
+  releaseBalanceReservation,
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
@@ -118,6 +118,8 @@ const chatV2 = async (req, res) => {
   /** @type {Run | undefined} - The completed run, undefined if incomplete */
   let completedRun;
   let contentRejected = false;
+  /** @type {Promise<BalanceReservation | undefined> | undefined} */
+  let balanceReservationPromise;
 
   const getContext = () => ({
     openai,
@@ -175,7 +177,7 @@ const chatV2 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
-      await checkBalance(
+      return await checkBalance(
         {
           req,
           res,
@@ -187,9 +189,9 @@ const chatV2 = async (req, res) => {
           },
         },
         {
-          findBalanceByUser,
           getMultiplier,
-          createAutoRefillTransaction,
+          reserveBalance,
+          releaseBalanceReservation,
           logViolation,
           balanceConfig,
           upsertBalanceFields,
@@ -395,8 +397,9 @@ const chatV2 = async (req, res) => {
       }
     }
 
-    const promises = [initializeThread(), checkBalanceBeforeRun()];
-    await Promise.all(promises);
+    const threadPromise = initializeThread();
+    balanceReservationPromise = checkBalanceBeforeRun();
+    await Promise.all([threadPromise, balanceReservationPromise]);
 
     const sendInitialResponse = () => {
       sendEvent(res, {
@@ -593,6 +596,9 @@ const chatV2 = async (req, res) => {
     }
   } catch (error) {
     await handleError(error);
+  } finally {
+    const balanceReservation = await balanceReservationPromise?.catch(() => undefined);
+    await balanceReservation?.release();
   }
 };
 

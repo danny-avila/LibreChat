@@ -1,9 +1,17 @@
+import { getRefillEligibilityDate } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
-import type { IBalance, IBalanceUpdate, TransactionData } from '~/types';
+import type {
+  BalanceReservationRequest,
+  BalanceReservationResult,
+  IBalanceUpdate,
+  TransactionData,
+  IBalance,
+} from '~/types';
 import type { ITransaction } from '~/schema/transaction';
 import logger from '~/config/winston';
 
 const cancelRate = 1.15;
+const maxReservationAttempts = 10;
 
 type MultiplierParams = {
   model?: string;
@@ -90,15 +98,8 @@ export function createTransactionMethods(
   ) => Promise<import('mongodb').DeleteResult>;
   deleteBalances: (filter: FilterQuery<IBalance>) => Promise<import('mongodb').DeleteResult>;
   createTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
-  createAutoRefillTransaction: (txData: TxData) => Promise<
-    | {
-        rate: number;
-        user: string;
-        balance: number;
-        transaction: ITransaction;
-      }
-    | undefined
-  >;
+  reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
+  releaseBalanceReservation: (params: { user: string; reservationId: string }) => Promise<void>;
   createStructuredTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
 } {
   /** Calculate and set the tokenValue for a transaction */
@@ -297,41 +298,127 @@ export function createTransactionMethods(
     );
   }
 
-  /**
-   * Creates an auto-refill transaction that also updates balance.
-   */
-  async function createAutoRefillTransaction(txData: TxData): Promise<
-    | {
-        rate: number;
-        user: string;
-        balance: number;
-        transaction: ITransaction;
-      }
-    | undefined
-  > {
-    if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
-      return;
+  function isAutoRefillDue(record: IBalance, now: Date): boolean {
+    if (!record.autoRefillEnabled || !(record.refillAmount > 0)) {
+      return false;
     }
-    const Transaction = mongoose.models.Transaction;
-    const transaction = new Transaction(txData);
-    transaction.endpointTokenConfig = txData.endpointTokenConfig;
-    transaction.inputTokenCount = txData.inputTokenCount;
-    calculateTokenValue(transaction);
-    await transaction.save();
+    const lastRefill = new Date(record.lastRefill ?? 0);
+    if (isNaN(lastRefill.getTime())) {
+      return true;
+    }
+    return (
+      now >=
+      getRefillEligibilityDate(
+        lastRefill,
+        record.refillIntervalValue ?? 0,
+        record.refillIntervalUnit ?? 'days',
+      )
+    );
+  }
 
-    const balanceResponse = await updateBalance({
-      user: transaction.user as string,
-      incrementValue: txData.rawAmount ?? 0,
-      setValues: { lastRefill: new Date() },
-    });
-    const result = {
-      rate: transaction.rate as number,
-      user: transaction.user.toString() as string,
-      balance: balanceResponse.tokenCredits,
-      transaction,
-    };
-    logger.debug('[Balance.check] Auto-refill performed', result);
-    return result;
+  async function recordAutoRefill(user: string, rawAmount: number): Promise<void> {
+    try {
+      const Transaction = mongoose.models.Transaction;
+      const transaction = new Transaction({
+        user,
+        tokenType: 'credits',
+        context: 'autoRefill',
+        rawAmount,
+      });
+      calculateTokenValue(transaction);
+      await transaction.save();
+      logger.debug('[Balance.reserve] Auto-refill performed', { user, rawAmount });
+    } catch (error) {
+      logger.error('[Balance.reserve] Failed to record auto-refill transaction', error);
+    }
+  }
+
+  /**
+   * Admits one request against the credits that in-flight requests have not already reserved,
+   * and holds its amount until released or expired. A due auto-refill is applied in the same
+   * write. The write is fenced on every value the decision read, so concurrent admissions and
+   * refills re-read instead of admitting against, or refilling from, a stale balance.
+   * Returns null when the user has no balance record.
+   */
+  async function reserveBalance({
+    user,
+    reservationId,
+    amount,
+    expiresAt,
+  }: BalanceReservationRequest): Promise<BalanceReservationResult | null> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    let delay = 25;
+
+    for (let attempt = 1; attempt <= maxReservationAttempts; attempt++) {
+      const record = await Balance.findOne({ user }).select('+reservations').lean<IBalance>();
+      if (!record) {
+        return null;
+      }
+
+      const now = new Date();
+      const credits = record.tokenCredits ?? 0;
+      const active = (record.reservations ?? []).filter(
+        (reservation) => reservation.expiresAt > now,
+      );
+      const held = active.reduce((sum, reservation) => sum + reservation.amount, 0);
+      const refill = credits - held - amount <= 0 && isAutoRefillDue(record, now);
+      const nextCredits = refill ? Math.max(0, credits + record.refillAmount) : credits;
+      const balance = nextCredits - held;
+      const reserved = balance >= amount;
+      const holds = reserved && amount > 0;
+
+      if (!refill && !holds) {
+        return { reserved, balance };
+      }
+
+      const update: Pick<Partial<IBalance>, 'reservations' | 'tokenCredits' | 'lastRefill'> = {};
+      if (holds) {
+        update.reservations = [...active, { id: reservationId, amount, expiresAt }];
+      }
+      if (refill) {
+        update.tokenCredits = nextCredits;
+        update.lastRefill = now;
+      }
+
+      const fence: FilterQuery<IBalance> = {
+        _id: record._id,
+        tokenCredits: record.tokenCredits ?? null,
+        reservations: record.reservations ?? null,
+      };
+      if (refill) {
+        fence.lastRefill = record.lastRefill ?? null;
+      }
+
+      const result = await Balance.updateOne(fence, { $set: update });
+      if (result.matchedCount === 1) {
+        if (refill) {
+          await recordAutoRefill(user, record.refillAmount);
+        }
+        return { reserved, balance };
+      }
+
+      if (attempt < maxReservationAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, delay + Math.random() * delay));
+        delay = Math.min(delay * 2, 1000);
+      }
+    }
+
+    throw new Error(`Balance reservation for user ${user} exceeded its retry bound.`);
+  }
+
+  /** Releases an in-flight reservation; releasing an unknown or expired id is a no-op. */
+  async function releaseBalanceReservation({
+    user,
+    reservationId,
+  }: {
+    user: string;
+    reservationId: string;
+  }): Promise<void> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    await Balance.updateOne(
+      { user, 'reservations.id': reservationId },
+      { $pull: { reservations: { id: reservationId } } },
+    );
   }
 
   /**
@@ -481,7 +568,8 @@ export function createTransactionMethods(
     deleteTransactions,
     deleteBalances,
     createTransaction,
-    createAutoRefillTransaction,
+    reserveBalance,
+    releaseBalanceReservation,
     createStructuredTransaction,
   };
 }

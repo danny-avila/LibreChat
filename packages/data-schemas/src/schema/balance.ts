@@ -41,6 +41,19 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     type: String,
     index: true,
   },
+  /** Credits held by in-flight requests; released when each request settles, or ignored once expired */
+  reservations: {
+    type: [
+      {
+        _id: false,
+        id: { type: String, required: true },
+        amount: { type: Number, required: true },
+        expiresAt: { type: Date, required: true },
+      },
+    ],
+    default: undefined,
+    select: false,
+  },
 });
 
 export default balanceSchema;

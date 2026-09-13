@@ -732,6 +732,22 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {BalanceReservation[]} */
+    const balanceReservations = [];
+    try {
+      return await this.sendReservedMessage(message, opts, balanceReservations);
+    } finally {
+      await Promise.all(balanceReservations.map((reservation) => reservation.release()));
+    }
+  }
+
+  /**
+   * @param {string} message
+   * @param {Record<string, unknown>} opts
+   * @param {BalanceReservation[]} balanceReservations - Collects the balance reservation
+   * admitting this message; `sendMessage` releases it once the turn has settled.
+   */
+  async sendReservedMessage(message, opts, balanceReservations) {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
@@ -974,7 +990,7 @@ class BaseClient {
         balanceConfig?.enabled &&
         supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
       ) {
-        await checkBalance(
+        const balanceReservation = await checkBalance(
           {
             req: this.options.req,
             res: this.options.res,
@@ -990,12 +1006,13 @@ class BaseClient {
           {
             logViolation,
             getMultiplier: db.getMultiplier,
-            findBalanceByUser: db.findBalanceByUser,
-            createAutoRefillTransaction: db.createAutoRefillTransaction,
+            reserveBalance: db.reserveBalance,
+            releaseBalanceReservation: db.releaseBalanceReservation,
             balanceConfig,
             upsertBalanceFields: db.upsertBalanceFields,
           },
         );
+        balanceReservations.push(balanceReservation);
       }
 
       completionResult = await this.sendCompletion(payload, opts);

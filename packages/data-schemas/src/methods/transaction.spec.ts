@@ -25,6 +25,13 @@ let createTransaction: ReturnType<typeof createTransactionMethods>['createTransa
 let createStructuredTransaction: ReturnType<
   typeof createTransactionMethods
 >['createStructuredTransaction'];
+let reserveBalance: ReturnType<typeof createTransactionMethods>['reserveBalance'];
+let releaseBalanceReservation: ReturnType<
+  typeof createTransactionMethods
+>['releaseBalanceReservation'];
+let findBalanceByUser: ReturnType<typeof createTransactionMethods>['findBalanceByUser'];
+let upsertBalanceFields: ReturnType<typeof createTransactionMethods>['upsertBalanceFields'];
+let updateBalance: ReturnType<typeof createTransactionMethods>['updateBalance'];
 let getMultiplier: ReturnType<typeof createTxMethods>['getMultiplier'];
 let getCacheMultiplier: ReturnType<typeof createTxMethods>['getCacheMultiplier'];
 
@@ -50,6 +57,11 @@ beforeAll(async () => {
   });
   createTransaction = transactionMethods.createTransaction;
   createStructuredTransaction = transactionMethods.createStructuredTransaction;
+  reserveBalance = transactionMethods.reserveBalance;
+  releaseBalanceReservation = transactionMethods.releaseBalanceReservation;
+  findBalanceByUser = transactionMethods.findBalanceByUser;
+  upsertBalanceFields = transactionMethods.upsertBalanceFields;
+  updateBalance = transactionMethods.updateBalance;
 
   const spendMethods = createSpendTokensMethods(mongoose, {
     createTransaction: transactionMethods.createTransaction,
@@ -1079,5 +1091,228 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+});
+
+describe('Balance Reservations', () => {
+  const inFuture = () => new Date(Date.now() + 60_000);
+  const reserve = (user: string, amount: number, reservationId = new mongoose.Types.ObjectId()) =>
+    reserveBalance({
+      user,
+      amount,
+      reservationId: reservationId.toString(),
+      expiresAt: inFuture(),
+    });
+
+  /** Runs `interleave` once, between the reservation's read and its fenced write. */
+  const interleaveBeforeNextWrite = (interleave: () => Promise<unknown>) => {
+    const realUpdateOne = Balance.updateOne.bind(Balance);
+    return jest
+      .spyOn(Balance, 'updateOne')
+      .mockImplementationOnce(((...args: Parameters<typeof Balance.updateOne>) =>
+        interleave().then(() => realUpdateOne(...args))) as unknown as typeof Balance.updateOne);
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('returns null when the user has no balance record', async () => {
+    const user = new mongoose.Types.ObjectId().toString();
+    await expect(reserve(user, 100)).resolves.toBeNull();
+  });
+
+  test('admits concurrent requests only up to the credits no other request holds', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => reserve(user.toString(), 300)),
+    );
+
+    expect(results.filter((result) => result?.reserved)).toHaveLength(3);
+    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    expect(stored?.tokenCredits).toBe(1000);
+    expect(stored?.reservations).toHaveLength(3);
+  });
+
+  test('releasing a reservation returns its credits to later admissions', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    const firstId = new mongoose.Types.ObjectId();
+
+    await expect(reserve(user.toString(), 600, firstId)).resolves.toEqual({
+      reserved: true,
+      balance: 1000,
+    });
+    await expect(reserve(user.toString(), 600)).resolves.toEqual({
+      reserved: false,
+      balance: 400,
+    });
+
+    await releaseBalanceReservation({ user: user.toString(), reservationId: firstId.toString() });
+
+    await expect(reserve(user.toString(), 600)).resolves.toEqual({
+      reserved: true,
+      balance: 1000,
+    });
+  });
+
+  test('ignores and prunes expired reservations', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({
+      user,
+      tokenCredits: 1000,
+      reservations: [{ id: 'stale', amount: 900, expiresAt: new Date(Date.now() - 1000) }],
+    });
+
+    const reservationId = new mongoose.Types.ObjectId();
+    await expect(reserve(user.toString(), 600, reservationId)).resolves.toEqual({
+      reserved: true,
+      balance: 1000,
+    });
+
+    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
+      reservationId.toString(),
+    ]);
+  });
+
+  test('admits a zero-cost request without storing a reservation', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 0 });
+
+    await expect(reserve(user.toString(), 0)).resolves.toEqual({ reserved: true, balance: 0 });
+
+    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    expect(stored?.reservations).toBeUndefined();
+  });
+
+  test('keeps reservations out of ordinary balance reads', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    await reserve(user.toString(), 100);
+
+    const record = await findBalanceByUser(user.toString());
+    expect(record?.tokenCredits).toBe(1000);
+    expect(record).not.toHaveProperty('reservations');
+
+    const synced = await upsertBalanceFields(user.toString(), { refillAmount: 5 });
+    expect(synced).not.toHaveProperty('reservations');
+    const spent = await updateBalance({ user: user.toString(), incrementValue: -10 });
+    expect(spent.tokenCredits).toBe(990);
+    expect(spent).not.toHaveProperty('reservations');
+  });
+
+  test('re-reads when a spend lands between the read and the write', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+
+    interleaveBeforeNextWrite(() =>
+      Balance.collection.updateOne({ user }, { $inc: { tokenCredits: -800 } }),
+    );
+
+    await expect(reserve(user.toString(), 500)).resolves.toEqual({
+      reserved: false,
+      balance: 200,
+    });
+    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    expect(stored?.reservations).toBeUndefined();
+  });
+
+  test('re-reads when a release lands between the read and the write', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    const releasedId = new mongoose.Types.ObjectId().toString();
+    await reserveBalance({
+      user: user.toString(),
+      reservationId: releasedId,
+      amount: 400,
+      expiresAt: inFuture(),
+    });
+
+    interleaveBeforeNextWrite(() =>
+      releaseBalanceReservation({ user: user.toString(), reservationId: releasedId }),
+    );
+
+    const reservationId = new mongoose.Types.ObjectId();
+    await expect(reserve(user.toString(), 500, reservationId)).resolves.toEqual({
+      reserved: true,
+      balance: 1000,
+    });
+    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
+      reservationId.toString(),
+    ]);
+  });
+
+  describe('auto-refill', () => {
+    const refillable = {
+      tokenCredits: 0,
+      autoRefillEnabled: true,
+      refillAmount: 1000,
+      refillIntervalValue: 30,
+      refillIntervalUnit: 'days' as const,
+      lastRefill: new Date('2020-01-01T00:00:00.000Z'),
+    };
+
+    test('applies one refill per eligibility window across concurrent admissions', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable });
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => reserve(user.toString(), 150)),
+      );
+
+      expect(results.filter((result) => result?.reserved)).toHaveLength(6);
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(1000);
+      expect(stored?.lastRefill.getTime()).toBeGreaterThan(refillable.lastRefill.getTime());
+      const refills = await Transaction.find({ user, context: 'autoRefill' }).lean();
+      expect(refills).toHaveLength(1);
+      expect(refills[0].rawAmount).toBe(1000);
+    });
+
+    test('re-reads when lastRefill advances between the read and the write', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable });
+
+      interleaveBeforeNextWrite(() =>
+        Balance.collection.updateOne({ user }, { $set: { lastRefill: new Date() } }),
+      );
+
+      await expect(reserve(user.toString(), 150)).resolves.toEqual({
+        reserved: false,
+        balance: 0,
+      });
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(0);
+      expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(0);
+    });
+
+    test('still applies a due refill when the refilled balance cannot cover the request', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable, refillAmount: 100 });
+
+      await expect(reserve(user.toString(), 500)).resolves.toEqual({
+        reserved: false,
+        balance: 100,
+      });
+      const stored = await Balance.findOne({ user }).select('+reservations').lean();
+      expect(stored?.tokenCredits).toBe(100);
+      expect(stored?.reservations).toBeUndefined();
+    });
+
+    test('does not refill while the unreserved balance covers the request', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable, tokenCredits: 500 });
+
+      await expect(reserve(user.toString(), 100)).resolves.toEqual({
+        reserved: true,
+        balance: 500,
+      });
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(500);
+    });
   });
 });
