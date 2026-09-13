@@ -103,7 +103,6 @@ export const useAssignDroppedConversation = (): AssignDroppedConversation => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const assignConversation = useAssignConversationToProjectMutation();
-  const effectiveProjectId = useEffectiveProjectId();
 
   return useCallback(
     (item: ConversationDragItem, projectId: string | null): Promise<boolean> => {
@@ -111,29 +110,28 @@ export const useAssignDroppedConversation = (): AssignDroppedConversation => {
       if (!conversationId) {
         return Promise.resolve(false);
       }
-      /* A write already in flight for this chat cannot answer for this drop.
-       * Its destination is a request rather than an outcome — it can still
-       * fail — and the path that started it may own no continuation at all: the
-       * row menu unfiles a chat without unpinning it. So a pending entry is not
-       * read as "already there"; this drop issues its own write and waits for
-       * that one. The mutation queues them per conversation, so the second
-       * lands after the first and repeats what it asked for, which the server
-       * takes as the no-op it is. */
-      const pending = getPendingAssignment(conversationId);
-      /* Nothing in flight, and the chat already sits where the drop asks: the
-       * filing half is done, whatever else the drop goes on to do. */
-      if (!pending && effectiveProjectId(item) === projectId) {
-        return Promise.resolve(true);
-      }
-      /* Reports only the outcome: the mutation owns the cache invalidations and
-       * records where each write is headed. */
+      /* No local short-circuit. Every answer this side could give about where
+       * the chat already sits is a guess: a pending write is a request rather
+       * than an outcome, a cached project can be a snapshot another tab has
+       * moved on from, and the drag item's own copy is older still. A drop that
+       * acted on any of them could unpin a chat that stayed in its project,
+       * leaving it out of both lists. So the write always goes, and the server's
+       * answer is what the drop acts on; repeating an assignment the chat
+       * already has is the no-op update it looks like, and the mutation queues
+       * writes per conversation so it lands after any already out.
+       *
+       * The success notice still belongs to a move that happened, which is why
+       * it reads the two project ids the response carries rather than the fact
+       * that a request was sent. */
       return assignConversation.mutateAsync({ conversationId, projectId }).then(
-        () => {
-          showToast({
-            message: localize('com_ui_project_updated'),
-            severity: NotificationSeverity.SUCCESS,
-            showIcon: true,
-          });
+        (result) => {
+          if (result.previousProjectId !== result.projectId) {
+            showToast({
+              message: localize('com_ui_project_updated'),
+              severity: NotificationSeverity.SUCCESS,
+              showIcon: true,
+            });
+          }
           return true;
         },
         () => {
@@ -146,7 +144,7 @@ export const useAssignDroppedConversation = (): AssignDroppedConversation => {
         },
       );
     },
-    [assignConversation, effectiveProjectId, localize, showToast],
+    [assignConversation, localize, showToast],
   );
 };
 

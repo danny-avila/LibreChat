@@ -9,8 +9,10 @@ import { useAssignDroppedConversation, useUnpinDroppedConversation } from '../dn
 const mockPin = jest.fn();
 const mockAssign = jest.fn();
 
+const mockShowToast = jest.fn();
+
 jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
 let mockPendingAssignment: { token: number; projectId: string | null } | undefined;
@@ -31,6 +33,9 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
+
+/** Only the two ids the drop reads; the response also carries the conversation. */
+type AssignResponse = { previousProjectId: string | null; projectId: string | null };
 
 const item = (pinned: boolean, conversationId = 'c1'): ConversationDragItem => ({
   conversationId,
@@ -81,6 +86,7 @@ describe('a drop on Chats, filing and unpinning together', () => {
   beforeEach(() => {
     mockPin.mockReset();
     mockAssign.mockReset();
+    mockShowToast.mockReset();
     mockPendingAssignment = undefined;
   });
 
@@ -98,10 +104,10 @@ describe('a drop on Chats, filing and unpinning together', () => {
   };
 
   it('unpins only once the project write has landed', async () => {
-    let settle: (() => void) | undefined;
+    let settle: ((result: AssignResponse) => void) | undefined;
     mockAssign.mockImplementation(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<AssignResponse>((resolve) => {
           settle = resolve;
         }),
     );
@@ -116,7 +122,7 @@ describe('a drop on Chats, filing and unpinning together', () => {
     expect(mockAssign).toHaveBeenCalledWith({ conversationId: 'c1', projectId: null });
     expect(mockPin).not.toHaveBeenCalled();
 
-    settle?.();
+    settle?.({ previousProjectId: 'p1', projectId: null });
     await running;
 
     expect(mockPin).toHaveBeenCalledWith(
@@ -150,7 +156,7 @@ describe('a drop on Chats, filing and unpinning together', () => {
    * that one, which the per-conversation queue runs after the first. */
   it('issues its own write rather than trusting one already in flight', async () => {
     mockPendingAssignment = { token: 1, projectId: null };
-    mockAssign.mockResolvedValue(undefined);
+    mockAssign.mockResolvedValue({ previousProjectId: 'p1', projectId: null });
     const { result } = renderHook(() => ({
       assign: useAssignDroppedConversation(),
       unpin: useUnpinDroppedConversation(),
@@ -187,5 +193,30 @@ describe('a drop on Chats, filing and unpinning together', () => {
 
     expect(mockAssign).toHaveBeenCalled();
     expect(mockPin).not.toHaveBeenCalled();
+  });
+  /* A chat this tab believes is already out of every project still gets the
+   * write: the belief can be a snapshot another tab has moved on from, and
+   * unpinning on it would leave the chat in a project and out of both lists.
+   * The notice belongs to a move that happened, so a write that changed
+   * nothing stays quiet. */
+  it('confirms the removal with the server and announces only a real move', async () => {
+    mockAssign.mockResolvedValue({ previousProjectId: null, projectId: null });
+    const { result } = renderHook(() => ({
+      assign: useAssignDroppedConversation(),
+      unpin: useUnpinDroppedConversation(),
+    }));
+
+    await drop(result.current.assign, result.current.unpin, {
+      conversationId: 'c1',
+      chatProjectId: null,
+      pinned: true,
+    });
+
+    expect(mockAssign).toHaveBeenCalledWith({ conversationId: 'c1', projectId: null });
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(mockPin).toHaveBeenCalledWith(
+      { conversationId: 'c1', pinned: false },
+      expect.anything(),
+    );
   });
 });

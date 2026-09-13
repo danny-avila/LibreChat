@@ -136,10 +136,15 @@ export async function dragRowOnto(
   await page.mouse.down();
   /** The first move is what the browser turns into `dragstart`. */
   await page.mouse.move(startX, startY - 8, { steps: 4 });
-  await page.mouse.move(endX, endY, { steps: 12 });
-  /** A second arrival at the same point: react-dnd reads the offset on hover,
-   *  and the last move of a traverse can land before the list has re-rendered. */
-  await page.mouse.move(endX, endY, { steps: 2 });
+  await page.mouse.move(endX, endY, { steps: 24 });
+  /** The list shifts rows under the pointer as it reorders, and the hover that
+   *  decides a swap reads the offset at the moment it fires. A pointer that
+   *  arrived in one last jump gets a single reading, taken while React may still
+   *  be rendering the previous one; a real hand keeps sending events. These
+   *  repeats are that, bounded. */
+  for (let settle = 0; settle < 3; settle += 1) {
+    await page.mouse.move(endX, endY + settle - 1, { steps: 2 });
+  }
   await page.mouse.up();
 }
 
