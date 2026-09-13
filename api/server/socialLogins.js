@@ -79,6 +79,7 @@ async function configureOpenId(app) {
 const configureSocialLogins = async (app, appConfig) => {
   logger.info('Configuring social logins...');
   const stateOptions = {
+    secret: process.env.JWT_SECRET,
     secureCookie: shouldUseSecureCookie(),
     maxAgeMs: appConfig?.registration?.oauthStateTtlMs,
   };

@@ -55,6 +55,7 @@ function getStateCookie(response, provider) {
 }
 
 const stateLocation = (response) => new URL(response.headers.location).searchParams.get('state');
+const BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 describe('OAuth login state binding', () => {
   let app;
@@ -81,8 +82,9 @@ describe('OAuth login state binding', () => {
     const appleStrategy = require('~/strategies/appleStrategy');
     ({ findUser } = require('~/models'));
 
-    github = githubStrategy({ secureCookie: true });
-    apple = appleStrategy({ secureCookie: true });
+    const stateOptions = { secret: 'jwt-secret', secureCookie: true };
+    github = githubStrategy(stateOptions);
+    apple = appleStrategy(stateOptions);
     passport.use(github);
     passport.use(apple);
 
@@ -126,7 +128,7 @@ describe('OAuth login state binding', () => {
   });
 
   describe('GitHub', () => {
-    it('stores the authorization state in a host-only cookie', async () => {
+    it('signs the authorization state for a host-only binding cookie', async () => {
       const response = await request(app).get('/oauth/github').expect(302);
 
       const location = new URL(response.headers.location);
@@ -134,7 +136,8 @@ describe('OAuth login state binding', () => {
 
       expect(location.origin).toBe('https://github.com');
       expect(location.searchParams.get('state')).toBeTruthy();
-      expect(cookie.value).toBe(location.searchParams.get('state'));
+      expect(cookie.value).toMatch(BINDING_PATTERN);
+      expect(location.searchParams.get('state')).not.toContain(cookie.value);
       expect(cookie.attributes).toEqual(
         expect.arrayContaining(['httponly', 'secure', 'samesite=lax', 'path=/']),
       );
@@ -145,9 +148,7 @@ describe('OAuth login state binding', () => {
       const first = await request(app).get('/oauth/github').expect(302);
       const second = await request(app).get('/oauth/github').expect(302);
 
-      expect(getStateCookie(first, 'github').value).not.toBe(
-        getStateCookie(second, 'github').value,
-      );
+      expect(stateLocation(first)).not.toBe(stateLocation(second));
     });
 
     it('rejects a callback link from a browser that never started the flow', async () => {
@@ -212,9 +213,7 @@ describe('OAuth login state binding', () => {
         expect.any(Function),
       );
 
-      const cleared = getStateCookie(response, 'github');
-      expect(cleared.value).toBe('');
-      expect(cleared.attributes).toContain('path=/');
+      expect(getStateCookie(response, 'github')).toBeUndefined();
     });
 
     it('still completes the pending login after an unrelated callback reaches the browser', async () => {
@@ -251,17 +250,19 @@ describe('OAuth login state binding', () => {
         .get('/oauth/github')
         .set('Cookie', `__Host-oauth_state_github=${getStateCookie(firstTab, 'github').value}`)
         .expect(302);
-      const pending = getStateCookie(secondTab, 'github').value;
+      const binding = getStateCookie(secondTab, 'github').value;
 
-      const firstCallback = await request(app)
+      expect(binding).toBe(getStateCookie(firstTab, 'github').value);
+
+      await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${pending}`)
+        .set('Cookie', `__Host-oauth_state_github=${binding}`)
         .query({ code: 'first-code', state: stateLocation(firstTab) })
         .expect(200);
 
       await request(app)
         .get('/oauth/github/callback')
-        .set('Cookie', `__Host-oauth_state_github=${getStateCookie(firstCallback, 'github').value}`)
+        .set('Cookie', `__Host-oauth_state_github=${binding}`)
         .query({ code: 'second-code', state: stateLocation(secondTab) })
         .expect(200);
 
@@ -278,7 +279,8 @@ describe('OAuth login state binding', () => {
 
       expect(location.origin).toBe('https://appleid.apple.com');
       expect(location.searchParams.get('response_mode')).toBe('form_post');
-      expect(cookie.value).toBe(location.searchParams.get('state'));
+      expect(cookie.value).toMatch(BINDING_PATTERN);
+      expect(location.searchParams.get('state')).not.toContain(cookie.value);
       expect(cookie.attributes).toEqual(
         expect.arrayContaining(['httponly', 'secure', 'samesite=none', 'path=/']),
       );
@@ -292,7 +294,7 @@ describe('OAuth login state binding', () => {
       const secondState = new URL(second.headers.location).searchParams.get('state');
 
       expect(firstState).not.toBe(secondState);
-      expect(getStateCookie(second, 'apple').value).toBe(secondState);
+      expect(getStateCookie(second, 'apple').value).toMatch(BINDING_PATTERN);
     });
 
     it('rejects a form_post callback from a browser that never started the flow', async () => {

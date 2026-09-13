@@ -29,14 +29,14 @@ function createApp(options: OAuthStateStoreOptions) {
   app.get('/start', (req, res, next) => {
     stateStore.store(req, (err, state) => (err ? next(err) : res.json({ state })));
   });
-  const callback = (req: Request, res: express.Response, next: express.NextFunction) => {
+  const verify = (req: Request, res: express.Response, next: express.NextFunction) => {
     const providedState = req.query.state ?? req.body?.state;
     stateStore.verify(req, providedState, (err, ok, info) =>
       err ? next(err) : res.json({ ok, message: info?.message } satisfies VerifyResult),
     );
   };
-  app.get('/oauth/github/callback', callback);
-  app.post('/oauth/apple/callback', callback);
+  app.get('/oauth/github/callback', verify);
+  app.post('/oauth/apple/callback', verify);
   return { app, stateStore };
 }
 
@@ -46,30 +46,50 @@ function getSetCookie(response: request.Response, name: string): string | undefi
 }
 
 function cookieValue(header: string | undefined): string {
-  return header?.split(';')[0].split('=')[1] ?? '';
+  return decodeURIComponent(header?.split(';')[0].split('=')[1] ?? '');
 }
 
-async function start(app: express.Express, cookie?: string) {
+async function start(app: express.Express, cookieName: string, binding?: string) {
   const req = request(app).get('/start');
-  const response = await (cookie ? req.set('Cookie', cookie) : req).expect(200);
-  return { state: response.body.state as string, response };
+  const response = await (binding ? req.set('Cookie', `${cookieName}=${binding}`) : req).expect(
+    200,
+  );
+  return {
+    state: response.body.state as string,
+    binding: cookieValue(getSetCookie(response, cookieName)),
+    response,
+  };
 }
 
-const github: OAuthStateStoreOptions = { provider: 'github', secureCookie: false };
-const secureGithub: OAuthStateStoreOptions = { provider: 'github', secureCookie: true };
+function callback(app: express.Express, cookie: string | undefined, state: string) {
+  const req = request(app).get('/oauth/github/callback').query({ state });
+  return (cookie ? req.set('Cookie', cookie) : req).expect(200);
+}
+
+const SECRET = 'state-signing-secret';
+const PLAIN = 'oauth_state_github';
+const github: OAuthStateStoreOptions = { provider: 'github', secret: SECRET, secureCookie: false };
+const apple: OAuthStateStoreOptions = {
+  provider: 'apple',
+  secret: SECRET,
+  secureCookie: false,
+  crossSiteCallback: true,
+};
 
 describe('createOAuthStateStore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('issues a host-only SameSite=Lax cookie on insecure deployments', async () => {
+  it('issues a host-only SameSite=Lax binding cookie on insecure deployments', async () => {
     const { app } = createApp(github);
 
-    const { state, response } = await start(app);
-    const cookie = getSetCookie(response, 'oauth_state_github');
+    const { state, binding, response } = await start(app, PLAIN);
+    const cookie = getSetCookie(response, PLAIN);
 
-    expect(cookie).toContain(`oauth_state_github=${state}`);
+    expect(binding).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(state).toMatch(/^[0-9a-z]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
+    expect(state).not.toContain(binding);
     expect(cookie).toContain(`Max-Age=${DEFAULT_OAUTH_STATE_TTL_MS / 1000}`);
     expect(cookie).toContain('Path=/;');
     expect(cookie).toContain('HttpOnly');
@@ -79,27 +99,22 @@ describe('createOAuthStateStore', () => {
   });
 
   it('uses a __Host- cookie, which a sibling subdomain cannot set, on secure deployments', async () => {
-    const { app } = createApp({ ...secureGithub, maxAgeMs: 120_000 });
+    const { app } = createApp({ ...github, secureCookie: true, maxAgeMs: 120_000 });
 
-    const { state, response } = await start(app);
+    const { response } = await start(app, '__Host-oauth_state_github');
     const cookie = getSetCookie(response, '__Host-oauth_state_github');
 
-    expect(cookie).toContain(`__Host-oauth_state_github=${state}`);
     expect(cookie).toContain('Max-Age=120');
     expect(cookie).toContain('Path=/;');
     expect(cookie).toContain('Secure');
-    expect(getSetCookie(response, 'oauth_state_github')).toBeUndefined();
+    expect(getSetCookie(response, PLAIN)).toBeUndefined();
   });
 
-  it('ignores a plain-named cookie on secure deployments', async () => {
-    const { app } = createApp(secureGithub);
-    const { state } = await start(app);
+  it('ignores a plain-named binding on secure deployments', async () => {
+    const { app } = createApp({ ...github, secureCookie: true });
+    const { state, binding } = await start(app, '__Host-oauth_state_github');
 
-    const response = await request(app)
-      .get('/oauth/github/callback')
-      .set('Cookie', `oauth_state_github=${state}`)
-      .query({ state })
-      .expect(200);
+    const response = await callback(app, `${PLAIN}=${binding}`, state);
 
     expect(response.body).toEqual({
       ok: false,
@@ -108,105 +123,128 @@ describe('createOAuthStateStore', () => {
   });
 
   it('marks a cross-site callback cookie SameSite=None and Secure, even on insecure deployments', async () => {
-    const { app } = createApp({ provider: 'apple', secureCookie: false, crossSiteCallback: true });
+    const { app } = createApp(apple);
 
-    const { response } = await start(app);
+    const { response } = await start(app, '__Host-oauth_state_apple');
     const cookie = getSetCookie(response, '__Host-oauth_state_apple');
 
     expect(cookie).toContain('SameSite=None');
     expect(cookie).toContain('Secure');
   });
 
-  it('accepts the state issued to this browser and clears the cookie with matching attributes', async () => {
-    const { app } = createApp({ provider: 'apple', secureCookie: true, crossSiteCallback: true });
-    const { state } = await start(app);
+  it('accepts a state signed for this browser without rewriting the binding', async () => {
+    const { app } = createApp(apple);
+    const { state, binding } = await start(app, '__Host-oauth_state_apple');
 
     const response = await request(app)
       .post('/oauth/apple/callback')
-      .set('Cookie', `__Host-oauth_state_apple=${state}`)
+      .set('Cookie', `__Host-oauth_state_apple=${binding}`)
       .type('form')
       .send({ state })
       .expect(200);
 
     expect(response.body).toEqual({ ok: true });
-    const cleared = getSetCookie(response, '__Host-oauth_state_apple');
-    expect(cleared).toContain('__Host-oauth_state_apple=;');
-    expect(cleared).toContain('Path=/;');
-    expect(cleared).toContain('SameSite=None');
-    expect(cleared).toContain('Secure');
+    expect(response.headers['set-cookie']).toBeUndefined();
   });
 
-  it('keeps flows started in other tabs pending and consumes only the matched one', async () => {
+  it('reuses the binding, so logins started in several tabs all complete', async () => {
     const { app } = createApp(github);
-    const first = await start(app);
-    const second = await start(
-      app,
-      `oauth_state_github=${cookieValue(getSetCookie(first.response, 'oauth_state_github'))}`,
-    );
-    const pending = cookieValue(getSetCookie(second.response, 'oauth_state_github'));
+    const first = await start(app, PLAIN);
+    const second = await start(app, PLAIN, first.binding);
+    const third = await start(app, PLAIN, second.binding);
 
-    expect(pending.split('.')).toEqual([second.state, first.state]);
+    expect(new Set([first.binding, second.binding, third.binding]).size).toBe(1);
+    expect(new Set([first.state, second.state, third.state]).size).toBe(3);
 
-    const firstCallback = await request(app)
-      .get('/oauth/github/callback')
-      .set('Cookie', `oauth_state_github=${pending}`)
-      .query({ state: first.state })
-      .expect(200);
-
-    expect(firstCallback.body).toEqual({ ok: true });
-    const remaining = cookieValue(getSetCookie(firstCallback, 'oauth_state_github'));
-    expect(remaining).toBe(second.state);
-
-    const secondCallback = await request(app)
-      .get('/oauth/github/callback')
-      .set('Cookie', `oauth_state_github=${remaining}`)
-      .query({ state: second.state })
-      .expect(200);
-
-    expect(secondCallback.body).toEqual({ ok: true });
-    expect(getSetCookie(secondCallback, 'oauth_state_github')).toContain('oauth_state_github=;');
-  });
-
-  it('remembers at most three outstanding flows, dropping the oldest', async () => {
-    const { app } = createApp(github);
-    let cookie = '';
-    const states: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      const flow = await start(app, cookie ? `oauth_state_github=${cookie}` : undefined);
-      states.push(flow.state);
-      cookie = cookieValue(getSetCookie(flow.response, 'oauth_state_github'));
+    for (const { state } of [second, first, third]) {
+      const response = await callback(app, `${PLAIN}=${third.binding}`, state);
+      expect(response.body).toEqual({ ok: true });
     }
+  });
 
-    expect(cookie.split('.')).toEqual([states[3], states[2], states[1]]);
+  it('rejects a state signed for a different browser', async () => {
+    const { app } = createApp(github);
+    const otherBrowser = await start(app, PLAIN);
+    const thisBrowser = await start(app, PLAIN);
+
+    const response = await callback(app, `${PLAIN}=${thisBrowser.binding}`, otherBrowser.state);
+
+    expect(response.body).toEqual({ ok: false, message: 'Invalid authorization request state.' });
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[OAuth] Rejected github callback: Invalid authorization request state.',
+      { provider: 'github', has_state: true },
+    );
+  });
+
+  it.each<[string, OAuthStateStoreOptions, string]>([
+    ['another provider', { ...github, provider: 'google' }, 'oauth_state_google'],
+    ['another secret', { ...github, secret: 'rotated-secret' }, PLAIN],
+  ])('rejects a state signed for %s', async (_label, signerOptions, signerCookie) => {
+    const { app: signer } = createApp(signerOptions);
+    const { app } = createApp(github);
+    const { state, binding } = await start(signer, signerCookie);
+
+    const response = await callback(app, `${PLAIN}=${binding}`, state);
+
+    expect(response.body).toEqual({ ok: false, message: 'Invalid authorization request state.' });
+  });
+
+  it('expires each state on its own clock while newer flows keep the binding alive', async () => {
+    const issuedAt = 1_800_000_000_000;
+    const now = jest.spyOn(Date, 'now').mockReturnValue(issuedAt);
+    try {
+      const { app } = createApp({ ...github, maxAgeMs: 60_000 });
+      const older = await start(app, PLAIN);
+      now.mockReturnValue(issuedAt + 50_000);
+      const newer = await start(app, PLAIN, older.binding);
+
+      now.mockReturnValue(issuedAt + 59_999);
+      const justInTime = await callback(app, `${PLAIN}=${newer.binding}`, older.state);
+      now.mockReturnValue(issuedAt + 60_000);
+      const expired = await callback(app, `${PLAIN}=${newer.binding}`, older.state);
+      const current = await callback(app, `${PLAIN}=${newer.binding}`, newer.state);
+
+      expect(justInTime.body).toEqual({ ok: true });
+      expect(expired.body).toEqual({ ok: false, message: 'Authorization request state expired.' });
+      expect(current.body).toEqual({ ok: true });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('rejects a state whose issue time was changed', async () => {
+    const { app } = createApp(github);
+    const { state, binding } = await start(app, PLAIN);
+    const [, nonce, signature] = state.split('.');
+    const retimed = `${(Date.now() + 3_600_000).toString(36)}.${nonce}.${signature}`;
+
+    const response = await callback(app, `${PLAIN}=${binding}`, retimed);
+
+    expect(response.body).toEqual({ ok: false, message: 'Invalid authorization request state.' });
   });
 
   it.each<[string, (state: string) => string]>([
-    ['a different state', () => 'b'.repeat(43)],
-    ['a state of another length', (state) => `${state}x`],
+    ['a truncated signature', (state) => state.slice(0, -1)],
     ['a repeated state parameter', (state) => `${state}&state=${state}`],
     ['an empty state', () => ''],
-  ])('rejects %s without discarding the pending state', async (_label, buildState) => {
+    ['a bare random value', () => 'b'.repeat(43)],
+  ])('rejects %s', async (_label, buildState) => {
     const { app } = createApp(github);
-    const { state } = await start(app);
+    const { state, binding } = await start(app, PLAIN);
 
     const response = await request(app)
       .get(`/oauth/github/callback?state=${buildState(state)}`)
-      .set('Cookie', `oauth_state_github=${state}`)
+      .set('Cookie', `${PLAIN}=${binding}`)
       .expect(200);
 
     expect(response.body).toEqual({ ok: false, message: 'Invalid authorization request state.' });
-    expect(response.headers['set-cookie']).toBeUndefined();
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[OAuth] Rejected github callback: Invalid authorization request state.',
-      expect.objectContaining({ provider: 'github' }),
-    );
   });
 
-  it('rejects a callback when this browser holds no state cookie', async () => {
+  it('rejects a callback when this browser holds no binding cookie', async () => {
     const { app } = createApp(github);
-    const { state } = await start(app);
+    const { state } = await start(app, PLAIN);
 
-    const response = await request(app).get('/oauth/github/callback').query({ state }).expect(200);
+    const response = await callback(app, undefined, state);
 
     expect(response.body).toEqual({
       ok: false,
@@ -220,11 +258,17 @@ describe('createOAuthStateStore', () => {
 
   it('fails the authorization request when no response is attached to the request', () => {
     const { stateStore } = createApp(github);
-    const callback = jest.fn();
+    const done = jest.fn();
 
-    stateStore.store({} as Request, callback);
+    stateStore.store({} as Request, done);
 
-    expect(callback).toHaveBeenCalledWith(expect.any(Error));
+    expect(done).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('refuses to build a store without a signing secret', () => {
+    expect(() => createOAuthStateStore({ ...github, secret: '' })).toThrow(
+      'A secret is required to sign github OAuth state',
+    );
   });
 
   it('keeps the arities passport-oauth2 dispatches on', () => {

@@ -80,12 +80,18 @@ jest.mock('~/server/middleware', () => {
 const ORIGINAL_ENV = process.env;
 const APP_ORIGIN = 'https://chat.example.com';
 const OTHER_ORIGIN = 'https://other-site.example.net';
+const ADMIN_PANEL_ORIGIN = 'https://admin.example.com';
 
 describe('local login endpoints reject cross-site submissions', () => {
   let app;
 
   beforeAll(() => {
-    process.env = { ...ORIGINAL_ENV, DOMAIN_CLIENT: APP_ORIGIN, DOMAIN_SERVER: APP_ORIGIN };
+    process.env = {
+      ...ORIGINAL_ENV,
+      DOMAIN_CLIENT: APP_ORIGIN,
+      DOMAIN_SERVER: APP_ORIGIN,
+      ADMIN_PANEL_URL: `${ADMIN_PANEL_ORIGIN}/`,
+    };
     app = express();
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
@@ -157,6 +163,18 @@ describe('local login endpoints reject cross-site submissions', () => {
       .expect(204);
 
     expect(mockVerify2FAWithTempToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a login posted from the configured admin panel origin', async () => {
+    await request(app)
+      .post('/api/auth/login')
+      .set('Host', 'chat.example.com')
+      .set('Sec-Fetch-Site', 'same-site')
+      .set('Origin', ADMIN_PANEL_ORIGIN)
+      .send({ email: 'admin@example.com', password: 'password' })
+      .expect(204);
+
+    expect(mockLoginController).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a server-side client that sends no browser headers', async () => {

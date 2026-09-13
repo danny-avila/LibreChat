@@ -148,6 +148,7 @@ describe('configureSocialLogins OAuth state options', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = {
+      JWT_SECRET: 'jwt-secret',
       GITHUB_CLIENT_ID: 'github-client',
       GITHUB_CLIENT_SECRET: 'github-secret',
       APPLE_CLIENT_ID: 'apple-client',
@@ -166,7 +167,7 @@ describe('configureSocialLogins OAuth state options', () => {
 
     await configureSocialLogins(app, { registration: { oauthStateTtlMs: 120000 } });
 
-    const expected = { secureCookie: true, maxAgeMs: 120000 };
+    const expected = { secret: 'jwt-secret', secureCookie: true, maxAgeMs: 120000 };
     expect(strategies.githubLogin).toHaveBeenCalledWith(expected);
     expect(strategies.appleLogin).toHaveBeenCalledWith(expected);
     expect(strategies.githubAdminLogin).toHaveBeenCalledWith();
@@ -180,6 +181,7 @@ describe('configureSocialLogins OAuth state options', () => {
     await configureSocialLogins({ use: jest.fn() });
 
     expect(strategies.githubLogin).toHaveBeenCalledWith({
+      secret: 'jwt-secret',
       secureCookie: false,
       maxAgeMs: undefined,
     });
