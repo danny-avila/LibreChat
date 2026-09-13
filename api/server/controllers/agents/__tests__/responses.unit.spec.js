@@ -236,15 +236,28 @@ jest.mock('@librechat/api', () => ({
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  resolveConversationCodeEnvironmentDecision: ({
+    requestedMode,
+    requestedSelections,
+    conversation,
+  }) => {
+    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
+    return {
+      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
+      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+    };
+  },
   getCodeWorkspaceSelections: jest.fn(),
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
     parentMessageId,
+    codeEnvironmentMode,
     codeWorkspaces,
   }) => ({
     messageId,
     conversationId,
+    ...(codeEnvironmentMode !== undefined && { codeEnvironmentMode }),
     ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
@@ -611,6 +624,38 @@ describe('createResponse controller', () => {
     },
   );
 
+  it.each([false, true])(
+    'persists the normalized no-attached decision atomically: stream=%s',
+    async (stream) => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.getCodeWorkspaceSelections.mockReturnValueOnce([
+        { environmentId: 'machine', workspaceId: 'stale-project' },
+      ]);
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream,
+          store: true,
+          code_environment_mode: 'without_attached',
+        },
+      });
+
+      await createResponse(req, res);
+
+      expect(db.saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          codeEnvironmentMode: 'without_attached',
+        }),
+        expect.anything(),
+      );
+      expect(db.saveConvo.mock.calls.at(-1)[1]).not.toHaveProperty('codeWorkspaces');
+      expect(api.getCodeWorkspaceSelections).not.toHaveBeenCalled();
+    },
+  );
+
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await createResponse(req, res);
 
@@ -905,6 +950,7 @@ describe('createResponse controller', () => {
           requestBody: {
             messageId: 'resp_mock-123',
             conversationId: expect.any(String),
+            codeEnvironmentMode: 'without_attached',
           },
         }),
         expect.anything(),

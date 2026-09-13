@@ -65,6 +65,8 @@ jest.mock('@librechat/api', () => ({
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
+  shouldPersistCodeWorkspaceInitializationError:
+    jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
   GenerationJobManager: mockGenerationJobManager,

@@ -20,7 +20,6 @@ import type { LocatorTraversalReporter } from '../../protection/diagnostics';
  * ```
  */
 import { nanoid } from 'nanoid';
-import { isCodeWorkspaceSelections } from 'librechat-data-provider';
 import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
@@ -538,13 +537,11 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
     return { valid: false, error: 'conversation_id must be a string' };
   }
-  if (
-    request.code_workspaces !== undefined &&
-    !isCodeWorkspaceSelections(request.code_workspaces)
-  ) {
+  if (request.code_environment_mode !== undefined || request.code_workspaces !== undefined) {
     return {
       valid: false,
-      error: 'code_workspaces must contain unique environment/workspace selections',
+      error:
+        'code_environment_mode and code_workspaces are not supported by this service because it cannot enforce a persisted conversation decision',
     };
   }
 
@@ -655,7 +652,6 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
-    codeWorkspaces: request.code_workspaces,
     parentMessageId: mcpParentMessageId,
   });
   const created = Math.floor(Date.now() / 1000);

@@ -68,6 +68,12 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeEnvironmentConfig,
+  type CodeExecutionContext,
+} from './execution';
+import {
   getContentTraversalFragments,
   isContentTraversalProtected,
   isContentTraversalLimitError,
@@ -92,11 +98,6 @@ import {
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
 import {
-  normalizeStatefulCodeEnvironment,
-  resolveCodeExecutionContext,
-  type CodeExecutionContext,
-} from './execution';
-import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
@@ -105,6 +106,7 @@ import { createConfiguredContentInspector, inspectContent } from '../protection/
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
 import { resolveAttachedWorkspaceCommandTimeoutMax } from '~/code/command';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
+import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
@@ -633,6 +635,25 @@ export type InitializedAgent = Agent & {
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
 
+/** Returns true when a conversation-level choice disables an attached environment. */
+export function optsOutOfAttachedCodeEnvironment(
+  agent: Agent,
+  requestBody: RequestBody | undefined,
+  environments: readonly CodeEnvironmentConfig[] | undefined,
+  implicitStatefulRouteAvailable = false,
+): boolean {
+  if (requestBody?.codeEnvironmentMode !== 'without_attached') return false;
+  const configured = agent.code_environment_id
+    ? environments?.find(({ id }) => id === agent.code_environment_id)
+    : environments?.find(({ default: isDefault }) => isDefault === true);
+  return (
+    agent.stateful_code_sessions === true &&
+    (configured?.type === 'attached' ||
+      (configured == null &&
+        (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
+  );
+}
+
 /**
  * Parameters for initializing an agent
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
@@ -1117,7 +1138,19 @@ export async function initializeAgent(
    * stateful agent must perform freshness checks and recovery uploads against
    * the same isolated deployment its eventual `/exec` request will use. */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const configuredCodeEnvironments =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+  const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+    agent,
+    requestBody,
+    configuredCodeEnvironments,
+    isImplicitStatefulCodeRouteAvailable(
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+    ),
+  );
+  const effectiveCodeEnvAvailable =
+    params.codeEnvAvailable === true && agentRequestsCodeExec && !attachedEnvironmentOptOut;
   const effectiveStatefulSessions =
     effectiveCodeEnvAvailable &&
     params.statefulSessionsAvailable === true &&
@@ -1136,7 +1169,7 @@ export async function initializeAgent(
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,
     environmentId: agent.code_environment_id,
-    environments: appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments,
+    environments: configuredCodeEnvironments,
     userId: requestFileOwnerId,
     agentId: agent.id,
     conversationId,
@@ -1169,9 +1202,14 @@ export async function initializeAgent(
   }
   const toolResourceSet = resolveResendToolResources({
     tools: resourceToolNames,
-    codeEnvAvailable: params.codeEnvAvailable === true,
+    codeEnvAvailable: params.codeEnvAvailable === true && !attachedEnvironmentOptOut,
     fileSearchAvailable: params.fileSearchAvailable,
   });
+  let runtimeToolResources = agent.tool_resources;
+  if (attachedEnvironmentOptOut && runtimeToolResources != null) {
+    runtimeToolResources = { ...runtimeToolResources };
+    delete runtimeToolResources[EToolResources.execute_code];
+  }
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -1488,7 +1526,7 @@ export async function initializeAgent(
     attachments: currentFiles
       ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
       : undefined,
-    tool_resources: agent.tool_resources,
+    tool_resources: runtimeToolResources,
     requestFileSet: new Set((authorizedRunFiles ?? requestFiles).map((file) => file.file_id)),
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,

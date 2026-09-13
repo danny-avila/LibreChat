@@ -85,6 +85,7 @@ const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, Translat
   worker_unavailable: 'com_error_code_workspace_worker_unavailable',
   unsupported: 'com_error_code_workspace_unsupported',
   missing: 'com_error_code_workspace_missing',
+  locked: 'com_error_code_workspace_locked',
 };
 
 /** Why a manual compaction could not run, keyed by the SDK's skip reason. */

@@ -23,6 +23,7 @@ const {
   findDisallowedDecisions,
   findIncompleteDecisions,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
@@ -917,7 +918,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // when the paused action carries a fingerprint (in-flight pauses from before this
   // change won't), and recomputed from the resume body's graph-determining fields.
   const pinnedFingerprint = pendingAction.requestFingerprint;
-  if (pinnedFingerprint && pinnedFingerprint !== computeAgentRequestFingerprint(req.body ?? {})) {
+  const pinnedFingerprintV2 = pendingAction.requestFingerprintV2;
+  const legacyFingerprint = computeLegacyAgentRequestFingerprint(req.body ?? {});
+  const currentFingerprint = computeAgentRequestFingerprint(req.body ?? {});
+  if (
+    (pinnedFingerprint && pinnedFingerprint !== legacyFingerprint) ||
+    (pinnedFingerprintV2 && pinnedFingerprintV2 !== currentFingerprint)
+  ) {
     return sendGenerationJson(
       res,
       403,
@@ -1822,6 +1829,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       createMCPRuntimeRequestBody({
         messageId: job.metadata.responseMessageId,
         conversationId: streamId,
+        codeEnvironmentMode:
+          req.body.codeEnvironmentMode ?? req.resolvedConversation?.codeEnvironmentMode,
         codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
       });

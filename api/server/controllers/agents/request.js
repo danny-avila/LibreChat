@@ -44,6 +44,7 @@ const {
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
+  shouldPersistCodeWorkspaceInitializationError,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -491,6 +492,7 @@ async function saveErrorTurn(
     const agentId = endpointOption?.agent_id ?? req.body?.agent_id;
     const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
     const seedConvo = isNewConvo || req.resolvedConversation === null;
+    const codeEnvironmentDecision = req._codeEnvironmentDecision;
     const convoFields = seedConvo
       ? {
           ...(endpoint != null && { endpoint }),
@@ -502,6 +504,12 @@ async function saveErrorTurn(
           ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
           ...(agentId != null && { agent_id: agentId }),
           ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+          ...(codeEnvironmentDecision?.mode != null && {
+            codeEnvironmentMode: codeEnvironmentDecision.mode,
+            ...(codeEnvironmentDecision.codeWorkspaces != null && {
+              codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
+            }),
+          }),
         }
       : {};
     await saveConvo(
@@ -1487,6 +1495,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
+    codeEnvironmentMode: req.body.codeEnvironmentMode,
     codeWorkspaces: resolveRunCodeWorkspaces({
       conversationId: effectiveConversationId,
       requestedSelections: req.body.codeWorkspaces,
@@ -1920,6 +1929,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
     startupTelemetry?.mark('client_initialized');
     client = result.client;
+    const normalizedMCPRequestBody = createMCPRuntimeRequestBody({
+      messageId: mcpRequestBody.messageId,
+      conversationId: mcpRequestBody.conversationId,
+      codeEnvironmentMode: req.body.codeEnvironmentMode,
+      codeWorkspaces: req.body.codeWorkspaces,
+      ...(Object.prototype.hasOwnProperty.call(mcpRequestBody, 'parentMessageId') && {
+        parentMessageId: mcpRequestBody.parentMessageId,
+      }),
+    });
+    if (JSON.stringify(normalizedMCPRequestBody) !== JSON.stringify(mcpRequestBody)) {
+      await GenerationJobManager.updateMetadata(
+        streamId,
+        { mcpRequestBody: normalizedMCPRequestBody },
+        jobCreatedAt,
+      );
+    }
     if (
       typeof client?.options?.agent?.id === 'string' &&
       !isEphemeralAgentId(client.options.agent.id)
@@ -3384,7 +3409,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const initializationError = initializationFailure
         ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
-      const completionPromise = streamStarted
+      const persistInitializationError = shouldPersistCodeWorkspaceInitializationError({
+        streamStarted,
+        isNewConversation: isNewConvo,
+        failureCode: initializationFailure?.code,
+        hasValidatedDecision: req._codeEnvironmentDecision != null,
+      });
+      const completionPromise = persistInitializationError
         ? GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {
             beforeErrorPublication: () =>
               saveErrorTurn(req, {

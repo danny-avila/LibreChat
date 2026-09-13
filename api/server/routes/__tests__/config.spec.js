@@ -116,6 +116,7 @@ afterEach(() => {
   delete process.env.LANGFUSE_TRACING_ENABLED;
   delete process.env.LANGFUSE_SAMPLE_RATE;
   delete process.env.TENANT_ISOLATION_STRICT;
+  delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
 });
 
 describe('GET /api/config', () => {
@@ -350,7 +351,31 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+      expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
     });
+
+    it('advertises code environment decisions only after deployment-wide activation', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION = '1';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentDecisionVersion).toBe(1);
+    });
+
+    it.each(['0', '2', '1.0', 'true'])(
+      'does not advertise unsupported code environment decision version %s',
+      async (version) => {
+        mockGetAppConfig.mockResolvedValue(baseAppConfig);
+        process.env.CODE_ENVIRONMENT_DECISION_VERSION = version;
+        const app = createApp(mockUser);
+
+        const response = await request(app).get('/api/config');
+
+        expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
+      },
+    );
 
     it('should strip private prompt fields from model spec presets', async () => {
       mockGetAppConfig.mockResolvedValue({
