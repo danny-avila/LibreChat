@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OGDialog, OGDialogTrigger, useToastContext } from '@librechat/client';
 import type t from 'librechat-data-provider';
 import '@testing-library/jest-dom';
+import { MarketplaceHostContext } from '../MarketplaceContext';
 import AgentDetailContent from '../AgentDetailContent';
 
 const mockToggleFavoriteAgent = jest.fn();
@@ -122,16 +123,20 @@ const renderDetail = (agent = baseAgent, basename = '/app', morph?: 'open' | 'cl
   queryClients.add(queryClient);
   const toastContext = { showToast: jest.fn() };
   jest.mocked(useToastContext).mockReturnValue(toastContext);
+  /* The app-global reset the start-chat path asks its host for: dropping the parallel
+     conversations a multi-conversation session left open, and the transcript the last
+     new chat left behind. The dialog only asks; the host owns that state. */
+  const host = { resetNewConversation: jest.fn() };
   const tree = (phase?: 'open' | 'closing') => (
-    /* The start-chat path drops the parallel conversations a multi-conversation session
-       left open, which is Recoil state. */
     <RecoilRoot>
       <MemoryRouter
         basename={basename}
         initialEntries={[`${basename}/agents/all?q=invoice&sort=popular&mine=1`]}
       >
         <QueryClientProvider client={queryClient}>
-          <DetailDialog agent={agent} morph={phase} />
+          <MarketplaceHostContext.Provider value={host}>
+            <DetailDialog agent={agent} morph={phase} />
+          </MarketplaceHostContext.Provider>
           <LocationProbe />
         </QueryClientProvider>
       </MemoryRouter>
@@ -141,6 +146,7 @@ const renderDetail = (agent = baseAgent, basename = '/app', morph?: 'open' | 'cl
   return {
     ...view,
     showToast: toastContext.showToast,
+    resetNewConversation: host.resetNewConversation,
     setMorph: (phase: 'open' | 'closing') => view.rerender(tree(phase)),
   };
 };
@@ -260,7 +266,7 @@ describe('AgentDetailContent', () => {
 
   it('starts a new agent chat through the router without marketplace parameters', async () => {
     const user = userEvent.setup();
-    renderDetail({ ...baseAgent, id: 'agent / one' });
+    const { resetNewConversation } = renderDetail({ ...baseAgent, id: 'agent / one' });
 
     await user.click(screen.getByRole('button', { name: 'Start chat' }));
 
@@ -274,6 +280,10 @@ describe('AgentDetailContent', () => {
     expect(location.searchParams.has('q')).toBe(false);
     expect(location.searchParams.has('sort')).toBe(false);
     expect(location.searchParams.has('mine')).toBe(false);
+    /* Whatever a multi-conversation session left open goes with it: the chat route's
+       query-param path keeps added conversations, so without the host's reset the new
+       agent would open as another column beside them. */
+    expect(resetNewConversation).toHaveBeenCalledTimes(1);
   });
 
   it('confirms a copy on the button itself and resets it, without a toast', async () => {

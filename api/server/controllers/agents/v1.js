@@ -12,12 +12,14 @@ const {
   agentUpdateSchema,
   agentSubagentsSchema,
   refreshListAvatars,
+  selectAvatarRefreshAgents,
+  getAvatarRefreshCoveredIds,
+  mergeAvatarRefreshCacheEntry,
   collectEdgeAgentIds,
   replaceEdgeSourceId,
   mergeDeploymentSkillIds,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
-  MAX_AVATAR_REFRESH_AGENTS,
   collectToolResourceFileIds,
   convertOcrToContextInPlace,
   normalizeToolResourceFiles,
@@ -1825,49 +1827,13 @@ const getListAgentsHandler = async (req, res) => {
           })
         : null,
     ]);
-
     const isValidCachedRefresh =
       cachedRefreshEntry != null &&
       typeof cachedRefreshEntry === 'object' &&
       cachedRefreshEntry.urlCache != null;
 
-    /**
-     * Refresh accessible S3 avatars before returning their cached URLs. The warm-up
-     * budget is restricted to agents with S3 avatars and ordered by immutable creation
-     * time, so refresh writes cannot change which agents fall inside the budget.
-     */
-    const resolveAvatarRefresh = async () => {
-      if (isValidCachedRefresh) {
-        logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
-        return cachedRefreshEntry;
-      }
-      try {
-        const fullList = await db.getListAgentsByAccess({
-          accessibleIds,
-          otherParams: { 'avatar.source': FileSources.s3 },
-          limit: MAX_AVATAR_REFRESH_AGENTS,
-          after: null,
-          // Keep the warm-up set independent of the requested marketplace ordering.
-          sort: 'newest',
-        });
-        const { urlCache } = await refreshListAvatars({
-          agents: fullList?.data ?? [],
-          userId,
-          refreshS3Url,
-          updateAgent: db.updateAgent,
-        });
-        const refreshEntry = { urlCache };
-        await cache.set(refreshKey, refreshEntry, Time.THIRTY_MINUTES);
-        return refreshEntry;
-      } catch (err) {
-        logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
-        return null;
-      }
-    };
-
-    const cachedRefresh = await resolveAvatarRefresh();
-
-    // Use the new ACL-aware function
+    // Use the ACL-aware function before refreshing so the requested ordering and page
+    // determine which avatars receive bounded S3 work.
     const data = await db.getListAgentsByAccess({
       accessibleIds,
       otherParams: filter,
@@ -1879,6 +1845,35 @@ const getListAgentsHandler = async (req, res) => {
     });
 
     const agents = data?.data ?? [];
+    const cachedCoveredIds = getAvatarRefreshCoveredIds(cachedRefreshEntry);
+    const refreshAgents = selectAvatarRefreshAgents(agents, cachedCoveredIds);
+
+    const resolveAvatarRefresh = async () => {
+      if (!refreshAgents.length && isValidCachedRefresh) {
+        logger.debug('[/Agents] S3 avatar refresh already checked for this page, skipping');
+        return cachedRefreshEntry;
+      }
+      try {
+        const { urlCache, coveredIds } = await refreshListAvatars({
+          agents: refreshAgents,
+          userId,
+          refreshS3Url,
+          updateAgent: db.updateAgent,
+        });
+        const refreshEntry = mergeAvatarRefreshCacheEntry(cachedRefreshEntry, {
+          urlCache,
+          coveredIds,
+        });
+        await cache.set(refreshKey, refreshEntry, Time.THIRTY_MINUTES);
+        return refreshEntry;
+      } catch (err) {
+        logger.error('[/Agents] Error refreshing avatars for list page: %o', err);
+        return null;
+      }
+    };
+
+    const cachedRefresh = await resolveAvatarRefresh();
+
     if (!agents.length) {
       return res.json(data);
     }
