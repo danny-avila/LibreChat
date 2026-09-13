@@ -133,6 +133,11 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/Providers', () => ({
   useOptionalMessagesOperations: () => ({ ask: mockAsk }),
   useIsMessagesViewReadOnly: jest.fn(() => false),
+  useMCPAppsPolicy: () => ({
+    enabled: true,
+    legacyHtmlEnabled: true,
+    cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+  }),
 }));
 
 const { AppBridge } = jest.requireMock('@modelcontextprotocol/ext-apps/app-bridge') as {
