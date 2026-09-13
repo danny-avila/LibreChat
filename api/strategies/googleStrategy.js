@@ -1,4 +1,5 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
+const { createOAuthStateStore } = require('@librechat/api');
 const socialLogin = require('./socialLogin');
 
 const getProfileDetails = ({ profile }) => ({
@@ -20,11 +21,16 @@ const getGoogleConfig = (callbackURL) => ({
   proxy: true,
 });
 
-const googleStrategy = () =>
-  new GoogleStrategy(
-    getGoogleConfig(`${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`),
+const googleStrategy = () => {
+  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`;
+  return new GoogleStrategy(
+    {
+      ...getGoogleConfig(callbackURL),
+      store: createOAuthStateStore({ provider: 'google', callbackURL }),
+    },
     googleLogin,
   );
+};
 
 const googleAdminStrategy = () =>
   new GoogleStrategy(
