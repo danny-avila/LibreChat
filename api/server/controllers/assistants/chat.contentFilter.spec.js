@@ -113,7 +113,6 @@ jest.mock('~/server/middleware/error', () => ({
 
 jest.mock('~/models', () => ({
   releaseBalanceReservation: jest.fn(),
-  upsertBalanceFields: jest.fn(),
   reserveBalance: jest.fn(),
   getTransactions: jest.fn(),
   getMultiplier: jest.fn(),

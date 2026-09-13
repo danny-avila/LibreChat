@@ -4,9 +4,9 @@ import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
 import type { BalanceConfig, IBalance } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { CheckBalanceDeps } from './checkBalance';
+import type { BalanceReservation, CheckBalanceDeps } from './checkBalance';
 import type { ServerRequest } from '~/types/http';
-import { checkBalance } from './checkBalance';
+import { checkBalance, createBalanceReservations, withBalanceReservations } from './checkBalance';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -37,6 +37,9 @@ describe('checkBalance', () => {
     model: 'gpt-4',
   };
 
+  const reserveRequest = (deps: CheckBalanceDeps) =>
+    (deps.reserveBalance as jest.Mock).mock.calls[0][0];
+
   it('reserves the token cost and releases that reservation exactly once', async () => {
     const deps = createMockDeps({ getMultiplier: jest.fn().mockReturnValue(2) });
 
@@ -47,15 +50,20 @@ describe('checkBalance', () => {
       amount: 200,
       reservationId: expect.any(String),
       expiresAt: expect.any(Date),
+      initialBalance: undefined,
     });
-    const [{ reservationId }] = (deps.reserveBalance as jest.Mock).mock.calls[0];
+    const { reservationId } = reserveRequest(deps);
     expect(deps.releaseBalanceReservation).not.toHaveBeenCalled();
 
     await Promise.all([reservation.release(), reservation.release()]);
     await reservation.release();
 
     expect(deps.releaseBalanceReservation).toHaveBeenCalledTimes(1);
-    expect(deps.releaseBalanceReservation).toHaveBeenCalledWith({ user: 'user-1', reservationId });
+    expect(deps.releaseBalanceReservation).toHaveBeenCalledWith({
+      user: 'user-1',
+      reservationId,
+      amount: 200,
+    });
   });
 
   it('logs instead of throwing when a release fails', async () => {
@@ -90,9 +98,35 @@ describe('checkBalance', () => {
     );
   });
 
+  it('reports no less than zero balance when reservations exceed the credits', async () => {
+    const deps = createMockDeps({
+      reserveBalance: jest.fn().mockResolvedValue({ reserved: false, balance: -200 }),
+    });
+
+    await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
+
+    expect(deps.logViolation).toHaveBeenCalledWith(
+      req,
+      res,
+      ViolationTypes.TOKEN_BALANCE,
+      expect.objectContaining({ balance: 0, tokenCost: 100 }),
+      0,
+    );
+  });
+
+  it('propagates a failure of the balance store instead of reporting a balance violation', async () => {
+    const deps = createMockDeps({
+      reserveBalance: jest.fn().mockRejectedValue(new Error('DB unavailable')),
+    });
+
+    await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow(
+      'DB unavailable',
+    );
+    expect(deps.logViolation).not.toHaveBeenCalled();
+  });
+
   describe('reservation expiry', () => {
-    const expiryOf = (deps: CheckBalanceDeps) =>
-      (deps.reserveBalance as jest.Mock).mock.calls[0][0].expiresAt.getTime();
+    const expiryOf = (deps: CheckBalanceDeps) => reserveRequest(deps).expiresAt.getTime();
 
     it('expires reservations after the configured TTL', async () => {
       const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 5000 } });
@@ -119,30 +153,16 @@ describe('checkBalance', () => {
   });
 
   describe('lazy balance initialization', () => {
-    const missingThenReserved = (balance: number, reserved = true) =>
-      jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ reserved, balance });
-
-    it('should create balance record when no record exists and startBalance is configured', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
-      const deps = createMockDeps({
-        reserveBalance: missingThenReserved(5000),
-        balanceConfig: { startBalance: 5000 },
-        upsertBalanceFields,
-      });
+    it('creates a missing record from startBalance', async () => {
+      const deps = createMockDeps({ balanceConfig: { startBalance: 5000 } });
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
-      expect(upsertBalanceFields).toHaveBeenCalledWith('user-1', {
-        user: 'user-1',
-        tokenCredits: 5000,
-      });
-      expect(deps.reserveBalance).toHaveBeenCalledTimes(2);
+      expect(reserveRequest(deps).initialBalance).toEqual({ user: 'user-1', tokenCredits: 5000 });
     });
 
-    it('should include auto-refill fields when configured', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
+    it('includes auto-refill fields when configured', async () => {
       const deps = createMockDeps({
-        reserveBalance: missingThenReserved(5000),
         balanceConfig: {
           startBalance: 5000,
           autoRefillEnabled: true,
@@ -150,126 +170,125 @@ describe('checkBalance', () => {
           refillIntervalUnit: 'days',
           refillAmount: 1000,
         },
-        upsertBalanceFields,
       });
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
-      expect(upsertBalanceFields).toHaveBeenCalledWith(
-        'user-1',
-        expect.objectContaining({
-          user: 'user-1',
-          tokenCredits: 5000,
-          autoRefillEnabled: true,
-          refillIntervalValue: 1,
-          refillIntervalUnit: 'days',
-          refillAmount: 1000,
-          lastRefill: expect.any(Date),
-        }),
-      );
-    });
-
-    it('should not include auto-refill fields when config is partial', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
-      const deps = createMockDeps({
-        reserveBalance: missingThenReserved(5000),
-        balanceConfig: { startBalance: 5000, autoRefillEnabled: true },
-        upsertBalanceFields,
-      });
-
-      await checkBalance({ req, res, txData: baseTxData }, deps);
-
-      expect(upsertBalanceFields).toHaveBeenCalledWith('user-1', {
+      expect(reserveRequest(deps).initialBalance).toEqual({
         user: 'user-1',
         tokenCredits: 5000,
+        autoRefillEnabled: true,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'days',
+        refillAmount: 1000,
+        lastRefill: expect.any(Date),
       });
     });
 
-    it('should throw a TOKEN_BALANCE violation with the stored balance when initialized credits fall short', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 3000 });
+    it('omits auto-refill fields when the refill config is partial', async () => {
       const deps = createMockDeps({
-        reserveBalance: missingThenReserved(3000, false),
-        balanceConfig: { startBalance: 5000 },
-        upsertBalanceFields,
+        balanceConfig: { startBalance: 5000, autoRefillEnabled: true },
       });
+
+      await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      expect(reserveRequest(deps).initialBalance).toEqual({ user: 'user-1', tokenCredits: 5000 });
+    });
+
+    it('creates a record with a startBalance of 0', async () => {
+      const deps = createMockDeps({ balanceConfig: { startBalance: 0 } });
+
+      await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      expect(reserveRequest(deps).initialBalance).toEqual({ user: 'user-1', tokenCredits: 0 });
+    });
+
+    it.each([
+      ['no balance config', undefined],
+      ['no startBalance', {}],
+    ])(
+      'throws a TOKEN_BALANCE violation for a missing record with %s',
+      async (_case, balanceConfig) => {
+        const deps = createMockDeps({
+          reserveBalance: jest.fn().mockResolvedValue(null),
+          balanceConfig,
+        });
+
+        await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
+        expect(reserveRequest(deps).initialBalance).toBeUndefined();
+        expect(deps.logViolation).toHaveBeenCalledWith(
+          req,
+          res,
+          ViolationTypes.TOKEN_BALANCE,
+          expect.objectContaining({ balance: 0 }),
+          0,
+        );
+      },
+    );
+  });
+
+  describe('balance reservations of a turn', () => {
+    const createReservation = () => {
+      const reservation: BalanceReservation = { release: jest.fn().mockResolvedValue(undefined) };
+      return reservation;
+    };
+
+    it('releases an admission that settles after the release was requested', async () => {
+      const reservations = createBalanceReservations();
+      const reservation = createReservation();
+      let admit: (value: BalanceReservation) => void = () => undefined;
+      reservations.track(new Promise<BalanceReservation>((resolve) => (admit = resolve)));
+
+      const released = reservations.release();
+      expect(reservation.release).not.toHaveBeenCalled();
+      admit(reservation);
+      await released;
+
+      expect(reservation.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases nothing for a refused admission and does not reject', async () => {
+      const reservations = createBalanceReservations();
+      const refused = Promise.reject(new Error('insufficient'));
+
+      await expect(reservations.track(refused)).rejects.toThrow('insufficient');
+      await expect(reservations.release()).resolves.toBeUndefined();
+    });
+
+    it('releases each tracked reservation once across repeated releases', async () => {
+      const reservations = createBalanceReservations();
+      const first = createReservation();
+      const second = createReservation();
+
+      await reservations.track(Promise.resolve(first));
+      await reservations.release();
+      await reservations.track(Promise.resolve(second));
+      await reservations.release();
+      await reservations.release();
+
+      expect(first.release).toHaveBeenCalledTimes(1);
+      expect(second.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the turn reservations whether the turn resolves or throws', async () => {
+      const kept = createReservation();
+      const failed = createReservation();
 
       await expect(
-        checkBalance({ req, res, txData: { ...baseTxData, amount: 4000 } }, deps),
-      ).rejects.toThrow();
+        withBalanceReservations(async (reservations) => {
+          await reservations.track(Promise.resolve(kept));
+          return 'done';
+        }),
+      ).resolves.toBe('done');
+      await expect(
+        withBalanceReservations(async (reservations) => {
+          await reservations.track(Promise.resolve(failed));
+          throw new Error('turn failed');
+        }),
+      ).rejects.toThrow('turn failed');
 
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({ balance: 3000, tokenCost: 4000 }),
-        0,
-      );
-    });
-
-    it('should throw a TOKEN_BALANCE violation when no record and no balanceConfig', async () => {
-      const deps = createMockDeps({ reserveBalance: jest.fn().mockResolvedValue(null) });
-
-      await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({ balance: 0 }),
-        0,
-      );
-    });
-
-    it('should throw a TOKEN_BALANCE violation when no record and startBalance is undefined', async () => {
-      const deps = createMockDeps({
-        reserveBalance: jest.fn().mockResolvedValue(null),
-        balanceConfig: {},
-        upsertBalanceFields: jest.fn(),
-      });
-
-      await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
-      expect(deps.upsertBalanceFields).not.toHaveBeenCalled();
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({ balance: 0 }),
-        0,
-      );
-    });
-
-    it('should throw a TOKEN_BALANCE violation when upsertBalanceFields is not provided', async () => {
-      const deps = createMockDeps({
-        reserveBalance: jest.fn().mockResolvedValue(null),
-        balanceConfig: { startBalance: 5000 },
-      });
-
-      await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({ balance: 0 }),
-        0,
-      );
-    });
-
-    it('should fall back to balance: 0 when upsertBalanceFields rejects', async () => {
-      const upsertBalanceFields = jest.fn().mockRejectedValue(new Error('DB unavailable'));
-      const deps = createMockDeps({
-        reserveBalance: jest.fn().mockResolvedValue(null),
-        balanceConfig: { startBalance: 5000 },
-        upsertBalanceFields,
-      });
-
-      await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
-      expect(deps.reserveBalance).toHaveBeenCalledTimes(1);
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({ balance: 0 }),
-        0,
-      );
+      expect(kept.release).toHaveBeenCalledTimes(1);
+      expect(failed.release).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -299,40 +318,41 @@ describe('checkBalance', () => {
       getMultiplier: () => 1,
       reserveBalance: methods.reserveBalance,
       releaseBalanceReservation: methods.releaseBalanceReservation,
-      upsertBalanceFields: methods.upsertBalanceFields,
       logViolation: jest.fn().mockResolvedValue(undefined),
       balanceConfig,
     });
 
-    const admitConcurrently = (user: string, count: number, deps: CheckBalanceDeps) =>
+    const admitConcurrently = (user: string, count: number, deps: CheckBalanceDeps, amount = 400) =>
       Promise.allSettled(
         Array.from({ length: count }, () =>
-          checkBalance({ req, res, txData: { ...baseTxData, user, amount: 400 } }, deps),
+          checkBalance({ req, res, txData: { ...baseTxData, user, amount } }, deps),
         ),
       );
+
+    const admittedOf = (outcomes: PromiseSettledResult<BalanceReservation>[]) =>
+      outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []));
 
     it('admits concurrent requests only against credits no in-flight request holds', async () => {
       const user = new mongoose.Types.ObjectId().toString();
       await Balance.create({ user, tokenCredits: 1000 });
       const deps = realDeps();
 
-      const outcomes = await admitConcurrently(user, 20, deps);
-      const admitted = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+      const admitted = admittedOf(await admitConcurrently(user, 20, deps));
 
       expect(admitted).toHaveLength(2);
       expect(deps.logViolation).toHaveBeenCalledTimes(18);
 
-      await expect(
-        checkBalance({ req, res, txData: { ...baseTxData, user, amount: 400 } }, deps),
-      ).rejects.toThrow();
+      await Promise.all(admitted.map((reservation) => reservation.release()));
+      expect(admittedOf(await admitConcurrently(user, 3, deps))).toHaveLength(2);
+    });
 
-      await Promise.all(
-        admitted.map((outcome) =>
-          (outcome as PromiseFulfilledResult<{ release: () => Promise<void> }>).value.release(),
-        ),
-      );
-      const after = await admitConcurrently(user, 3, deps);
-      expect(after.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(2);
+    it('admits every request of a funded concurrent burst', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      await Balance.create({ user, tokenCredits: 100_000 });
+
+      const outcomes = await admitConcurrently(user, 40, realDeps(), 100);
+
+      expect(admittedOf(outcomes)).toHaveLength(40);
     });
 
     it('refills once for concurrent requests arriving in one refill window', async () => {
@@ -349,7 +369,7 @@ describe('checkBalance', () => {
 
       const outcomes = await admitConcurrently(user, 10, realDeps());
 
-      expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(2);
+      expect(admittedOf(outcomes)).toHaveLength(2);
       const stored = await Balance.findOne({ user }).lean();
       expect(stored?.tokenCredits).toBe(1005);
       const refills = await methods.getTransactions({ user, context: 'autoRefill' });
@@ -363,10 +383,10 @@ describe('checkBalance', () => {
       await checkBalance({ req, res, txData: { ...baseTxData, user, amount: 400 } }, deps);
       const outcomes = await admitConcurrently(user, 4, deps);
 
-      expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
-      const stored = await Balance.findOne({ user }).select('+reservations').lean();
+      expect(admittedOf(outcomes)).toHaveLength(1);
+      const stored = await Balance.findOne({ user }).select('+reservedCredits').lean();
       expect(stored?.tokenCredits).toBe(1000);
-      expect(stored?.reservations).toHaveLength(2);
+      expect(stored?.reservedCredits).toBe(800);
     });
   });
 });

@@ -1,11 +1,17 @@
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
-/** Credits held against a balance while the request that reserved them is in flight */
+/** Whole credits held against a balance while the request that reserved them is in flight */
 export interface IBalanceReservation {
   id: string;
   amount: number;
   expiresAt: Date;
+}
+
+/** An applied auto-refill whose ledger transaction has not been confirmed as recorded */
+export interface IBalancePendingRefill {
+  transactionId: Types.ObjectId;
+  rawAmount: number;
 }
 
 export interface IBalance extends Document {
@@ -18,8 +24,11 @@ export interface IBalance extends Document {
   lastRefill: Date;
   refillAmount: number;
   tenantId?: string;
-  /** Excluded from reads unless explicitly selected */
+  /** Reservation state is excluded from reads unless explicitly selected */
   reservations?: IBalanceReservation[];
+  /** Sum of `reservations` amounts, maintained by the same writes */
+  reservedCredits?: number;
+  pendingRefill?: IBalancePendingRefill;
 }
 
 /** Plain data fields for creating or updating a balance record (no Mongoose Document methods) */
@@ -42,6 +51,15 @@ export interface BalanceReservationRequest {
   amount: number;
   /** An unreleased reservation stops counting against the balance at this instant */
   expiresAt: Date;
+  /** Creates the balance record with these fields when the user has none */
+  initialBalance?: IBalanceUpdate;
+}
+
+export interface BalanceReservationRelease {
+  user: string;
+  reservationId: string;
+  /** The amount that was reserved */
+  amount: number;
 }
 
 export interface BalanceReservationResult {

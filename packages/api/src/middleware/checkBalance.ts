@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
 import type {
   BalanceReservationRequest,
+  BalanceReservationRelease,
   BalanceReservationResult,
   IBalanceUpdate,
   BalanceConfig,
@@ -24,7 +25,7 @@ interface TxData {
 export interface CheckBalanceDeps {
   getMultiplier: (params: Record<string, unknown>) => number;
   reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
-  releaseBalanceReservation: (params: { user: string; reservationId: string }) => Promise<void>;
+  releaseBalanceReservation: (params: BalanceReservationRelease) => Promise<void>;
   logViolation: (
     req: unknown,
     res: unknown,
@@ -34,17 +35,51 @@ export interface CheckBalanceDeps {
   ) => Promise<void>;
   /** Balance config for lazy initialization when no record exists, and the reservation TTL */
   balanceConfig?: BalanceConfig;
-  /** Upsert function for lazy initialization when no record exists */
-  upsertBalanceFields?: (
-    userId: string,
-    fields: IBalanceUpdate,
-  ) => Promise<{ tokenCredits: number } | null>;
 }
 
 /** Credits held for an admitted request until its usage has been recorded. */
 export interface BalanceReservation {
   /** Idempotent; a failed release is logged and left to expire. */
   release: () => Promise<void>;
+}
+
+/** The balance reservations admitted during one turn. */
+export interface BalanceReservations {
+  /** Tracks an admission that may still be pending; returns the same promise. */
+  track: <T extends BalanceReservation | undefined>(admission: Promise<T>) => Promise<T>;
+  /**
+   * Releases every tracked reservation, first waiting for admissions still pending so a
+   * reservation that settles after its turn failed is released too. Failed admissions hold nothing.
+   */
+  release: () => Promise<void>;
+}
+
+export function createBalanceReservations(): BalanceReservations {
+  let admissions: Promise<BalanceReservation | undefined>[] = [];
+  return {
+    track: (admission) => {
+      admissions.push(admission.catch(() => undefined));
+      return admission;
+    },
+    release: async () => {
+      const pending = admissions;
+      admissions = [];
+      const reservations = await Promise.all(pending);
+      await Promise.all(reservations.map((reservation) => reservation?.release()));
+    },
+  };
+}
+
+/** Runs one turn and releases whatever balance reservations it admitted once it settles. */
+export async function withBalanceReservations<T>(
+  run: (reservations: BalanceReservations) => Promise<T>,
+): Promise<T> {
+  const reservations = createBalanceReservations();
+  try {
+    return await run(reservations);
+  } finally {
+    await reservations.release();
+  }
 }
 
 let warnedInvalidReservationTtl = false;
@@ -67,7 +102,10 @@ function getReservationTtlMs(config?: BalanceConfig): number {
   return DEFAULT_BALANCE_RESERVATION_TTL_MS;
 }
 
-function buildInitialBalance(user: string, config: BalanceConfig): IBalanceUpdate {
+function buildInitialBalance(user: string, config?: BalanceConfig): IBalanceUpdate | undefined {
+  if (config?.startBalance == null) {
+    return undefined;
+  }
   const fields: IBalanceUpdate = { user, tokenCredits: config.startBalance };
   if (
     config.autoRefillEnabled &&
@@ -84,40 +122,11 @@ function buildInitialBalance(user: string, config: BalanceConfig): IBalanceUpdat
   return fields;
 }
 
-/** Reserves against the user's balance record, lazily creating it from config when absent. */
-async function reserveBalanceRecord(
-  request: BalanceReservationRequest,
-  deps: CheckBalanceDeps,
-): Promise<BalanceReservationResult> {
-  const { user } = request;
-  const result = await deps.reserveBalance(request);
-  if (result) {
-    return result;
-  }
-
-  const config = deps.balanceConfig;
-  if (config?.startBalance == null || !deps.upsertBalanceFields) {
-    logger.debug('[Balance.check] No balance record found for user', { user });
-    return { reserved: false, balance: 0 };
-  }
-
-  logger.debug('[Balance.check] Lazy-initializing balance record for user', {
-    user,
-    startBalance: config.startBalance,
-  });
-  try {
-    await deps.upsertBalanceFields(user, buildInitialBalance(user, config));
-  } catch (error) {
-    logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
-    return { reserved: false, balance: 0 };
-  }
-  return (await deps.reserveBalance(request)) ?? { reserved: false, balance: 0 };
-}
-
 /**
  * Admits a request against the user's balance and holds its token cost until the returned
  * reservation is released, so concurrent requests are admitted only against credits that no
- * other in-flight request holds. Throws with the balance info if the credits are insufficient.
+ * other in-flight request holds. A missing balance record is created from `startBalance`.
+ * Throws with the balance info if the credits are insufficient.
  */
 export async function checkBalance(
   { req, res, txData }: { req: ServerRequest; res: Response; txData: TxData },
@@ -146,32 +155,36 @@ export async function checkBalance(
     endpointTokenConfig: !!endpointTokenConfig,
   });
 
-  const { reserved, balance } = await reserveBalanceRecord(
-    {
-      user,
-      reservationId,
-      amount: tokenCost,
-      expiresAt: new Date(Date.now() + getReservationTtlMs(deps.balanceConfig)),
-    },
-    deps,
-  );
+  const result = await deps.reserveBalance({
+    user,
+    reservationId,
+    amount: tokenCost,
+    expiresAt: new Date(Date.now() + getReservationTtlMs(deps.balanceConfig)),
+    initialBalance: buildInitialBalance(user, deps.balanceConfig),
+  });
 
-  if (reserved) {
+  if (result?.reserved) {
     let released: Promise<void> | undefined;
     return {
       release: () => {
-        released ??= deps.releaseBalanceReservation({ user, reservationId }).catch((error) => {
-          logger.error('[Balance.check] Failed to release balance reservation', { user, error });
-        });
+        released ??= deps
+          .releaseBalanceReservation({ user, reservationId, amount: tokenCost })
+          .catch((error) => {
+            logger.error('[Balance.check] Failed to release balance reservation', { user, error });
+          });
         return released;
       },
     };
   }
 
+  if (!result) {
+    logger.debug('[Balance.check] No balance record found for user', { user });
+  }
+
   const type = ViolationTypes.TOKEN_BALANCE;
   const errorMessage: Record<string, unknown> = {
     type,
-    balance,
+    balance: Math.max(0, result?.balance ?? 0),
     tokenCost,
     promptTokens: txData.amount,
   };

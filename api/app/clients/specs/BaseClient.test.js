@@ -50,7 +50,6 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
   getMultiplier: jest.fn(),
   reserveBalance: jest.fn(),
-  upsertBalanceFields: jest.fn(),
   releaseBalanceReservation: jest.fn(),
 }));
 
@@ -2279,13 +2278,21 @@ describe('BaseClient', () => {
       TestClient.options.endpointType = priorEndpointType;
     });
 
-    test('holds the reservation until the response usage has been recorded', async () => {
-      await TestClient.sendMessage('Hello', {});
+    test('releases the reservation once the response usage is recorded, before persistence', async () => {
+      const beforeResponsePersistence = jest.fn(async () => {
+        events.push('persist');
+        return true;
+      });
 
-      expect(events).toEqual(['reserve', 'completion', 'usage', 'release']);
+      await TestClient.sendMessage('Hello', { beforeResponsePersistence });
+
+      expect(events).toEqual(['reserve', 'completion', 'usage', 'release', 'persist']);
+      const [{ reservationId, amount }] = reserveBalance.mock.calls[0];
+      expect(releaseBalanceReservation).toHaveBeenCalledTimes(1);
       expect(releaseBalanceReservation).toHaveBeenCalledWith({
         user: TestClient.user,
-        reservationId: reserveBalance.mock.calls[0][0].reservationId,
+        reservationId,
+        amount,
       });
     });
 

@@ -1096,15 +1096,13 @@ describe('Premium Token Pricing Integration Tests', () => {
 
 describe('Balance Reservations', () => {
   const inFuture = () => new Date(Date.now() + 60_000);
-  const reserve = (user: string, amount: number, reservationId = new mongoose.Types.ObjectId()) =>
-    reserveBalance({
-      user,
-      amount,
-      reservationId: reservationId.toString(),
-      expiresAt: inFuture(),
-    });
+  const newId = () => new mongoose.Types.ObjectId().toString();
+  const reserve = (user: string, amount: number, reservationId = newId()) =>
+    reserveBalance({ user, amount, reservationId, expiresAt: inFuture() });
+  const readState = (user: mongoose.Types.ObjectId) =>
+    Balance.findOne({ user }).select('+reservations +reservedCredits +pendingRefill').lean();
 
-  /** Runs `interleave` once, between the reservation's read and its fenced write. */
+  /** Runs `interleave` once, immediately before the next `Balance.updateOne` executes. */
   const interleaveBeforeNextWrite = (interleave: () => Promise<unknown>) => {
     const realUpdateOne = Balance.updateOne.bind(Balance);
     return jest
@@ -1117,9 +1115,43 @@ describe('Balance Reservations', () => {
     jest.restoreAllMocks();
   });
 
-  test('returns null when the user has no balance record', async () => {
-    const user = new mongoose.Types.ObjectId().toString();
-    await expect(reserve(user, 100)).resolves.toBeNull();
+  test('returns null when the user has no balance record and no initial balance', async () => {
+    await expect(reserve(newId(), 100)).resolves.toBeNull();
+  });
+
+  test('creates a missing record from the initial balance and admits against it', async () => {
+    const user = new mongoose.Types.ObjectId();
+
+    await expect(
+      reserveBalance({
+        user: user.toString(),
+        amount: 400,
+        reservationId: newId(),
+        expiresAt: inFuture(),
+        initialBalance: { user: user.toString(), tokenCredits: 1000 },
+      }),
+    ).resolves.toEqual({ reserved: true, balance: 1000 });
+
+    const stored = await readState(user);
+    expect(stored?.tokenCredits).toBe(1000);
+    expect(stored?.reservedCredits).toBe(400);
+  });
+
+  test('never overwrites a record another writer created while initializing', async () => {
+    const user = new mongoose.Types.ObjectId();
+
+    interleaveBeforeNextWrite(() => Balance.create({ user, tokenCredits: 50 }));
+
+    await expect(
+      reserveBalance({
+        user: user.toString(),
+        amount: 100,
+        reservationId: newId(),
+        expiresAt: inFuture(),
+        initialBalance: { user: user.toString(), tokenCredits: 1000 },
+      }),
+    ).resolves.toEqual({ reserved: false, balance: 50 });
+    expect((await readState(user))?.tokenCredits).toBe(50);
   });
 
   test('admits concurrent requests only up to the credits no other request holds', async () => {
@@ -1131,15 +1163,55 @@ describe('Balance Reservations', () => {
     );
 
     expect(results.filter((result) => result?.reserved)).toHaveLength(3);
-    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    const stored = await readState(user);
     expect(stored?.tokenCredits).toBe(1000);
     expect(stored?.reservations).toHaveLength(3);
+    expect(stored?.reservedCredits).toBe(900);
   });
 
-  test('releasing a reservation returns its credits to later admissions', async () => {
+  test('commits each admission of a funded burst on its first write', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 100_000 });
+    const realUpdateOne = Balance.updateOne.bind(Balance);
+    const writes = jest
+      .spyOn(Balance, 'updateOne')
+      .mockImplementation(((...args: Parameters<typeof Balance.updateOne>) =>
+        new Promise((resolve) => setTimeout(resolve, 25)).then(() =>
+          realUpdateOne(...args),
+        )) as unknown as typeof Balance.updateOne);
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () => reserve(user.toString(), 100)),
+    );
+
+    expect(results.every((result) => result?.reserved)).toBe(true);
+    expect(writes).toHaveBeenCalledTimes(50);
+    const stored = await readState(user);
+    expect(stored?.reservations).toHaveLength(50);
+    expect(stored?.reservedCredits).toBe(5000);
+  });
+
+  test('holds whole credits so the running total stays exact', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });
-    const firstId = new mongoose.Types.ObjectId();
+    const reservationId = newId();
+
+    await expect(reserve(user.toString(), 0.3, reservationId)).resolves.toEqual({
+      reserved: true,
+      balance: 1000,
+    });
+    expect((await readState(user))?.reservedCredits).toBe(1);
+
+    await releaseBalanceReservation({ user: user.toString(), reservationId, amount: 0.3 });
+    const stored = await readState(user);
+    expect(stored?.reservedCredits).toBe(0);
+    expect(stored?.reservations).toEqual([]);
+  });
+
+  test('releasing a reservation returns its credits to later admissions, once', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Balance.create({ user, tokenCredits: 1000 });
+    const firstId = newId();
 
     await expect(reserve(user.toString(), 600, firstId)).resolves.toEqual({
       reserved: true,
@@ -1150,7 +1222,9 @@ describe('Balance Reservations', () => {
       balance: 400,
     });
 
-    await releaseBalanceReservation({ user: user.toString(), reservationId: firstId.toString() });
+    const release = { user: user.toString(), reservationId: firstId, amount: 600 };
+    await Promise.all([releaseBalanceReservation(release), releaseBalanceReservation(release)]);
+    expect((await readState(user))?.reservedCredits).toBe(0);
 
     await expect(reserve(user.toString(), 600)).resolves.toEqual({
       reserved: true,
@@ -1158,24 +1232,24 @@ describe('Balance Reservations', () => {
     });
   });
 
-  test('ignores and prunes expired reservations', async () => {
+  test('prunes expired reservations together with their credits', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({
       user,
       tokenCredits: 1000,
+      reservedCredits: 900,
       reservations: [{ id: 'stale', amount: 900, expiresAt: new Date(Date.now() - 1000) }],
     });
 
-    const reservationId = new mongoose.Types.ObjectId();
+    const reservationId = newId();
     await expect(reserve(user.toString(), 600, reservationId)).resolves.toEqual({
       reserved: true,
       balance: 1000,
     });
 
-    const stored = await Balance.findOne({ user }).select('+reservations').lean();
-    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
-      reservationId.toString(),
-    ]);
+    const stored = await readState(user);
+    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([reservationId]);
+    expect(stored?.reservedCredits).toBe(600);
   });
 
   test('admits a zero-cost request without storing a reservation', async () => {
@@ -1184,24 +1258,28 @@ describe('Balance Reservations', () => {
 
     await expect(reserve(user.toString(), 0)).resolves.toEqual({ reserved: true, balance: 0 });
 
-    const stored = await Balance.findOne({ user }).select('+reservations').lean();
+    const stored = await readState(user);
     expect(stored?.reservations).toBeUndefined();
+    expect(stored?.reservedCredits).toBeUndefined();
   });
 
-  test('keeps reservations out of ordinary balance reads', async () => {
+  test('keeps reservation state out of ordinary balance reads and writes', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });
     await reserve(user.toString(), 100);
 
+    const hidden = ['reservations', 'reservedCredits', 'pendingRefill'];
     const record = await findBalanceByUser(user.toString());
-    expect(record?.tokenCredits).toBe(1000);
-    expect(record).not.toHaveProperty('reservations');
-
     const synced = await upsertBalanceFields(user.toString(), { refillAmount: 5 });
-    expect(synced).not.toHaveProperty('reservations');
     const spent = await updateBalance({ user: user.toString(), incrementValue: -10 });
+
+    expect(record?.tokenCredits).toBe(1000);
     expect(spent.tokenCredits).toBe(990);
-    expect(spent).not.toHaveProperty('reservations');
+    for (const read of [record, synced, spent]) {
+      for (const field of hidden) {
+        expect(read).not.toHaveProperty(field);
+      }
+    }
   });
 
   test('re-reads when a spend lands between the read and the write', async () => {
@@ -1216,34 +1294,20 @@ describe('Balance Reservations', () => {
       reserved: false,
       balance: 200,
     });
-    const stored = await Balance.findOne({ user }).select('+reservations').lean();
-    expect(stored?.reservations).toBeUndefined();
+    expect((await readState(user))?.reservedCredits).toBeUndefined();
   });
 
-  test('re-reads when a release lands between the read and the write', async () => {
+  test('re-reads when another admission takes the credits between the read and the write', async () => {
     const user = new mongoose.Types.ObjectId();
     await Balance.create({ user, tokenCredits: 1000 });
-    const releasedId = new mongoose.Types.ObjectId().toString();
-    await reserveBalance({
-      user: user.toString(),
-      reservationId: releasedId,
-      amount: 400,
-      expiresAt: inFuture(),
-    });
 
-    interleaveBeforeNextWrite(() =>
-      releaseBalanceReservation({ user: user.toString(), reservationId: releasedId }),
-    );
+    interleaveBeforeNextWrite(() => reserve(user.toString(), 800));
 
-    const reservationId = new mongoose.Types.ObjectId();
-    await expect(reserve(user.toString(), 500, reservationId)).resolves.toEqual({
-      reserved: true,
-      balance: 1000,
+    await expect(reserve(user.toString(), 500)).resolves.toEqual({
+      reserved: false,
+      balance: 200,
     });
-    const stored = await Balance.findOne({ user }).select('+reservations').lean();
-    expect(stored?.reservations?.map((reservation) => reservation.id)).toEqual([
-      reservationId.toString(),
-    ]);
+    expect((await readState(user))?.reservedCredits).toBe(800);
   });
 
   describe('auto-refill', () => {
@@ -1265,30 +1329,38 @@ describe('Balance Reservations', () => {
       );
 
       expect(results.filter((result) => result?.reserved)).toHaveLength(6);
-      const stored = await Balance.findOne({ user }).lean();
+      const stored = await readState(user);
       expect(stored?.tokenCredits).toBe(1000);
       expect(stored?.lastRefill.getTime()).toBeGreaterThan(refillable.lastRefill.getTime());
+      expect(stored?.pendingRefill).toBeUndefined();
       const refills = await Transaction.find({ user, context: 'autoRefill' }).lean();
       expect(refills).toHaveLength(1);
       expect(refills[0].rawAmount).toBe(1000);
     });
 
-    test('re-reads when lastRefill advances between the read and the write', async () => {
-      const user = new mongoose.Types.ObjectId();
-      await Balance.create({ user, ...refillable });
+    test.each([
+      ['lastRefill advances', { lastRefill: new Date() }, 0],
+      ['auto-refill is disabled', { autoRefillEnabled: false }, 0],
+      ['the refill amount changes', { refillAmount: 10 }, 10],
+      ['the refill interval lengthens', { refillIntervalValue: 100_000 }, 0],
+    ])(
+      'applies the current refill settings when %s mid-attempt',
+      async (_case, change, credits) => {
+        const user = new mongoose.Types.ObjectId();
+        await Balance.create({ user, ...refillable });
 
-      interleaveBeforeNextWrite(() =>
-        Balance.collection.updateOne({ user }, { $set: { lastRefill: new Date() } }),
-      );
+        interleaveBeforeNextWrite(() => Balance.collection.updateOne({ user }, { $set: change }));
 
-      await expect(reserve(user.toString(), 150)).resolves.toEqual({
-        reserved: false,
-        balance: 0,
-      });
-      const stored = await Balance.findOne({ user }).lean();
-      expect(stored?.tokenCredits).toBe(0);
-      expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(0);
-    });
+        await expect(reserve(user.toString(), 150)).resolves.toEqual({
+          reserved: false,
+          balance: credits,
+        });
+        expect((await readState(user))?.tokenCredits).toBe(credits);
+        expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(
+          credits > 0 ? 1 : 0,
+        );
+      },
+    );
 
     test('still applies a due refill when the refilled balance cannot cover the request', async () => {
       const user = new mongoose.Types.ObjectId();
@@ -1298,7 +1370,7 @@ describe('Balance Reservations', () => {
         reserved: false,
         balance: 100,
       });
-      const stored = await Balance.findOne({ user }).select('+reservations').lean();
+      const stored = await readState(user);
       expect(stored?.tokenCredits).toBe(100);
       expect(stored?.reservations).toBeUndefined();
     });
@@ -1311,8 +1383,59 @@ describe('Balance Reservations', () => {
         reserved: true,
         balance: 500,
       });
-      const stored = await Balance.findOne({ user }).lean();
-      expect(stored?.tokenCredits).toBe(500);
+      expect((await readState(user))?.tokenCredits).toBe(500);
+    });
+
+    test('records the ledger transaction of a refill whose first recording failed', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable });
+      const save = jest
+        .spyOn(Transaction.prototype, 'save')
+        .mockRejectedValue(new Error('ledger unavailable'));
+
+      await expect(reserve(user.toString(), 150)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+      const applied = await readState(user);
+      expect(applied?.tokenCredits).toBe(1000);
+      expect(applied?.pendingRefill?.rawAmount).toBe(1000);
+      expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(0);
+
+      save.mockRestore();
+      await reserve(user.toString(), 150);
+
+      const settled = await readState(user);
+      expect(settled?.tokenCredits).toBe(1000);
+      expect(settled?.pendingRefill).toBeUndefined();
+      const refills = await Transaction.find({ user, context: 'autoRefill' }).lean();
+      expect(refills.map((refill) => refill._id.toString())).toEqual([
+        applied?.pendingRefill?.transactionId.toString(),
+      ]);
+    });
+
+    test('does not duplicate a ledger transaction that was recorded before its marker cleared', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const transactionId = new mongoose.Types.ObjectId();
+      await Transaction.create({
+        _id: transactionId,
+        user,
+        tokenType: 'credits',
+        context: 'autoRefill',
+        rawAmount: 1000,
+      });
+      await Balance.create({
+        user,
+        ...refillable,
+        tokenCredits: 1000,
+        lastRefill: new Date(),
+        pendingRefill: { transactionId, rawAmount: 1000 },
+      });
+
+      await reserve(user.toString(), 150);
+
+      expect((await readState(user))?.pendingRefill).toBeUndefined();
+      expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(1);
     });
   });
 });

@@ -20,6 +20,7 @@ const {
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
+  withBalanceReservations,
 } = require('@librechat/api');
 const {
   Constants,
@@ -732,20 +733,16 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    /** @type {BalanceReservation[]} */
-    const balanceReservations = [];
-    try {
-      return await this.sendReservedMessage(message, opts, balanceReservations);
-    } finally {
-      await Promise.all(balanceReservations.map((reservation) => reservation.release()));
-    }
+    return withBalanceReservations((balanceReservations) =>
+      this.sendReservedMessage(message, opts, balanceReservations),
+    );
   }
 
   /**
    * @param {string} message
    * @param {Record<string, unknown>} opts
-   * @param {BalanceReservation[]} balanceReservations - Collects the balance reservation
-   * admitting this message; `sendMessage` releases it once the turn has settled.
+   * @param {BalanceReservations} balanceReservations - Holds the balance reservation admitting
+   * this message; released once its usage is recorded, and by `sendMessage` on any other exit.
    */
   async sendReservedMessage(message, opts, balanceReservations) {
     const appConfig = this.options.req?.config;
@@ -990,7 +987,7 @@ class BaseClient {
         balanceConfig?.enabled &&
         supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
       ) {
-        const balanceReservation = await checkBalance(
+        const balanceAdmission = checkBalance(
           {
             req: this.options.req,
             res: this.options.res,
@@ -1009,10 +1006,9 @@ class BaseClient {
             reserveBalance: db.reserveBalance,
             releaseBalanceReservation: db.releaseBalanceReservation,
             balanceConfig,
-            upsertBalanceFields: db.upsertBalanceFields,
           },
         );
-        balanceReservations.push(balanceReservation);
+        await balanceReservations.track(balanceAdmission);
       }
 
       completionResult = await this.sendCompletion(payload, opts);
@@ -1172,6 +1168,7 @@ class BaseClient {
         completionTokens,
       });
     }
+    await balanceReservations.release();
 
     if (userMessagePromise) {
       await userMessagePromise;
