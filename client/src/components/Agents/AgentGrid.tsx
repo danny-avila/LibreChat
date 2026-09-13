@@ -151,11 +151,17 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       scrollElementRef.current.scrollTop = 0;
     }
   }, [isPendingResults, scopeKey, scrollElementRef]);
+  /**
+   * Paging is suspended while a failure is held. The rows stay mounted behind the error
+   * card now, so the end of the list is still reachable, and without this the virtualized
+   * grid would re-request the cursor page that just failed on the next scroll — the
+   * error card owns that retry and its backoff.
+   */
   const loadMore = useCallback(() => {
-    if (hasNextPage && !isFetching) {
+    if (hasNextPage && !isFetching && !failure) {
       void fetchNextPage({ cancelRefetch: false });
     }
-  }, [fetchNextPage, hasNextPage, isFetching]);
+  }, [failure, fetchNextPage, hasNextPage, isFetching]);
 
   // An empty cursor page can occur when its selected agents change during the request.
   useEffect(() => {
@@ -286,7 +292,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
               count: currentAgents.length,
               category: getCategoryDisplayName(category),
             })}
-            hasNextPage={hasNextPage ?? false}
+            hasNextPage={(hasNextPage ?? false) && !failure}
             isFetching={isFetching}
             onLoadMore={loadMore}
             onSelectAgent={onSelectAgent}
