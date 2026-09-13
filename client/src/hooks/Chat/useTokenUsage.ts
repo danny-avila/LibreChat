@@ -75,9 +75,10 @@ export interface TokenUsageView {
    *  shows a single pruned Messages row instead of input/output/estimated. */
   messagesPruned: boolean;
   /** Tool-call share of the message tokens: `breakdown.toolMessageTokens` on
-   *  the snapshot path, the clamped branch walk share on the estimate path.
-   *  Undefined when the producing SDK doesn't report it (older snapshots) or
-   *  the estimate is zero — the row stays hidden. A SUBSET of messages. */
+   *  the snapshot path, plus retained post-snapshot tool results; the clamped
+   *  branch walk share on the estimate path. Undefined when the producing SDK
+   *  doesn't report it (older snapshots) or the estimate is zero — the row stays
+   *  hidden. */
   toolCallTokens?: number;
   /** Cache split of the reconciling call's prompt (live or persisted) — a
    *  share of the used context, not an addition. */
@@ -266,15 +267,20 @@ export default function useTokenUsage({
     const anchorSeries =
       effective != null ? collectAnchorSeries(conversationKey, tailId, snapshotsByAnchor) : [];
     /** The snapshot is pre-invoke, so its `remainingContextTokens` predates the
-     *  last call's finalized output and any in-flight output. Both already ate
-     *  that headroom (`usedTokens` adds them), so the projection must too. */
+     *  last call's finalized output, any retained tool result, and any in-flight
+     *  output. All already ate that headroom (`usedTokens` adds them), so the
+     *  projection must too. */
     const completedOutput = normalizeTokenCount(effective?.completedOutputTokens);
+    const retainedToolTokens = normalizeTokenCount(effective?.retainedToolTokens);
     const liveOutput = normalizeTokenCount(liveTokens);
     const remainingForRunway =
       effective?.remainingContextTokens != null
         ? Math.max(
             0,
-            normalizeTokenCount(effective.remainingContextTokens) - completedOutput - liveOutput,
+            normalizeTokenCount(effective.remainingContextTokens) -
+              completedOutput -
+              retainedToolTokens -
+              liveOutput,
           )
         : null;
     let runwayTurns: number | undefined;
@@ -313,8 +319,11 @@ export default function useTokenUsage({
           : instructionTokens + normalizeTokenCount(breakdown.messageTokens);
       /** The snapshot is pre-invoke: in-flight output rides on `liveTokens` (0
        *  unless streaming this branch), the last call's finalized output on
-       *  `completedOutputTokens`. */
-      const usedTokens = normalizeTokenCount(Math.max(0, baseUsed) + liveOutput + completedOutput);
+       *  `completedOutputTokens`, and retained tool results on
+       *  `retainedToolTokens`. */
+      const usedTokens = normalizeTokenCount(
+        Math.max(0, baseUsed) + liveOutput + completedOutput + retainedToolTokens,
+      );
       return {
         usedTokens,
         maxTokens,
@@ -333,12 +342,15 @@ export default function useTokenUsage({
         overheadTokens: 0,
         messageTokens: 0,
         messagesPruned: false,
+        /** Retained tool results sit outside `messageTokens`, so widen the
+         *  reported tool-call share without clipping it back to that pre-invoke
+         *  total. Keep older snapshots unsplit when no split was reported. */
         toolCallTokens:
           breakdown.toolMessageTokens != null
             ? Math.min(
                 normalizeTokenCount(breakdown.toolMessageTokens),
                 normalizeTokenCount(breakdown.messageTokens),
-              )
+              ) + retainedToolTokens
             : undefined,
         cacheRead: normalizeTokenCount(effective.cacheRead),
         cacheWrite: normalizeTokenCount(effective.cacheWrite),

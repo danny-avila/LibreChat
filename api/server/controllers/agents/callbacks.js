@@ -385,7 +385,9 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
  * @param {{ latest: TContextUsageEvent | null, count: number }} [options.contextUsageSink] - Mutable
  *   holder for the latest visible context snapshot + a count of visible snapshots (model calls),
- *   used to persist the breakdown only when the final call emitted usage.
+ *   used to persist the breakdown only when the final call emitted usage. Also records that
+ *   snapshot's position in the usage stream and in `contentParts`, so the save path can tell
+ *   which usage events and which content parts came after it.
  * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
  *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
  * @param {(toolName: string, agentId?: string) => string | undefined} [options.resolveMcpServerName]
@@ -851,6 +853,10 @@ function getDefaultHandlers({
           contextUsageSink.latest = data;
           contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
           contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
+          /** Where this snapshot's content ends. The parts appended after it are
+           *  the ones its own call produced, so a turn that stops at the tool-call
+           *  limit can count the tool results no later snapshot describes. */
+          contextUsageSink.latestContentIndex = contentParts?.length ?? 0;
         }
         /** Every agent's snapshot publishes the run's context meta, hidden
          *  sequential agents included: their model calls latch tiers too, and a

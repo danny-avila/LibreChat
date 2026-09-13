@@ -210,10 +210,14 @@ describe('resumable event generation fencing', () => {
     );
     const contextUsageSink = { latest: null, count: 0, onSnapshot };
     const usageEmitSink = [{ input_tokens: 10 }];
+    /** Two parts already rendered when the snapshot lands: the boundary the save
+     *  path slices at to find the content this snapshot's own call produced. */
+    const contentParts = [{ type: 'text' }, { type: 'tool_call' }];
     const data = { contextBudget: 1000, remainingContextTokens: 400 };
     const handlers = getDefaultHandlers({
       res: { write: jest.fn() },
       aggregateContent: jest.fn(),
+      contentParts,
       toolEndCallback: jest.fn(),
       collectedUsage: [],
       streamId: 'conversation-1',
@@ -230,7 +234,12 @@ describe('resumable event generation fencing', () => {
       });
     await Promise.resolve();
 
-    expect(contextUsageSink).toMatchObject({ latest: data, count: 1, latestUsageIndex: 1 });
+    expect(contextUsageSink).toMatchObject({
+      latest: data,
+      count: 1,
+      latestUsageIndex: 1,
+      latestContentIndex: 2,
+    });
     expect(onSnapshot).toHaveBeenCalledTimes(1);
     expect(settled).toBe(false);
     releaseSnapshot();

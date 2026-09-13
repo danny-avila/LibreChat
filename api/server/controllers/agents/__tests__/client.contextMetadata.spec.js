@@ -1,3 +1,12 @@
+/** The counting itself is exercised in packages/api (it needs a loaded encoding,
+ *  which this environment cannot load); here the resolver stands in so the WIRING
+ *  is pinned: which content the save path hands it, and where its figure lands. */
+const mockResolveRetainedToolTokens = jest.fn();
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  resolveRetainedToolTokens: (...args) => mockResolveRetainedToolTokens(...args),
+}));
+
 const AgentClient = require('../client');
 
 /** Minimal post-(maybe-)summary snapshot. baseUsed = maxContextTokens(1000) -
@@ -34,18 +43,37 @@ const primaryFor = (runId, output_tokens) => ({
   runId,
 });
 
-function buildMeta({ snap, latestUsageIndex, usageEvents }) {
+const toolPart = (name, output) => ({
+  type: 'tool_call',
+  tool_call: { name, args: '{"path":"a"}', output },
+});
+
+function buildMeta({
+  snap,
+  latestUsageIndex,
+  usageEvents,
+  stepLimitReached = false,
+  latestContentIndex,
+  contentParts,
+}) {
   const self = {
     collectedThoughtSignatures: null,
     usageEmitSink: usageEvents,
+    stepLimitReached,
+    contentParts,
+    getEncoding: () => 'o200k_base',
     contextUsageSink: snap
-      ? { latest: snap, count: 1, latestUsageIndex }
+      ? { latest: snap, count: 1, latestUsageIndex, latestContentIndex }
       : { latest: null, count: 0 },
   };
   return AgentClient.prototype.buildResponseMetadata.call(self);
 }
 
 describe('AgentClient.buildResponseMetadata — snapshot persistence + summary marker', () => {
+  beforeEach(() => {
+    mockResolveRetainedToolTokens.mockReset();
+  });
+
   it('persists the snapshot when a primary usage follows it (normal turn)', () => {
     const meta = buildMeta({ snap: snapshot(0), latestUsageIndex: 0, usageEvents: [primary] });
     expect(meta.contextUsage).toBeDefined();
@@ -135,5 +163,51 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
     expect(meta.summaryUsedTokens).toBe(260);
     /** run-1's own primary follows the snapshot → snapshot persisted with output 5. */
     expect(meta.contextUsage.completedOutputTokens).toBe(5);
+  });
+
+  /** A turn that stops at the tool-call limit keeps the results of the tools its
+   *  final call ran. The snapshot describing that call precedes them and no further
+   *  call is made, so the counted figure has to ride along or the client's gauge
+   *  misses the retained result until the next turn. */
+  it('hands the resolver this snapshot’s content boundary and persists its figure', () => {
+    mockResolveRetainedToolTokens.mockReturnValue(180);
+    const contentParts = [
+      toolPart('grep', 'the result the snapshot already counts'),
+      toolPart('read_file', 'the retained result'),
+    ];
+    const meta = buildMeta({
+      snap: snapshot(0),
+      latestUsageIndex: 0,
+      usageEvents: [primary],
+      stepLimitReached: true,
+      latestContentIndex: 1,
+      contentParts,
+    });
+    expect(mockResolveRetainedToolTokens).toHaveBeenCalledWith({
+      stoppedAtToolLimit: true,
+      contentParts,
+      /** The earlier loop step is already inside the snapshot's message tokens. */
+      fromIndex: 1,
+      encoding: 'o200k_base',
+    });
+    expect(meta.contextUsage.retainedToolTokens).toBe(180);
+  });
+
+  it('reports a turn that did not stop at the tool-call limit as such', () => {
+    mockResolveRetainedToolTokens.mockReturnValue(undefined);
+    const meta = buildMeta({
+      snap: snapshot(0),
+      latestUsageIndex: 0,
+      usageEvents: [primary],
+      latestContentIndex: 0,
+      contentParts: [toolPart('read_file', 'a result the next call re-counted')],
+    });
+    expect(mockResolveRetainedToolTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ stoppedAtToolLimit: false }),
+    );
+    /** Nothing to add, so the blob stays exactly as it was before this change. */
+    expect(Object.prototype.hasOwnProperty.call(meta.contextUsage, 'retainedToolTokens')).toBe(
+      false,
+    );
   });
 });

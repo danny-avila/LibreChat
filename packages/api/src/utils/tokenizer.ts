@@ -78,6 +78,47 @@ class Tokenizer {
     }
   }
 
+  /**
+   * Token count for content that must not be estimated, or `undefined` when the
+   * encoding is not loaded yet so the caller can omit a figure instead of
+   * publishing a guess. Used for a value that is ADDED to exact provider
+   * accounting — see the retained tool results of a turn stopped at the tool-call
+   * limit — where {@link getTokenCount}'s two fallbacks would corrupt the sum:
+   * the cold-start estimate is a character ratio, and the oversized-input
+   * shortcut returns byte length, which runs several times the real count on
+   * ordinary text. Oversized text is therefore tokenized in bounded slices, cut
+   * on code-point boundaries so a split surrogate pair cannot change the count.
+   */
+  countExactTokens(text: string, encoding: EncodingName = 'o200k_base'): number | undefined {
+    if (text.length === 0) {
+      return 0;
+    }
+    const tokenizer = this.tokenizersCache[encoding];
+    if (!tokenizer) {
+      void this.initEncoding(encoding);
+      return undefined;
+    }
+    try {
+      let total = 0;
+      let start = 0;
+      while (start < text.length) {
+        let end = Math.min(text.length, start + MAX_TOKENIZER_INPUT_LENGTH);
+        if (end < text.length) {
+          const code = text.charCodeAt(end - 1);
+          if (code >= 0xd800 && code <= 0xdbff) {
+            end -= 1;
+          }
+        }
+        total += tokenizer.count(text.slice(start, end));
+        start = end;
+      }
+      return total;
+    } catch (error) {
+      this.handleCountError(encoding, tokenizer, error);
+      return undefined;
+    }
+  }
+
   private handleCountError(encoding: EncodingName, tokenizer: AiTokenizer, error: unknown): void {
     logger.error('[Tokenizer] Error getting token count:', error);
     if (this.tokenizersCache[encoding] !== tokenizer) {

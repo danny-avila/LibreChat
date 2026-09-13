@@ -32,6 +32,7 @@ const {
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  resolveRetainedToolTokens,
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
@@ -3625,7 +3626,16 @@ class AgentClient extends BaseClient {
             event.runId === latestSnapshotRunId),
       );
     if (latestSnapshot && hasPrimaryAfterSnapshot) {
-      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+      /** The counted tool results this turn keeps past that snapshot — only a
+       *  tool-call-limit stop has any; see `resolveRetainedToolTokens`. */
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents, {
+        retainedToolTokens: resolveRetainedToolTokens({
+          stoppedAtToolLimit: this.stepLimitReached === true,
+          contentParts: this.contentParts,
+          fromIndex: this.contextUsageSink?.latestContentIndex ?? 0,
+          encoding: this.getEncoding(),
+        }),
+      });
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
      *  the context, INDEPENDENT of the snapshot guard above. When the client has

@@ -379,6 +379,57 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
+/**
+ * Exact token count of the tool results a turn retains beyond its last context
+ * snapshot.
+ *
+ * Snapshots are dispatched pre-invoke, so the results of the tools the call they
+ * precede requested are never in them; normally the next call's snapshot carries
+ * those results as kept-message context, but a run that stops at the tool-call
+ * limit makes no next call — the result stays on the response and in no snapshot.
+ * `fromIndex` is the content length recorded when the last snapshot was captured,
+ * so parts at or after it belong to that final, unsnapshotted step.
+ *
+ * Only the tool OUTPUT counts. A call's name and arguments are model output,
+ * already carried by the snapshot's `completedOutputTokens`, so counting them
+ * again would double them. The result-message framing the next turn adds (role,
+ * tool_call_id, per-message overhead) is left out as well: the figure is added to
+ * exact provider accounting, so it errs low rather than overstating the context.
+ * Non-string outputs are skipped, matching {@link countFormattedMessageTokens}.
+ *
+ * `undefined` rather than a number whenever a result could not be counted exactly
+ * (the run's encoding is not loaded): a turn whose gauge is missing the retained
+ * result is better than one whose exact figures absorbed a guess. The Claude
+ * framing correction is applied, matching the counter that produced the snapshot.
+ */
+export function countRetainedToolTokens(
+  parts: ReadonlyArray<unknown> | null | undefined,
+  fromIndex: number,
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): number | undefined {
+  if (!Array.isArray(parts)) {
+    return 0;
+  }
+  const start = Number.isFinite(fromIndex) ? Math.max(0, Math.floor(fromIndex)) : 0;
+  let tokens = 0;
+  for (let index = start; index < parts.length; index++) {
+    const part = parts[index] as ContentBlock | null | undefined;
+    if (part == null || part.type !== ContentTypes.TOOL_CALL) {
+      continue;
+    }
+    const output = part.tool_call?.output;
+    if (typeof output !== 'string' || output.length === 0) {
+      continue;
+    }
+    const counted = Tokenizer.countExactTokens(output, encoding);
+    if (counted == null) {
+      return undefined;
+    }
+    tokens += counted;
+  }
+  return encoding === 'claude' ? Math.ceil(tokens * CLAUDE_TOKEN_CORRECTION) : tokens;
+}
+
 export function createTokenCounter(
   encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
 ): TokenCounter {
