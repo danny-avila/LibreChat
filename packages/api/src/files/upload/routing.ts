@@ -6,6 +6,7 @@ import {
   getEndpointFileConfig,
   resolveUploadLLMDeliveryPath,
   isSpeechProviderConfigured,
+  getCustomEndpointProvider,
 } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
@@ -118,6 +119,7 @@ export async function resolveEffectiveToolResource({
     endpointConfig,
     fileConfig,
     endpoint,
+    endpointProvider: getCustomEndpointProvider(req.config?.endpoints?.custom, endpoint),
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi),
     sttConfigured: isSpeechProviderConfigured(req.config?.speech?.stt),
   });

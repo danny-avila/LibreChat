@@ -1,8 +1,10 @@
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
+import type { TEndpoint } from './config';
 import {
   isNativelyReadableText,
   canToolResourceConsume,
   resolveUploadDestination,
+  getCustomEndpointProvider,
   resolveDefaultLLMDeliveryPath,
   resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
@@ -332,16 +334,37 @@ describe('resolveDefaultLLMDeliveryPath', () => {
       expect(resolve('video/mp4', 'MyGateway', [])).toBe('none');
     });
 
-    it('applies to the built-in OpenAI-compatible endpoints as well', () => {
-      expect(resolve('video/mp4', 'openAI', explicit)).toBe('provider');
-      expect(resolve('video/mp4', 'azureOpenAI', explicit)).toBe('provider');
-    });
-
-    it('does not opt in a known provider whose encoder emits nothing for media', () => {
-      /* Anthropic and Bedrock are identified, and their encoders have no media branch, so
-       * an allowlist naming video would leave the model with neither media nor text. */
+    it('does not opt in a built-in endpoint, which the client offers no media for', () => {
+      /* Anthropic and Bedrock encoders have no media branch at all, and OpenAI/Azure are
+       * left out because the picker and drag-drop only open media for custom endpoints:
+       * a route the client cannot send to is a capability with no entry point. */
+      expect(resolve('video/mp4', 'openAI', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'azureOpenAI', explicit)).toBe('none');
       expect(resolve('video/mp4', 'anthropic', explicit)).toBe('none');
       expect(resolve('video/mp4', 'bedrock', explicit)).toBe('none');
+    });
+
+    it('keeps a custom endpoint that runs as Anthropic on its previous route', () => {
+      /* A custom endpoint may declare `provider: anthropic`, and the encoders emit
+       * OpenAI-format parts only, so the opt-in would deliver nothing there. Audio keeps
+       * its transcription route and video stays off the model path. */
+      const endpointConfig = { supportedMimeTypes: explicit };
+      const anthropic = { mimeType: 'video/mp4', endpointConfig, endpoint: 'MyClaude' };
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'anthropic' })).toBe(
+        'none',
+      );
+      expect(
+        resolveUploadLLMDeliveryPath({
+          ...anthropic,
+          mimeType: 'audio/wav',
+          endpointProvider: 'anthropic',
+          sttConfigured: true,
+        }),
+      ).toBe('text');
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'openAI' })).toBe(
+        'provider',
+      );
+      expect(resolveUploadLLMDeliveryPath(anthropic)).toBe('provider');
     });
 
     it('reaches the upload resolver through the merged endpoint config', () => {
@@ -614,6 +637,27 @@ describe('resolveUploadDestination', () => {
         isMessageAttachment: true,
       }).rejection,
     ).toBe('no-consumer');
+  });
+});
+
+describe('getCustomEndpointProvider', () => {
+  const custom = [
+    { name: 'My Claude', provider: 'anthropic' },
+    { name: 'Ollama', provider: 'anthropic' },
+    { name: 'MyGateway' },
+  ] as Array<Partial<Pick<TEndpoint, 'name' | 'provider'>>>;
+
+  it('returns the declared dialect for a custom endpoint, matching the normalized name', () => {
+    expect(getCustomEndpointProvider(custom, 'My Claude')).toBe('anthropic');
+    /* The same normalization the file config lookup applies to endpoint names. */
+    expect(getCustomEndpointProvider(custom, 'ollama')).toBe('anthropic');
+  });
+
+  it('returns nothing for an endpoint without a dialect, an unknown one, or no config', () => {
+    expect(getCustomEndpointProvider(custom, 'MyGateway')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, 'Other')).toBeUndefined();
+    expect(getCustomEndpointProvider(undefined, 'My Claude')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, undefined)).toBeUndefined();
   });
 });
 

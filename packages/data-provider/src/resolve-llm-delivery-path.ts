@@ -1,5 +1,6 @@
 import type { TDefaultLLMDeliveryPath, TDefaultLLMDeliveryPathConfig } from './file-config';
 import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
+import type { TEndpoint } from './config';
 import {
   retrievalMimeTypes,
   isExplicitMimeConfig,
@@ -15,21 +16,38 @@ import {
   isDocumentSupportedProvider,
 } from './schemas';
 import { EToolResources } from './types/assistants';
+import { normalizeEndpointName } from './utils';
 
-/** An OpenAI-compatible endpoint emits OpenAI-format media parts only for the types the
- *  admin listed in its `supportedMimeTypes`; the inherited default list is not an opt-in.
- *  A name that is not a known provider is a custom endpoint, which runs as OpenAI at
- *  request time. Mirrors `isConfiguredProviderMediaType` on the encoder side, so the
- *  route and the encoder agree on which uploads the provider actually receives. */
+/**
+ * The native provider a custom endpoint declares, when it declares one. A custom endpoint
+ * speaks OpenAI's API unless its config names another dialect, and the upload route needs
+ * that answer for the same reason request initialization does: the media encoders emit
+ * OpenAI-format parts, so a custom endpoint running as Anthropic receives none.
+ */
+export function getCustomEndpointProvider(
+  customEndpoints: Array<Partial<Pick<TEndpoint, 'name' | 'provider'>>> | undefined,
+  endpoint?: string | null,
+): string | undefined {
+  if (!customEndpoints || !endpoint) {
+    return undefined;
+  }
+  const normalized = normalizeEndpointName(endpoint);
+  return customEndpoints.find((config) => normalizeEndpointName(config.name ?? '') === normalized)
+    ?.provider;
+}
+
+/** A custom endpoint emits OpenAI-format media parts only for the types the admin listed
+ *  in its `supportedMimeTypes`; the inherited default list is not an opt-in. A name that
+ *  is not a known provider is a custom endpoint. Mirrors `isConfiguredProviderMediaType`
+ *  on the encoder side, so the route and the encoder agree on which uploads the provider
+ *  actually receives; the built-in endpoints are left out because the client offers no
+ *  media for them. */
 const isConfiguredMediaEndpoint = (
   mimeType: string,
   endpoint: string,
   supportedMimeTypes?: RegexLike[],
 ): boolean => {
-  if (!isExplicitMimeConfig(supportedMimeTypes)) {
-    return false;
-  }
-  if (!isOpenAILikeProvider(endpoint) && isKnownProviderIdentifier(endpoint)) {
+  if (!isExplicitMimeConfig(supportedMimeTypes) || isKnownProviderIdentifier(endpoint)) {
     return false;
   }
   return baseFileConfig.checkType(mimeType, supportedMimeTypes);
@@ -238,6 +256,7 @@ export function resolveDefaultUploadLLMDeliveryPath({
   endpointConfig,
   fileConfig,
   endpoint,
+  endpointProvider,
   useResponsesApi,
   sttConfigured,
 }: {
@@ -245,12 +264,19 @@ export function resolveDefaultUploadLLMDeliveryPath({
   endpointConfig?: EndpointFileConfig;
   fileConfig?: FileConfig;
   endpoint?: string;
+  /** The provider the endpoint runs as, when the caller knows it: a custom endpoint's
+   *  declared dialect at upload time, the agent's resolved provider at turn time. */
+  endpointProvider?: string | null;
   useResponsesApi?: boolean;
   sttConfigured?: boolean;
 }): TDefaultLLMDeliveryPath {
   if (endpointConfig?.legacyFileUploadUX === true) {
     return 'provider';
   }
+  /* The media opt-in exists for OpenAI-format parts, so an endpoint known to run as
+   * something else — a custom endpoint declaring `provider: anthropic` — keeps the
+   * capability gate it had, where audio still reaches transcription. */
+  const runsAsOpenAI = endpointProvider == null || isOpenAILikeProvider(endpointProvider);
   return resolveDefaultLLMDeliveryPath(
     mimeType,
     endpointConfig?.defaultLLMDeliveryPath,
@@ -258,7 +284,7 @@ export function resolveDefaultUploadLLMDeliveryPath({
     endpoint,
     useResponsesApi,
     sttConfigured,
-    endpointConfig?.supportedMimeTypes,
+    runsAsOpenAI ? endpointConfig?.supportedMimeTypes : undefined,
   );
 }
 
@@ -270,6 +296,7 @@ export function resolveUploadLLMDeliveryPath({
   fileConfig,
   endpoint,
   useResponsesApi,
+  endpointProvider,
   sttConfigured,
 }: {
   toolResource?: string | null;
@@ -277,6 +304,7 @@ export function resolveUploadLLMDeliveryPath({
   endpointConfig?: EndpointFileConfig;
   fileConfig?: FileConfig;
   endpoint?: string;
+  endpointProvider?: string | null;
   useResponsesApi?: boolean;
   sttConfigured?: boolean;
 }): TDefaultLLMDeliveryPath {
@@ -291,6 +319,7 @@ export function resolveUploadLLMDeliveryPath({
     endpointConfig,
     fileConfig,
     endpoint,
+    endpointProvider,
     useResponsesApi,
     sttConfigured,
   });
