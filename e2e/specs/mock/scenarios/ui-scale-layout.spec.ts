@@ -6,6 +6,7 @@ import { clearUserConversations, deleteConversations, seedConversations } from '
 import {
   BASE_FONT_PX,
   MAX_SCALE,
+  accountButton,
   appearanceCard,
   closeSettingsButton,
   decreaseButton,
@@ -15,6 +16,7 @@ import {
   openAppearanceSettings,
   pressStepper,
   rootFontPx,
+  visible,
   withCollapsedSidebar,
   withStoredScale,
 } from './ui-scale.helpers';
@@ -111,15 +113,11 @@ test.describe('UI scale layout', () => {
     await page.goto('/c/new', { timeout: 10000 });
     await expectRootFontPx(page, BASE_FONT_PX * MAX_SCALE);
 
-    const account = page.getByTestId('nav-user');
-    if (!(await account.isVisible().catch(() => false))) {
-      await page.getByTestId('open-sidebar-button').first().click();
-    }
+    const account = await accountButton(page);
     await account.click();
-
-    const menu = page.getByTestId('nav-settings');
-    await expect(menu).toBeVisible();
-    const bounds = await box(page.locator('.account-settings-popover'));
+    await expect(visible(page, 'nav-settings')).toBeVisible();
+    const menu = page.getByRole('menu', { name: 'Account Settings' });
+    const bounds = await box(menu);
     const viewport = page.viewportSize()!;
     /* The menu is portaled to the body, so a scale that fed layout through a
        transform instead of the root font size would leave it anchored off the
@@ -135,11 +133,7 @@ test.describe('UI scale layout', () => {
     page,
   }) => {
     const avatarBox = async (current: Page) => {
-      const account = current.getByTestId('nav-user');
-      if (!(await account.isVisible().catch(() => false))) {
-        await current.getByTestId('open-sidebar-button').first().click();
-      }
-      await expect(account).toBeVisible({ timeout: 20000 });
+      const account = await accountButton(current);
       return box(account.locator('div.rounded-full, img').first());
     };
 

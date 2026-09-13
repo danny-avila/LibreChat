@@ -3,7 +3,13 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { getE2EUser } from '../../../setup/user';
 import { clearUserConversations, deleteConversations, seedConversations } from '../db';
-import { BASE_FONT_PX, MAX_SCALE, expectRootFontPx, withStoredScale } from './ui-scale.helpers';
+import {
+  BASE_FONT_PX,
+  MAX_SCALE,
+  expectRootFontPx,
+  conversationRow,
+  withStoredScale,
+} from './ui-scale.helpers';
 
 /**
  * The scale is a persisted preference, not a session toggle: it has to be in
@@ -84,10 +90,10 @@ test.describe('UI scale persistence', () => {
       await page.reload({ timeout: 15000 });
       await expectRootFontPx(page, BASE_FONT_PX * MAX_SCALE);
 
-      /* Navigating inside the SPA re-mounts the shell; the scale lives above it. */
-      const row = page.getByTestId('convo-item').filter({ hasText: 'Scaled navigation target' });
-      await expect(row.first()).toBeVisible({ timeout: 20000 });
-      await row.first().click();
+      /* Navigating inside the SPA re-mounts the shell; the scale lives above it.
+         Below the drawer breakpoint the list is behind the drawer. */
+      const row = await conversationRow(page, 'Scaled navigation target');
+      await row.click();
       await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
       await expectRootFontPx(page, BASE_FONT_PX * MAX_SCALE);
     } finally {

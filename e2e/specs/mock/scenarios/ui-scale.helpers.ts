@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 /**
  * Helpers for the UI scale scenarios.
@@ -10,16 +10,22 @@ import type { Page } from '@playwright/test';
  * Every assertion here therefore reads a *rendered* size, never the stored
  * value: the stored number proving nothing is the whole reason these scenarios
  * exist.
+ *
+ * The shell mounts the account menu twice — once in the desktop rail, once in
+ * the mobile drawer header — and both are in the DOM at every viewport, so
+ * every shell control is addressed through `visible()` rather than by test id
+ * alone, which would be a strict-mode violation.
  */
 
 /** Root font size with no scale applied and no browser font preference set. */
 export const BASE_FONT_PX = 16;
 
-/** The stops the stepper walks, mirroring the browser's own Ctrl -/+ ladder. */
-export const SCALE_STOPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5] as const;
-
 export const MAX_SCALE = 1.5;
 export const MIN_SCALE = 0.5;
+
+/** The one rendered instance of a shell control that exists at both viewports. */
+export const visible = (page: Page, testId: string): Locator =>
+  page.locator(`[data-testid="${testId}"]:visible`).first();
 
 /** Seed the persisted preference before the app boots, the way a returning user arrives. */
 export async function withStoredScale(page: Page, scale: number) {
@@ -47,17 +53,98 @@ export async function expectRootFontPx(page: Page, expected: number) {
 }
 
 /**
- * Open Settings from the account menu. The trigger lives in the sidebar, which
- * is a drawer below the (scale-aware) drawer breakpoint, so open it when the
- * account button is not already on screen.
+ * The candidate that is actually on screen. The collapsed rail stays rendered
+ * and CSS-visible while translated off-canvas, so "visible" alone can hand back
+ * a control no one can click.
  */
-export async function openSettings(page: Page) {
-  const account = page.getByTestId('nav-user');
-  if (!(await account.isVisible().catch(() => false))) {
-    await page.getByTestId('open-sidebar-button').first().click();
+async function reachable(page: Page, candidates: Locator): Promise<Locator | null> {
+  const viewport = page.viewportSize();
+  if (!viewport) {
+    return null;
   }
+  const count = await candidates.count();
+  for (let index = 0; index < count; index++) {
+    const candidate = candidates.nth(index);
+    const bounds = await candidate.boundingBox();
+    /* Intersection, not containment: the off-canvas rail sits entirely beside
+       the viewport, while an on-screen control may legitimately bleed a pixel. */
+    if (
+      bounds &&
+      bounds.width > 0 &&
+      bounds.height > 0 &&
+      bounds.x + bounds.width > 0 &&
+      bounds.y + bounds.height > 0 &&
+      bounds.x < viewport.width &&
+      bounds.y < viewport.height
+    ) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Wait until one of `candidates` is on screen, opening the sidebar whenever a
+ * control for it is offered. Below the (scale-aware) drawer breakpoint the whole
+ * sidebar is a drawer, and the control that opens it is published under
+ * different test ids by the rail and by the chat header — the accessible name is
+ * the one thing both share. The opener is also mounted a beat after first paint,
+ * so the attempt has to be repeated rather than made once.
+ */
+async function reachableInSidebar(
+  page: Page,
+  candidates: Locator,
+  label: string,
+): Promise<Locator> {
+  let found: Locator | null = null;
+  await expect
+    .poll(
+      async () => {
+        found = await reachable(page, candidates);
+        if (found) {
+          return true;
+        }
+        /* Once the drawer is open its opener goes off-canvas, so this stops
+           clicking by itself rather than toggling the drawer back shut. */
+        const opener = await reachable(
+          page,
+          page.getByRole('button', { name: 'Open sidebar', exact: true }),
+        );
+        await opener?.click().catch(() => undefined);
+        return false;
+      },
+      { message: `${label} should come on screen`, timeout: 30000 },
+    )
+    .toBe(true);
+  if (!found) {
+    throw new Error(`${label} never became reachable`);
+  }
+  return found;
+}
+
+/** The account menu button, opening the drawer if that is where it lives. */
+export async function accountButton(page: Page): Promise<Locator> {
+  return reachableInSidebar(
+    page,
+    page.locator('[data-testid="nav-user"]'),
+    'the account menu button',
+  );
+}
+
+/** A conversation row in the sidebar list, by its title. */
+export async function conversationRow(page: Page, title: string): Promise<Locator> {
+  return reachableInSidebar(
+    page,
+    page.locator('[data-testid="convo-item"]').filter({ hasText: title }),
+    `the conversation row "${title}"`,
+  );
+}
+
+/** Open Settings from the account menu. */
+export async function openSettings(page: Page) {
+  const account = await accountButton(page);
   await account.click();
-  await page.getByTestId('nav-settings').click();
+  await visible(page, 'nav-settings').click();
   await expect(closeSettingsButton(page)).toBeVisible();
 }
 
@@ -78,8 +165,8 @@ export async function openAppearanceSettings(page: Page) {
 export const closeSettingsButton = (page: Page) =>
   page.getByRole('button', { name: 'Close Settings', exact: true });
 
-export const decreaseButton = (page: Page) => page.getByTestId('ui-scale-decrease');
-export const increaseButton = (page: Page) => page.getByTestId('ui-scale-increase');
+export const decreaseButton = (page: Page) => visible(page, 'ui-scale-decrease');
+export const increaseButton = (page: Page) => visible(page, 'ui-scale-increase');
 
 /** The stepper's own readout, the number a person reads back after stepping. */
 export const scaleReadout = (page: Page) =>
@@ -90,7 +177,7 @@ export const scaleReadout = (page: Page) =>
 
 /** The Appearance card that holds the scale stepper and its sibling controls. */
 export const appearanceCard = (page: Page) =>
-  page.locator('section').filter({ has: page.getByTestId('ui-scale-decrease') });
+  page.locator('section').filter({ has: page.locator('[data-testid="ui-scale-decrease"]') });
 
 declare global {
   interface Window {
