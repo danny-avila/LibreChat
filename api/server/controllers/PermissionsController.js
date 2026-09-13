@@ -7,6 +7,7 @@ const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schem
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const {
   enrichRemoteAgentPrincipals,
+  getEntraPrincipalSearchType,
   backfillRemoteAgentPermissions,
   auditInsightsPermissionChanges,
   getInsightsPrincipalState,
@@ -473,7 +474,7 @@ const getUserEffectivePermissions = async (req, res) => {
  */
 const searchPrincipals = async (req, res) => {
   try {
-    const { q: rawQuery, limit = 20, types } = req.query;
+    const { q: rawQuery, limit = 20 } = req.query;
 
     if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0) {
       return res.status(400).json({
@@ -490,35 +491,16 @@ const searchPrincipals = async (req, res) => {
     }
 
     const searchLimit = Math.min(Math.max(1, parseInt(limit) || 10), 50);
-
-    let typeFilters = null;
-    if (types) {
-      const typesArray = Array.isArray(types) ? types : types.split(',');
-      const validTypes = typesArray.filter((t) =>
-        [PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE].includes(t),
-      );
-      typeFilters = validTypes.length > 0 ? validTypes : null;
-    }
+    const typeFilters = req.principalSearchTypes ?? [];
 
     const localResults = await db.searchPrincipals(query, searchLimit, typeFilters);
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
+    const graphType = getEntraPrincipalSearchType(typeFilters);
 
-    if (useEntraId && localResults.length < searchLimit) {
+    if (useEntraId && graphType && localResults.length < searchLimit) {
       try {
-        let graphType = 'all';
-        if (typeFilters && typeFilters.length === 1) {
-          const graphTypeMap = {
-            [PrincipalType.USER]: 'users',
-            [PrincipalType.GROUP]: 'groups',
-          };
-          const mappedType = graphTypeMap[typeFilters[0]];
-          if (mappedType) {
-            graphType = mappedType;
-          }
-        }
-
         const authHeader = req.headers.authorization;
         const accessToken =
           authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;

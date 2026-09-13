@@ -9,8 +9,9 @@ jest.mock('@librechat/data-schemas', () => ({
   SYSTEM_TENANT_ID: '__SYSTEM__',
 }));
 
-const { AccessRoleIds, ResourceType, PrincipalType, SystemRoles } =
+const { AccessRoleIds, ResourceType, PrincipalType, SystemRoles, PermissionTypes, Permissions } =
   jest.requireActual('librechat-data-provider');
+const { createPeoplePickerAccess } = jest.requireActual('@librechat/api');
 
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
@@ -64,6 +65,7 @@ jest.mock('~/server/services/GraphApiService', () => ({
 }));
 
 const db = require('~/models');
+const GraphApiService = require('~/server/services/GraphApiService');
 const {
   updateResourcePermissions,
   searchPrincipals,
@@ -127,6 +129,7 @@ describe('PermissionsController', () => {
 
       const req = createMockReq({
         query: { q: '  [invalid  ', limit: '5', types: PrincipalType.USER },
+        principalSearchTypes: [PrincipalType.USER],
       });
       const res = createMockRes();
 
@@ -145,6 +148,75 @@ describe('PermissionsController', () => {
           count: 1,
         }),
       );
+    });
+
+    it.each([{ q: 'al', type: PrincipalType.GROUP }, { q: 'al', types: 'foobar' }, { q: 'al' }])(
+      'searches only the types the people picker check resolved for %j',
+      async (query) => {
+        const checkAccess = createPeoplePickerAccess({
+          getRoleByName: async () => ({
+            permissions: {
+              [PermissionTypes.PEOPLE_PICKER]: {
+                [Permissions.VIEW_USERS]: false,
+                [Permissions.VIEW_GROUPS]: true,
+                [Permissions.VIEW_ROLES]: false,
+              },
+            },
+          }),
+        });
+        const req = createMockReq({ query });
+        const res = createMockRes();
+
+        await checkAccess(req, res, () => searchPrincipals(req, res));
+
+        expect(db.searchPrincipals).toHaveBeenCalledWith('al', 20, [PrincipalType.GROUP]);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ types: [PrincipalType.GROUP] }),
+        );
+      },
+    );
+
+    it('searches no types when the people picker check did not run', async () => {
+      const req = createMockReq({ query: { q: 'alice', types: PrincipalType.USER } });
+      const res = createMockRes();
+
+      await searchPrincipals(req, res);
+
+      expect(db.searchPrincipals).toHaveBeenCalledWith('alice', 20, []);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it.each([
+      [[PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE], 'all'],
+      [[PrincipalType.USER, PrincipalType.ROLE], 'users'],
+      [[PrincipalType.GROUP, PrincipalType.ROLE], 'groups'],
+      [[PrincipalType.ROLE], null],
+    ])('scopes the Entra ID search for %j to %s', async (principalSearchTypes, graphType) => {
+      GraphApiService.entraIdPrincipalFeatureEnabled.mockReturnValueOnce(true);
+      GraphApiService.searchEntraIdPrincipals.mockResolvedValue([]);
+      const req = createMockReq({
+        query: { q: 'alice' },
+        headers: { authorization: 'Bearer token' },
+        user: { id: 'user-1', role: 'USER', openidId: 'oid-1' },
+        principalSearchTypes,
+      });
+      const res = createMockRes();
+
+      await searchPrincipals(req, res);
+
+      if (graphType) {
+        expect(GraphApiService.searchEntraIdPrincipals).toHaveBeenCalledWith(
+          'token',
+          'oid-1',
+          'alice',
+          graphType,
+          20,
+        );
+      } else {
+        expect(GraphApiService.searchEntraIdPrincipals).not.toHaveBeenCalled();
+      }
+      expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it('does not expose internal error details on search failures', async () => {
