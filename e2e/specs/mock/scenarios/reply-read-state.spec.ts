@@ -16,6 +16,7 @@ import {
   withMongo,
 } from '../db';
 import { getAccessToken, requestJson } from '../helpers';
+import { openConversationMenu, openSidebar } from './sidebar';
 
 type ReadState = Pick<
   IConversation,
@@ -120,13 +121,16 @@ test('later visible read wins over a delayed unread response, and stale seen can
   );
   const row = page.getByTestId('convo-item').filter({ hasText: title });
   try {
-    await row.hover();
-    await row.getByRole('button', { name: 'Conversation Menu Options' }).click();
+    await openSidebar(page);
+    await openConversationMenu(row);
     await page.getByRole('menuitem', { name: 'Mark as unread', exact: true }).click();
     await committed.promise;
     expect((await readState(conversationId))?.lastSeenAt).toBeUndefined();
     await page.keyboard.press('Escape');
-    await row.getByRole('button', { name: `${title} conversation, Unread`, exact: true }).click();
+    await openSidebar(page);
+    await row
+      .getByRole('button', { name: `${title} conversation, Unread`, exact: true })
+      .dispatchEvent('click');
     await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
     await expect(page.locator(`[id="${replyId}"]`)).toBeVisible();
     await expect
