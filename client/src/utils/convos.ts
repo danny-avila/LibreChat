@@ -12,7 +12,7 @@ import {
 } from 'date-fns';
 import type { TConversation, TMessage, GroupedConversations } from 'librechat-data-provider';
 import type { InvalidateQueryFilters } from '@tanstack/react-query';
-import type { InfiniteData, Query, QueryKey } from '@tanstack/react-query';
+import type { InfiniteData, Query } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
 
 /**
