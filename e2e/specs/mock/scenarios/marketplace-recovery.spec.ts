@@ -22,6 +22,15 @@ const responseFor = (agent: MockAgent) => ({
   has_more: false,
 });
 
+const pageFor = (agents: MockAgent[], after?: string) => ({
+  object: 'list',
+  data: agents,
+  first_id: agents[0]?.id ?? null,
+  last_id: agents.at(-1)?.id ?? null,
+  has_more: after != null,
+  after: after ?? null,
+});
+
 const makeAgent = (suffix: string): MockAgent => ({
   id: `agent-marketplace-recovery-${suffix}`,
   name: `Marketplace Recovery Agent ${suffix}`,
@@ -40,6 +49,11 @@ const makeAgent = (suffix: string): MockAgent => ({
     frequency_penalty: null,
   },
 });
+
+/* More than the grid's windowing threshold, so the list virtualizes and its height is
+   what the scroll position depends on. */
+const makeAgents = (count: number, offset: number): MockAgent[] =>
+  Array.from({ length: count }, (_, index) => makeAgent(`row-${offset + index}`));
 
 const routeMarketplace = async (page: Page, handler: (route: Route) => Promise<void>) => {
   await page.route('**/api/agents*', async (route) => {
@@ -169,5 +183,80 @@ test.describe('marketplace recovery', () => {
        firing alongside it. The served page also succeeds, so it costs no query retry. */
     expect(listRequests).toBe(beforeReturn + 1);
     await expect.poll(() => listRequests, { timeout: 3000 }).toBe(beforeReturn + 1);
+  });
+
+  test('@scenario:pagination-failure-keeps-the-loaded-rows a failed next page keeps the loaded rows and the scroll position', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const loaded = makeAgents(36, 0);
+    const nextPage = makeAgents(8, 36);
+    let cursorRequests = 0;
+    let cursorServed = false;
+
+    await routeMarketplace(page, async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get('cursor');
+      if (cursor == null) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(pageFor(loaded, 'cursor-page-two')),
+        });
+        return;
+      }
+      cursorRequests += 1;
+      if (!cursorServed) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'cursor page unavailable' }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(pageFor(nextPage)),
+      });
+    });
+
+    await page.goto('/agents/all');
+    await expect(page.getByRole('button', { name: loaded[0].name })).toBeVisible();
+
+    /* The marketplace scrolls its own frame, which is the element the grid is rendered
+       into rather than the document. */
+    const frame = page.getByRole('tabpanel').locator('xpath=..');
+    await frame.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const deepScroll = await frame.evaluate((element) => element.scrollTop);
+    expect(deepScroll).toBeGreaterThan(0);
+
+    /* Reaching the end asks for the next cursor page; it fails, and the query's two
+       immediate retries fail with it, so the error card takes over recovery. */
+    await expect(page.getByRole('alert')).toContainText(translations.com_agents_error_server_title, {
+      timeout: 30_000,
+    });
+    expect(cursorRequests).toBeGreaterThan(0);
+
+    /* The rows are still mounted behind the card, so the frame still has something to be
+       scrolled through: replacing them collapses its height and the browser clamps the
+       position to the shorter document. */
+    const rows = page.getByRole('tabpanel').getByRole('listitem');
+    await expect(rows.first()).toBeVisible();
+    expect(await frame.evaluate((element) => element.scrollTop)).toBe(deepScroll);
+
+    /* Returning to the window is the card's immediate attempt, so the recovery does not
+       have to wait out a backoff step whose button is disabled while it runs. */
+    cursorServed = true;
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 30_000 });
+    /* Recovery adds rows to the list the user was reading rather than remounting it, so
+       the position survives the round trip. */
+    expect(await frame.evaluate((element) => element.scrollTop)).toBe(deepScroll);
   });
 });

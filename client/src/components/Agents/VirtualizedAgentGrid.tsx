@@ -24,11 +24,12 @@ interface VirtualizedAgentGridProps {
   onLoadMore: () => void;
   onSelectAgent?: (agent: t.Agent) => void;
   /**
-   * Rendered in place of the list whenever the marketplace has something else to say —
-   * no results, or a failure it is recovering from. It lives here rather than beside this
-   * component because this grid owns the detail dialog and the focus it has to hand back:
-   * a parent that swapped the grid out for those states would tear an open dialog down
-   * mid-flight and strand keyboard focus.
+   * Rendered whenever the marketplace has something else to say — no results, or a
+   * failure it is recovering from. It lives here rather than beside this component
+   * because this grid owns the detail dialog and the focus it has to hand back: a parent
+   * that swapped the grid out for those states would tear an open dialog down mid-flight
+   * and strand keyboard focus. Rows that are already loaded keep their place; the
+   * placeholder follows them instead of replacing them.
    */
   placeholder?: React.ReactNode;
 }
@@ -357,9 +358,14 @@ export default function VirtualizedAgentGrid({
           back to, even when the refresh that removed the selected agent also emptied the
           marketplace. */}
       <div ref={setHostElement} tabIndex={-1} className="min-w-0 focus-visible:outline-none">
-        {placeholder != null || agents.length === 0 ? (
-          placeholder
-        ) : (
+        {/* The rows stay mounted while the marketplace has something else to say, and the
+            placeholder is rendered after them rather than in their place: replacing the list
+            collapses its scrollable height, the browser clamps the scroll position to the
+            shorter document, and the remount that follows a recovery starts the list at the
+            top again — so a transient pagination failure would send someone browsing deep
+            in the marketplace back to the first row. With no rows there is no height to
+            keep, and the placeholder is all there is to show. */}
+        {agents.length > 0 && (
           <div
             role="list"
             tabIndex={-1}
@@ -431,6 +437,7 @@ export default function VirtualizedAgentGrid({
             })}
           </div>
         )}
+        {placeholder}
       </div>
       {createPortal(
         <AnimatePresence onExitComplete={() => setLiftedAgentId(null)}>

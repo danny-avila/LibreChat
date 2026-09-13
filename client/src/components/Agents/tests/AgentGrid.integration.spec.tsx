@@ -237,6 +237,11 @@ describe('AgentGrid pagination', () => {
     expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(
       'Cursor page unavailable',
     );
+    // The rows the user was reading stay mounted behind the error card. Unmounting the
+    // list collapses its scrollable height, which is what let the browser clamp the
+    // scroll position and drop someone browsing deep in the marketplace back to row one.
+    expect(screen.getByRole('list')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(marketplace).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'next-page' }));
@@ -246,8 +251,8 @@ describe('AgentGrid pagination', () => {
       await pending.promise;
     });
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    // The grid returns to the top of the recovered list, so assert its length rather than
-    // a card the virtualizer has scrolled past.
+    // The list was never unmounted, so the virtualizer still renders the window the user
+    // was reading rather than the first row; assert the recovered length instead.
     expect(screen.getAllByRole('listitem')[0]).toHaveAttribute('aria-setsize', '64');
   });
 
