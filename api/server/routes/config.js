@@ -325,6 +325,7 @@ router.get('/', async function (req, res) {
       mcpApps: resolveMCPAppsPolicy(
         appConfig?.mcpSettings?.apps,
         appConfig?.mcpAppSandbox ?? DEFAULT_MCP_APP_CSP_LIMITS,
+        appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
       ),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),

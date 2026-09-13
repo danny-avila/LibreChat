@@ -303,10 +303,8 @@
 
         const allowParts = [];
         if (permissions && typeof permissions === 'object') {
-          if (permissions.clipboardWrite) allowParts.push('clipboard-write');
-          if (permissions.camera) allowParts.push('camera');
-          if (permissions.microphone) allowParts.push('microphone');
           if (permissions.geolocation) allowParts.push('geolocation');
+          if (permissions.clipboardWrite) allowParts.push('clipboard-write');
         }
         if (allowParts.length > 0) {
           innerFrame.setAttribute('allow', allowParts.join('; '));
@@ -329,8 +327,6 @@
           URL.revokeObjectURL(innerFrameBlobUrl);
         }
       });
-
-      const RAW_TEXT_TAGS = ['script', 'style', 'title', 'textarea'];
 
       function findTagEnd(html, at) {
         let quote = '';
@@ -361,79 +357,68 @@
         return after === undefined || after === '>' || after === '/' || /\s/.test(after);
       }
 
-      /**
-       * A literal `<head>` inside a comment, a CDATA section or a raw-text element is never parsed as
-       * a tag, so those spans are walked past instead of matched. Injecting into one would leave the
-       * bootstrap commented out, the view unattested, and every App Bridge message queued until it
-       * times out. Anything the scan cannot resolve confidently returns -1 so the caller prefixes the
-       * whole document, which keeps the bootstrap ahead of the app's markup either way.
-       */
-      function findHeadInjectionPoint(html) {
+      /** Locate only a document-level head in the HTML prolog. The first body/template/unknown token
+       * ends the search so a later head can never capture the bootstrap inside inert App content. */
+      function findDocumentInjectionPoint(html) {
         const lower = html.toLowerCase();
         let at = 0;
-        while (at < lower.length) {
-          const next = lower.indexOf('<', at);
-          if (next === -1) {
-            return -1;
-          }
-          if (lower.startsWith('<!--', next)) {
-            const close = lower.indexOf('-->', next + 4);
-            // An unterminated comment or raw-text span runs to the end of the document, so no head
-            // can follow it.
-            if (close === -1) {
-              return -1;
-            }
-            at = close + 3;
-            continue;
-          }
-          if (lower.startsWith('<![cdata[', next)) {
-            const close = lower.indexOf(']]>', next + 9);
-            if (close === -1) {
-              return -1;
-            }
-            at = close + 3;
-            continue;
-          }
-          const kind = lower[next + 1];
-          if (kind === undefined || !/[a-z!/?]/.test(kind)) {
-            at = next + 1;
-            continue;
-          }
-          if (isTagAt(lower, next, 'head')) {
-            const end = findTagEnd(lower, next);
-            return end === -1 ? -1 : end + 1;
-          }
-          const rawText = RAW_TEXT_TAGS.find((name) => isTagAt(lower, next, name));
-          if (rawText) {
-            const open = findTagEnd(lower, next);
-            const close = open === -1 ? -1 : lower.indexOf('</' + rawText, open + 1);
-            if (close === -1) {
-              return -1;
-            }
-            at = close + rawText.length + 2;
-            continue;
-          }
-          const end = findTagEnd(lower, next);
-          at = end === -1 ? lower.length : end + 1;
+        let fallbackAt = 0;
+        let sawDoctype = false;
+        let sawHtml = false;
+
+        if (lower.charCodeAt(0) === 0xfeff) {
+          at = 1;
+          fallbackAt = 1;
         }
-        return -1;
+
+        while (at < lower.length) {
+          while (at < lower.length && /\s/.test(lower[at])) {
+            at += 1;
+          }
+          fallbackAt = at;
+          if (at >= lower.length) {
+            return fallbackAt;
+          }
+          if (lower.startsWith('<!--', at)) {
+            const close = lower.indexOf('-->', at + 4);
+            if (close === -1) {
+              return fallbackAt;
+            }
+            at = close + 3;
+            fallbackAt = at;
+            continue;
+          }
+          if (!sawDoctype && !sawHtml && isTagAt(lower, at, '!doctype')) {
+            const end = findTagEnd(lower, at);
+            if (end === -1) return fallbackAt;
+            sawDoctype = true;
+            at = end + 1;
+            fallbackAt = at;
+            continue;
+          }
+          if (!sawHtml && isTagAt(lower, at, 'html')) {
+            const end = findTagEnd(lower, at);
+            if (end === -1) return fallbackAt;
+            sawHtml = true;
+            at = end + 1;
+            fallbackAt = at;
+            continue;
+          }
+          if (isTagAt(lower, at, 'head')) {
+            const end = findTagEnd(lower, at);
+            return end === -1 ? fallbackAt : end + 1;
+          }
+          return fallbackAt;
+        }
+        return fallbackAt;
       }
 
       function injectIntoHead(html, injection) {
         // The bootstrap must run before any app script, and the app's bytes must reach the blob
         // verbatim: inject, never rewrap. Prefixing a document that opens with a doctype would push
         // the doctype down and flip the app into quirks mode.
-        const at = findHeadInjectionPoint(html);
-        if (at !== -1) {
-          return html.slice(0, at) + injection + html.slice(at);
-        }
-        const doctypeMatch = html.match(/^\s*<!doctype[^>]*>/i);
-        if (doctypeMatch) {
-          return (
-            html.slice(0, doctypeMatch[0].length) + injection + html.slice(doctypeMatch[0].length)
-          );
-        }
-        return injection + html;
+        const at = findDocumentInjectionPoint(html);
+        return html.slice(0, at) + injection + html.slice(at);
       }
 
       notifyReady();

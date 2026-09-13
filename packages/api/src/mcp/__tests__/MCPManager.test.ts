@@ -984,6 +984,7 @@ describe('MCPManager', () => {
         toolListVersion: 0,
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
+        getMCPAppRuntimeTarget: jest.fn(() => ({ type: 'sse', url: serverConfig.url })),
         timeout: 1234,
         fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
           tools: [
@@ -1000,7 +1001,10 @@ describe('MCPManager', () => {
     }
 
     async function callWith(connection: MCPConnection, signal?: AbortSignal) {
-      const manager = new MCPManager();
+      const manager = new MCPManager(undefined, undefined, {
+        create: jest.fn(() => 'binding'),
+        verify: jest.fn(() => true),
+      });
       jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
       return manager.callTool({
         user,
@@ -1169,7 +1173,10 @@ describe('MCPManager', () => {
         };
       });
       const connection = connectionFor(request);
-      const manager = new MCPManager();
+      const manager = new MCPManager(undefined, undefined, {
+        create: jest.fn(() => 'binding'),
+        verify: jest.fn(() => true),
+      });
       jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
 
       const first = await manager.callTool({
@@ -4167,6 +4174,12 @@ describe('MCPManager', () => {
   describe('MCP App operations', () => {
     const user = { id: 'user-123', role: 'ADMIN' } as IUser & { id: string };
     const flowManager = {} as Parameters<MCPManager['readResource']>[0]['flowManager'];
+    const appBindingCodec = {
+      create: jest.fn(() => 'binding'),
+      verify: jest.fn(() => true),
+    };
+    const createAppManager = (configs: t.MCPServers) =>
+      MCPManager.createInstance(configs, { appBindingCodec });
     const defaultOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
 
     const context = (
@@ -4175,6 +4188,7 @@ describe('MCPManager', () => {
       extra: Partial<Parameters<MCPManager['readResource']>[0]> = {},
     ) => ({
       serverName,
+      serverBinding: 'binding',
       user,
       connectionTarget: {
         serverConfig: config,
@@ -4192,6 +4206,10 @@ describe('MCPManager', () => {
         isConnected: jest.fn().mockResolvedValue(true),
         getLastConnectionCheckError: jest.fn(),
         setRequestHeaders: jest.fn(),
+        getMCPAppRuntimeTarget: jest.fn(() => ({
+          type: 'sse',
+          url: 'https://example.com/mcp',
+        })),
         fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools, complete: true }),
         timeout: 30_000,
         client: fakeClient(request),
@@ -4286,7 +4304,7 @@ describe('MCPManager', () => {
     ])(
       'rejects unsupported $name configuration before connection checkout',
       async ({ config, message }) => {
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const manager = await createAppManager(newMCPServersConfig());
         const getConnection = jest.spyOn(manager, 'getConnection');
 
         await expect(
@@ -4307,7 +4325,7 @@ describe('MCPManager', () => {
       } as t.ParsedServerConfig;
       const request = jest.fn().mockResolvedValue({ resources: [] });
       const appConnection = connection(request);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       const getConnection = jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
 
       await expect(manager.listResources(context('srv', config))).resolves.toEqual({
@@ -4332,7 +4350,7 @@ describe('MCPManager', () => {
       } as t.ParsedServerConfig;
       const request = jest.fn().mockResolvedValue({ resources: [] });
       const appConnection = connection(request);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       const getConnection = jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
       const onOAuthCredentialsChanging = jest.fn(async () => async () => 'generation-b');
 
@@ -4362,7 +4380,7 @@ describe('MCPManager', () => {
       });
 
       try {
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const manager = await createAppManager(newMCPServersConfig());
         await expect(
           manager.listResources(
             context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
@@ -4394,7 +4412,7 @@ describe('MCPManager', () => {
       });
 
       try {
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const manager = await createAppManager(newMCPServersConfig());
         await expect(
           manager.listResources(
             context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
@@ -4417,7 +4435,7 @@ describe('MCPManager', () => {
       });
 
       try {
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const manager = await createAppManager(newMCPServersConfig());
         await expect(
           manager.listResources(
             context('srv', standardOAuthConfig, { onOAuthCredentialsChanging }),
@@ -4439,7 +4457,7 @@ describe('MCPManager', () => {
         contents: [{ uri: 'data://catalog/part%2Fleaf', text: 'leaf' }],
       });
       const appConnection = connection(request);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
 
       await manager.readResource({
@@ -4467,7 +4485,7 @@ describe('MCPManager', () => {
       } as t.ParsedServerConfig;
       const request = jest.fn().mockResolvedValue({ resources: [] });
       const appConnection = connection(request);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
       const activity = jest
         .spyOn(
@@ -4507,7 +4525,7 @@ describe('MCPManager', () => {
       } as t.ParsedServerConfig;
       const failure = new Error('provider unavailable');
       const appConnection = connection(jest.fn().mockRejectedValue(failure));
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
       const retain = jest.spyOn(
         manager as unknown as { retainConnection: (value: MCPConnection) => void },
@@ -4537,7 +4555,7 @@ describe('MCPManager', () => {
         .mockRejectedValueOnce(Object.assign(new Error('Unauthorized'), { status: 401 }))
         .mockResolvedValueOnce({ resources: [] });
       const appConnection = connection(request);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
       const release = jest.spyOn(
         manager as unknown as { releaseConnection: (value: MCPConnection) => Promise<void> },
@@ -4589,7 +4607,7 @@ describe('MCPManager', () => {
       );
       const replacementRequest = jest.fn().mockResolvedValue({ resources: [] });
       const replacement = connection(replacementRequest);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest
         .spyOn(manager, 'getConnection')
         .mockResolvedValueOnce(stale)
@@ -4643,7 +4661,7 @@ describe('MCPManager', () => {
         content: [{ type: 'text', text: 'done' }],
       });
       const visibleConnection = connection(visibleRequest);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const manager = await createAppManager(newMCPServersConfig());
       jest.spyOn(manager, 'getConnection').mockResolvedValue(visibleConnection);
       const signal = new AbortController().signal;
 
@@ -4658,7 +4676,7 @@ describe('MCPManager', () => {
 
       (MCPManager as unknown as { instance: null }).instance = null;
       const hiddenRequest = jest.fn();
-      const hiddenManager = await MCPManager.createInstance(newMCPServersConfig());
+      const hiddenManager = await createAppManager(newMCPServersConfig());
       jest
         .spyOn(hiddenManager, 'getConnection')
         .mockResolvedValue(
@@ -4691,7 +4709,7 @@ describe('MCPManager', () => {
         const request = jest.fn().mockResolvedValue({ content: [{ type: 'text', text: 'done' }] });
         const appConnection = connection(request);
         const snapshots = appConnection.fetchOrderedToolsSnapshot as jest.Mock;
-        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const manager = await createAppManager(newMCPServersConfig());
         jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
 
         await expect(

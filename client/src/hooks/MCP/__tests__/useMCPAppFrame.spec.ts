@@ -30,6 +30,7 @@ const appResource = (overrides: Partial<UIResource> = {}): UIResource =>
     mimeType: 'text/html;profile=mcp-app',
     toolName: 'render',
     serverName: 'demo',
+    serverBinding: 'binding-demo',
     ...overrides,
   }) as UIResource;
 

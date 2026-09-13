@@ -29,6 +29,7 @@ const MCP_APP_PHASE_AGENT_ID = encodeEphemeralAgentId({
 });
 const MCP_APP_PHASE_PARENT_LABEL = 'Rendered two MCP Apps in one activity phase';
 const APP_ROUTE_PATHS = new Set([
+  '/api/mcp/app/validate',
   '/api/mcp/app-tool-call',
   '/api/mcp/resources/read',
   '/api/mcp/resources/list',
@@ -105,6 +106,16 @@ function uiResources(messages: StoredMessage[]) {
       .filter((attachment) => attachment.type === 'ui_resources')
       .flatMap((attachment) => attachment.ui_resources ?? []),
   );
+}
+
+function persistedServerBinding(messages: StoredMessage[]): string {
+  const binding = uiResources(messages).find(
+    (resource) => resource.mimeType === 'text/html;profile=mcp-app',
+  )?.serverBinding;
+  if (typeof binding !== 'string' || !binding) {
+    throw new Error('Expected a persisted MCP App server binding');
+  }
+  return binding;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -406,9 +417,11 @@ test.describe('MCP Apps full integration', () => {
       'sandbox',
       'allow-scripts allow-same-origin allow-forms',
     );
+    await expect(outerFrame).toHaveAttribute('allow', 'geolocation; clipboard-write');
 
     const innerFrame = page.frameLocator('iframe[title="MCP App: show_app"]').locator('iframe');
     await expect(innerFrame).toHaveAttribute('sandbox', 'allow-scripts allow-forms');
+    await expect(innerFrame).toHaveAttribute('allow', 'geolocation; clipboard-write');
 
     const viewCsp = await appFrame(page)
       .locator('meta[http-equiv="Content-Security-Policy"]')
@@ -434,13 +447,18 @@ test.describe('MCP Apps full integration', () => {
     await expect(app.getByTestId('operation')).toContainText('ui://e2e/details/current');
     await expect(app.getByTestId('operation')).toContainText('ui://e2e/link-app.html');
 
+    const currentConversationId = new URL(page.url()).pathname.split('/').pop();
+    expect(currentConversationId).toMatch(/^[0-9a-fA-F-]{36}$/);
+    const serverBinding = persistedServerBinding(
+      await getMessages(page, token, currentConversationId!),
+    );
     const templates = await requestJson<{ resourceTemplates: Array<{ uriTemplate: string }> }>(
       page,
       {
         path: '/api/mcp/resources/templates/list',
         method: 'POST',
         token,
-        body: { serverName: 'e2e-app' },
+        body: { serverName: 'e2e-app', serverBinding },
       },
     );
     expect(templates.resourceTemplates).toEqual(
@@ -625,6 +643,11 @@ test.describe('MCP Apps full integration', () => {
       'ui://e2e/legacy.html',
       'ui://e2e/link-app.html',
     ]);
+    expect(
+      persistedResources
+        .filter((resource) => resource.mimeType === 'text/html;profile=mcp-app')
+        .every((resource) => typeof resource.serverBinding === 'string'),
+    ).toBe(true);
     writeState({
       conversationId: conversationId!,
       label,
@@ -932,10 +955,15 @@ test.describe('MCP Apps full integration', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
     const token = await getAccessToken(page);
     expect(await getPolicy(page, token)).toEqual({ enabled: true, legacyHtmlEnabled: true });
+    const state = readState();
+    const serverBinding = persistedServerBinding(
+      await getMessages(page, token, state.conversationId),
+    );
 
     const resources = async () =>
       rawAuthenticatedRequest(page, token, '/api/mcp/resources/list', {
         serverName: 'e2e-app',
+        serverBinding,
       });
     expect((await resources()).status).toBe(200);
     expect((await resources()).status).toBe(200);
@@ -948,6 +976,7 @@ test.describe('MCP Apps full integration', () => {
     const toolCall = async () =>
       rawAuthenticatedRequest(page, token, '/api/mcp/app-tool-call', {
         serverName: 'e2e-app',
+        serverBinding,
         toolName: 'follow_up',
         arguments: { label: 'quota' },
       });

@@ -5,6 +5,8 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  DEFAULT_MCP_APP_PERSISTED_BYTES,
+  MAX_MCP_APP_PERSISTED_BYTES,
   resolveMCPAppRateLimits,
   resolveMCPAppsPolicy,
   resolveEndpointType,
@@ -1398,29 +1400,62 @@ describe('bedrockModels defaults', () => {
 
 describe('MCP Apps configuration', () => {
   it.each([
-    [undefined, { enabled: false, legacyHtmlEnabled: true }],
-    [true, { enabled: true, legacyHtmlEnabled: true }],
-    [false, { enabled: false, legacyHtmlEnabled: false }],
+    [
+      undefined,
+      {
+        enabled: false,
+        legacyHtmlEnabled: true,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+      },
+    ],
+    [
+      true,
+      {
+        enabled: true,
+        legacyHtmlEnabled: true,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+      },
+    ],
+    [
+      false,
+      {
+        enabled: false,
+        legacyHtmlEnabled: false,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+      },
+    ],
   ])('resolves raw apps value %s to the effective policy', (value, expected) => {
     expect(resolveMCPAppsPolicy(value)).toEqual(expected);
   });
 
   it('defaults and validates deployment-owned sandbox limits', () => {
-    expect(configSchema.parse({ version: '1.2.1' }).mcpAppSandbox).toEqual(
-      DEFAULT_MCP_APP_CSP_LIMITS,
-    );
+    expect(configSchema.parse({ version: '1.2.1' }).mcpAppSandbox).toEqual({
+      ...DEFAULT_MCP_APP_CSP_LIMITS,
+      maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+    });
     expect(
       configSchema.parse({
         version: '1.2.1',
-        mcpAppSandbox: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+        mcpAppSandbox: {
+          maxSourcesPerDirective: 64,
+          maxSerializedLength: 8192,
+          maxPersistedAppBytes: 2048,
+        },
       }).mcpAppSandbox,
-    ).toEqual({ maxSourcesPerDirective: 64, maxSerializedLength: 8192 });
+    ).toEqual({
+      maxSourcesPerDirective: 64,
+      maxSerializedLength: 8192,
+      maxPersistedAppBytes: 2048,
+    });
     for (const mcpAppSandbox of [
       { maxSourcesPerDirective: 0 },
       { maxSourcesPerDirective: 1.5 },
       { maxSerializedLength: -1 },
       { maxSerializedLength: 1.5 },
       { maxSerializedLength: Number.MAX_SAFE_INTEGER + 1 },
+      { maxPersistedAppBytes: 0 },
+      { maxPersistedAppBytes: 1.5 },
+      { maxPersistedAppBytes: MAX_MCP_APP_PERSISTED_BYTES + 1 },
     ]) {
       expect(configSchema.safeParse({ version: '1.2.1', mcpAppSandbox }).success).toBe(false);
     }

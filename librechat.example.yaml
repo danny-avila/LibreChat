@@ -512,6 +512,7 @@ actions:
 # mcpAppSandbox:
 #   maxSourcesPerDirective: 32
 #   maxSerializedLength: 4096
+#   maxPersistedAppBytes: 1048576
 
 # Example MCP Servers Object Structure
 # mcpServers:

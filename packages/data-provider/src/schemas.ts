@@ -1027,6 +1027,8 @@ export type UIResource = {
   text?: string;
   serverName?: string;
   toolName?: string;
+  /** Opaque server-issued binding required for executable MCP App callbacks. */
+  serverBinding?: string;
   structuredContent?: Record<string, unknown>;
   content?: unknown[];
   csp?: {

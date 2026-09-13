@@ -102,7 +102,7 @@ export function useMCPAppFrame(
   useEffect(() => {
     setStatus('loading');
     setHeight(undefined);
-  }, [resourceKey, inlineHtml]);
+  }, [resourceKey, inlineHtml, resource?.serverBinding]);
 
   const kind: MCPAppFrameKind = useMemo(() => {
     if (!mcpAppsEnabled || !resource) {

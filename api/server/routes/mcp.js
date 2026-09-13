@@ -47,6 +47,7 @@ const {
   listMCPResources,
   listMCPResourceTemplates,
   appToolCall,
+  validateMCPApp,
   serveMCPSandbox,
   requireMCPAppsEnabled,
 } = require('~/server/controllers/mcpApps');
@@ -1321,6 +1322,19 @@ router.delete(
 );
 
 // --- MCP Apps Support ---
+
+/**
+ * Validate that a persisted MCP App still targets its originating server configuration
+ * @route POST /api/mcp/app/validate
+ */
+router.post(
+  '/app/validate',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
+  validateMCPApp,
+);
 
 /**
  * Read a UI resource from an MCP server

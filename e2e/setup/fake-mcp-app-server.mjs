@@ -52,17 +52,16 @@ const embeddedToolResultHtml = `<!doctype html>
 
 const appHtml = `<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="mcp-app-sdk-version" content="${SDK_PACKAGE.version}" />
-    <title>LibreChat MCP App fixture</title>
-    <style>
-      body { font: 14px system-ui, sans-serif; margin: 12px; }
-      button { margin: 4px; }
-      output { display: block; white-space: pre-wrap; }
-    </style>
-  </head>
+  <template data-testid="inert-head"><head><title>inert template head</title></head></template>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="mcp-app-sdk-version" content="${SDK_PACKAGE.version}" />
+  <title>LibreChat MCP App fixture</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 12px; }
+    button { margin: 4px; }
+    output { display: block; white-space: pre-wrap; }
+  </style>
   <body>
     <main data-testid="mcp-app-fixture">
       <p data-testid="document-source">resources-read-document</p>
@@ -157,7 +156,9 @@ const appHtml = `<!doctype html>
   </body>
 </html>`;
 
-const appMeta = { ui: {} };
+const appMeta = {
+  ui: { permissions: { camera: {}, microphone: {}, geolocation: {}, clipboardWrite: {} } },
+};
 const linkAppMeta = { ui: { csp: { resourceDomains: [LINK_ORIGIN] } } };
 
 const legacyHtml = `<!doctype html>

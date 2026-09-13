@@ -3,6 +3,7 @@ import type { UIResource } from 'librechat-data-provider';
 import {
   isAllowedAppLink,
   getMCPSandboxUrl,
+  getSupportedMCPAppPermissions,
   fetchMCPResourceHtml,
   clampAppViewHeight,
   withSandboxCsp,
@@ -417,16 +418,23 @@ describe('fetchMCPResourceHtml', () => {
     } as Response);
     const controller = new AbortController();
 
-    await expect(fetchMCPResourceHtml('demo', 'ui://app/main', controller.signal)).resolves.toEqual(
-      {
-        html: '<p>selected</p>',
-        csp: { connectDomains: ['https://api.example'] },
-        permissions: { clipboardWrite: {} },
-      },
-    );
+    await expect(
+      fetchMCPResourceHtml('demo', 'binding-demo', 'ui://app/main', controller.signal),
+    ).resolves.toEqual({
+      html: '<p>selected</p>',
+      csp: { connectDomains: ['https://api.example'] },
+      permissions: { clipboardWrite: {} },
+    });
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('/api/mcp/resources/read'),
-      expect.objectContaining({ signal: controller.signal }),
+      expect.objectContaining({
+        body: JSON.stringify({
+          serverName: 'demo',
+          serverBinding: 'binding-demo',
+          uri: 'ui://app/main',
+        }),
+        signal: controller.signal,
+      }),
     );
   });
 
@@ -445,7 +453,7 @@ describe('fetchMCPResourceHtml', () => {
       }),
     } as Response);
 
-    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).resolves.toEqual({
+    await expect(fetchMCPResourceHtml('demo', 'binding-demo', 'ui://app/main')).resolves.toEqual({
       html: '<p>café</p>',
       csp: undefined,
       permissions: undefined,
@@ -463,7 +471,7 @@ describe('fetchMCPResourceHtml', () => {
       }),
     } as Response);
 
-    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).rejects.toThrow(
+    await expect(fetchMCPResourceHtml('demo', 'binding-demo', 'ui://app/main')).rejects.toThrow(
       'no matching HTML document',
     );
   });
@@ -474,7 +482,24 @@ describe('fetchMCPResourceHtml', () => {
       status: 403,
     } as Response);
 
-    await expect(fetchMCPResourceHtml('demo', 'ui://app/main')).rejects.toThrow('(403)');
+    await expect(fetchMCPResourceHtml('demo', 'binding-demo', 'ui://app/main')).rejects.toThrow(
+      '(403)',
+    );
+  });
+});
+
+describe('getSupportedMCPAppPermissions', () => {
+  it('keeps supported permissions and withholds media from an opaque frame', () => {
+    expect(
+      getSupportedMCPAppPermissions({
+        camera: {},
+        microphone: {},
+        geolocation: {},
+        clipboardWrite: {},
+      }),
+    ).toEqual({ geolocation: {}, clipboardWrite: {} });
+    expect(getSupportedMCPAppPermissions({ camera: {}, microphone: {} })).toBeUndefined();
+    expect(getSupportedMCPAppPermissions(undefined)).toBeUndefined();
   });
 });
 

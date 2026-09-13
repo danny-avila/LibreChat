@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {
   Tools,
+  DEFAULT_MCP_APP_PERSISTED_BYTES,
   MCP_APP_MIME_TYPE,
   isHtmlMediaType,
   isMcpAppMimeType,
@@ -40,6 +41,17 @@ function deriveResourceId(
     toolArgs != null ? JSON.stringify(toolArgs) : '',
   ];
   return generateResourceId(parts.join('\x00'));
+}
+
+function fitsPersistedAppLimit(resource: UIResource, maxBytes: number): boolean {
+  try {
+    return (
+      Buffer.byteLength(JSON.stringify({ [Tools.ui_resources]: { data: [resource] } }), 'utf8') <=
+      maxBytes
+    );
+  } catch {
+    return false;
+  }
 }
 
 function getMCPImageDataMaxBytes(): number {
@@ -318,6 +330,7 @@ export function formatToolContent(
     toolName?: string;
     resourceUri?: string;
     resolvedAppResource?: t.ResourceContents;
+    serverBinding?: string;
     toolArgs?: Record<string, unknown>;
     mcpApps?: TMCPAppsPolicy;
   },
@@ -326,7 +339,12 @@ export function formatToolContent(
   const isRecognizedProvider = RECOGNIZED_PROVIDERS.has(provider);
   // Truthiness, not != null: an empty resourceUri/serverName/toolName cannot address an app, and a
   // single predicate keeps this gate and the synthesis below from drifting apart.
-  const hasSyntheticApp = !!(metadata?.resourceUri && metadata.serverName && metadata.toolName);
+  const hasSyntheticApp = !!(
+    metadata?.resourceUri &&
+    metadata.serverName &&
+    metadata.toolName &&
+    metadata.serverBinding
+  );
   const hasRenderableResource = result?.content?.some((item) => isRenderableUiResource(item));
   if (!isRecognizedProvider && !hasSyntheticApp && !hasRenderableResource) {
     return [parseAsString(result), undefined];
@@ -450,14 +468,15 @@ export function formatToolContent(
     }
   }
 
-  // The declared App document is acquired through resources/read and passed separately. A failed or
-  // unusable read leaves a URI-only descriptor for the existing bounded interactive retry path.
+  // The declared App document is acquired through resources/read and passed separately. Persistence
+  // admission can discard its body while retaining the bound URI descriptor for a later read.
   if (
     hasSyntheticApp &&
     mcpApps.enabled &&
     metadata?.resourceUri &&
     metadata.serverName &&
-    metadata.toolName
+    metadata.toolName &&
+    metadata.serverBinding
   ) {
     const resolvedResource =
       metadata.resolvedAppResource?.uri === metadata.resourceUri &&
@@ -471,31 +490,52 @@ export function formatToolContent(
     } else if (resolvedResource && 'blob' in resolvedResource) {
       resolvedBody = resolvedResource.blob;
     }
-    const resourceId = deriveResourceId(
-      `${metadata.resourceUri}\x00${resolvedBody}`,
-      result,
-      metadata.toolArgs,
-      metadata.serverName,
-      metadata.toolName,
-    );
     const itemUi = (resolvedResource?._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
       | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
       | undefined;
-    uiResources.push({
-      ...resolvedResource,
-      resourceId,
+    const snapshot = {
       uri: metadata.resourceUri,
       mimeType: resolvedResource?.mimeType ?? MCP_APP_MIME_TYPE,
       serverName: metadata.serverName,
+      serverBinding: metadata.serverBinding,
       toolName: metadata.toolName,
       structuredContent: result?.structuredContent,
       content: result?.content,
       toolArgs: metadata.toolArgs,
       isError: result?.isError,
       resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+    };
+    const fullResource: UIResource = {
+      ...resolvedResource,
+      ...snapshot,
+      resourceId: deriveResourceId(
+        `${metadata.resourceUri}\x00${resolvedBody}`,
+        result,
+        metadata.toolArgs,
+        metadata.serverName,
+        metadata.toolName,
+      ),
       csp: itemUi?.csp,
       permissions: itemUi?.permissions,
-    });
+    };
+    const maxBytes = mcpApps.maxPersistedAppBytes ?? DEFAULT_MCP_APP_PERSISTED_BYTES;
+    if (fitsPersistedAppLimit(fullResource, maxBytes)) {
+      uiResources.push(fullResource);
+    } else {
+      const uriResource: UIResource = {
+        ...snapshot,
+        resourceId: deriveResourceId(
+          `${metadata.resourceUri}\x00`,
+          result,
+          metadata.toolArgs,
+          metadata.serverName,
+          metadata.toolName,
+        ),
+      };
+      if (fitsPersistedAppLimit(uriResource, maxBytes)) {
+        uiResources.push(uriResource);
+      }
+    }
   }
 
   if (legacyMarkerCount > 0) {

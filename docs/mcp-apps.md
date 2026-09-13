@@ -12,16 +12,16 @@ The lockfile is the executable version boundary.
 
 ## Support profile
 
-| Area                            | Supported behavior                                                                                                         |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| App resource                    | A tool-linked `ui://` resource with `text/html;profile=mcp-app`, supplied as UTF-8 `text` or base64 `blob`                 |
-| MCP connection                  | Shared, ordinary per-user/custom-variable, MCP OAuth, and direct OpenID connections                                        |
-| View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging |
-| Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                      |
-| Rendering                       | One settled App on its tool-result surface; legacy inline HTML keeps its existing adapter with resize/actions              |
-| History                         | A stored settled result replays its input, unchanged result, and read-derived App document after reload                    |
-| Search and public share         | Search results do not load Apps; public shares omit UI resources and retain ordinary transcript and tool text              |
-| Unsupported connection profiles | OBO, Graph-token placeholders, and request-body credential placeholders do not offer an interactive App View               |
+| Area                            | Supported behavior                                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| App resource                    | A tool-linked `ui://` resource with `text/html;profile=mcp-app`, supplied as UTF-8 `text` or base64 `blob`                  |
+| MCP connection                  | Shared, ordinary per-user/custom-variable, MCP OAuth, and direct OpenID connections                                         |
+| View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging  |
+| Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                       |
+| Rendering                       | One settled App on its tool-result surface; legacy inline HTML keeps its existing adapter with resize/actions               |
+| History                         | A stored settled result replays its input, unchanged result, and App document while its originating server binding is valid |
+| Search and public share         | Search results do not load Apps; public shares omit UI resources and retain ordinary transcript and tool text               |
+| Unsupported connection profiles | OBO, Graph-token placeholders, and request-body credential placeholders do not offer an interactive App View                |
 
 Optional draft features such as sampling, downloads, App-provided tools, state restoration, external
 View URLs, and partial tool input are outside this profile.
@@ -44,13 +44,17 @@ serialized characters. Raise them for Apps that declare more origins or a larger
 mcpAppSandbox:
   maxSourcesPerDirective: 64
   maxSerializedLength: 8192
+  maxPersistedAppBytes: 2097152
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and
 user overrides cannot change them. Apply a limits change across the server and client deployment,
 then reload open chat pages so host link decisions and newly served sandbox responses use the same
 snapshot. Request query parameters contain only the normalized CSP declaration and cannot choose
-their own limits.
+their own limits. `maxPersistedAppBytes` defaults to 1 MiB and can be raised to at most 4 MiB. It
+bounds each complete App attachment added to a message, rather than the whole message document. An
+oversized full document falls back to a bound URI-only descriptor; if that descriptor is still too
+large, LibreChat omits the optional App artifact while preserving ordinary tool output.
 
 MCP App browser routes use independent, per-user, one-minute limits. Configure positive integer
 values at `rateLimits.mcpApps.resourcesPerMinute` and
@@ -86,6 +90,10 @@ declared `connectDomains` through the sandbox response's `form-action` policy. T
 should expose only this sandbox endpoint, not the chat application, session endpoints, or other
 authenticated LibreChat routes.
 
+The opaque inner frame supports requested geolocation and clipboard-write delegation. Camera and
+microphone requests are withheld because browser media capture requires a non-opaque document
+origin; Apps must feature-detect permission availability as required by the MCP Apps protocol.
+
 The outer proxy response CSP is a loader policy that permits its own blob-backed inner frame. Before
 the App document runs, the proxy separately installs the View policy as a CSP meta element inside
 that inner document. The View policy comes from the selected resource's `_meta.ui.csp`; with no
@@ -99,6 +107,15 @@ accepted for compatibility). LibreChat reads that exact URI from the same authen
 connection during the original tool call and persists the selected App-profile document. The tool
 result sent to the View remains unchanged, including any embedded resource body; an embedded body
 does not replace the required `resources/read` document.
+
+Each persisted App also carries an opaque server binding issued from the exact authenticated MCP
+target used by the original call. LibreChat validates that binding before loading stored inline HTML
+and on every later App operation. Changing the server owner, effective endpoint, command, relevant
+custom variables, or configuration generation invalidates existing Views; routine OAuth or bearer
+credential refresh does not. Invalidated and older unbound App attachments remain unavailable and
+never bind by server name to a replacement configuration. The host does not live-revoke a document
+that is already loaded: a remount or page reload validates before loading it again, and every later
+App operation validates independently.
 
 If the initial read fails or returns no usable exact item, the ordinary tool result remains
 successful and LibreChat stores a URI-only unavailable descriptor. An authenticated interactive
@@ -114,17 +131,24 @@ than an invalid server response.
 View requests remain bound to the authenticated user and originating server. The browser-facing
 operations are:
 
-| Method        | Route                                    | Body                                  |
-| ------------- | ---------------------------------------- | ------------------------------------- |
-| Tool call     | `POST /api/mcp/app-tool-call`            | `{ serverName, toolName, arguments }` |
-| Resource read | `POST /api/mcp/resources/read`           | `{ serverName, uri }`                 |
-| Resource list | `POST /api/mcp/resources/list`           | `{ serverName, cursor? }`             |
-| Template list | `POST /api/mcp/resources/templates/list` | `{ serverName, cursor? }`             |
+| Method        | Route                                    | Body                                                 |
+| ------------- | ---------------------------------------- | ---------------------------------------------------- |
+| Binding check | `POST /api/mcp/app/validate`             | `{ serverName, serverBinding }`                      |
+| Tool call     | `POST /api/mcp/app-tool-call`            | `{ serverName, serverBinding, toolName, arguments }` |
+| Resource read | `POST /api/mcp/resources/read`           | `{ serverName, serverBinding, uri }`                 |
+| Resource list | `POST /api/mcp/resources/list`           | `{ serverName, serverBinding, cursor? }`             |
+| Template list | `POST /api/mcp/resources/templates/list` | `{ serverName, serverBinding, cursor? }`             |
 
 Successful routes return the raw MCP SDK result. Invalid requests return HTTP 400, missing
 authentication returns 401, and a policy without MCP Apps enabled returns 403. An auxiliary
 resource read uses the same authenticated server's authority; a View cannot choose another MCP
 connection.
+
+A corrected client validates stored inline HTML before loading it. URI-only history combines
+binding validation and `resources/read` against one resolved target, avoiding a second lookup. An
+older cached client can still display inline HTML after a server upgrade, but corrected backend
+routes reject every bridge operation that omits the binding; same-version client/server deployment
+remains the supported upgrade model.
 
 Standard MCP OAuth callbacks reuse an existing or refreshable user connection. When interactive
 authorization is required, the user starts it through LibreChat's existing MCP UI; an App callback
@@ -141,6 +165,11 @@ declared resource. The browser verifies one initial `resources/read`, execution 
 document, delivery of the unchanged tool result, View-originated tool/resource/list/message
 operations, and reload from the persisted document without another read. A public share must retain
 ordinary transcript and tool text while exposing no UI attachment, frame, or App RPC.
+
+The fixture document begins with a template containing a decoy `head`; successful connection proves
+the host bootstrap was inserted into the active document prolog. It also requests camera,
+microphone, geolocation, and clipboard-write while asserting that only the two permissions supported
+by LibreChat's opaque frame reach either iframe boundary.
 
 A second ordinary App resource permits one link origin; its `openLink` button checks both the SDK
 result and the page the host opens. Keeping the first resource's CSP undeclared lets the browser

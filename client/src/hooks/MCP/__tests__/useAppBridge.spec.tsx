@@ -9,6 +9,7 @@ import {
   listMCPResources,
   listMCPResourceTemplates,
   readMCPResource,
+  validateMCPAppBinding,
 } from '~/utils/mcpApps';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
 import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
@@ -106,7 +107,11 @@ jest.mock('@modelcontextprotocol/ext-apps/app-bridge', () => ({
     post,
     listen,
   })),
-  buildAllowAttribute: () => '',
+  buildAllowAttribute: (permissions?: Record<string, unknown>) =>
+    ['camera', 'microphone', 'geolocation', 'clipboardWrite']
+      .filter((key) => permissions?.[key])
+      .map((key) => (key === 'clipboardWrite' ? 'clipboard-write' : key))
+      .join('; '),
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
@@ -117,6 +122,7 @@ jest.mock('~/utils/mcpApps', () => ({
   readMCPResource: jest.fn(),
   listMCPResources: jest.fn(),
   listMCPResourceTemplates: jest.fn(),
+  validateMCPAppBinding: jest.fn(),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -139,6 +145,9 @@ const mockListResources = listMCPResources as jest.MockedFunction<typeof listMCP
 const mockListTemplates = listMCPResourceTemplates as jest.MockedFunction<
   typeof listMCPResourceTemplates
 >;
+const mockValidateBinding = validateMCPAppBinding as jest.MockedFunction<
+  typeof validateMCPAppBinding
+>;
 const mockReadOnly = useIsMessagesViewReadOnly as jest.MockedFunction<
   typeof useIsMessagesViewReadOnly
 >;
@@ -157,6 +166,7 @@ const makeResource = (overrides: Partial<UIResource> = {}): UIResource =>
     mimeType: 'text/html;profile=mcp-app',
     toolName: 'render',
     serverName: 'demo',
+    serverBinding: 'binding-demo',
     ...overrides,
   }) as UIResource;
 
@@ -186,7 +196,7 @@ function BridgeFrameHarness({ resource, userId }: { resource: UIResource; userId
 function mountBridge(
   resource: UIResource,
   client: QueryClient,
-  callbacks: { onTeardown?: () => void; userId?: string } = {},
+  callbacks: { onFailed?: () => void; onTeardown?: () => void; userId?: string } = {},
 ) {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('data-sandbox-url', SANDBOX_URL);
@@ -209,7 +219,7 @@ function mountBridge(
         onSizeChanged: jest.fn(),
         onLoaded: jest.fn(),
         onTeardown: callbacks.onTeardown ?? jest.fn(),
-        onFailed: jest.fn(),
+        onFailed: callbacks.onFailed ?? jest.fn(),
       }),
     { wrapper },
   );
@@ -238,6 +248,7 @@ describe('useAppBridge', () => {
     mockReadOnly.mockReturnValue(false);
     mockAsk.mockReset();
     mockFetchHtml.mockResolvedValue({ html: '<p>app</p>' });
+    mockValidateBinding.mockResolvedValue();
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     document.body.innerHTML = '';
     document.documentElement.className = '';
@@ -256,7 +267,7 @@ describe('useAppBridge', () => {
         toolName: 'sibling',
       });
       let targetReads = 0;
-      mockFetchHtml.mockImplementation(async (_server, uri) => {
+      mockFetchHtml.mockImplementation(async (_server, _binding, uri) => {
         if (uri === target.uri && targetReads++ === 0) {
           throw new Error('temporary read failure');
         }
@@ -345,7 +356,7 @@ describe('useAppBridge', () => {
           .getQueryCache()
           .getAll()
           .map((query) => query.queryKey)
-          .filter((key) => key[0] === 'mcpAppResourceHtml' && key[2] === target.uri)
+          .filter((key) => key[0] === 'mcpAppResourceHtml' && key[3] === target.uri)
           .map((key) => key.at(-1)),
       ).toEqual([0, 1]);
     });
@@ -407,7 +418,7 @@ describe('useAppBridge', () => {
           .getAll()
           .map((query) => query.queryKey)
           .filter((key) => key[0] === 'mcpAppResourceHtml')
-          .map((key) => key[4]),
+          .map((key) => key[5]),
       ).toEqual(['user-alpha', 'user-beta']);
     });
 
@@ -432,6 +443,133 @@ describe('useAppBridge', () => {
       expect(iframe.src).toContain('/api/mcp/sandbox');
     });
 
+    it('validates persisted inline html before assigning or sending it', async () => {
+      let resolveValidation: () => void = () => {};
+      mockValidateBinding.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveValidation = resolve;
+        }),
+      );
+      const { iframe } = mountBridge(makeResource({ text: '<p>persisted</p>' }), client);
+      await flush();
+
+      expect(latest().connected).not.toBeNull();
+      expect(iframe.getAttribute('src')).toBeNull();
+      expect(latest().resourceReady).toHaveLength(0);
+      expect(mockValidateBinding).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        expect.any(AbortSignal),
+      );
+
+      await act(async () => {
+        resolveValidation();
+        await Promise.resolve();
+      });
+      await flush();
+      expect(iframe.src).toContain('/api/mcp/sandbox');
+
+      await act(async () => latest().emit('sandboxready'));
+      await flush();
+      expect(latest().resourceReady[0].html).toBe('<p>persisted</p>');
+    });
+
+    it('keeps unbound persisted html inert', async () => {
+      const onFailed = jest.fn();
+      const { iframe } = mountBridge(
+        makeResource({ serverBinding: undefined, text: '<p>old app</p>' }),
+        client,
+        { onFailed },
+      );
+      await flush();
+
+      expect(onFailed).toHaveBeenCalledTimes(1);
+      expect(FakeAppBridge.instances).toHaveLength(0);
+      expect(mockValidateBinding).not.toHaveBeenCalled();
+      expect(iframe.getAttribute('src')).toBeNull();
+      expect(iframe.getAttribute('allow')).toBeNull();
+    });
+
+    it('cancels an inline binding validation without loading late html', async () => {
+      let resolveValidation: () => void = () => {};
+      mockValidateBinding.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveValidation = resolve;
+        }),
+      );
+      const { iframe, view } = mountBridge(makeResource({ text: '<p>persisted</p>' }), client);
+      await flush();
+      const requestSignal = mockValidateBinding.mock.calls[0][2];
+
+      act(() => view.unmount());
+      await flush();
+      expect(requestSignal?.aborted).toBe(true);
+
+      await act(async () => {
+        resolveValidation();
+        await Promise.resolve();
+      });
+      expect(iframe.getAttribute('src')).toBeNull();
+      expect(latest().resourceReady).toHaveLength(0);
+    });
+
+    it('unloads an old document while a replacement binding is validated', async () => {
+      let resolveReplacement: () => void = () => {};
+      mockValidateBinding.mockResolvedValueOnce().mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveReplacement = resolve;
+        }),
+      );
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('data-sandbox-url', SANDBOX_URL);
+      document.body.appendChild(iframe);
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot>
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        </RecoilRoot>
+      );
+      const view = renderHook(
+        ({ resource }: { resource: UIResource }) =>
+          useAppBridge({
+            iframeRef: { current: iframe },
+            resource,
+            toolArgs: undefined,
+            toolResult: undefined,
+            attempt: 0,
+            onSizeChanged: jest.fn(),
+          }),
+        {
+          wrapper,
+          initialProps: {
+            resource: makeResource({ serverBinding: 'binding-old', text: '<p>old</p>' }),
+          },
+        },
+      );
+      await flush();
+      expect(iframe.src).toContain('/api/mcp/sandbox');
+      const oldBridge = latest();
+
+      view.rerender({
+        resource: makeResource({ serverBinding: 'binding-new', text: '<p>new</p>' }),
+      });
+      await flush();
+
+      expect(oldBridge.closed).toBe(true);
+      expect(iframe.getAttribute('src')).toBeNull();
+      expect(mockValidateBinding).toHaveBeenLastCalledWith(
+        'demo',
+        'binding-new',
+        expect.any(AbortSignal),
+      );
+
+      await act(async () => {
+        resolveReplacement();
+        await Promise.resolve();
+      });
+      await flush();
+      expect(iframe.src).toContain('/api/mcp/sandbox');
+    });
+
     it('carries the resolved csp to the sandbox response boundary', async () => {
       mockFetchHtml.mockResolvedValue({
         html: '<p>app</p>',
@@ -442,6 +580,40 @@ describe('useAppBridge', () => {
 
       const csp = new URL(iframe.src).searchParams.get('csp');
       expect(JSON.parse(csp as string)).toEqual({ connectDomains: ['https://api.example.com'] });
+    });
+
+    it('forwards only permissions supported by the opaque inner frame', async () => {
+      mockFetchHtml.mockResolvedValue({
+        html: '<p>app</p>',
+        permissions: {
+          camera: {},
+          microphone: {},
+          geolocation: {},
+          clipboardWrite: {},
+        },
+      });
+      const { iframe } = mountBridge(makeResource(), client);
+      await flush();
+
+      expect(iframe.getAttribute('allow')).toBe('geolocation; clipboard-write');
+      await act(async () => latest().emit('sandboxready'));
+      await flush();
+      expect(latest().resourceReady[0].permissions).toEqual({
+        geolocation: {},
+        clipboardWrite: {},
+      });
+    });
+
+    it('removes an ineffective media-only allow attribute', async () => {
+      mockFetchHtml.mockResolvedValue({
+        html: '<p>app</p>',
+        permissions: { camera: {}, microphone: {} },
+      });
+      const { iframe } = mountBridge(makeResource(), client);
+      iframe.setAttribute('allow', 'camera; microphone');
+      await flush();
+
+      expect(iframe.getAttribute('allow')).toBeNull();
     });
 
     it('sends the resource once even when the proxy announces twice', async () => {
@@ -466,7 +638,7 @@ describe('useAppBridge', () => {
       );
       const { iframe, view } = mountBridge(makeResource(), client);
       await flush();
-      const requestSignal = mockFetchHtml.mock.calls[0][2];
+      const requestSignal = mockFetchHtml.mock.calls[0][3];
       act(() => view.unmount());
       await flush();
 
@@ -506,7 +678,7 @@ describe('useAppBridge', () => {
         resolve: (value: { html: string }) => void;
       }> = [];
       mockFetchHtml.mockImplementation(
-        (_server, _uri, signal) =>
+        (_server, _binding, _uri, signal) =>
           new Promise((resolve) => requests.push({ signal, resolve })) as ReturnType<
             typeof fetchMCPResourceHtml
           >,
@@ -649,6 +821,11 @@ describe('useAppBridge', () => {
       await flush();
 
       expect(mockFetchHtml).not.toHaveBeenCalled();
+      expect(mockValidateBinding).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        expect.any(AbortSignal),
+      );
       expect(latest().resourceReady[0].html).toBe('<p>inline</p>');
       expect(latest().capabilities.serverTools).toBeUndefined();
       expect(latest().capabilities.openLinks).toEqual({});
@@ -793,10 +970,21 @@ describe('useAppBridge', () => {
       await latest().onlistresources?.({ cursor: 'a' }, extra);
       await latest().onlistresourcetemplates?.({ cursor: 'b' }, extra);
 
-      expect(mockCallTool).toHaveBeenCalledWith('demo', 'next', { q: 2 }, extra.signal);
-      expect(mockReadResource).toHaveBeenCalledWith('demo', 'ui://detail', extra.signal);
-      expect(mockListResources).toHaveBeenCalledWith('demo', 'a', extra.signal);
-      expect(mockListTemplates).toHaveBeenCalledWith('demo', 'b', extra.signal);
+      expect(mockCallTool).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'next',
+        { q: 2 },
+        extra.signal,
+      );
+      expect(mockReadResource).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'ui://detail',
+        extra.signal,
+      );
+      expect(mockListResources).toHaveBeenCalledWith('demo', 'binding-demo', 'a', extra.signal);
+      expect(mockListTemplates).toHaveBeenCalledWith('demo', 'binding-demo', 'b', extra.signal);
     });
 
     it('reports unsupported or rejected message delivery as an error', async () => {

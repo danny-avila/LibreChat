@@ -22,6 +22,23 @@ export type AppToolResult = {
   _meta?: Record<string, unknown>;
 };
 
+/** Browser capabilities supported by LibreChat's deliberately opaque inner App frame. */
+export function getSupportedMCPAppPermissions(
+  permissions: UIResource['permissions'],
+): UIResource['permissions'] {
+  if (!permissions) {
+    return undefined;
+  }
+  const supported: NonNullable<UIResource['permissions']> = {};
+  if (permissions.geolocation) {
+    supported.geolocation = {};
+  }
+  if (permissions.clipboardWrite) {
+    supported.clipboardWrite = {};
+  }
+  return Object.keys(supported).length > 0 ? supported : undefined;
+}
+
 /**
  * An MCP App resource is server-bound and declares the MCP Apps HTML profile
  * (`text/html;profile=mcp-app`). Only these run the App Bridge handshake; plain `text/html`
@@ -178,6 +195,7 @@ async function postMCPAppRequest<T>(
 
 export async function callMCPAppTool(
   serverName: string,
+  serverBinding: string,
   toolName: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
@@ -186,6 +204,7 @@ export async function callMCPAppTool(
     '/api/mcp/app-tool-call',
     {
       serverName,
+      serverBinding,
       toolName,
       arguments: args,
     },
@@ -195,26 +214,52 @@ export async function callMCPAppTool(
 
 export async function readMCPResource(
   serverName: string,
+  serverBinding: string,
   uri: string,
   signal?: AbortSignal,
 ): Promise<ReadResourceResult> {
-  return postMCPAppRequest('/api/mcp/resources/read', { serverName, uri }, signal);
+  return postMCPAppRequest('/api/mcp/resources/read', { serverName, serverBinding, uri }, signal);
 }
 
 export async function listMCPResources(
   serverName: string,
+  serverBinding: string,
   cursor?: string,
   signal?: AbortSignal,
 ): Promise<ListResourcesResult> {
-  return postMCPAppRequest('/api/mcp/resources/list', { serverName, cursor }, signal);
+  return postMCPAppRequest(
+    '/api/mcp/resources/list',
+    { serverName, serverBinding, cursor },
+    signal,
+  );
 }
 
 export async function listMCPResourceTemplates(
   serverName: string,
+  serverBinding: string,
   cursor?: string,
   signal?: AbortSignal,
 ): Promise<ListResourceTemplatesResult> {
-  return postMCPAppRequest('/api/mcp/resources/templates/list', { serverName, cursor }, signal);
+  return postMCPAppRequest(
+    '/api/mcp/resources/templates/list',
+    { serverName, serverBinding, cursor },
+    signal,
+  );
+}
+
+export async function validateMCPAppBinding(
+  serverName: string,
+  serverBinding: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const result = await postMCPAppRequest<{ valid?: boolean }>(
+    '/api/mcp/app/validate',
+    { serverName, serverBinding },
+    signal,
+  );
+  if (result.valid !== true) {
+    throw new Error('MCP App server binding is no longer valid');
+  }
 }
 
 type ResourceUiMeta = {
@@ -385,6 +430,7 @@ export function getInlineResourceHtml(resource: UIResource): string | undefined 
 
 export async function fetchMCPResourceHtml(
   serverName: string,
+  serverBinding: string,
   uri: string,
   signal?: AbortSignal,
 ): Promise<{
@@ -392,7 +438,7 @@ export async function fetchMCPResourceHtml(
   csp?: ResourceUiMeta['csp'];
   permissions?: ResourceUiMeta['permissions'];
 }> {
-  const result = (await readMCPResource(serverName, uri, signal)) as {
+  const result = (await readMCPResource(serverName, serverBinding, uri, signal)) as {
     contents?: Array<{
       uri?: string;
       mimeType?: string;

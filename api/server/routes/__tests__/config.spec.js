@@ -360,6 +360,7 @@ describe('GET /api/config', () => {
       expect(response.body.mcpApps).toEqual({
         ...expected,
         cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+        maxPersistedAppBytes: 1048576,
       });
     });
 
@@ -375,6 +376,7 @@ describe('GET /api/config', () => {
         enabled: true,
         legacyHtmlEnabled: true,
         cspLimits: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+        maxPersistedAppBytes: 1048576,
       });
     });
 

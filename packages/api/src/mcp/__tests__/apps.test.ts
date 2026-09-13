@@ -15,6 +15,7 @@ import {
   resolveEffectiveAppServerConfig,
 } from '../apps';
 import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '../errors';
+import { createMCPAppBindingCodec, projectMCPAppRuntimeTarget } from '../apps/binding';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 import { getPluginAuthMap } from '~/agents/auth';
 
@@ -30,6 +31,39 @@ const tool = (visibility?: unknown): ToolWithMeta =>
     name: 'do_thing',
     ...(visibility === undefined ? {} : { _meta: { ui: { visibility } } }),
   }) as ToolWithMeta;
+
+describe('MCP App server bindings', () => {
+  const connectionTarget = {
+    serverConfig: {
+      source: 'yaml' as const,
+      type: 'sse' as const,
+      url: 'https://mcp.example.com',
+    },
+    connectionOwner: 'operator' as const,
+  };
+  const subject = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    serverName: 'srv',
+    connectionTarget,
+    runtimeTarget: projectMCPAppRuntimeTarget(connectionTarget.serverConfig),
+  };
+
+  it('validates only the same opaque user, config, and resolved runtime target', () => {
+    const codec = createMCPAppBindingCodec('secret');
+    const binding = codec.create(subject);
+
+    expect(binding).toMatch(/^v1\.[A-Za-z0-9_-]+$/);
+    expect(codec.verify(binding, subject)).toBe(true);
+    expect(codec.verify(binding, { ...subject, userId: 'user-2' })).toBe(false);
+    expect(
+      codec.verify(binding, {
+        ...subject,
+        runtimeTarget: { type: 'sse', url: 'https://replacement.example.com' },
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('tool visibility', () => {
   describe('isToolHiddenFromApp', () => {
@@ -86,6 +120,7 @@ describe('App request config and auth resolution', () => {
     const ctx = await resolveAppRequestContext({
       user,
       serverName: 'srv',
+      serverBinding: 'binding',
       resolveServerConfig: () =>
         Promise.resolve({
           serverConfig: { type: 'sse', url: 'https://a.example.com' },
@@ -111,6 +146,7 @@ describe('App request config and auth resolution', () => {
       resolveAppRequestContext({
         user,
         serverName: 'srv',
+        serverBinding: 'binding',
         resolveServerConfig: () => Promise.reject(new Error('config unavailable')),
         findPluginAuthsByKeys,
         flowManager,
@@ -126,6 +162,7 @@ describe('App request config and auth resolution', () => {
       resolveAppRequestContext({
         user,
         serverName: 'srv',
+        serverBinding: 'binding',
         resolveServerConfig: () =>
           Promise.resolve({
             serverConfig: { type: 'sse', url: 'https://a.example.com' },
@@ -145,6 +182,7 @@ describe('App request config and auth resolution', () => {
     const ctx = await resolveAppRequestContext({
       user,
       serverName: 'srv',
+      serverBinding: 'binding',
       resolveServerConfig: () =>
         Promise.resolve({
           serverConfig: { type: 'sse', url: 'https://a.example.com' },
@@ -169,6 +207,7 @@ describe('App request config and auth resolution', () => {
       resolveAppRequestContext({
         user,
         serverName: 'srv',
+        serverBinding: 'binding',
         resolveServerConfig: () => Promise.resolve(undefined),
         findPluginAuthsByKeys,
         flowManager,
@@ -350,6 +389,7 @@ describe('app proxy input validation', () => {
     readResource: jest.fn(),
     listResources: jest.fn(),
     listResourceTemplates: jest.fn(),
+    validateAppBinding: jest.fn(),
     appToolCall: jest.fn(),
   } as jest.Mocked<MCPAppsProxyManager>;
   const context = { serverName: 'srv' } as MCPAppRequestContext;

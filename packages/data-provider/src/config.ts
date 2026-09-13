@@ -2209,21 +2209,29 @@ export type TMCPAppsPolicy = {
   enabled: boolean;
   legacyHtmlEnabled: boolean;
   cspLimits?: MCPAppCspLimits;
+  /** Server-enforced UTF-8 JSON byte cap for one persisted MCP App artifact. */
+  maxPersistedAppBytes?: number;
 };
+
+export const DEFAULT_MCP_APP_PERSISTED_BYTES = 1024 * 1024;
+export const MAX_MCP_APP_PERSISTED_BYTES = 4 * 1024 * 1024;
 
 export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
   enabled: false,
   legacyHtmlEnabled: false,
+  maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
 };
 
 export function resolveMCPAppsPolicy(
   value?: boolean,
   cspLimits?: Partial<MCPAppCspLimits>,
+  maxPersistedAppBytes = DEFAULT_MCP_APP_PERSISTED_BYTES,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
     legacyHtmlEnabled: value !== false,
     ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
+    maxPersistedAppBytes,
   };
 }
 
@@ -2841,6 +2849,12 @@ export const configSchema = z.object({
         .positive()
         .max(Number.MAX_SAFE_INTEGER)
         .default(DEFAULT_MCP_APP_CSP_LIMITS.maxSerializedLength),
+      maxPersistedAppBytes: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_MCP_APP_PERSISTED_BYTES)
+        .default(DEFAULT_MCP_APP_PERSISTED_BYTES),
     })
     .default({}),
   mcpSettings: z

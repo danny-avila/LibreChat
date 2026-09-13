@@ -23,6 +23,12 @@ import {
   requiresUserScopedConnection,
   resolveServerInstructions,
 } from './utils';
+import {
+  projectMCPAppRuntimeTarget,
+  type MCPAppBindingCodec,
+  type MCPAppBindingSubject,
+  type MCPAppRuntimeTarget,
+} from './apps/binding';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
@@ -165,6 +171,7 @@ export class MCPManager extends UserConnectionManager {
   constructor(
     catalogRecoveryMaxStateEntries?: number,
     catalogRecoveryMaxDetachedDiscoveries?: number,
+    private readonly appBindingCodec?: MCPAppBindingCodec,
   ) {
     super();
     this.catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker(
@@ -189,12 +196,14 @@ export class MCPManager extends UserConnectionManager {
     options?: {
       catalogRecoveryMaxStateEntries?: number;
       catalogRecoveryMaxDetachedDiscoveries?: number;
+      appBindingCodec?: MCPAppBindingCodec;
     },
   ): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
     MCPManager.instance = new MCPManager(
       options?.catalogRecoveryMaxStateEntries,
       options?.catalogRecoveryMaxDetachedDiscoveries,
+      options?.appBindingCodec,
     );
     await MCPManager.instance.initialize(configs);
     return MCPManager.instance;
@@ -422,7 +431,30 @@ export class MCPManager extends UserConnectionManager {
     return true;
   }
 
-  /** Retrieves an app-level or user-specific connection based on provided arguments */
+  private async resolveCheckoutTarget(args: {
+    serverName: string;
+    user?: IUser;
+    connectionTarget?: t.MCPConnectionTarget;
+    serverConfig?: t.ParsedServerConfig;
+  }): Promise<t.MCPConnectionTarget | undefined> {
+    if (args.connectionTarget) {
+      return args.connectionTarget;
+    }
+    const registry = MCPServersRegistry.getInstance();
+    const resolvedConfig =
+      args.serverConfig ?? (await registry.getServerConfig(args.serverName, args.user?.id));
+    if (!resolvedConfig) {
+      return undefined;
+    }
+    return {
+      serverConfig: resolvedConfig,
+      connectionOwner: (await registry.isAppServerConfig(args.serverName, resolvedConfig))
+        ? 'operator'
+        : 'principal',
+    };
+  }
+
+  /** Retrieves an app-level or user-specific connection based on provided arguments. */
   public async getConnection(
     args: {
       serverName: string;
@@ -439,22 +471,7 @@ export class MCPManager extends UserConnectionManager {
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     const userId = args.user?.id;
-    const registry = MCPServersRegistry.getInstance();
-    const resolvedConfig =
-      args.serverConfig ??
-      (args.connectionTarget == null
-        ? await registry.getServerConfig(args.serverName, userId)
-        : undefined);
-    const connectionTarget =
-      args.connectionTarget ??
-      (resolvedConfig
-        ? {
-            serverConfig: resolvedConfig,
-            connectionOwner: (await registry.isAppServerConfig(args.serverName, resolvedConfig))
-              ? ('operator' as const)
-              : ('principal' as const),
-          }
-        : undefined);
+    const connectionTarget = await this.resolveCheckoutTarget(args);
     if (
       connectionTarget &&
       userId &&
@@ -489,6 +506,25 @@ export class MCPManager extends UserConnectionManager {
       ErrorCode.InvalidRequest,
       `No connection found for server ${args.serverName}`,
     );
+  }
+
+  /** Checks out a connection together with the exact target used to create or reuse it. */
+  private async checkoutConnection(
+    args: Parameters<MCPManager['getConnection']>[0],
+  ): Promise<{ connection: MCPConnection; connectionTarget: t.MCPConnectionTarget }> {
+    const connectionTarget = await this.resolveCheckoutTarget(args);
+    if (!connectionTarget) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `No connection found for server ${args.serverName}`,
+      );
+    }
+    const connection = await this.getConnection({
+      ...args,
+      serverConfig: undefined,
+      connectionTarget,
+    });
+    return { connection, connectionTarget };
   }
 
   /**
@@ -1386,6 +1422,7 @@ Please follow these instructions when using tools from the respective MCP server
     while (true) {
       /** User-specific connection */
       let connection: MCPConnection | undefined;
+      let checkedOutTarget: t.MCPConnectionTarget | undefined;
       let connectionRetained = false;
       let deferredDisposalHeld = false;
       let attachSharedOAuthHandler: ((relay: OAuthLifecycleRelay) => () => void) | undefined;
@@ -1428,7 +1465,7 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         let awaitedCheckoutRecovery: Promise<void> | undefined;
         while (true) {
-          connection = await this.getConnection({
+          ({ connection, connectionTarget: checkedOutTarget } = await this.checkoutConnection({
             serverName,
             user,
             flowManager,
@@ -1448,7 +1485,7 @@ Please follow these instructions when using tools from the respective MCP server
             requestScopedConnections,
             serverConfig: providedConfig,
             directBearerRecoveryState,
-          });
+          }));
           retainConnectionLease();
           const checkoutRecovery = this.oauthRecoveries.get(connection);
           if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
@@ -1913,6 +1950,23 @@ Please follow these instructions when using tools from the respective MCP server
           }
         }
 
+        const serverBinding =
+          resourceMeta && connection && checkedOutTarget && userId && this.appBindingCodec
+            ? this.appBindingCodec.create(
+                this.getAppBindingSubject(
+                  serverName,
+                  userId,
+                  user?.tenantId,
+                  checkedOutTarget,
+                  connection,
+                ),
+              )
+            : undefined;
+        if (resourceMeta && !serverBinding) {
+          resourceMeta = undefined;
+          resolvedAppResource = undefined;
+        }
+
         return formatToolContent(
           toolResult,
           provider,
@@ -1922,6 +1976,7 @@ Please follow these instructions when using tools from the respective MCP server
                 toolName,
                 resourceUri: resourceMeta?.uri,
                 resolvedAppResource,
+                serverBinding,
                 toolArgs: toolArguments,
                 mcpApps,
               }
@@ -2019,7 +2074,7 @@ Please follow these instructions when using tools from the respective MCP server
       };
 
       try {
-        connection = await this.getConnection({
+        ({ connection } = await this.checkoutConnection({
           serverName,
           user,
           connectionTarget,
@@ -2030,7 +2085,7 @@ Please follow these instructions when using tools from the respective MCP server
           onOAuthCredentialsChanging,
           directBearerRecoveryState,
           signal,
-        });
+        }));
         this.retainConnection(connection);
         retained = true;
 
@@ -2062,6 +2117,11 @@ Please follow these instructions when using tools from the respective MCP server
         const headers: Record<string, string> =
           'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
         connection.setRequestHeaders(headers);
+        this.assertAppServerBinding(
+          context,
+          connection,
+          projectMCPAppRuntimeTarget(currentOptions),
+        );
 
         const recover = async (error: unknown): Promise<void> => {
           if (directBearerRecoveryState.attempted) {
@@ -2118,6 +2178,51 @@ Please follow these instructions when using tools from the respective MCP server
         await release();
       }
     }
+  }
+
+  private getAppBindingSubject(
+    serverName: string,
+    userId: string,
+    tenantId: unknown,
+    connectionTarget: t.MCPConnectionTarget,
+    connection: MCPConnection,
+  ): MCPAppBindingSubject {
+    return {
+      serverName,
+      userId,
+      tenantId: typeof tenantId === 'string' ? tenantId : null,
+      connectionTarget,
+      runtimeTarget: connection.getMCPAppRuntimeTarget(),
+    };
+  }
+
+  private assertAppServerBinding(
+    context: MCPAppOperationContext,
+    connection: MCPConnection,
+    currentRuntimeTarget: MCPAppRuntimeTarget,
+  ): void {
+    const currentSubject = this.getAppBindingSubject(
+      context.serverName,
+      context.user.id,
+      context.user.tenantId,
+      context.connectionTarget,
+      connection,
+    );
+    const currentTargetMatches = this.appBindingCodec?.verify(context.serverBinding, {
+      ...currentSubject,
+      runtimeTarget: currentRuntimeTarget,
+    });
+    const connectionMatches = this.appBindingCodec?.verify(context.serverBinding, currentSubject);
+    if (!currentTargetMatches || !connectionMatches) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `MCP App binding for server "${context.serverName}" is no longer valid.`,
+      );
+    }
+  }
+
+  async validateAppBinding(context: MCPAppOperationContext): Promise<{ valid: true }> {
+    return this.runAppOperation(context, async () => ({ valid: true }));
   }
 
   async readResource({

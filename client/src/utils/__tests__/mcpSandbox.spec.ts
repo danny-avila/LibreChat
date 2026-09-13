@@ -323,10 +323,12 @@ describe('mcp-sandbox proxy', () => {
       expect(sandbox.frame()?.getAttribute('sandbox')).toBe('allow-scripts allow-pointer-lock');
     });
 
-    it('maps declared permissions onto the allow attribute', () => {
+    it('withholds media permissions that an opaque inner frame cannot use', () => {
       const sandbox = loadSandbox();
-      sandbox.deliverResource({ permissions: { clipboardWrite: {}, geolocation: {} } });
-      expect(sandbox.frame()?.getAttribute('allow')).toBe('clipboard-write; geolocation');
+      sandbox.deliverResource({
+        permissions: { camera: {}, microphone: {}, clipboardWrite: {}, geolocation: {} },
+      });
+      expect(sandbox.frame()?.getAttribute('allow')).toBe('geolocation; clipboard-write');
     });
 
     it.each([
@@ -360,21 +362,21 @@ describe('mcp-sandbox proxy', () => {
         '<!-- template includes <head> --><html><head></head><body>app</body></html>',
         '<html><head>',
       ],
-      ['<!doctype html><!-- <head> --><body>app</body>', '<!doctype html>'],
+      ['<!doctype html><!-- <head> --><body>app</body>', '<!-- <head> -->'],
       ['<!doctype html><!-- <head>', '<!doctype html>'],
       [
         '<!doctype html><html><head></head><body><script>var s="<head>";</script></body></html>',
         '<head>',
       ],
-      [
-        '<!doctype html><html><body><script>var s="<head>";</script></body></html>',
-        '<!doctype html>',
-      ],
+      ['<!doctype html><html><body><script>var s="<head>";</script></body></html>', '<html>'],
       ['<!doctype html><HTML><HEAD></HEAD><body>a</body></HTML>', '<HEAD>'],
       ['<!doctype html><html><head data-x="1"></head><body>a</body></html>', '<head data-x="1">'],
-      ['<!doctype html><html><body><div title="<head>"></div></body></html>', '<!doctype html>'],
+      ['<!doctype html><html><body><div title="<head>"></div></body></html>', '<html>'],
+      ['<template><head></head></template><p>app</p>', ''],
+      ['<!doctype html><!-- lead --><template><head></head></template><p>app</p>', '<!-- lead -->'],
+      ['<!doctype html><html><template><template><head></head></template></template>', '<html>'],
       ['<p>bare</p>', ''],
-    ])('injects the bootstrap at the first parsed head (%s)', (html, marker) => {
+    ])('injects into the document head or active prolog (%s)', (html, marker) => {
       const sandbox = loadSandbox();
       sandbox.deliverResource({ html });
       const blob = sandbox.blobs[0];
@@ -385,6 +387,16 @@ describe('mcp-sandbox proxy', () => {
       expect(injection).not.toBe('');
       const at = marker === '' ? 0 : html.indexOf(marker) + marker.length;
       expect(blob).toBe(html.slice(0, at) + injection + html.slice(at));
+    });
+
+    it('keeps a quoted doctype and leading comment ahead of the bootstrap', () => {
+      const sandbox = loadSandbox();
+      const prefix = '<!-- lead --><!doctype html PUBLIC "example>public" "example>system">';
+      const html = `${prefix}<template><head></head></template>`;
+      sandbox.deliverResource({ html });
+      expect(sandbox.blobs[0]).toMatch(
+        /^<!-- lead --><!doctype html PUBLIC "example>public" "example>system"><meta /,
+      );
     });
 
     it('mints a distinct nonce per document', () => {

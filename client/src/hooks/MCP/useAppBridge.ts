@@ -15,6 +15,8 @@ import {
   readMCPResource,
   listMCPResources,
   listMCPResourceTemplates,
+  validateMCPAppBinding,
+  getSupportedMCPAppPermissions,
   getInlineResourceHtml,
   isAllowedAppLink,
   withSandboxCsp,
@@ -128,9 +130,20 @@ export function useAppBridge({
     const iframe = iframeRef.current;
     const serverName = resource.serverName;
     if (!iframe || !serverName || !active) return;
+    const serverBinding = resource.serverBinding;
+    if (!serverBinding) {
+      iframe.removeAttribute('src');
+      iframe.removeAttribute('allow');
+      onFailedRef.current?.();
+      return;
+    }
     const frameWindow = iframe.contentWindow;
     if (!frameWindow) return;
 
+    // A retry or binding change must unload the prior document before validating its replacement.
+    // The WindowProxy remains stable across the about:blank navigation used by removing src.
+    iframe.removeAttribute('src');
+    iframe.removeAttribute('allow');
     effectiveCspRef.current = undefined;
     // Unmount, a resource switch, or a teardown can run cleanup while a read or bridge.connect() is
     // still pending; this flag stops the pending continuation from touching a disposed bridge.
@@ -143,6 +156,7 @@ export function useAppBridge({
     const resourceQueryKey = [
       QueryKeys.mcpAppResourceHtml,
       serverName,
+      serverBinding,
       resource.uri,
       resource.resourceId,
       userId,
@@ -164,6 +178,17 @@ export function useAppBridge({
         logger.warn('[MCP App] Declared csp could not be delivered to the sandbox response');
       }
       iframe.src = url;
+    };
+
+    const applyOuterPermissions = (permissions: UIResource['permissions']) => {
+      const allowAttr = buildAllowAttribute(
+        permissions as Parameters<typeof buildAllowAttribute>[0],
+      );
+      if (allowAttr) {
+        iframe.setAttribute('allow', allowAttr);
+      } else {
+        iframe.removeAttribute('allow');
+      }
     };
 
     // The WindowProxy identity survives the frame's navigation, so the transport is bound and
@@ -247,19 +272,20 @@ export function useAppBridge({
       bridge.oncalltool = async (params, { signal }) =>
         callMCPAppTool(
           serverName,
+          serverBinding,
           params.name,
           (params.arguments as Record<string, unknown>) ?? {},
           signal,
         );
 
       bridge.onreadresource = async (params, { signal }) =>
-        readMCPResource(serverName, params.uri, signal);
+        readMCPResource(serverName, serverBinding, params.uri, signal);
 
       bridge.onlistresources = async (params, { signal }) =>
-        listMCPResources(serverName, params?.cursor, signal);
+        listMCPResources(serverName, serverBinding, params?.cursor, signal);
 
       bridge.onlistresourcetemplates = async (params, { signal }) =>
-        listMCPResourceTemplates(serverName, params?.cursor, signal);
+        listMCPResourceTemplates(serverName, serverBinding, params?.cursor, signal);
 
       bridge.onmessage = async ({ content }, { signal }) => {
         const text = (content as MessageContentBlock[])
@@ -285,9 +311,21 @@ export function useAppBridge({
     const resolveResource = async (): Promise<ResolvedResource | null> => {
       const inlineHtml = getInlineResourceHtml(resource);
       // Inline mcp-app resources already carry their HTML, so use it directly instead of a
-      // resources/read round trip; resourceUri-only apps are fetched from the server.
+      // resources/read round trip, but validate their persisted server binding before loading it.
       if (inlineHtml) {
-        return { html: inlineHtml, csp: resource.csp, permissions: resource.permissions };
+        await queryClient.fetchQuery({
+          queryKey: resourceQueryKey,
+          queryFn: async ({ signal }) => {
+            await validateMCPAppBinding(serverName, serverBinding, signal);
+            return true;
+          },
+          staleTime: 0,
+        });
+        return {
+          html: inlineHtml,
+          csp: resource.csp,
+          permissions: getSupportedMCPAppPermissions(resource.permissions),
+        };
       }
       // Read-only views must not resolve app HTML from the viewer's MCP server.
       if (readOnly) {
@@ -301,13 +339,14 @@ export function useAppBridge({
         // cache entry. The View ID owns cancellation, while the remaining fields retain server,
         // resource, persisted-call, and user scope; zero stale time makes every later mount re-read.
         queryKey: resourceQueryKey,
-        queryFn: ({ signal }) => fetchMCPResourceHtml(serverName, resource.uri, signal),
+        queryFn: ({ signal }) =>
+          fetchMCPResourceHtml(serverName, serverBinding, resource.uri, signal),
         staleTime: 0,
       });
       return {
         html: fetched.html,
         csp: fetched.csp,
-        permissions: fetched.permissions,
+        permissions: getSupportedMCPAppPermissions(fetched.permissions),
       };
     };
 
@@ -325,18 +364,13 @@ export function useAppBridge({
           throw new Error('Resource returned no HTML');
         }
         resolved = next;
+        applyOuterPermissions(next.permissions);
         // A retry that resolved a csp the current sandbox document was not served with would run the
         // app under the restrictive default policy; reload the document with the declared domains
         // and let its own announcement deliver the resource.
         if (next.csp && next.csp !== srcCsp) {
           assignSandboxSrc(next.csp);
           return;
-        }
-        if (next.permissions) {
-          const updatedAllow = buildAllowAttribute(
-            next.permissions as Parameters<typeof buildAllowAttribute>[0],
-          );
-          if (updatedAllow) iframe.setAttribute('allow', updatedAllow);
         }
         resourceSent = true;
         await bridge.sendSandboxResourceReady({
@@ -404,11 +438,6 @@ export function useAppBridge({
       logger.debug('[MCP App]', level, data);
     });
 
-    const allowAttr = buildAllowAttribute(
-      resource.permissions as Parameters<typeof buildAllowAttribute>[0],
-    );
-    if (allowAttr) iframe.setAttribute('allow', allowAttr);
-
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['class'],
@@ -442,6 +471,7 @@ export function useAppBridge({
         return;
       }
       resolved = next;
+      applyOuterPermissions(next?.permissions);
       // A failed read still loads the sandbox document: its re-announcements are the only retry
       // signal, and a later resolve reloads it with the declared domains.
       if (next || !readOnly) {
@@ -459,6 +489,7 @@ export function useAppBridge({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     resource.resourceId,
+    resource.serverBinding,
     resource.uri,
     resource.serverName,
     active,

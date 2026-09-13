@@ -3,6 +3,7 @@ const mockController = {
   listMCPResources: jest.fn(),
   listMCPResourceTemplates: jest.fn(),
   appToolCall: jest.fn(),
+  validateMCPApp: jest.fn(),
   serveMCPSandbox: jest.fn(),
   requireMCPAppsEnabled: jest.fn(),
 };

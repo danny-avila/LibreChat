@@ -34,6 +34,7 @@ export type AuthenticatedMCPAppUser = IUser & { id: string };
 
 export interface MCPAppOperationContext {
   serverName: string;
+  serverBinding: string;
   user: AuthenticatedMCPAppUser;
   connectionTarget: t.MCPConnectionTarget;
   customUserVars?: Record<string, string>;
@@ -77,6 +78,7 @@ export function isToolHiddenFromModel(tool: ToolWithMeta): boolean {
 
 /** Declared here rather than importing MCPManager to avoid a circular import. */
 export interface MCPAppsProxyManager {
+  validateAppBinding(args: MCPAppOperationContext): Promise<{ valid: true }>;
   readResource(args: MCPAppOperationContext & { uri: string }): Promise<unknown>;
   listResources(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
   listResourceTemplates(args: MCPAppOperationContext & { cursor?: string }): Promise<unknown>;
@@ -145,6 +147,7 @@ export async function resolveEffectiveAppServerConfig({
  */
 export async function resolveAppRequestContext({
   serverName,
+  serverBinding,
   user,
   resolveServerConfig,
   findPluginAuthsByKeys,
@@ -156,6 +159,7 @@ export async function resolveAppRequestContext({
 }: {
   user: AuthenticatedMCPAppUser;
   serverName: string;
+  serverBinding: unknown;
   resolveServerConfig: () => Promise<t.MCPConnectionTarget | undefined>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
   flowManager: FlowStateManager<MCPOAuthTokens | null>;
@@ -165,6 +169,9 @@ export async function resolveAppRequestContext({
   signal?: AbortSignal;
 }): Promise<MCPAppRequestContext> {
   const userId = user.id;
+  if (typeof serverBinding !== 'string' || serverBinding.length === 0) {
+    throw new McpError(ErrorCode.InvalidRequest, 'serverBinding must be a non-empty string');
+  }
   const [connectionTarget, userMCPAuthMap] = await Promise.all([
     resolveServerConfig(),
     getUserMCPAuthMap({
@@ -189,6 +196,7 @@ export async function resolveAppRequestContext({
   signal?.throwIfAborted();
   return {
     serverName,
+    serverBinding,
     user,
     connectionTarget,
     customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
@@ -198,6 +206,13 @@ export async function resolveAppRequestContext({
     onOAuthCredentialsChanging,
     signal,
   };
+}
+
+export async function validateAppServerBinding(
+  manager: MCPAppsProxyManager,
+  ctx: MCPAppRequestContext,
+): Promise<{ valid: true }> {
+  return manager.validateAppBinding(ctx);
 }
 
 /** A denied app request is an expected client error, not a host fault. */

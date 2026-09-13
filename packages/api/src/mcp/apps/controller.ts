@@ -12,6 +12,7 @@ import {
   listAppResources,
   listAppResourceTemplates,
   callAppTool,
+  validateAppServerBinding,
   buildAppProxyErrorResponse,
   isDeniedAppRequest,
   resolveAppRequestContext,
@@ -21,6 +22,7 @@ import { buildSandboxResponse } from '../sandbox';
 
 interface MCPAppsBody {
   serverName?: unknown;
+  serverBinding?: unknown;
   uri?: unknown;
   cursor?: unknown;
   toolName?: unknown;
@@ -144,6 +146,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
   listMCPResources: RequestHandler;
   listMCPResourceTemplates: RequestHandler;
   appToolCall: RequestHandler;
+  validateMCPApp: RequestHandler;
   serveMCPSandbox: RequestHandler;
   requireMCPAppsEnabled: RequestHandler;
 } {
@@ -185,6 +188,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
         const context = await resolveAppRequestContext({
           user,
           serverName,
+          serverBinding: body.serverBinding,
           resolveServerConfig: () =>
             resolveEffectiveAppServerConfig({
               serverName,
@@ -220,6 +224,11 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     label: 'readMCPResource',
     fallback: 'Failed to read resource',
     proxy: (manager, context, body) => readAppResource(manager, context, body.uri),
+  });
+  const validateMCPApp = createProxyHandler({
+    label: 'validateMCPApp',
+    fallback: 'Failed to validate MCP App',
+    proxy: (manager, context) => validateAppServerBinding(manager, context),
   });
   const listMCPResources = createProxyHandler({
     label: 'listMCPResources',
@@ -286,6 +295,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     listMCPResources,
     listMCPResourceTemplates,
     appToolCall,
+    validateMCPApp,
     serveMCPSandbox,
     requireMCPAppsEnabled,
   };

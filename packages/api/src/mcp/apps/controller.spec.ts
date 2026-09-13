@@ -39,7 +39,7 @@ const makeRequest = (overrides: Partial<MockRequest> = {}): MockRequest =>
     aborted: false,
     complete: true,
     destroyed: false,
-    body: { serverName: 'srv', uri: 'ui://view' },
+    body: { serverName: 'srv', serverBinding: 'binding', uri: 'ui://view' },
     query: {},
     user: { id: 'user-1', role: 'USER' },
     ...overrides,
@@ -109,6 +109,7 @@ function makeDependencies(manager: MCPAppsProxyManager) {
 }
 
 const makeManager = (): jest.Mocked<MCPAppsProxyManager> => ({
+  validateAppBinding: jest.fn(),
   readResource: jest.fn(),
   listResources: jest.fn(),
   listResourceTemplates: jest.fn(),
@@ -119,6 +120,26 @@ describe('createMCPAppsController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetPluginAuthMap.mockResolvedValue({ mcp_srv: { API_KEY: 'secret' } });
+  });
+
+  it('validates a persisted binding through the admitted target context', async () => {
+    const manager = makeManager();
+    manager.validateAppBinding.mockResolvedValue({ valid: true });
+    const { dependencies } = makeDependencies(manager);
+    const controller = createMCPAppsController(dependencies);
+    const request = makeRequest();
+    const response = makeResponse();
+
+    await controller.validateMCPApp(
+      asHandlerRequest(request),
+      asHandlerResponse(response),
+      jest.fn(),
+    );
+
+    expect(manager.validateAppBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName: 'srv', serverBinding: 'binding' }),
+    );
+    expect(response.json).toHaveBeenCalledWith({ valid: true });
   });
 
   it('reuses the admitted config snapshot for manager resolution', async () => {
@@ -156,6 +177,7 @@ describe('createMCPAppsController', () => {
     expect(manager.readResource).toHaveBeenCalledWith(
       expect.objectContaining({
         serverName: 'srv',
+        serverBinding: 'binding',
         uri: 'ui://view',
         user: request.user,
         connectionTarget: {

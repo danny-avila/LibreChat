@@ -33,6 +33,7 @@ import {
   isStandaloneSseConflict,
 } from './errors';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { projectMCPAppRuntimeTarget, type MCPAppRuntimeTarget } from './apps/binding';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { runOutsideTracing } from '~/utils/tracing';
 import { mediaTypeEssence } from '~/utils/headers';
@@ -1170,6 +1171,11 @@ export class MCPConnection extends EventEmitter {
       normalizedHeaders[key.toLowerCase()] = value;
     }
     this.requestHeaders = normalizedHeaders;
+  }
+
+  /** Stable routing identity captured by this connection, without live authorization headers. */
+  getMCPAppRuntimeTarget(): MCPAppRuntimeTarget {
+    return projectMCPAppRuntimeTarget(this.options);
   }
 
   getRequestHeaders(): Record<string, string> | null | undefined {

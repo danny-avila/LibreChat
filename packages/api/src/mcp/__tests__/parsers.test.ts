@@ -328,6 +328,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -342,12 +343,53 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact).toMatchObject({
         uri: 'ui://app',
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         structuredContent: { count: 3 },
       });
       expect(uiResourceArtifact?.content).toBe(result.content);
       expect(CallToolResultSchema.safeParse(result).success).toBe(true);
       expect(uiResourceArtifact?.text).toBe('<p>from resources/read</p>');
+    });
+
+    it('falls back to a URI-only App snapshot when the hydrated artifact exceeds its cap', () => {
+      const result: t.MCPToolCallResponse = { content: [{ type: 'text', text: 'ordinary' }] };
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        serverBinding: 'binding',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+        mcpApps: { ...ENABLED_MCP_APPS_POLICY, maxPersistedAppBytes: 1024 },
+        resolvedAppResource: {
+          uri: 'ui://app',
+          mimeType: MCP_APP_MIME_TYPE,
+          text: 'x'.repeat(4096),
+          _meta: { ui: { permissions: { camera: {} } } },
+        },
+      });
+
+      expect(artifacts?.ui_resources?.data?.[0]).toMatchObject({
+        uri: 'ui://app',
+        serverBinding: 'binding',
+        content: result.content,
+      });
+      expect(artifacts?.ui_resources?.data?.[0]?.text).toBeUndefined();
+      expect(artifacts?.ui_resources?.data?.[0]?._meta).toBeUndefined();
+    });
+
+    it('omits an oversized URI-only App snapshot while preserving canonical output', () => {
+      const result: t.MCPToolCallResponse = { content: [{ type: 'text', text: 'ordinary' }] };
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        serverBinding: 'binding',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+        toolArgs: { input: 'x'.repeat(4096) },
+        mcpApps: { ...ENABLED_MCP_APPS_POLICY, maxPersistedAppBytes: 256 },
+      });
+
+      expect(content).toContain('ordinary');
+      expect(artifacts?.ui_resources).toBeUndefined();
     });
 
     it('renders a plain text/html ui:// resource statically without app-bridge metadata', () => {
@@ -363,6 +405,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
       });
 
@@ -391,6 +434,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -412,6 +456,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -442,6 +487,7 @@ describe('formatToolContent', () => {
       };
       const metadata = {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -483,6 +529,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://declared',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -513,6 +560,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
@@ -527,6 +575,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: { enabled: false, legacyHtmlEnabled: false },
@@ -548,6 +597,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
       });
@@ -561,6 +611,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'openai', {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: '',
       });
@@ -581,7 +632,7 @@ describe('formatToolContent', () => {
             structuredContent: sc,
           } as t.MCPToolCallResponse,
           'openai',
-          { serverName: 'srv', toolName: 'do_thing' },
+          { serverName: 'srv', serverBinding: 'binding', toolName: 'do_thing' },
         )[1]?.ui_resources?.data?.[0]?.resourceId;
 
       expect(resourceIdFor({ a: 1 })).not.toEqual(resourceIdFor({ a: 2 }));
@@ -1207,6 +1258,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
         serverName: 's',
+        serverBinding: 'binding',
         toolName: 't',
         toolArgs: { a: 1 },
       });
@@ -1223,6 +1275,7 @@ describe('formatToolContent', () => {
         'vertexai' as t.Provider,
         {
           serverName: 's',
+          serverBinding: 'binding',
           toolName: 't',
           resourceUri: 'ui://s/app',
           mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -1246,6 +1299,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
         serverName: 's',
+        serverBinding: 'binding',
         toolName: 't',
         mcpApps: { enabled: false, legacyHtmlEnabled: false },
       });
@@ -1270,6 +1324,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
         serverName: 's',
+        serverBinding: 'binding',
         toolName: 't',
       });
 
@@ -1290,6 +1345,7 @@ describe('formatToolContent', () => {
 
       const [, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
         serverName: 's',
+        serverBinding: 'binding',
         toolName: 't',
       });
 
@@ -1350,6 +1406,7 @@ describe('formatToolContent', () => {
 
     const appMetadata = {
       serverName: 'srv',
+      serverBinding: 'binding',
       toolName: 'do_thing',
       resourceUri: 'ui://app',
       mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -1368,6 +1425,7 @@ describe('formatToolContent', () => {
         uri: 'ui://app',
         mimeType: 'text/html;profile=mcp-app',
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
       });
       expect(content).not.toContain('UI Resource Marker:');
@@ -1402,6 +1460,7 @@ describe('formatToolContent', () => {
         uri: 'ui://app',
         mimeType: 'text/html;profile=mcp-app',
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
       });
     });
@@ -1477,6 +1536,7 @@ describe('formatToolContent', () => {
   describe('ordinary resources beside a declared App', () => {
     const metadata = {
       serverName: 'srv',
+      serverBinding: 'binding',
       toolName: 'do_thing',
       resourceUri: 'ui://app',
       mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -1544,6 +1604,7 @@ describe('formatToolContent', () => {
 describe('shared result snapshot', () => {
   const appMeta = {
     serverName: 'srv',
+    serverBinding: 'binding',
     toolName: 'do_thing',
     resourceUri: 'ui://app',
     mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -1651,7 +1712,7 @@ describe('shared result snapshot', () => {
 });
 
 describe('ui:// resource identity and rendering', () => {
-  const appMeta = { serverName: 'srv', toolName: 'do_thing' };
+  const appMeta = { serverName: 'srv', serverBinding: 'binding', toolName: 'do_thing' };
 
   it('gives two legacy ui:// resources with identical html distinct ids', () => {
     const html = '<p>same</p>';
@@ -1852,6 +1913,7 @@ describe('isRenderableUiResource media types', () => {
       'openai',
       {
         serverName: 'srv',
+        serverBinding: 'binding',
         toolName: 'do_thing',
         resourceUri: 'ui://app',
         mcpApps: ENABLED_MCP_APPS_POLICY,
@@ -1867,6 +1929,7 @@ describe('isRenderableUiResource media types', () => {
     expect(artifacts?.ui_resources?.data?.[0]).toMatchObject({
       uri: 'ui://app',
       serverName: 'srv',
+      serverBinding: 'binding',
       text: '<p>read document</p>',
     });
   });
