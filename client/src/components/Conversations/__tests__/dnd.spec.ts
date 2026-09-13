@@ -85,6 +85,25 @@ describe('mergeVisibleOrder', () => {
   it('keeps every hidden key when only one row is visible', () => {
     expect(mergeVisibleOrder(['a', 'b', 'c'], ['c'])).toEqual(['a', 'b', 'c']);
   });
+
+  /* The section reads a stored order back grouped, so an order saved before the
+   * kinds were kept apart is normalized here rather than merged across. Here
+   * `convo:hidden` is a pinned chat the drained list has not delivered yet:
+   * swapping the two visible chats must leave it where it was among chats,
+   * second of three. */
+  it('keeps each kind in its own slots when a legacy order interleaves them', () => {
+    const stored = ['convo:c1', 'convo:hidden', 'model:1:A:m', 'convo:c2'];
+    const visible = ['model:1:A:m', 'convo:c2', 'convo:c1'];
+
+    const merged = mergeVisibleOrder(stored, visible);
+
+    expect(merged).toEqual(['model:1:A:m', 'convo:c2', 'convo:hidden', 'convo:c1']);
+    expect(merged.filter((key) => key.startsWith('convo:'))).toEqual([
+      'convo:c2',
+      'convo:hidden',
+      'convo:c1',
+    ]);
+  });
 });
 
 /* `didDrop()` is false both for a drop the pinned rows handled and for one an
