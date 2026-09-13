@@ -41,9 +41,11 @@ const shellHasConfiguredFooter =
  * zero-height wrapper, so a composer that did not reserve it would be painted
  * over. Both decisions read this one answer so they cannot disagree.
  *
- * Until `/api/config` answers, that answer is the shell's, which is the same
- * one the config will give: the deployment a cold load lands on is the
- * deployment that served the document.
+ * Until `/api/config` answers, that answer is the shell's, which is the
+ * deployment's own configuration (`librechat.yaml` plus `CUSTOM_FOOTER`). A DB
+ * config override that adds or removes a policy link for the caller's tenant,
+ * role or user is resolved only by `/api/config`, so on such a deployment the
+ * resolved answer — the one that wins here — can differ from the shell's.
  */
 export function useConfiguredFooter(): boolean {
   const { data: config, isSuccess } = useGetStartupConfig();

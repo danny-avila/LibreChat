@@ -19,6 +19,13 @@ export interface ConfiguredFooterSource {
  * server already knows when it serves the document, so it says so and no client
  * has to guess: a first-ever visit to a configured deployment paints the
  * composer in its final position instead of correcting by the bar's height.
+ * The answer is the deployment's own configuration — `librechat.yaml` plus
+ * `CUSTOM_FOOTER` — because the document is served before there is a caller to
+ * resolve: a per-tenant, role or user config override of `privacyPolicy` or
+ * `termsOfService` is resolved by `/api/config`, and the client prefers that
+ * resolved answer over this one. Reading the effective config here would cost
+ * an override query on the document that carries the conversation's LCP, and
+ * still could not resolve role or user overrides pre-authentication.
  *
  * Always injected, including the negative answer, so an absent flag means "no
  * server said" (the Vite dev server) rather than "no footer".

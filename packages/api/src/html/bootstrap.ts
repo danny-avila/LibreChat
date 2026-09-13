@@ -29,9 +29,14 @@ export const injectBootstrapConfig = (
   const payload = JSON.stringify(values).replace(/</g, '\\u003c');
   const script = `<script ${sentinel}>${BOOTSTRAP_GLOBAL}=Object.assign({},${BOOTSTRAP_GLOBAL},${payload});</script>`;
 
+  /* Replacements are functions: a `$&`, `$1` or `$'` inside a value is data, and
+     a replacement string would have `String.replace` expand it instead. */
   if (html.includes('</head>')) {
-    return html.replace('</head>', `${script}</head>`);
+    return html.replace('</head>', () => `${script}</head>`);
   }
 
-  return html.replace(/<body([^>]*)>/i, `<body$1>${script}`);
+  return html.replace(
+    /<body([^>]*)>/i,
+    (_match, attributes: string) => `<body${attributes}>${script}`,
+  );
 };

@@ -2,15 +2,23 @@ import { injectBootstrapConfig } from './bootstrap';
 
 const SHELL = '<html><head></head><body></body></html>';
 
+/** Every value these tests inject, as the client reads it back off the global. */
+interface TestBootstrap {
+  first?: boolean;
+  second?: number;
+  note?: string;
+  flag?: boolean;
+}
+
 /** Runs the shell's injected scripts the way a browser would, so the assertions
  *  are about what the client receives rather than about the markup's spelling. */
-const bootstrapOf = (html: string): Record<string, unknown> => {
+const bootstrapOf = (html: string): TestBootstrap => {
   const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(
     (match) => match[1],
   );
   return new Function('window', `${scripts.join('\n')}\nreturn window.__LIBRECHAT_CONFIG__;`)(
     {},
-  ) as Record<string, unknown>;
+  ) as TestBootstrap;
 };
 
 describe('injectBootstrapConfig', () => {
@@ -36,6 +44,24 @@ describe('injectBootstrapConfig', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html.match(/<\/script>/g)).toHaveLength(1);
     expect(bootstrapOf(html)).toEqual({ note });
+  });
+
+  it('keeps `$` sequences in a value literal instead of expanding them', () => {
+    const note = "$& $` $' $1 $$";
+
+    expect(
+      bootstrapOf(
+        injectBootstrapConfig(SHELL, { sentinel: 'data-librechat-test="true"', values: { note } }),
+      ).note,
+    ).toBe(note);
+    expect(
+      bootstrapOf(
+        injectBootstrapConfig('<html><body class="x"></body></html>', {
+          sentinel: 'data-librechat-test="true"',
+          values: { note },
+        }),
+      ).note,
+    ).toBe(note);
   });
 
   it('lands ahead of the app in a document with no head at all', () => {

@@ -1,5 +1,5 @@
-import { applyCspNonce } from '~/security/csp';
 import { injectConfiguredFooterBootstrap } from './footer';
+import { applyCspNonce } from '~/security/csp';
 
 const SHELL =
   '<!DOCTYPE html><html><head><title>LibreChat</title></head>' +

@@ -554,7 +554,8 @@ if (cluster.isMaster) {
 
     /* The composer lays out against whether a footer bar sits beneath it, and
        `/api/config` answers that only after it has painted. One shell serves
-       every request, so the answer comes from the base config, like index.js. */
+       every request, before there is a caller whose overrides could be resolved,
+       so the answer is the deployment's base configuration, like index.js. */
     indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
       customFooter: process.env.CUSTOM_FOOTER,
       interfaceConfig: baseAppConfig?.interfaceConfig,
