@@ -194,8 +194,13 @@ function toContent(value: unknown, maxLength: number): TTraceContent | undefined
   if (value == null) {
     return undefined;
   }
+  /** An empty object or a JSON null carries nothing; a string that spells one is real output. */
   const text = typeof value === 'string' ? value : JSON.stringify(value);
-  if (text == null || text === '' || text === '{}' || text === 'null') {
+  if (
+    text == null ||
+    text === '' ||
+    (typeof value !== 'string' && (text === '{}' || text === 'null'))
+  ) {
     return undefined;
   }
   return text.length > maxLength
@@ -365,10 +370,8 @@ function segmentAt(
 const cursorSchema = z.object({
   /** The newest turn of the segment being read. */
   m: z.string().min(1),
-  /** The project within that segment; absent, its first. */
-  s: z.string().min(1).optional(),
-  /** That project's Langfuse cursor; absent, the project starts. */
-  c: z.string().min(1).optional(),
+  /** The start time every read of that segment has loaded down to; absent, the segment starts. */
+  t: timestampSchema.optional(),
   /** Projects that failed earlier in this read; segments are built without them. */
   x: z.array(z.string().min(1)).max(8).optional(),
 });
@@ -594,8 +597,12 @@ export function createLangfuseTraceReader({
       const owners = buildTraceOwners(messages);
       const timeFilter = startTimeFilter(timeWindow(refs));
 
-      /** Reads one project's traces for a segment until they or this request's record budget run out. */
-      async function readFrom(read: SegmentRead, startCursor?: string) {
+      /**
+       * Reads one project's traces for a segment, newest first, until they or this
+       * request's record budget run out. `bound` and `floor` limit start times to
+       * the part of the segment a page still needs.
+       */
+      async function readFrom(read: SegmentRead, bound?: string, floor?: string) {
         const filter = JSON.stringify([
           { type: 'string', column: 'sessionId', operator: '=', value: query.conversationId },
           {
@@ -605,9 +612,15 @@ export function createLangfuseTraceReader({
             value: read.messages.flatMap(traceIdsOf),
           },
           ...timeFilter,
+          ...(bound
+            ? [{ type: 'datetime', column: 'startTime', operator: '<=', value: bound }]
+            : []),
+          ...(floor
+            ? [{ type: 'datetime', column: 'startTime', operator: '>=', value: floor }]
+            : []),
         ]);
         const records: TTraceRecord[] = [];
-        let cursor = startCursor;
+        let cursor: string | undefined;
         let remaining = query.settings.maxRecords;
 
         for (;;) {
@@ -626,10 +639,10 @@ export function createLangfuseTraceReader({
           remaining -= page.data.length;
           const next = page.meta?.cursor || undefined;
           if (!next || page.data.length === 0) {
-            return { records };
+            return { records, truncated: false };
           }
           if (remaining <= 0) {
-            return { records, next };
+            return { records, truncated: true };
           }
           cursor = next;
         }
@@ -649,15 +662,9 @@ export function createLangfuseTraceReader({
       }
 
       let excluded = new Set(continuation?.x ?? []);
-      let continuedSourceId = continuation?.s;
-      let startCursor = continuation?.c;
+      let bound = continuation?.t;
       let firstSourceId: string | undefined;
       const usable = () => sources.filter((source) => !excluded.has(sourceIdOf(source)));
-      const unreadableSource = () =>
-        new TraceReadError(
-          'invalid_request',
-          'The page cursor names a source this conversation cannot read',
-        );
 
       while (newest >= 0) {
         let segment = segmentAt(usable(), messages, newest);
@@ -667,37 +674,32 @@ export function createLangfuseTraceReader({
           segment = segmentAt(usable(), messages, newest);
         }
         if (segment == null) {
-          if (continuedSourceId != null) {
-            throw unreadableSource();
-          }
           /** Recorded only against projects this deployment no longer reads. */
           newest--;
+          bound = undefined;
           continue;
         }
 
-        let index = 0;
-        if (continuedSourceId != null) {
-          const sourceId = continuedSourceId;
-          index = segment.reads.findIndex(({ destination }) => isSource(destination, sourceId));
-          if (index === -1) {
-            throw unreadableSource();
-          }
-          continuedSourceId = undefined;
-        }
-
+        /**
+         * Every read of the segment runs before the page returns, and a read that
+         * fills the budget cuts the page at its oldest start time: records older
+         * than that wait for the next page, where every project continues from it.
+         * No record is shown before a newer one that another project holds.
+         */
         const failures: Array<{ destination: LangfuseScoreDestination; error: TraceReadError }> =
           [];
+        let collected: Array<{ record: TTraceRecord; sourceId: string }> = [];
+        let cut: string | undefined;
+        let index = 0;
         while (index < segment.reads.length) {
           const read = segment.reads[index];
           const sourceId = sourceIdOf(read.destination);
           let result: Awaited<ReturnType<typeof readFrom>>;
           try {
-            result = await readFrom(read, startCursor);
+            result = await readFrom(read, bound, cut);
           } catch (error) {
-            /** A fresh start can move to a project holding the same turns; a mid-project cursor
-             *  cannot, and a cancelled read has no one left to answer. */
+            /** Another project holding the same turns can answer instead; a cancelled read has no one left to answer. */
             if (
-              startCursor != null ||
               query.signal?.aborted ||
               !(error instanceof TraceReadError) ||
               !FAILOVER_CODES.has(error.code)
@@ -706,40 +708,55 @@ export function createLangfuseTraceReader({
             }
             failures.push({ destination: read.destination, error });
             excluded.add(sourceId);
-            /** Reads before `index` are unchanged: a later project was never the one the segment
-             *  was built around, and nothing precedes a failed first one. */
             const rebuilt = segmentAt(usable(), messages, newest);
             if (rebuilt == null) {
               throw error;
             }
+            /** Reads before `index` are unchanged: a later project was never the one the segment
+             *  was built around, and nothing precedes a failed first one. */
             segment = rebuilt;
             continue;
           }
-
           firstSourceId ??= sourceId;
-          startCursor = undefined;
-          const turn = messages[newest].messageId;
-          const failed = excluded.size > 0 ? { x: [...excluded] } : {};
-          if (result.next) {
-            return {
-              records: result.records,
-              sourceId,
-              nextCursor: encodeCursor({ m: turn, s: sourceId, c: result.next, ...failed }),
-            };
+          for (const record of result.records) {
+            collected.push({ record, sourceId });
           }
-          const following = segment.reads[index + 1];
+          if (result.truncated) {
+            const oldest = result.records[result.records.length - 1]?.startTime;
+            if (oldest == null) {
+              throw new TraceReadError('upstream_error', 'Langfuse returned an unexpected page');
+            }
+            cut = cut == null || oldest > cut ? oldest : cut;
+          }
+          index++;
+        }
+
+        const failed = excluded.size > 0 ? { x: [...excluded] } : {};
+        if (cut != null) {
+          if (cut === bound) {
+            throw new TraceReadError(
+              'upstream_error',
+              'More observations share one start time than a page can hold',
+            );
+          }
+          const floor = cut;
+          collected = collected.filter(({ record }) => record.startTime >= floor);
+        }
+        if (collected.length > 0) {
+          const pageSources = new Set(collected.map(({ sourceId }) => sourceId));
           const older = messages[segment.oldest - 1];
           let nextCursor: string | undefined;
-          if (following != null) {
-            nextCursor = encodeCursor({ m: turn, s: sourceIdOf(following.destination), ...failed });
+          if (cut != null) {
+            nextCursor = encodeCursor({ m: messages[newest].messageId, t: cut, ...failed });
           } else if (older != null) {
             nextCursor = encodeCursor({ m: older.messageId, ...failed });
           }
-          /** An empty read moves straight on, so a turn in a later project or segment is not shown as missing. */
-          if (result.records.length > 0) {
-            return { records: result.records, sourceId, ...(nextCursor ? { nextCursor } : {}) };
-          }
-          index++;
+          return {
+            records: collected.map(({ record }) => record),
+            /** A page drawn from several projects names none, so nothing links it to just one. */
+            ...(pageSources.size === 1 ? { sourceId: [...pageSources][0] } : {}),
+            ...(nextCursor ? { nextCursor } : {}),
+          };
         }
 
         /** Every read of this segment answered empty, which says nothing about a turn only a failed project holds. */
@@ -752,6 +769,7 @@ export function createLangfuseTraceReader({
           throw hidden[hidden.length - 1].error;
         }
         newest = segment.oldest - 1;
+        bound = undefined;
       }
       return { records: [], ...(firstSourceId ? { sourceId: firstSourceId } : {}) };
     },

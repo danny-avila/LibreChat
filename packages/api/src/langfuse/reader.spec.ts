@@ -445,41 +445,101 @@ describe('createLangfuseTraceReader', () => {
       expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'legacy' }] });
     });
 
-    it('reaches a project holding legacy turns after the one that holds the newest', async () => {
+    it('loads every project a segment reads before returning, so a newer legacy turn is not left behind', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-0', langfuseDestinationIds: ['connection-id'] },
+          { messageId: 'legacy-response' },
+          { messageId: 'response-2', langfuseDestinationIds: ['connection-id'] },
+        ],
+      });
+      const { reader, fetchMock } = setup({
+        refs,
+        responses: [
+          jsonResponse({
+            data: [
+              observation({ id: 'newest', traceId: traceIdForMessage('response-2') }),
+              observation({ id: 'oldest', traceId: traceIdForMessage('response-0') }),
+            ],
+          }),
+          jsonResponse({
+            data: [observation({ id: 'middle', traceId: traceIdForMessage('legacy-response') })],
+          }),
+        ],
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedTraceIds(fetchMock, 0)).toEqual(
+        tracesOf('response-0', 'legacy-response', 'response-2'),
+      );
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+      expect(requestedTraceIds(fetchMock, 1)).toEqual(tracesOf('legacy-response'));
+      expect(page.records.map(({ id }) => id)).toEqual(['newest', 'oldest', 'middle']);
+      expect(page).not.toHaveProperty('sourceId');
+      expect(page.nextCursor).toBeUndefined();
+    });
+
+    it('cuts a page drawn from several projects at the oldest start time all of them loaded', async () => {
       const refs = createRefs({
         sampledMessages: [
           { messageId: 'legacy-response' },
           { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
         ],
       });
+      const settings = resolveTraceViewerConfig({ enabled: true, maxRecords: 2 });
+      const legacy = traceIdForMessage('legacy-response');
+      const at = (second: number) => `2026-09-12T11:30:0${second}.000Z`;
       const first = setup({
-        refs,
-        responses: [jsonResponse({ data: [observation({ id: 'newest' })] })],
-      });
-
-      const page = await first.reader.listRecords(createQuery());
-
-      expect(page).toMatchObject({ sourceId: 'connection-id', records: [{ id: 'newest' }] });
-      expect(page.nextCursor).toBeDefined();
-
-      const later = setup({
         refs,
         responses: [
           jsonResponse({
-            data: [observation({ id: 'legacy', traceId: traceIdForMessage('legacy-response') })],
+            data: [
+              observation({ id: 'c5', startTime: at(5) }),
+              observation({ id: 'c1', startTime: at(1) }),
+            ],
+          }),
+          jsonResponse({
+            data: [
+              observation({ id: 'l4', traceId: legacy, startTime: at(4) }),
+              observation({ id: 'l3', traceId: legacy, startTime: at(3) }),
+            ],
+            meta: { cursor: 'more' },
           }),
         ],
       });
-      const older = await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
 
-      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
-      expect(requestedUrl(later.fetchMock).searchParams.has('cursor')).toBe(false);
-      expect(requestedTraceIds(first.fetchMock)).toEqual(tracesOf('legacy-response', 'response-1'));
-      expect(requestedTraceIds(later.fetchMock)).toEqual(tracesOf('legacy-response'));
-      expect(older).toEqual({
-        sourceId: 'central-id',
-        records: [expect.objectContaining({ id: 'legacy', messageId: 'legacy-response' })],
+      const page = await first.reader.listRecords(createQuery({ settings }));
+
+      expect(page.records.map(({ id }) => id)).toEqual(['c5', 'l4', 'l3']);
+      expect(requestedFilter(first.fetchMock, 1)).not.toContainEqual(
+        expect.objectContaining({ operator: '<=' }),
+      );
+      const later = setup({
+        refs,
+        responses: [
+          jsonResponse({ data: [observation({ id: 'c1', startTime: at(1) })] }),
+          jsonResponse({
+            data: [
+              observation({ id: 'l3', traceId: legacy, startTime: at(3) }),
+              observation({ id: 'l2', traceId: legacy, startTime: at(2) }),
+            ],
+          }),
+        ],
       });
+      const older = await later.reader.listRecords({
+        ...createQuery({ settings }),
+        cursor: page.nextCursor,
+      });
+
+      for (const call of [0, 1]) {
+        expect(requestedFilter(later.fetchMock, call)).toContainEqual(
+          expect.objectContaining({ column: 'startTime', operator: '<=', value: at(3) }),
+        );
+      }
+      expect(older.records.map(({ id }) => id)).toEqual(['c1', 'l3', 'l2']);
+      expect(older.nextCursor).toBeUndefined();
     });
 
     it('does not visit a project whose turns an earlier project provably holds', async () => {
@@ -543,11 +603,14 @@ describe('createLangfuseTraceReader', () => {
       const older = await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
 
       expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
-      expect(requestedUrl(later.fetchMock).searchParams.get('cursor')).toBe('more');
+      expect(requestedUrl(later.fetchMock).searchParams.has('cursor')).toBe(false);
+      expect(requestedFilter(later.fetchMock)).toContainEqual(
+        expect.objectContaining({ operator: '<=', value: '2026-09-12T11:30:00.000Z' }),
+      );
       expect(older.records.map(({ id }) => id)).toEqual(['b']);
     });
 
-    it('reports the failure when every project holding the turns fails, and never fails over mid-project', async () => {
+    it('fails over on a later page too, and reports the failure when every project holding the turns fails', async () => {
       const refs = createRefs({
         sampledMessages: [
           { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
@@ -560,16 +623,22 @@ describe('createLangfuseTraceReader', () => {
           jsonResponse({ message: 'down' }, 503),
         ],
       });
-      const midProject = setup({ refs, responses: [jsonResponse({ message: 'down' }, 503)] });
-      const cursor = encodeTestCursor({ m: 'response-1', s: 'connection-id', c: 'more' });
+      const laterPage = setup({
+        refs,
+        responses: [
+          jsonResponse({ message: 'down' }, 503),
+          jsonResponse({ data: [observation({ id: 'b' })] }),
+        ],
+      });
+      const cursor = encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' });
 
       await expect(allFail.reader.listRecords(createQuery())).rejects.toMatchObject({
         code: 'upstream_error',
       });
       await expect(
-        midProject.reader.listRecords({ ...createQuery(), cursor }),
-      ).rejects.toMatchObject({ code: 'upstream_error' });
-      expect(midProject.fetchMock).toHaveBeenCalledTimes(1);
+        laterPage.reader.listRecords({ ...createQuery(), cursor }),
+      ).resolves.toMatchObject({ sourceId: 'central-id', records: [{ id: 'b' }] });
+      expect(requestedUrl(laterPage.fetchMock, 1).origin).toBe('https://central.langfuse.test');
     });
 
     it('reports a failed project that could hold a turn the empty ones do not', async () => {
@@ -784,7 +853,7 @@ describe('createLangfuseTraceReader', () => {
 
       expect(page.records.map(({ id }) => id)).toEqual(['a', 'b', 'c']);
       expect(page.nextCursor).toBe(
-        encodeTestCursor({ m: 'response-1', s: 'connection-id', c: 'cursor-2' }),
+        encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' }),
       );
       expect(requestedUrl(fetchMock, 0).searchParams.get('limit')).toBe('3');
       expect(requestedUrl(fetchMock, 0).searchParams.has('cursor')).toBe(false);
@@ -792,7 +861,21 @@ describe('createLangfuseTraceReader', () => {
       expect(requestedUrl(fetchMock, 1).searchParams.get('cursor')).toBe('cursor-1');
     });
 
-    it('continues a cursor from the project that issued it, even after the ranking changed', async () => {
+    it('refuses to repeat a page whose records all share the start time it continues from', async () => {
+      const { reader } = setup({
+        responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'more' } })],
+      });
+      const cursor = encodeTestCursor({ m: 'response-1', t: '2026-09-12T11:30:00.000Z' });
+
+      await expect(
+        reader.listRecords({
+          ...createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
+          cursor,
+        }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
+    });
+
+    it('continues a page from the same segment after newer turns arrive', async () => {
       const first = setup({
         responses: [jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'next' } })],
         refs: createRefs({
@@ -816,10 +899,10 @@ describe('createLangfuseTraceReader', () => {
       });
       const page = await later.reader.listRecords({ ...createQuery(), cursor: nextCursor });
 
-      expect(page).toMatchObject({ sourceId: 'central-id' });
+      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'b' }] });
       expect(page.nextCursor).toBeUndefined();
       expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
-      expect(requestedUrl(later.fetchMock).searchParams.get('cursor')).toBe('next');
+      expect(requestedTraceIds(later.fetchMock)).toEqual(tracesOf('response-1'));
     });
 
     it('keeps paging a project whose id resolved after the first page', async () => {
@@ -844,22 +927,18 @@ describe('createLangfuseTraceReader', () => {
       expect(page.records.map(({ id }) => id)).toEqual(['b']);
     });
 
-    it('rejects a forged cursor and one for a project the conversation can no longer read', async () => {
+    it('rejects a forged cursor, a malformed bound and a turn the conversation no longer has', async () => {
       const { reader, fetchMock } = setup();
-      const retired = encodeTestCursor({ m: 'response-1', s: 'retired-id', c: 'next' });
-      const vanished = encodeTestCursor({ m: 'deleted-response' });
 
-      await expect(
-        reader.listRecords({ ...createQuery(), cursor: 'bm90IGpzb24' }),
-      ).rejects.toMatchObject({ code: 'invalid_request' });
-      await expect(reader.listRecords({ ...createQuery(), cursor: retired })).rejects.toMatchObject(
-        {
+      for (const cursor of [
+        'bm90IGpzb24',
+        encodeTestCursor({ m: 'response-1', t: 'not-a-time' }),
+        encodeTestCursor({ m: 'deleted-response' }),
+      ]) {
+        await expect(reader.listRecords({ ...createQuery(), cursor })).rejects.toMatchObject({
           code: 'invalid_request',
-        },
-      );
-      await expect(
-        reader.listRecords({ ...createQuery(), cursor: vanished }),
-      ).rejects.toMatchObject({ code: 'invalid_request' });
+        });
+      }
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -887,12 +966,18 @@ describe('createLangfuseTraceReader', () => {
     });
 
     it('treats a cursor Langfuse rejects as an invalid request', async () => {
-      const { reader } = setup({ responses: [jsonResponse({ message: 'bad cursor' }, 400)] });
-      const cursor = encodeTestCursor({ m: 'response-1', s: 'connection-id', c: 'expired' });
-
-      await expect(reader.listRecords({ ...createQuery(), cursor })).rejects.toMatchObject({
-        code: 'invalid_request',
+      const { reader } = setup({
+        responses: [
+          jsonResponse({ data: [observation({ id: 'a' })], meta: { cursor: 'expired' } }),
+          jsonResponse({ message: 'bad cursor' }, 400),
+        ],
       });
+
+      await expect(
+        reader.listRecords(
+          createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 2000 }) }),
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_request' });
     });
 
     it('stops the Langfuse request when the client goes away', async () => {
@@ -1031,6 +1116,30 @@ describe('createLangfuseTraceReader', () => {
         output: { value: 'short', truncated: false },
         metadata: { value: '{"agentId":"', truncated: true },
       });
+    });
+
+    it('keeps literal strings that spell an empty object or null', async () => {
+      const { reader } = setup({
+        responses: [
+          jsonResponse({
+            data: [observation({ input: '{}', output: 'null', metadata: {} })],
+          }),
+        ],
+      });
+
+      const detail = await reader.getRecord({
+        ...createQuery({
+          settings: resolveTraceViewerConfig({ enabled: true, showInputOutput: true }),
+        }),
+        recordId: 'obs-root',
+      });
+
+      expect(detail).toMatchObject({
+        contentAvailable: true,
+        input: { value: '{}', truncated: false },
+        output: { value: 'null', truncated: false },
+      });
+      expect(detail).not.toHaveProperty('metadata');
     });
 
     it('reads the detail from the project that listed the record', async () => {
