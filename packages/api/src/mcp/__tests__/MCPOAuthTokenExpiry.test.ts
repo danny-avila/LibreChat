@@ -524,16 +524,13 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       }).loadTokens();
       await new Promise((resolve) => setTimeout(resolve, 250));
 
-      const { exchanged, stored } = await completeAuthorizationFromCallback();
+      const { exchanged } = await completeAuthorizationFromCallback();
 
       await expect(waiting).resolves.toMatchObject({
         access_token: exchanged.access_token,
         publication_generation: 'generation-2',
       });
-      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith({
-        publicationGeneration: 'generation-2',
-        obtainedAt: stored.obtained_at,
-      });
+      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith('generation-2');
       expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
 
       finishEarlierAttempt?.();

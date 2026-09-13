@@ -5592,19 +5592,17 @@ describe('MCPManager', () => {
       }
     });
 
-    it('leases a new connection under the generation carried by credentials obtained during its build', async () => {
+    it('leases a new connection under the carried generation while it is the one currently stored', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
         .mockResolvedValue('generation-a');
       const renewalSpy = jest
         .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
         .mockResolvedValue(true);
-      const { serverConfig, flowManager } = adoptingOAuthServer((options) =>
-        options.onOAuthCredentialsAdopted?.({
-          publicationGeneration: 'generation-b',
-          obtainedAt: Date.now(),
-        }),
-      );
+      const { serverConfig, flowManager } = adoptingOAuthServer(async (options) => {
+        generationSpy.mockResolvedValue('generation-b');
+        await options.onOAuthCredentialsAdopted?.('generation-b');
+      });
 
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -5621,7 +5619,7 @@ describe('MCPManager', () => {
       }
     });
 
-    it('keeps its captured generation for cached credentials obtained before its build began', async () => {
+    it('keeps its captured generation when the carried one is no longer stored', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
         .mockResolvedValue('generation-a');
@@ -5629,10 +5627,7 @@ describe('MCPManager', () => {
         .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
         .mockResolvedValue(true);
       const { serverConfig, flowManager } = adoptingOAuthServer((options) =>
-        options.onOAuthCredentialsAdopted?.({
-          publicationGeneration: 'generation-b',
-          obtainedAt: Date.now() - 60_000,
-        }),
+        options.onOAuthCredentialsAdopted?.('generation-b'),
       );
 
       try {

@@ -665,10 +665,7 @@ describe('MCPConnectionFactory', () => {
           tokenLoadingFactory({ onOAuthCredentialsAdopted }).getOAuthTokensForTest(),
         ).resolves.toEqual(releasedTokens);
 
-        expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith({
-          publicationGeneration: 'generation-b',
-          obtainedAt: 1_700_000_000_000,
-        });
+        expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith('generation-b');
       });
     });
 
@@ -5202,10 +5199,7 @@ describe('MCPConnectionFactory', () => {
       ).resolves.toBe(mockConnectionInstance);
 
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(releasedTokens);
-      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith({
-        publicationGeneration: 'generation-b',
-        obtainedAt: 1_700_000_000_000,
-      });
+      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith('generation-b');
     });
 
     it('should trigger proactive OAuth when oauth is configured without requiresOAuth', async () => {

@@ -278,15 +278,13 @@ export interface UserConnectionContext {
    */
   onDiscoveryDetached?: (work: Promise<unknown>) => void;
   /**
-   * Reports credentials the factory adopted from an authorization or refresh it did not perform,
-   * with the publication generation they were persisted under and when they were obtained. A
-   * caller leasing a generation captured before it resolved credentials moves the lease to the
-   * one credentials obtained after that capture carry.
+   * Reports the publication generation carried by credentials the factory adopted from an
+   * authorization or refresh it did not perform. A caller leasing a generation captured before it
+   * resolved credentials moves the lease to the reported one while that is the generation
+   * currently stored: the build then leases under the publication that stored its credentials
+   * and stays fenced by any rotation that followed them.
    */
-  onOAuthCredentialsAdopted?: (credentials: {
-    publicationGeneration: string;
-    obtainedAt: number;
-  }) => void;
+  onOAuthCredentialsAdopted?: (publicationGeneration: string) => Promise<void>;
   /**
    * Runs before the factory re-reads credentials from storage because a credential change
    * invalidated its cached token flow. A caller leasing a generation captured earlier re-captures

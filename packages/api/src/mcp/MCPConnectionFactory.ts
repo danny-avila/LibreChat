@@ -946,14 +946,11 @@ export class MCPConnectionFactory {
   }
 
   /** Tokens released by another party's authorization or refresh carry the generation it published. */
-  private adoptPublishedCredentials(tokens: MCPOAuthTokens): void {
+  private async adoptPublishedCredentials(tokens: MCPOAuthTokens): Promise<void> {
     if (!tokens.publication_generation) {
       return;
     }
-    this.onOAuthCredentialsAdopted?.({
-      publicationGeneration: tokens.publication_generation,
-      obtainedAt: tokens.obtained_at,
-    });
+    await this.onOAuthCredentialsAdopted?.(tokens.publication_generation);
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -995,7 +992,7 @@ export class MCPConnectionFactory {
           storedClient?.clientMetadata as Partial<OAuthStoredClientMetadata> | undefined,
           this.serverConfig.oauth,
         );
-        this.adoptPublishedCredentials(tokens);
+        await this.adoptPublishedCredentials(tokens);
         logger.info(`${this.logPrefix} Loaded OAuth tokens`);
       }
       return tokens;
@@ -1732,7 +1729,7 @@ export class MCPConnectionFactory {
           );
 
           connection.setOAuthTokens(tokens);
-          this.adoptPublishedCredentials(tokens);
+          await this.adoptPublishedCredentials(tokens);
           // Same rationale as the silent-refresh success path: invalidate the
           // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
           // freshly stored tokens rather than the just-rejected ones the

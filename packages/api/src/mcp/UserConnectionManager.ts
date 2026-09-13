@@ -614,7 +614,6 @@ export abstract class UserConnectionManager {
 
     /** Capture before resolving credentials/creating the connection. If another replica rotates
      *  the generation while creation is in flight, this connection's publications are fenced. */
-    const generationCapturedAt = Date.now();
     const publicationGeneration = ephemeralConnection
       ? undefined
       : await getMCPToolsChangedGeneration({ userId, serverName });
@@ -802,9 +801,9 @@ export abstract class UserConnectionManager {
        * capture predates, so the build would otherwise fence itself: a refresh it performs, an
        * authorization it waits on, or a re-read after a change invalidated its token cache each
        * hand it the newest credentials, which it would then publish under a retired generation.
-       * Recording the generation those credentials carry keeps the fence pointing at rotations
-       * that follow them. A cached settlement obtained before the capture says nothing about the
-       * generation captured after it, so the capture stands for those.
+       * Recording the generation those credentials carry, while it is still the stored one, keeps
+       * the fence pointing at rotations that follow them; a carried generation the store has
+       * already retired proves nothing about the current one, so the capture stands for it.
        */
       let credentialGeneration: string | undefined;
       const trackPublishedGeneration: t.UserConnectionContext['onOAuthCredentialsChanging'] =
@@ -823,8 +822,8 @@ export abstract class UserConnectionManager {
       const adoptCredentialGeneration: t.UserConnectionContext['onOAuthCredentialsAdopted'] =
         ephemeralConnection
           ? undefined
-          : ({ publicationGeneration: published, obtainedAt }) => {
-              if (obtainedAt >= generationCapturedAt) {
+          : async (published) => {
+              if ((await getMCPToolsChangedGeneration({ userId, serverName })) === published) {
                 credentialGeneration = published;
               }
             };
