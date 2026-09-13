@@ -260,6 +260,10 @@ function castCursorPrimary(
  * comparison semantics change, or an older reader will resume a walk under semantics that no
  * longer exist. Cursors without a version are version 1 for rolling-deployment compatibility.
  *
+ * Orderings past version 1 nest their boundary under `boundary`, where a pre-versioning reader
+ * cannot find it — see {@link encodeAgentSortCursor}. A flat boundary claiming such a version
+ * did not come from this encoder and is unreadable rather than trusted.
+ *
  * Legacy cursors carry only `updatedAt` and `_id`; they name `recent`, whose ordering preserves
  * the old updated-time walk. A cursor naming another ordering is a mismatch, while malformed
  * data is unreadable; both are fail-closed.
@@ -278,6 +282,9 @@ function decodeAgentSortCursor(
 
     const hasPrimary = typeof decoded.primary !== 'undefined';
     const hasLegacyPair = typeof decoded.updatedAt === 'string' && typeof decoded._id === 'string';
+    /** Set once a versioned cursor's nested boundary has been lifted into place, so the
+     *  legacy substitution below does not overwrite it with an absent `updatedAt`. */
+    let hasNestedBoundary = false;
     let cursorSort: AgentListSortOption | null = null;
 
     if (typeof decoded.sort === 'undefined') {
@@ -303,15 +310,25 @@ function decodeAgentSortCursor(
       if (cursorVersion !== AGENT_SORT_CONFIG[cursorSort].version) {
         return { kind: 'ordering-mismatch' };
       }
+      if (cursorVersion > 1) {
+        const boundary = decoded.boundary;
+        if (boundary == null || typeof boundary !== 'object' || Array.isArray(boundary)) {
+          return { kind: 'unreadable' };
+        }
+        const { primary, secondary } = boundary as Record<string, unknown>;
+        decoded.primary = primary;
+        decoded.secondary = secondary;
+        hasNestedBoundary = true;
+      }
     }
-    if (!hasPrimary && hasLegacyPair && cursorSort !== 'recent') {
+    if (!hasPrimary && !hasNestedBoundary && hasLegacyPair && cursorSort !== 'recent') {
       return { kind: 'ordering-mismatch' };
     }
     if (cursorSort !== sort) {
       return { kind: 'ordering-mismatch' };
     }
 
-    if (!hasPrimary) {
+    if (!hasPrimary && !hasNestedBoundary) {
       decoded.primary = decoded.updatedAt;
       decoded.secondary = decoded._id;
     }
@@ -390,12 +407,21 @@ function buildAgentSortCursorCondition(
  * comparison semantics change, or an older reader will resume a walk under semantics that no
  * longer exist. `recent` additionally carries the legacy pair so old instances can keep
  * reading its updated-time walk.
+ *
+ * A version is only half the protection, because it protects the reader that knows to look
+ * at it. Instances deployed before versioning existed ignore unknown fields and read
+ * `primary`/`secondary` straight out of the payload, so a bumped ordering whose boundary sits
+ * where they expect it would still be resumed under the comparison it replaced. So any
+ * ordering past version 1 carries its boundary nested instead: a reader that does not know
+ * about versions finds no boundary it recognizes and fails closed, and one that does knows
+ * where to look. Version 1 keeps the flat shape, which is what makes every cursor already in
+ * flight readable across a deployment.
  */
 function encodeAgentSortCursor(
   sort: AgentListSortOption,
   lastAgent: Record<string, unknown>,
 ): string {
-  const { field, valueType } = AGENT_SORT_CONFIG[sort];
+  const { field, valueType, version } = AGENT_SORT_CONFIG[sort];
   const rawValue = lastAgent[field];
   const asIsoDate = (value: unknown): string | null => {
     if (value == null) {
@@ -422,11 +448,17 @@ function encodeAgentSortCursor(
   }
 
   const secondary = String(lastAgent._id);
+  if (version > 1) {
+    return Buffer.from(
+      JSON.stringify({ sort, version, boundary: { primary, secondary } }),
+    ).toString('base64');
+  }
+
   const legacyUpdatedAt = sort === 'recent' ? asIsoDate(lastAgent.updatedAt) : null;
   return Buffer.from(
     JSON.stringify({
       sort,
-      version: AGENT_SORT_CONFIG[sort].version,
+      version,
       primary,
       secondary,
       ...(legacyUpdatedAt == null ? {} : { updatedAt: legacyUpdatedAt, _id: secondary }),
