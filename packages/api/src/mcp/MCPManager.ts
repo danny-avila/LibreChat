@@ -941,7 +941,6 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
-    mcpApps,
     signal,
     directBearerRecoveryState = { attempted: true },
   }: {
@@ -961,7 +960,6 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
-    mcpApps?: TMCPAppsPolicy;
     signal?: AbortSignal;
     directBearerRecoveryState?: t.DirectBearerRecoveryState;
   }): Promise<void> {
@@ -1343,6 +1341,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
+    mcpApps,
   }: {
     user?: IUser;
     serverName: string;
@@ -1366,6 +1365,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
+    mcpApps?: TMCPAppsPolicy;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
