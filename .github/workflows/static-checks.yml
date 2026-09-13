@@ -812,8 +812,16 @@ jobs:
         run: |
           run_sweep() {
             set +e
+            # Two rules are switched off for the sweep only: `prettier/prettier`
+            # reformats every file (formatting drift is caught per changed file
+            # by the Static checks job and is not a config regression), and
+            # `import/no-cycle` walks the whole import graph from every file
+            # while config/circular-deps.mjs already owns cycle detection.
+            # Together they were ~85% of a full-tree lint.
             timeout -k 15 "$ESLINT_SWEEP_BUDGET_SECONDS" \
-              node_modules/.bin/eslint --config "$1" api client packages -f json -o "$2"
+              node_modules/.bin/eslint --config "$1" api client packages -f json -o "$2" \
+                --rule 'prettier/prettier: off' \
+                --rule 'import/no-cycle: off'
             local status=$?
             set -e
             # 124 = timeout sent TERM; 137 = it escalated to KILL.
@@ -841,6 +849,13 @@ jobs:
           # flat-config files/ignores patterns and plugin imports resolve
           # relative to the config's own directory, so a temp-dir copy would
           # scope to nothing and the comparison would pass vacuously.
+          # An unchanged config cannot regress: the head sweep above already
+          # proved this workflow still runs it, so a second identical sweep
+          # would only double the job's runtime.
+          if git diff --quiet "$BASE_SHA" HEAD -- eslint.config.mjs; then
+            echo "::notice title=ESLint sweep::eslint.config.mjs is unchanged from base; skipping the regression comparison."
+            exit 0
+          fi
           trap 'rm -f eslint.config.base.mjs' EXIT
           if ! git show "$BASE_SHA:eslint.config.mjs" > eslint.config.base.mjs 2>/dev/null; then
             echo "::notice title=ESLint sweep::No eslint.config.mjs at base ref; skipping regression comparison."
