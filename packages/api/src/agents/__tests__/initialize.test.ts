@@ -38,10 +38,14 @@ import {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  FileContext,
+  FileSources,
+  AgentCapabilities,
+  configSchema,
   Tools,
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent, TFile } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
 import type { CodeExecutionContext } from '../execution';
@@ -3687,5 +3691,255 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     );
 
     expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
+  });
+});
+
+describe('initializeAgent — authorized run file snapshots', () => {
+  const resourceMock = jest.requireMock('../resources') as { primeResources: jest.Mock };
+  const filterMock = jest.requireMock('~/files') as {
+    filterFilesByEndpointRuntimeConfig: jest.Mock;
+  };
+  const realResources = jest.requireActual<typeof import('../resources')>('../resources');
+  const realFilters = jest.requireActual<typeof import('~/files/filter')>('~/files/filter');
+
+  const inputFile = (overrides: Partial<TFile> = {}): TFile => ({
+    file_id: 'current-pdf',
+    user: 'user-1',
+    filename: 'current.pdf',
+    filepath: '/uploads/current.pdf',
+    type: 'application/pdf',
+    source: FileSources.local,
+    bytes: 20,
+    usage: 1,
+    embedded: false,
+    object: 'file',
+    llmDeliveryPath: 'provider',
+    metadata: { destinationChosen: false },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resourceMock.primeResources.mockReset().mockImplementation(realResources.primeResources);
+    filterMock.filterFilesByEndpointRuntimeConfig
+      .mockReset()
+      .mockImplementation(realFilters.filterFilesByEndpointRuntimeConfig);
+  });
+
+  afterEach(() => {
+    resourceMock.primeResources
+      .mockReset()
+      .mockResolvedValue({ attachments: [], tool_resources: undefined });
+    filterMock.filterFilesByEndpointRuntimeConfig.mockReset().mockReturnValue([]);
+  });
+
+  function setup() {
+    const result = createMocks();
+    result.agent.tools = [Tools.execute_code, Tools.file_search];
+    result.agent.endpoint = EModelEndpoint.openAI;
+    return result;
+  }
+
+  it('reuses current inputs without reading parent history or counting their usage again', async () => {
+    const { agent, req, loadTools, db } = setup();
+    const file = inputFile();
+    const getMessages = jest.fn();
+    const getDeferredProvisionFiles = jest.fn();
+    const result = await initializeAgent(
+      {
+        req,
+        agent,
+        loadTools,
+        conversationId: 'parent-conversation',
+        parentMessageId: 'previous-parent-message',
+        authorizedRunFiles: [file],
+        allowedProviders: new Set([Providers.OPENAI]),
+        codeEnvAvailable: true,
+        fileSearchAvailable: true,
+      },
+      { ...db, getMessages, getDeferredProvisionFiles },
+    );
+    expect(result.requestAttachments.map((entry) => entry.file_id)).toEqual([file.file_id]);
+    expect(result.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toEqual([
+      file.file_id,
+    ]);
+    expect(result.provisionState?.vectorDBFiles.map((entry) => entry.file_id)).toEqual([
+      file.file_id,
+    ]);
+    expect(result.requestAttachments[0]).not.toBe(file);
+    expect(result.provisionState?.agentScopedFileIds.size).toBe(0);
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(getDeferredProvisionFiles).not.toHaveBeenCalled();
+    expect(db.getConvoFiles).not.toHaveBeenCalled();
+    expect(db.getToolFilesByIds).not.toHaveBeenCalled();
+    expect(db.getFiles).not.toHaveBeenCalled();
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+  });
+
+  it('still authorizes and primes the child agent own setup files separately', async () => {
+    const { agent, req, loadTools, db } = setup();
+    const shared = inputFile();
+    const setupFile = inputFile({
+      file_id: 'child-setup',
+      filename: 'setup.txt',
+      type: 'text/plain',
+      text: 'child setup instructions',
+      llmDeliveryPath: 'text',
+      context: FileContext.agents,
+    });
+    if (req.config == null) throw new Error('Missing test configuration');
+    req.config.endpoints = { ...req.config.endpoints };
+    req.config.endpoints.agents = configSchema.parse({
+      version: '1.3.9',
+      endpoints: { agents: { capabilities: [AgentCapabilities.context] } },
+    }).endpoints?.agents;
+    agent.tools?.push(EToolResources.context);
+    agent.tool_resources = { context: { file_ids: [setupFile.file_id] } };
+    (db.getFiles as jest.Mock).mockResolvedValue([setupFile]);
+    const filterFilesByAgentAccess = jest.fn(async ({ files }: { files: TFile[] }) => files);
+    const result = await initializeAgent(
+      {
+        req,
+        agent,
+        loadTools,
+        conversationId: 'parent-conversation',
+        authorizedRunFiles: [shared],
+        allowedProviders: new Set([Providers.OPENAI]),
+        codeEnvAvailable: true,
+        fileSearchAvailable: true,
+      },
+      { ...db, filterFilesByAgentAccess },
+    );
+    expect(result.requestAttachments.map((entry) => entry.file_id)).toEqual([shared.file_id]);
+    expect(result.agentContextAttachments.map((entry) => entry.file_id)).toEqual([
+      setupFile.file_id,
+    ]);
+    expect(result.provisionState?.agentScopedFileIds).toEqual(new Set([setupFile.file_id]));
+    expect(filterFilesByAgentAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: agent.id, userId: 'user-1', files: [setupFile] }),
+    );
+    expect(db.getFiles).toHaveBeenCalledTimes(1);
+    expect(db.getConvoFiles).not.toHaveBeenCalled();
+  });
+
+  it('treats an empty authorized snapshot as no shared inputs', async () => {
+    const { agent, req, loadTools, db } = setup();
+    (db.getConvoFiles as jest.Mock).mockResolvedValue(['unrelated-history']);
+    const result = await initializeAgent(
+      {
+        req,
+        agent,
+        loadTools,
+        conversationId: 'parent-conversation',
+        authorizedRunFiles: [],
+        allowedProviders: new Set([Providers.OPENAI]),
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(result.requestAttachments).toEqual([]);
+    expect(result.provisionState).toBeUndefined();
+    expect(db.getConvoFiles).not.toHaveBeenCalled();
+  });
+
+  it.each([{ user: 'foreign-user' }, { tenantId: 'foreign-tenant' }])(
+    'rejects an incorrectly scoped snapshot before priming: %o',
+    async (difference) => {
+      const { agent, req, loadTools, db } = setup();
+      await expect(
+        initializeAgent(
+          {
+            req,
+            agent,
+            loadTools,
+            authorizedRunFiles: [inputFile(difference)],
+            allowedProviders: new Set([Providers.OPENAI]),
+            codeEnvAvailable: true,
+          },
+          db,
+        ),
+      ).rejects.toThrow('authenticated owner');
+      expect(resourceMock.primeResources).not.toHaveBeenCalled();
+    },
+  );
+
+  it('applies the child endpoint policy to the supplied snapshot', async () => {
+    const { agent, req, loadTools, db } = setup();
+    if (req.config == null) throw new Error('Missing test configuration');
+    req.config.fileConfig = { endpoints: { [EModelEndpoint.openAI]: { disabled: true } } };
+    const result = await initializeAgent(
+      {
+        req,
+        agent,
+        loadTools,
+        authorizedRunFiles: [inputFile()],
+        allowedProviders: new Set([Providers.OPENAI]),
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(result.requestAttachments).toEqual([]);
+    expect(result.provisionState).toBeUndefined();
+  });
+
+  it('checks current content policy before a shared text file reaches a child', async () => {
+    const { agent, req, loadTools, db } = setup();
+    if (req.config == null) throw new Error('Missing test configuration');
+    req.config.filters = {
+      files: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      },
+    };
+    await expect(
+      initializeAgent(
+        {
+          req,
+          agent,
+          loadTools,
+          authorizedRunFiles: [inputFile({ llmDeliveryPath: 'text', text: 'PRIVATE-SECRET' })],
+          allowedProviders: new Set([Providers.OPENAI]),
+          codeEnvAvailable: true,
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_block' });
+    expect(resourceMock.primeResources).not.toHaveBeenCalled();
+  });
+
+  it('returns only exact current request IDs for seeding a shared-file manifest', async () => {
+    const { agent, req, loadTools, db } = setup();
+    const current = inputFile();
+    const historical = inputFile({ file_id: 'history-file', embedded: true });
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValue([current, historical]);
+    (db.getConvoFiles as jest.Mock).mockResolvedValue([historical.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValue([historical]);
+    const result = await initializeAgent(
+      {
+        req,
+        agent,
+        loadTools,
+        conversationId: 'parent-conversation',
+        requestFiles: [{ file_id: current.file_id } as IMongoFile],
+        allowedProviders: new Set([Providers.OPENAI]),
+        codeEnvAvailable: true,
+        fileSearchAvailable: true,
+      },
+      db,
+    );
+    expect(result.requestAttachments.map((entry) => entry.file_id)).toEqual([
+      current.file_id,
+      historical.file_id,
+    ]);
+    expect(result.currentRequestAttachments.map((entry) => entry.file_id)).toEqual([
+      current.file_id,
+    ]);
+    expect(result.currentRequestAttachments[0].user).toBe('user-1');
   });
 });

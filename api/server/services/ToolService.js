@@ -52,6 +52,7 @@ const {
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  resolveRunFileCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
@@ -2050,6 +2051,7 @@ async function loadToolsForExecution({
   conversationId,
   actionsEnabled,
   accessibleMcpServerNames,
+  runFileCodeExecutionContext,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -2148,6 +2150,10 @@ async function loadToolsForExecution({
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
+  Object.assign(
+    codeExecutionContext,
+    resolveRunFileCodeExecutionContext(codeExecutionContext, runFileCodeExecutionContext),
+  );
   configurable.codeExecutionContext = codeExecutionContext;
 
   const isPTC =

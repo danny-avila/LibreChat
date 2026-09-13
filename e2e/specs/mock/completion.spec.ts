@@ -13,6 +13,7 @@ test.describe('generation finalization invariant', () => {
   }) => {
     test.setTimeout(90_000);
     const label = `completion-error-${Date.now()}`;
+    const providerError = `E2E forced stream error ${label}`;
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
@@ -20,6 +21,9 @@ test.describe('generation finalization invariant', () => {
     await expect(
       sendMessageAndWaitForCompletion(page, `E2E_FORCED_ERROR:${label}`),
     ).rejects.toThrow('Persisted assistant response contains an unexpected error');
-    await expect(messagesView(page).getByText(`E2E forced stream error ${label}`)).toBeVisible();
+    await expect(
+      messagesView(page).getByText('The model provider could not complete this request.'),
+    ).toBeVisible();
+    await expect(messagesView(page).getByText(providerError)).toHaveCount(0);
   });
 });

@@ -177,6 +177,32 @@ describe('createEndpointsConfigService', () => {
       expect(result?.[EModelEndpoint.agents]?.maxSubagents).toBe(20);
     });
 
+    it.each([true, false])(
+      'exposes file sharing policy to the agent builder when enabled=%s',
+      async (enabled) => {
+        const fileSharing = {
+          enabled,
+          allowSiblingSharing: false,
+          maxFiles: 100,
+          ttlMs: 3_600_000,
+        };
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+          }),
+          getAppConfig: jest
+            .fn()
+            .mockResolvedValue(
+              appConfig({ endpoints: { [EModelEndpoint.agents]: { fileSharing } } }),
+            ),
+        });
+        const { getEndpointsConfig } = createEndpointsConfigService(deps);
+        const result = await getEndpointsConfig(fakeReq());
+
+        expect(result?.[EModelEndpoint.agents]?.fileSharing).toEqual(fileSharing);
+      },
+    );
+
     it('exposes the deployment stateful environment allowlist', async () => {
       const deps = createMockDeps({
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({

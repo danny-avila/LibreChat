@@ -1,7 +1,23 @@
 import mongoose, { Schema } from 'mongoose';
 import { FileContext, FileSources } from 'librechat-data-provider';
+import type { RunFileProvenance } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
 import { codeEnvRefMapSchema, codeEnvRefSchema } from './codeEnvRef';
+
+const runFileProvenanceSchema = new Schema<RunFileProvenance>(
+  {
+    runId: { type: String, required: true },
+    executionId: { type: String, required: true },
+    agentId: { type: String, required: true },
+    parentExecutionId: { type: String },
+    parentAgentId: { type: String },
+    recipientAgentIds: { type: [String], default: undefined },
+    sourceFileId: { type: String, required: true },
+    publishedAt: { type: String, required: true },
+    inputFileIds: { type: [String], required: true },
+  },
+  { _id: false },
+);
 
 const file: Schema<IMongoFile> = new Schema(
   {
@@ -119,6 +135,11 @@ const file: Schema<IMongoFile> = new Schema(
     width: Number,
     height: Number,
     metadata: {
+      runFile: {
+        type: runFileProvenanceSchema,
+        default: undefined,
+        immutable: true,
+      },
       codeEnvRef: {
         type: codeEnvRefSchema,
         default: undefined,
@@ -203,6 +224,22 @@ file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },
+);
+file.index(
+  {
+    user: 1,
+    tenantId: 1,
+    conversationId: 1,
+    'metadata.runFile.runId': 1,
+    'metadata.runFile.executionId': 1,
+    'metadata.runFile.agentId': 1,
+    'metadata.runFile.sourceFileId': 1,
+  },
+  {
+    name: 'run_artifact_identity',
+    unique: true,
+    partialFilterExpression: { context: FileContext.run_artifact },
+  },
 );
 
 export default file;

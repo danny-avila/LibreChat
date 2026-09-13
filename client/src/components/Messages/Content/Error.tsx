@@ -75,6 +75,10 @@ type TCodeWorkspaceError = {
   reason?: string;
 };
 
+type TUpstreamModelError = {
+  status?: number;
+};
+
 const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, TranslationKeys> = {
   required: 'com_error_code_workspace_required',
   invalid: 'com_error_code_workspace_invalid',
@@ -152,6 +156,10 @@ const errorMessages = {
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
   [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
+  [ErrorTypes.UPSTREAM_MODEL_ERROR]: (json: TUpstreamModelError, localize: LocalizeFunction) =>
+    typeof json.status === 'number'
+      ? localize('com_error_upstream_model_status', { 0: json.status })
+      : localize('com_error_upstream_model'),
   [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
   [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
     localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),

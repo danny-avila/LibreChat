@@ -256,6 +256,7 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       expect.objectContaining({ requestBody: runArgs.requestBody }),
       undefined,
       processStream.mock.calls[0][1].signal,
+      undefined,
     );
     expect(loadTools.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
     await runArgs.customHandlers[GraphEvents.ON_TOOL_EXECUTE].handle(GraphEvents.ON_TOOL_EXECUTE, {

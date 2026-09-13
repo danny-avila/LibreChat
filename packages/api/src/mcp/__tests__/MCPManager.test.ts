@@ -5075,7 +5075,7 @@ describe('MCPManager', () => {
       expect(clearRecoveryState).not.toHaveBeenCalled();
 
       await manager.disconnectUserConnection(userId, serverName);
-      expect(clearRecoveryState).toHaveBeenCalledWith(userId, serverName);
+      expect(clearRecoveryState).toHaveBeenCalledWith(userId, serverName, undefined);
     });
 
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
