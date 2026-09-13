@@ -159,21 +159,39 @@ export const favoriteRowByName = (page: Page, name: string): Locator =>
 export const chatsListRow = (page: Page, title: string): Locator =>
   page.getByTestId('convo-item').filter({ hasText: title }).first();
 
+/** Where the Pinned section sits: on screen, slid out of view, or not laid out
+ *  yet — three states, because the third one is not the second one. */
+type SidebarPlacement = 'on-screen' | 'off-screen' | 'unlaid';
+
+const sidebarPlacement = async (page: Page): Promise<SidebarPlacement> => {
+  const box = await pinnedSection(page).boundingBox();
+  if (!box) {
+    return 'unlaid';
+  }
+  return box.x >= 0 ? 'on-screen' : 'off-screen';
+};
+
 /**
  * Brings the sidebar on screen. A narrow viewport keeps the drawer mounted and
  * slides it out of view instead of unmounting it, so every row still answers a
  * query while nothing on it can be tapped — the tap would land on the page
  * beside the drawer. The chat header's opener is what a person reaches for
- * there, and the rail's own toggle is not rendered at that width.
+ * there; no such control exists at desktop widths, where the panel is already
+ * open, so a section that has merely not been laid out yet is waited for rather
+ * than answered with a click that would never resolve.
  */
 export async function ensureSidebarOnScreen(page: Page): Promise<void> {
-  const section = pinnedSection(page);
-  const onScreen = async () => ((await section.boundingBox())?.x ?? -1) >= 0;
-  if (await onScreen()) {
+  await expect.poll(() => sidebarPlacement(page), { timeout: 15_000 }).not.toBe('unlaid');
+  if ((await sidebarPlacement(page)) === 'on-screen') {
     return;
   }
-  await page.getByRole('button', { name: 'Open sidebar' }).first().click();
-  await expect.poll(onScreen, { timeout: 10_000 }).toBe(true);
+  const opener = page.getByRole('button', { name: 'Open sidebar' });
+  /* Desktop keeps the panel open and renders no opener at all, so an x that is
+   * still negative there is a panel mid-layout, not a closed drawer. */
+  if ((await opener.count()) > 0) {
+    await opener.first().click();
+  }
+  await expect.poll(() => sidebarPlacement(page), { timeout: 15_000 }).toBe('on-screen');
 }
 
 /** Opens a fresh chat route and waits for the Pinned section to be reachable. */
