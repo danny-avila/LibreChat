@@ -1,18 +1,23 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, SystemRoles, PrincipalType, PermissionTypes } from 'librechat-data-provider';
 import type {
+  TUser,
   TPeoplePickerPermissions,
   TPrincipalSearchResponse,
   TPrincipalSearchResult,
 } from 'librechat-data-provider';
-import type { NextFunction, Response } from 'express';
-import type { ServerRequest } from '~/types';
+import type { NextFunction, Request, Response } from 'express';
 
 export type SearchablePrincipalType = PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE;
 
 export type EntraPrincipalSearchType = 'all' | 'users' | 'groups';
 
-export type PrincipalSearchRequest = ServerRequest & {
+export type PrincipalSearchUser = Partial<Pick<TUser, 'id' | 'role' | 'provider'>> & {
+  openidId?: string;
+};
+
+export type PrincipalSearchRequest = Pick<Request, 'query' | 'headers'> & {
+  user?: PrincipalSearchUser;
   /** Principal types the caller may search, resolved by the people picker access check. */
   principalSearchTypes?: SearchablePrincipalType[];
 };
@@ -39,7 +44,7 @@ export interface PrincipalSearchDeps {
   ) => Promise<TPrincipalSearchResult[]>;
   calculateRelevanceScore: (item: TPrincipalSearchResult, query: string) => number;
   sortPrincipalsByRelevance: (results: ScoredPrincipal[]) => ScoredPrincipal[];
-  entraIdPrincipalFeatureEnabled: (user: PrincipalSearchRequest['user']) => unknown;
+  entraIdPrincipalFeatureEnabled: (user?: PrincipalSearchUser) => boolean;
   searchEntraIdPrincipals: (
     accessToken: string,
     sub: string | undefined,
