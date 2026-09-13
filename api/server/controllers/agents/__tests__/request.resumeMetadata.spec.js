@@ -3912,7 +3912,6 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveConvo).not.toHaveBeenCalled();
     });
 
-
     it.each([false, true])(
       'creates the conversation row for a failed first turn (authorized project: %s)',
       async (hasAuthorizedProject) => {

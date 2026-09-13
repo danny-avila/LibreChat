@@ -71,6 +71,12 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeEnvironmentConfig,
+  type CodeExecutionContext,
+} from './execution';
+import {
   resolveChatProjectFiles,
   resolveChatProjectPolicyFiles,
   toCanonicalProjectResource,
@@ -100,12 +106,6 @@ import {
   splitMCPToolKey,
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
-import {
-  normalizeStatefulCodeEnvironment,
-  resolveCodeExecutionContext,
-  type CodeEnvironmentConfig,
-  type CodeExecutionContext,
-} from './execution';
 import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
