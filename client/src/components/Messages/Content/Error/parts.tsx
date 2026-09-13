@@ -128,6 +128,7 @@ export function ErrorDetails({ label, children }: { label: string; children: Rea
         aria-controls={panelId}
         className="flex items-center gap-1 rounded-md text-xs font-medium text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
       >
+        {label}
         <ChevronRight
           className={cn(
             'size-3.5 transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none',
@@ -135,7 +136,6 @@ export function ErrorDetails({ label, children }: { label: string; children: Rea
           )}
           aria-hidden="true"
         />
-        {label}
       </button>
       <div id={panelId} style={panelStyle} aria-hidden={!open}>
         <div ref={panelRef} className="overflow-hidden">
