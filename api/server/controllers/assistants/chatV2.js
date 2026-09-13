@@ -14,6 +14,10 @@ const {
   preflightAssistantRunContent,
   reportLocatorTraversalFailure,
   preflightAssistantUserMessageContent,
+  assertModelBoundContent,
+  resolveChatProjectContext,
+  formatChatProjectInstructions,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE,
 } = require('@librechat/api');
 const {
   Time,
@@ -46,7 +50,9 @@ const {
   getTransactions,
   findBalanceByUser,
   upsertBalanceFields,
+  getChatProject,
   createAutoRefillTransaction,
+  getProjectFiles,
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
@@ -140,6 +146,39 @@ const chatV2 = async (req, res) => {
         await handleError(new Error('Request closed'));
       }
     });
+    let existingConversation = req.resolvedConversation;
+    if (existingConversation === undefined) {
+      existingConversation = convoId ? await getConvo(req.user.id, convoId) : null;
+    }
+    req.resolvedConversation = existingConversation;
+    const projectContext = await resolveChatProjectContext(
+      {
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+        conversationId: convoId,
+        requestedProjectId: endpointOption?.chatProjectId ?? req.body?.chatProjectId,
+        resolvedConversation: existingConversation,
+        includeResources: false,
+      },
+      { getConvo, getChatProject, getProjectFiles },
+    );
+    req.chatProjectContext = projectContext;
+    if (projectContext?.instructions.trim()) {
+      try {
+        assertModelBoundContent({
+          filters: req.config?.filters,
+          legacyPii: req.config?.messageFilter?.pii,
+          agents: [{ instructions: projectContext.instructions }],
+        });
+      } catch (error) {
+        if (!isContentFilterError(error)) {
+          throw error;
+        }
+        contentRejected = true;
+        return res.status(error.statusCode).json(error.body);
+      }
+    }
+    const projectInstructions = formatChatProjectInstructions(projectContext);
 
     if (convoId && !_thread_id) {
       completedRun = true;
@@ -167,11 +206,13 @@ const chatV2 = async (req, res) => {
         transactions.reduce((acc, curr) => acc + curr.rawAmount, 0),
       );
 
-      // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
+      // TODO: make promptBuffer a config option; buffer for title generation.
       const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
       // 5 is added for labels
-      let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
-      promptTokens += totalPreviousTokens + promptBuffer;
+      const promptText = [`${text ?? ''}${promptPrefix ?? ''}`, projectInstructions]
+        .filter(Boolean)
+        .join('\n\n');
+      let promptTokens = totalPreviousTokens + (await countTokens(promptText)) + 5 + promptBuffer;
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
@@ -253,20 +294,16 @@ const chatV2 = async (req, res) => {
       endpointOption,
       clientTimestamp,
     });
-
-    let existingConversationPromise;
-    const getExistingConversation = () => {
-      if (!convoId) {
-        return Promise.resolve(null);
-      }
-      existingConversationPromise ??= getConvo(req.user.id, convoId);
-      return existingConversationPromise;
-    };
+    if (projectInstructions) {
+      body.additional_instructions = [body.additional_instructions, projectInstructions]
+        .filter(Boolean)
+        .join('\n\n');
+    }
 
     const getRequestFileIds = async () => {
       let thread_file_ids = [];
       if (convoId) {
-        const convo = await getExistingConversation();
+        const convo = existingConversation;
         if (convo && convo.file_ids) {
           thread_file_ids = convo.file_ids;
         }
@@ -361,6 +398,10 @@ const chatV2 = async (req, res) => {
       /* asynchronous */
       userMessagePromise = saveUserMessage(req, { ...requestMessage, model });
 
+      const conversationProjectId =
+        existingConversation === null
+          ? projectContext?.projectId
+          : existingConversation?.chatProjectId;
       conversation = {
         conversationId,
         endpoint,
@@ -368,6 +409,7 @@ const chatV2 = async (req, res) => {
         instructions: instructions,
         assistant_id,
         // model,
+        ...(conversationProjectId !== undefined ? { chatProjectId: conversationProjectId } : {}),
       };
 
       if (file_ids.length) {
@@ -592,6 +634,10 @@ const chatV2 = async (req, res) => {
       });
     }
   } catch (error) {
+    if (!res.headersSent && error?.message === CHAT_PROJECT_CONTEXT_UNAVAILABLE) {
+      contentRejected = true;
+      return res.status(404).json({ error: 'Conversation context unavailable' });
+    }
     await handleError(error);
   }
 };

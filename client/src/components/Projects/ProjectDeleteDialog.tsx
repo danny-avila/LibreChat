@@ -10,6 +10,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
+import type { ComponentProps } from 'react';
 import { useDeleteProjectMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -18,12 +19,14 @@ type ProjectDeleteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: TChatProject;
+  triggerRef?: ComponentProps<typeof OGDialog>['triggerRef'];
 };
 
 export default function ProjectDeleteDialog({
   open,
   onOpenChange,
   project,
+  triggerRef,
 }: ProjectDeleteDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -49,7 +52,7 @@ export default function ProjectDeleteDialog({
   };
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       <OGDialogContent className="w-11/12 max-w-md" showCloseButton={false}>
         <OGDialogHeader>
           <OGDialogTitle>{localize('com_ui_delete_project')}</OGDialogTitle>

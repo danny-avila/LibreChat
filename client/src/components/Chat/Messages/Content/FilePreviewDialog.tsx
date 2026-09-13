@@ -3,7 +3,13 @@ import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
+import {
+  formatFileSize,
+  getDownloadFilename,
+  logger,
+  sortPagesByRelevance,
+  triggerDownload,
+} from '~/utils';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -23,17 +29,6 @@ interface FilePreviewDialogProps {
   fileType?: string;
   fileSource?: string;
   fileSize?: number;
-}
-
-/** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1048576) {
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${bytes} B`;
 }
 
 function getDisplayType(fileType?: string, fileName?: string): string {
@@ -221,7 +216,7 @@ export default function FilePreviewDialog({
     metaParts.push(`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`);
   }
   if (fileSize != null && fileSize > 0) {
-    metaParts.push(formatBytes(fileSize));
+    metaParts.push(formatFileSize(fileSize));
   }
   if (sortedPages && sortedPages.length > 0) {
     metaParts.push(localize('com_file_pages', { pages: sortedPages.join(', ') }));

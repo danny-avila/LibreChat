@@ -22,7 +22,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
-import { useCreateProjectMutation } from '~/data-provider';
+import { useCreateProjectMutation, useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 type ProjectCreateDialogProps = {
@@ -46,6 +46,9 @@ export default function ProjectCreateDialog({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const createProject = useCreateProjectMutation();
+  const { data: startupConfig } = useGetStartupConfig();
+  const descriptionLimit =
+    startupConfig?.projects?.maxDescriptionLength ?? MAX_CHAT_PROJECT_DESCRIPTION_LENGTH;
   const { showToast } = useToastContext();
 
   useEffect(() => {
@@ -130,7 +133,7 @@ export default function ProjectCreateDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 rows={3}
-                maxLength={MAX_CHAT_PROJECT_DESCRIPTION_LENGTH}
+                maxLength={descriptionLimit}
                 className="min-h-[4.5rem] bg-transparent"
               />
             </div>

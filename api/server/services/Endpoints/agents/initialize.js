@@ -6,6 +6,7 @@ const {
   resolveConversationCodeEnvironmentDecision,
   createConcurrencyLimiter,
   loadSkillStates,
+  resolveChatProjectContext,
   initializeAgent,
   primeInvokedSkillsForProfiles,
   validateAgentModel,
@@ -23,9 +24,9 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
-  resolveCodeExecutionWorkspaceContext,
   optsOutOfAttachedCodeEnvironment,
   isImplicitStatefulCodeRouteAvailable,
+  resolveCodeExecutionWorkspaceContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -566,6 +567,31 @@ const initializeClient = async ({
   /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
   const usageEmitSink = [];
 
+  const requestedProjectId =
+    endpointOption.chatProjectId !== undefined
+      ? endpointOption.chatProjectId
+      : req.body?.chatProjectId;
+  const hasResolvedProjectContext = Object.prototype.hasOwnProperty.call(req, 'chatProjectContext');
+  const chatProjectContextPromise = hasResolvedProjectContext
+    ? Promise.resolve(req.chatProjectContext)
+    : requestConversationPromise.then((resolvedConversation) =>
+        resolveChatProjectContext(
+          {
+            userId: req.user.id,
+            tenantId: req.user.tenantId,
+            conversationId,
+            requestedProjectId,
+            resolvedConversation,
+            includeResources: false,
+          },
+          {
+            getConvo: db.getConvo,
+            getChatProject: db.getChatProject,
+            getProjectFiles: db.getProjectFiles,
+          },
+        ),
+      );
+
   const [
     memoryAvailable,
     accessibleSkillIds,
@@ -574,6 +600,7 @@ const initializeClient = async ({
     { skillStates, defaultActiveOnShare },
     { primaryAgent, modelsConfig },
     requestConversation,
+    chatProjectContext,
     toolRoleGrants,
   ] = await Promise.all([
     memoryAvailablePromise,
@@ -583,10 +610,13 @@ const initializeClient = async ({
     skillStatesPromise,
     validatedPrimaryAgentPromise,
     requestConversationPromise,
+    chatProjectContextPromise,
     toolRoleGrantsPromise,
   ]);
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
+  req.chatProjectContext = chatProjectContext;
+  req.chatProjectContextEnabled = true;
   const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
     conversationId,
     requestedMode: runtimeRequestBody?.codeEnvironmentMode,
@@ -666,7 +696,6 @@ const initializeClient = async ({
       primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());
     }
   }
-
   const primaryScopedSkillIds = resolveAgentScopedSkillIds({
     agent: primaryAgent,
     accessibleSkillIds,
@@ -686,9 +715,9 @@ const initializeClient = async ({
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
   });
-
   const primaryConfig = await initializeAgent(
     {
+      useChatProjectContext: true,
       req,
       res,
       loadTools,
@@ -714,6 +743,7 @@ const initializeClient = async ({
       manualSkills,
     },
     {
+      getProjectFiles: db.getProjectFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
@@ -805,6 +835,7 @@ const initializeClient = async ({
       checkPermission,
       logViolation,
       db: {
+        getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -1279,6 +1310,7 @@ const initializeClient = async ({
           defaultActiveOnShare,
         },
         {
+          getProjectFiles: db.getProjectFiles,
           getFiles: db.getFiles,
           getUserKey: db.getUserKey,
           getMessages: db.getMessages,

@@ -202,6 +202,7 @@ const processAddedConvo = async ({
         defaultActiveOnShare,
       },
       {
+        getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
