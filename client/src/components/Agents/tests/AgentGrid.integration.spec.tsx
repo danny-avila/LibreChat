@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import userEvent from '@testing-library/user-event';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -191,6 +192,45 @@ describe('AgentGrid pagination', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+  it('puts recovery before loaded rows in keyboard order', async () => {
+    const user = userEvent.setup();
+    marketplace
+      .mockResolvedValueOnce(page(makeAgents(32), 'next-page'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'))
+      .mockRejectedValueOnce(new Error('Cursor page unavailable'));
+    renderGrid();
+    await screen.findByRole('button', { name: 'Agent 0' });
+
+    const frame = screen.getByTestId('viewport');
+    act(() => {
+      frame.scrollTop = frame.scrollHeight - frame.clientHeight;
+      fireEvent.scroll(frame);
+    });
+    await screen.findByRole('alert', {}, { timeout: 5000 });
+
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus();
+  });
+
+  it('hides previous-scope rows when the replacement request fails', async () => {
+    marketplace
+      .mockResolvedValueOnce(page(makeAgents(1)))
+      .mockRejectedValueOnce(new Error('My agents unavailable'))
+      .mockRejectedValueOnce(new Error('My agents unavailable'))
+      .mockRejectedValueOnce(new Error('My agents unavailable'));
+    const view = renderGrid();
+    await screen.findByRole('button', { name: 'Agent 0' });
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Harness mine={1} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(screen.queryByRole('button', { name: 'Agent 0' })).not.toBeInTheDocument();
   });
 
   it('keeps the error state in place while a retry is in flight', async () => {

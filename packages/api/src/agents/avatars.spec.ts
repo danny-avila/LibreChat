@@ -144,11 +144,10 @@ describe('refreshListAvatars', () => {
     expect(stats.updated).toBe(1);
     expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg' });
     expect(mockRefreshS3Url).toHaveBeenCalledWith(agent.avatar);
-    expect(mockUpdateAgent).toHaveBeenCalledWith(
-      { id: 'agent1' },
-      { avatar: { filepath: 'new-path.jpg', source: FileSources.s3 } },
-      { updatingUserId: userId, skipVersioning: true },
-    );
+    expect(mockUpdateAgent).toHaveBeenCalledWith({
+      id: 'agent1',
+      avatar: { filepath: 'new-path.jpg', source: FileSources.s3 },
+    });
   });
 
   it('should not update if S3 URL unchanged', async () => {

@@ -48,11 +48,22 @@ export const getAvatarRefreshCoveredIds = (entry: unknown): string[] => {
 
 export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
 
-export type UpdateAgentFn = (
-  searchParams: { id: string },
-  updateData: { avatar: AgentAvatar },
-  options: { updatingUserId: string; skipVersioning: boolean },
-) => Promise<unknown>;
+export type UpdateAgentFn = (params: { id: string; avatar: AgentAvatar }) => Promise<unknown>;
+
+export type AvatarRefreshCache = {
+  set: (key: string, value: AvatarRefreshCacheEntry, ttl: number) => Promise<unknown>;
+};
+
+export type ResolveAvatarRefreshParams = {
+  agents: Agent[];
+  userId: string;
+  cachedRefreshEntry: unknown;
+  cache: AvatarRefreshCache;
+  refreshKey: string;
+  cacheTtl: number;
+  refreshS3Url: RefreshS3UrlFn;
+  updateAgent: UpdateAgentFn;
+};
 
 export type RefreshListAvatarsParams = {
   agents: Agent[];
@@ -74,6 +85,53 @@ export type RefreshStats = {
   coveredIds: string[];
 };
 
+/**
+ * Resolves the cache and refresh work for one already-paginated agent page.
+ * Cache coverage is page-independent: each response contributes the rows it saw,
+ * so later pages can refresh rows absent from earlier responses.
+ */
+export const resolveAvatarRefresh = async ({
+  agents,
+  userId,
+  cachedRefreshEntry,
+  cache,
+  refreshKey,
+  cacheTtl,
+  refreshS3Url,
+  updateAgent,
+}: ResolveAvatarRefreshParams): Promise<AvatarRefreshCacheEntry | null> => {
+  const isValidCachedRefresh =
+    cachedRefreshEntry != null &&
+    typeof cachedRefreshEntry === 'object' &&
+    (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache != null;
+  const cachedCoveredIds = getAvatarRefreshCoveredIds(cachedRefreshEntry);
+  const refreshAgents = selectAvatarRefreshAgents(agents, cachedCoveredIds);
+
+  if (!refreshAgents.length && isValidCachedRefresh) {
+    logger.debug(
+      '[resolveAvatarRefresh] S3 avatar refresh already checked for this page, skipping',
+    );
+    return cachedRefreshEntry as AvatarRefreshCacheEntry;
+  }
+
+  try {
+    const { urlCache, coveredIds } = await refreshListAvatars({
+      agents: refreshAgents,
+      userId,
+      refreshS3Url,
+      updateAgent,
+    });
+    const refreshEntry = mergeAvatarRefreshCacheEntry(cachedRefreshEntry, {
+      urlCache,
+      coveredIds,
+    });
+    await cache.set(refreshKey, refreshEntry, cacheTtl);
+    return refreshEntry;
+  } catch (err) {
+    logger.error('[resolveAvatarRefresh] Error refreshing avatars for list page: %o', err);
+    return null;
+  }
+};
 export const mergeAvatarRefreshCacheEntry = (
   previous: unknown,
   stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'>,
@@ -103,7 +161,6 @@ export const mergeAvatarRefreshCacheEntry = (
  */
 export const refreshListAvatars = async ({
   agents,
-  userId,
   refreshS3Url,
   updateAgent,
 }: RefreshListAvatarsParams): Promise<RefreshStats> => {
@@ -156,11 +213,10 @@ export const refreshListAvatars = async ({
           stats.urlCache[agent.id] = newPath;
 
           try {
-            await updateAgent(
-              { id: agent.id },
-              { avatar: { filepath: newPath, source: agent.avatar.source } },
-              { updatingUserId: userId, skipVersioning: true },
-            );
+            await updateAgent({
+              id: agent.id,
+              avatar: { filepath: newPath, source: agent.avatar.source },
+            });
             stats.updated++;
           } catch (persistErr) {
             logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);
