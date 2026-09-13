@@ -527,6 +527,10 @@ describe('Agent Abort Endpoint', () => {
           await options.beforePublish(abortResult);
           return abortResult;
         });
+        mockSaveMessage.mockImplementation(async (_context, message) => ({
+          ...message,
+          _id: `oid-${message.messageId}`,
+        }));
         const response = await request(app)
           .post('/api/agents/chat/abort')
           .send({ conversationId: jobStreamId });
@@ -542,6 +546,8 @@ describe('Agent Abort Endpoint', () => {
           expect.objectContaining({
             stampReply: true,
             replyMessageId: 'response-msg-456',
+            /* Without these `saveConvo` reloads the whole history inside the abort barrier. */
+            appendMessageIds: ['oid-user-msg-123', 'oid-response-msg-456'],
           }),
         );
       });

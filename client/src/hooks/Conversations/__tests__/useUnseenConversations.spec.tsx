@@ -526,7 +526,7 @@ describe('useUnseenConversations', () => {
     await act(async () => {
       await queryClient.fetchQuery({
         queryKey: listKeyActive,
-        meta: { replyDiscovery: true },
+        meta: { replyDiscovery: ['renamed-backlog'] },
         queryFn: async () =>
           page([
             {
@@ -543,6 +543,39 @@ describe('useUnseenConversations', () => {
       'renamed-backlog',
     ]);
     expect(result.current?.arrivalStamps).toEqual([]);
+  });
+
+  it('announces only the named discovery on a query it has never observed', async () => {
+    /* The watcher creates this query to reveal one conversation; the rest of its first page is
+       backlog this session has never seen, and greeting the user with all of it is the bug. */
+    const { result, queryClient } = setup();
+    act(() => {
+      queryClient.setQueryData(listKeyArchived, page([]));
+    });
+
+    await act(async () => {
+      await queryClient.fetchQuery({
+        queryKey: [...listKeyActive, 'reply-discovery'],
+        meta: { replyDiscovery: ['discovered'] },
+        queryFn: async () =>
+          page([
+            {
+              conversationId: 'discovered',
+              title: 'Discovered',
+              lastResponseAt: RESPONDED_AGAIN_AT,
+              updatedAt: RESPONDED_AGAIN_AT,
+            },
+            {
+              conversationId: 'backlog',
+              title: 'Old backlog',
+              lastResponseAt: RESPONDED_AT,
+              updatedAt: RESPONDED_AT,
+            },
+          ]),
+      });
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([['discovered', RESPONDED_AGAIN_AT]]);
   });
 
   it('does not treat pagination or a newly mounted variant as a reply arrival', () => {

@@ -23,6 +23,7 @@ jest.mock('librechat-data-provider', () => {
 
 const CONVO_ID = 'convo-unread';
 const listKey = [QueryKeys.allConversations, { isArchived: false }];
+const archivedKey = [QueryKeys.archivedConversations, { isArchived: true }];
 const RESPONDED_AT = '2026-08-16T10:00:00.000Z';
 const SEEN_AT = '2026-08-16T11:00:00.000Z';
 
@@ -389,6 +390,74 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(cached()?.lastResponseAt).toBeUndefined();
     expect(cached()?.lastResponseIsManual).toBeUndefined();
     expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(false);
+  });
+
+  it('rolls an archived row back when the server refuses the unread write', async () => {
+    /* Mark as unread is offered from the archived view, where the row lives in its own list
+       cache: a baseline read that skipped it left the failed write's dot on screen. */
+    const request = deferred();
+    mockMarkUnread.mockReturnValue(request.promise);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData<InfiniteData<ConversationCursorData>>(archivedKey, {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: CONVO_ID,
+              title: 'Archived',
+              endpoint: EModelEndpoint.openAI,
+              createdAt: RESPONDED_AT,
+              updatedAt: SEEN_AT,
+              isArchived: true,
+              lastResponseAt: RESPONDED_AT,
+              lastResponseMessageId: 'original-reply',
+              lastSeenAt: SEEN_AT,
+            },
+          ],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [null],
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useMarkConversationUnreadMutation(), { wrapper });
+    const archived = () =>
+      queryClient.getQueryData<InfiniteData<ConversationCursorData>>(archivedKey)?.pages[0]
+        .conversations[0];
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({ conversationId: CONVO_ID }).catch(() => undefined);
+      await flush();
+      expect(isConversationUnseen(archived())).toBe(true);
+      request.reject(new Error('network down'));
+      await pending;
+    });
+
+    expect(archived()?.lastSeenAt).toBe(SEEN_AT);
+    expect(isConversationUnseen(archived())).toBe(false);
+  });
+
+  it('abandons an unread write that the user superseded by opening the conversation', async () => {
+    /* The unread write suspends while list fetches are cancelled; the read that starts in that
+       window is the newer intent, and sending the unread request afterwards would leave the
+       server flagged against it. */
+    mockMarkSeen.mockResolvedValue({ modified: true });
+    const { result, cached, wrapper } = setup(RESPONDED_AT, SEEN_AT);
+    const seen = renderHook(() => useMarkConversationSeenMutation(), { wrapper });
+
+    await act(async () => {
+      const unread = result.current.mutateAsync({ conversationId: CONVO_ID }).catch(() => undefined);
+      const read = seen.result.current
+        .mutateAsync({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT })
+        .catch(() => undefined);
+      await Promise.all([unread, read]);
+    });
+
+    expect(mockMarkUnread).not.toHaveBeenCalled();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
     expect(isConversationUnseen(cached())).toBe(false);
   });
 });

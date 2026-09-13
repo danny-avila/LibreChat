@@ -1336,6 +1336,10 @@ export function isConvoInAggregateCaches(
  * Callers that only need a point-in-time answer use this instead of subscribing to the list,
  * which keeps event-driven checks off the render path.
  *
+ * Every list prefix `updateConvoInAllQueries` writes is read here, archive included: a row the
+ * user reached from the archived view lives only in that cache, and a lookup that missed it
+ * would take no baseline for an optimistic write and find nothing to roll back afterwards.
+ *
  * The pinned section is fed by its own request, so a pin older than the loaded chat pages lives
  * only there. Missing it would leave such a row's unseen dot stuck: the caller would read the
  * conversation as absent, and absent reads as caught up.
@@ -1344,9 +1348,7 @@ export function findConvoInAllQueries(
   queryClient: QueryClient,
   conversationId: string,
 ): TConversation | undefined {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   let freshest: ConvoCandidate | undefined;
   for (const query of queries) {

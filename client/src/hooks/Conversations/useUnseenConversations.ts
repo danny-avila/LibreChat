@@ -166,12 +166,13 @@ const observeArrivalQuery = (
 ): void => {
   const current = snapshotForQuery(query);
   const previous = snapshots.get(query.queryHash);
-  /* An explicit watcher discovery is live even when it creates the unfiltered query.
-     Ordinary first loads and newly mounted filter variants still establish a quiet baseline. */
-  if (
-    current === null ||
-    (previous == null && !(mode === 'server' && query.meta?.replyDiscovery === true))
-  ) {
+  /* The watcher names the conversations a discovery refresh was started for. Those are live on
+     the query it creates; every other row on that first page is backlog this session has never
+     observed, and announcing it would greet the user with their whole unseen history. */
+  const discovered = query.meta?.replyDiscovery;
+  const discoveredIds = Array.isArray(discovered) ? new Set(discovered as string[]) : null;
+  const isLiveDiscovery = mode === 'server' && (discoveredIds?.size ?? 0) > 0;
+  if (current === null || (previous == null && !isLiveDiscovery)) {
     snapshots.set(query.queryHash, current);
     return;
   }
@@ -186,6 +187,9 @@ const observeArrivalQuery = (
         convo.lastResponseIsManual === true ||
         (mode === 'local' && !previous?.has(conversationId))
       ) {
+        continue;
+      }
+      if (previous == null && discoveredIds?.has(conversationId) !== true) {
         continue;
       }
       /* An unknown row can enter this page because it was renamed. Real reply writes advance

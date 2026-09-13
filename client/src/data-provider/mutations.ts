@@ -17,6 +17,7 @@ import {
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
+  CONVERSATION_LIST_KEYS,
   clearArchivedConversationMessagesCache,
   clearDeletedConversationMessagesCache,
 } from '~/utils';
@@ -273,13 +274,20 @@ export const usePinConversationMutation = (
  * unseen again, with the caller's attempt guard suppressing the re-acknowledgement. Only once
  * it holds data, though: cancelling ChatRoute's initial load would revert it to empty, and
  * with its refetches disabled nothing would ever restart that fetch.
+ *
+ * The roots are the ones the optimistic write reaches, archive included: Mark as unread is
+ * offered from the archived view, and an archived list fetch left running would commit the
+ * read state it read before the write and never be restarted.
  */
 const cancelConvoReadFetches = async (
   queryClient: QueryClient,
   conversationId: string,
 ): Promise<QueryKey[]> => {
   const pointKey = [QueryKeys.conversation, conversationId];
-  const roots = [[QueryKeys.allConversations], [QueryKeys.pinnedConversations]];
+  const roots = [
+    ...CONVERSATION_LIST_KEYS.map((listKey) => [listKey]),
+    [QueryKeys.pinnedConversations],
+  ];
   const cache = queryClient.getQueryCache();
   /* Recorded before the cancellation, because a cancelled fetch was carrying rows this
      mutation never asked about: other conversations' replies, renames, a page that had not
@@ -322,7 +330,9 @@ const restartInterruptedReads = (queryClient: QueryClient, keys: QueryKey[] | un
  * this tab has not seen.
  */
 const refreshConvoReadCaches = (queryClient: QueryClient, conversationId: string): void => {
-  queryClient.invalidateQueries([QueryKeys.allConversations]);
+  for (const listKey of CONVERSATION_LIST_KEYS) {
+    queryClient.invalidateQueries([listKey]);
+  }
   queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
   const pointKey = [QueryKeys.conversation, conversationId];
   if (queryClient.getQueryData(pointKey) !== undefined) {
@@ -380,6 +390,29 @@ const releaseReadWrite = (
 };
 
 /**
+ * Cancelling the in-flight list fetches is awaited, and the user can act again inside that
+ * window: Mark as unread, then open the conversation. The later intent claims the token while
+ * this one is suspended, so a write that resumes without owning the conversation any more has
+ * to abandon — its optimistic write and its request would both land after the newer one.
+ *
+ * Keyed by the variables object, which is the same reference `onMutate` and the request
+ * function receive for one call, so concurrent writes cannot read each other's verdict.
+ */
+const supersededReadWrites = new WeakSet<object>();
+
+const abandonWhenSuperseded = (
+  queryClient: QueryClient,
+  vars: { conversationId: string },
+  token: number,
+): boolean => {
+  if (isLatestReadWrite(queryClient, vars.conversationId, token)) {
+    return false;
+  }
+  supersededReadWrites.add(vars);
+  return true;
+};
+
+/**
  * Requests for two replies can be in flight at once, and the first to return is not always the
  * first sent. Settlement is safe only for the latest local read-state operation, while the cache
  * still holds this mutation's own acknowledgement or while it moves the catch-up forward;
@@ -428,11 +461,17 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
 
   return useMutation(
     [MutationKeys.convoSeen],
-    (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
+    (payload: t.TMarkConversationSeenRequest) =>
+      supersededReadWrites.delete(payload)
+        ? Promise.resolve({ modified: false })
+        : dataService.markConversationSeen(payload),
     {
       onMutate: async (vars) => {
         const operationToken = claimReadWrite(queryClient, vars.conversationId);
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
+        if (abandonWhenSuperseded(queryClient, vars, operationToken)) {
+          return { operationToken, interrupted, superseded: true as const };
+        }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
            a clock running behind the server would leave the row still unseen, and the cache
@@ -447,6 +486,9 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
         return { previous: cached?.lastSeenAt, acknowledged, operationToken, interrupted };
       },
       onSuccess: (data, vars, context) => {
+        if (context?.superseded === true) {
+          return;
+        }
         /* A list refetch already in flight can have read the old catch-up before this write
            and commit afterwards, putting it back. Settle against the server's answer once it
            is known: re-apply what it accepted, or restore the real state when the observed
@@ -618,7 +660,10 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
 
   return useMutation(
     [MutationKeys.convoUnread],
-    (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
+    (payload: t.TMarkConversationUnreadRequest) =>
+      supersededReadWrites.delete(payload)
+        ? Promise.resolve({ modified: false })
+        : dataService.markConversationUnread(payload),
     {
       onMutate: async (vars) => {
         const observed = findConvoInAllQueries(queryClient, vars.conversationId);
@@ -629,6 +674,9 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           lastSeenAt: observed?.lastSeenAt,
         });
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
+        if (abandonWhenSuperseded(queryClient, vars, owner.token)) {
+          return { chain: owner.chain, token: owner.token, interrupted, superseded: true as const };
+        }
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
            state apart from a newer reply that arrived while the request was open. A never-
@@ -660,6 +708,9 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         return context;
       },
       onSuccess: (data, vars, context) => {
+        if (context?.superseded === true) {
+          return;
+        }
         if (data.modified && context?.chain) {
           context.chain.accepted = true;
         }
@@ -757,6 +808,9 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         }));
       },
       onError: (_error, vars, context) => {
+        if (context?.superseded === true) {
+          return;
+        }
         /* A later click owns the row once it has captured this pass's optimistic state as its
            own baseline: rolling back here would restore a catch-up the newer request is about
            to be judged against, and its settlement would then read the restored value as a

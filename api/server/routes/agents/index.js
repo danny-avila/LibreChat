@@ -827,6 +827,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
              * await the user prerequisite first, but still attempt the child
              * write and checkpoint cleanup so every independently useful
              * operation gets a chance to succeed. */
+            let persistedRequestId;
             try {
               const persistedRequest = await saveMessage(messageContext, requestMessage, {
                 context: 'api/server/routes/agents/index.js - abort user prerequisite',
@@ -834,6 +835,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               if (!persistedRequest) {
                 throw new Error('Abort user prerequisite was not persisted');
               }
+              persistedRequestId = persistedRequest._id;
             } catch (error) {
               persistenceErrors.push(error);
             }
@@ -862,6 +864,12 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 hasPersistableAbortContent(content)
               ) {
                 try {
+                  /* The two rows this barrier just wrote are handed to `saveConvo` directly:
+                     without them it reloads the conversation's entire message list to rebuild
+                     `messages`, and that serial read sits between Stop and the FINAL event. */
+                  const appendMessageIds = [persistedRequestId, persistedResponse._id].filter(
+                    (id) => id != null,
+                  );
                   await saveConvo(
                     messageContext,
                     {
@@ -873,6 +881,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                       context: 'api/server/routes/agents/index.js - abort reply stamp',
                       stampReply: true,
                       replyMessageId: persistedResponse.messageId,
+                      ...(appendMessageIds.length > 0 ? { appendMessageIds } : {}),
                     },
                   );
                 } catch (error) {

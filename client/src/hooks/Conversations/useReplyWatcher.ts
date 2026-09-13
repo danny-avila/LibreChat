@@ -149,8 +149,19 @@ const reconcileFirstPage = (
   return pagesChanged || pageParamsChanged ? { ...current, pages, pageParams } : current;
 };
 
-/** Refresh the visible sidebar and the unfiltered cache read by global reply indicators. */
-const refreshConversationLists = async (queryClient: QueryClient): Promise<void> => {
+/**
+ * Refresh the visible sidebar and the unfiltered cache read by global reply indicators.
+ *
+ * `discovered` names the conversations this refresh was started for. The queries it creates
+ * have never been observed before, so the alert layer would otherwise have to choose between
+ * treating their whole first page as new arrivals — announcing the user's entire unseen
+ * backlog — and treating it as a quiet baseline, which would swallow the very reply that
+ * triggered the refresh. Naming the ids keeps both from happening.
+ */
+const refreshConversationLists = async (
+  queryClient: QueryClient,
+  discovered: readonly string[] = [],
+): Promise<void> => {
   const cache = queryClient.getQueryCache();
   const active = cache
     .findAll([QueryKeys.allConversations], { exact: false })
@@ -162,7 +173,7 @@ const refreshConversationLists = async (queryClient: QueryClient): Promise<void>
     const queryFn = query.options.queryFn;
     const snapshot = await queryClient.fetchInfiniteQuery<ConversationCursorData>({
       queryKey: [...query.queryKey, 'reply-discovery'],
-      meta: { replyDiscovery: true },
+      meta: { replyDiscovery: discovered },
       queryFn: async ({ signal }) => {
         if (typeof queryFn !== 'function') {
           return dataService.listConversations({
@@ -205,7 +216,7 @@ const refreshConversationLists = async (queryClient: QueryClient): Promise<void>
     queryClient.invalidateQueries([QueryKeys.pinnedConversations]),
     queryClient.fetchInfiniteQuery({
       queryKey: [QueryKeys.allConversations, { isArchived: false, replyDiscovery: true }],
-      meta: { replyDiscovery: true },
+      meta: { replyDiscovery: discovered },
       queryFn: () => dataService.listConversations({ isArchived: false, limit: AWAY_POLL_LIMIT }),
       getNextPageParam: () => undefined,
     }),
@@ -250,7 +261,7 @@ const mergeTimestamps = async (
      succeeded keeps a row that moved beyond the refreshed pages from causing a refetch loop. */
   if (!isConvoInAggregateCaches(queryClient, conversationId)) {
     if (aggregateRevealed.get(conversationId) !== lastResponseAt) {
-      await refreshConversationLists(queryClient);
+      await refreshConversationLists(queryClient, [conversationId]);
       if (!isCurrent()) {
         return;
       }
@@ -554,7 +565,7 @@ export default function useReplyWatcher() {
            Recording them first would let a transient list failure mute those conversations for
            good: every later poll would read them as already attempted and never invalidate
            again, even after the network recovered. */
-        await refreshConversationLists(queryClient);
+        await refreshConversationLists(queryClient, [...unknownStamps.keys()]);
         if (!isCurrent() || didListRefreshFail(queryClient)) {
           return;
         }

@@ -862,7 +862,14 @@ describe('useReplyWatcher', () => {
         ]),
       );
       expect(queryClient.getQueryData(filteredKey)).toEqual(filteredData);
-      expect(result.current?.arrivalStamps).toContainEqual(['outside-filter', RESPONDED_AT]);
+      /* The away poll names the conversation it discovered, so that refresh may announce it.
+         The focused refresh names nothing: the canonical query it creates has never been
+         observed, and treating its whole first page as arrivals would announce the backlog. */
+      if (focused) {
+        expect(result.current?.arrivalStamps).toEqual([]);
+      } else {
+        expect(result.current?.arrivalStamps).toContainEqual(['outside-filter', RESPONDED_AT]);
+      }
       unsubscribe();
       unmount();
     },
