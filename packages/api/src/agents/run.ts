@@ -50,6 +50,7 @@ import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
+import type { ModelErrorTrackerCallback } from '~/agents/failures/tracker';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { TerminalSteerHook } from '~/agents/steering/runtime';
@@ -986,6 +987,8 @@ type CallbackClientOptions = {
   fallbacks?: FallbackConfig[];
 };
 
+type RunModelCallback = ModelBoundChatModelCallback | ModelErrorTrackerCallback;
+
 /**
  * Installs run-stable callbacks on the model client itself. Subagent child
  * graphs intentionally replace invocation callbacks with their own event
@@ -994,7 +997,7 @@ type CallbackClientOptions = {
  */
 function withModelCallbacks<T extends object>(
   options: T,
-  modelCallbacks: readonly ModelBoundChatModelCallback[] | undefined,
+  modelCallbacks: readonly RunModelCallback[] | undefined,
 ): T {
   if (!modelCallbacks?.length) {
     return options;
@@ -1640,8 +1643,8 @@ export async function createRun({
   compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
-  /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
-  modelCallbacks?: readonly ModelBoundChatModelCallback[];
+  /** Model callbacks inherited by root, summary, fallback, and subagent clients. */
+  modelCallbacks?: readonly RunModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**

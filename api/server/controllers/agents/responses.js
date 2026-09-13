@@ -83,6 +83,7 @@ const {
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
   resolveConversationCodeEnvironmentDecision,
+  createTerminalRunErrorObserver,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -123,7 +124,6 @@ const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
 
 function handleExecutionError({ error, res, appConfig }) {
-  logger.error('[Responses API] Error:', getSafeErrorMetadata(error));
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
     appConfig?.messageFilter?.pii,
@@ -629,6 +629,11 @@ const executeResponse = async (envelope, { req, res }) => {
 
   // Generate IDs
   const responseId = generateResponseId();
+  const terminalRunError = createTerminalRunErrorObserver({
+    logger,
+    responseMessageId: responseId,
+    source: '[Responses API]',
+  });
   const context = createResponseContext(request, responseId);
 
   logger.debug(
@@ -674,7 +679,10 @@ const executeResponse = async (envelope, { req, res }) => {
     onSettlementError: (error) => {
       logger.error('[Responses API] Failed to settle execution:', getSafeErrorMetadata(error));
     },
-    handleExecutionError: (error) => handleExecutionError({ error, res, appConfig }),
+    handleExecutionError: (error, signal) => {
+      terminalRunError.log(error, signal);
+      return handleExecutionError({ error, res, appConfig });
+    },
     execute: async (execution) => {
       if (request.previous_response_id != null) {
         if (typeof request.previous_response_id !== 'string') {
@@ -1260,6 +1268,7 @@ const executeResponse = async (envelope, { req, res }) => {
           user: { ...createSafeUser(req.user), id: userId },
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
+          modelCallbacks: [terminalRunError.modelCallback],
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -1494,6 +1503,7 @@ const executeResponse = async (envelope, { req, res }) => {
           user: { ...createSafeUser(req.user), id: userId },
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
+          modelCallbacks: [terminalRunError.modelCallback],
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),
