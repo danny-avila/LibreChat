@@ -5170,20 +5170,15 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
-        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        } else {
-          logger.debug(
-            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
-          );
-        }
+        /** The run owns its usage even when stopped: `/api/agents/chat/abort`
+         *  only signals the abort, so nothing else records what was consumed.
+         *  A stopped turn is labelled as such on its transactions. */
+        const wasAborted = abortController?.signal?.aborted === true;
+        await this.recordCollectedUsage({
+          context: wasAborted ? 'abort' : 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -5840,14 +5835,12 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        }
+        const wasAborted = abortController?.signal?.aborted === true;
+        await this.recordCollectedUsage({
+          context: wasAborted ? 'abort' : 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
