@@ -9,6 +9,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   sanitizeMessageForTransmit,
+  hasPersistableAbortContent,
   buildAbortedResponseMetadata,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
@@ -166,10 +167,15 @@ async function abortMessage(req, res) {
      saves the message directly, so the stamp rides along here. Best-effort: the row is
      already durable, and a missed stamp must not suppress the final event.
      The temporary flag comes from the job: the client's abort request carries only the abort
-     key and endpoint, so the request body alone would stamp a stopped temporary chat. */
+     key and endpoint, so the request body alone would stamp a stopped temporary chat.
+     An interrupt before the first real token still persists the unfinished assistant row, but
+     that row renders nothing: stamping it would raise a dot for a reply with nothing to read,
+     and opening the conversation could never clear it. */
   const stampConversationId = jobData?.conversationId;
   const isTemporaryJob = (jobData?.isTemporary ?? req?.body?.isTemporary) === true;
-  if (savedMessage?.messageId && !isTemporaryJob && stampConversationId) {
+  const replyIsReadable =
+    hasPersistableAbortContent(content) || (typeof text === 'string' && text.trim().length > 0);
+  if (savedMessage?.messageId && replyIsReadable && !isTemporaryJob && stampConversationId) {
     try {
       await db.stampConvoLastResponse(userId, stampConversationId, savedMessage.messageId);
     } catch (error) {

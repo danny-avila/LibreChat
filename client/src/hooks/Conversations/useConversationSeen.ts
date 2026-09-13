@@ -58,22 +58,32 @@ export default function useConversationSeen(
   const markSeenRef = useRef<() => void>(() => undefined);
   const isResponseRenderedRef = useRef(isResponseRendered);
   isResponseRenderedRef.current = isResponseRendered;
-  /** The active MessagesView scopes this to its rendered tree. The document fallback keeps the
-   * hook safe for callers that do not own a content ref, while still requiring the actual row
-   * body rather than a virtual/progressive placeholder. */
-  const hasRenderedResponse = useCallback((messageId: string | undefined): boolean => {
-    if (!messageId) {
-      return false;
-    }
-    if (isResponseRenderedRef.current) {
-      return isResponseRenderedRef.current(messageId);
-    }
-    const row = document.getElementById(messageId);
-    const body = row?.querySelector('[data-testid="message-body"]');
-    return (
-      body != null && (body.childElementCount > 0 || (body.textContent?.trim().length ?? 0) > 0)
-    );
-  }, []);
+  /** Proof that the stamped reply is the one on screen. The active MessagesView scopes the
+   * lookup to its rendered tree; the document fallback keeps the hook usable for callers that
+   * own no content ref, while still requiring the row's committed body rather than a
+   * progressive placeholder.
+   *
+   * Manual markers name no message, and a row stamped before reply identity existed cannot be
+   * bound to a branch either; both fall back to the history-fetch proof rather than stranding a
+   * dot no acknowledgement could ever clear. */
+  const replyBranchIsVisible = useCallback(
+    (convo: { lastResponseIsManual?: boolean; lastResponseMessageId?: string } | undefined) => {
+      const messageId = convo?.lastResponseMessageId;
+      if (convo?.lastResponseIsManual === true || !messageId) {
+        return true;
+      }
+      if (isResponseRenderedRef.current) {
+        return isResponseRenderedRef.current(messageId);
+      }
+      const body = document
+        .getElementById(messageId)
+        ?.querySelector('[data-testid="message-body"]');
+      return (
+        body != null && (body.childElementCount > 0 || (body.textContent?.trim().length ?? 0) > 0)
+      );
+    },
+    [],
+  );
 
   const scheduleRenderedCheck = useCallback(
     (expectedStamp: string | undefined, proofSource?: 'local' | 'server') => {
@@ -96,9 +106,7 @@ export default function useConversationSeen(
               hasLocallyCommittedReply(queryClient, conversationId, expectedStamp)) ||
               (proofSource === 'server' &&
                 hasServerFetchedReply(queryClient, conversationId, expectedStamp)));
-          const responseIsRendered =
-            cached?.lastResponseIsManual === true ||
-            hasRenderedResponse(cached?.lastResponseMessageId);
+          const responseIsRendered = replyBranchIsVisible(cached);
           if (
             expectedStamp != null &&
             messagesReady &&
@@ -117,7 +125,7 @@ export default function useConversationSeen(
         });
       });
     },
-    [conversationId, queryClient, hasRenderedResponse],
+    [conversationId, queryClient, replyBranchIsVisible],
   );
 
   const markSeenIfCaughtUp = useCallback(
@@ -160,11 +168,7 @@ export default function useConversationSeen(
       const isManualMarker = cached?.lastResponseIsManual === true;
       const hasLocalProof = hasLocallyCommittedReply(queryClient, conversationId, lastResponseAt);
       const hasServerProof = hasServerFetchedReply(queryClient, conversationId, lastResponseAt);
-      if (
-        !isManualMarker &&
-        (hasLocalProof || hasServerProof) &&
-        !hasRenderedResponse(cached?.lastResponseMessageId)
-      ) {
+      if (!isManualMarker && (hasLocalProof || hasServerProof) && !replyBranchIsVisible(cached)) {
         /* A stamped history cache can still describe a hidden sibling branch, or a progressive
          * row whose body has not committed. Neither is safe to acknowledge and neither should
          * trigger a second history request. */
@@ -211,7 +215,7 @@ export default function useConversationSeen(
        * newer, so a reply persisted from another device mid-request stays unseen. */
       markSeen({ conversationId, lastResponseAt });
     },
-    [conversationId, queryClient, markSeen, scheduleRenderedCheck, hasRenderedResponse],
+    [conversationId, queryClient, markSeen, scheduleRenderedCheck, replyBranchIsVisible],
   );
 
   markSeenRef.current = markSeenIfCaughtUp;

@@ -347,6 +347,14 @@ describe('Agent Abort Endpoint', () => {
           expect.objectContaining({ context: expect.stringContaining('abort endpoint') }),
         );
 
+        /** The row renders nothing, so a dot raised for it names a reply the user can never
+         * open and no acknowledgement could clear. */
+        expect(mockSaveConvo).not.toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({ stampReply: true }),
+        );
+
         /** This is the exact server-side fence hit by the queued submission
          * after the abort FINAL. It must observe the row written above rather
          * than reject the drain solely because the stable id ends in `_`. */

@@ -329,6 +329,31 @@ describe('useConversationSeen', () => {
     expect(invalidateMessages).not.toHaveBeenCalled();
   });
 
+  it('acknowledges a real reply stamped before reply identity existed', async () => {
+    /* A row written by an older server carries no `lastResponseMessageId`; requiring one would
+       leave its dot unclearable for the life of the conversation. */
+    const queryClient = createClient();
+    seedUnseen(queryClient);
+    updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
+      ...convo,
+      lastResponseMessageId: undefined,
+    }));
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useConversationSeen(CONVO_ID, false), { wrapper });
+    await renderMessages(queryClient);
+
+    act(() => result.current(true));
+
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+  });
+
   it('sends nothing while the user is scrolled away from the newest message', () => {
     const { result } = setup({ lastResponseAt: RESPONDED_AT });
     mockMarkSeen.mockClear();

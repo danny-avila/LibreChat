@@ -31,9 +31,11 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  /** Real implementation: these tests exist to verify abort classification
-   *  itself, so mocking it would assert the mock rather than the behavior. */
+  /** Real implementations: these tests exist to verify abort classification and the
+   *  readable-reply gate themselves, so mocking them would assert the mock rather than the
+   *  behavior. */
   isAbortError: jest.requireActual('@librechat/api').isAbortError,
+  hasPersistableAbortContent: jest.requireActual('@librechat/api').hasPersistableAbortContent,
   countTokens: jest.fn().mockResolvedValue(100),
   isEnabled: jest.fn().mockReturnValue(false),
   sendEvent: jest.fn(),
@@ -404,6 +406,25 @@ describe('abortMiddleware - transactions config', () => {
     await handleAbort()(buildReq(), res);
 
     expect(db.stampConvoLastResponse).toHaveBeenCalledWith('user-123', 'convo-123', 'msg-123');
+    expect(JSON.parse(res.send.mock.calls[0][0]).final).toBe(true);
+  });
+
+  it('does not announce a stopped turn that produced nothing to read', async () => {
+    /* An interrupt before the model's first real token still persists the unfinished
+       assistant row; a dot raised for it names a reply the user can never open. */
+    db.saveMessage.mockResolvedValueOnce({ messageId: 'msg-empty' });
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [{ type: 'text', text: '   ' }],
+      text: '   ',
+      collectedUsage: [],
+    });
+    const res = buildRes();
+
+    await handleAbort()(buildReq(), res);
+
+    expect(db.stampConvoLastResponse).not.toHaveBeenCalled();
     expect(JSON.parse(res.send.mock.calls[0][0]).final).toBe(true);
   });
 

@@ -852,8 +852,15 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                  because a very early interrupt can arrive before the conversation row exists:
                  the same upsert that creates it carries the reply stamp, assigned at write
                  time. Best-effort: the messages are already durable, and a missed stamp must
-                 not suppress the normal FINAL. */
-              if (messageContext.isTemporary !== true && persistedResponse.messageId) {
+                 not suppress the normal FINAL.
+                 A turn persisted only because `created` was emitted has no readable content:
+                 its row renders nothing, so a dot raised for it could never be cleared by
+                 opening the conversation. */
+              if (
+                messageContext.isTemporary !== true &&
+                persistedResponse.messageId &&
+                hasPersistableAbortContent(content)
+              ) {
                 try {
                   await saveConvo(
                     messageContext,
