@@ -63,15 +63,17 @@ function ContentBlock({ label, content }: { label: TranslationKeys; content?: TT
 function RecordContent({
   conversationId,
   recordId,
+  messageId,
   sourceId,
 }: {
   conversationId: string;
   recordId: string;
+  messageId: string;
   sourceId?: string;
 }) {
   const localize = useLocalize();
   const { data, isLoading, isError, refetch } = useConversationTraceRecordQuery(
-    { conversationId, recordId, sourceId },
+    { conversationId, recordId, messageId, sourceId },
     true,
   );
 
@@ -257,6 +259,7 @@ function Inspector({
             <RecordContent
               conversationId={conversationId}
               recordId={record.id}
+              messageId={record.messageId}
               sourceId={sourceId}
             />
           </section>

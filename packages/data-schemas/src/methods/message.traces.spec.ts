@@ -89,9 +89,19 @@ describe('getConversationTraceRefs', () => {
     expect(refs).toEqual({
       firstMessageAt: at(1),
       sampledMessages: [
-        { messageId: 'response-1', createdAt: at(2), langfuseDestinationIds: ['destination-a'] },
-        { messageId: 'response-2', createdAt: at(4) },
-        { messageId: 'user-5_', createdAt: at(5), langfuseRunId: 'run-5' },
+        {
+          messageId: 'response-1',
+          createdAt: at(2),
+          orderKey: expect.any(String),
+          langfuseDestinationIds: ['destination-a'],
+        },
+        { messageId: 'response-2', createdAt: at(4), orderKey: expect.any(String) },
+        {
+          messageId: 'user-5_',
+          createdAt: at(5),
+          orderKey: expect.any(String),
+          langfuseRunId: 'run-5',
+        },
       ],
     });
   });
@@ -123,7 +133,7 @@ describe('getConversationTraceRefs', () => {
     expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['first', 'second']);
   });
 
-  it('reads a bounded page of sampled responses ending at an anchor', async () => {
+  it('reads a bounded page of sampled responses ending at a position a previous read returned', async () => {
     await seed(
       [1, 2, 3, 4, 5].map((index) => ({
         messageId: `response-${index}`,
@@ -133,19 +143,34 @@ describe('getConversationTraceRefs', () => {
         langfuseSampled: true,
       })),
     );
-    const page = (input: { through?: string; limit?: number }) =>
-      methods
-        .getConversationTraceRefs({ user: 'owner', conversationId: 'convo', ...input })
-        .then((refs) => refs.sampledMessages.map(({ messageId }) => messageId));
+    const read = (input: Record<string, unknown>) =>
+      methods.getConversationTraceRefs({ user: 'owner', conversationId: 'convo', ...input });
+    const ids = (refs: { sampledMessages: Array<{ messageId: string }> }) =>
+      refs.sampledMessages.map(({ messageId }) => messageId);
 
-    await expect(page({ limit: 2 })).resolves.toEqual(['response-4', 'response-5']);
-    await expect(page({ through: 'response-3', limit: 2 })).resolves.toEqual([
-      'response-2',
-      'response-3',
-    ]);
-    await expect(page({ through: 'response-1', limit: 2 })).resolves.toEqual(['response-1']);
-    await expect(page({ through: 'deleted-response', limit: 2 })).resolves.toEqual([]);
-    await expect(page({})).resolves.toHaveLength(5);
+    const newest = await read({ limit: 2 });
+    expect(ids(newest)).toEqual(['response-4', 'response-5']);
+    const all = await read({});
+    const third = all.sampledMessages[2];
+    const findOne = jest.spyOn(Message, 'findOne');
+    await read({ through: { messageId: third.messageId, orderKey: third.orderKey }, limit: 2 });
+    /** One round trip: the only other lookup is the conversation's first message, run alongside. */
+    expect(findOne).toHaveBeenCalledTimes(1);
+    findOne.mockRestore();
+    expect(
+      ids(
+        await read({ through: { messageId: third.messageId, orderKey: third.orderKey }, limit: 2 }),
+      ),
+    ).toEqual(['response-2', 'response-3']);
+    expect(
+      ids(await read({ through: { messageId: 'response-1', orderKey: third.orderKey }, limit: 2 })),
+    ).toEqual([]);
+    expect(
+      ids(await read({ through: { messageId: third.messageId, orderKey: 'forged' }, limit: 2 })),
+    ).toEqual([]);
+    expect(ids(await read({ messageId: 'response-2' }))).toEqual(['response-2']);
+    expect(ids(await read({ messageId: 'someone-elses-response' }))).toEqual([]);
+    expect(ids(all)).toHaveLength(5);
   });
 
   it('never treats a client-authored row as a sampled response', async () => {

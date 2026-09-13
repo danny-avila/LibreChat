@@ -60,11 +60,11 @@ export function getConversationTraceRecords(
 }
 
 export function getConversationTraceRecord(
-  { conversationId, recordId, sourceId }: TTraceRecordParams,
+  { conversationId, recordId, messageId, sourceId }: TTraceRecordParams,
   signal?: AbortSignal,
 ): Promise<TTraceRecordDetail> {
   return request.get(
-    endpoints.conversationTraceRecord(conversationId, recordId, sourceId),
+    endpoints.conversationTraceRecord(conversationId, recordId, messageId, sourceId),
     signal ? { signal } : undefined,
   );
 }

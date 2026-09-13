@@ -67,6 +67,7 @@ export const useConversationTraceRecordQuery = (
   {
     conversationId,
     recordId,
+    messageId,
     sourceId,
   }: Omit<TTraceRecordParams, 'recordId'> & {
     recordId: string | null;
@@ -74,10 +75,10 @@ export const useConversationTraceRecordQuery = (
   enabled: boolean,
 ): QueryObserverResult<TTraceRecordDetail> =>
   useQuery<TTraceRecordDetail>(
-    [QueryKeys.conversationTraceRecord, conversationId, recordId, sourceId ?? null],
+    [QueryKeys.conversationTraceRecord, conversationId, recordId, messageId, sourceId ?? null],
     ({ signal }) =>
       dataService.getConversationTraceRecord(
-        { conversationId, recordId: recordId ?? '', sourceId },
+        { conversationId, recordId: recordId ?? '', messageId, sourceId },
         signal,
       ),
     {

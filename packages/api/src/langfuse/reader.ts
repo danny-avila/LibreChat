@@ -74,7 +74,8 @@ export interface LangfuseTraceReaderDeps {
     user: string;
     conversationId: string;
     tenantId?: string;
-    through?: string;
+    messageId?: string;
+    through?: { messageId: string; orderKey: string };
     limit?: number;
   }) => Promise<ConversationTraceRefs>;
   hasSampledTraceMessage: (input: {
@@ -305,6 +306,8 @@ const rootSchema = z.object({ traceId: z.string().min(1), startTime: timestampSc
 const cursorSchema = z.object({
   /** The newest turn of the segment being read. */
   m: z.string().min(1),
+  /** That turn's position in the response order, which the next request resumes from. */
+  p: z.string().min(1).max(64).optional(),
   /** The trace of that turn the segment starts at, when it starts partway through the turn. */
   k: z.enum(['r', 't']).optional(),
   /** The project reading it. */
@@ -439,12 +442,14 @@ export function createLangfuseTraceReader({
     return destinations;
   }
 
-  async function loadConversation(query: TraceQuery) {
+  /** The one sampled response a detail read is for, with the projects that could hold its traces. */
+  async function loadTurn(query: TraceQuery, messageId: string) {
     const [refs, destinations] = await Promise.all([
       getConversationTraceRefs({
         user: query.userId,
         conversationId: query.conversationId,
         tenantId: query.tenantId,
+        messageId,
       }),
       readableDestinations(query.appConfig),
     ]);
@@ -575,7 +580,7 @@ export function createLangfuseTraceReader({
        * being read, plus one older response that says where the next page starts.
        * A long conversation's pages then never reload the responses before them.
        */
-      const loadWindow = async (through?: string) => {
+      const loadWindow = async (through?: { messageId: string; orderKey: string }) => {
         const refs = await getConversationTraceRefs({
           user: query.userId,
           conversationId: query.conversationId,
@@ -591,8 +596,18 @@ export function createLangfuseTraceReader({
           messages: peek ? refs.sampledMessages.slice(1) : refs.sampledMessages,
         };
       };
+      if (continuation != null && continuation.p == null) {
+        throw new TraceReadError(
+          'invalid_request',
+          'The page cursor is not one this server issued',
+        );
+      }
       const [initial, destinations] = await Promise.all([
-        loadWindow(continuation?.m),
+        loadWindow(
+          continuation?.p != null
+            ? { messageId: continuation.m, orderKey: continuation.p }
+            : undefined,
+        ),
         readableDestinations(query.appConfig),
       ]);
       const sources = readableSources(destinations);
@@ -857,6 +872,7 @@ export function createLangfuseTraceReader({
         const records: TTraceRecord[] = [];
         let cursor = startCursor;
         let remaining = query.settings.maxRecords;
+        const followed = new Set<string>(startCursor != null ? [startCursor] : []);
 
         for (;;) {
           const params = new URLSearchParams({
@@ -876,6 +892,11 @@ export function createLangfuseTraceReader({
           if (!next || page.data.length === 0) {
             return { records };
           }
+          /** A cursor that repeats would hand every later page the same records. */
+          if (followed.has(next)) {
+            throw new TraceReadError('upstream_error', 'Langfuse repeated a page cursor');
+          }
+          followed.add(next);
           if (remaining <= 0) {
             return { records, next };
           }
@@ -886,10 +907,13 @@ export function createLangfuseTraceReader({
       /** A continuation that no longer matches the trace; the viewer reloads from the newest page. */
       const changed = () =>
         new TraceReadError('invalid_request', 'The trace changed since this page was loaded');
-      const positionOf = (unit: Pick<TraceUnit, 'turn' | 'kind' | 'first'>): TraceCursor => ({
-        m: messages[unit.turn].messageId,
-        ...(unit.first ? {} : { k: unit.kind === 'title' ? ('t' as const) : ('r' as const) }),
+      const cursorAt = (message: SampledTraceMessage, kind?: TraceKind): TraceCursor => ({
+        m: message.messageId,
+        ...(message.orderKey != null ? { p: message.orderKey } : {}),
+        ...(kind != null ? { k: kind === 'title' ? ('t' as const) : ('r' as const) } : {}),
       });
+      const positionOf = (unit: Pick<TraceUnit, 'turn' | 'kind' | 'first'>): TraceCursor =>
+        cursorAt(messages[unit.turn], unit.first ? undefined : unit.kind);
 
       let resume = continuation?.c != null ? continuation : undefined;
       let firstSourceId: string | undefined;
@@ -898,7 +922,11 @@ export function createLangfuseTraceReader({
           if (peek == null) {
             break;
           }
-          ({ messages, peek } = await loadWindow(peek.messageId));
+          ({ messages, peek } = await loadWindow(
+            peek.orderKey != null
+              ? { messageId: peek.messageId, orderKey: peek.orderKey }
+              : undefined,
+          ));
           owners = buildTraceOwners(messages);
           turn = messages.length - 1;
           startKind = undefined;
@@ -964,9 +992,9 @@ export function createLangfuseTraceReader({
           if (after != null) {
             nextCursor = encodeCursor(positionOf(after));
           } else if (lowest > 0) {
-            nextCursor = encodeCursor({ m: messages[lowest - 1].messageId });
+            nextCursor = encodeCursor(cursorAt(messages[lowest - 1]));
           } else if (peek != null) {
-            nextCursor = encodeCursor({ m: peek.messageId });
+            nextCursor = encodeCursor(cursorAt(peek));
           }
           return { records: result.records, sourceId, ...(nextCursor ? { nextCursor } : {}) };
         }
@@ -979,7 +1007,7 @@ export function createLangfuseTraceReader({
       if (!keyedByInternalId(query.appConfig)) {
         return null;
       }
-      const { refs, sources } = await loadConversation(query);
+      const { refs, sources } = await loadTurn(query, query.messageId);
       const pinned = sources.find((candidate) => isSource(candidate, query.sourceId));
       const candidates = pinned
         ? [pinned, ...sources.filter((entry) => entry !== pinned)]
@@ -994,6 +1022,12 @@ export function createLangfuseTraceReader({
         { type: 'string', column: 'id', operator: '=', value: query.recordId },
         { type: 'string', column: 'sessionId', operator: '=', value: query.conversationId },
         ownerFilter(query),
+        {
+          type: 'stringOptions',
+          column: 'traceId',
+          operator: 'any of',
+          value: refs.sampledMessages.flatMap(traceIdsOf),
+        },
         ...startTimeFilter(window),
       ];
       const params = new URLSearchParams({

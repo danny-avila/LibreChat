@@ -209,7 +209,12 @@ describe('Trace Viewer', () => {
     expect(within(inspector).getByText('partial outp')).toBeInTheDocument();
     expect(within(inspector).getByText('com_ui_trace_truncated')).toBeInTheDocument();
     expect(dataService.getConversationTraceRecord).toHaveBeenCalledWith(
-      { conversationId: 'convo-1', recordId: 'llm', sourceId: 'tenant-project' },
+      {
+        conversationId: 'convo-1',
+        recordId: 'llm',
+        messageId: 'response-1',
+        sourceId: 'tenant-project',
+      },
       expect.any(AbortSignal),
     );
   });

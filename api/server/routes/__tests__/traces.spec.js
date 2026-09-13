@@ -151,7 +151,9 @@ describe('trace routes', () => {
     mockGetConvoOwnership.mockResolvedValue(null);
 
     const availability = await request(app).get('/api/traces/convo-1/availability');
-    const response = await request(app).get('/api/traces/convo-1/records/obs-root');
+    const response = await request(app).get(
+      '/api/traces/convo-1/records/obs-root?message=response-1',
+    );
 
     expect(availability.body).toEqual({ available: false });
     expect(response.status).toBe(404);

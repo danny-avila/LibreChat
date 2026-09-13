@@ -32,9 +32,10 @@ export interface TraceReader {
   isAvailable(query: TraceQuery): Promise<TTraceAvailability>;
   listRecords(query: TraceQuery & { cursor?: string }): Promise<TTracePage>;
   /** `null` when the record is absent or outside the conversation's traces. */
-  /** `sourceId` pins the read to the page that listed the record when that source is still readable. */
+  /** `messageId` is the turn the list attributed the record to, so only that turn's traces are
+   *  looked up; `sourceId` pins the read to the page that listed the record when still readable. */
   getRecord(
-    query: TraceQuery & { recordId: string; sourceId?: string },
+    query: TraceQuery & { recordId: string; messageId: string; sourceId?: string },
   ): Promise<TTraceRecordDetail | null>;
 }
 

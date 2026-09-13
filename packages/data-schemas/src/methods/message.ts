@@ -425,6 +425,20 @@ const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
  * imports stamp `isUserSubmitted: true`) never count, even if one was persisted
  * with forged fields before those writes stripped them.
  */
+/** A response's position in trace order: its creation time, then its `_id`. */
+function traceOrderKey(createdAt: Date, id: Types.ObjectId): string {
+  return `${createdAt.getTime().toString(36)}.${id.toString()}`;
+}
+
+function parseTraceOrderKey(key: string): { createdAt: Date; id: string } | undefined {
+  const [time, hex] = key.split('.');
+  const milliseconds = Number.parseInt(time ?? '', 36);
+  if (!Number.isFinite(milliseconds) || hex == null || !/^[0-9a-f]{24}$/.test(hex)) {
+    return undefined;
+  }
+  return { createdAt: new Date(milliseconds), id: hex };
+}
+
 /** An explicit tenant scope, so a read without request tenant context still cannot span tenants. */
 const traceTenantScope = (tenantId?: string) =>
   tenantId == null ? { tenantId: { $exists: false } } : { tenantId };
@@ -597,6 +611,8 @@ export interface SampledTraceMessage {
   langfuseDestinationIds?: string[];
   /** The run whose trace this response reports, when it is not the message's own id. */
   langfuseRunId?: string;
+  /** Opaque position in the conversation's response order, which a later read can resume from. */
+  orderKey?: string;
 }
 
 export interface ConversationTraceRefs {
@@ -628,8 +644,10 @@ export interface MessageMethods {
     user: string;
     conversationId: string;
     tenantId?: string;
-    /** The newest response to include; the page ends there instead of at the newest one. */
-    through?: string;
+    /** Only this response, when it is a sampled one. */
+    messageId?: string;
+    /** The newest response to include, by the `orderKey` a previous read returned for it. */
+    through?: { messageId: string; orderKey: string };
     /** The most responses to return, newest first from `through`; all of them when absent. */
     limit?: number;
   }): Promise<ConversationTraceRefs>;
@@ -3376,67 +3394,73 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     user,
     conversationId,
     tenantId,
+    messageId,
     through,
     limit,
   }: {
     user: string;
     conversationId: string;
     tenantId?: string;
-    /** The newest response to include; the page ends there instead of at the newest one. */
-    through?: string;
-    /** The most responses to return, newest first from `through`; all of them when absent. */
+    messageId?: string;
+    through?: { messageId: string; orderKey: string };
     limit?: number;
   }): Promise<ConversationTraceRefs> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const scope = { user, conversationId, ...traceTenantScope(tenantId) };
-      const sampledScope = { ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE };
-      const [first, anchor] = await Promise.all([
-        Message.findOne(scope)
-          .select('createdAt -_id')
-          .sort({ createdAt: 1 })
-          .lean<Pick<IMessage, 'createdAt'>>(),
-        through != null
-          ? Message.findOne({ ...sampledScope, messageId: through })
-              .select('_id createdAt')
-              .lean<{ _id: Types.ObjectId; createdAt: Date }>()
-          : null,
-      ]);
-      if (through != null && anchor == null) {
-        return { firstMessageAt: first?.createdAt, sampledMessages: [] };
-      }
-      /** `_id` breaks ties between responses saved in the same millisecond, so every page
-       *  request rebuilds the same turn order its cursor was positioned in. */
+      const anchor = through != null ? parseTraceOrderKey(through.orderKey) : undefined;
       const range =
         anchor != null
           ? {
               $or: [
                 { createdAt: { $lt: anchor.createdAt } },
-                { createdAt: anchor.createdAt, _id: { $lte: anchor._id } },
+                {
+                  createdAt: anchor.createdAt,
+                  _id: { $lte: new mongoose.Types.ObjectId(anchor.id) },
+                },
               ],
             }
           : {};
-      const query = Message.find({ ...sampledScope, ...range }).select(
-        'messageId createdAt langfuseDestinationIds langfuseRunId -_id',
-      );
+      const query = Message.find({
+        ...scope,
+        ...SERVER_AUTHORED_SAMPLED_RESPONSE,
+        ...(messageId != null ? { messageId } : {}),
+        ...range,
+      }).select('_id messageId createdAt langfuseDestinationIds langfuseRunId');
       const bounded = limit != null;
-      const rows = await (
-        bounded
-          ? query.sort({ createdAt: -1, _id: -1 }).limit(limit)
-          : query.sort({ createdAt: 1, _id: 1 })
-      ).lean<
-        Array<
-          Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'>
-        >
-      >();
+      /** `_id` breaks ties between responses saved in the same millisecond, so every page
+       *  request rebuilds the same turn order its cursor was positioned in. */
+      const sorted = bounded
+        ? query.sort({ createdAt: -1, _id: -1 }).limit(limit)
+        : query.sort({ createdAt: 1, _id: 1 });
+      const [first, rows] = await Promise.all([
+        Message.findOne(scope)
+          .select('createdAt -_id')
+          .sort({ createdAt: 1 })
+          .lean<Pick<IMessage, 'createdAt'>>(),
+        through != null && anchor == null
+          ? []
+          : sorted.lean<
+              Array<
+                Pick<
+                  IMessage,
+                  'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'
+                > & { _id: Types.ObjectId }
+              >
+            >(),
+      ]);
       const sampled = bounded ? rows.reverse() : rows;
+      /** A position that no longer names its response (deleted, or never issued) resumes nothing. */
+      if (through != null && sampled[sampled.length - 1]?.messageId !== through.messageId) {
+        return { firstMessageAt: first?.createdAt, sampledMessages: [] };
+      }
       return {
         firstMessageAt: first?.createdAt,
         sampledMessages: sampled
           .filter((message) => typeof message.messageId === 'string')
-          .map(({ messageId, createdAt, langfuseDestinationIds, langfuseRunId }) => ({
-            messageId,
-            ...(createdAt != null ? { createdAt } : {}),
+          .map(({ _id, messageId: id, createdAt, langfuseDestinationIds, langfuseRunId }) => ({
+            messageId: id,
+            ...(createdAt != null ? { createdAt, orderKey: traceOrderKey(createdAt, _id) } : {}),
             ...(Array.isArray(langfuseDestinationIds) ? { langfuseDestinationIds } : {}),
             ...(typeof langfuseRunId === 'string' && langfuseRunId.length > 0
               ? { langfuseRunId }

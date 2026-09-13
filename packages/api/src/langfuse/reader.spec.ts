@@ -120,10 +120,32 @@ function setup({
   });
   /** Same paging contract as the data-schemas query, which has its own database spec. */
   const getConversationTraceRefs = jest.fn(
-    async ({ through, limit }: { through?: string; limit?: number } = {}) => {
-      const all = refs.sampledMessages;
+    async ({
+      messageId,
+      through,
+      limit,
+    }: {
+      messageId?: string;
+      through?: { messageId: string; orderKey: string };
+      limit?: number;
+    } = {}) => {
+      const all = refs.sampledMessages.map((message) => ({
+        ...message,
+        orderKey: `key:${message.messageId}`,
+      }));
+      if (messageId != null) {
+        return {
+          ...refs,
+          sampledMessages: all.filter((message) => message.messageId === messageId),
+        };
+      }
       const end =
-        through != null ? all.findIndex(({ messageId }) => messageId === through) : all.length - 1;
+        through != null
+          ? all.findIndex(
+              (message) =>
+                message.messageId === through.messageId && message.orderKey === through.orderKey,
+            )
+          : all.length - 1;
       if (through != null && end === -1) {
         return { ...refs, sampledMessages: [] };
       }
@@ -370,7 +392,7 @@ describe('createLangfuseTraceReader', () => {
       });
 
       await reader.listRecords(createQuery());
-      await reader.getRecord({ ...createQuery(), recordId: 'response-1' });
+      await reader.getRecord({ ...createQuery(), recordId: 'response-1', messageId: 'response-1' });
 
       const owner = {
         type: 'stringOptions',
@@ -394,7 +416,9 @@ describe('createLangfuseTraceReader', () => {
 
       await expect(reader.isAvailable(query)).resolves.toEqual({ available: false });
       await expect(reader.listRecords(query)).rejects.toMatchObject({ code: 'not_found' });
-      await expect(reader.getRecord({ ...query, recordId: 'obs-root' })).resolves.toBeNull();
+      await expect(
+        reader.getRecord({ ...query, recordId: 'obs-root', messageId: 'response-1' }),
+      ).resolves.toBeNull();
       expect(hasSampledTraceMessage).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
 
@@ -612,7 +636,10 @@ describe('createLangfuseTraceReader', () => {
       await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
 
       expect(later.getConversationTraceRefs).toHaveBeenCalledWith(
-        expect.objectContaining({ through: 'response-9', limit: 51 }),
+        expect.objectContaining({
+          through: { messageId: 'response-9', orderKey: 'key:response-9' },
+          limit: 51,
+        }),
       );
       expect(requestedTraceIds(later.fetchMock).sort()).toEqual(
         tracesOf(...sampledMessages.slice(0, 10).map(({ messageId }) => messageId)).sort(),
@@ -633,10 +660,22 @@ describe('createLangfuseTraceReader', () => {
 
       expect(page.records.map(({ id }) => id)).toEqual(['response-3']);
       expect(page.nextCursor).toBeUndefined();
-      expect(getConversationTraceRefs.mock.calls.map(([input]) => input?.through)).toEqual([
-        undefined,
-        'response-9',
-      ]);
+      expect(
+        getConversationTraceRefs.mock.calls.map(([input]) => input?.through?.messageId),
+      ).toEqual([undefined, 'response-9']);
+    });
+
+    it('reports a list read whose cursor repeats instead of serving the same records again', async () => {
+      const { reader } = setup({
+        route: () =>
+          jsonResponse({ data: [observation({ id: 'same' })], meta: { cursor: 'same' } }),
+      });
+
+      await expect(
+        reader.listRecords(
+          createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 2000 }) }),
+        ),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
     });
 
     it('treats a root lookup that repeats its cursor as a failed project', async () => {
@@ -819,7 +858,13 @@ describe('createLangfuseTraceReader', () => {
       const refs = createRefs({
         sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['connection-id'] }],
       });
-      const stale = encodeTestCursor({ m: 'response-1', s: 'connection-id', c: 'old', h: 'other' });
+      const stale = encodeTestCursor({
+        m: 'response-1',
+        p: 'key:response-1',
+        s: 'connection-id',
+        c: 'old',
+        h: 'other',
+      });
       const staleSegment = setup({ refs, route: (request) => recordsFor(request, 'response-1') });
       const rejected = setup({
         refs,
@@ -1058,6 +1103,7 @@ describe('createLangfuseTraceReader', () => {
       expect(page.records.map(({ id }) => id)).toEqual(['a', 'b', 'c']);
       expect(JSON.parse(Buffer.from(page.nextCursor ?? '', 'base64url').toString())).toEqual({
         m: 'response-1',
+        p: 'key:response-1',
         s: 'connection-id',
         c: 'cursor-2',
         h: expect.any(String),
@@ -1120,10 +1166,14 @@ describe('createLangfuseTraceReader', () => {
       expect(page.records.map(({ id }) => id)).toEqual(['b']);
     });
 
-    it('rejects a forged cursor and a turn the conversation no longer has', async () => {
+    it('rejects a forged cursor, one without a position and a turn the conversation no longer has', async () => {
       const { reader, fetchMock } = setup();
 
-      for (const cursor of ['bm90IGpzb24', encodeTestCursor({ m: 'deleted-response' })]) {
+      for (const cursor of [
+        'bm90IGpzb24',
+        encodeTestCursor({ m: 'response-1' }),
+        encodeTestCursor({ m: 'deleted-response', p: 'key:deleted-response' }),
+      ]) {
         await expect(reader.listRecords({ ...createQuery(), cursor })).rejects.toMatchObject({
           code: 'invalid_request',
         });
@@ -1249,7 +1299,11 @@ describe('createLangfuseTraceReader', () => {
         responses: [jsonResponse({ data: [observation({ input: 'secret prompt' })] })],
       });
 
-      const detail = await reader.getRecord({ ...createQuery(), recordId: 'obs-root' });
+      const detail = await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        messageId: 'response-1',
+      });
 
       expect(detail).toEqual({
         record: expect.objectContaining({ id: 'obs-root', messageId: 'response-1' }),
@@ -1261,6 +1315,12 @@ describe('createLangfuseTraceReader', () => {
         { type: 'string', column: 'id', operator: '=', value: 'obs-root' },
         { type: 'string', column: 'sessionId', operator: '=', value: 'convo-1' },
         { type: 'stringOptions', column: 'userId', operator: 'any of', value: ['owner'] },
+        {
+          type: 'stringOptions',
+          column: 'traceId',
+          operator: 'any of',
+          value: [RESPONSE_TRACE, TITLE_TRACE],
+        },
         { type: 'datetime', column: 'startTime', operator: '<', value: '2026-09-12T12:10:00.000Z' },
         {
           type: 'datetime',
@@ -1295,6 +1355,7 @@ describe('createLangfuseTraceReader', () => {
           }),
         }),
         recordId: 'obs-root',
+        messageId: 'response-1',
       });
 
       expect(requestedUrl(fetchMock).searchParams.get('fields')).toBe(
@@ -1322,6 +1383,7 @@ describe('createLangfuseTraceReader', () => {
           settings: resolveTraceViewerConfig({ enabled: true, showInputOutput: true }),
         }),
         recordId: 'obs-root',
+        messageId: 'response-1',
       });
 
       expect(detail).toMatchObject({
@@ -1341,8 +1403,18 @@ describe('createLangfuseTraceReader', () => {
         ],
       });
 
-      await reader.getRecord({ ...createQuery(), recordId: 'obs-root', sourceId: 'central-id' });
-      await reader.getRecord({ ...createQuery(), recordId: 'obs-root', sourceId: 'retired-id' });
+      await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        messageId: 'response-1',
+        sourceId: 'central-id',
+      });
+      await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        messageId: 'response-1',
+        sourceId: 'retired-id',
+      });
 
       expect(requestedUrl(fetchMock, 0).origin).toBe('https://central.langfuse.test');
       expect(requestedUrl(fetchMock, 1).origin).toBe('https://tenant.langfuse.test');
@@ -1360,6 +1432,7 @@ describe('createLangfuseTraceReader', () => {
       const detail = await reader.getRecord({
         ...createQuery(),
         recordId: 'obs-root',
+        messageId: 'response-1',
         sourceId: 'connection-id',
       });
 
@@ -1377,6 +1450,7 @@ describe('createLangfuseTraceReader', () => {
       const detail = await reader.getRecord({
         ...createQuery(),
         recordId: 'obs-root',
+        messageId: 'response-1',
         sourceId: 'retired-id',
       });
 
@@ -1400,13 +1474,52 @@ describe('createLangfuseTraceReader', () => {
       });
 
       await expect(
-        fanout.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
+        fanout.reader.getRecord({
+          ...createQuery(),
+          recordId: 'obs-root',
+          messageId: 'response-1',
+        }),
       ).resolves.toBeNull();
       expect(fanout.fetchMock).toHaveBeenCalledTimes(2);
       await expect(
-        legacy.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
+        legacy.reader.getRecord({
+          ...createQuery(),
+          recordId: 'obs-root',
+          messageId: 'response-1',
+        }),
       ).rejects.toMatchObject({ code: 'upstream_error' });
       expect(legacy.fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('authorizes a detail read by the one turn the list attributed it to', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-0', langfuseDestinationIds: ['connection-id'] },
+          { messageId: 'response-1', langfuseDestinationIds: ['connection-id'] },
+        ],
+      });
+      const { reader, fetchMock, getConversationTraceRefs } = setup({
+        refs,
+        responses: [
+          jsonResponse({ data: [observation({ traceId: traceIdForMessage('response-0') })] }),
+        ],
+      });
+
+      const detail = await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        messageId: 'response-1',
+      });
+
+      expect(getConversationTraceRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'response-1' }),
+      );
+      expect(requestedTraceIds(fetchMock)).toEqual(tracesOf('response-1'));
+      expect(detail).toBeNull();
+      await expect(
+        reader.getRecord({ ...createQuery(), recordId: 'obs-root', messageId: 'not-sampled' }),
+      ).resolves.toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('reads the record detail of a failed turn from the trace of its run', async () => {
@@ -1423,7 +1536,11 @@ describe('createLangfuseTraceReader', () => {
         responses: [jsonResponse({ data: [observation({ traceId: traceIdForMessage('run-1') })] })],
       });
 
-      const detail = await reader.getRecord({ ...createQuery(), recordId: 'obs-root' });
+      const detail = await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        messageId: 'user-1_',
+      });
 
       expect(detail?.record).toMatchObject({ id: 'obs-root', messageId: 'user-1_' });
     });
@@ -1433,9 +1550,9 @@ describe('createLangfuseTraceReader', () => {
         responses: [jsonResponse({ data: [observation({ traceId: FOREIGN_TRACE })] })],
       });
 
-      await expect(reader.getRecord({ ...createQuery(), recordId: 'obs-root' })).resolves.toBe(
-        null,
-      );
+      await expect(
+        reader.getRecord({ ...createQuery(), recordId: 'obs-root', messageId: 'response-1' }),
+      ).resolves.toBe(null);
     });
   });
 

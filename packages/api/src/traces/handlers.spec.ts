@@ -122,7 +122,7 @@ describe('trace handlers', () => {
 
     const availability = await request(app).get('/api/traces/convo-1/availability');
     const records = await request(app).get('/api/traces/convo-1/records');
-    const detail = await request(app).get('/api/traces/convo-1/records/obs-1');
+    const detail = await request(app).get('/api/traces/convo-1/records/obs-1?message=response-1');
 
     expect(availability.body).toEqual({ available: false });
     expect(records.status).toBe(404);
@@ -253,7 +253,7 @@ describe('trace handlers', () => {
     });
     const { app } = createApp({ reader });
 
-    const response = await request(app).get('/api/traces/convo-1/records/obs-1');
+    const response = await request(app).get('/api/traces/convo-1/records/obs-1?message=response-1');
 
     expect(response.status).toBe(500);
     expect(JSON.stringify(response.body)).not.toContain('10.0.0.1');
@@ -274,9 +274,13 @@ describe('trace handlers', () => {
     const shown = createPricedApp(true);
 
     const hiddenList = await request(hidden).get('/api/traces/convo-1/records');
-    const hiddenDetail = await request(hidden).get('/api/traces/convo-1/records/obs-1');
+    const hiddenDetail = await request(hidden).get(
+      '/api/traces/convo-1/records/obs-1?message=response-1',
+    );
     const shownList = await request(shown).get('/api/traces/convo-1/records');
-    const shownDetail = await request(shown).get('/api/traces/convo-1/records/obs-1');
+    const shownDetail = await request(shown).get(
+      '/api/traces/convo-1/records/obs-1?message=response-1',
+    );
 
     expect(hiddenList.body.records[0]).not.toHaveProperty('cost');
     expect(hiddenDetail.body.record).not.toHaveProperty('cost');
@@ -288,7 +292,9 @@ describe('trace handlers', () => {
     const reader = createReader({ getRecord: jest.fn(async () => null) });
     const { app } = createApp({ reader });
 
-    const response = await request(app).get('/api/traces/convo-1/records/obs-missing');
+    const response = await request(app).get(
+      '/api/traces/convo-1/records/obs-missing?message=response-1',
+    );
 
     expect(response.status).toBe(404);
     expect(reader.getRecord).toHaveBeenCalledWith(
@@ -296,19 +302,28 @@ describe('trace handlers', () => {
     );
   });
 
-  it('pins a detail read to the source of the page that listed it and rejects a malformed one', async () => {
+  it('reads a detail for the turn and source that listed it, and rejects a malformed or missing one', async () => {
     const reader = createReader();
     const { app } = createApp({ reader });
 
-    await request(app).get('/api/traces/convo-1/records/obs-1?source=central-id');
+    await request(app).get(
+      '/api/traces/convo-1/records/obs-1?message=response-1&source=central-id',
+    );
     const oversized = await request(app).get(
-      `/api/traces/convo-1/records/obs-1?source=${'s'.repeat(200)}`,
+      `/api/traces/convo-1/records/obs-1?message=response-1&source=${'s'.repeat(200)}`,
     );
 
+    const withoutTurn = await request(app).get('/api/traces/convo-1/records/obs-1');
+
     expect(reader.getRecord).toHaveBeenCalledWith(
-      expect.objectContaining({ recordId: 'obs-1', sourceId: 'central-id' }),
+      expect.objectContaining({
+        recordId: 'obs-1',
+        messageId: 'response-1',
+        sourceId: 'central-id',
+      }),
     );
     expect(oversized.status).toBe(400);
+    expect(withoutTurn.status).toBe(400);
     expect(reader.getRecord).toHaveBeenCalledTimes(1);
   });
 

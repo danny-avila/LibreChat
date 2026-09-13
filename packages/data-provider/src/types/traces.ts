@@ -69,6 +69,8 @@ export type TTracePageParams = {
 export type TTraceRecordParams = {
   conversationId: string;
   recordId: string;
+  /** The turn the list attributed the record to; its traces are what authorize the read. */
+  messageId: string;
   /** The `sourceId` of the page that listed the record, so its detail reads the same project. */
   sourceId?: string;
 };

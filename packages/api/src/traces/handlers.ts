@@ -254,13 +254,15 @@ export function createTraceHandlers({
       }
       const { recordId } = req.params;
       const sourceId = firstQueryValue(req.query.source);
+      const messageId = firstQueryValue(req.query.message);
       if (
         !isValidId(recordId, TRACE_RECORD_ID_MAX_LENGTH) ||
+        !isValidId(messageId, TRACE_RECORD_ID_MAX_LENGTH) ||
         (sourceId != null && !isValidId(sourceId, TRACE_SOURCE_ID_MAX_LENGTH))
       ) {
         return sendTraceError(res, 'invalid_request');
       }
-      const detail = await reader.getRecord({ ...scope.query, recordId, sourceId });
+      const detail = await reader.getRecord({ ...scope.query, recordId, messageId, sourceId });
       if (!detail) {
         return sendTraceError(res, 'not_found');
       }
