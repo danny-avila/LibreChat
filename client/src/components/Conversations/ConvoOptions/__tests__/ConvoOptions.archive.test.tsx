@@ -67,6 +67,7 @@ jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: { sharedLinksEnabled: false } }),
   useArchiveConvoMutation: () => ({ mutate: mockArchiveMutate, isLoading: false }),
   usePinConversationMutation: () => ({ mutate: jest.fn(), isLoading: false }),
+  useMarkConversationUnreadMutation: () => ({ mutate: jest.fn(), isLoading: false }),
 }));
 
 jest.mock('~/hooks', () => ({

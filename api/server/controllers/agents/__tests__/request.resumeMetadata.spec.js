@@ -68,6 +68,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 );
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockSaveMessage = jest.fn();
 const mockSaveConvo = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
@@ -389,6 +390,7 @@ jest.mock('~/models', () => ({
   getAgentEventActorDetachedAction: (...args) => mockGetAgentEventActorDetachedAction(...args),
   claimAgentEventActorSuspension: (...args) => mockClaimAgentEventActorSuspension(...args),
   settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -5857,7 +5859,12 @@ describe('ResumableAgentController resume metadata', () => {
       getHaltReason: () => 'preempt_incomplete',
     };
 
-    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle, clientOverrides } = {}) => {
+    const runFirstTurn = async ({
+      run,
+      addTitle: suppliedAddTitle,
+      clientOverrides,
+      databaseResult,
+    } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -5890,9 +5897,11 @@ describe('ResumableAgentController resume metadata', () => {
             parentMessageId: 'user-msg',
             conversationId: options.conversationId,
             content: [{ type: 'text', text: 'Truncated answer' }],
-            databasePromise: Promise.resolve({
-              conversation: { conversationId: options.conversationId, title: null },
-            }),
+            databasePromise: Promise.resolve(
+              databaseResult ?? {
+                conversation: { conversationId: options.conversationId, title: null },
+              },
+            ),
           };
         }),
       };
@@ -5928,6 +5937,51 @@ describe('ResumableAgentController resume metadata', () => {
       const { addTitle } = await runFirstTurn({ run: preemptIncompleteRun });
 
       expect(addTitle).not.toHaveBeenCalled();
+    });
+    it('does not re-stamp an unfinished response already persisted by BaseClient', async () => {
+      const stampedAt = new Date('2026-09-07T12:00:00.000Z');
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        databaseResult: {
+          conversation: {
+            conversationId: 'new',
+            title: null,
+            lastResponseAt: stampedAt,
+          },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).not.toHaveBeenCalled();
+      const finalEvent = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1)[1];
+      expect(finalEvent.conversation.lastResponseAt).toEqual(stampedAt);
+    });
+
+    it('stamps and acknowledges the fallback conversation when BaseClient persistence is skipped', async () => {
+      const stampedAt = new Date('2026-09-07T12:00:00.000Z');
+      mockSaveMessage.mockImplementation(async (_ctx, message) => message);
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'new',
+        title: null,
+        createdAt: '2026-06-07T00:00:00.000Z',
+        lastResponseAt: stampedAt,
+      });
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        databaseResult: {
+          persistenceSkipped: true,
+          conversation: {
+            conversationId: 'new',
+            title: null,
+            lastResponseAt: new Date('2026-09-07T11:59:00.000Z'),
+          },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).toHaveBeenCalledTimes(1);
+      const finalEvent = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1)[1];
+      expect(finalEvent.conversation.lastResponseAt).toEqual(stampedAt);
     });
 
     it('still generates a deferred title for a completed first turn', async () => {
