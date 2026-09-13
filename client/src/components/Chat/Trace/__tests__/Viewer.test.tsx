@@ -2,8 +2,9 @@ import React from 'react';
 import userEvent from '@testing-library/user-event';
 import { dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import type { TTracePage, TTraceRecord, TStartupConfig } from 'librechat-data-provider';
+import { keepNewestTracePage } from '~/data-provider/Traces/queries';
 import Viewer from '../Viewer';
 
 jest.mock('librechat-data-provider', () => {
@@ -382,6 +383,73 @@ describe('Trace Viewer', () => {
       { conversationId: 'convo-1', cursor: undefined },
       expect.any(AbortSignal),
     );
+  });
+
+  it('drops an interval and a selection on older pages when a refresh trims them', async () => {
+    const newest = [
+      record({
+        id: 'later',
+        messageId: 'response-2',
+        traceId: 'trace-2',
+        name: 'LaterGraph',
+        kind: 'agent',
+        startTime: at(10_000),
+        endTime: at(12_000),
+      }),
+    ];
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation(async ({ cursor }) =>
+        cursor == null ? { records: newest, nextCursor: 'older' } : { records },
+      );
+    renderViewer();
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+    await userEvent.click(await treeItem(/llm/));
+    fireEvent.keyDown(screen.getByTestId('trace-overview'), { key: '+' });
+    expect(screen.queryByRole('treeitem', { name: /LaterGraph/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('trace-inspector')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_refresh' }));
+
+    expect(await treeItem(/LaterGraph/)).toBeInTheDocument();
+    expect(screen.queryByTestId('trace-overview-selection')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+
+    expect(await treeItem(/llm/)).toBeInTheDocument();
+    expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument();
+  });
+
+  it('keeps a newest-page selection but drops an older one when a settled run trims the cache', async () => {
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation(async ({ cursor }) =>
+        cursor == null
+          ? { records: records.slice(1), nextCursor: 'older' }
+          : { records: records.slice(0, 1) },
+      );
+    const { client } = renderViewer();
+    const inspectorHeading = () =>
+      within(screen.getByTestId('trace-inspector')).getByRole('heading', { level: 3 });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+    await userEvent.click(await treeItem(/web_search/));
+    act(() => keepNewestTracePage(client, 'convo-1'));
+
+    expect(await screen.findByRole('button', { name: 'com_ui_trace_load_older' })).toBeVisible();
+    expect(inspectorHeading()).toHaveTextContent('web_search');
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
+    await userEvent.click(await treeItem(/AgentGraph/));
+    expect(inspectorHeading()).toHaveTextContent('AgentGraph');
+    act(() => keepNewestTracePage(client, 'convo-1'));
+
+    await waitFor(() => expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
+
+    expect(await treeItem(/AgentGraph/)).toBeInTheDocument();
+    expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument();
   });
 
   it('retries the read that failed: an older page retries that page', async () => {

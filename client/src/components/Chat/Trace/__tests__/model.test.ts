@@ -2,6 +2,7 @@ import type { TTraceRecord } from 'librechat-data-provider';
 import {
   turnKey,
   panWindow,
+  fitWindow,
   zoomWindow,
   assignLanes,
   clampWindow,
@@ -302,6 +303,17 @@ describe('time windows', () => {
       end: BASE + 6000,
     });
     expect(clampWindow({ start: BASE - 1, end: BASE + 20_000 }, bounds)).toBeNull();
+  });
+
+  it('fits a window to a trace that shrank, and drops one that no longer covers it', () => {
+    const inside = { start: BASE + 1000, end: BASE + 2000 };
+    expect(fitWindow(inside, bounds)).toBe(inside);
+    expect(fitWindow({ start: BASE - 3000, end: BASE + 2000 }, bounds)).toEqual({
+      start: BASE,
+      end: BASE + 2000,
+    });
+    expect(fitWindow({ start: BASE - 3000, end: BASE - 1000 }, bounds)).toBeNull();
+    expect(fitWindow({ start: BASE - 3000, end: BASE }, bounds)).toBeNull();
   });
 
   it('zooms around an anchor and pans within bounds', () => {

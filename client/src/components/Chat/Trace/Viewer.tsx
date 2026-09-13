@@ -24,7 +24,14 @@ import {
   useGetLangfuseSessionLinkQuery,
   useConversationTraceRecordsQuery,
 } from '~/data-provider';
-import { ZOOM_STEP, zoomWindow, flattenRows, buildTraceModel, collapsibleKeys } from './model';
+import {
+  ZOOM_STEP,
+  fitWindow,
+  zoomWindow,
+  flattenRows,
+  buildTraceModel,
+  collapsibleKeys,
+} from './model';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
 import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
@@ -131,6 +138,12 @@ export default function Viewer({
     () => flattenRows(model, { collapsed, query: deferredQuery, window: view, labelsFor }),
     [model, collapsed, deferredQuery, view, labelsFor],
   );
+  /** A refresh or a settled run trims the cache to its newest page. An interval or a selection
+   *  on records that left with the older pages would hide every row, or reopen when they reload. */
+  useEffect(() => {
+    setSelectedId((id) => (id != null && !model.nodes.has(id) ? null : id));
+    setView((current) => (current != null ? fitWindow(current, model) : current));
+  }, [model]);
   const selectedNode = selectedId != null ? model.nodes.get(selectedId) : undefined;
   const selectedTurnStart =
     model.turns.find((turn) => turn.messageId === selectedNode?.record.messageId)?.start ??

@@ -218,30 +218,64 @@ function buildTraceOwners(messages: SampledTraceMessage[]): Map<string, string> 
   return owners;
 }
 
+/** Whether a response's trace could be in a project: it names the project, or predates the record. */
+function couldHold(destination: LangfuseScoreDestination, message: SampledTraceMessage): boolean {
+  const ids = message.langfuseDestinationIds;
+  return ids == null || (destination.id != null && ids.includes(destination.id));
+}
+
+/** Whether a response names the project, so its trace is known to be there. */
+function provablyHolds(
+  destination: LangfuseScoreDestination,
+  message: SampledTraceMessage,
+): boolean {
+  const ids = message.langfuseDestinationIds;
+  return ids != null && destination.id != null && ids.includes(destination.id);
+}
+
+/** Whether a project could hold a turn that none of the `held` projects provably holds. */
+function holdsOtherTurns(
+  destination: LangfuseScoreDestination,
+  held: LangfuseScoreDestination[],
+  messages: SampledTraceMessage[],
+): boolean {
+  return messages.some(
+    (message) =>
+      couldHold(destination, message) && !held.some((entry) => provablyHolds(entry, message)),
+  );
+}
+
 /**
- * Orders the projects a conversation can be read from: the destination that
- * received the most of its sampled responses first, then the tenant's own
- * project over central. A connection enabled mid-conversation holds only the
- * later turns, so preference alone would hide every turn exported before it. A
- * message with no recorded destinations predates the record and could be in
- * any of them; a destination no message could be in is dropped.
+ * Orders the projects a conversation can be read from: the one that could hold
+ * its newest sampled response first, because pages run newest first; then the
+ * one that received the most responses; then the tenant's own project over
+ * central. A connection enabled mid-conversation holds only the later turns, so
+ * preference alone would hide every turn exported before it, and coverage alone
+ * would put a newer project's turns behind every page of an older one. A message
+ * with no recorded destinations predates the record and could be in any of them;
+ * a destination no message could be in is dropped. Relies on `messages` running
+ * oldest first.
  */
 function rankDestinations(
   destinations: LangfuseScoreDestination[],
   messages: SampledTraceMessage[],
 ): LangfuseScoreDestination[] {
   return destinations
-    .map((destination) => ({
-      destination,
-      coverage: messages.filter(
-        ({ langfuseDestinationIds }) =>
-          langfuseDestinationIds == null ||
-          (destination.id != null && langfuseDestinationIds.includes(destination.id)),
-      ).length,
-    }))
+    .map((destination) => {
+      let coverage = 0;
+      let newest = -1;
+      for (let i = 0; i < messages.length; i++) {
+        if (couldHold(destination, messages[i])) {
+          coverage++;
+          newest = i;
+        }
+      }
+      return { destination, coverage, newest };
+    })
     .filter(({ coverage }) => coverage > 0)
     .sort(
       (a, b) =>
+        b.newest - a.newest ||
         b.coverage - a.coverage ||
         DESTINATION_PREFERENCE[a.destination.name] - DESTINATION_PREFERENCE[b.destination.name],
     )
@@ -309,15 +343,7 @@ function readPlan(
 ): LangfuseScoreDestination[] {
   const plan: LangfuseScoreDestination[] = [];
   for (const destination of ranked) {
-    const addsTurns = messages.some(({ langfuseDestinationIds: ids }) => {
-      if (ids == null) {
-        return true;
-      }
-      const couldHold = destination.id != null && ids.includes(destination.id);
-      const heldEarlier = plan.some(({ id }) => id != null && ids.includes(id));
-      return couldHold && !heldEarlier;
-    });
-    if (plan.length === 0 || addsTurns) {
+    if (plan.length === 0 || holdsOtherTurns(destination, plan, messages)) {
       plan.push(destination);
     }
   }
@@ -571,6 +597,7 @@ export function createLangfuseTraceReader({
       let startCursor = continuation?.c;
       let firstSourceId: string | undefined;
       let lastFailure: TraceReadError | undefined;
+      const failed: LangfuseScoreDestination[] = [];
       while (index < plan.length) {
         const destination = plan[index];
         const sourceId = sourceIdOf(destination);
@@ -589,6 +616,7 @@ export function createLangfuseTraceReader({
             throw error;
           }
           lastFailure = error;
+          failed.push(destination);
           excluded.add(sourceId);
           /** The plan's prefix depends only on the ranking before it, so `index` still points
            *  at the first project not yet read. */
@@ -617,7 +645,11 @@ export function createLangfuseTraceReader({
         }
         index++;
       }
-      if (firstSourceId == null && lastFailure != null) {
+      /** Every project read answered empty, which says nothing about a turn only a failed one holds. */
+      if (
+        lastFailure != null &&
+        failed.some((destination) => holdsOtherTurns(destination, plan, refs.sampledMessages))
+      ) {
         throw lastFailure;
       }
       return { records: [], ...(firstSourceId ? { sourceId: firstSourceId } : {}) };
@@ -646,30 +678,46 @@ export function createLangfuseTraceReader({
         limit: '1',
         filter: JSON.stringify(filter),
       });
-      let page: z.infer<typeof pageSchema> | undefined;
+      /** Projects that answered without the record, and ones that could not answer. */
+      const answered: LangfuseScoreDestination[] = [];
+      const failed: LangfuseScoreDestination[] = [];
+      let lastFailure: TraceReadError | undefined;
+      let match: OwnedObservation | undefined;
       for (const destination of candidates) {
+        /** A project whose turns a project that already answered provably holds cannot add the record. */
+        if (answered.length > 0 && !holdsOtherTurns(destination, answered, refs.sampledMessages)) {
+          continue;
+        }
+        let page: z.infer<typeof pageSchema>;
         try {
           page = await requestPage(destination, params, query, false);
-          break;
         } catch (error) {
-          const lastCandidate = destination === candidates[candidates.length - 1];
           if (
-            lastCandidate ||
             query.signal?.aborted ||
             !(error instanceof TraceReadError) ||
             !FAILOVER_CODES.has(error.code)
           ) {
             throw error;
           }
+          lastFailure = error;
+          failed.push(destination);
+          continue;
         }
+        match = parseRows(page.data, owners).find(
+          ({ observation }) => observation.id === query.recordId,
+        );
+        if (match) {
+          break;
+        }
+        answered.push(destination);
       }
-      if (!page) {
-        return null;
-      }
-      const match = parseRows(page.data, owners).find(
-        ({ observation }) => observation.id === query.recordId,
-      );
       if (!match) {
+        if (
+          lastFailure != null &&
+          failed.some((destination) => holdsOtherTurns(destination, answered, refs.sampledMessages))
+        ) {
+          throw lastFailure;
+        }
         return null;
       }
       const { observation, messageId } = match;

@@ -264,6 +264,34 @@ describe('createLangfuseTraceReader', () => {
       expect(requestedUrl(fetchMock).origin).toBe('https://central.langfuse.test');
     });
 
+    it('reads the project holding the newest turn first after a conversation moved projects', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-0', langfuseDestinationIds: ['central-id'] },
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id'] },
+          { messageId: 'response-2', langfuseDestinationIds: ['connection-id'] },
+        ],
+      });
+      const { reader, fetchMock } = setup({
+        refs,
+        responses: [
+          jsonResponse({
+            data: [observation({ id: 'newest', traceId: traceIdForMessage('response-2') })],
+          }),
+        ],
+      });
+
+      const page = await reader.listRecords(createQuery());
+
+      expect(requestedUrl(fetchMock).origin).toBe('https://tenant.langfuse.test');
+      expect(page).toMatchObject({ sourceId: 'connection-id', records: [{ id: 'newest' }] });
+
+      const later = setup({ refs, responses: [jsonResponse({ data: [] })] });
+      await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
+
+      expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
+    });
+
     it('tries the next readable project when legacy responses left the first one empty', async () => {
       const { reader, fetchMock } = setup({
         refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
@@ -405,6 +433,36 @@ describe('createLangfuseTraceReader', () => {
         midProject.reader.listRecords({ ...createQuery(), cursor }),
       ).rejects.toMatchObject({ code: 'upstream_error' });
       expect(midProject.fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failed project that could hold a turn the empty ones do not', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'legacy-response' }] }),
+        responses: [jsonResponse({ data: [] }), jsonResponse({ message: 'down' }, 503)],
+      });
+
+      await expect(reader.listRecords(createQuery())).rejects.toMatchObject({
+        code: 'upstream_error',
+      });
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('answers empty when a project that answered provably holds every turn of the failed one', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+          ],
+        }),
+        responses: [jsonResponse({ message: 'expired key' }, 401), jsonResponse({ data: [] })],
+      });
+
+      await expect(reader.listRecords(createQuery())).resolves.toEqual({
+        records: [],
+        sourceId: 'central-id',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it('treats two credentials for one project as one source instead of replaying its page', async () => {
@@ -846,6 +904,47 @@ describe('createLangfuseTraceReader', () => {
       expect(detail?.record.id).toBe('obs-root');
       expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
       expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('keeps probing projects when one answers without the record', async () => {
+      const { reader, fetchMock } = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [jsonResponse({ data: [] }), jsonResponse({ data: [observation()] })],
+      });
+
+      const detail = await reader.getRecord({
+        ...createQuery(),
+        recordId: 'obs-root',
+        sourceId: 'retired-id',
+      });
+
+      expect(detail?.record.id).toBe('obs-root');
+      expect(requestedUrl(fetchMock, 0).origin).toBe('https://tenant.langfuse.test');
+      expect(requestedUrl(fetchMock, 1).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('skips a project whose turns an answered one provably holds, and reports a failure that could hide the record', async () => {
+      const fanout = setup({
+        refs: createRefs({
+          sampledMessages: [
+            { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+          ],
+        }),
+        responses: [jsonResponse({ data: [] })],
+      });
+      const legacy = setup({
+        refs: createRefs({ sampledMessages: [{ messageId: 'response-1' }] }),
+        responses: [jsonResponse({ message: 'down' }, 503), jsonResponse({ data: [] })],
+      });
+
+      await expect(
+        fanout.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
+      ).resolves.toBeNull();
+      expect(fanout.fetchMock).toHaveBeenCalledTimes(1);
+      await expect(
+        legacy.reader.getRecord({ ...createQuery(), recordId: 'obs-root' }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
+      expect(legacy.fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it('returns null for an observation outside the user-owned traces', async () => {

@@ -394,6 +394,26 @@ export function clampWindow(
   return { start, end: start + span };
 }
 
+/**
+ * Keeps a zoom window on the records still loaded: the part of it inside the
+ * trace, or none when it covers none of the trace. A window that already fits
+ * is returned as is.
+ */
+export function fitWindow(
+  window: TraceWindow,
+  model: Pick<TraceModel, 'start' | 'end'>,
+): TraceWindow | null {
+  const start = Math.max(window.start, model.start);
+  const end = Math.min(window.end, model.end);
+  if (end <= start) {
+    return null;
+  }
+  if (start === window.start && end === window.end) {
+    return window;
+  }
+  return clampWindow({ start, end }, { start: model.start, end: model.end }, minimumSpan(model));
+}
+
 export const ZOOM_STEP = 0.5;
 const PAN_STEP = 0.1;
 
