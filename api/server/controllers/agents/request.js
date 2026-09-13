@@ -46,6 +46,7 @@ const {
   getCodeWorkspaceSelectionErrorDetails,
   shouldPersistCodeWorkspaceInitializationError,
   getFailedTurnTraceFields,
+  createCompactionFailureContent,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -490,6 +491,11 @@ async function saveErrorTurn(
         error: true,
         unfinished: false,
         isCreatedByUser: false,
+        /** A compaction has no content of its own, so the marked failure is
+         *  what identifies the reloaded turn as one. */
+        ...(req.body?.compact === true && {
+          content: createCompactionFailureContent(errorText),
+        }),
       },
       { context },
     );

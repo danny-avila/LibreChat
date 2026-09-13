@@ -3535,7 +3535,9 @@ class AgentClient extends BaseClient {
 
     const completion = filterMalformedContentParts(this.contentParts);
     if (this.isCompactionTurn()) {
-      markCompactionOutcome(completion);
+      markCompactionOutcome(completion, {
+        aborted: this.abortController?.signal?.aborted === true,
+      });
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };

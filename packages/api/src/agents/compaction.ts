@@ -29,19 +29,38 @@ export function getSummaryPartText(part: TMessageContentParts | null | undefined
     .trim();
 }
 
+/** The typed failure a manual compaction reports when it produced no summary. */
+const COMPACTION_FAILED_ERROR = JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED });
+
+/**
+ * The content a failed manual compaction persists: the typed failure, marked as
+ * the compaction's own outcome. A turn saved from a thrown failure has no
+ * content of its own, so without this the row is indistinguishable from an
+ * answer to the message it hangs off and keeps that message's rerun controls.
+ */
+export function createCompactionFailureContent(
+  errorText: string = COMPACTION_FAILED_ERROR,
+): TMessageContentParts[] {
+  return [{ type: ContentTypes.ERROR, error: errorText, initiatedBy: 'user' }];
+}
+
 /**
  * Stamps `initiatedBy: 'user'` on the part that carries a manual compaction's
  * outcome, which is the turn's only record of having been one: the run emits no
  * text of its own, and a compaction hangs off whatever leaf the branch ends
  * with, so a reader cannot infer it from the turn's shape or its parent.
  *
- * Both outcomes are marked. A run that produced a summary marks it; a run that
+ * Every outcome is marked. A run that produced a summary marks it; a run that
  * recorded why it could not (an error part, e.g. a skipped compaction) marks
- * that instead, so the failure is still identifiable as a compaction rather
- * than as an answer to the message behind it. A run that ended with neither
- * fails as a typed error instead of persisting an empty assistant message.
+ * that instead; a run that produced neither records the typed failure here, so
+ * it persists and streams like any other failed compaction rather than as an
+ * empty assistant message. A cancelled run keeps failing as a typed error: the
+ * turn stopped early rather than failing, and the abort path owns it.
  */
-export function markCompactionOutcome(contentParts: TMessageContentParts[]): void {
+export function markCompactionOutcome(
+  contentParts: TMessageContentParts[],
+  { aborted = false }: { aborted?: boolean } = {},
+): void {
   const summary = contentParts.find(
     (part): part is SummaryContentPart =>
       part?.type === ContentTypes.SUMMARY &&
@@ -62,9 +81,10 @@ export function markCompactionOutcome(contentParts: TMessageContentParts[]): voi
   if (markedFailure) {
     return;
   }
-  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
-    code: 'COMPACTION_FAILED',
-  });
+  if (aborted) {
+    throw Object.assign(new Error(COMPACTION_FAILED_ERROR), { code: 'COMPACTION_FAILED' });
+  }
+  contentParts.push(...createCompactionFailureContent());
 }
 
 function snapshotEntry(

@@ -39,6 +39,9 @@ const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
+/** A run that completes having produced no content at all: the shape a
+ *  summarizer takes when it returns nothing for a manual compaction. */
+const EMPTY_REPLY_MARKER = 'E2E_EMPTY_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
@@ -581,6 +584,11 @@ function replyResponses(text) {
       responses: [' '.repeat(EMPTY_SLOW_REPLY_CHUNKS)],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
+  }
+
+  const emptyName = getMarkerValue(text, EMPTY_REPLY_MARKER);
+  if (emptyName) {
+    return { responses: [''] };
   }
 
   const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);

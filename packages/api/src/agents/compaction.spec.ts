@@ -10,6 +10,7 @@ import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@
 import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
+  createCompactionFailureContent,
   createCompactionSemanticIndexProjection,
   markCompactionOutcome,
   restoreCompactionSemanticIndex,
@@ -180,6 +181,10 @@ describe('markCompactionOutcome', () => {
     expect(parts[1]).toMatchObject({ initiatedBy: 'user' });
   });
 
+  /** The fallback the reviewed head threw on: a run that produced neither a
+   *  summary nor an explanation now records the typed failure itself, so the
+   *  turn carries the marker on the stream and in storage instead of being
+   *  saved as a bare error row with no content. */
   it.each([
     ['nothing at all', []],
     ['an empty summary', [summary('   ')]],
@@ -187,9 +192,30 @@ describe('markCompactionOutcome', () => {
       'a partial summary with no recorded failure',
       [summary('Half a checkpoint', { failed: true })],
     ],
-  ])('fails as a typed error for a run that produced %s', (_label, parts) => {
-    expect(() => markCompactionOutcome(parts)).toThrow(
+  ])('records a marked typed failure for a run that produced %s', (_label, parts) => {
+    markCompactionOutcome(parts);
+
+    expect(parts[parts.length - 1]).toEqual({
+      type: ContentTypes.ERROR,
+      error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+      initiatedBy: 'user',
+    });
+  });
+
+  /** A cancelled compaction stopped early rather than failing, and the abort
+   *  path owns that turn: it must not be turned into a failure row. */
+  it('fails as a typed error when the run was cancelled', () => {
+    const parts: TMessageContentParts[] = [];
+
+    expect(() => markCompactionOutcome(parts, { aborted: true })).toThrow(
       JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
     );
+    expect(parts).toHaveLength(0);
+  });
+
+  it('marks the content a failed compaction turn persists', () => {
+    expect(createCompactionFailureContent('Summarization failed')).toEqual([
+      { type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' },
+    ]);
   });
 });
