@@ -323,7 +323,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         userId: 'u1',
         serverName: 'test-srv',
       });
-      expect(clearLocalRecovery).toHaveBeenCalledWith('u1', 'test-srv');
+      expect(clearLocalRecovery).toHaveBeenCalledWith('u1', 'test-srv', 'generation-2');
 
       await expect(
         MCPTokenStorage.getTokens({

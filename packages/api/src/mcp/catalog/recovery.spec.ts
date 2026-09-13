@@ -2,8 +2,12 @@ import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import { ErrorCode, McpError, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
+import type {
+  MCPRecoveryGenerationScope,
+  MCPServerCatalogLoaderDeps,
+  MCPServerCatalogRecoveryPolicy,
+} from './recovery';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import type { MCPRecoveryGenerationScope, MCPServerCatalogLoaderDeps } from './recovery';
 import {
   MCPCatalogCapacityError,
   MCPServerCatalogRecoveryTracker,
@@ -1087,6 +1091,7 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     let generation = 'generation-1';
     let readsFail = false;
     let publicationHold: Promise<void> | undefined;
+    let retryIntentHold: Promise<void> | undefined;
     let retryCleanup: Promise<void> = Promise.resolve();
     const recoveryTracker = new MCPServerCatalogRecoveryTracker();
     const rotate = () => {
@@ -1102,7 +1107,12 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     const onOAuthCredentialsChanging = (changed: MCPRecoveryGenerationScope) =>
       prepareMCPAuthorizationMutation(changed, {
         invalidateRecoveryGeneration,
-        persistPublicationRetry: async () => 'retry-v1',
+        persistPublicationRetry: async () => {
+          if (retryIntentHold != null) {
+            await retryIntentHold;
+          }
+          return 'retry-v1';
+        },
         clearPublicationRetry: () => retryCleanup,
         clearLocalRecovery: (userId, changedServerName, published) =>
           recoveryTracker.clear(userId, changedServerName, published),
@@ -1115,6 +1125,17 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       /** Leaves the durable retry-intent delete hanging, as a stalled store would. */
       stallRetryCleanup: () => {
         retryCleanup = new Promise<void>(() => undefined);
+      },
+      /** Holds the durable retry-intent write that precedes every token-row write. */
+      holdRetryIntent: () => {
+        let release: () => void = () => undefined;
+        retryIntentHold = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return () => {
+          retryIntentHold = undefined;
+          release();
+        };
       },
       getRecoveryGeneration: async () => {
         if (readsFail) {
@@ -1151,9 +1172,10 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
   const loadCatalogs = (
     fence: ReturnType<typeof createFence>,
     discoverServerTools: MCPServerCatalogLoaderDeps['discoverServerTools'],
+    recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>,
   ) =>
     loadMCPServerCatalogs(
-      { user, servers },
+      { user, servers, recoveryPolicy },
       {
         getCachedServerTools: jest.fn().mockResolvedValue(null),
         getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
@@ -1264,6 +1286,35 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
       new Map([[serverName, recoveredTools]]),
     ]);
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('rediscovers once a refresh released with its stalled flight publishes the rotation', async () => {
+    const fence = createFence();
+    const releaseRetryIntent = fence.holdRetryIntent();
+    const recoveryPolicy = { discoveryTimeoutMs: 100, discoverySettleGraceMs: 20 };
+    let refresh: Promise<void> | undefined;
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+      if (refresh == null) {
+        refresh = refreshAccessToken(options);
+        await refresh;
+      }
+      return { tools: listedTools };
+    });
+
+    const released = await loadCatalogs(fence, discoverServerTools, recoveryPolicy);
+    const suppressed = await loadCatalogs(fence, discoverServerTools, recoveryPolicy);
+    expect(released.serversWithoutTools).toEqual([serverName]);
+    expect(suppressed.serversWithoutTools).toEqual([serverName]);
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-1');
+
+    releaseRetryIntent();
+    await refresh;
+    await expect(fence.getRecoveryGeneration()).resolves.toBe('generation-2');
+
+    const recovered = await loadCatalogs(fence, discoverServerTools, recoveryPolicy);
+    expect(recovered.serverTools).toEqual(new Map([[serverName, recoveredTools]]));
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
   });
 
   it('discards a shared catalog that the shared generation cannot confirm for a request that saw a newer one', async () => {
