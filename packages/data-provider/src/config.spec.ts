@@ -988,6 +988,7 @@ describe('allowedAddressesSchema', () => {
       expect(defaults.mcpSettings?.catalogRecovery).toEqual({
         discoveryBackoffMs: [300_000, 600_000, 1_200_000, 1_800_000],
         discoveryTimeoutMs: 3_000,
+        discoverySettleGraceMs: 10_000,
         reauthRetryMs: 1_800_000,
         maxStateEntries: 10_000,
         generationReadTimeoutMs: 500,
@@ -1009,6 +1010,18 @@ describe('allowedAddressesSchema', () => {
           mcpSettings: { catalogRecovery: { discoveryTimeoutMs: 0 } },
         }).success,
       ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { discoverySettleGraceMs: -1 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.parse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { discoverySettleGraceMs: 0 } },
+        }).mcpSettings?.catalogRecovery.discoverySettleGraceMs,
+      ).toBe(0);
       expect(
         configSchema.safeParse({
           version: '1.0',

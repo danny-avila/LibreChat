@@ -2726,6 +2726,14 @@ export const configSchema = z.object({
             .positive()
             .max(5 * 60_000)
             .default(3_000),
+          /** How long past `discoveryTimeoutMs` a stalled discovery may hold its catalog slot and
+           * coalesced requests. It is never cancelled, so OAuth tokens it redeemed still persist. */
+          discoverySettleGraceMs: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(5 * 60_000)
+            .default(10_000),
           reauthRetryMs: z
             .number()
             .int()

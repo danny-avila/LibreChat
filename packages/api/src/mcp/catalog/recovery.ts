@@ -3,7 +3,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
+import { hasCustomUserVars, waitUntilDeadline, getMissingCustomUserVars } from '../utils';
 import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
@@ -15,13 +15,15 @@ const pendingCatalogLanes: CatalogWorkLane[] = [];
 let activeCatalogWork = 0;
 /**
  * Bounds one server's discovery end to end — connect, `tools/list` pagination, and the
- * unauthenticated fallback all draw down this single budget, so a slot is held for at most this
- * long regardless of where the server stalls. Recovery targets a server that is reachable and
- * authorized but whose catalog cache expired, and such a server answers well inside this window.
+ * unauthenticated fallback all draw down this single budget. Recovery targets a server that is
+ * reachable and authorized but whose catalog cache expired, and such a server answers well inside
+ * this window. The settle grace lets a discovery that honored the budget finish closing its
+ * connections; past it, recovery releases the slot even if some dependency is still stalled.
  */
 const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
   discoveryTimeoutMs: 3_000,
+  discoverySettleGraceMs: 10_000,
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
   generationReadTimeoutMs: 500,
@@ -149,6 +151,8 @@ export async function publishMCPAuthorizationMutation(
 export interface MCPServerCatalogRecoveryPolicy {
   discoveryBackoffMs: readonly number[];
   discoveryTimeoutMs: number;
+  /** How long past its budget a discovery may keep its catalog slot and coalesced requests. */
+  discoverySettleGraceMs: number;
   reauthRetryMs: number;
   maxStateEntries: number;
   generationReadTimeoutMs: number;
@@ -545,19 +549,34 @@ async function discoverCandidate(
     trackPublication,
   }: { signal?: AbortSignal; trackPublication?: PublicationTracker } = {},
 ): Promise<RecoveryOutcome> {
+  const deadlineMs = Date.now() + resolveBudget(serverConfig, policy);
   try {
-    const result = await deps.discoverServerTools({
-      user,
-      serverName,
-      configServers: { [serverName]: serverConfig },
-      customUserVars,
-      deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
-      signal,
-      onOAuthCredentialsChanging: trackPublications(
-        deps.onOAuthCredentialsChanging,
-        trackPublication,
-      ),
-    });
+    /** Discovery can await work that ignores its budget — a token refresh persisting behind a
+     *  stalled write — and a shared flight has no request signal to end that wait, so it would hold
+     *  every coalesced request and its slot indefinitely. Stop waiting instead of cancelling: that
+     *  work still commits what it redeemed. */
+    const discovery = await waitUntilDeadline(
+      deps.discoverServerTools({
+        user,
+        serverName,
+        configServers: { [serverName]: serverConfig },
+        customUserVars,
+        deadlineMs,
+        signal,
+        onOAuthCredentialsChanging: trackPublications(
+          deps.onOAuthCredentialsChanging,
+          trackPublication,
+        ),
+      }),
+      deadlineMs + policy.discoverySettleGraceMs,
+    );
+    if (!discovery.settled) {
+      logger.warn(
+        `[MCP catalog recovery] Discovery for ${serverName} is still running ${policy.discoverySettleGraceMs}ms past its budget; releasing its catalog slot while it finishes in the background`,
+      );
+      return { serverName, tools: null, ...(!signal?.aborted && { state: 'backoff' as const }) };
+    }
+    const result = discovery.value;
     const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
     if (signal?.aborted) {
       return { serverName, tools: null };

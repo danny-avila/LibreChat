@@ -23,6 +23,7 @@ import {
   requiresOAuthMachinery,
   isChatSelectableMCPServer,
   filterChatSelectableMCPServers,
+  waitUntilDeadline,
 } from '~/mcp/utils';
 
 describe('normalizeServerName', () => {
@@ -1266,5 +1267,61 @@ describe('filterChatSelectableMCPServers', () => {
     await expect(filterChatSelectableMCPServers([], opts)).resolves.toEqual([]);
     await expect(filterChatSelectableMCPServers(undefined, opts)).resolves.toEqual([]);
     await expect(filterChatSelectableMCPServers(null, opts)).resolves.toEqual([]);
+  });
+});
+
+describe('waitUntilDeadline', () => {
+  const deferred = () => {
+    let resolve!: (value: string) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<string>((resolveWork, rejectWork) => {
+      resolve = resolveWork;
+      reject = rejectWork;
+    });
+    return { promise, resolve, reject };
+  };
+
+  it('returns the value of work that settles before the deadline', async () => {
+    await expect(waitUntilDeadline(Promise.resolve('tokens'), Date.now() + 1000)).resolves.toEqual({
+      settled: true,
+      value: 'tokens',
+    });
+  });
+
+  it('rethrows a rejection that lands before the deadline', async () => {
+    await expect(
+      waitUntilDeadline(Promise.reject(new Error('storage unavailable')), Date.now() + 1000),
+    ).rejects.toThrow('storage unavailable');
+  });
+
+  it('stops waiting at the deadline and keeps observing the abandoned work', async () => {
+    const work = deferred();
+
+    await expect(waitUntilDeadline(work.promise, Date.now() + 10)).resolves.toEqual({
+      settled: false,
+    });
+
+    /** Jest fails the test if this late rejection goes unhandled. */
+    work.reject(new Error('late failure'));
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+
+  it('stops waiting when the signal aborts, including one aborted before the wait', async () => {
+    const aborting = new AbortController();
+    const pending = deferred();
+    const waiting = waitUntilDeadline(pending.promise, undefined, aborting.signal);
+    aborting.abort();
+    await expect(waiting).resolves.toEqual({ settled: false });
+
+    const aborted = new AbortController();
+    aborted.abort();
+    const abandoned = deferred();
+    await expect(waitUntilDeadline(abandoned.promise, undefined, aborted.signal)).resolves.toEqual({
+      settled: false,
+    });
+
+    pending.reject(new Error('late failure'));
+    abandoned.reject(new Error('late failure'));
+    await new Promise((resolve) => setImmediate(resolve));
   });
 });
