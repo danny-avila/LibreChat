@@ -13,6 +13,14 @@ export interface FlowLease {
   release: () => Promise<void>;
 }
 
+/** The flow a waiter was monitoring disappeared before it settled. */
+export class FlowStateNotFoundError extends Error {
+  constructor(type: string) {
+    super(`${type} Flow state not found`);
+    this.name = 'FlowStateNotFoundError';
+  }
+}
+
 interface InMemoryLeaseState {
   generation: number;
   owner?: string;
@@ -735,7 +743,7 @@ export class FlowStateManager<T = unknown> {
             if (!flowState) {
               cleanup();
               logger.error(`[${flowKey}] Flow state not found after retry`);
-              reject(new Error(`${type} Flow state not found`));
+              reject(new FlowStateNotFoundError(type));
               return;
             }
           }
@@ -939,18 +947,26 @@ export class FlowStateManager<T = unknown> {
     signal?: AbortSignal,
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
-    let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState && !this.isTokenExpired(existingState)) {
-      logger.debug(`[${flowKey}] Flow already exists with valid token`);
-      return this.monitorFlow(flowKey, type, signal);
+    let joined = this.joinExistingFlow(
+      flowKey,
+      type,
+      (await this.keyv.get(flowKey)) as FlowState<T> | undefined,
+      signal,
+    );
+    if (joined) {
+      return joined;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState && !this.isTokenExpired(existingState)) {
-      logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
-      return this.monitorFlow(flowKey, type, signal);
+    joined = this.joinExistingFlow(
+      flowKey,
+      type,
+      (await this.keyv.get(flowKey)) as FlowState<T> | undefined,
+      signal,
+    );
+    if (joined) {
+      return joined;
     }
 
     const initialState: FlowState = {
@@ -988,6 +1004,31 @@ export class FlowStateManager<T = unknown> {
       }
       throw error;
     }
+  }
+
+  /**
+   * A completed result is served as it stands and a pending attempt is monitored, as is a failure
+   * of a retained type. A failure of any other type only lingers because its own attempt already
+   * returned it, so the next attempt replaces it instead of waiting on it.
+   */
+  private joinExistingFlow(
+    flowKey: string,
+    type: string,
+    existingState: FlowState<T> | undefined,
+    signal?: AbortSignal,
+  ): Promise<T> | undefined {
+    if (!existingState || this.isTokenExpired(existingState)) {
+      return undefined;
+    }
+    if (existingState.status === 'COMPLETED') {
+      logger.debug(`[${flowKey}] Serving completed flow result`);
+      return Promise.resolve(existingState.result as T);
+    }
+    if (existingState.status === 'FAILED' && !this.retainedFailureTypes.has(type)) {
+      return undefined;
+    }
+    logger.debug(`[${flowKey}] Flow already exists with valid token`);
+    return this.monitorFlow(flowKey, type, signal);
   }
 
   /**

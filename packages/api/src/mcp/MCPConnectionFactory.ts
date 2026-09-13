@@ -42,7 +42,7 @@ import {
   isClientRejectionMessage,
   createDeadlineAbortSignal,
 } from './utils';
-import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -98,6 +98,8 @@ export class MCPConnectionFactory {
   protected readonly onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
   protected readonly onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
   protected readonly onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
+  protected readonly onOAuthCredentialsAdopted?: t.UserConnectionContext['onOAuthCredentialsAdopted'];
+  protected readonly onOAuthCredentialsInvalidated?: t.UserConnectionContext['onOAuthCredentialsInvalidated'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
@@ -601,6 +603,8 @@ export class MCPConnectionFactory {
     this.onOAuthCredentialsChanged = options?.onOAuthCredentialsChanged;
     this.onOAuthCredentialsChanging = options?.onOAuthCredentialsChanging;
     this.onDiscoveryDetached = options?.onDiscoveryDetached;
+    this.onOAuthCredentialsAdopted = options?.onOAuthCredentialsAdopted;
+    this.onOAuthCredentialsInvalidated = options?.onOAuthCredentialsInvalidated;
     this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
@@ -896,13 +900,15 @@ export class MCPConnectionFactory {
       .digest('base64url');
   }
 
-  /** Retrieves existing OAuth tokens from storage or returns null */
-  protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
-    if (!this.tokenMethods?.findToken) return null;
-
-    try {
-      const flowId = this.getTokenFlowId();
-      const tokens = await this.flowManager!.createFlowWithHandler(
+  /**
+   * Reads tokens through the shared `mcp_get_tokens` flow. A flow that disappears while this call
+   * waits on it was invalidated by a credential change, so the read runs once more against the
+   * changed storage instead of reporting the tokens missing and prompting for authorization again.
+   */
+  private async loadOAuthTokens(): Promise<MCPOAuthTokens | null> {
+    const flowId = this.getTokenFlowId();
+    const readTokens = () =>
+      this.flowManager!.createFlowWithHandler(
         flowId,
         'mcp_get_tokens',
         async () => {
@@ -924,6 +930,38 @@ export class MCPConnectionFactory {
         },
         this.signal,
       );
+
+    try {
+      return await readTokens();
+    } catch (error) {
+      if (!(error instanceof FlowStateNotFoundError)) {
+        throw error;
+      }
+      logger.info(
+        `${this.logPrefix} Token flow was invalidated while waiting on it; re-reading stored tokens`,
+      );
+      await this.onOAuthCredentialsInvalidated?.();
+      return await readTokens();
+    }
+  }
+
+  /** Tokens released by another party's authorization or refresh carry the generation it published. */
+  private adoptPublishedCredentials(tokens: MCPOAuthTokens): void {
+    if (!tokens.publication_generation) {
+      return;
+    }
+    this.onOAuthCredentialsAdopted?.({
+      publicationGeneration: tokens.publication_generation,
+      obtainedAt: tokens.obtained_at,
+    });
+  }
+
+  /** Retrieves existing OAuth tokens from storage or returns null */
+  protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
+    if (!this.tokenMethods?.findToken) return null;
+
+    try {
+      const tokens = await this.loadOAuthTokens();
 
       if (tokens) {
         const [isCurrentAccessToken, storedClient] = await this.runWithCapturedTenant(() =>
@@ -957,6 +995,7 @@ export class MCPConnectionFactory {
           storedClient?.clientMetadata as Partial<OAuthStoredClientMetadata> | undefined,
           this.serverConfig.oauth,
         );
+        this.adoptPublishedCredentials(tokens);
         logger.info(`${this.logPrefix} Loaded OAuth tokens`);
       }
       return tokens;
@@ -1171,8 +1210,8 @@ export class MCPConnectionFactory {
           });
     return async (freshTokens) => {
       if (publishPreparedMutation != null) {
-        await publishPreparedMutation();
-        await this.invalidateGetTokensFlow(freshTokens);
+        const publicationGeneration = await publishPreparedMutation();
+        await this.invalidateGetTokensFlow(freshTokens, publicationGeneration);
         return;
       }
       if (freshTokens != null) {
@@ -1189,7 +1228,10 @@ export class MCPConnectionFactory {
     };
   }
 
-  protected async invalidateGetTokensFlow(freshTokens?: MCPOAuthTokens): Promise<void> {
+  protected async invalidateGetTokensFlow(
+    freshTokens?: MCPOAuthTokens,
+    publicationGeneration?: string,
+  ): Promise<void> {
     if (!this.flowManager || !this.userId) {
       return;
     }
@@ -1200,7 +1242,13 @@ export class MCPConnectionFactory {
         return;
       }
       if (state.status === 'PENDING' && freshTokens) {
-        await this.flowManager.completeFlow(flowId, 'mcp_get_tokens', freshTokens);
+        await this.flowManager.completeFlow(
+          flowId,
+          'mcp_get_tokens',
+          publicationGeneration
+            ? { ...freshTokens, publication_generation: publicationGeneration }
+            : freshTokens,
+        );
         return;
       }
       if (state.status !== 'COMPLETED') {
@@ -1684,6 +1732,7 @@ export class MCPConnectionFactory {
           );
 
           connection.setOAuthTokens(tokens);
+          this.adoptPublishedCredentials(tokens);
           // Same rationale as the silent-refresh success path: invalidate the
           // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
           // freshly stored tokens rather than the just-rejected ones the

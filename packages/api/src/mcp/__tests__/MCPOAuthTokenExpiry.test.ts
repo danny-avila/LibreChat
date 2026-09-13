@@ -16,9 +16,13 @@ import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import type * as t from '~/mcp/types';
+import {
+  persistMCPAuthorizationTransaction,
+  prepareMCPAuthorizationMutation,
+} from '~/mcp/authorization';
 import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
-import { prepareMCPAuthorizationMutation } from '~/mcp/authorization';
 import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 
@@ -341,6 +345,202 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       });
       expect(refreshGrants()).toHaveLength(1);
     });
+  });
+
+  describe('A callback settles or removes the token flow a connection is waiting on', () => {
+    let server: OAuthTestServer;
+    let tokenStore: InMemoryTokenStore;
+    let flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    const tokenFlowId = MCPOAuthHandler.generateTokenFlowId('u1', 'test-srv');
+    const oauthFlowId = MCPOAuthHandler.generateFlowId('u1', 'test-srv');
+
+    class TokenLoadingFactory extends MCPConnectionFactory {
+      public constructor(basic: t.BasicConnectionOptions, options: t.OAuthConnectionOptions) {
+        super(basic, options);
+      }
+
+      public loadTokens(): Promise<MCPOAuthTokens | null> {
+        return this.getOAuthTokens();
+      }
+    }
+
+    beforeEach(async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000, issueRefreshTokens: true });
+      tokenStore = new InMemoryTokenStore();
+      flowManager = new FlowStateManager<MCPOAuthTokens | null>(
+        new MockKeyv<MCPOAuthTokens | null>() as unknown as Keyv,
+        { ttl: 30000, ci: true },
+      );
+    });
+
+    afterEach(async () => {
+      await server.close();
+    });
+
+    const waitingConnection = (
+      hooks: Pick<
+        t.UserConnectionContext,
+        'onOAuthCredentialsAdopted' | 'onOAuthCredentialsInvalidated'
+      >,
+    ) =>
+      new TokenLoadingFactory(
+        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          useOAuth: true,
+          user: { id: 'u1' } as IUser,
+          flowManager,
+          tokenMethods: {
+            findToken: tokenStore.findToken,
+            createToken: tokenStore.createToken,
+            updateToken: tokenStore.updateToken,
+            deleteTokens: tokenStore.deleteTokens,
+          },
+          ...hooks,
+        },
+      );
+
+    /** Mirrors the callback route: exchanges a code, then stores, publishes, and settles in one transaction. */
+    const completeAuthorizationFromCallback = async () => {
+      const code = await server.getAuthCode();
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}`,
+      });
+      const exchanged = (await tokenRes.json()) as {
+        access_token: string;
+        token_type: string;
+        expires_in: number;
+        refresh_token: string;
+      };
+      const exchangedTokens: MCPOAuthTokens = {
+        ...exchanged,
+        obtained_at: Date.now(),
+        expires_at: Date.now() + exchanged.expires_in * 1000,
+      };
+      await flowManager.initFlow(oauthFlowId, 'mcp_oauth', {
+        serverName: 'test-srv',
+        userId: 'u1',
+        serverUrl: server.url,
+        state: 'callback-state',
+      });
+      const stored = await persistMCPAuthorizationTransaction(
+        {
+          scope: { userId: 'u1', serverName: 'test-srv' },
+          flowIds: [tokenFlowId, oauthFlowId],
+          tokens: exchangedTokens,
+          completeAuthorization: async (tokens) => {
+            await flowManager.completeFlow(oauthFlowId, 'mcp_oauth', tokens);
+          },
+          persistTokens: (tokens, onStoreCommitted) =>
+            MCPTokenStorage.storeTokens({
+              userId: 'u1',
+              serverName: 'test-srv',
+              tokens,
+              createToken: tokenStore.createToken,
+              updateToken: tokenStore.updateToken,
+              deleteTokens: tokenStore.deleteTokens,
+              findToken: tokenStore.findToken,
+              clientInfo: { client_id: 'test-client' },
+              metadata: bindingMetadata(server.url),
+              onStoreCommitted,
+            }),
+        },
+        {
+          ensureServerActive: async () => true,
+          inactiveServerError: () => new Error('deleted'),
+          invalidateRecoveryGeneration: async () => 'generation-2',
+          persistPublicationRetry: async () => 'retry-v1',
+          clearPublicationRetry: async () => undefined,
+          flowManager,
+          retryDelaysMs: [0],
+        },
+      );
+      return { exchanged, stored };
+    };
+
+    it('re-reads the tokens a callback stored after removing the failed flow it was waiting on', async () => {
+      let failEarlierAttempt: (() => void) | undefined;
+      const earlierAttempt = flowManager.createFlowWithHandler(
+        tokenFlowId,
+        'mcp_get_tokens',
+        () =>
+          new Promise<MCPOAuthTokens | null>((_, reject) => {
+            failEarlierAttempt = () =>
+              reject(new ReauthenticationRequiredError('test-srv', 'missing'));
+          }),
+      );
+      await waitForCondition(
+        async () =>
+          (await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status === 'PENDING',
+      );
+
+      const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+      const onOAuthCredentialsAdopted = jest.fn();
+      const waiting = waitingConnection({
+        onOAuthCredentialsInvalidated,
+        onOAuthCredentialsAdopted,
+      }).loadTokens();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      failEarlierAttempt?.();
+      await expect(earlierAttempt).rejects.toBeInstanceOf(ReauthenticationRequiredError);
+      expect((await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status).toBe(
+        'FAILED',
+      );
+
+      const { exchanged } = await completeAuthorizationFromCallback();
+      expect(await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens')).toBeFalsy();
+
+      await expect(waiting).resolves.toMatchObject({ access_token: exchanged.access_token });
+      expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
+      expect(onOAuthCredentialsAdopted).not.toHaveBeenCalled();
+      expect((await flowManager.getFlowState(oauthFlowId, 'mcp_oauth'))?.result).toMatchObject({
+        access_token: exchanged.access_token,
+        publication_generation: 'generation-2',
+      });
+    }, 15000);
+
+    it('adopts the generation a callback published when it settles the flow it was waiting on', async () => {
+      let finishEarlierAttempt: (() => void) | undefined;
+      const earlierAttempt = flowManager.createFlowWithHandler(
+        tokenFlowId,
+        'mcp_get_tokens',
+        () =>
+          new Promise<MCPOAuthTokens | null>((resolve) => {
+            finishEarlierAttempt = () => resolve(null);
+          }),
+      );
+      await waitForCondition(
+        async () =>
+          (await flowManager.getFlowState(tokenFlowId, 'mcp_get_tokens'))?.status === 'PENDING',
+      );
+
+      const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+      const onOAuthCredentialsAdopted = jest.fn();
+      const waiting = waitingConnection({
+        onOAuthCredentialsInvalidated,
+        onOAuthCredentialsAdopted,
+      }).loadTokens();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const { exchanged, stored } = await completeAuthorizationFromCallback();
+
+      await expect(waiting).resolves.toMatchObject({
+        access_token: exchanged.access_token,
+        publication_generation: 'generation-2',
+      });
+      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith({
+        publicationGeneration: 'generation-2',
+        obtainedAt: stored.obtained_at,
+      });
+      expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
+
+      finishEarlierAttempt?.();
+      await expect(earlierAttempt).resolves.toMatchObject({
+        access_token: exchanged.access_token,
+      });
+    }, 15000);
   });
 
   describe('Access token expired + refresh token rejected by server', () => {

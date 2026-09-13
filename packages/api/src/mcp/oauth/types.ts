@@ -128,6 +128,12 @@ export interface MCPOAuthTokens extends OAuthTokens {
   obtained_at: number;
   /** Calculated expiry time */
   expires_at?: number;
+  /**
+   * Tool-cache publication generation written when these tokens were persisted. Carried only by
+   * tokens handed to the waiters of the authorization or refresh that stored them, never by a
+   * stored row, so a connection built on them can lease under that generation.
+   */
+  publication_generation?: string;
 }
 
 /** Extended OAuth tokens that may include refresh token expiry */

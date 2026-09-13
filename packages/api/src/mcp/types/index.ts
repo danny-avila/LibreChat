@@ -277,6 +277,22 @@ export interface UserConnectionContext {
    * OAuth token flow still persisting a refresh. The work keeps running; the promise settles with it.
    */
   onDiscoveryDetached?: (work: Promise<unknown>) => void;
+  /**
+   * Reports credentials the factory adopted from an authorization or refresh it did not perform,
+   * with the publication generation they were persisted under and when they were obtained. A
+   * caller leasing a generation captured before it resolved credentials moves the lease to the
+   * one credentials obtained after that capture carry.
+   */
+  onOAuthCredentialsAdopted?: (credentials: {
+    publicationGeneration: string;
+    obtainedAt: number;
+  }) => void;
+  /**
+   * Runs before the factory re-reads credentials from storage because a credential change
+   * invalidated its cached token flow. A caller leasing a generation captured earlier re-captures
+   * it here, ahead of the read, so a rotation that follows the read still fences the build.
+   */
+  onOAuthCredentialsInvalidated?: () => Promise<void>;
 }
 
 export interface RequestScopedMCPConnectionStore {

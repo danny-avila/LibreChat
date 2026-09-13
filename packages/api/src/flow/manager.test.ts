@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { FlowStateManager, PENDING_STALE_MS } from './manager';
+import { FlowStateManager, FlowStateNotFoundError, PENDING_STALE_MS } from './manager';
 import { FlowState } from './types';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -570,6 +570,94 @@ describe('FlowStateManager', () => {
         ci: true,
       });
     });
+
+    it('serves a completed result without waiting on the monitor interval', async () => {
+      const completedResult: TokenResult = {
+        access_token: 'cached_token',
+        refresh_token: 'refresh_token',
+        expires_at: Date.now() + 3600000,
+      };
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 5000,
+        completedAt: Date.now() - 4000,
+        result: completedResult,
+      } as FlowState<TokenResult>);
+      const handlerSpy = jest.fn();
+
+      const startedAt = Date.now();
+      await expect(
+        tokenFlowManager.createFlowWithHandler(flowId, type, handlerSpy),
+      ).resolves.toEqual(completedResult);
+
+      expect(Date.now() - startedAt).toBeLessThan(1000);
+      expect(handlerSpy).not.toHaveBeenCalled();
+    });
+
+    it('replaces a failure nobody retains instead of waiting on it', async () => {
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'FAILED',
+        metadata: {},
+        createdAt: Date.now() - 5000,
+        failedAt: Date.now() - 4000,
+        error: 'earlier attempt failed',
+      } as FlowState<TokenResult>);
+      const freshResult: TokenResult = { access_token: 'fresh_token', refresh_token: 'refresh' };
+      const handlerSpy = jest.fn().mockResolvedValue(freshResult);
+
+      await expect(
+        tokenFlowManager.createFlowWithHandler(flowId, type, handlerSpy),
+      ).resolves.toEqual(freshResult);
+
+      expect(handlerSpy).toHaveBeenCalledTimes(1);
+      await expect(tokenFlowManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({ status: 'COMPLETED', result: freshResult }),
+      );
+    });
+
+    it('still reports a retained failure to a later attempt', async () => {
+      const retainingManager = new FlowStateManager<TokenResult>(tokenStore as unknown as Keyv, {
+        ttl: 30000,
+        retainedFailureTypes: [type],
+        ci: true,
+      });
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'FAILED',
+        metadata: {},
+        createdAt: Date.now() - 5000,
+        failedAt: Date.now() - 4000,
+        error: 'earlier attempt failed',
+      } as FlowState<TokenResult>);
+      const handlerSpy = jest.fn();
+
+      await expect(
+        retainingManager.createFlowWithHandler(flowId, type, handlerSpy),
+      ).rejects.toThrow('earlier attempt failed');
+
+      expect(handlerSpy).not.toHaveBeenCalled();
+    }, 15000);
+
+    it('rejects with FlowStateNotFoundError when the pending flow it joined disappears', async () => {
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'PENDING',
+        metadata: {},
+        createdAt: Date.now(),
+      } as FlowState<TokenResult>);
+      const handlerSpy = jest.fn();
+
+      const joined = tokenFlowManager.createFlowWithHandler(flowId, type, handlerSpy);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await tokenFlowManager.deleteFlow(flowId, type);
+
+      await expect(joined).rejects.toBeInstanceOf(FlowStateNotFoundError);
+      await expect(joined).rejects.toThrow('mcp_get_tokens Flow state not found');
+      expect(handlerSpy).not.toHaveBeenCalled();
+    }, 15000);
 
     it('should execute handler when existing flow has expired token', async () => {
       const expiredTokenResult: TokenResult = {
