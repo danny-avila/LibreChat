@@ -11,6 +11,7 @@ import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useMessagesConversation, useMessagesOperations } from '~/Providers';
 import { getPartText, isEditablePart, withPartText } from './editableParts';
+import { findRerunParent } from './rerunParent';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -100,13 +101,13 @@ export default function EditContentParts({
   );
   const editedMessage = findMessageById(getMessages(), messageId);
   const isBusy = isSubmitting || isSaving;
-  /** A rerun replays the parent as the turn's user message, so a model turn chained
-   *  onto another model turn — an imported or restored thread — has none. The action
-   *  is withheld rather than offered and silently refused; Save still applies. An
-   *  unresolvable parent keeps it, matching the hover row. */
+  /** A rerun replays the parent as the turn's user message, so a model turn with no
+   *  user turn behind it — chained onto another model turn, or left at the root by an
+   *  import — has none. The action is withheld rather than offered and silently
+   *  refused, the footer says why, and Save still applies. */
   const canRerun =
     editedMessage?.isCreatedByUser === true ||
-    findMessageById(getMessages(), editedMessage?.parentMessageId)?.isCreatedByUser !== false;
+    findRerunParent(getMessages(), editedMessage?.parentMessageId) != null;
   /** Only meaningful while a rerun is on offer: it explains why this one is held
    *  back until the edits are saved. A save-only editor reports unsaved changes
    *  instead of an unavailable action's precondition. */
@@ -248,14 +249,10 @@ export default function EditContentParts({
           },
         ) === false;
     } else {
-      const parentMessage = messages?.find(
-        (item) => item.messageId === editedMessage.parentMessageId,
-      );
-      /** A rerun replays the parent as the turn's user message. A manual compaction
-       *  hangs off the leaf it summarized and never opens this editor, but an
-       *  imported chain can also put a model turn under a model turn; refuse rather
-       *  than submit that parent in the user slot. */
-      if (!parentMessage || parentMessage.isCreatedByUser !== true) {
+      /** The same resolution the withheld button is gated on, so a rendered Rerun and
+       *  the submission it runs cannot disagree about the turn being replayed. */
+      const parentMessage = findRerunParent(messages, editedMessage.parentMessageId);
+      if (!parentMessage) {
         return;
       }
       if (!firstChange) {
@@ -349,8 +346,10 @@ export default function EditContentParts({
     [canRerun, enterEdit, saveChanges, updateAndRerun],
   );
 
-  /** Both states share the footer's status slot so neither can add a row and
-   *  shift the message below it. */
+  /** Every state shares the footer's one status slot so none can add a row and
+   *  shift the message below it, which orders them by how actionable they are:
+   *  a blocked or pending save first, then why the footer offers no rerun — the
+   *  question a Save-only editor otherwise leaves unanswered. */
   const getStatusMessage = () => {
     if (hasBlankEdit) {
       return localize('com_ui_message_part_empty');
@@ -360,6 +359,9 @@ export default function EditContentParts({
     }
     if (changedParts.length > 0) {
       return localize('com_ui_unsaved_changes');
+    }
+    if (!canRerun) {
+      return localize('com_ui_rerun_needs_user_turn');
     }
     return '';
   };
