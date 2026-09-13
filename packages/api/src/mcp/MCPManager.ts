@@ -122,7 +122,7 @@ export class MCPManager extends UserConnectionManager {
   constructor(
     catalogRecoveryMaxStateEntries?: number,
     catalogRecoveryMaxDetachedDiscoveries?: number,
-    private readonly appBindingCodec?: MCPAppBindingCodec,
+    private readonly appBindingCodec: MCPAppBindingCodec | undefined = undefined,
   ) {
     super();
     this.catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker(
