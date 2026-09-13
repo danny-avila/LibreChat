@@ -1,0 +1,205 @@
+import { randomUUID } from 'crypto';
+import { expect } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { getE2EUser } from '../../../setup/user';
+import { getAccessToken, requestJson } from '../helpers';
+import { deleteConversations, withMongo } from '../db';
+
+/** `aria-label` of the Pinned section's region (`com_ui_pinned`). */
+export const PINNED_REGION = 'Pinned';
+
+const userEmail = getE2EUser().email;
+
+export type SeededPin = { conversationId: string; title: string };
+
+/**
+ * A pinned chat is an ordinary conversation carrying `pinned: true`; the sidebar
+ * reads that flag to move the row out of the date groups and into the Pinned
+ * section. Inserted directly, the way `seedConversations` does, so a spec can
+ * choose the row's title and its position in the natural order without driving
+ * the pin menu first.
+ */
+export async function seedPinnedConversations(titles: string[]): Promise<SeededPin[]> {
+  const now = Date.now();
+  const pins: SeededPin[] = titles.map((title) => ({ conversationId: randomUUID(), title }));
+  await withMongo(async (db) => {
+    const user = await db.collection('users').findOne({ email: userEmail });
+    if (!user) {
+      throw new Error(`E2E seed: user "${userEmail}" not found`);
+    }
+    await db.collection('conversations').insertMany(
+      pins.map((pin, index) => ({
+        conversationId: pin.conversationId,
+        title: pin.title,
+        user: String(user._id),
+        endpoint: 'openAI',
+        isArchived: false,
+        pinned: true,
+        /** Descending by `updatedAt` is the natural order of the section, so the
+         *  first title given is the first row rendered. */
+        createdAt: new Date(now - index * 1000),
+        updatedAt: new Date(now - index * 1000),
+        __v: 0,
+      })),
+    );
+  });
+  return pins;
+}
+
+/** Whether the stored conversation is still pinned, for the drop that unpins. */
+export async function isConversationPinned(conversationId: string): Promise<boolean> {
+  return withMongo(async (db) => {
+    const convo = await db.collection('conversations').findOne({ conversationId });
+    return convo?.pinned === true;
+  });
+}
+
+export type ModelFavorite = { endpoint: string; model: string };
+
+/**
+ * The key a favorite model takes in the stored pinned order. The endpoint is
+ * length-prefixed so that an endpoint or model containing `:` cannot collide
+ * with another pair — the encoding the section itself uses.
+ */
+export const favoriteEntryKey = ({ endpoint, model }: ModelFavorite): string =>
+  `model:${endpoint.length}:${endpoint}:${model}`;
+
+/** The key a pinned chat takes in the stored pinned order. */
+export const convoEntryKey = (conversationId: string): string => `convo:${conversationId}`;
+
+/** Pinned models/agents are the signed-in user's favorites, written through the
+ *  same route the star does, so the server's cache invalidation runs too. */
+export async function setFavorites(page: Page, favorites: ModelFavorite[]): Promise<void> {
+  const token = await getAccessToken(page);
+  await requestJson(page, {
+    path: '/api/user/settings/favorites',
+    token,
+    method: 'POST',
+    body: { favorites },
+  });
+}
+
+/** The per-user display order of the Pinned section. */
+export async function setPinnedOrder(page: Page, keys: string[]): Promise<void> {
+  const token = await getAccessToken(page);
+  await requestJson(page, {
+    path: '/api/user/settings/pinned-order',
+    token,
+    method: 'POST',
+    body: { pinnedOrder: keys },
+  });
+}
+
+/** Leaves the account with no favorites and no saved order, so one spec's
+ *  arrangement cannot decide another's. Requires a loaded page for its token. */
+export async function resetPinnedState(page: Page): Promise<void> {
+  await setFavorites(page, []);
+  await setPinnedOrder(page, []);
+}
+
+/** Removes the seeded pinned chats. */
+export async function removePins(pins: SeededPin[]): Promise<void> {
+  if (pins.length === 0) {
+    return;
+  }
+  await deleteConversations(pins.map((pin) => pin.conversationId));
+}
+
+/**
+ * Drags one row onto a point inside another and releases there.
+ *
+ * The list reorders on `dragover`, and only once the pointer has crossed the
+ * hovered row's midpoint, so a drag that jumps straight to its destination in a
+ * single move delivers too few events to reach that threshold and the list
+ * never shifts. The pointer therefore steps: one short move to start the drag,
+ * then a stepped traverse into the target.
+ *
+ * `fraction` is where inside the target row the pointer lands, measured from
+ * its top — below 0.5 to move a row upwards, above 0.5 to move it down.
+ */
+export async function dragRowOnto(
+  page: Page,
+  source: Locator,
+  target: Locator,
+  fraction: number,
+): Promise<void> {
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  if (!from || !to) {
+    throw new Error('drag source and target must both be laid out');
+  }
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  const endX = to.x + to.width / 2;
+  const endY = to.y + to.height * fraction;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  /** The first move is what the browser turns into `dragstart`. */
+  await page.mouse.move(startX, startY - 8, { steps: 4 });
+  await page.mouse.move(endX, endY, { steps: 12 });
+  /** A second arrival at the same point: react-dnd reads the offset on hover,
+   *  and the last move of a traverse can land before the list has re-rendered. */
+  await page.mouse.move(endX, endY, { steps: 2 });
+  await page.mouse.up();
+}
+
+export const pinnedSection = (page: Page): Locator =>
+  page.getByRole('region', { name: PINNED_REGION });
+
+/** Every row of the Pinned section, in rendered order. */
+export const pinnedRows = (page: Page): Locator => pinnedSection(page).locator('ul > li');
+
+export const pinnedConvoRow = (page: Page, title: string): Locator =>
+  pinnedSection(page).getByTestId('convo-item').filter({ hasText: title });
+
+export const favoriteRowByName = (page: Page, name: string): Locator =>
+  pinnedSection(page).getByTestId('favorite-item').filter({ hasText: name });
+
+/** The chats list below the Pinned section, where an unpinned chat reappears. */
+export const chatsListRow = (page: Page, title: string): Locator =>
+  page.getByTestId('convo-item').filter({ hasText: title }).first();
+
+/** Opens a fresh chat route and waits for the Pinned section to render. */
+export async function openWithPinnedSection(page: Page): Promise<void> {
+  await page.goto('/c/new', { timeout: 15_000 });
+  await expect(pinnedSection(page)).toBeVisible({ timeout: 20_000 });
+}
+
+/** The rendered order of the Pinned section as row kinds, for the grouping the
+ *  section guarantees: `favorite` for a pinned model/agent, `convo` for a chat. */
+export async function pinnedRowKinds(page: Page): Promise<string[]> {
+  return pinnedSection(page).evaluate((section) =>
+    Array.from(section.querySelectorAll('ul > li')).map((row) =>
+      row.querySelector('[data-testid="favorite-item"]') ? 'favorite' : 'convo',
+    ),
+  );
+}
+
+/** The accessible names of the Pinned rows, in rendered order. */
+export async function pinnedRowNames(page: Page): Promise<string[]> {
+  return pinnedSection(page).evaluate((section) =>
+    Array.from(section.querySelectorAll('ul > li')).map((row) => {
+      const favorite = row.querySelector('[data-testid="favorite-item"]');
+      if (favorite) {
+        return favorite.getAttribute('aria-label') ?? '';
+      }
+      return row.querySelector('[data-testid="convo-item"]')?.textContent?.trim() ?? '';
+    }),
+  );
+}
+
+/** The resolved corner radius of an element, in pixels. */
+export async function borderRadius(locator: Locator): Promise<number> {
+  return locator.evaluate((node) =>
+    parseFloat(getComputedStyle(node as HTMLElement).borderTopLeftRadius),
+  );
+}
+
+/** The painted background of an element, which is `transparent` until a control
+ *  actually fills under the pointer. */
+export async function backgroundColor(locator: Locator): Promise<string> {
+  return locator.evaluate((node) => getComputedStyle(node as HTMLElement).backgroundColor);
+}
+
+export const isTransparent = (color: string): boolean =>
+  color === 'rgba(0, 0, 0, 0)' || color === 'transparent';
