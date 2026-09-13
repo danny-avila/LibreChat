@@ -1513,7 +1513,7 @@ export async function initializeAgent(
   }
   const toolResourceSet = resolveResendToolResources({
     tools: resourceToolNames,
-    codeEnvAvailable: params.codeEnvAvailable === true,
+    codeEnvAvailable: params.codeEnvAvailable === true && !attachedEnvironmentOptOut,
     fileSearchAvailable: params.fileSearchAvailable,
   });
 

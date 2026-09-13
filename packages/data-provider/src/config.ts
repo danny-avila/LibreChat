@@ -26,7 +26,6 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
-import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';

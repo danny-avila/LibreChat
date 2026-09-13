@@ -3466,11 +3466,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             beforeErrorPublication: () =>
               saveErrorTurn(req, {
                 conversationId,
-                error: initializationError,
-                isNewConvo,
-                parentMessageId,
                 endpointOption,
-                res,
+                isNewConvo,
+                errorText: initializationError,
+                initialAgentId: verifiedInitialAgentId,
               }),
           })
         : GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt);

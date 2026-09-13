@@ -181,6 +181,7 @@ jest.mock('uuid', () => ({
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
+    info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
   },
