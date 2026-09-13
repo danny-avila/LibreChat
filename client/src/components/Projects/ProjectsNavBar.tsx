@@ -102,7 +102,7 @@ export default function ProjectsNavBar({
               <Ariakit.MenuButton
                 aria-label={localize('com_ui_sort_projects_by')}
                 className={cn(
-                  'inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-text-secondary transition-colors',
+                  'inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-text-secondary transition-colors',
                   'hover:bg-surface-hover hover:text-text-primary',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
                   isSortMenuOpen && 'bg-surface-hover text-text-primary',
@@ -114,7 +114,7 @@ export default function ProjectsNavBar({
             }
             items={sortMenuItems}
           />
-          <Button type="button" variant="default" onClick={onCreate} className="shrink-0">
+          <Button type="button" variant="default" size="sm" onClick={onCreate} className="shrink-0">
             <Plus className="size-4" aria-hidden="true" />
             {localize('com_ui_new_project')}
           </Button>
