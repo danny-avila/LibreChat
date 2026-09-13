@@ -126,7 +126,7 @@ export type AgentListSortOption = AgentSortOption | 'recent';
 const AGENT_SORT_CONFIG: Record<
   AgentListSortOption,
   {
-    field: 'createdAt' | 'updatedAt' | 'favoriteCount' | 'authorDisplayName';
+    field: 'createdAt' | 'updatedAt' | 'favoriteCount' | 'authorSortKey';
     direction: 1 | -1;
     tieBreakDirection: 1 | -1;
     valueType: 'date' | 'number' | 'string';
@@ -136,7 +136,7 @@ const AGENT_SORT_CONFIG: Record<
   newest: { field: 'createdAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
   oldest: { field: 'createdAt', direction: 1, tieBreakDirection: -1, valueType: 'date' },
   popular: { field: 'favoriteCount', direction: -1, tieBreakDirection: 1, valueType: 'number' },
-  author: { field: 'authorDisplayName', direction: 1, tieBreakDirection: 1, valueType: 'string' },
+  author: { field: 'authorSortKey', direction: 1, tieBreakDirection: 1, valueType: 'string' },
 };
 
 /**
@@ -145,12 +145,17 @@ const AGENT_SORT_CONFIG: Record<
  * has never been returned by this endpoint, and leaking any of them would make the
  * response shape depend on `?sort=`.
  */
-const INTERNAL_SORT_FIELDS = ['createdAt', 'favoriteCount', 'authorDisplayName'] as const;
+const INTERNAL_SORT_FIELDS = [
+  'createdAt',
+  'favoriteCount',
+  'authorDisplayName',
+  'authorSortKey',
+] as const;
 
 /**
  * Favourite counts are keyed per tenant because agent ids collide across tenants,
- * and a missing `tenantId` is the same tenant as an explicitly null one — the
- * separator is a code point no tenant id or agent id can contain.
+ * and a missing `tenantId` is the same tenant as an explicitly null one — the separator
+ * is a code point no tenant id or agent id can contain.
  */
 const FAVORITE_COUNT_KEY_SEPARATOR = '\u0000';
 function favoriteCountKey(tenantId: string | null | undefined, agentId: string): string {
@@ -158,16 +163,14 @@ function favoriteCountKey(tenantId: string | null | undefined, agentId: string):
 }
 
 /**
- * Marks a list row whose owner contact the list query already resolved, so
- * `attachOwnerContacts` (`api/server/services/Agents/ownerContact.js`) skips the ACL
- * aggregation and the user lookup for it and strips this field from the response.
+ * Marks a list row whose owner contact the list query already resolved, so `attachOwnerContacts`
+ * skips the ACL aggregation and the user lookup for it and strips this field from the response.
  */
 export const AGENT_OWNER_CONTACT_RESOLVED_FIELD = '_ownerContactResolved';
 
 /**
  * A stringified ObjectId is always exactly 24 hex characters. Checked explicitly rather
- * than with `ObjectId.isValid`, which also accepts any 12-character string — so
- * `'not-an-objec'` would pass and produce a garbage query instead of being rejected.
+ * than with `ObjectId.isValid`, which also accepts any 12-character string.
  */
 const OBJECT_ID_HEX = /^[0-9a-fA-F]{24}$/;
 
@@ -176,6 +179,28 @@ interface AgentSortCursor {
   primary: string;
   /** The last row's `_id`, used as the tie-break. */
   secondary: string;
+}
+
+export type AgentSortCursorFailure = 'ordering-mismatch' | 'unreadable';
+
+export class AgentSortCursorError extends Error {
+  readonly code = 'AGENT_SORT_CURSOR_INVALID';
+
+  constructor(readonly failure: AgentSortCursorFailure) {
+    super(`Agent sort cursor ${failure}`);
+    this.name = 'AgentSortCursorError';
+  }
+}
+
+type AgentSortCursorDecodeResult =
+  | { kind: 'usable'; cursor: AgentSortCursor }
+  | { kind: 'ordering-mismatch' }
+  | { kind: 'unreadable' };
+
+function isAgentListSortOption(value: unknown): value is AgentListSortOption {
+  return (
+    typeof value === 'string' && Object.prototype.hasOwnProperty.call(AGENT_SORT_CONFIG, value)
+  );
 }
 
 function castCursorPrimary(
@@ -192,55 +217,77 @@ function castCursorPrimary(
 }
 
 /**
- * Decodes a base64 cursor produced by `encodeAgentSortCursor`, returning `null` for
- * anything the caller should treat as "start from page one": malformed base64/JSON, a
- * `secondary` that is not an ObjectId, a `primary` that does not parse as the current
- * mode's value type, or a legacy cursor used with a mode other than `recent`.
+ * Cursor invariant: a cursor names the ordering it was produced under, and is honored only
+ * by a reader that implements that ordering. A cursor that cannot be honored is an error,
+ * never a silent restart.
  *
- * Legacy cursors carry only `updatedAt` and `_id`; they are accepted for `recent` because
- * that mode preserves the old updated-time ordering, including its value type and tie-break.
- *
- * Validating `primary` matters because it flows straight into a Mongo query: without
- * this, a hand-edited `{"primary": null, ...}` reaches the driver as an `Invalid Date`.
+ * Legacy cursors carry only `updatedAt` and `_id`; they name `recent`, whose ordering
+ * preserves the old updated-time walk. A cursor naming another ordering is a mismatch,
+ * while malformed data is unreadable; both are fail-closed.
  */
-function decodeAgentSortCursor(after: string, sort: AgentListSortOption): AgentSortCursor | null {
+function decodeAgentSortCursor(
+  after: string,
+  sort: AgentListSortOption,
+): AgentSortCursorDecodeResult {
   try {
-    const decoded = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-    const hasPrimary = typeof decoded?.primary !== 'undefined';
-    if (!hasPrimary) {
-      /* Old instances emitted only this pair for their updatedAt-desc/_id-asc walk.
-       * It is readable here only for `recent`, whose field, value type, and directions
-       * are identical; other modes must not resume a different ordering. */
-      if (
-        sort !== 'recent' ||
-        typeof decoded?.updatedAt !== 'string' ||
-        typeof decoded?._id !== 'string'
+    const decoded: Record<string, unknown> = JSON.parse(
+      Buffer.from(after, 'base64').toString('utf8'),
+    );
+    if (decoded == null || Array.isArray(decoded) || typeof decoded !== 'object') {
+      return { kind: 'unreadable' };
+    }
+
+    const hasPrimary = typeof decoded.primary !== 'undefined';
+    const hasLegacyPair = typeof decoded.updatedAt === 'string' && typeof decoded._id === 'string';
+    let cursorSort: AgentListSortOption | null = null;
+
+    if (typeof decoded.sort === 'undefined') {
+      if (!hasPrimary && hasLegacyPair) {
+        cursorSort = 'recent';
+      } else if (
+        hasPrimary &&
+        hasLegacyPair &&
+        decoded.primary === decoded.updatedAt &&
+        decoded.secondary === decoded._id
       ) {
-        return null;
+        // Cursors from the immediately preceding current release were recent cursors
+        // without the explicit identity; retain their safe legacy interpretation.
+        cursorSort = 'recent';
+      } else {
+        return { kind: 'unreadable' };
       }
+    } else if (!isAgentListSortOption(decoded.sort)) {
+      return { kind: 'unreadable' };
+    } else {
+      cursorSort = decoded.sort;
+    }
+    if (!hasPrimary && hasLegacyPair && cursorSort !== 'recent') {
+      return { kind: 'ordering-mismatch' };
+    }
+    if (cursorSort !== sort) {
+      return { kind: 'ordering-mismatch' };
+    }
+
+    if (!hasPrimary) {
       decoded.primary = decoded.updatedAt;
       decoded.secondary = decoded._id;
     }
-    if (typeof decoded?.secondary !== 'string') {
-      return null;
+    if (typeof decoded.secondary !== 'string' || !OBJECT_ID_HEX.test(decoded.secondary)) {
+      return { kind: 'unreadable' };
     }
-    if (!OBJECT_ID_HEX.test(decoded.secondary)) {
-      return null;
-    }
+
     const primary = String(decoded.primary);
     const { valueType } = AGENT_SORT_CONFIG[sort];
     if (valueType === 'date') {
-      // `''` is exempt on purpose: it is the explicit "this row had no createdAt" tier
-      // read by `buildAgentSortCursorCondition`, not a malformed value.
       if (primary !== '' && Number.isNaN(new Date(primary).getTime())) {
-        return null;
+        return { kind: 'unreadable' };
       }
     } else if (valueType === 'number' && (primary === '' || !Number.isFinite(Number(primary)))) {
-      return null;
+      return { kind: 'unreadable' };
     }
-    return { primary, secondary: decoded.secondary };
+    return { kind: 'usable', cursor: { primary, secondary: decoded.secondary } };
   } catch {
-    return null;
+    return { kind: 'unreadable' };
   }
 }
 
@@ -248,21 +295,19 @@ function decodeAgentSortCursor(after: string, sort: AgentListSortOption): AgentS
  * Builds the filter that selects everything ordered after a decoded cursor.
  *
  * Field-name-agnostic: the same Date/Number/String comparison works whether the sort
- * field is stored (`createdAt`) or computed by an aggregation
- * (`favoriteCount`/`authorDisplayName`).
+ * field is stored (`createdAt`) or computed by an aggregation (`favoriteCount`/`authorSortKey`).
  *
  * Agents inserted outside Mongoose can lack `createdAt`, and legacy rows can
- * contain an explicit null. Mongo sorts both as the same null tier. Cursor
- * predicates therefore use a null equality branch so neither form disappears
- * between pages.
+ * contain an explicit null. Mongo sorts both as the same null tier. Cursor predicates
+ * therefore use a null equality branch so neither form disappears between pages.
  */
 function buildAgentSortCursorCondition(
   sort: AgentListSortOption,
   decoded: AgentSortCursor,
   /**
    * `decoded.secondary` already cast to an ObjectId. Passed in rather than constructed
-   * here because this module receives its mongoose instance through
-   * `createAgentMethods`, and the aggregation branch gets no automatic query casting.
+   * here because this module receives its mongoose instance through `createAgentMethods`,
+   * and the aggregation branch gets no automatic query casting.
    */
   secondaryId: Types.ObjectId,
 ): Record<string, unknown> {
@@ -292,22 +337,13 @@ function buildAgentSortCursorCondition(
 
   return { $or: branches };
 }
-
 /**
- * Encodes the cursor for the last row of a page. Reads whatever ended up on the mode's
- * sort field, whether stored or computed by this request's aggregation.
+ * Cursor invariant: a cursor names the ordering it was produced under, and is honored only
+ * by a reader that implements that ordering. A cursor that cannot be honored is an error,
+ * never a silent restart.
  *
- * A row with no usable date encodes an empty `primary` rather than falling back to the
- * epoch: an epoch cursor would be a date the row never had, and the resulting condition
- * could never re-select it. It would also throw on `.toISOString()`, surfacing as a 500.
- *
- * Only the `recent` mode carries the legacy `updatedAt`/`_id` pair. That is the one
- * current ordering whose field and direction exactly match the decoder on an instance
- * that predates sort modes. For every other mode, omitting the pair makes that instance
- * reject the cursor instead of silently walking a different ordering; the pair cannot
- * translate a `createdAt`, popularity, or owner-name boundary into its `updatedAt` walk.
- * `decodeAgentSortCursor` ignores the pair, so the mode's own key stays authoritative
- * wherever the request lands on a current instance.
+ * The `sort` field is the ordering identity; `recent` additionally carries the legacy pair
+ * so old instances can keep reading its updated-time walk.
  */
 function encodeAgentSortCursor(
   sort: AgentListSortOption,
@@ -315,7 +351,6 @@ function encodeAgentSortCursor(
 ): string {
   const { field, valueType } = AGENT_SORT_CONFIG[sort];
   const rawValue = lastAgent[field];
-
   const asIsoDate = (value: unknown): string | null => {
     if (value == null) {
       return null;
@@ -337,16 +372,14 @@ function encodeAgentSortCursor(
   } else if (valueType === 'number') {
     primary = String(rawValue ?? 0);
   } else {
-    primary = String(rawValue ?? AUTHOR_SORT_SENTINEL);
+    primary = String(rawValue ?? AUTHOR_SORT_SENTINEL).toLowerCase();
   }
 
   const secondary = String(lastAgent._id);
-  /** A legacy pair is safe only for `recent`, whose ordering is the old updated-time walk.
-   * For all other modes, an older instance must reject rather than resume a wrong order. */
   const legacyUpdatedAt = sort === 'recent' ? asIsoDate(lastAgent.updatedAt) : null;
-
   return Buffer.from(
     JSON.stringify({
+      sort,
       primary,
       secondary,
       ...(legacyUpdatedAt == null ? {} : { updatedAt: legacyUpdatedAt, _id: secondary }),
@@ -1901,19 +1934,16 @@ export function createAgentMethods(
       };
     };
 
-    /** Decodes `after` for the active sort mode; `null` means "fall back to page one". */
+    /** A cursor that cannot be honored is an error, never a page-one restart. */
     const readCursor = (): AgentSortCursor | null => {
       if (!after) {
         return null;
       }
       const decoded = decodeAgentSortCursor(after, sort);
-      if (!decoded) {
-        // Never log the cursor itself — it is client-supplied input.
-        logger.warn(
-          `[getListAgentsByAccess] Rejected cursor for sort mode "${sort}", falling back to page one`,
-        );
+      if (decoded.kind === 'usable') {
+        return decoded.cursor;
       }
-      return decoded;
+      throw new AgentSortCursorError(decoded.kind);
     };
 
     if (sort === 'popular') {
@@ -2212,6 +2242,11 @@ export function createAgentMethods(
           },
         },
       });
+      pipeline.push({
+        $addFields: {
+          authorSortKey: { $toLower: '$authorDisplayName' },
+        },
+      });
 
       // Applied after the `$addFields` above, since it compares against the computed
       // sort key rather than a stored field.
@@ -2230,13 +2265,14 @@ export function createAgentMethods(
         $project: {
           ...projection,
           authorDisplayName: 1,
+          authorSortKey: 1,
           owner_contact: 1,
         },
       });
 
       pipeline.push({
         $sort: {
-          authorDisplayName: AGENT_SORT_CONFIG[sort].direction,
+          authorSortKey: AGENT_SORT_CONFIG[sort].direction,
           _id: AGENT_SORT_CONFIG[sort].tieBreakDirection,
         },
       });

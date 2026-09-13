@@ -44,6 +44,7 @@ const {
   validateAgentWorkspaceDefaultBinding,
   marketplaceMineFilter,
   resolveMarketplaceListQuery,
+  mapMarketplaceListError,
 } = require('@librechat/api');
 const {
   Time,
@@ -1888,8 +1889,12 @@ const getListAgentsHandler = async (req, res) => {
 
     return res.json(data);
   } catch (error) {
+    const mappedError = mapMarketplaceListError(error);
+    if (mappedError) {
+      return res.status(mappedError.status).json(mappedError.body);
+    }
     logger.error('[/Agents] Error listing Agents: %o', error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
 

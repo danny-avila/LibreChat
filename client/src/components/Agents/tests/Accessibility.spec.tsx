@@ -116,6 +116,7 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('~/data-provider/Agents', () => ({
   useMarketplaceAgentsInfiniteQuery: jest.fn(),
+  useGetAgentByIdQuery: jest.fn(() => ({ error: null, isFetching: false })),
 }));
 
 // Mock utility functions

@@ -3,7 +3,7 @@ const express = require('express');
 const request = require('supertest');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { createModels, tenantStorage } = require('@librechat/data-schemas');
+const { AgentSortCursorError, createModels, tenantStorage } = require('@librechat/data-schemas');
 const {
   Tools,
   SkillsScope,
@@ -3389,6 +3389,18 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           },
         ],
       });
+    });
+    test('maps cursor contract failures to HTTP 409 without restarting the walk', async () => {
+      const listSpy = jest
+        .spyOn(db, 'getListAgentsByAccess')
+        .mockRejectedValue(new AgentSortCursorError('ordering-mismatch'));
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'cursor_ordering_mismatch' });
+      expect(mockRes.status).not.toHaveBeenCalledWith(500);
+      listSpy.mockRestore();
     });
 
     test('should return empty list when user has no accessible agents', async () => {
