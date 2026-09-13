@@ -2560,6 +2560,31 @@ describe('recordFallbackTokenUsage', () => {
     expect(spendTokens).toHaveBeenCalledWith({ ...txMetadata, context: 'abort' }, estimate);
   });
 
+  it('labels the estimate from the stop state when no context is given', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata, aborted: true });
+    await recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata, aborted: false });
+    await recordFallbackTokenUsage({ spendTokens }, { ...estimate, txMetadata });
+
+    expect(spendTokens.mock.calls.map(([tx]) => tx.context)).toEqual([
+      'abort',
+      'message',
+      'message',
+    ]);
+  });
+
+  it('lets an explicit context override the stop state', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+
+    await recordFallbackTokenUsage(
+      { spendTokens },
+      { ...estimate, txMetadata, aborted: true, context: 'incomplete' },
+    );
+
+    expect(spendTokens).toHaveBeenCalledWith({ ...txMetadata, context: 'incomplete' }, estimate);
+  });
+
   it('bills a reasoning count the estimate cannot see as its own row', async () => {
     const spendTokens = jest.fn().mockResolvedValue(undefined);
 

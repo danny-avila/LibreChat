@@ -634,6 +634,9 @@ export interface FallbackTokenUsageParams {
     | null;
   promptTokens?: number;
   completionTokens?: number;
+  /** Whether the run was stopped; labels the row when no explicit `context` is given. */
+  aborted?: boolean;
+  /** Explicit transaction label; otherwise derived from `aborted`. */
   context?: string;
   /** Transaction fields the caller owns: user, conversation, message, model, config. */
   txMetadata: Omit<TxMetadata, 'context'>;
@@ -653,7 +656,8 @@ export async function recordFallbackTokenUsage(
     usage,
     promptTokens,
     completionTokens,
-    context = 'message',
+    aborted = false,
+    context = resolveRunUsageContext(aborted),
     txMetadata,
   }: FallbackTokenUsageParams,
 ): Promise<void> {

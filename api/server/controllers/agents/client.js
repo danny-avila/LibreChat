@@ -6154,7 +6154,8 @@ class AgentClient extends BaseClient {
       { spendTokens: db.spendTokens },
       {
         usage,
-        context: context ?? resolveRunUsageContext(this.abortController?.signal?.aborted === true),
+        context,
+        aborted: this.abortController?.signal?.aborted === true,
         promptTokens,
         completionTokens,
         txMetadata: {
