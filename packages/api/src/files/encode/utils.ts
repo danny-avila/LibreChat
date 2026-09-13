@@ -112,6 +112,71 @@ export const isConfiguredProviderMediaType = (
 };
 
 /**
+ * Maps accepted audio MIME types to the format token OpenAI-compatible providers expect.
+ * Mirrors the canonicalization in `api/server/services/Files/Audio/STTService.js`: the
+ * accepted MIME list carries aliases (`audio/wave`, `audio/x-wav`, `audio/mpeg`) whose
+ * names are not themselves valid format values.
+ */
+const audioMimeToFormat: Record<string, string> = {
+  'audio/mp3': 'mp3',
+  'audio/mpeg': 'mp3',
+  'audio/mpeg3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/ogg': 'ogg',
+  'audio/vorbis': 'ogg',
+  'audio/opus': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+  'audio/webm': 'webm',
+  'audio/aac': 'aac',
+};
+
+/**
+ * Format values OpenAI-compatible providers accept for an `input_audio` part.
+ * Used to validate an extension-derived fallback so an arbitrary filename suffix
+ * never reaches the provider as a format.
+ */
+const supportedAudioFormats = new Set([
+  'wav',
+  'mp3',
+  'aiff',
+  'aac',
+  'ogg',
+  'flac',
+  'm4a',
+  'webm',
+  'pcm16',
+  'pcm24',
+]);
+
+/**
+ * Resolves the `input_audio.format` value for a file.
+ *
+ * Prefers the MIME type, which is validated upstream against `audioMimeTypes`, because
+ * the filename extension is user-controlled: it may be absent (`recording`), an alias
+ * that is not a valid format (`clip.wave`), or disagree with the actual content. Falls
+ * back to the extension only when it is itself a supported format.
+ * @param mimeType - The file's MIME type
+ * @param filename - The original filename
+ * @returns The canonical format, or undefined when neither source yields a supported one
+ */
+export const getAudioFormat = (mimeType: string, filename: string): string | undefined => {
+  const fromMime = audioMimeToFormat[mimeType?.toLowerCase()];
+  if (fromMime) {
+    return fromMime;
+  }
+  const parts = filename?.toLowerCase().split('.') ?? [];
+  /** `parts[0]` must be non-empty so a dotfile (`.mp3`) is not read as an extension. */
+  const extension = parts.length > 1 && parts[0] ? parts[parts.length - 1] : undefined;
+  return extension && supportedAudioFormats.has(extension) ? extension : undefined;
+};
+
+/**
  * Processes a file by downloading and encoding it to base64
  * @param req - Express request object
  * @param file - File object to process

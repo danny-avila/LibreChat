@@ -1,7 +1,13 @@
 import { Readable } from 'node:stream';
 import { Providers } from '@librechat/agents';
+import { audioMimeTypes } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { AttachmentObjectNotFoundError, getFileStream, isConfiguredProviderMediaType } from './utils';
+import {
+  AttachmentObjectNotFoundError,
+  getAudioFormat,
+  getFileStream,
+  isConfiguredProviderMediaType,
+} from './utils';
 
 const file = {
   file_id: 'file-1',
@@ -121,5 +127,74 @@ describe('isConfiguredProviderMediaType', () => {
     expect(isConfiguredProviderMediaType(req, { provider: Providers.OPENAI }, 'audio/wav')).toBe(
       true,
     );
+  });
+});
+
+describe('getAudioFormat', () => {
+  it.each([
+    ['audio/mp3', 'mp3'],
+    ['audio/mpeg', 'mp3'],
+    ['audio/mpeg3', 'mp3'],
+    ['audio/wav', 'wav'],
+    ['audio/wave', 'wav'],
+    ['audio/x-wav', 'wav'],
+    ['audio/ogg', 'ogg'],
+    ['audio/vorbis', 'ogg'],
+    ['audio/mp4', 'm4a'],
+    ['audio/x-m4a', 'm4a'],
+    ['audio/flac', 'flac'],
+    ['audio/x-flac', 'flac'],
+  ])('maps %s to %s regardless of the filename', (mimeType, expected) => {
+    expect(getAudioFormat(mimeType, 'clip.bogus')).toBe(expected);
+    expect(getAudioFormat(mimeType, 'recording')).toBe(expected);
+  });
+
+  it('is case-insensitive for the MIME type', () => {
+    expect(getAudioFormat('AUDIO/WAVE', 'clip.wave')).toBe('wav');
+  });
+
+  it('falls back to a supported extension when the MIME type is unmapped', () => {
+    expect(getAudioFormat('audio/unknown', 'clip.mp3')).toBe('mp3');
+    expect(getAudioFormat('audio/unknown', 'clip.PCM16')).toBe('pcm16');
+  });
+
+  it('rejects an unsupported extension rather than passing it through', () => {
+    expect(getAudioFormat('audio/unknown', 'clip.wave')).toBeUndefined();
+    expect(getAudioFormat('audio/unknown', 'clip.exe')).toBeUndefined();
+  });
+
+  it('returns undefined when the filename has no extension and the MIME is unmapped', () => {
+    expect(getAudioFormat('audio/wma', 'recording')).toBeUndefined();
+    expect(getAudioFormat('', '')).toBeUndefined();
+  });
+
+  it('does not treat a leading-dot filename as an extension', () => {
+    expect(getAudioFormat('audio/unknown', '.mp3')).toBeUndefined();
+  });
+
+  /** Guards against the accepted-MIME list drifting ahead of the format mapping. */
+  it('resolves a format for every accepted audio MIME type that has one', () => {
+    const accepted = [
+      'audio/mp3',
+      'audio/mpeg',
+      'audio/mpeg3',
+      'audio/wav',
+      'audio/wave',
+      'audio/x-wav',
+      'audio/ogg',
+      'audio/vorbis',
+      'audio/mp4',
+      'audio/m4a',
+      'audio/x-m4a',
+      'audio/flac',
+      'audio/x-flac',
+      'audio/webm',
+      'audio/aac',
+      'audio/opus',
+    ];
+    for (const mimeType of accepted) {
+      expect(audioMimeTypes.test(mimeType)).toBe(true);
+      expect(getAudioFormat(mimeType, 'recording')).toBeDefined();
+    }
   });
 });
