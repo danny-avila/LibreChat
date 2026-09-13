@@ -3387,7 +3387,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           .lean<Pick<IMessage, 'createdAt'>>(),
         Message.find({ ...scope, ...SERVER_AUTHORED_SAMPLED_RESPONSE })
           .select('messageId createdAt langfuseDestinationIds langfuseRunId -_id')
-          .sort({ createdAt: 1 })
+          /** `_id` breaks ties between responses saved in the same millisecond, so every page
+           *  request rebuilds the same turn order its cursor was positioned in. */
+          .sort({ createdAt: 1, _id: 1 })
           .lean<
             Array<
               Pick<IMessage, 'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'>

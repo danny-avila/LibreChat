@@ -96,6 +96,33 @@ describe('getConversationTraceRefs', () => {
     });
   });
 
+  it('orders responses saved in the same millisecond by id, so every read rebuilds one order', async () => {
+    const later = new mongoose.Types.ObjectId('66e2d7a0a1b2c3d4e5f60002');
+    const earlier = new mongoose.Types.ObjectId('66e2d7a0a1b2c3d4e5f60001');
+    await seed([
+      {
+        _id: later,
+        messageId: 'second',
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(2),
+        langfuseSampled: true,
+      },
+      {
+        _id: earlier,
+        messageId: 'first',
+        conversationId: 'convo',
+        user: 'owner',
+        createdAt: at(2),
+        langfuseSampled: true,
+      },
+    ] as Array<Partial<IMessage>>);
+
+    const refs = await methods.getConversationTraceRefs({ user: 'owner', conversationId: 'convo' });
+
+    expect(refs.sampledMessages.map(({ messageId }) => messageId)).toEqual(['first', 'second']);
+  });
+
   it('never treats a client-authored row as a sampled response', async () => {
     await seed([
       {

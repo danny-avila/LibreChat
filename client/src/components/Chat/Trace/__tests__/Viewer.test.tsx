@@ -508,6 +508,25 @@ describe('Trace Viewer', () => {
     );
   });
 
+  it('reloads from the newest page when an older page no longer matches the trace', async () => {
+    const list = jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockResolvedValueOnce({ records: records.slice(1), nextCursor: 'older' })
+      .mockRejectedValueOnce(axiosError(400, 'invalid_request'))
+      .mockResolvedValue({ records: records.slice(1), nextCursor: 'older' });
+    renderViewer();
+    await userEvent.click(await screen.findByRole('button', { name: 'com_ui_trace_load_older' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_trace_error_changed');
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list).toHaveBeenLastCalledWith(
+      { conversationId: 'convo-1', cursor: undefined },
+      expect.any(AbortSignal),
+    );
+  });
+
   it('closes the inspector on Escape before closing the trace', async () => {
     const { onClose } = renderViewer();
     await userEvent.click(await treeItem(/llm/));

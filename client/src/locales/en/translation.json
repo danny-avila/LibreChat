@@ -2564,6 +2564,7 @@
   "com_ui_trace_decoding": "Decoding",
   "com_ui_trace_empty_description": "The tracing service has no records for this conversation yet. New traces can take a minute to arrive after a response finishes.",
   "com_ui_trace_empty_title": "No trace records yet",
+  "com_ui_trace_error_changed": "This trace changed since it loaded. Retry to reload it from the newest records.",
   "com_ui_trace_error_generic": "The tracing service couldn't return this trace.",
   "com_ui_trace_error_not_found": "This conversation has no trace available.",
   "com_ui_trace_error_rate_limited": "Too many trace requests. Try again in a minute.",

@@ -379,7 +379,7 @@ describe('createLangfuseTraceReader', () => {
       await both.reader.listRecords(createQuery());
       const page = await onlyCentral.reader.listRecords(createQuery());
 
-      expect(calls(both.fetchMock)).toEqual(['probe tenant', 'read tenant']);
+      expect(calls(both.fetchMock)).toEqual(['probe tenant', 'probe central', 'read tenant']);
       expect(calls(onlyCentral.fetchMock)).toEqual([
         'probe tenant',
         'probe central',
@@ -421,6 +421,40 @@ describe('createLangfuseTraceReader', () => {
         { sourceId: 'central-id', records: ['response-3', 'response-4'] },
         { sourceId: 'connection-id', records: ['response-2'] },
         { sourceId: 'central-id', records: ['legacy-1', 'response-0'] },
+      ]);
+    });
+
+    it('reads a title run from the project that holds it when it landed apart from its run', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const titleTrace = traceIdForMessage('title-response-1');
+      const route = (request: RoutedRequest) => {
+        const traceIds =
+          request.origin === TENANT ? [traceIdForMessage('response-1')] : [titleTrace];
+        const asked = traceIds.filter((traceId) => request.traceIds.includes(traceId));
+        return jsonResponse({
+          data: asked.map((traceId) =>
+            request.probe
+              ? { id: `root-${traceId}`, traceId }
+              : observation({ id: traceId === titleTrace ? 'title' : 'run', traceId }),
+          ),
+        });
+      };
+      const pages: Array<{ sourceId?: string; records: string[] }> = [];
+      let cursor: string | undefined;
+      do {
+        const { reader } = setup({ refs, route });
+        const page = await reader.listRecords({ ...createQuery(), cursor });
+        pages.push({ sourceId: page.sourceId, records: page.records.map(({ id }) => id) });
+        cursor = page.nextCursor;
+      } while (cursor);
+
+      expect(pages).toEqual([
+        { sourceId: 'connection-id', records: ['run'] },
+        { sourceId: 'central-id', records: ['title'] },
       ]);
     });
 
@@ -481,6 +515,7 @@ describe('createLangfuseTraceReader', () => {
       ]);
       expect(calls(readFails.fetchMock)).toEqual([
         'probe tenant',
+        'probe central',
         'read tenant',
         'probe central',
         'read central',
@@ -513,7 +548,7 @@ describe('createLangfuseTraceReader', () => {
       ).rejects.toMatchObject({ code: 'upstream_error' });
     });
 
-    it('starts a segment over on another project when the one a cursor names fails', async () => {
+    it('reports a failed continuation instead of replaying its segment from another project', async () => {
       const refs = createRefs({
         sampledMessages: [
           { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
@@ -541,17 +576,11 @@ describe('createLangfuseTraceReader', () => {
         },
       });
 
-      const page = await later.reader.listRecords({ ...createQuery(), cursor: nextCursor });
-
-      expect(calls(later.fetchMock)).toEqual([
-        'probe tenant',
-        'read tenant @next',
-        'probe central',
-        'read central',
-      ]);
-      expect(page).toMatchObject({ sourceId: 'central-id', records: [{ id: 'response-1' }] });
+      await expect(
+        later.reader.listRecords({ ...createQuery(), cursor: nextCursor }),
+      ).rejects.toMatchObject({ code: 'upstream_error' });
+      expect(calls(later.fetchMock)).not.toContain('read central');
     });
-
     it('reads a turn no project shows a root for yet from the preferred one, since a running turn has none', async () => {
       const { reader, fetchMock } = setup({
         refs: createRefs({ sampledMessages: [{ messageId: 'legacy-response' }] }),
@@ -578,7 +607,7 @@ describe('createLangfuseTraceReader', () => {
       ]);
     });
 
-    it('starts a segment over when its cursor no longer matches the segment or Langfuse rejects it', async () => {
+    it('reports a continuation the trace no longer matches, or one Langfuse rejects, as changed', async () => {
       const refs = createRefs({
         sampledMessages: [{ messageId: 'response-1', langfuseDestinationIds: ['connection-id'] }],
       });
@@ -599,14 +628,15 @@ describe('createLangfuseTraceReader', () => {
         createQuery({ settings: resolveTraceViewerConfig({ enabled: true, maxRecords: 1 }) }),
       );
 
-      await staleSegment.reader.listRecords({ ...createQuery(), cursor: stale });
-      const restarted = await rejected.reader.listRecords({ ...createQuery(), cursor: nextCursor });
-
-      expect(calls(staleSegment.fetchMock)).toEqual(['read tenant']);
-      expect(calls(rejected.fetchMock)).toEqual(['read tenant @next', 'read tenant']);
-      expect(restarted.records.map(({ id }) => id)).toEqual(['response-1']);
+      await expect(
+        staleSegment.reader.listRecords({ ...createQuery(), cursor: stale }),
+      ).rejects.toMatchObject({ code: 'invalid_request' });
+      await expect(
+        rejected.reader.listRecords({ ...createQuery(), cursor: nextCursor }),
+      ).rejects.toMatchObject({ code: 'invalid_request' });
+      expect(calls(staleSegment.fetchMock)).toEqual([]);
+      expect(calls(rejected.fetchMock)).toEqual(['read tenant @next']);
     });
-
     it('reads a failed turn from the trace of the run its error row stands for', async () => {
       const runTrace = traceIdForMessage('run-1');
       const { reader, fetchMock } = setup({

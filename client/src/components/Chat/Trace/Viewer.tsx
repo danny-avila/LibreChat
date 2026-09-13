@@ -42,6 +42,7 @@ import Ledger from './Ledger';
 import { cn } from '~/utils';
 
 const ERROR_MESSAGES: Partial<Record<TTraceErrorCode, TranslationKeys>> = {
+  invalid_request: 'com_ui_trace_error_changed',
   not_found: 'com_ui_trace_error_not_found',
   rate_limited: 'com_ui_trace_error_rate_limited',
   timeout: 'com_ui_trace_error_timeout',
@@ -49,11 +50,14 @@ const ERROR_MESSAGES: Partial<Record<TTraceErrorCode, TranslationKeys>> = {
   unsupported: 'com_ui_trace_error_unsupported',
 };
 
+function errorCodeOf(error: unknown): TTraceErrorCode | undefined {
+  return axios.isAxiosError<TTraceErrorResponse>(error)
+    ? error.response?.data?.errorCode
+    : undefined;
+}
+
 function errorMessageKey(error: unknown): TranslationKeys {
-  if (!axios.isAxiosError<TTraceErrorResponse>(error)) {
-    return 'com_ui_trace_error_generic';
-  }
-  const code = error.response?.data?.errorCode;
+  const code = errorCodeOf(error);
   return (code != null ? ERROR_MESSAGES[code] : undefined) ?? 'com_ui_trace_error_generic';
 }
 
@@ -364,7 +368,13 @@ export default function Viewer({
                       size="sm"
                       variant="outline"
                       disabled={recordsQuery.isFetching}
-                      onClick={lastRead === 'older' ? loadOlder : refresh}
+                      onClick={
+                        /** A continuation the trace no longer matches can only be reloaded from the newest page. */
+                        lastRead === 'older' &&
+                        errorCodeOf(recordsQuery.error) !== 'invalid_request'
+                          ? loadOlder
+                          : refresh
+                      }
                     >
                       {localize('com_ui_retry')}
                     </Button>
