@@ -148,6 +148,7 @@ describe('marketplace cursor recovery', () => {
       expect(result.current.data?.pages).toHaveLength(1);
       expect(result.current.data?.pages[0].data.map((agent) => agent.id)).toEqual(['b']);
       expect(result.current.error).toBeNull();
+      expect(result.current.cursorRecovery).toEqual({ id: 1, status: 'succeeded' });
     });
     expect(marketplace.mock.calls[1][0]).toEqual(
       expect.objectContaining({ cursor: 'foreign-order', sort: 'popular' }),

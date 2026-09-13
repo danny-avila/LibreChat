@@ -176,6 +176,33 @@ describe('AgentGrid pagination', () => {
     ).toHaveAttribute('aria-setsize', '36');
   });
 
+  it('clears the held cursor failure after a whole-walk reset succeeds', async () => {
+    const mismatch = Object.assign(new Error('Cursor ordering mismatch'), {
+      response: {
+        status: 409,
+        data: { error: 'cursor_ordering_mismatch' },
+      },
+    });
+    marketplace
+      .mockResolvedValueOnce(page(makeAgents(32), 'foreign-order'))
+      .mockRejectedValueOnce(mismatch)
+      .mockResolvedValueOnce(page(makeAgents(1)));
+    renderGrid();
+    await screen.findByRole('button', { name: 'Agent 0' });
+
+    const frame = screen.getByTestId('viewport');
+    act(() => {
+      frame.scrollTop = frame.scrollHeight - frame.clientHeight;
+      fireEvent.scroll(frame);
+    });
+
+    await waitFor(() => {
+      expect(marketplace).toHaveBeenCalledTimes(3);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Agent 0' })).toBeEnabled();
+    });
+  });
+
   it('shows a fetch error and recovers through the retry action', async () => {
     // A transport failure is retried inside the query (initial attempt plus two
     // retries) before the error card takes over recovery.

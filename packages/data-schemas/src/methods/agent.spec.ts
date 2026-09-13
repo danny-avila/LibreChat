@@ -6023,7 +6023,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(page2.data.map((agent) => agent.author)).toEqual([users[1]._id.toString()]);
       expect(new Set([...page1.data, ...page2.data].map((agent) => agent.id)).size).toBe(3);
       const cursor = JSON.parse(Buffer.from(page1.after as string, 'base64').toString('utf8'));
-      expect(cursor).toMatchObject({ sort: 'author', primary: 'mike' });
+      expect(cursor).toMatchObject({ sort: 'author', version: 2, primary: 'mike' });
     });
 
     test('paginates across multiple pages without duplicates or gaps', async () => {
@@ -6818,6 +6818,43 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         }),
       ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
     });
+    test('rejects an author cursor from version 1 and accepts the current version 2 cursor', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+      const page1 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+      });
+      const cursor = JSON.parse(
+        Buffer.from(page1.after as string, 'base64').toString('utf8'),
+      ) as Record<string, unknown>;
+
+      expect(cursor).toMatchObject({ sort: 'author', version: 2 });
+      const version1Cursor = { ...cursor, version: 1 };
+      const versionlessCursor = { ...cursor };
+      delete versionlessCursor.version;
+      for (const incompatibleCursor of [version1Cursor, versionlessCursor]) {
+        await expect(
+          getListAgentsByAccess({
+            accessibleIds,
+            otherParams: {},
+            sort: 'author',
+            limit: 1,
+            after: encode(incompatibleCursor),
+          }),
+        ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'ordering-mismatch' });
+      }
+
+      const page2 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+        after: page1.after,
+      });
+      expect(page2.data).toHaveLength(1);
+    });
 
     test('rejects a legacy cursor for a sorted request instead of restarting from page one', async () => {
       const { accessibleIds } = await seedTwoAgents();
@@ -6915,8 +6952,22 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         ) as Record<string, unknown>;
 
         expect(cursor.sort).toBe(sort);
+        expect(cursor.version).toBe(sort === 'author' ? 2 : 1);
         expect(typeof cursor.primary).toBe('string');
         expect(typeof cursor.secondary).toBe('string');
+        if (sort !== 'author') {
+          const versionlessCursor = { ...cursor };
+          delete versionlessCursor.version;
+          const nextPage = await getListAgentsByAccess({
+            accessibleIds,
+            otherParams: {},
+            sort,
+            limit: 1,
+            after: encode(versionlessCursor),
+          });
+          expect(nextPage.data).toHaveLength(1);
+        }
+
         if (sort === 'recent') {
           expect(Number.isNaN(new Date(cursor.updatedAt as string).getTime())).toBe(false);
           expect(mongoose.Types.ObjectId.isValid(cursor._id as string)).toBe(true);
