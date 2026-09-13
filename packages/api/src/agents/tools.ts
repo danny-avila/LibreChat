@@ -1,4 +1,5 @@
 import {
+  Tools,
   Constants,
   normalizeActionToolName,
   normalizeServerName,
@@ -58,6 +59,30 @@ export function isCodeSessionToolName(
     name === SEARCH_WORKSPACE_TOOL_NAME ||
     name === LIST_WORKSPACE_FILES_TOOL_NAME ||
     hostFileAuthoringToolNames?.has(name) === true
+  );
+}
+
+/** Tools that consume shared code, search, or image resources need current file records. */
+export function isFileResourceToolName(name: string): boolean {
+  return (
+    isCodeFileToolName(name) ||
+    isCodeSessionToolName(name) ||
+    name === Tools.file_search ||
+    name === 'image_gen_oai' ||
+    name === 'image_edit_oai' ||
+    name === 'gemini_image_gen'
+  );
+}
+
+/** File-authoring artifacts opt in explicitly; other tool artifacts keep their normal delivery. */
+export function isCodeArtifactToolOutput(output: { name: string; artifact?: unknown }): boolean {
+  const artifact = output.artifact;
+  return (
+    isCodeSessionToolName(output.name) ||
+    (artifact != null &&
+      typeof artifact === 'object' &&
+      HOST_FILE_AUTHORING_ARTIFACT_KEY in artifact &&
+      artifact[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true)
   );
 }
 

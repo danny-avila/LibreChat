@@ -477,8 +477,10 @@ export type InitializedAgent = Agent & {
   tools: GenericTool[];
   /** @deprecated use requestAttachments or agentContextAttachments based on sharing semantics. */
   attachments: IMongoFile[];
-  /** Files attached to the current user message/run and safe to share across run agents. */
+  /** Message files admitted for this agent, including historical files when resend is enabled. */
   requestAttachments: IMongoFile[];
+  /** Only hydrated attachments from the current request; excludes history and agent setup files. */
+  currentRequestAttachments: TFile[];
   /** Files attached to this agent's permanent context via tool_resources. */
   agentContextAttachments: IMongoFile[];
   toolContextMap: Record<string, unknown>;
@@ -673,6 +675,8 @@ export interface InitializeAgentParams {
   requestBody?: RequestBody;
   /** Request files */
   requestFiles?: IMongoFile[];
+  /** Host-authorized, hydrated inputs for an isolated execution. Suppresses parent history reads. */
+  authorizedRunFiles?: readonly TFile[];
   /** Function to load agent tools */
   loadTools?: (params: {
     provider: string;
@@ -894,6 +898,7 @@ export async function initializeAgent(
     agent,
     loadTools,
     requestFiles = [],
+    authorizedRunFiles,
     conversationId,
     endpointOption,
     parentMessageId,
@@ -1112,7 +1117,7 @@ export async function initializeAgent(
     );
   }
 
-  let currentFiles: IMongoFile[] | undefined;
+  let currentFiles: Array<IMongoFile | TFile> | undefined;
 
   const _modelOptions = structuredClone(
     Object.assign(
@@ -1220,7 +1225,11 @@ export async function initializeAgent(
   const wantsSearchFiles = toolResourceSet.has(EToolResources.file_search);
   const wantsProvisioning = wantsCodeFiles || wantsSearchFiles;
 
-  if (conversationId != null && (resendFiles || wantsProvisioning)) {
+  if (
+    authorizedRunFiles === undefined &&
+    conversationId != null &&
+    (resendFiles || wantsProvisioning)
+  ) {
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
@@ -1355,7 +1364,7 @@ export async function initializeAgent(
   const snapshotFileIds = [...requestFileIds, ...toolFileIds, ...deferredProvisionFileIds];
   let requestUsageFiles: IMongoFile[] = [];
   let toolUsageFiles: IMongoFile[] = [];
-  if (requestFileOwnerScope && snapshotFileIds.length > 0) {
+  if (authorizedRunFiles === undefined && requestFileOwnerScope && snapshotFileIds.length > 0) {
     const hydratedFiles =
       ((await db.getFiles(
         {
@@ -1383,7 +1392,17 @@ export async function initializeAgent(
       .map((fileId) => hydratedFilesById.get(fileId))
       .filter((file): file is IMongoFile => file != null);
   }
-  if (requestFiles.length > 0 || toolFileIds.length > 0) {
+  if (authorizedRunFiles !== undefined) {
+    for (const file of authorizedRunFiles) {
+      if (
+        file.user !== requestFileOwnerId ||
+        (file.tenantId ?? null) !== (user?.tenantId ?? null)
+      ) {
+        throw new Error('Run file inputs do not match the authenticated owner');
+      }
+    }
+    currentFiles = authorizedRunFiles.map((file) => structuredClone(file));
+  } else if (requestFiles.length > 0 || toolFileIds.length > 0) {
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
   }
 
@@ -1401,7 +1420,9 @@ export async function initializeAgent(
       skipTotalSizeLimit: true,
       preserveTextSources: true,
     });
-    const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+    const requestUsageFileIds = new Set(
+      (authorizedRunFiles ?? requestUsageFiles).map((file) => file.file_id),
+    );
     assertAgentAttachmentLimits({
       attachments: currentFiles.filter(
         (file) => requestUsageFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
@@ -1506,7 +1527,7 @@ export async function initializeAgent(
       ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
       : undefined,
     tool_resources: runtimeToolResources,
-    requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    requestFileSet: new Set((authorizedRunFiles ?? requestFiles).map((file) => file.file_id)),
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
@@ -2143,6 +2164,14 @@ export async function initializeAgent(
   const finalAttachments: IMongoFile[] = toMongoFiles(primedAttachments);
   const requestAttachments: IMongoFile[] = toMongoFiles(primedRequestAttachments);
   const agentContextAttachments: IMongoFile[] = toMongoFiles(primedAgentContextAttachments);
+  const currentRequestFileIds = new Set(requestFileIds);
+  const currentRequestAttachments: TFile[] = (primedRequestAttachments ?? [])
+    .filter((file): file is TFile => file != null && currentRequestFileIds.has(file.file_id))
+    .map((file) => ({
+      ...file,
+      user: String(file.user),
+      ...(file._id == null ? {} : { _id: String(file._id) }),
+    }));
 
   const compatibilityAttachments =
     finalAttachments.length > 0
@@ -2203,6 +2232,7 @@ export async function initializeAgent(
     alwaysApplySkillPrimes,
     attachments: compatibilityAttachments,
     requestAttachments,
+    currentRequestAttachments,
     agentContextAttachments,
     toolContextMap: toolContextMap ?? {},
     dynamicToolContextMap: dynamicToolContextMap ?? {},

@@ -16,7 +16,11 @@ import type {
   CodeWorkspaceOperation,
   CodeWorkspaceSelection,
 } from './code/workspace';
-import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  TAgentsEndpoint,
+} from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { CodeApprovalMode } from './code/approval';
 import type { RefillIntervalUnit } from './balance';
@@ -637,6 +641,7 @@ export type TConfig = {
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
+  fileSharing?: TAgentsEndpoint['fileSharing'];
   /** Concurrent Code API uploads allowed per route and authenticated principal. */
   codeApiUploadConcurrency?: number;
   /** Milliseconds one operation may spend waiting on Code API rate limits. */

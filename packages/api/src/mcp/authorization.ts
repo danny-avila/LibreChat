@@ -3,7 +3,8 @@ import { publishMCPAuthorizationMutation } from './catalog/recovery';
 
 export interface MCPAuthorizationPublicationDeps {
   invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-  clearLocalRecovery?: (userId: string, serverName: string) => void;
+  /** Receives the generation the publication wrote, when it reports one. */
+  clearLocalRecovery?: (userId: string, serverName: string, generation?: string) => void;
   persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
   clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
