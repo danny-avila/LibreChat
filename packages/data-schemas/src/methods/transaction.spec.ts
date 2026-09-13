@@ -1139,8 +1139,15 @@ describe('Balance Reservations', () => {
 
   test('never overwrites a record another writer created while initializing', async () => {
     const user = new mongoose.Types.ObjectId();
-
-    interleaveBeforeNextWrite(() => Balance.create({ user, tokenCredits: 50 }));
+    const realFindOneAndUpdate = Balance.findOneAndUpdate.bind(Balance);
+    jest.spyOn(Balance, 'findOneAndUpdate').mockImplementationOnce(((
+      ...args: Parameters<typeof Balance.findOneAndUpdate>
+    ) => ({
+      lean: () =>
+        upsertBalanceFields(user.toString(), { tokenCredits: 50 }).then(() =>
+          realFindOneAndUpdate(...args).lean(),
+        ),
+    })) as unknown as typeof Balance.findOneAndUpdate);
 
     await expect(
       reserveBalance({
@@ -1152,6 +1159,67 @@ describe('Balance Reservations', () => {
       }),
     ).resolves.toEqual({ reserved: false, balance: 50 });
     expect((await readState(user))?.tokenCredits).toBe(50);
+    expect(await Balance.countDocuments({ user })).toBe(1);
+  });
+
+  test('creates a missing record under the user id, so racing creators share one record', async () => {
+    const reserved = new mongoose.Types.ObjectId();
+    const synced = new mongoose.Types.ObjectId();
+    const spent = new mongoose.Types.ObjectId();
+    const racing = new mongoose.Types.ObjectId();
+    const initialReservation = (user: mongoose.Types.ObjectId) =>
+      reserveBalance({
+        user: user.toString(),
+        amount: 400,
+        reservationId: newId(),
+        expiresAt: inFuture(),
+        initialBalance: { user: user.toString(), tokenCredits: 1000 },
+      });
+
+    await initialReservation(reserved);
+    await upsertBalanceFields(synced.toString(), { tokenCredits: 50 }, { refillAmount: 5 });
+    await updateBalance({ user: spent.toString(), incrementValue: 25 });
+    const racingResults = await Promise.all(
+      Array.from({ length: 10 }, () => initialReservation(racing)),
+    );
+
+    for (const user of [reserved, synced, spent, racing]) {
+      const records = await Balance.find({ user }).lean();
+      expect(records.map((record) => record._id.toString())).toEqual([user.toString()]);
+    }
+    expect(await Balance.findById(synced).lean()).toMatchObject({
+      tokenCredits: 50,
+      refillAmount: 5,
+    });
+    expect((await Balance.findById(spent).lean())?.tokenCredits).toBe(25);
+    expect(racingResults.filter((result) => result?.reserved)).toHaveLength(2);
+  });
+
+  test('resolves a user with duplicate records to their oldest record on every path', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const newer = mongoose.Types.ObjectId.createFromTime(nowSeconds);
+    const older = mongoose.Types.ObjectId.createFromTime(nowSeconds - 3600);
+    await Balance.create({ _id: newer, user, tokenCredits: 5000 });
+    await Balance.create({ _id: older, user, tokenCredits: 1000 });
+
+    expect((await findBalanceByUser(user.toString()))?._id?.toString()).toBe(older.toString());
+    await expect(reserve(user.toString(), 2000)).resolves.toEqual({
+      reserved: false,
+      balance: 1000,
+    });
+    await reserve(user.toString(), 400);
+    await updateBalance({ user: user.toString(), incrementValue: -100 });
+    await upsertBalanceFields(user.toString(), { refillAmount: 7 });
+
+    expect(await Balance.findById(older).select('+reservedCredits').lean()).toMatchObject({
+      tokenCredits: 900,
+      reservedCredits: 400,
+      refillAmount: 7,
+    });
+    const untouched = await Balance.findById(newer).select('+reservedCredits').lean();
+    expect(untouched?.tokenCredits).toBe(5000);
+    expect(untouched?.reservedCredits).toBeUndefined();
   });
 
   test('admits concurrent requests only up to the credits no other request holds', async () => {
@@ -1361,6 +1429,26 @@ describe('Balance Reservations', () => {
         );
       },
     );
+
+    test('does not refill when a release frees enough credits mid-attempt', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable, tokenCredits: 1000 });
+      const heldId = newId();
+      await reserve(user.toString(), 900, heldId);
+
+      interleaveBeforeNextWrite(() =>
+        releaseBalanceReservation({ user: user.toString(), reservationId: heldId, amount: 900 }),
+      );
+
+      await expect(reserve(user.toString(), 200)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+      const stored = await readState(user);
+      expect(stored?.tokenCredits).toBe(1000);
+      expect(stored?.lastRefill.getTime()).toBe(refillable.lastRefill.getTime());
+      expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(0);
+    });
 
     test('still applies a due refill when the refilled balance cannot cover the request', async () => {
       const user = new mongoose.Types.ObjectId();

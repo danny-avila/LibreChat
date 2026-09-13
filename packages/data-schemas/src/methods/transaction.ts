@@ -15,6 +15,8 @@ import logger from '~/config/winston';
 
 const cancelRate = 1.15;
 const maxReservationAttempts = 10;
+/** Every balance read resolves a user to their oldest record, so duplicate records stay inert */
+const oldestFirst = { _id: 1 } as const;
 
 type MultiplierParams = {
   model?: string;
@@ -93,8 +95,15 @@ export function createTransactionMethods(
     setValues?: IBalanceUpdate;
   }) => Promise<IBalance>;
   bulkInsertTransactions: (docs: TransactionData[]) => Promise<void>;
-  findBalanceByUser: (user: string) => Promise<IBalance | null>;
-  upsertBalanceFields: (user: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
+  findBalanceByUser: (
+    user: string,
+    options?: { includeReservedCredits?: boolean },
+  ) => Promise<IBalance | null>;
+  upsertBalanceFields: (
+    user: string,
+    fields: IBalanceUpdate,
+    insertOnly?: IBalanceUpdate,
+  ) => Promise<IBalance | null>;
   getTransactions: (filter: FilterQuery<ITransaction>) => Promise<ITransaction[]>;
   deleteTransactions: (
     filter: FilterQuery<ITransaction>,
@@ -229,7 +238,7 @@ export function createTransactionMethods(
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       let currentBalanceDoc: IBalance | null;
       try {
-        currentBalanceDoc = await Balance.findOne({ user }).lean<IBalance>();
+        currentBalanceDoc = await Balance.findOne({ user }).sort(oldestFirst).lean<IBalance>();
         const currentCredits = currentBalanceDoc ? currentBalanceDoc.tokenCredits : 0;
         const potentialNewCredits = currentCredits + incrementValue;
         const newCredits = Math.max(0, potentialNewCredits);
@@ -244,7 +253,7 @@ export function createTransactionMethods(
         let updatedBalance: IBalance | null = null;
         if (currentBalanceDoc) {
           updatedBalance = await Balance.findOneAndUpdate(
-            { user, tokenCredits: currentCredits },
+            { _id: currentBalanceDoc._id, tokenCredits: currentCredits },
             updatePayload,
             { new: true },
           ).lean<IBalance>();
@@ -254,29 +263,8 @@ export function createTransactionMethods(
           }
           lastError = new Error(`Concurrency conflict for user ${user} on attempt ${attempt}.`);
         } else {
-          try {
-            updatedBalance = await Balance.findOneAndUpdate({ user }, updatePayload, {
-              upsert: true,
-              new: true,
-            }).lean<IBalance>();
-
-            if (updatedBalance) {
-              return updatedBalance;
-            }
-            lastError = new Error(
-              `Upsert race condition suspected for user ${user} on attempt ${attempt}.`,
-            );
-          } catch (error: unknown) {
-            if (
-              error instanceof Error &&
-              'code' in error &&
-              (error as { code: number }).code === 11000
-            ) {
-              lastError = error;
-            } else {
-              throw error;
-            }
-          }
+          await upsertBalanceRecord(user, {}, { tokenCredits: 0 });
+          continue;
         }
       } catch (error) {
         logger.error(`[updateBalance] Error during attempt ${attempt} for user ${user}:`, error);
@@ -378,6 +366,7 @@ export function createTransactionMethods(
       {
         _id: record._id,
         tokenCredits: record.tokenCredits ?? null,
+        reservedCredits: record.reservedCredits ?? null,
         lastRefill: record.lastRefill ?? null,
         pendingRefill: null,
         autoRefillEnabled: record.autoRefillEnabled,
@@ -420,15 +409,47 @@ export function createTransactionMethods(
     );
   }
 
-  async function initializeBalance(user: string, initialBalance: IBalanceUpdate): Promise<void> {
+  /**
+   * Applies `fields` to the user's balance record, creating the record when the user has none.
+   * A created record is keyed by the user id, so creators racing on a missing record converge on
+   * one document instead of each inserting their own; `insertOnly` applies only on creation.
+   */
+  async function upsertBalanceRecord(
+    user: string,
+    fields: IBalanceUpdate,
+    insertOnly: IBalanceUpdate = {},
+  ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    const { user: _user, ...fields } = initialBalance;
+    const { user: _fieldsUser, ...set } = fields;
+    const setOnInsert = Object.fromEntries(
+      Object.entries(insertOnly).filter(([key]) => key !== 'user' && !(key in set)),
+    );
+    const updatesExisting = Object.keys(set).length > 0;
+
+    const existing = updatesExisting
+      ? await Balance.findOneAndUpdate(
+          { user },
+          { $set: set },
+          { new: true, sort: oldestFirst },
+        ).lean<IBalance>()
+      : await Balance.findOne({ user }).sort(oldestFirst).lean<IBalance>();
+    if (existing) {
+      return existing;
+    }
+
+    const create = () =>
+      Balance.findOneAndUpdate(
+        { _id: user },
+        { ...(updatesExisting ? { $set: set } : {}), $setOnInsert: { ...setOnInsert, user } },
+        { upsert: true, new: true },
+      ).lean<IBalance>();
     try {
-      await Balance.updateOne({ user }, { $setOnInsert: fields }, { upsert: true });
+      return await create();
     } catch (error) {
       if (!isDuplicateKeyError(error)) {
         throw error;
       }
+      return create();
     }
   }
 
@@ -454,13 +475,14 @@ export function createTransactionMethods(
 
     for (let attempt = 1; attempt <= maxReservationAttempts; attempt++) {
       const record = await Balance.findOne({ user })
+        .sort(oldestFirst)
         .select('+reservations +reservedCredits +pendingRefill')
         .lean<IBalance>();
       if (!record) {
         if (!initialBalance) {
           return null;
         }
-        await initializeBalance(user, initialBalance);
+        await upsertBalanceRecord(user, {}, initialBalance);
         continue;
       }
 
@@ -619,23 +641,26 @@ export function createTransactionMethods(
     }
   }
 
-  /** Retrieves a user's balance record. */
-  async function findBalanceByUser(user: string): Promise<IBalance | null> {
+  /** Retrieves a user's balance record, optionally with the credits in-flight requests hold. */
+  async function findBalanceByUser(
+    user: string,
+    options?: { includeReservedCredits?: boolean },
+  ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    return Balance.findOne({ user }).lean<IBalance>();
+    const query = Balance.findOne({ user }).sort(oldestFirst);
+    if (options?.includeReservedCredits) {
+      query.select('+reservedCredits');
+    }
+    return query.lean<IBalance>();
   }
 
-  /** Upserts balance fields for a user. */
+  /** Upserts balance fields for a user; `insertOnly` fields apply only when the record is created. */
   async function upsertBalanceFields(
     user: string,
     fields: IBalanceUpdate,
+    insertOnly?: IBalanceUpdate,
   ): Promise<IBalance | null> {
-    const Balance = mongoose.models.Balance as Model<IBalance>;
-    return Balance.findOneAndUpdate(
-      { user },
-      { $set: fields },
-      { upsert: true, new: true },
-    ).lean<IBalance>();
+    return upsertBalanceRecord(user, fields, insertOnly);
   }
 
   /** Deletes transactions matching a filter. */
