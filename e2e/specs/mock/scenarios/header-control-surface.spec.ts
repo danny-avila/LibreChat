@@ -61,6 +61,8 @@ async function openSeededConversation(page: Page, conversationId: string) {
   });
 }
 
+/** The hover fill is a different colour from the resting one, so a surface is
+ *  only comparable together with whether the pointer is on it. */
 const surfaceOf = (page: Page, selector: string) =>
   page.evaluate((target) => {
     const element = document.querySelector(target);
@@ -72,6 +74,7 @@ const surfaceOf = (page: Page, selector: string) =>
       background: style.backgroundColor,
       radius: style.borderTopLeftRadius,
       opacity: style.opacity,
+      hovered: element.matches(':hover'),
     };
   }, selector);
 
@@ -222,6 +225,12 @@ test.describe('mobile chat header controls', () => {
       await expect(close).toBeVisible();
       await expect(close).toBeFocused();
 
+      /** A click leaves the pointer on the opener's coordinates, and the drawer
+       *  slides its own toggle onto them: one of the pair would then be reading
+       *  its hover fill. Move off both and let the 300ms slide finish. */
+      await page.mouse.move(200, 760);
+      await page.waitForTimeout(600);
+
       /** One control across two views: the drawer's toggle is the header's
        *  toggle, so it carries the same fill, corner and tap target. */
       const [opener, closer, boxes] = await Promise.all([
@@ -242,6 +251,8 @@ test.describe('mobile chat header controls', () => {
         ),
       ]);
 
+      expect(opener.hovered, 'the pointer is still on the header toggle').toBe(false);
+      expect(closer.hovered, 'the pointer is still on the drawer toggle').toBe(false);
       expect(closer.background).toBe(opener.background);
       expect(closer.radius).toBe(opener.radius);
       expect(isOpaque(closer.background)).toBe(true);
