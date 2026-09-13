@@ -17,7 +17,11 @@ import {
   eReasoningParameterFormatSchema,
   eReasoningResponseKeySchema,
 } from './schemas';
-import { REFILL_INTERVAL_UNITS, DEFAULT_BALANCE_RESERVATION_TTL_MS } from './balance';
+import {
+  REFILL_INTERVAL_UNITS,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from './balance';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
@@ -2494,7 +2498,7 @@ export const balanceSchema = z.object({
   reservationTtlMs: z
     .number()
     .int()
-    .positive()
+    .min(MIN_BALANCE_RESERVATION_TTL_MS)
     .optional()
     .default(DEFAULT_BALANCE_RESERVATION_TTL_MS),
 });

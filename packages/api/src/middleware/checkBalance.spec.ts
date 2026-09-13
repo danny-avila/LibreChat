@@ -1,12 +1,21 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, createMethods, createModels } from '@librechat/data-schemas';
-import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
+import {
+  ViolationTypes,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from 'librechat-data-provider';
 import type { BalanceConfig, IBalance } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { BalanceReservation, CheckBalanceDeps } from './checkBalance';
 import type { ServerRequest } from '~/types/http';
-import { checkBalance, createBalanceReservations, withBalanceReservations } from './checkBalance';
+import {
+  checkBalance,
+  ABORTED_TURN_LAPSE_MS,
+  withBalanceReservations,
+  createBalanceReservations,
+} from './checkBalance';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -130,13 +139,13 @@ describe('checkBalance', () => {
     const expiryOf = (deps: CheckBalanceDeps) => reserveRequest(deps).expiresAt.getTime();
 
     it('expires reservations after the configured TTL', async () => {
-      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 5000 } });
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 20_000 } });
       const before = Date.now();
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
-      expect(expiryOf(deps)).toBeGreaterThanOrEqual(before + 5000);
-      expect(expiryOf(deps)).toBeLessThanOrEqual(Date.now() + 5000);
+      expect(expiryOf(deps)).toBeGreaterThanOrEqual(before + 20_000);
+      expect(expiryOf(deps)).toBeLessThanOrEqual(Date.now() + 20_000);
     });
 
     it('falls back to the default TTL, warning once, when the configured TTL is invalid', async () => {
@@ -211,6 +220,41 @@ describe('checkBalance', () => {
       await jest.advanceTimersByTimeAsync(60_000);
 
       expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
+      await reservation.release();
+    });
+
+    it('shortens a lapsing reservation to the lapse window and stops renewing it', async () => {
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 600_000 } });
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+      const { reservationId } = reserveRequest(deps);
+      await reservation.lapseAfter(60_000);
+      await reservation.release();
+      await jest.advanceTimersByTimeAsync(1_200_000);
+
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledWith({
+        user: 'user-1',
+        reservationId,
+        expiresAt: new Date(Date.now() - 1_200_000 + 60_000),
+      });
+      expect(deps.releaseBalanceReservation).not.toHaveBeenCalled();
+    });
+
+    it('raises a TTL below the minimum so renewal stays bounded', async () => {
+      const deps = createMockDeps({ balanceConfig: { reservationTtlMs: 1 } });
+      const before = Date.now();
+
+      const reservation = await checkBalance({ req, res, txData: baseTxData }, deps);
+      expect(reserveRequest(deps).expiresAt.getTime()).toBe(
+        before + MIN_BALANCE_RESERVATION_TTL_MS,
+      );
+
+      await jest.advanceTimersByTimeAsync(MIN_BALANCE_RESERVATION_TTL_MS / 2 - 1);
+      expect(deps.renewBalanceReservation).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1);
+      expect(deps.renewBalanceReservation).toHaveBeenCalledTimes(1);
+
       await reservation.release();
     });
 
@@ -305,9 +349,31 @@ describe('checkBalance', () => {
 
   describe('balance reservations of a turn', () => {
     const createReservation = () => {
-      const reservation: BalanceReservation = { release: jest.fn().mockResolvedValue(undefined) };
+      const reservation: BalanceReservation = {
+        release: jest.fn().mockResolvedValue(undefined),
+        lapseAfter: jest.fn().mockResolvedValue(undefined),
+      };
       return reservation;
     };
+
+    it('lets an aborted turn reservations lapse instead of releasing them', async () => {
+      let aborted = false;
+      const reservation = createReservation();
+
+      await expect(
+        withBalanceReservations(
+          async (reservations) => {
+            await reservations.track(Promise.resolve(reservation));
+            aborted = true;
+            return 'stopped';
+          },
+          { isAborted: () => aborted },
+        ),
+      ).resolves.toBe('stopped');
+
+      expect(reservation.lapseAfter).toHaveBeenCalledWith(ABORTED_TURN_LAPSE_MS);
+      expect(reservation.release).not.toHaveBeenCalled();
+    });
 
     it('releases an admission that settles after the release was requested', async () => {
       const reservations = createBalanceReservations();

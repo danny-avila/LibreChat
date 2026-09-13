@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { DEFAULT_BALANCE_RESERVATION_TTL_MS, ViolationTypes } from 'librechat-data-provider';
+import {
+  ViolationTypes,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from 'librechat-data-provider';
 import type {
   BalanceReservationRequest,
   BalanceReservationRenewal,
@@ -46,6 +50,11 @@ export interface CheckBalanceDeps {
 export interface BalanceReservation {
   /** Idempotent; stops renewal. A failed release is logged and left to expire. */
   release: () => Promise<void>;
+  /**
+   * Stops renewal and lets the reservation lapse after `ms` (at most its TTL) instead of releasing
+   * it, for a turn whose usage another request records. Settles the reservation like `release`.
+   */
+  lapseAfter: (ms: number) => Promise<void>;
 }
 
 /** The balance reservations admitted during one turn. */
@@ -55,11 +64,21 @@ export interface BalanceReservations {
   /**
    * Releases every tracked reservation, first waiting for admissions still pending so a
    * reservation that settles after its turn failed is released too. Failed admissions hold nothing.
+   * When the turn was aborted, each reservation lapses after `ABORTED_TURN_LAPSE_MS` instead.
    */
   release: () => Promise<void>;
 }
 
-export function createBalanceReservations(): BalanceReservations {
+/**
+ * How long an aborted turn's reservation keeps holding its credits. A stopped turn's usage is
+ * charged by the Stop request after the generation unwinds, possibly on another instance, so the
+ * credits stay held until that charge has had time to land.
+ */
+export const ABORTED_TURN_LAPSE_MS: number = 60 * 1000;
+
+export function createBalanceReservations(options?: {
+  isAborted?: () => boolean;
+}): BalanceReservations {
   let admissions: Promise<BalanceReservation | undefined>[] = [];
   return {
     track: (admission) => {
@@ -70,7 +89,12 @@ export function createBalanceReservations(): BalanceReservations {
       const pending = admissions;
       admissions = [];
       const reservations = await Promise.all(pending);
-      await Promise.all(reservations.map((reservation) => reservation?.release()));
+      const aborted = options?.isAborted?.() === true;
+      await Promise.all(
+        reservations.map((reservation) =>
+          aborted ? reservation?.lapseAfter(ABORTED_TURN_LAPSE_MS) : reservation?.release(),
+        ),
+      );
     },
   };
 }
@@ -78,8 +102,9 @@ export function createBalanceReservations(): BalanceReservations {
 /** Runs one turn and releases whatever balance reservations it admitted once it settles. */
 export async function withBalanceReservations<T>(
   run: (reservations: BalanceReservations) => Promise<T>,
+  options?: { isAborted?: () => boolean },
 ): Promise<T> {
-  const reservations = createBalanceReservations();
+  const reservations = createBalanceReservations(options);
   try {
     return await run(reservations);
   } finally {
@@ -141,6 +166,25 @@ function holdReservation(
         });
       return released;
     },
+    lapseAfter: (ms) => {
+      clearTimeout(timer);
+      released ??=
+        amount > 0
+          ? deps
+              .renewBalanceReservation({
+                user,
+                reservationId,
+                expiresAt: new Date(Date.now() + Math.min(ms, ttlMs)),
+              })
+              .catch((error) => {
+                logger.error('[Balance.check] Failed to shorten balance reservation', {
+                  user,
+                  error,
+                });
+              })
+          : Promise.resolve();
+      return released;
+    },
   };
 }
 
@@ -151,17 +195,19 @@ function getReservationTtlMs(config?: BalanceConfig): number {
   if (ttl == null) {
     return DEFAULT_BALANCE_RESERVATION_TTL_MS;
   }
-  if (Number.isFinite(ttl) && ttl > 0) {
-    return ttl;
-  }
-  if (!warnedInvalidReservationTtl) {
+  const valid = Number.isFinite(ttl) && ttl > 0;
+  const effective = valid
+    ? Math.max(ttl, MIN_BALANCE_RESERVATION_TTL_MS)
+    : DEFAULT_BALANCE_RESERVATION_TTL_MS;
+  if (effective !== ttl && !warnedInvalidReservationTtl) {
     warnedInvalidReservationTtl = true;
-    logger.warn('[Balance.check] Ignoring invalid balance.reservationTtlMs; using the default', {
+    logger.warn('[Balance.check] Adjusting balance.reservationTtlMs', {
       reservationTtlMs: ttl,
-      defaultMs: DEFAULT_BALANCE_RESERVATION_TTL_MS,
+      effectiveMs: effective,
+      minimumMs: MIN_BALANCE_RESERVATION_TTL_MS,
     });
   }
-  return DEFAULT_BALANCE_RESERVATION_TTL_MS;
+  return effective;
 }
 
 function buildInitialBalance(user: string, config?: BalanceConfig): IBalanceUpdate | undefined {
