@@ -22,6 +22,7 @@ function cloneMessagesWithTimestamps(
   { detachSubagentRuntime = false } = {},
 ) {
   const idMapping = new Map();
+  const clonedCreatedAt = new Map();
 
   // First pass: create ID mapping and sort messages by parentMessageId
   const sortedMessages = [...messagesToClone].sort((a, b) => {
@@ -54,15 +55,11 @@ function cloneMessagesWithTimestamps(
 
     // If this message has a parent, ensure its timestamp is after the parent's
     let createdAt = ensureDate(message.createdAt);
-    if (parentId !== Constants.NO_PARENT) {
-      const parentMessage = importBatchBuilder.messages.find((msg) => msg.messageId === parentId);
-      if (parentMessage) {
-        const parentDate = ensureDate(parentMessage.createdAt);
-        if (createdAt <= parentDate) {
-          createdAt = new Date(parentDate.getTime() + 1);
-        }
-      }
+    const parentDate = clonedCreatedAt.get(parentId);
+    if (parentDate && createdAt <= parentDate) {
+      createdAt = new Date(parentDate.getTime() + 1);
     }
+    clonedCreatedAt.set(newMessageId, createdAt);
 
     const clonedMessage = {
       ...withoutTraceRefs(message),
@@ -201,6 +198,13 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
     return [];
   }
 
+  const messagesById = new Map();
+  for (const message of messages) {
+    if (!messagesById.has(message.messageId)) {
+      messagesById.set(message.messageId, message);
+    }
+  }
+
   const pathToRoot = new Set();
   const visited = new Set();
   let current = targetMessage;
@@ -218,7 +222,7 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
       break;
     }
 
-    current = messages.find((msg) => msg.messageId === currentParentId);
+    current = messagesById.get(currentParentId);
   }
 
   // Include all messages that are in the path or whose parent is in the path
