@@ -6749,12 +6749,11 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
     /**
      * A rolling deployment can send the next page to an instance that predates sort
-     * modes, and that instance reads two keys and nothing else: `updatedAt` and `_id`.
-     * Absent, it builds an `Invalid Date`, which Mongo rejects and the endpoint reports
-     * as a 500 in the middle of someone's scroll.
+     * modes. The legacy `updatedAt`/`_id` pair is safe only when the current mode is
+     * `recent`, because that is the only mode with the old instance's ordering.
      */
     test.each(['recent', 'newest', 'oldest', 'popular', 'author'] as const)(
-      'emits a cursor an instance that predates sort modes can still read (%s)',
+      'emits a cursor shape compatible with the ordering it describes (%s)',
       async (sort) => {
         const { accessibleIds } = await seedTwoAgents();
 
@@ -6768,17 +6767,20 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         expect(result.has_more).toBe(true);
         const cursor = JSON.parse(
           Buffer.from(result.after as string, 'base64').toString('utf8'),
-        ) as Record<string, string>;
+        ) as Record<string, unknown>;
 
-        expect(Number.isNaN(new Date(cursor.updatedAt).getTime())).toBe(false);
-        expect(mongoose.Types.ObjectId.isValid(cursor._id)).toBe(true);
-        /* The same row the mode's own cursor names, so the older instance continues its
-           updated-time ordering from where this page ended rather than somewhere else. */
-        expect(cursor._id).toBe(cursor.secondary);
-        const lastRow = (await Agent.findById(cursor._id).lean()) as unknown as {
-          updatedAt: Date;
-        } | null;
-        expect(new Date(cursor.updatedAt).toISOString()).toBe(lastRow?.updatedAt.toISOString());
+        expect(typeof cursor.primary).toBe('string');
+        expect(typeof cursor.secondary).toBe('string');
+        if (sort === 'recent') {
+          expect(Number.isNaN(new Date(cursor.updatedAt as string).getTime())).toBe(false);
+          expect(mongoose.Types.ObjectId.isValid(cursor._id as string)).toBe(true);
+          expect(cursor._id).toBe(cursor.secondary);
+        } else {
+          // An older instance must reject a non-recent cursor rather than silently
+          // continue its updated-time walk from a boundary in another ordering.
+          expect(cursor).not.toHaveProperty('updatedAt');
+          expect(cursor).not.toHaveProperty('_id');
+        }
       },
     );
   });

@@ -284,12 +284,11 @@ function buildAgentSortCursorCondition(
  * epoch: an epoch cursor would be a date the row never had, and the resulting condition
  * could never re-select it. It would also throw on `.toISOString()`, surfacing as a 500.
  *
- * The legacy `updatedAt`/`_id` pair is carried alongside, describing the same row, so a
- * cursor minted here stays readable by an instance that predates sort modes. During a
- * rolling deployment the next page can reach one of those, and it reads exactly these
- * two keys: without them it builds an `Invalid Date`, which Mongo rejects and the
- * endpoint reports as a 500 mid-scroll. With them it continues its own updated-time
- * ordering from the row this page ended on — the page it would have served all along.
+ * Only the `recent` mode carries the legacy `updatedAt`/`_id` pair. That is the one
+ * current ordering whose field and direction exactly match the decoder on an instance
+ * that predates sort modes. For every other mode, omitting the pair makes that instance
+ * reject the cursor instead of silently walking a different ordering; the pair cannot
+ * translate a `createdAt`, popularity, or owner-name boundary into its `updatedAt` walk.
  * `decodeAgentSortCursor` ignores the pair, so the mode's own key stays authoritative
  * wherever the request lands on a current instance.
  */
@@ -325,10 +324,9 @@ function encodeAgentSortCursor(
   }
 
   const secondary = String(lastAgent._id);
-  /** Omitted when the row carries no usable timestamp: an older instance rejects an
-   *  absent pair the same way it rejects an unreadable one, and inventing a date here
-   *  would move its page to a row the cursor never described. */
-  const legacyUpdatedAt = asIsoDate(lastAgent.updatedAt);
+  /** A legacy pair is safe only for `recent`, whose ordering is the old updated-time walk.
+   * For all other modes, an older instance must reject rather than resume a wrong order. */
+  const legacyUpdatedAt = sort === 'recent' ? asIsoDate(lastAgent.updatedAt) : null;
 
   return Buffer.from(
     JSON.stringify({
@@ -1931,6 +1929,9 @@ export function createAgentMethods(
               { _id: 1, id: 1, tenantId: 1 },
             ).lean()) as Array<{ _id: Types.ObjectId; id: string; tenantId?: string | null }>)
           : [];
+      const decodedCursor = readCursor();
+      const cursorCount = decodedCursor ? Number(decodedCursor.primary) : null;
+      const cursorIdHex = decodedCursor ? decodedCursor.secondary.toLowerCase() : null;
       const favorited = favoritedRows
         .map((row) => ({
           _id: row._id,
@@ -1950,11 +1951,11 @@ export function createAgentMethods(
           return a.idHex < b.idHex ? -1 : 1;
         });
 
-      const decodedCursor = readCursor();
-      const cursorCount = decodedCursor ? Number(decodedCursor.primary) : null;
-      const cursorIdHex = decodedCursor ? decodedCursor.secondary.toLowerCase() : null;
-      /* A cursor carrying count 0 was minted inside the count-0 tail, so the
-         favourited segment is already spent for this page. */
+      /* Counts are recomputed for each request. The order and cursor are stable within a
+         count bucket while counts stay unchanged; client-side dedup can absorb rows that
+         drift backward. An unseen row that gains favorites can cross upward between
+         requests and be missed. A snapshot/revision requires a materialized favorite
+         counter (berry-13/LibreChat#11); favorites carry no per-favorite timestamp. */
       let startIndex = favorited.length;
       if (cursorCount === null) {
         startIndex = 0;
@@ -2020,9 +2021,7 @@ export function createAgentMethods(
       const favoritedCursorRow = pageFavorited[pageFavorited.length - 1];
       let nextCursor: string | null = null;
       /* The whole row rather than its id alone: `encodeAgentSortCursor` carries the
-         row's `updatedAt` so an instance that predates sort modes can still read the
-         cursor. A copy, so stripping the internal keys off the response later cannot
-         reach into what the cursor was built from. */
+         row's updatedAt only for the legacy-compatible recent mode. */
       if (hasMore && tailCursorRow) {
         nextCursor = encodeAgentSortCursor(sort, { ...tailCursorRow, favoriteCount: 0 });
       } else if (hasMore && favoritedCursorRow) {

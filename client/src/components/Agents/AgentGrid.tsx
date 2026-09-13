@@ -228,10 +228,17 @@ const AgentGrid: React.FC<AgentGridProps> = ({
    * place of it: the grid owns the detail dialog and the element focus returns to, so
    * swapping it out for a failure or an empty result would tear an open dialog down
    * mid-flight and leave keyboard focus on a detached card.
+   *
+   * With rows already loaded the grid renders it after them, which on a list several
+   * viewports tall is below everything the reader can see. A failure nobody scrolls to
+   * looks like a healthy marketplace that has quietly stopped loading, so the card is
+   * pinned to the bottom of the scroll frame instead: its status, countdown, retry and
+   * eventual reload link stay on screen wherever the reader already was. Without rows
+   * there is nothing to pin it over and it is the whole of the page.
    */
   let listPlaceholder: React.ReactNode = null;
   if (failure) {
-    listPlaceholder = (
+    const errorCard = (
       <ErrorDisplay
         error={(failure as ApiError) || 'Unknown error occurred'}
         /* A cursor page that failed is not in the cache, so `refetch` would refresh the
@@ -250,6 +257,17 @@ const AgentGrid: React.FC<AgentGridProps> = ({
           category,
         }}
       />
+    );
+    listPlaceholder = hasData ? (
+      /* The wrapper takes no pointer events so the rows it overlaps stay clickable;
+         the card itself takes them back for its retry and reload controls. */
+      <div className="pointer-events-none sticky bottom-0 z-10 flex justify-center pt-5">
+        <div className="pointer-events-auto w-full max-w-xl rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
+          {errorCard}
+        </div>
+      </div>
+    ) : (
+      errorCard
     );
   } else if (!hasData) {
     listPlaceholder = (
