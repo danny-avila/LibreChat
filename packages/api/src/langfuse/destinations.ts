@@ -356,6 +356,13 @@ export async function getLangfuseTraceDestinationIds(
   return destinations.map(({ id }) => id as string);
 }
 
+/** The trace sampling record a response message stores. */
+export type LangfuseTraceMessageFields = {
+  langfuseSampled?: boolean;
+  langfuseDestinationIds?: string[];
+  langfuseRunId?: string;
+};
+
 /**
  * The sampling record a response stores for its run's trace. `runId` names the
  * run when it is not the response's own id, as for a failed turn's error row;
@@ -385,6 +392,31 @@ export async function getLangfuseTraceMessageFields(
     ),
     ...(runId !== messageId ? { langfuseRunId: runId } : {}),
   };
+}
+
+/**
+ * The sampling record for a failed turn's error row, which keeps its own id and
+ * so names the run that failed. A turn that failed before its run was created
+ * has no trace to name, and a destination lookup that fails leaves the row
+ * without one rather than failing the error write.
+ */
+export async function getFailedTurnTraceFields(
+  appConfig: AppConfig | undefined,
+  {
+    messageId,
+    runId,
+    runCreated,
+  }: { messageId: string; runId?: string | null; runCreated: boolean },
+): Promise<LangfuseTraceMessageFields> {
+  if (!runCreated || typeof runId !== 'string' || runId.length === 0) {
+    return {};
+  }
+  try {
+    return await getLangfuseTraceMessageFields(appConfig, messageId, { runId });
+  } catch (error) {
+    logger.warn('[langfuse] Could not record the failed run trace:', error);
+    return {};
+  }
 }
 
 const centralPublicKey = normalizeString(process.env.LANGFUSE_PUBLIC_KEY);

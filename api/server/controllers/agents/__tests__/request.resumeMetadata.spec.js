@@ -55,6 +55,7 @@ function wonGenerationClaim(overrides = {}) {
 }
 
 const mockCheckAndIncrementPendingRequest = jest.fn();
+const mockGetFailedTurnTraceFields = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
 const mockGetViolationInfo = jest.fn(() => ({
   type: 'concurrent',
@@ -280,11 +281,7 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
-  getLangfuseTraceMessageFields: jest.fn(async (_appConfig, messageId, { runId } = {}) => ({
-    langfuseSampled: true,
-    langfuseDestinationIds: ['destination-1'],
-    ...(runId != null && runId !== messageId ? { langfuseRunId: runId } : {}),
-  })),
+  getFailedTurnTraceFields: (...args) => mockGetFailedTurnTraceFields(...args),
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -3777,6 +3774,12 @@ describe('ResumableAgentController resume metadata', () => {
     });
 
     it('points a failed turn at the trace of the run that failed', async () => {
+      const traceFields = {
+        langfuseSampled: true,
+        langfuseDestinationIds: ['destination-1'],
+        langfuseRunId: 'server-response-uuid',
+      };
+      mockGetFailedTurnTraceFields.mockResolvedValue(traceFields);
       const serverUserMessage = {
         messageId: 'server-user',
         parentMessageId: 'prior-response',
@@ -3806,16 +3809,16 @@ describe('ResumableAgentController resume metadata', () => {
       const errorRow = mockSaveMessage.mock.calls
         .map(([, message]) => message)
         .find((message) => message.messageId === 'server-user_');
-      expect(errorRow).toMatchObject({
-        error: true,
-        isCreatedByUser: false,
-        langfuseSampled: true,
-        langfuseDestinationIds: ['destination-1'],
-        langfuseRunId: 'server-response-uuid',
+      expect(mockGetFailedTurnTraceFields).toHaveBeenCalledWith(expect.anything(), {
+        messageId: 'server-user_',
+        runId: 'server-response-uuid',
+        runCreated: true,
       });
+      expect(errorRow).toMatchObject({ error: true, isCreatedByUser: false, ...traceFields });
     });
 
-    it('records no trace for a failure before the run was created', async () => {
+    it('tells the trace lookup when a failure came before the run was created', async () => {
+      mockGetFailedTurnTraceFields.mockResolvedValue({});
       const client = {
         options: {},
         sendMessage: jest.fn(async (_text, options) => {
@@ -3839,9 +3842,12 @@ describe('ResumableAgentController resume metadata', () => {
       const errorRow = mockSaveMessage.mock.calls
         .map(([, message]) => message)
         .find((message) => message.messageId === 'server-user_');
+      expect(mockGetFailedTurnTraceFields).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ runCreated: false }),
+      );
       expect(errorRow).toMatchObject({ error: true });
       expect(errorRow).not.toHaveProperty('langfuseSampled');
-      expect(errorRow).not.toHaveProperty('langfuseRunId');
     });
 
     it('does not overwrite an existing response row', async () => {

@@ -1,5 +1,5 @@
 import { resolveTraceViewerConfig } from 'librechat-data-provider';
-import type { ConversationTraceRefs } from '@librechat/data-schemas';
+import type { AppConfig, ConversationTraceRefs } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery } from '~/traces/types';
 
@@ -283,6 +283,7 @@ describe('createLangfuseTraceReader', () => {
       });
       expect(requestedFilter(fetchMock)).toEqual([
         { type: 'string', column: 'sessionId', operator: '=', value: 'convo-1' },
+        { type: 'stringOptions', column: 'userId', operator: 'any of', value: ['owner'] },
         {
           type: 'stringOptions',
           column: 'traceId',
@@ -342,6 +343,37 @@ describe('createLangfuseTraceReader', () => {
       await later.reader.listRecords({ ...createQuery(), cursor: page.nextCursor });
 
       expect(requestedUrl(later.fetchMock).origin).toBe('https://central.langfuse.test');
+    });
+
+    it('asks for only the observations exported for the requesting user, by internal or configured id', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const { reader, fetchMock } = setup({
+        refs,
+        route: (request) =>
+          request.probe ? rootsFor(request, 'response-1') : recordsFor(request, 'response-1'),
+      });
+      const query = createQuery({
+        appConfig: { langfuse: { trace: { userIdField: 'email' } } } as AppConfig,
+        user: { id: 'owner', email: 'owner@example.com' },
+      });
+
+      await reader.listRecords(query);
+      await reader.getRecord({ ...query, recordId: 'response-1' });
+
+      const owner = {
+        type: 'stringOptions',
+        column: 'userId',
+        operator: 'any of',
+        value: ['owner', 'owner@example.com'],
+      };
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(4);
+      fetchMock.mock.calls.forEach((_call, index) => {
+        expect(requestedFilter(fetchMock, index)).toContainEqual(owner);
+      });
     });
 
     it('reads a turn only its preferred project holds without asking any project first', async () => {
@@ -456,6 +488,45 @@ describe('createLangfuseTraceReader', () => {
         { sourceId: 'connection-id', records: ['run'] },
         { sourceId: 'central-id', records: ['title'] },
       ]);
+    });
+
+    it('reads a title run that started after its run first when the two sit in different projects', async () => {
+      const refs = createRefs({
+        sampledMessages: [
+          { messageId: 'response-0', langfuseDestinationIds: ['connection-id'] },
+          { messageId: 'response-1', langfuseDestinationIds: ['central-id', 'connection-id'] },
+        ],
+      });
+      const runTrace = traceIdForMessage('response-1');
+      const titleTrace = traceIdForMessage('title-response-1');
+      const olderTrace = traceIdForMessage('response-0');
+      const held: Record<string, Record<string, string>> = {
+        [TENANT]: {
+          [runTrace]: '2026-09-12T11:30:00.000Z',
+          [olderTrace]: '2026-09-12T11:20:00.000Z',
+        },
+        [CENTRAL]: { [titleTrace]: '2026-09-12T11:30:09.000Z' },
+      };
+      const route = (request: RoutedRequest) =>
+        jsonResponse({
+          data: Object.entries(held[request.origin])
+            .filter(([traceId]) => request.traceIds.includes(traceId))
+            .map(([traceId, startTime]) =>
+              request.probe
+                ? { id: `root-${traceId}`, traceId, startTime }
+                : observation({ id: traceId, traceId, startTime }),
+            ),
+        });
+      const pages: string[][] = [];
+      let cursor: string | undefined;
+      do {
+        const { reader } = setup({ refs, route });
+        const page = await reader.listRecords({ ...createQuery(), cursor });
+        pages.push(page.records.map(({ id }) => id));
+        cursor = page.nextCursor;
+      } while (cursor);
+
+      expect(pages).toEqual([[titleTrace], [runTrace, olderTrace]]);
     });
 
     it('bounds how many turns one read asks a project for', async () => {
@@ -1052,6 +1123,7 @@ describe('createLangfuseTraceReader', () => {
       expect(JSON.parse(params.get('filter') ?? '[]')).toEqual([
         { type: 'string', column: 'id', operator: '=', value: 'obs-root' },
         { type: 'string', column: 'sessionId', operator: '=', value: 'convo-1' },
+        { type: 'stringOptions', column: 'userId', operator: 'any of', value: ['owner'] },
         { type: 'datetime', column: 'startTime', operator: '<', value: '2026-09-12T12:10:00.000Z' },
         {
           type: 'datetime',

@@ -44,7 +44,7 @@ const {
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
-  getLangfuseTraceMessageFields,
+  getFailedTurnTraceFields,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -352,7 +352,7 @@ async function saveErrorTurn(
     errorText,
     liveUserMessage,
     liveResponseMessageId,
-    traceRunId,
+    runCreated = false,
     sender,
     initialAgentId,
   },
@@ -468,20 +468,15 @@ async function saveErrorTurn(
         throw new Error('Failed user message could not be persisted');
       }
     }
-    /** A run that started has a trace under its own response id, which the error row does not share. */
-    const langfuseTraceFields =
-      typeof traceRunId === 'string' && traceRunId.length > 0
-        ? await getLangfuseTraceMessageFields(req.config, errorMessageId, {
-            runId: traceRunId,
-          }).catch((err) => {
-            logger.warn('[AgentController] Failed to record the failed run trace', err);
-            return undefined;
-          })
-        : undefined;
+    const langfuseTraceFields = await getFailedTurnTraceFields(req.config, {
+      messageId: errorMessageId,
+      runId: liveResponseMessageId,
+      runCreated,
+    });
     const savedErrorMessage = await saveMessage(
       reqCtx,
       {
-        ...(langfuseTraceFields ?? {}),
+        ...langfuseTraceFields,
         messageId: errorMessageId,
         conversationId,
         parentMessageId: errorParentMessageId,
@@ -3199,7 +3194,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     errorText: generationError,
                     liveUserMessage: userMessage,
                     liveResponseMessageId,
-                    traceRunId: client?.run != null ? liveResponseMessageId : undefined,
+                    runCreated: client?.run != null,
                     sender: client?.sender,
                     initialAgentId: verifiedInitialAgentId,
                   }),

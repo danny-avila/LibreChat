@@ -137,6 +137,7 @@ describe('trace routes', () => {
       expect.arrayContaining([
         expect.objectContaining({ column: 'sessionId', operator: '=', value: 'convo-1' }),
         expect.objectContaining({ column: 'traceId', operator: 'any of' }),
+        expect.objectContaining({ column: 'userId', operator: 'any of', value: ['owner'] }),
       ]),
     );
     expect(new Headers(init.headers).get('Authorization')).toBe(

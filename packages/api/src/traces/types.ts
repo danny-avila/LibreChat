@@ -1,5 +1,6 @@
 import type {
   TTracePage,
+  LangfuseTraceUserIdField,
   TTraceAvailability,
   TTraceErrorCode,
   TTraceRecordDetail,
@@ -7,9 +8,13 @@ import type {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 
+/** The requester's identity fields a tracing backend may have keyed their traces by at export. */
+export type TraceRequester = Partial<Record<LangfuseTraceUserIdField, string>>;
+
 /** One authorized read: the caller has already proven `userId` owns `conversationId`. */
 export interface TraceQuery {
   userId: string;
+  user?: TraceRequester;
   /** The requester's tenant; `undefined` is the tenantless scope, never "any tenant". */
   tenantId?: string;
   conversationId: string;

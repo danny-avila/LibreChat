@@ -417,6 +417,29 @@ describe('Langfuse feedback scores', () => {
     });
   });
 
+  it('names the run of a failed turn only when that run was created', async () => {
+    await loadFeedback();
+    const { getFailedTurnTraceFields } = await import('./destinations');
+
+    await expect(
+      getFailedTurnTraceFields(undefined, {
+        messageId: 'user-1_',
+        runId: 'run-1',
+        runCreated: false,
+      }),
+    ).resolves.toEqual({});
+    await expect(
+      getFailedTurnTraceFields(undefined, { messageId: 'user-1_', runId: null, runCreated: true }),
+    ).resolves.toEqual({});
+    await expect(
+      getFailedTurnTraceFields(undefined, {
+        messageId: 'user-1_',
+        runId: 'run-1',
+        runCreated: true,
+      }),
+    ).resolves.toMatchObject({ langfuseSampled: true, langfuseRunId: 'run-1' });
+  });
+
   it('keeps the central destination identity stable when credentials rotate', async () => {
     const { sendFeedbackScore } = await loadFeedback();
     const { getLangfuseTraceDestinationIds } = await import('./destinations');

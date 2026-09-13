@@ -15,6 +15,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery, TraceReader } from '~/traces/types';
+import { resolveLangfuseTraceUserId } from './identity';
 import { getScoreDestinations } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
@@ -294,13 +295,13 @@ const SEGMENT_TURNS = 50;
 
 /** Root observations only: one row per trace, so a probe of which traces a project holds stays small. */
 const ROOT_FILTER = { type: 'null', column: 'parentObservationId', operator: 'is null', value: '' };
-const rootSchema = z.object({ traceId: z.string().min(1) });
+const rootSchema = z.object({ traceId: z.string().min(1), startTime: timestampSchema.nullish() });
 
 const cursorSchema = z.object({
   /** The newest turn of the segment being read. */
   m: z.string().min(1),
-  /** `t` when the segment starts at that turn's title run rather than its run. */
-  k: z.literal('t').optional(),
+  /** The trace of that turn the segment starts at, when it starts partway through the turn. */
+  k: z.enum(['r', 't']).optional(),
   /** The project reading it. */
   s: z.string().min(1).optional(),
   /** That project's Langfuse cursor. */
@@ -339,6 +340,23 @@ type LangfuseFilter = Array<{
   operator: string;
   value: string | string[];
 }>;
+
+type TraceKind = 'run' | 'title';
+const KIND_BY_CODE: Record<'r' | 't', TraceKind> = { r: 'run', t: 'title' };
+
+/**
+ * Observations exported for the requesting user. The trace ids a conversation
+ * owns derive from message ids, which a request can influence, so a colliding
+ * id must still never return someone else's trace: every read also requires
+ * the user id the server stamped on the trace at export, the internal id or
+ * the configured `langfuse.trace.userIdField` value.
+ */
+function ownerFilter(query: TraceQuery): LangfuseFilter[number] {
+  const configured = resolveLangfuseTraceUserId(query.appConfig?.langfuse?.trace, query.user);
+  const userIds =
+    configured != null && configured !== query.userId ? [query.userId, configured] : [query.userId];
+  return { type: 'stringOptions', column: 'userId', operator: 'any of', value: userIds };
+}
 
 function startTimeFilter(window: { from?: string; to: string }): LangfuseFilter {
   return [
@@ -535,15 +553,16 @@ export function createLangfuseTraceReader({
       const timeFilter = startTimeFilter(timeWindow(refs));
       const scopeFilter = (traceIds: string[]): LangfuseFilter => [
         { type: 'string', column: 'sessionId', operator: '=', value: query.conversationId },
+        ownerFilter(query),
         { type: 'stringOptions', column: 'traceId', operator: 'any of', value: traceIds },
         ...timeFilter,
       ];
 
       let turn = messages.length - 1;
-      let offset = 0;
+      let startKind: TraceKind | undefined;
       if (continuation != null) {
         turn = messages.findIndex(({ messageId }) => messageId === continuation.m);
-        offset = continuation.k === 't' ? 1 : 0;
+        startKind = continuation.k != null ? KIND_BY_CODE[continuation.k] : undefined;
         if (turn === -1) {
           throw new TraceReadError(
             'invalid_request',
@@ -562,6 +581,8 @@ export function createLangfuseTraceReader({
        */
       const probed = new Map<string, Set<string>>();
       const found = new Map<string, Set<string>>();
+      /** Root start times the probes saw, which order a turn's traces when they sit in different projects. */
+      const rootStarts = new Map<string, string>();
       const failures = new Map<string, TraceReadError>();
       const isFailed = (source: LangfuseScoreDestination) => failures.has(sourceIdOf(source));
       const isFailover = (error: unknown): error is TraceReadError =>
@@ -599,6 +620,9 @@ export function createLangfuseTraceReader({
               if (root.success) {
                 parsed++;
                 present.add(root.data.traceId);
+                if (root.data.startTime != null) {
+                  rootStarts.set(root.data.traceId, new Date(root.data.startTime).toISOString());
+                }
               }
             }
             if (page.data.length > 0 && parsed === 0) {
@@ -647,15 +671,42 @@ export function createLangfuseTraceReader({
         }
       }
 
-      type TraceUnit = { turn: number; offset: number; traceId: string };
-      /** A turn's traces in reading order: its run, then its title run. */
-      const unitsFrom = (start: number, startOffset: number, lowest: number): TraceUnit[] => {
+      type TraceUnit = { turn: number; kind: TraceKind; first: boolean; traceId: string };
+      /**
+       * A turn's traces in reading order, newest first: a title run seen to start
+       * after its run (a title generated once the response finished) comes first;
+       * otherwise the run does. The order only matters when the two sit in
+       * different projects, and then both roots, and so their start times, are known.
+       */
+      const tracesOf = (index: number): Array<Pick<TraceUnit, 'kind' | 'traceId'>> => {
+        const [run, title] = traceIdsOf(messages[index]);
+        const runStart = rootStarts.get(run);
+        const titleStart = rootStarts.get(title);
+        const titleFirst = runStart != null && titleStart != null && titleStart > runStart;
+        const ordered: Array<Pick<TraceUnit, 'kind' | 'traceId'>> = [
+          { kind: 'run', traceId: run },
+          { kind: 'title', traceId: title },
+        ];
+        return titleFirst ? ordered.reverse() : ordered;
+      };
+      const unitsFrom = (
+        start: number,
+        kind: TraceKind | undefined,
+        lowest: number,
+      ): TraceUnit[] => {
         const units: TraceUnit[] = [];
         for (let index = start; index >= lowest; index--) {
-          const traceIds = traceIdsOf(messages[index]);
-          for (let unit = index === start ? startOffset : 0; unit < traceIds.length; unit++) {
-            units.push({ turn: index, offset: unit, traceId: traceIds[unit] });
-          }
+          const traces = tracesOf(index);
+          const from =
+            index === start && kind != null
+              ? Math.max(
+                  0,
+                  traces.findIndex((trace) => trace.kind === kind),
+                )
+              : 0;
+          traces.slice(from).forEach((trace, position) => {
+            units.push({ turn: index, first: from + position === 0, ...trace });
+          });
         }
         return units;
       };
@@ -679,7 +730,7 @@ export function createLangfuseTraceReader({
         if (holding.length > 0) {
           return prefer != null && holding.includes(prefer) ? prefer : holding[0];
         }
-        const failed = unit.offset === 0 ? candidates.find(isFailed) : undefined;
+        const failed = unit.kind === 'run' ? candidates.find(isFailed) : undefined;
         if (failed != null) {
           throw failures.get(sourceIdOf(failed));
         }
@@ -774,9 +825,9 @@ export function createLangfuseTraceReader({
       /** A continuation that no longer matches the trace; the viewer reloads from the newest page. */
       const changed = () =>
         new TraceReadError('invalid_request', 'The trace changed since this page was loaded');
-      const positionOf = (unit: Pick<TraceUnit, 'turn' | 'offset'>): TraceCursor => ({
+      const positionOf = (unit: Pick<TraceUnit, 'turn' | 'kind' | 'first'>): TraceCursor => ({
         m: messages[unit.turn].messageId,
-        ...(unit.offset > 0 ? { k: 't' as const } : {}),
+        ...(unit.first ? {} : { k: unit.kind === 'title' ? ('t' as const) : ('r' as const) }),
       });
 
       let resume = continuation?.c != null ? continuation : undefined;
@@ -784,12 +835,12 @@ export function createLangfuseTraceReader({
       while (turn >= 0) {
         const lowest = Math.max(0, turn - SEGMENT_TURNS + 1);
         await gatherEvidence(lowest, turn);
-        const units = unitsFrom(turn, offset, lowest);
+        const units = unitsFrom(turn, startKind, lowest);
         const segment = units.length > 0 ? segmentOf(units) : null;
         const after = segment != null ? units[segment.end] : units[1];
         const advance = () => {
           turn = after != null ? after.turn : lowest - 1;
-          offset = after != null ? after.offset : 0;
+          startKind = after != null && !after.first ? after.kind : undefined;
         };
         if (segment == null) {
           if (resume != null) {
@@ -838,7 +889,9 @@ export function createLangfuseTraceReader({
           };
         }
         if (result.records.length > 0) {
-          const older = after ?? (lowest > 0 ? { turn: lowest - 1, offset: 0 } : undefined);
+          const older =
+            after ??
+            (lowest > 0 ? { turn: lowest - 1, kind: 'run' as const, first: true } : undefined);
           return {
             records: result.records,
             sourceId,
@@ -865,6 +918,7 @@ export function createLangfuseTraceReader({
       const filter: LangfuseFilter = [
         { type: 'string', column: 'id', operator: '=', value: query.recordId },
         { type: 'string', column: 'sessionId', operator: '=', value: query.conversationId },
+        ownerFilter(query),
         ...startTimeFilter(window),
       ];
       const params = new URLSearchParams({
