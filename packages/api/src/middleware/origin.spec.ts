@@ -1,6 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
 import { createSameOriginGuard } from './origin';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -15,6 +16,7 @@ function createApp(trustedOrigins: Array<string | undefined> = []) {
     res.status(204).end();
   });
   const app = express();
+  app.set('trust proxy', true);
   app.post('/api/auth/login', createSameOriginGuard({ trustedOrigins }), handler);
   return { app, handler };
 }
@@ -50,7 +52,10 @@ describe('createSameOriginGuard', () => {
         .send({ email: 'other@example.com', password: 'secret' })
         .expect(403);
 
-      expect(response.body).toEqual({ message: 'Cross-site request rejected' });
+      expect(response.body).toEqual({
+        message: 'Cross-site request rejected',
+        code: ErrorTypes.AUTH_CROSS_ORIGIN,
+      });
       expect(response.headers['set-cookie']).toBeUndefined();
       expect(handler).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
@@ -87,16 +92,30 @@ describe('createSameOriginGuard', () => {
   });
 
   describe('browsers that send Origin without Sec-Fetch-Site', () => {
-    it('passes an Origin matching the Host the request was sent to', async () => {
+    it('passes an Origin matching the scheme and Host the request was sent to', async () => {
       const { app, handler } = createApp();
 
       await request(app)
         .post('/api/auth/login')
         .set('Host', `${HOST}:443`)
+        .set('X-Forwarded-Proto', 'https')
         .set('Origin', `https://${HOST}`)
         .expect(204);
 
       expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an http Origin on the same host as an https request', async () => {
+      const { app, handler } = createApp();
+
+      await request(app)
+        .post('/api/auth/login')
+        .set('Host', HOST)
+        .set('X-Forwarded-Proto', 'https')
+        .set('Origin', `http://${HOST}`)
+        .expect(403);
+
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it.each(['https://other-site.example.com', 'null', 'not a url'])(
@@ -120,6 +139,7 @@ describe('createSameOriginGuard', () => {
       await request(app)
         .post('/api/auth/login')
         .set('Host', HOST)
+        .set('X-Forwarded-Proto', 'https')
         .set('Origin', `https://${HOST}:8443`)
         .expect(403);
 

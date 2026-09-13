@@ -33,16 +33,15 @@ const getDiscordConfig = (callbackURL) => ({
   authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none',
 });
 
-const discordStrategy = () => {
-  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.DISCORD_CALLBACK_URL}`;
-  return new DiscordStrategy(
+/** @param {Omit<import('@librechat/api').OAuthStateStoreOptions, 'provider'>} stateOptions */
+const discordStrategy = (stateOptions) =>
+  new DiscordStrategy(
     {
-      ...getDiscordConfig(callbackURL),
-      store: createOAuthStateStore({ provider: 'discord', callbackURL }),
+      ...getDiscordConfig(`${process.env.DOMAIN_SERVER}${process.env.DISCORD_CALLBACK_URL}`),
+      store: createOAuthStateStore({ ...stateOptions, provider: 'discord' }),
     },
     discordLogin,
   );
-};
 
 const discordAdminStrategy = () =>
   new DiscordStrategy(

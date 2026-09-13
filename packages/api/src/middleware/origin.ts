@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
 import type { Request, RequestHandler } from 'express';
 
 const SAME_ORIGIN_FETCH_SITES: ReadonlySet<string> = new Set(['same-origin', 'none']);
@@ -21,22 +22,16 @@ function toOrigin(value: string | undefined): string | undefined {
   }
 }
 
-function matchesHost(origin: string, host: string | undefined): boolean {
-  if (!host) {
-    return false;
-  }
-  const { protocol, host: originHost } = new URL(origin);
-  try {
-    return new URL(`${protocol}//${host}`).host === originHost;
-  } catch {
-    return false;
-  }
+/** The request's own origin: its scheme (honoring `trust proxy`) and the `Host` it was sent to. */
+function matchesRequestOrigin(origin: string, req: Request): boolean {
+  const host = req.get('host');
+  return host != null && toOrigin(`${req.protocol}://${host}`) === origin;
 }
 
 /**
  * A browser labels every request with `Sec-Fetch-Site`, which a page cannot set. Browsers
- * predating it still send `Origin` on a form POST, compared here against the `Host` it was sent
- * to. A request carrying neither header did not come from a browser page and passes.
+ * predating it still send `Origin` on a form POST, compared here against the request's own
+ * scheme and host. A request carrying neither header did not come from a browser page and passes.
  */
 function isCrossSiteRequest(req: Request, trustedOrigins: ReadonlySet<string>): boolean {
   const originHeader = req.get('origin');
@@ -52,7 +47,7 @@ function isCrossSiteRequest(req: Request, trustedOrigins: ReadonlySet<string>): 
   if (!originHeader) {
     return false;
   }
-  return !origin || !matchesHost(origin, req.get('host'));
+  return !origin || !matchesRequestOrigin(origin, req);
 }
 
 const truncate = (value: string | undefined): string | undefined =>
@@ -80,6 +75,9 @@ export function createSameOriginGuard({ trustedOrigins }: SameOriginGuardOptions
       fetch_site: truncate(req.get('sec-fetch-site')),
       origin: truncate(req.get('origin')),
     });
-    res.status(403).json({ message: 'Cross-site request rejected' });
+    res.status(403).json({
+      message: 'Cross-site request rejected',
+      code: ErrorTypes.AUTH_CROSS_ORIGIN,
+    });
   };
 }

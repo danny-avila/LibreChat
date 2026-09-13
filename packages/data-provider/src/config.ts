@@ -40,6 +40,9 @@ export {
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
+/** How long a started social login may take to return to its callback before its `state` expires. */
+export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
 export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
@@ -2859,6 +2862,8 @@ export const configSchema = z.object({
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
+      /** Milliseconds a started social login may take to reach its callback; defaults to `DEFAULT_OAUTH_STATE_TTL_MS`. */
+      oauthStateTtlMs: z.number().int().min(60_000).max(3_600_000).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
@@ -3596,6 +3601,10 @@ export enum ErrorTypes {
    * Authentication rejected because the account or IP is banned
    */
   AUTH_BANNED = 'auth_banned',
+  /**
+   * Authentication request was not sent from this application's origin
+   */
+  AUTH_CROSS_ORIGIN = 'auth_cross_origin',
   /**
    * Model refused to respond (content policy violation)
    */

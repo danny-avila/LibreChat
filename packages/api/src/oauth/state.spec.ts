@@ -1,9 +1,10 @@
 import express from 'express';
 import request from 'supertest';
 import { logger } from '@librechat/data-schemas';
+import { DEFAULT_OAUTH_STATE_TTL_MS } from 'librechat-data-provider';
 import type { Request } from 'express';
-import type { OAuthStateStore, OAuthStateStoreOptions } from './state';
-import { createOAuthStateStore, OAUTH_STATE_MAX_AGE } from './state';
+import type { OAuthStateStore, OAuthStateStoreOptions, PresetStateStrategy } from './state';
+import { createOAuthStateStore, deferStateToStore } from './state';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -39,86 +40,144 @@ function createApp(options: OAuthStateStoreOptions) {
   return { app, stateStore };
 }
 
-function getCookie(response: request.Response, name: string): string | undefined {
+function getSetCookie(response: request.Response, name: string): string | undefined {
   const headers = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
   return headers.find((header) => header.startsWith(`${name}=`));
 }
 
-describe('createOAuthStateStore', () => {
-  const originalEnv = process.env;
+function cookieValue(header: string | undefined): string {
+  return header?.split(';')[0].split('=')[1] ?? '';
+}
 
+async function start(app: express.Express, cookie?: string) {
+  const req = request(app).get('/start');
+  const response = await (cookie ? req.set('Cookie', cookie) : req).expect(200);
+  return { state: response.body.state as string, response };
+}
+
+const github: OAuthStateStoreOptions = { provider: 'github', secureCookie: false };
+const secureGithub: OAuthStateStoreOptions = { provider: 'github', secureCookie: true };
+
+describe('createOAuthStateStore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...originalEnv, NODE_ENV: 'test', DOMAIN_SERVER: 'http://localhost:3080' };
-    delete process.env.SESSION_COOKIE_SECURE;
   });
 
-  afterAll(() => {
-    process.env = originalEnv;
-  });
+  it('issues a host-only SameSite=Lax cookie on insecure deployments', async () => {
+    const { app } = createApp(github);
 
-  it('issues a SameSite=Lax cookie scoped to the callback path that follows the session Secure setting', async () => {
-    process.env.SESSION_COOKIE_SECURE = 'true';
-    const { app } = createApp({
-      provider: 'github',
-      callbackURL: 'https://chat.example.com/oauth/github/callback',
-    });
+    const { state, response } = await start(app);
+    const cookie = getSetCookie(response, 'oauth_state_github');
 
-    const response = await request(app).get('/start').expect(200);
-    const cookie = getCookie(response, 'oauth_state_github');
-
-    expect(cookie).toContain(`oauth_state_github=${response.body.state}`);
-    expect(cookie).toContain(`Max-Age=${OAUTH_STATE_MAX_AGE / 1000}`);
-    expect(cookie).toContain('Path=/oauth/github/callback');
-    expect(cookie).toContain('SameSite=Lax');
-    expect(cookie).toContain('Secure');
-  });
-
-  it('scopes the cookie to the whole site when the callback URL cannot be parsed', async () => {
-    const { app } = createApp({ provider: 'github', callbackURL: 'undefined/oauth/callback' });
-
-    const response = await request(app).get('/start').expect(200);
-
-    const cookie = getCookie(response, 'oauth_state_github');
+    expect(cookie).toContain(`oauth_state_github=${state}`);
+    expect(cookie).toContain(`Max-Age=${DEFAULT_OAUTH_STATE_TTL_MS / 1000}`);
     expect(cookie).toContain('Path=/;');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Lax');
     expect(cookie).not.toContain('Secure');
+    expect(cookie).not.toContain('Domain=');
+  });
+
+  it('uses a __Host- cookie, which a sibling subdomain cannot set, on secure deployments', async () => {
+    const { app } = createApp({ ...secureGithub, maxAgeMs: 120_000 });
+
+    const { state, response } = await start(app);
+    const cookie = getSetCookie(response, '__Host-oauth_state_github');
+
+    expect(cookie).toContain(`__Host-oauth_state_github=${state}`);
+    expect(cookie).toContain('Max-Age=120');
+    expect(cookie).toContain('Path=/;');
+    expect(cookie).toContain('Secure');
+    expect(getSetCookie(response, 'oauth_state_github')).toBeUndefined();
+  });
+
+  it('ignores a plain-named cookie on secure deployments', async () => {
+    const { app } = createApp(secureGithub);
+    const { state } = await start(app);
+
+    const response = await request(app)
+      .get('/oauth/github/callback')
+      .set('Cookie', `oauth_state_github=${state}`)
+      .query({ state })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      ok: false,
+      message: 'Unable to verify authorization request state.',
+    });
   });
 
   it('marks a cross-site callback cookie SameSite=None and Secure, even on insecure deployments', async () => {
-    const { app } = createApp({
-      provider: 'apple',
-      callbackURL: 'http://localhost:3080/oauth/apple/callback',
-      crossSiteCallback: true,
-    });
+    const { app } = createApp({ provider: 'apple', secureCookie: false, crossSiteCallback: true });
 
-    const response = await request(app).get('/start').expect(200);
-    const cookie = getCookie(response, 'oauth_state_apple');
+    const { response } = await start(app);
+    const cookie = getSetCookie(response, '__Host-oauth_state_apple');
 
     expect(cookie).toContain('SameSite=None');
     expect(cookie).toContain('Secure');
   });
 
-  it('accepts the state issued to this browser and clears it with matching attributes', async () => {
-    const { app } = createApp({
-      provider: 'apple',
-      callbackURL: 'https://chat.example.com/oauth/apple/callback',
-      crossSiteCallback: true,
-    });
-    const start = await request(app).get('/start').expect(200);
+  it('accepts the state issued to this browser and clears the cookie with matching attributes', async () => {
+    const { app } = createApp({ provider: 'apple', secureCookie: true, crossSiteCallback: true });
+    const { state } = await start(app);
 
     const response = await request(app)
       .post('/oauth/apple/callback')
-      .set('Cookie', `oauth_state_apple=${start.body.state}`)
+      .set('Cookie', `__Host-oauth_state_apple=${state}`)
       .type('form')
-      .send({ state: start.body.state })
+      .send({ state })
       .expect(200);
 
     expect(response.body).toEqual({ ok: true });
-    const cleared = getCookie(response, 'oauth_state_apple');
-    expect(cleared).toContain('oauth_state_apple=;');
-    expect(cleared).toContain('Path=/oauth/apple/callback');
+    const cleared = getSetCookie(response, '__Host-oauth_state_apple');
+    expect(cleared).toContain('__Host-oauth_state_apple=;');
+    expect(cleared).toContain('Path=/;');
     expect(cleared).toContain('SameSite=None');
     expect(cleared).toContain('Secure');
+  });
+
+  it('keeps flows started in other tabs pending and consumes only the matched one', async () => {
+    const { app } = createApp(github);
+    const first = await start(app);
+    const second = await start(
+      app,
+      `oauth_state_github=${cookieValue(getSetCookie(first.response, 'oauth_state_github'))}`,
+    );
+    const pending = cookieValue(getSetCookie(second.response, 'oauth_state_github'));
+
+    expect(pending.split('.')).toEqual([second.state, first.state]);
+
+    const firstCallback = await request(app)
+      .get('/oauth/github/callback')
+      .set('Cookie', `oauth_state_github=${pending}`)
+      .query({ state: first.state })
+      .expect(200);
+
+    expect(firstCallback.body).toEqual({ ok: true });
+    const remaining = cookieValue(getSetCookie(firstCallback, 'oauth_state_github'));
+    expect(remaining).toBe(second.state);
+
+    const secondCallback = await request(app)
+      .get('/oauth/github/callback')
+      .set('Cookie', `oauth_state_github=${remaining}`)
+      .query({ state: second.state })
+      .expect(200);
+
+    expect(secondCallback.body).toEqual({ ok: true });
+    expect(getSetCookie(secondCallback, 'oauth_state_github')).toContain('oauth_state_github=;');
+  });
+
+  it('remembers at most three outstanding flows, dropping the oldest', async () => {
+    const { app } = createApp(github);
+    let cookie = '';
+    const states: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const flow = await start(app, cookie ? `oauth_state_github=${cookie}` : undefined);
+      states.push(flow.state);
+      cookie = cookieValue(getSetCookie(flow.response, 'oauth_state_github'));
+    }
+
+    expect(cookie.split('.')).toEqual([states[3], states[2], states[1]]);
   });
 
   it.each<[string, (state: string) => string]>([
@@ -126,13 +185,9 @@ describe('createOAuthStateStore', () => {
     ['a state of another length', (state) => `${state}x`],
     ['a repeated state parameter', (state) => `${state}&state=${state}`],
     ['an empty state', () => ''],
-  ])('rejects %s', async (_label, buildState) => {
-    const { app } = createApp({
-      provider: 'github',
-      callbackURL: 'https://chat.example.com/oauth/github/callback',
-    });
-    const start = await request(app).get('/start').expect(200);
-    const state: string = start.body.state;
+  ])('rejects %s without discarding the pending state', async (_label, buildState) => {
+    const { app } = createApp(github);
+    const { state } = await start(app);
 
     const response = await request(app)
       .get(`/oauth/github/callback?state=${buildState(state)}`)
@@ -140,7 +195,7 @@ describe('createOAuthStateStore', () => {
       .expect(200);
 
     expect(response.body).toEqual({ ok: false, message: 'Invalid authorization request state.' });
-    expect(getCookie(response, 'oauth_state_github')).toContain('oauth_state_github=;');
+    expect(response.headers['set-cookie']).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       '[OAuth] Rejected github callback: Invalid authorization request state.',
       expect.objectContaining({ provider: 'github' }),
@@ -148,16 +203,10 @@ describe('createOAuthStateStore', () => {
   });
 
   it('rejects a callback when this browser holds no state cookie', async () => {
-    const { app } = createApp({
-      provider: 'github',
-      callbackURL: 'https://chat.example.com/oauth/github/callback',
-    });
-    const start = await request(app).get('/start').expect(200);
+    const { app } = createApp(github);
+    const { state } = await start(app);
 
-    const response = await request(app)
-      .get('/oauth/github/callback')
-      .query({ state: start.body.state })
-      .expect(200);
+    const response = await request(app).get('/oauth/github/callback').query({ state }).expect(200);
 
     expect(response.body).toEqual({
       ok: false,
@@ -170,10 +219,7 @@ describe('createOAuthStateStore', () => {
   });
 
   it('fails the authorization request when no response is attached to the request', () => {
-    const { stateStore } = createApp({
-      provider: 'github',
-      callbackURL: 'https://chat.example.com/oauth/github/callback',
-    });
+    const { stateStore } = createApp(github);
     const callback = jest.fn();
 
     stateStore.store({} as Request, callback);
@@ -182,12 +228,28 @@ describe('createOAuthStateStore', () => {
   });
 
   it('keeps the arities passport-oauth2 dispatches on', () => {
-    const stateStore = createOAuthStateStore({
-      provider: 'github',
-      callbackURL: 'https://chat.example.com/oauth/github/callback',
-    });
+    const stateStore = createOAuthStateStore(github);
 
     expect(stateStore.store).toHaveLength(2);
     expect(stateStore.verify).toHaveLength(3);
+  });
+});
+
+describe('deferStateToStore', () => {
+  it('drops a state the strategy fills in without mutating the caller options', () => {
+    const strategy: PresetStateStrategy = {
+      authorizationParams(options: { state?: string; scope?: string }) {
+        options.state = options.state || 'preset-state';
+        options.scope = 'name email';
+        return options;
+      },
+    };
+    const routeOptions = { session: false };
+
+    deferStateToStore(strategy);
+    const params = strategy.authorizationParams(routeOptions);
+
+    expect(params).toEqual({ session: false, scope: 'name email' });
+    expect(routeOptions).toEqual({ session: false });
   });
 });

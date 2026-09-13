@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const { Strategy: AppleStrategy } = require('passport-apple');
-const { createOAuthStateStore } = require('@librechat/api');
+const { createOAuthStateStore, deferStateToStore } = require('@librechat/api');
 const socialLogin = require('./socialLogin');
 
 /**
@@ -47,26 +47,19 @@ const getAppleConfig = (callbackURL) => ({
 });
 
 /**
- * passport-apple fills in a `state` of its own (on the shared route options, so it never changes
- * after the first request), and a preset `state` bypasses the configured state store.
+ * Apple returns with a cross-site form POST, so its state cookie must be `SameSite=None`.
+ * @param {Omit<import('@librechat/api').OAuthStateStoreOptions, 'provider'>} stateOptions
  */
-class AppleStoreStateStrategy extends AppleStrategy {
-  authorizationParams(options) {
-    const { state: _state, ...params } = super.authorizationParams({ ...options });
-    return params;
-  }
-}
-
-/** Apple returns with a cross-site form POST, so its state cookie must be `SameSite=None`. */
-const appleStrategy = () => {
-  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`;
-  return new AppleStoreStateStrategy(
+const appleStrategy = (stateOptions) => {
+  const strategy = new AppleStrategy(
     {
-      ...getAppleConfig(callbackURL),
-      store: createOAuthStateStore({ provider: 'apple', callbackURL, crossSiteCallback: true }),
+      ...getAppleConfig(`${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`),
+      store: createOAuthStateStore({ ...stateOptions, provider: 'apple', crossSiteCallback: true }),
     },
     appleLogin,
   );
+  deferStateToStore(strategy);
+  return strategy;
 };
 
 const appleAdminStrategy = () =>

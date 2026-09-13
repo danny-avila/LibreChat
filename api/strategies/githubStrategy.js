@@ -31,16 +31,15 @@ const getGitHubConfig = (callbackURL) => ({
   }),
 });
 
-const githubStrategy = () => {
-  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`;
-  return new GitHubStrategy(
+/** @param {Omit<import('@librechat/api').OAuthStateStoreOptions, 'provider'>} stateOptions */
+const githubStrategy = (stateOptions) =>
+  new GitHubStrategy(
     {
-      ...getGitHubConfig(callbackURL),
-      store: createOAuthStateStore({ provider: 'github', callbackURL }),
+      ...getGitHubConfig(`${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`),
+      store: createOAuthStateStore({ ...stateOptions, provider: 'github' }),
     },
     githubLogin,
   );
-};
 
 const githubAdminStrategy = () =>
   new GitHubStrategy(

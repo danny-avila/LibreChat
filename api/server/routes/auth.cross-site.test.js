@@ -1,5 +1,6 @@
 const express = require('express');
 const request = require('supertest');
+const { ErrorTypes } = require('librechat-data-provider');
 
 const mockLoginLimiter = jest.fn((req, res, next) => next());
 const mockRequireLocalAuth = jest.fn((req, res, next) => next());
@@ -109,7 +110,10 @@ describe('local login endpoints reject cross-site submissions', () => {
       .send({ email: 'other@example.com', password: 'other-password' })
       .expect(403);
 
-    expect(response.body).toEqual({ message: 'Cross-site request rejected' });
+    expect(response.body).toEqual({
+      message: 'Cross-site request rejected',
+      code: ErrorTypes.AUTH_CROSS_ORIGIN,
+    });
     expect(response.headers['set-cookie']).toBeUndefined();
     expect(mockLoginLimiter).not.toHaveBeenCalled();
     expect(mockRequireLocalAuth).not.toHaveBeenCalled();

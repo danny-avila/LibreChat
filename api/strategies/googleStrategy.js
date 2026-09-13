@@ -21,16 +21,15 @@ const getGoogleConfig = (callbackURL) => ({
   proxy: true,
 });
 
-const googleStrategy = () => {
-  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`;
-  return new GoogleStrategy(
+/** @param {Omit<import('@librechat/api').OAuthStateStoreOptions, 'provider'>} stateOptions */
+const googleStrategy = (stateOptions) =>
+  new GoogleStrategy(
     {
-      ...getGoogleConfig(callbackURL),
-      store: createOAuthStateStore({ provider: 'google', callbackURL }),
+      ...getGoogleConfig(`${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`),
+      store: createOAuthStateStore({ ...stateOptions, provider: 'google' }),
     },
     googleLogin,
   );
-};
 
 const googleAdminStrategy = () =>
   new GoogleStrategy(

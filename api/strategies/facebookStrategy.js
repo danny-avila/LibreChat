@@ -23,16 +23,15 @@ const getFacebookConfig = (callbackURL) => ({
   profileFields: ['id', 'email', 'name'],
 });
 
-const facebookStrategy = () => {
-  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.FACEBOOK_CALLBACK_URL}`;
-  return new FacebookStrategy(
+/** @param {Omit<import('@librechat/api').OAuthStateStoreOptions, 'provider'>} stateOptions */
+const facebookStrategy = (stateOptions) =>
+  new FacebookStrategy(
     {
-      ...getFacebookConfig(callbackURL),
-      store: createOAuthStateStore({ provider: 'facebook', callbackURL }),
+      ...getFacebookConfig(`${process.env.DOMAIN_SERVER}${process.env.FACEBOOK_CALLBACK_URL}`),
+      store: createOAuthStateStore({ ...stateOptions, provider: 'facebook' }),
     },
     facebookLogin,
   );
-};
 
 const facebookAdminStrategy = () =>
   new FacebookStrategy(
