@@ -13,6 +13,14 @@ export interface FlowLease {
   release: () => Promise<void>;
 }
 
+/** The flow a waiter was monitoring disappeared before it settled. */
+export class FlowStateNotFoundError extends Error {
+  constructor(type: string) {
+    super(`${type} Flow state not found`);
+    this.name = 'FlowStateNotFoundError';
+  }
+}
+
 interface InMemoryLeaseState {
   generation: number;
   owner?: string;
@@ -91,6 +99,24 @@ flow.result = cjson.decode(ARGV[3])
 flow.completedAt = tonumber(ARGV[4])
 data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
 redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
+return 1
+`;
+
+/** Installs a new attempt only while the key is absent or still holds the attempt the caller
+ * observed and decided to replace, so concurrent replacements run a single handler. The status
+ * is part of the match because a replacement created in the same millisecond as the failure it
+ * replaces shares its `createdAt`. */
+const CLAIM_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  if ARGV[3] == '' then return 0 end
+  local flow = cjson.decode(raw).value
+  if flow.createdAt ~= tonumber(ARGV[3]) then return 0 end
+  local state = flow.metadata and flow.metadata.state or ''
+  if state ~= ARGV[4] then return 0 end
+  if flow.status ~= ARGV[5] then return 0 end
+end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
 return 1
 `;
 
@@ -669,7 +695,16 @@ export class FlowStateManager<T = unknown> {
     return this.monitorFlow(flowKey, type, signal);
   }
 
-  private monitorFlow(flowKey: string, type: string, signal?: AbortSignal): Promise<T> {
+  /**
+   * Waits for the flow to settle. An owner that aborts takes its flow down with it; a joiner that
+   * aborts leaves the flow to the attempt that owns it and to the other waiters.
+   */
+  private monitorFlow(
+    flowKey: string,
+    type: string,
+    signal?: AbortSignal,
+    ownsFlow = true,
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
       let isCleanedUp = false;
@@ -695,10 +730,12 @@ export class FlowStateManager<T = unknown> {
         cleanup();
         logger.warn(`[${flowKey}] Flow aborted (immediate)`);
         const message = `${type} flow aborted`;
-        try {
-          await this.keyv.delete(flowKey);
-        } catch {
-          // Ignore delete errors during abort
+        if (ownsFlow) {
+          try {
+            await this.keyv.delete(flowKey);
+          } catch {
+            // Ignore delete errors during abort
+          }
         }
         reject(new Error(message));
       };
@@ -735,7 +772,7 @@ export class FlowStateManager<T = unknown> {
             if (!flowState) {
               cleanup();
               logger.error(`[${flowKey}] Flow state not found after retry`);
-              reject(new Error(`${type} Flow state not found`));
+              reject(new FlowStateNotFoundError(type));
               return;
             }
           }
@@ -744,7 +781,9 @@ export class FlowStateManager<T = unknown> {
             cleanup();
             logger.warn(`[${flowKey}] Flow aborted`);
             const message = `${type} flow aborted`;
-            await this.keyv.delete(flowKey);
+            if (ownsFlow) {
+              await this.keyv.delete(flowKey);
+            }
             reject(new Error(message));
             return;
           }
@@ -939,18 +978,20 @@ export class FlowStateManager<T = unknown> {
     signal?: AbortSignal,
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
-    let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState && !this.isTokenExpired(existingState)) {
-      logger.debug(`[${flowKey}] Flow already exists with valid token`);
-      return this.monitorFlow(flowKey, type, signal);
+    let observed = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    let joined = this.joinExistingFlow(flowKey, type, observed, signal);
+    if (joined) {
+      return joined;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (!this.claimsAtomically(flowKey)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
-    existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState && !this.isTokenExpired(existingState)) {
-      logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
-      return this.monitorFlow(flowKey, type, signal);
+      observed = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      joined = this.joinExistingFlow(flowKey, type, observed, signal);
+      if (joined) {
+        return joined;
+      }
     }
 
     const initialState: FlowState = {
@@ -959,8 +1000,11 @@ export class FlowStateManager<T = unknown> {
       metadata: {},
       createdAt: Date.now(),
     };
+    if (!(await this.claimFlow(flowKey, initialState, observed))) {
+      logger.debug(`[${flowKey}] Flow was claimed by a concurrent attempt; joining it`);
+      return this.createFlowWithHandler(flowId, type, handler, signal);
+    }
     logger.debug(`[${flowKey}] Creating initial flow state`);
-    await this.keyv.set(flowKey, initialState, this.ttl);
 
     try {
       const result = await handler();
@@ -988,6 +1032,93 @@ export class FlowStateManager<T = unknown> {
       }
       throw error;
     }
+  }
+
+  /**
+   * A completed result is served as it stands and a pending attempt is monitored, as is a failure
+   * of a retained type. A failure of any other type only lingers because its own attempt already
+   * returned it, so the next attempt replaces it instead of waiting on it.
+   */
+  private joinExistingFlow(
+    flowKey: string,
+    type: string,
+    existingState: FlowState<T> | undefined,
+    signal?: AbortSignal,
+  ): Promise<T> | undefined {
+    if (!existingState || this.isTokenExpired(existingState)) {
+      return undefined;
+    }
+    if (existingState.status === 'FAILED' && !this.retainedFailureTypes.has(type)) {
+      return undefined;
+    }
+    if (signal?.aborted) {
+      return Promise.reject(new Error(`${type} flow aborted`));
+    }
+    if (existingState.status === 'COMPLETED') {
+      logger.debug(`[${flowKey}] Serving completed flow result`);
+      return Promise.resolve(existingState.result as T);
+    }
+    logger.debug(`[${flowKey}] Flow already exists with valid token`);
+    return this.monitorFlow(flowKey, type, signal, false);
+  }
+
+  /** Redis and the default in-memory store install an attempt atomically; other stores cannot. */
+  private claimsAtomically(flowKey: string): boolean {
+    return (
+      this.getRedisKey(flowKey) != null ||
+      (this.keyv instanceof Keyv && this.keyv.store instanceof Map)
+    );
+  }
+
+  /**
+   * Installs `initialState` only while the key is absent or still holds `observed`, the attempt
+   * the caller read and decided to replace. A store without an atomic primitive installs it
+   * unconditionally, as before.
+   */
+  private async claimFlow(
+    flowKey: string,
+    initialState: FlowState,
+    observed: FlowState<T> | undefined,
+  ): Promise<boolean> {
+    const observedState =
+      typeof observed?.metadata?.state === 'string' ? observed.metadata.state : '';
+    const envelope = JSON.stringify({
+      value: initialState,
+      expires: initialState.createdAt + this.ttl,
+    });
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const claimed = await this.evalRedisScript(CLAIM_FLOW, redisKey, [
+        envelope,
+        String(this.ttl),
+        observed ? String(observed.createdAt) : '',
+        observedState,
+        observed?.status ?? '',
+      ]);
+      return Number(claimed) === 1;
+    }
+
+    if (this.keyv instanceof Keyv && this.keyv.store instanceof Map) {
+      const current = this.getInMemoryEntry(flowKey);
+      if (
+        current &&
+        (!observed ||
+          current.envelope.value.status !== observed.status ||
+          !FlowStateManager.isCurrentAttempt(
+            current.envelope.value,
+            observed.createdAt,
+            observedState,
+          ))
+      ) {
+        return false;
+      }
+      const key = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+      this.keyv.store.set(key, envelope);
+      return true;
+    }
+
+    await this.keyv.set(flowKey, initialState, this.ttl);
+    return true;
   }
 
   /**

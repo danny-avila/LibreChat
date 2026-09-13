@@ -81,6 +81,7 @@ function TestConsumer() {
       data-testid="consumer"
       data-authenticated={ctx.isAuthenticated}
       data-auth-ready={ctx.isAuthReady}
+      data-error={ctx.error ?? ''}
       data-roles={JSON.stringify(ctx.roles ?? {})}
     />
   );
@@ -210,6 +211,41 @@ describe('AuthContextProvider — login onError redirect handling', () => {
     });
 
     expect(mockNavigate).toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('surfaces the cross-origin rejection code instead of the HTTP status message', () => {
+    jest.useFakeTimers();
+    const { getByTestId } = renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onError({
+        message: 'Request failed with status code 403',
+        response: { data: { message: 'Cross-site request rejected', code: 'auth_cross_origin' } },
+      });
+      jest.advanceTimersByTime(400);
+    });
+
+    expect(getByTestId('consumer')).toHaveAttribute('data-error', 'auth_cross_origin');
+    jest.useRealTimers();
+  });
+
+  it('keeps the HTTP status message for other rejections that carry a code', () => {
+    jest.useFakeTimers();
+    const { getByTestId } = renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onError({
+        message: 'Request failed with status code 429',
+        response: { data: { message: 'Too many login attempts', code: 'something_else' } },
+      });
+      jest.advanceTimersByTime(400);
+    });
+
+    expect(getByTestId('consumer')).toHaveAttribute(
+      'data-error',
+      'Request failed with status code 429',
+    );
+    jest.useRealTimers();
   });
 
   it('preserves redirect_to with query params and hash', () => {

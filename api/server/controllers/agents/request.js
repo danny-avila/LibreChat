@@ -45,6 +45,7 @@ const {
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
   shouldPersistCodeWorkspaceInitializationError,
+  getFailedTurnTraceFields,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -352,6 +353,7 @@ async function saveErrorTurn(
     errorText,
     liveUserMessage,
     liveResponseMessageId,
+    runCreated = false,
     sender,
     initialAgentId,
   },
@@ -467,9 +469,15 @@ async function saveErrorTurn(
         throw new Error('Failed user message could not be persisted');
       }
     }
+    const langfuseTraceFields = await getFailedTurnTraceFields(req.config, {
+      messageId: errorMessageId,
+      runId: liveResponseMessageId,
+      runCreated,
+    });
     const savedErrorMessage = await saveMessage(
       reqCtx,
       {
+        ...langfuseTraceFields,
         messageId: errorMessageId,
         conversationId,
         parentMessageId: errorParentMessageId,
@@ -3211,6 +3219,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     errorText: generationError,
                     liveUserMessage: userMessage,
                     liveResponseMessageId,
+                    runCreated: client?.run != null,
                     sender: client?.sender,
                     initialAgentId: verifiedInitialAgentId,
                   }),

@@ -373,7 +373,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    await configureSocialLogins(app);
+    await configureSocialLogins(app, appConfig);
   }
 
   /* Per-request capability cache — must be registered before any route that calls hasCapability */
@@ -403,6 +403,7 @@ const startServer = async () => {
   app.use('/api/search', routes.search);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
+  app.use('/api/traces', routes.traces);
   app.use('/api/presets', routes.presets);
   app.use('/api/projects', routes.projects);
   app.use('/api/prompts', routes.prompts);

@@ -491,7 +491,7 @@ export type ToolDialogProps = {
 };
 
 export type TResError = {
-  response: { data: { message: string } };
+  response: { data: { message: string; code?: string } };
   message: string;
 };
 

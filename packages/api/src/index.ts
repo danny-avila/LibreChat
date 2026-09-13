@@ -3,6 +3,7 @@ export * from './acl/accessControlService';
 export * from './acl/insightsPermissions';
 export * from './acl/middleware';
 export * from './acl/principals';
+export * from './acl/search';
 export * from './credentials';
 /* Artifacts */
 export * from './artifacts';
@@ -99,6 +100,8 @@ export * from './tools';
 export * from './web';
 /* Langfuse */
 export * from './langfuse';
+/* Traces */
+export * from './traces';
 /* Insights */
 export * from './insights';
 /* Cache */

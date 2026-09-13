@@ -178,7 +178,11 @@ jest.mock('@librechat/api', () => ({
   createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   /** Grants both by default; the capability set is what these specs vary. */
-  resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
+  resolveToolRoleGrants: jest.fn(async () => ({
+    runCode: true,
+    fileSearch: true,
+    webSearch: true,
+  })),
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];
@@ -1851,6 +1855,45 @@ describe('OpenAIChatCompletionController', () => {
         expect.objectContaining({ fileSearchAvailable: true, codeEnvAvailable: true }),
         expect.anything(),
       );
+    });
+  });
+
+  describe('web search role gating', () => {
+    const setCapabilities = (capabilities) => {
+      req.config.endpoints.agents.capabilities = capabilities;
+    };
+
+    const passedResolver = () => {
+      const { initializeAgent } = require('@librechat/api');
+      return initializeAgent.mock.calls[0][0].resolveWebSearchGrant;
+    };
+
+    /** Provider-native search is a model parameter with no capability of its own,
+     *  so the resolver is handed over whatever the capabilities — but it reads
+     *  nothing until the initializer finds native search in the built config. */
+    it('hands initializeAgent a grant resolver without reading the role', async () => {
+      const { resolveToolRoleGrants } = require('@librechat/api');
+      setCapabilities([]);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(passedResolver()).toEqual(expect.any(Function));
+      expect(resolveToolRoleGrants).not.toHaveBeenCalled();
+    });
+
+    it('resolves the WEB_SEARCH grant against this request when called', async () => {
+      const { resolveToolRoleGrants } = require('@librechat/api');
+      resolveToolRoleGrants.mockResolvedValueOnce({
+        runCode: true,
+        fileSearch: true,
+        webSearch: false,
+      });
+      setCapabilities([]);
+
+      await OpenAIChatCompletionController(req, res);
+
+      await expect(passedResolver()()).resolves.toBe(false);
+      expect(resolveToolRoleGrants).toHaveBeenCalledWith(expect.objectContaining({ req }));
     });
   });
 });

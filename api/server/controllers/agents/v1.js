@@ -38,7 +38,9 @@ const {
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
   reportLocatorTraversalFailure,
+  isActiveAgentWorkspaceConfiguration,
   reconcileAgentWorkspaceDefault,
+  resolveAgentWorkspaceRestoreConfiguration,
   shouldValidateAgentWorkspaceDefaultBinding,
   validateAgentWorkspaceDefaultBinding,
 } = require('@librechat/api');
@@ -1463,6 +1465,7 @@ const duplicateAgentHandler = async (req, res) => {
       author: userId,
     });
     if (
+      isActiveAgentWorkspaceConfiguration(newAgentData) &&
       !validateStatefulCodeEnvironment(
         req,
         res,
@@ -2070,16 +2073,22 @@ const revertAgentVersionHandler = async (req, res) => {
     }
 
     const revertVersion = existingAgent.versions?.[version_index];
+    const restoredWorkspaceConfiguration = revertVersion
+      ? resolveAgentWorkspaceRestoreConfiguration({
+          version: revertVersion,
+          current: existingAgent,
+        })
+      : undefined;
     if (
-      revertVersion &&
+      isActiveAgentWorkspaceConfiguration(restoredWorkspaceConfiguration) &&
       !validateStatefulCodeEnvironment(
         req,
         res,
-        revertVersion.stateful_code_sessions,
-        revertVersion.stateful_code_environment,
-        revertVersion.code_environment_id,
+        restoredWorkspaceConfiguration.stateful_code_sessions,
+        restoredWorkspaceConfiguration.stateful_code_environment,
+        restoredWorkspaceConfiguration.code_environment_id,
         false,
-        revertVersion.code_workspace_id,
+        restoredWorkspaceConfiguration.code_workspace_id,
       )
     ) {
       return;

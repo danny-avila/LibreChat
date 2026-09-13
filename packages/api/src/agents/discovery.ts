@@ -112,6 +112,12 @@ export interface DiscoverConnectedAgentsParams {
    * the terms its parent did.
    */
   fileSearchAvailable?: InitializeAgentParams['fileSearchAvailable'];
+  /**
+   * The caller's `WEB_SEARCH` grant resolver, forwarded so a handoff or subagent
+   * whose provider config turns native web search on is authorized by the same
+   * request-memoized read as its parent.
+   */
+  resolveWebSearchGrant?: InitializeAgentParams['resolveWebSearchGrant'];
   /** Sibling of `codeEnvAvailable` — the `stateful_code_sessions` capability flag, forwarded to every handoff `initializeAgent`. */
   statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
   /** Deployment policy for stateful workspace scopes, forwarded unchanged to every referenced agent. */
@@ -251,6 +257,7 @@ async function initializeReferencedAgent(
       defaultActiveOnShare: params.defaultActiveOnShare,
       codeEnvAvailable: params.codeEnvAvailable,
       fileSearchAvailable: params.fileSearchAvailable,
+      resolveWebSearchGrant: params.resolveWebSearchGrant,
       backgroundToolsAvailable: params.backgroundToolsAvailable,
       toolIntentsAvailable: params.toolIntentsAvailable,
       statefulSessionsAvailable: params.statefulSessionsAvailable,

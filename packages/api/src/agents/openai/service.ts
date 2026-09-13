@@ -213,6 +213,12 @@ interface InitializeAgentParams {
    */
   fileSearchAvailable?: boolean;
   /**
+   * Resolves the `WEB_SEARCH` role grant. `initializeAgent` calls it only when an
+   * agent's built provider config turns native web search on, and strips that
+   * search when it resolves `false`.
+   */
+  resolveWebSearchGrant?: () => Promise<boolean>;
+  /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
    * OpenAI-compatible route resolves stateful sessions identically to the
@@ -709,6 +715,14 @@ export async function createAgentChatCompletion(
       capabilityAllowsFileSearch === true && deps.getRoleByName != null
         ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
         : capabilityAllowsFileSearch;
+    /** Wired whenever the embedder supplies `getRoleByName`, independent of
+     *  `appConfig`: provider-native web search is a model parameter with no
+     *  capability of its own, so the role grant is its only gate. */
+    const { getRoleByName } = deps;
+    const resolveWebSearchGrant =
+      getRoleByName != null
+        ? async () => (await resolveToolRoleGrants({ req, getRoleByName })).webSearch
+        : undefined;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -758,6 +772,7 @@ export async function createAgentChatCompletion(
       isInitialAgent: true,
       codeEnvAvailable,
       fileSearchAvailable,
+      resolveWebSearchGrant,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,

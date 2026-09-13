@@ -34,15 +34,17 @@ jest.mock('@librechat/agents', () => ({
 
 import { Providers } from '@librechat/agents';
 import {
+  Tools,
   Constants,
   ErrorTypes,
+  Permissions,
   EModelEndpoint,
   EToolResources,
   FileContext,
   FileSources,
+  PermissionTypes,
   AgentCapabilities,
   configSchema,
-  Tools,
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent, TFile } from 'librechat-data-provider';
@@ -4209,5 +4211,202 @@ describe('initializeAgent — authorized run file snapshots', () => {
       current.file_id,
     ]);
     expect(result.currentRequestAttachments[0].user).toBe('user-1');
+  });
+});
+
+/**
+ * Provider-native web search is gated on what the provider builder produced, not
+ * on `model_parameters.web_search`: an endpoint's `defaultParams`, `customParams`
+ * defaults and `addParams` reach the same switch, and `addParams` is applied last.
+ */
+describe('initializeAgent — provider-native web search role gate', () => {
+  const OPENAI_SEARCH = { type: 'web_search' };
+
+  const roleWithWebSearch = (use: boolean) =>
+    jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: { [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: use } },
+    });
+
+  const roleGatedReq = () =>
+    ({ user: { id: 'user-1', role: 'USER' }, config: {} }) as unknown as ServerRequest;
+
+  const run = async ({
+    provider = Providers.OPENAI,
+    providerTools = [OPENAI_SEARCH],
+    getRoleByName,
+    params = {},
+  }: {
+    provider?: Providers;
+    providerTools?: unknown[];
+    getRoleByName?: jest.Mock;
+    params?: Partial<Parameters<typeof initializeAgent>[0]>;
+  }) => {
+    const { agent, res, loadTools, db } = createMocks({ provider, providerTools });
+    return initializeAgent(
+      {
+        req: roleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([provider]),
+        isInitialAgent: true,
+        ...params,
+      },
+      { ...db, getRoleByName },
+    );
+  };
+
+  it.each([
+    ['OpenAI', Providers.OPENAI, OPENAI_SEARCH],
+    ['Anthropic', Providers.ANTHROPIC, { type: 'web_search_20250305', name: 'web_search' }],
+    ['Google', Providers.GOOGLE, { googleSearch: {} }],
+  ])(
+    'strips the %s native search tool when the role denies WEB_SEARCH',
+    async (_label, provider, nativeTool) => {
+      const result = await run({
+        provider: provider as Providers,
+        providerTools: [nativeTool],
+        getRoleByName: roleWithWebSearch(false),
+      });
+      expect(result.tools).not.toContainEqual(nativeTool);
+    },
+  );
+
+  it.each([
+    ['OpenAI', Providers.OPENAI, OPENAI_SEARCH],
+    ['Anthropic', Providers.ANTHROPIC, { type: 'web_search_20250305', name: 'web_search' }],
+    ['Google', Providers.GOOGLE, { googleSearch: {} }],
+  ])(
+    'keeps the %s native search tool when the role grants WEB_SEARCH',
+    async (_label, provider, nativeTool) => {
+      const result = await run({
+        provider: provider as Providers,
+        providerTools: [nativeTool],
+        getRoleByName: roleWithWebSearch(true),
+      });
+      expect(result.tools).toContainEqual(nativeTool);
+    },
+  );
+
+  /** An agent that stores `web_search: false` still gets native search when its
+   *  endpoint's `addParams` turns it on, so the stored value cannot short-circuit
+   *  the gate. */
+  it('strips endpoint-enabled search for a denied role even when the agent stores false', async () => {
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: 'test-model', web_search: false },
+    });
+
+    const result = await run({ getRoleByName: roleWithWebSearch(false) });
+
+    expect(result.tools).not.toContainEqual(OPENAI_SEARCH);
+  });
+
+  it('reads no role when the built config turns no native search on', async () => {
+    const getRoleByName = roleWithWebSearch(false);
+    const resolveWebSearchGrant = jest.fn().mockResolvedValue(false);
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: 'test-model', web_search: true },
+    });
+
+    await run({ providerTools: [], getRoleByName, params: { resolveWebSearchGrant } });
+
+    expect(getRoleByName).not.toHaveBeenCalled();
+    expect(resolveWebSearchGrant).not.toHaveBeenCalled();
+  });
+
+  /** OpenRouter receives web search as `modelKwargs.plugins`, not as a tool, so
+   *  the plugin alone has to trigger the gate. */
+  it('strips the OpenRouter web search plugin when the role denies WEB_SEARCH', async () => {
+    const { agent, res, loadTools, db } = createMocks({ provider: Providers.OPENAI });
+    const llmConfig = {
+      model: agent.model,
+      modelKwargs: { plugins: [{ id: 'web' }, { id: 'file-parser' }] },
+    };
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({ llmConfig }),
+      overrideProvider: Providers.OPENAI,
+    });
+    const getRoleByName = roleWithWebSearch(false);
+
+    await initializeAgent(
+      {
+        req: roleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getRoleByName },
+    );
+
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+    expect(llmConfig.modelKwargs.plugins).toEqual([{ id: 'file-parser' }]);
+  });
+
+  /** The OpenAI-compatible and Responses routes reach the initializer with
+   *  `runtime` and no `req`; their resolver joins the grants memoized on their
+   *  own request, so the initializer must not read the role itself. */
+  it('uses the caller resolver instead of reading the role', async () => {
+    const getRoleByName = roleWithWebSearch(true);
+    const resolveWebSearchGrant = jest.fn().mockResolvedValue(false);
+
+    const result = await run({ getRoleByName, params: { resolveWebSearchGrant } });
+
+    expect(resolveWebSearchGrant).toHaveBeenCalledTimes(1);
+    expect(getRoleByName).not.toHaveBeenCalled();
+    expect(result.tools).not.toContainEqual(OPENAI_SEARCH);
+  });
+
+  it('keeps native search when the caller resolver grants it', async () => {
+    const resolveWebSearchGrant = jest.fn().mockResolvedValue(true);
+
+    const result = await run({ params: { resolveWebSearchGrant } });
+
+    expect(result.tools).toContainEqual(OPENAI_SEARCH);
+  });
+
+  it('denies native search when the caller resolver throws', async () => {
+    const resolveWebSearchGrant = jest.fn().mockRejectedValue(new Error('role store down'));
+
+    const result = await run({ params: { resolveWebSearchGrant } });
+
+    expect(result.tools).not.toContainEqual(OPENAI_SEARCH);
+  });
+
+  it('authorizes the runtime user when the caller passes runtime and no req', async () => {
+    const getRoleByName = roleWithWebSearch(false);
+
+    const result = await run({
+      getRoleByName,
+      params: {
+        req: undefined,
+        runtime: {
+          user: { id: 'user-1', role: 'USER' } as never,
+          appConfig: {} as never,
+          requestBody: {},
+          turnStartedAt: 1000,
+        },
+      },
+    });
+
+    expect(getRoleByName).toHaveBeenCalledWith('USER', undefined);
+    /** One read, not one per grant: without a `req` there is no per-request
+     *  cache to dedupe the three permission checks. */
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+    expect(result.tools).not.toContainEqual(OPENAI_SEARCH);
+  });
+
+  it('applies no role gate when neither a resolver nor a role lookup is wired', async () => {
+    const result = await run({});
+
+    expect(result.tools).toContainEqual(OPENAI_SEARCH);
   });
 });

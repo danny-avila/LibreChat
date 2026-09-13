@@ -6,6 +6,7 @@ import {
   getTagByKey,
   isAgentsEndpoint,
   SearchResultData,
+  isConfiguredSender,
   toMinimalFeedback,
   isAssistantsEndpoint,
   TUpdateFeedbackRequest,
@@ -190,6 +191,15 @@ export default function useMessageActions(props: TMessageActions) {
     enterEdit,
     conversation,
     messageLabel,
+    /** Whether `messageLabel` is a configured sender, so the header can withhold the
+     *  model it stands in for. */
+    hasConfiguredSender: isConfiguredSender({
+      sender: message?.sender,
+      endpoint: message?.endpoint ?? conversation?.endpoint,
+      endpointType: conversation?.endpointType,
+      model: message?.model ?? conversation?.model,
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
     /** Withholding the handler removes the controls: `HoverButtons` renders feedback
      *  only when it has somewhere to send it. */
     handleFeedback: feedbackEnabled ? handleFeedback : undefined,

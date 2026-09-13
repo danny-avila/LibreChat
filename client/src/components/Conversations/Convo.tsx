@@ -1,10 +1,10 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useDrag } from 'react-dnd';
+import { Link2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { Link2, PinOff } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { Button, Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
+import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ConversationDragItem } from './dnd';
 import {
@@ -20,6 +20,7 @@ import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { CONVERSATION_DRAG_TYPE } from './dnd';
 import ConvoActions from './ConvoActions';
+import UnpinButton from './UnpinButton';
 import RenameForm from './RenameForm';
 import ConvoLink from './ConvoLink';
 import store from '~/store';
@@ -166,11 +167,22 @@ function Conversation({
     setRenaming(false);
   };
 
+  /* One-way: a row that has been reached keeps its overflow control mounted for
+   * as long as the row itself lives. Resetting this on leave unmounted the
+   * control and remounted it on the next entry, one frame after the row's hover
+   * had already revealed its slot — so the button arrived a frame late and
+   * restarted its hover fill from transparent every time the pointer crossed
+   * the row's edge, which reads as a flicker.
+   *
+   * The cost is what the row's own lifetime is: the chats list unmounts a row
+   * as it scrolls out, while the Pinned section mounts every pinned row at
+   * once, so there a pointer crossing the list leaves one `ConvoOptions` per
+   * row it touched, standing until the section unmounts. That is bounded by
+   * the pin count the user chose, and a control that unmounts instead is what
+   * this comment's first paragraph describes. */
   const handleMouseEnter = useCallback(() => {
-    if (!hasInteracted) {
-      setHasInteracted(true);
-    }
-  }, [hasInteracted]);
+    setHasInteracted(true);
+  }, []);
 
   /* Matches the favorites' row-level unpin: one click on the pin badge, no
    * menu digging. The row unmounts once the pinned refetch lands, so focus is
@@ -213,35 +225,8 @@ function Conversation({
     );
   }, [conversationId, unpinMutation, showToast, localize]);
 
-  const handleMouseLeave = useCallback(() => {
-    if (!isPopoverActive) {
-      setHasInteracted(false);
-    }
-  }, [isPopoverActive]);
-
-  const handleBlur = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      // Don't reset if focus is moving to a child element within this container
-      if (e.currentTarget.contains(e.relatedTarget as Node)) {
-        return;
-      }
-      if (!isPopoverActive) {
-        setHasInteracted(false);
-      }
-    },
-    [isPopoverActive],
-  );
-
   const handlePopoverOpenChange = useCallback((open: boolean) => {
     setIsPopoverActive(open);
-    if (!open) {
-      requestAnimationFrame(() => {
-        const container = containerRef.current;
-        if (container && !container.contains(document.activeElement)) {
-          setHasInteracted(false);
-        }
-      });
-    }
   }, []);
 
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
@@ -291,20 +276,29 @@ function Conversation({
     </span>
   );
 
+  /* The slot takes its width from the row's hover, not from its content. The
+   * overflow menu mounts a tick after the pointer arrives (see `ConvoActions`),
+   * and a content-sized slot grew at that moment, pulling the unpin badge a
+   * button's width leftwards out from under the pointer: the badge's fill,
+   * already fading in, handed off to whichever control had slid into its place.
+   * Reserving the width up front leaves every control where it was drawn. */
   let actionVisibilityClassName =
-    'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
+    'pointer-events-none w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:scale-x-100 group-hover:opacity-100';
+  let actionWidthClassName = isSmallScreen
+    ? 'group-focus-within:w-9 group-hover:w-9'
+    : 'group-focus-within:w-7 group-hover:w-7';
   if (isGenerating) {
     actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
+    actionWidthClassName = '';
   } else if (isPopoverActive || isActiveConvo || isSmallScreen) {
     /** Touch has no hover, so a reveal-on-hover menu is unreachable there. */
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
-  }
-
-  let actionWidthClassName = '';
-  if (!isGenerating && !isPopoverActive && isActiveConvo && isShiftHeld) {
-    actionWidthClassName = 'max-w-[60px]';
-  } else if (!isGenerating) {
-    actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
+    /** Shift over the active row swaps the menu for archive and delete. */
+    if (!isPopoverActive && isActiveConvo && isShiftHeld) {
+      actionWidthClassName = 'w-[60px]';
+    } else {
+      actionWidthClassName = isSmallScreen ? 'w-9' : 'w-7';
+    }
   }
 
   let actionContent: React.ReactNode = null;
@@ -331,9 +325,7 @@ function Conversation({
       onPointerLeave={() => setIsHovered(false)}
       onPointerCancel={() => setIsHovered(false)}
       onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
-      onBlur={handleBlur}
       onClick={(e) => {
         if (renaming) {
           return;
@@ -372,29 +364,19 @@ function Conversation({
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
-        <TooltipAnchor
-          description={localize('com_ui_unpin')}
-          side="top"
-          render={
-            <Button
-              variant="row-action"
-              size="icon-xs"
-              aria-label={localize('com_ui_unpin')}
-              data-testid="convo-unpin-button"
-              onClick={(e) => {
-                e.stopPropagation();
-                unpinConvo();
-              }}
-              className="mr-1 shrink-0 text-text-primary"
-            >
-              <PinOff className="size-4" aria-hidden="true" />
-            </Button>
-          }
+        <UnpinButton
+          testId="convo-unpin-button"
+          className="mr-1"
+          keepVisible={isPopoverActive}
+          onClick={(e) => {
+            e.stopPropagation();
+            unpinConvo();
+          }}
         />
       )}
       <div
         className={cn(
-          'mr-2 flex origin-left items-center justify-center',
+          'mr-1 flex shrink-0 origin-left items-center justify-center',
           actionVisibilityClassName,
           actionWidthClassName,
         )}

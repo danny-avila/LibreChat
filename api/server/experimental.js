@@ -628,7 +628,7 @@ if (cluster.isMaster) {
     }
 
     if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-      await configureSocialLogins(app);
+      await configureSocialLogins(app, appConfig);
     }
 
     app.use(capabilityContextMiddleware);

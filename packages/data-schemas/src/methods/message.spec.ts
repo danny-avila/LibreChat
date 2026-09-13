@@ -800,6 +800,7 @@ describe('Message Operations', () => {
         ...mockMessageData,
         langfuseSampled: true,
         langfuseDestinationIds: ['destination-1'],
+        langfuseRunId: 'run-1',
       });
 
       const result = await updateMessage(mockCtx.userId, {
@@ -809,6 +810,7 @@ describe('Message Operations', () => {
 
       expect(result?.langfuseSampled).toBe(true);
       expect(result?.langfuseDestinationIds).toEqual(['destination-1']);
+      expect(result?.langfuseRunId).toBe('run-1');
     });
 
     it('should throw an error if message is not found', async () => {
@@ -2115,6 +2117,7 @@ describe('Message Operations', () => {
         contextMeta: { anything: true },
         langfuseSampled: true,
         langfuseDestinationIds: ['lf-1'],
+        langfuseRunId: 'run-1',
         metadata: {
           usage: { input: 10, output: 20 },
           thoughtSignatures: { tool_1: 'opaque' },
@@ -2184,6 +2187,7 @@ describe('Message Operations', () => {
         'contextMeta',
         'langfuseSampled',
         'langfuseDestinationIds',
+        'langfuseRunId',
         'subagentTask',
       ]) {
         expect(hidden[field]).toBeUndefined();

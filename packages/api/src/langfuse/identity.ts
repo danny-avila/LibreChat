@@ -39,6 +39,19 @@ function isUserIdField(field: string): field is LangfuseTraceUserIdField {
   return USER_ID_FIELDS.has(field);
 }
 
+/**
+ * Whether traces are exported under the internal user id: no field is set, or
+ * the set field is one the exporter ignores. A user without a value for an
+ * allowed field also keeps the internal id, but that is per user and not known
+ * from config alone.
+ */
+export function exportsInternalTraceUserId(
+  trace: LangfuseTraceIdentityConfig | undefined,
+): boolean {
+  const field = trace?.userIdField;
+  return field == null || field === DEFAULT_USER_ID_FIELD || !isUserIdField(String(field));
+}
+
 function isUserMetadataField(field: unknown): field is LangfuseTraceUserMetadataField {
   return typeof field === 'string' && USER_METADATA_FIELDS.has(field);
 }
