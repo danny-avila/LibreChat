@@ -10,6 +10,7 @@ const LABEL_CLASSES =
 
 interface CopyLinkProps {
   url: string;
+  disabled?: boolean;
 }
 
 /**
@@ -17,7 +18,7 @@ interface CopyLinkProps {
  * measured width of whichever label is showing. Widths come from intrinsic (`w-max`)
  * inner spans, so a font swap or a translated label re-measures instead of clipping.
  */
-export default function CopyLink({ url }: CopyLinkProps) {
+export default function CopyLink({ url, disabled = false }: CopyLinkProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [isCopied, setIsCopied] = useState(false);
@@ -60,6 +61,9 @@ export default function CopyLink({ url }: CopyLinkProps) {
   }, [idleLabel, copiedLabel]);
 
   const handleCopy = useCallback(async () => {
+    if (disabled) {
+      return;
+    }
     try {
       await navigator.clipboard.writeText(url);
       clearTimeout(resetTimerRef.current);
@@ -68,7 +72,7 @@ export default function CopyLink({ url }: CopyLinkProps) {
     } catch {
       showToast({ message: localize('com_agents_link_copy_failed') });
     }
-  }, [localize, showToast, url]);
+  }, [disabled, localize, showToast, url]);
 
   const width = widths?.[isCopied ? 'copied' : 'idle'];
 
@@ -78,6 +82,7 @@ export default function CopyLink({ url }: CopyLinkProps) {
         variant="outline"
         className="min-w-0 px-3"
         onClick={handleCopy}
+        aria-disabled={disabled || undefined}
         aria-label={isCopied ? copiedLabel : idleLabel}
       >
         <MorphIcon icon={isCopied ? Check : Link} size={16} className="shrink-0" />

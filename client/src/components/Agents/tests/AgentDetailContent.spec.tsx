@@ -92,10 +92,12 @@ const DetailDialog = ({
   agent = baseAgent,
   morph,
   actionsUnavailable = false,
+  actionsDisabled = false,
 }: {
   agent?: t.Agent;
   morph?: 'open' | 'closing';
   actionsUnavailable?: boolean;
+  actionsDisabled?: boolean;
 }) => {
   const [open, setOpen] = React.useState(true);
   /* Stands in for the grid card the dialog morphs out of: the copy the words
@@ -113,6 +115,7 @@ const DetailDialog = ({
           morph={morph}
           descriptionSource={morph == null ? undefined : () => cardDescription.current}
           actionsUnavailable={actionsUnavailable}
+          actionsDisabled={actionsDisabled}
         />
       )}
     </OGDialog>
@@ -124,6 +127,7 @@ const renderDetail = (
   basename = '/app',
   morph?: 'open' | 'closing',
   actionsUnavailable = false,
+  actionsDisabled = false,
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -135,7 +139,7 @@ const renderDetail = (
      conversations a multi-conversation session left open, and the transcript the last
      new chat left behind. The dialog only asks; the host owns that state. */
   const host = { resetNewConversation: jest.fn() };
-  const tree = (phase?: 'open' | 'closing') => (
+  const tree = (phase?: 'open' | 'closing', disabled = actionsDisabled) => (
     <RecoilRoot>
       <MemoryRouter
         basename={basename}
@@ -143,7 +147,12 @@ const renderDetail = (
       >
         <QueryClientProvider client={queryClient}>
           <MarketplaceHostContext.Provider value={host}>
-            <DetailDialog agent={agent} morph={phase} actionsUnavailable={actionsUnavailable} />
+            <DetailDialog
+              agent={agent}
+              morph={phase}
+              actionsUnavailable={actionsUnavailable}
+              actionsDisabled={disabled}
+            />
           </MarketplaceHostContext.Provider>
           <LocationProbe />
         </QueryClientProvider>
@@ -156,6 +165,7 @@ const renderDetail = (
     showToast: toastContext.showToast,
     resetNewConversation: host.resetNewConversation,
     setMorph: (phase: 'open' | 'closing') => view.rerender(tree(phase)),
+    setActionsDisabled: (disabled: boolean) => view.rerender(tree(morph, disabled)),
   };
 };
 
@@ -345,6 +355,28 @@ describe('AgentDetailContent', () => {
     renderDetail();
     expect(screen.getByRole('button', { name: 'Unpin' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Unpin' })).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('keeps controls mounted and focused while transient validation disables them', () => {
+    const agent = { ...baseAgent, conversation_starters: ['Ask about the latest changes'] };
+    const rendered = renderDetail(agent);
+    const copy = screen.getByRole('button', { name: 'Copy link' });
+    copy.focus();
+
+    rendered.setActionsDisabled(true);
+
+    expect(copy).toBeInTheDocument();
+    expect(copy).toHaveAttribute('aria-disabled', 'true');
+    expect(copy).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Pin' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Start chat' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /Ask about the latest changes/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
   it('keeps the captured dialog open but removes actions for an inaccessible agent', () => {
     renderDetail(baseAgent, '/app', undefined, true);

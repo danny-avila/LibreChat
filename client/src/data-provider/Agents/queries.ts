@@ -219,6 +219,14 @@ export const useGetAgentCategoriesQuery = (
 /**
  * Hook for infinite loading of marketplace agents with cursor-based pagination
  */
+type MarketplaceCursorRecovery = {
+  id: number;
+  status: 'resetting' | 'succeeded';
+};
+
+/** The bounded whole-walk recovery state exposed to consumers that hold page failures. */
+export type MarketplaceCursorRecoverySignal = MarketplaceCursorRecovery | null;
+
 export const useMarketplaceAgentsInfiniteQuery = (
   params: t.AgentListParams,
   config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
@@ -230,13 +238,22 @@ export const useMarketplaceAgentsInfiniteQuery = (
     signature: requestSignature,
     attempted: false,
   });
+  const cursorRecoveryRef = useRef<MarketplaceCursorRecoverySignal>(null);
+  const cursorRecoveryIdRef = useRef(0);
   if (mismatchRecovery.current.signature !== requestSignature) {
     mismatchRecovery.current = { signature: requestSignature, attempted: false };
+    cursorRecoveryRef.current = null;
   }
 
   const onError = (error: unknown) => {
-    if (isCursorOrderingMismatch(error) && !mismatchRecovery.current.attempted) {
+    if (
+      isCursorOrderingMismatch(error) &&
+      mismatchRecovery.current.signature === requestSignature &&
+      !mismatchRecovery.current.attempted
+    ) {
       mismatchRecovery.current.attempted = true;
+      const recoveryId = ++cursorRecoveryIdRef.current;
+      cursorRecoveryRef.current = { id: recoveryId, status: 'resetting' };
       /*
        * `fetchNextPage` normally preserves old pages and appends its result. Resetting
        * this exact query first discards the foreign-ordered prefix; the active observer
@@ -248,7 +265,7 @@ export const useMarketplaceAgentsInfiniteQuery = (
     config?.onError?.(error);
   };
 
-  return useInfiniteQuery<t.AgentListResponse>({
+  const query = useInfiniteQuery<t.AgentListResponse>({
     queryKey,
     queryFn: ({ pageParam }) => {
       const queryParams = { ...params };
@@ -288,4 +305,19 @@ export const useMarketplaceAgentsInfiniteQuery = (
     ...config,
     onError,
   });
+  /*
+   * `resetQueries` restarts this infinite query with its initial page. Observe the
+   * settled one-page result here so consumers can distinguish that successful walk
+   * reset from an ordinary cursor-page failure, even when the replacement walk is
+   * shorter than the discarded prefix.
+   */
+  if (
+    cursorRecoveryRef.current?.status === 'resetting' &&
+    query.status === 'success' &&
+    !query.isFetching &&
+    query.data?.pages.length === 1
+  ) {
+    cursorRecoveryRef.current = { ...cursorRecoveryRef.current, status: 'succeeded' };
+  }
+  return { ...query, cursorRecovery: cursorRecoveryRef.current };
 };

@@ -298,7 +298,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
             </p>
           )}
 
-          {!actionsUnavailable && !actionsDisabled && conversationStarters.length > 0 && (
+          {!actionsUnavailable && conversationStarters.length > 0 && (
             <motion.section {...detail} className="mt-8" aria-labelledby={`${id}-starters`}>
               <h3 id={`${id}-starters`} className="text-sm font-semibold text-text-primary">
                 {localize('com_agents_starters_heading')}
@@ -312,7 +312,12 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                     key={`${starter}-${index}`}
                     variant="outline"
                     className="h-auto min-h-14 items-start justify-between gap-3 whitespace-normal px-4 py-3 text-left rtl:text-right"
-                    onClick={() => handleStartChat(starter)}
+                    aria-disabled={actionsDisabled || undefined}
+                    onClick={() => {
+                      if (!actionsDisabled) {
+                        handleStartChat(starter);
+                      }
+                    }}
                   >
                     <span className="min-w-0 break-words">{starter}</span>
                     <ArrowUpRight className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -337,7 +342,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                 <AgentContact agent={agent} compact className="text-sm" />
               </motion.div>
             )}
-            {!actionsUnavailable && !actionsDisabled && (
+            {!actionsUnavailable && (
               <motion.div
                 {...detail}
                 className="grid gap-2 sm:ms-auto sm:flex sm:items-center sm:gap-2"
@@ -349,7 +354,12 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                     aria-pressed={isFavorite}
                     aria-busy={isUpdating}
                     disabled={isUpdating}
-                    onClick={() => toggleFavoriteAgent(agent.id)}
+                    aria-disabled={actionsDisabled || undefined}
+                    onClick={() => {
+                      if (!actionsDisabled) {
+                        toggleFavoriteAgent(agent.id);
+                      }
+                    }}
                     className="min-w-0 px-3"
                   >
                     {isUpdating ? (
@@ -359,9 +369,17 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                     )}
                     <span className="truncate">{favoriteLabel}</span>
                   </Button>
-                  <CopyLink url={shareUrl} />
+                  <CopyLink url={shareUrl} disabled={actionsDisabled} />
                 </div>
-                <Button className="w-full sm:w-auto" onClick={() => handleStartChat()}>
+                <Button
+                  className="w-full sm:w-auto"
+                  aria-disabled={actionsDisabled || undefined}
+                  onClick={() => {
+                    if (!actionsDisabled) {
+                      handleStartChat();
+                    }
+                  }}
+                >
                   <MessageSquarePlus className="size-4" aria-hidden="true" />
                   {localize('com_agents_start_chat')}
                 </Button>

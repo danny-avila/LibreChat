@@ -1,11 +1,13 @@
 import React, { useRef } from 'react';
 import userEvent from '@testing-library/user-event';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type t from 'librechat-data-provider';
 import type { VirtualLayout } from './layout';
 import { installVirtualLayout, makeAgents } from './layout';
 import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
+
+let mockQueriedAgent: t.Agent | undefined;
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -17,6 +19,7 @@ jest.mock('~/utils', () => ({
 }));
 jest.mock('~/data-provider/Agents', () => ({
   useGetAgentByIdQuery: jest.fn(() => ({
+    data: mockQueriedAgent,
     error: null,
     isFetching: false,
     refetch: jest.fn(),
@@ -30,6 +33,10 @@ jest.mock('../AgentDetailContent', () => {
     default: ({ agent }: { agent: t.Agent }) => (
       <OGDialogContent aria-describedby={undefined} showCloseButton={false}>
         <OGDialogTitle>{agent.name}</OGDialogTitle>
+        <p>{agent.description}</p>
+        {agent.conversation_starters?.map((starter) => (
+          <p key={starter}>{starter}</p>
+        ))}
         <OGDialogClose>{close}</OGDialogClose>
       </OGDialogContent>
     ),
@@ -53,9 +60,11 @@ function Harness({ agents, placeholder }: { agents: t.Agent[]; placeholder?: Rea
   );
 }
 
+let layout: VirtualLayout;
+
 describe('VirtualizedAgentGrid', () => {
-  let layout: VirtualLayout;
   beforeEach(() => {
+    mockQueriedAgent = undefined;
     layout = installVirtualLayout();
   });
   afterEach(() => {
@@ -141,6 +150,28 @@ describe('VirtualizedAgentGrid', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await waitFor(() => expect(document.body.contains(document.activeElement)).toBe(true));
     expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('renders the revalidated agent when a refresh moves it out of the loaded window', async () => {
+    const agents = makeAgents(3);
+    const view = render(<Harness agents={agents} />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Agent 0' }));
+    expect(await screen.findByRole('dialog', { name: 'Agent 0' })).toBeInTheDocument();
+
+    mockQueriedAgent = {
+      ...agents[0],
+      description: 'Fresh description from the agent endpoint.',
+      conversation_starters: ['Fresh starter'],
+    };
+    view.rerender(<Harness agents={agents.slice(1)} placeholder={<p>{'No agents found'}</p>} />);
+
+    expect(
+      await screen.findByText('Fresh description from the agent endpoint.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Fresh starter')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('dialog')).queryByText(agents[0].description ?? ''),
+    ).not.toBeInTheDocument();
   });
 
   it('tabs to the next logical agent even when its row is not currently mounted', async () => {
