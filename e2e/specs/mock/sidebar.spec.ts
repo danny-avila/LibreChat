@@ -85,6 +85,83 @@ test.describe('sidebar chat list', () => {
   });
 });
 
+test('keeps Settings open when UI scale switches between drawer and rail', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.addInitScript(() => {
+    localStorage.setItem('uiScale', '1.5');
+    localStorage.setItem('unifiedSidebarExpanded', 'false');
+  });
+  await page.goto('/c/new');
+  await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
+  await page.getByTestId('nav-user').click();
+  await page.getByTestId('nav-settings').click();
+  await page.getByRole('tab', { name: 'General', exact: true }).click();
+
+  const decrease = page.getByTestId('ui-scale-decrease');
+  const increase = page.getByTestId('ui-scale-increase');
+  for (let i = 0; i < 3; i++) {
+    await decrease.click();
+  }
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).fontSize))
+    .toBe('16px');
+  await expect(decrease).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close Settings', exact: true })).toBeVisible();
+
+  for (let i = 0; i < 3; i++) {
+    await increase.click();
+  }
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).fontSize))
+    .toBe('24px');
+  await expect(decrease).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(decrease).toBeHidden();
+});
+
+test('keeps appearance controls inside their card with scaled browser fonts', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Page.setFontSizes', { fontSizes: { standard: 20, fixed: 13 } });
+  await page.addInitScript(() => {
+    localStorage.setItem('uiScale', '1.5');
+    localStorage.setItem('unifiedSidebarExpanded', 'false');
+  });
+  await page.goto('/c/new');
+  await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
+  await page.getByTestId('nav-user').click();
+  await page.getByTestId('nav-settings').click();
+  await page.getByRole('tab', { name: 'General', exact: true }).click();
+
+  const card = page.locator('section').filter({ has: page.getByTestId('ui-scale-decrease') });
+  const controls = [
+    card.getByRole('combobox', { name: /^Theme / }),
+    card.getByRole('combobox', { name: /^Language / }),
+    card.getByTestId('font-size-selector'),
+    card.getByTestId('ui-scale-decrease'),
+    card.getByTestId('ui-scale-increase'),
+    card.getByTestId('chatDirection'),
+    card.getByTestId('clock-format-selector'),
+    card.getByTestId('week-start-selector'),
+  ];
+  for (const control of controls) {
+    await control.scrollIntoViewIfNeeded();
+    await expect(control).toBeInViewport();
+    const bounds = await control.evaluate((element) => {
+      const controlRect = element.getBoundingClientRect();
+      const cardRect = element.closest('section')!.getBoundingClientRect();
+      return {
+        left: controlRect.left - cardRect.left,
+        right: cardRect.right - controlRect.right,
+      };
+    });
+    expect(bounds.left).toBeGreaterThanOrEqual(-1);
+    expect(bounds.right).toBeGreaterThanOrEqual(-1);
+  }
+  await cdp.detach();
+});
+
 /**
  * Regression: expanding the sidebar from a collapsed reload first measured the
  * virtualized conversation rows mid-animation (narrow width), so date-group headers

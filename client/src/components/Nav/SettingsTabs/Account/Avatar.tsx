@@ -187,7 +187,7 @@ function Avatar() {
         }
       }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{localize('com_nav_profile_picture')}</span>
         <OGDialogTrigger asChild>
           <Button variant="outline">
@@ -203,7 +203,7 @@ function Avatar() {
             {image != null ? localize('com_ui_preview') : localize('com_ui_upload_image')}
           </OGDialogTitle>
         </OGDialogHeader>
-        <div className="flex flex-col items-center justify-center p-2">
+        <div className="flex min-w-0 flex-col items-center justify-center p-2">
           {image != null ? (
             <>
               <div
@@ -287,7 +287,7 @@ function Avatar() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-center space-x-3">
+                <div className="flex flex-wrap items-center justify-center gap-3">
                   <Button
                     type="button"
                     variant="outline"
@@ -317,7 +317,7 @@ function Avatar() {
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-6 flex w-full space-x-3">
+              <div className="mt-6 flex w-full flex-wrap gap-3">
                 <Button
                   type="button"
                   variant="outline"
@@ -330,7 +330,7 @@ function Avatar() {
                 <Button
                   variant="submit"
                   type="button"
-                  className={cn('w-full', isUploading ? 'cursor-not-allowed opacity-90' : '')}
+                  className={cn('flex-1', isUploading ? 'cursor-not-allowed opacity-90' : '')}
                   onClick={handleUpload}
                   disabled={isUploading}
                 >

@@ -23,7 +23,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery(`(max-width: ${767 * remScale}px)`);
   const [activeTab, setActiveTab] = useState<SettingsTab>(SettingsTabValues.GENERAL);
   const [query, setQuery] = useState('');
-  const [mobileDetail, setMobileDetail] = useState(false);
+  const [mobileDetail, setMobileDetail] = useState(!isSmallScreen);
 
   const searching = query.trim().length > 0;
   const inDetail = isSmallScreen && mobileDetail && !searching;
@@ -38,9 +38,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
 
   const selectTab = (tab: SettingsTab) => {
     setActiveTab(tab);
-    if (isSmallScreen) {
-      setMobileDetail(true);
-    }
+    setMobileDetail(true);
   };
 
   return (

@@ -73,7 +73,11 @@ export default function UiScaleSelector() {
   return (
     <div className="flex w-full flex-wrap items-center justify-between gap-2">
       <div id={labelId}>{localize('com_nav_ui_scale')}</div>
-      <div className="flex items-center gap-2" role="group" aria-labelledby={labelId}>
+      <div
+        className="flex max-w-full flex-wrap items-center gap-2"
+        role="group"
+        aria-labelledby={labelId}
+      >
         <Button
           variant="outline"
           size="icon"

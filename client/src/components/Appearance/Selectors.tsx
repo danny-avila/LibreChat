@@ -32,7 +32,7 @@ export const ThemeSelector = ({
   const labelId = 'theme-selector-label';
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-wrap items-center justify-between gap-2">
       <div id={labelId}>{localize('com_nav_theme')}</div>
 
       <Dropdown
@@ -113,10 +113,10 @@ export const LangSelector = ({
   const labelId = 'language-selector-label';
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-wrap items-center justify-between gap-2">
       <div id={labelId}>{localize('com_nav_language')}</div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 max-w-full items-center gap-2">
         {isLanguageLoading && (
           <span
             role="status"

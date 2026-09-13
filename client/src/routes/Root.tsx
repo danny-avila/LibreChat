@@ -36,6 +36,7 @@ import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
 import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
+import Settings from '~/components/Nav/Settings';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
 
@@ -203,6 +204,7 @@ export default function Root() {
                 </div>
               </div>
             </PromptGroupsProvider>
+            <Settings />
             <KeyboardShortcutsProvider />
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (

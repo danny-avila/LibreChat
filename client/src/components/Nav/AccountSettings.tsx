@@ -1,4 +1,5 @@
 import { useState, memo, useRef } from 'react';
+import { useSetAtom } from 'jotai';
 import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -15,8 +16,8 @@ import {
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { settingsOpenAtom } from './Settings';
 import { useLocalize } from '~/hooks';
-import Settings from './Settings';
 import store from '~/store';
 
 function HelpSubmenu({
@@ -97,7 +98,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
-  const [showSettings, setShowSettings] = useState(false);
+  const setShowSettings = useSetAtom(settingsOpenAtom);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -182,7 +183,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           triggerRef={accountSettingsButtonRef}
         />
       )}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Menu.MenuProvider>
   );
 }
