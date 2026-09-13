@@ -86,15 +86,25 @@ const isOpaque = (background: string) => {
   return channels.length < 4 || Number(channels[3]) === 1;
 };
 
-/** Pull the conversation up so a message really is behind the header row: the
- *  list opens with a clearance below the header and nothing under it yet. */
-async function scrollConversationUnderHeader(page: Page, delta: number) {
+/** Move the conversation under the header row with a real wheel. */
+async function scrollConversation(page: Page, delta: number) {
   await messagesView(page).hover();
   await page.mouse.wheel(0, delta);
   await page.waitForTimeout(500);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
+}
+
+/**
+ * Park the transcript at its top, then bring it down under the header. Where a
+ * freshly opened conversation lands is the app's business — the newest message
+ * with auto-scroll on, the top of a seeded transcript without it — so this
+ * rewinds first and leaves the wheel below a known distance to travel.
+ */
+async function parkConversationUnderHeader(page: Page) {
+  await scrollConversation(page, -6000);
+  await scrollConversation(page, 900);
 }
 
 test.describe('mobile chat header controls', () => {
@@ -108,7 +118,7 @@ test.describe('mobile chat header controls', () => {
     try {
       await openSeededConversation(page, conversationId);
 
-      await scrollConversationUnderHeader(page, 900);
+      await parkConversationUnderHeader(page);
       /** Nothing to hide unless a message really is behind the toggle. */
       const behindHeader = await page.evaluate((target) => {
         const toggle = document.querySelector(target)?.getBoundingClientRect();
@@ -146,7 +156,7 @@ test.describe('mobile chat header controls', () => {
 
       /** Move the conversation, not the header: whatever was behind the toggle
        *  is replaced by different ink. */
-      await scrollConversationUnderHeader(page, 700);
+      await scrollConversation(page, 700);
 
       const bandAfter = await page.screenshot({ clip: band });
       expect(
