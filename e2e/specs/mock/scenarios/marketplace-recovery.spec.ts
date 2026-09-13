@@ -231,20 +231,28 @@ test.describe('marketplace recovery', () => {
     });
     const deepScroll = await frame.evaluate((element) => element.scrollTop);
     expect(deepScroll).toBeGreaterThan(0);
+    /* The row the reader has reached. It is what has to still be on screen afterwards:
+       the position in pixels moves by whatever the card below the list occupies, the
+       row the reader was looking at does not. */
+    const anchor = page.getByRole('button', { name: loaded[loaded.length - 1].name });
+    await expect(anchor).toBeVisible();
 
     /* Reaching the end asks for the next cursor page; it fails, and the query's two
        immediate retries fail with it, so the error card takes over recovery. */
-    await expect(page.getByRole('alert')).toContainText(translations.com_agents_error_server_title, {
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('alert')).toContainText(
+      translations.com_agents_error_server_title,
+      {
+        timeout: 30_000,
+      },
+    );
     expect(cursorRequests).toBeGreaterThan(0);
 
-    /* The rows are still mounted behind the card, so the frame still has something to be
-       scrolled through: replacing them collapses its height and the browser clamps the
-       position to the shorter document. */
-    const rows = page.getByRole('tabpanel').getByRole('listitem');
-    await expect(rows.first()).toBeVisible();
-    expect(await frame.evaluate((element) => element.scrollTop)).toBe(deepScroll);
+    /* The rows stay mounted behind the card, so the frame keeps its height and the
+       reader keeps their place: replacing the list collapses that height and the browser
+       clamps the scroll position back to the first row. */
+    await expect(page.getByRole('tabpanel').getByRole('listitem').first()).toBeVisible();
+    await expect(anchor).toBeVisible();
+    expect(await frame.evaluate((element) => element.scrollTop)).toBeGreaterThan(deepScroll / 2);
 
     /* Returning to the window is the card's immediate attempt, so the recovery does not
        have to wait out a backoff step whose button is disabled while it runs. */
@@ -255,8 +263,11 @@ test.describe('marketplace recovery', () => {
     });
 
     await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 30_000 });
-    /* Recovery adds rows to the list the user was reading rather than remounting it, so
-       the position survives the round trip. */
-    expect(await frame.evaluate((element) => element.scrollTop)).toBe(deepScroll);
+    /* Recovery appends to the list the reader was reading rather than remounting it, so
+       the page they had reached is still the page they are on. The appended rows sit
+       below the viewport and the virtualizer has not mounted them, which is exactly why
+       the anchor row is what this asserts. */
+    await expect(anchor).toBeVisible();
+    expect(await frame.evaluate((element) => element.scrollTop)).toBeGreaterThan(deepScroll / 2);
   });
 });

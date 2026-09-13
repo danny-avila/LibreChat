@@ -77,7 +77,14 @@ test.describe('agent detail morph', () => {
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole('heading', { name: agent.name, exact: true })).toBeVisible();
-      await expect(dialog.getByText(description, { exact: true })).toBeVisible();
+      /* The dialog is handed the card's own paragraph, and the word morph paints that
+         copy as per-word spans beside one screen-reader copy of the same text — so the
+         assertion is about the paragraph carrying the description, not about how many
+         nodes spell it out. */
+      const dialogDescription = dialog.locator('p').filter({ hasText: description });
+      await expect(dialogDescription).toHaveCount(1);
+      await expect(dialogDescription).toBeVisible();
+      await expect(dialogDescription).toContainText(description);
 
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(dialog).toBeHidden();
