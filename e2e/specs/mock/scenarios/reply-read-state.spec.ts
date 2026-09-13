@@ -27,11 +27,14 @@ test.beforeAll(async () => {
   const runtime = JSON.parse(fs.readFileSync(getRuntimeEnvPath(), 'utf8')) as {
     MONGO_URI?: string;
   };
+  /* Both harnesses provision a throwaway database: the local mock run uses LibreChat-e2e, the
+   * verification runner a per-run lc_verify_* database on the lab host. Anything else is a real
+   * deployment, and this spec writes conversations and messages directly. */
   if (
     !runtime.MONGO_URI ||
-    !/^mongodb:\/\/127\.0\.0\.1:\d+\/LibreChat-e2e(?:\?|$)/.test(runtime.MONGO_URI)
+    !/\/(LibreChat-e2e|lc_verify_[A-Za-z0-9_]+)(?:\?|$)/.test(runtime.MONGO_URI)
   ) {
-    throw new Error('Reply ordering acceptance requires the disposable E2E Mongo database');
+    throw new Error('Reply ordering acceptance requires a disposable E2E Mongo database');
   }
   await mongoose.connect(runtime.MONGO_URI);
   createModels(mongoose);
