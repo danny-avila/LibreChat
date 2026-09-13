@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { withoutTraceRefs } = require('@librechat/api');
+const { cloneLineage, withoutTraceRefs, getAllMessagesUpToParent } = require('@librechat/api');
 const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
 const { getConvo, getMessages, getSharedMessages } = require('~/models');
@@ -21,50 +21,12 @@ function cloneMessagesWithTimestamps(
   importBatchBuilder,
   { detachSubagentRuntime = false } = {},
 ) {
-  const idMapping = new Map();
-  const clonedCreatedAt = new Map();
-
-  // First pass: create ID mapping and sort messages by parentMessageId
-  const sortedMessages = [...messagesToClone].sort((a, b) => {
-    if (a.parentMessageId === Constants.NO_PARENT) {
-      return -1;
-    }
-    if (b.parentMessageId === Constants.NO_PARENT) {
-      return 1;
-    }
-    return 0;
-  });
-
-  // Helper function to ensure date object
-  const ensureDate = (dateValue) => {
-    if (!dateValue) {
-      return new Date();
-    }
-    return dateValue instanceof Date ? dateValue : new Date(dateValue);
-  };
-
-  // Second pass: clone messages while maintaining proper timestamps
-  for (const message of sortedMessages) {
-    const newMessageId = uuidv4();
-    idMapping.set(message.messageId, newMessageId);
-
-    const parentId =
-      message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-        ? idMapping.get(message.parentMessageId)
-        : Constants.NO_PARENT;
-
-    // If this message has a parent, ensure its timestamp is after the parent's
-    let createdAt = ensureDate(message.createdAt);
-    const parentDate = clonedCreatedAt.get(parentId);
-    if (parentDate && createdAt <= parentDate) {
-      createdAt = new Date(parentDate.getTime() + 1);
-    }
-    clonedCreatedAt.set(newMessageId, createdAt);
-
+  const { entries, idMapping } = cloneLineage(messagesToClone, uuidv4);
+  for (const { source, messageId, parentMessageId, createdAt } of entries) {
     const clonedMessage = {
-      ...withoutTraceRefs(message),
-      messageId: newMessageId,
-      parentMessageId: parentId,
+      ...withoutTraceRefs(source),
+      messageId,
+      parentMessageId,
       createdAt,
     };
     if (detachSubagentRuntime) {
@@ -184,55 +146,6 @@ async function forkConversation({
     );
     throw error;
   }
-}
-
-/**
- * Retrieves all messages up to the root from the target message.
- * @param {TMessage[]} messages - The list of messages to search.
- * @param {string} targetMessageId - The ID of the target message.
- * @returns {TMessage[]} The list of messages up to the root from the target message.
- */
-function getAllMessagesUpToParent(messages, targetMessageId) {
-  const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
-  if (!targetMessage) {
-    return [];
-  }
-
-  const messagesById = new Map();
-  for (const message of messages) {
-    if (!messagesById.has(message.messageId)) {
-      messagesById.set(message.messageId, message);
-    }
-  }
-
-  const pathToRoot = new Set();
-  const visited = new Set();
-  let current = targetMessage;
-
-  while (current) {
-    if (visited.has(current.messageId)) {
-      break;
-    }
-
-    visited.add(current.messageId);
-    pathToRoot.add(current.messageId);
-
-    const currentParentId = current.parentMessageId ?? Constants.NO_PARENT;
-    if (currentParentId === Constants.NO_PARENT) {
-      break;
-    }
-
-    current = messagesById.get(currentParentId);
-  }
-
-  // Include all messages that are in the path or whose parent is in the path
-  // Exclude children of the target message
-  return messages.filter(
-    (msg) =>
-      (pathToRoot.has(msg.messageId) && msg.messageId !== targetMessageId) ||
-      (pathToRoot.has(msg.parentMessageId) && msg.parentMessageId !== targetMessageId) ||
-      msg.messageId === targetMessageId,
-  );
 }
 
 /**
