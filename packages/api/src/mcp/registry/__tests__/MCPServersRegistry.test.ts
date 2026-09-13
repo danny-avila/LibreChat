@@ -1,6 +1,11 @@
 import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
 import { setImmediate as realSetImmediate } from 'timers';
+import {
+  DEFAULT_MCP_APPS_POLICY,
+  DEFAULT_MCP_APP_PERSISTED_BYTES,
+  DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+} from 'librechat-data-provider';
 import type * as t from '~/mcp/types';
 import {
   MCPServersRegistry,
@@ -537,7 +542,12 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: ['10.0.0.0/8'],
         useSSRFProtection: false,
-        mcpApps: { enabled: false, legacyHtmlEnabled: true },
+        mcpApps: {
+          enabled: false,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+          maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+        },
       });
     });
 
@@ -547,7 +557,12 @@ describe('MCPServersRegistry', () => {
         allowedDomains: undefined,
         allowedAddresses: undefined,
         useSSRFProtection: true,
-        mcpApps: { enabled: false, legacyHtmlEnabled: true },
+        mcpApps: {
+          enabled: false,
+          legacyHtmlEnabled: true,
+          maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+          maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+        },
       });
     });
 
@@ -580,7 +595,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: null,
         useSSRFProtection: false,
-        mcpApps: { enabled: false, legacyHtmlEnabled: false },
+        mcpApps: DEFAULT_MCP_APPS_POLICY,
       });
     });
 
@@ -650,7 +665,10 @@ describe('MCPServersRegistry', () => {
         requiresOAuth: false,
       } as t.ParsedServerConfig;
       const key = registry['configCacheKey']('srv', rawConfig, allowlists);
-      await registry['configCacheRepo'].add(key, cachedConfig);
+      const { config: storedCachedConfig } = await registry['configCacheRepo'].add(
+        key,
+        cachedConfig,
+      );
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
       inspectSpy.mockClear();
 
@@ -663,7 +681,7 @@ describe('MCPServersRegistry', () => {
           ...allowlists,
         }),
       ).resolves.toEqual({
-        serverConfig: cachedConfig,
+        serverConfig: storedCachedConfig,
         connectionOwner: 'principal',
       });
       expect(inspectSpy).not.toHaveBeenCalled();
@@ -671,7 +689,9 @@ describe('MCPServersRegistry', () => {
 
     it('keeps an absent or failed config-cache target unavailable instead of using a same-name base', async () => {
       await registry['cacheConfigsRepo'].add('srv', {
-        ...testParsedConfig,
+        type: 'streamable-http',
+        url: 'https://base.example.com/mcp',
+        requiresOAuth: false,
         source: 'yaml',
       });
 
@@ -708,7 +728,10 @@ describe('MCPServersRegistry', () => {
         source: 'yaml' as const,
         requiresOAuth: false,
       } as t.ParsedServerConfig;
-      await registry['cacheConfigsRepo'].add('srv', yamlConfig);
+      const { config: storedYamlConfig } = await registry['cacheConfigsRepo'].add(
+        'srv',
+        yamlConfig,
+      );
 
       await expect(
         registry.resolveCachedAppServerConfig({
@@ -718,7 +741,7 @@ describe('MCPServersRegistry', () => {
           mcpConfig: { srv: rawConfig },
           ...allowlists,
         }),
-      ).resolves.toEqual({ serverConfig: yamlConfig, connectionOwner: 'operator' });
+      ).resolves.toEqual({ serverConfig: storedYamlConfig, connectionOwner: 'operator' });
     });
   });
 

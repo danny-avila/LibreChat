@@ -376,6 +376,8 @@ async function createShare(page: Page, conversationId: string): Promise<SharePay
 }
 
 test.describe('MCP Apps full integration', () => {
+  test.skip(process.env.E2E_MCP_APPS !== 'true', 'requires the dedicated MCP Apps fixture profile');
+
   test('runs an official SDK View, reloads its snapshot, and omits UI from a public share', async ({
     page,
   }, testInfo) => {

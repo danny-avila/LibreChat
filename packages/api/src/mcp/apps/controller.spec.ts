@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { RequestHandler, Response } from 'express';
 import type { MCPAppsControllerDependencies } from './controller';
 import type { MCPAppsProxyManager } from '../apps';
@@ -191,7 +192,9 @@ describe('createMCPAppsController', () => {
         allowedDomains: ['mcp.example.com'],
         allowedAddresses: ['10.0.0.0/8'],
       },
-      mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
+      mcpConfig: {
+        srv: { type: 'stdio', command: 'test', args: [] },
+      } satisfies Record<string, MCPOptions>,
     }));
     const controller = createMCPAppsController(dependencies);
     const request = makeRequest();

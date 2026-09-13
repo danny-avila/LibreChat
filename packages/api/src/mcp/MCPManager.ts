@@ -1868,27 +1868,25 @@ Please follow these instructions when using tools from the respective MCP server
 
         let resolvedAppResource: t.ResourceContents | undefined;
         if (resourceMeta && !options?.signal?.aborted) {
+          const resourceUri = resourceMeta.uri;
           try {
             const readResult = await connection.client.readResource(
-              { uri: resourceMeta.uri },
+              { uri: resourceUri },
               { timeout: connection.timeout, signal: options?.signal },
             );
             if (!options?.signal?.aborted) {
-              resolvedAppResource = selectResolvedAppResource(
-                readResult.contents,
-                resourceMeta.uri,
-              );
+              resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceUri);
             }
             if (!resolvedAppResource) {
               logger.warn(
-                `[MCP][${serverName}][${toolName}] App resource "${resourceMeta.uri}" did not return usable App content; preserving tool result`,
+                `[MCP][${serverName}][${toolName}] App resource "${resourceUri}" did not return usable App content; preserving tool result`,
               );
               resourceMeta = undefined;
             }
           } catch (error) {
             if (!options?.signal?.aborted) {
               logger.warn(
-                `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceMeta.uri}"; preserving tool result`,
+                `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceUri}"; preserving tool result`,
                 error,
               );
             }

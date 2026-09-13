@@ -1578,16 +1578,7 @@ describe('User parameter passing tests', () => {
         },
       });
 
-      await expect(
-        mcpTool._call(
-          {},
-          {
-            configurable: { user: mockUser },
-            metadata: { provider: 'assistants', thread_id: 'thread-1', run_id: 'run-1' },
-            toolCall: {},
-          },
-        ),
-      ).resolves.toEqual(['ordinary output', artifact]);
+      await expect(mcpTool._call({})).resolves.toEqual(['ordinary output', artifact]);
       expect(callTool).toHaveBeenCalledWith(expect.objectContaining({ mcpApps }));
     });
 
@@ -1706,7 +1697,7 @@ describe('User parameter passing tests', () => {
       const waiterCall = mcpTool.invoke({}, createConfig(waiterAbort.signal));
       await new Promise((resolve) => setImmediate(resolve));
 
-      ownerAbort.abort();
+      ownerAbort.abort(new DOMException('Aborted', 'AbortError'));
 
       await expect(ownerCall).rejects.toThrow('Aborted');
       expect(flowManager.failFlow).not.toHaveBeenCalled();

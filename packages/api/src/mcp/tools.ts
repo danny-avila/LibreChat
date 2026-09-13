@@ -25,7 +25,7 @@ export function createMCPStructuredTool(
     config?: Parameters<DynamicStructuredToolFunction>[2],
   ) => ReturnType<DynamicStructuredToolFunction>,
   fields: Omit<DynamicStructuredToolFields, 'func'>,
-): DynamicStructuredTool {
+): DynamicStructuredTool<unknown> {
   return new DynamicStructuredTool({
     ...fields,
     func: (input, runManager, config) => {
