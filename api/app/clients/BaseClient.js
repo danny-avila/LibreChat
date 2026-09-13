@@ -733,9 +733,8 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    return withBalanceReservations(
-      (balanceReservations) => this.sendReservedMessage(message, opts, balanceReservations),
-      { isAborted: () => this.abortController?.signal?.aborted === true },
+    return withBalanceReservations((balanceReservations) =>
+      this.sendReservedMessage(message, opts, balanceReservations),
     );
   }
 

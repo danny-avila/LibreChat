@@ -56,7 +56,6 @@ jest.mock('~/models', () => ({
 
 const {
   releaseBalanceReservation,
-  renewBalanceReservation,
   reserveBalance,
   getMultiplier,
   saveMessage,
@@ -2260,7 +2259,6 @@ describe('BaseClient', () => {
       releaseBalanceReservation.mockImplementation(async () => {
         events.push('release');
       });
-      renewBalanceReservation.mockResolvedValue(undefined);
       TestClient.sendCompletion.mockImplementation(async () => {
         events.push('completion');
         return { completion: 'Mock response text', metadata: undefined };
@@ -2272,7 +2270,6 @@ describe('BaseClient', () => {
       TestClient.buildMessages.mockReturnValue({
         prompt: [],
         tokenCountMap: { res: 50 },
-        promptTokens: 20,
       });
     });
 
@@ -2314,22 +2311,6 @@ describe('BaseClient', () => {
       await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow('usage write failed');
 
       expect(events).toEqual(['reserve', 'completion', 'release']);
-    });
-
-    test('lets the reservation of a stopped turn lapse instead of releasing it', async () => {
-      TestClient.sendCompletion.mockImplementation(async () => {
-        events.push('completion');
-        TestClient.abortController.abort();
-        return { completion: 'Partial', metadata: undefined };
-      });
-
-      await TestClient.sendMessage('Hello', {});
-
-      expect(releaseBalanceReservation).not.toHaveBeenCalled();
-      const [{ reservationId }] = reserveBalance.mock.calls[0];
-      expect(renewBalanceReservation).toHaveBeenCalledWith(
-        expect.objectContaining({ user: TestClient.user, reservationId }),
-      );
     });
 
     test('takes no reservation when the balance check refuses the request', async () => {

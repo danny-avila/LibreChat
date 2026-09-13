@@ -50,11 +50,6 @@ export interface CheckBalanceDeps {
 export interface BalanceReservation {
   /** Idempotent; stops renewal. A failed release is logged and left to expire. */
   release: () => Promise<void>;
-  /**
-   * Stops renewal and lets the reservation lapse after `ms` (at most its TTL) instead of releasing
-   * it, for a turn whose usage another request records. Settles the reservation like `release`.
-   */
-  lapseAfter: (ms: number) => Promise<void>;
 }
 
 /** The balance reservations admitted during one turn. */
@@ -64,21 +59,11 @@ export interface BalanceReservations {
   /**
    * Releases every tracked reservation, first waiting for admissions still pending so a
    * reservation that settles after its turn failed is released too. Failed admissions hold nothing.
-   * When the turn was aborted, each reservation lapses after `ABORTED_TURN_LAPSE_MS` instead.
    */
   release: () => Promise<void>;
 }
 
-/**
- * How long an aborted turn's reservation keeps holding its credits. A stopped turn's usage is
- * charged by the Stop request after the generation unwinds, possibly on another instance, so the
- * credits stay held until that charge has had time to land.
- */
-export const ABORTED_TURN_LAPSE_MS: number = 60 * 1000;
-
-export function createBalanceReservations(options?: {
-  isAborted?: () => boolean;
-}): BalanceReservations {
+export function createBalanceReservations(): BalanceReservations {
   let admissions: Promise<BalanceReservation | undefined>[] = [];
   return {
     track: (admission) => {
@@ -89,12 +74,7 @@ export function createBalanceReservations(options?: {
       const pending = admissions;
       admissions = [];
       const reservations = await Promise.all(pending);
-      const aborted = options?.isAborted?.() === true;
-      await Promise.all(
-        reservations.map((reservation) =>
-          aborted ? reservation?.lapseAfter(ABORTED_TURN_LAPSE_MS) : reservation?.release(),
-        ),
-      );
+      await Promise.all(reservations.map((reservation) => reservation?.release()));
     },
   };
 }
@@ -102,9 +82,8 @@ export function createBalanceReservations(options?: {
 /** Runs one turn and releases whatever balance reservations it admitted once it settles. */
 export async function withBalanceReservations<T>(
   run: (reservations: BalanceReservations) => Promise<T>,
-  options?: { isAborted?: () => boolean },
 ): Promise<T> {
-  const reservations = createBalanceReservations(options);
+  const reservations = createBalanceReservations();
   try {
     return await run(reservations);
   } finally {
@@ -164,25 +143,6 @@ function holdReservation(
         .catch((error) => {
           logger.error('[Balance.check] Failed to release balance reservation', { user, error });
         });
-      return released;
-    },
-    lapseAfter: (ms) => {
-      clearTimeout(timer);
-      released ??=
-        amount > 0
-          ? deps
-              .renewBalanceReservation({
-                user,
-                reservationId,
-                expiresAt: new Date(Date.now() + Math.min(ms, ttlMs)),
-              })
-              .catch((error) => {
-                logger.error('[Balance.check] Failed to shorten balance reservation', {
-                  user,
-                  error,
-                });
-              })
-          : Promise.resolve();
       return released;
     },
   };
