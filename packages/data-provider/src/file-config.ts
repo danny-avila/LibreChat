@@ -583,6 +583,7 @@ export const endpointFileConfigSchema = z.object({
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
   defaultLLMDeliveryPath: defaultLLMDeliveryPathSchema.optional(),
   legacyFileUploadUX: z.boolean().optional(),
+  textFallbackWithoutTools: z.boolean().optional(),
 });
 
 const skillFileConfigSchema = z.object({
@@ -624,6 +625,7 @@ export const fileConfigSchema = z.object({
     .optional(),
   defaultLLMDeliveryPath: defaultLLMDeliveryPathSchema.optional(),
   legacyFileUploadUX: z.boolean().optional(),
+  textFallbackWithoutTools: z.boolean().optional(),
 });
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
@@ -970,6 +972,8 @@ function mergeWithDefault(
       defaultConfig.defaultLLMDeliveryPath,
     ),
     legacyFileUploadUX: endpointConfig.legacyFileUploadUX ?? defaultConfig.legacyFileUploadUX,
+    textFallbackWithoutTools:
+      endpointConfig.textFallbackWithoutTools ?? defaultConfig.textFallbackWithoutTools,
   };
 }
 
@@ -1060,6 +1064,8 @@ export function getEndpointFileConfig(params: {
       baseDefaultConfig.defaultLLMDeliveryPath,
     ),
     legacyFileUploadUX: mergedFileConfig.legacyFileUploadUX ?? baseDefaultConfig.legacyFileUploadUX,
+    textFallbackWithoutTools:
+      mergedFileConfig.textFallbackWithoutTools ?? baseDefaultConfig.textFallbackWithoutTools,
   };
   const userDefaultConfig = mergedFileConfig.endpoints.default;
   const defaultConfig = userDefaultConfig
@@ -1184,6 +1190,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     mergedConfig.legacyFileUploadUX = dynamic.legacyFileUploadUX;
   }
 
+  if (dynamic.textFallbackWithoutTools !== undefined) {
+    mergedConfig.textFallbackWithoutTools = dynamic.textFallbackWithoutTools;
+  }
+
   if (dynamic.serverFileSizeLimit !== undefined) {
     mergedConfig.serverFileSizeLimit = mbToBytes(dynamic.serverFileSizeLimit);
   }
@@ -1298,6 +1308,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
     if (dynamicEndpoint.legacyFileUploadUX !== undefined) {
       mergedEndpoint.legacyFileUploadUX = dynamicEndpoint.legacyFileUploadUX;
+    }
+
+    if (dynamicEndpoint.textFallbackWithoutTools !== undefined) {
+      mergedEndpoint.textFallbackWithoutTools = dynamicEndpoint.textFallbackWithoutTools;
     }
   }
 

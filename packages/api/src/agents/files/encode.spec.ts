@@ -138,6 +138,49 @@ describe('createRunFileMessageEncoder', () => {
     expect(pdf.llmDeliveryPath).toBe('provider');
   });
 
+  it('delivers stored text only to a child that runs no tool able to read a tool-routed file', async () => {
+    const csv: TFile = {
+      ...pdf,
+      file_id: 'input-csv',
+      filename: 'sales.csv',
+      filepath: '/files/sales.csv',
+      type: 'text/csv',
+      text: 'region,total\nwest,4',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    };
+    const harness = setup({
+      agents: {
+        noReader: { provider: 'openAI', fileConsumers: { executeCode: false, fileSearch: false } },
+        runsCode: { provider: 'openAI', fileConsumers: { executeCode: true, fileSearch: false } },
+        unknown: { provider: 'openAI' },
+      },
+      fileConfig: {
+        endpoints: {
+          openAI: {
+            defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+            textFallbackWithoutTools: true,
+          },
+        },
+      },
+    });
+
+    const [noReader, runsCode, unknown] = await Promise.all([
+      harness.encode([csv], 'noReader'),
+      harness.encode([csv], 'runsCode'),
+      harness.encode([csv], 'unknown'),
+    ]);
+
+    expect(JSON.stringify(noReader[0].content)).toContain('region,total');
+    expect(runsCode).toEqual([]);
+    expect(unknown).toEqual([]);
+    expect(harness.extractText).toHaveBeenCalledWith(
+      expect.objectContaining({ attachments: [{ ...csv, llmDeliveryPath: 'text' }] }),
+    );
+    expect(harness.encodeDocuments).not.toHaveBeenCalled();
+    expect(csv.llmDeliveryPath).toBe('none');
+  });
+
   it('honors an explicit tool destination even when the receiving endpoint supports native files', async () => {
     const harness = setup();
     const file: TFile = {

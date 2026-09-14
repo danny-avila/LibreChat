@@ -4493,3 +4493,108 @@ describe('initializeAgent — provider-native web search role gate', () => {
     expect(result.tools).toContainEqual(OPENAI_SEARCH);
   });
 });
+
+describe('initializeAgent tool-routed text fallback', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const routedCsv = () =>
+    ({
+      file_id: 'csv-file',
+      filename: 'sales.csv',
+      type: 'text/csv',
+      text: 'region,total',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    }) as IMongoFile;
+
+  async function initializeWith({
+    tools,
+    csv,
+    textFallbackWithoutTools = true,
+  }: {
+    tools: string[];
+    csv: IMongoFile;
+    textFallbackWithoutTools?: boolean;
+  }) {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = tools;
+    req.config = {
+      fileConfig: {
+        endpoints: {
+          [Providers.OPENAI]: {
+            defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+            textFallbackWithoutTools,
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([csv]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [csv],
+        codeEnvAvailable: true,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    return { result, filterFilesByEndpointRuntimeConfig };
+  }
+
+  it('hands endpoint filtering a text copy when the agent runs no tool that can read the file', async () => {
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({ tools: [], csv });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...csv, llmDeliveryPath: 'text' }] }),
+    );
+    expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: false });
+    expect(csv.llmDeliveryPath).toBe('none');
+  });
+
+  it('leaves the file on its tool route where the endpoint has not enabled the fallback', async () => {
+    const csv = routedCsv();
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv,
+      textFallbackWithoutTools: false,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [csv] }),
+    );
+  });
+
+  it('leaves the file to Run Code when the agent can run code', async () => {
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [EToolResources.execute_code],
+      csv,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [csv] }),
+    );
+    expect(result.fileConsumers).toEqual({ executeCode: true, fileSearch: false });
+  });
+});

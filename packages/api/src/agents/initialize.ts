@@ -25,6 +25,7 @@ import type {
   TFile,
   Agent,
   TUser,
+  TurnFileConsumers,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -114,6 +115,7 @@ import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
+import { applyTurnTextFallback } from './files/delivery';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
@@ -616,6 +618,8 @@ export type InitializedAgent = Agent & {
   currentRequestAttachments: TFile[];
   /** Files attached to this agent's permanent context via tool_resources. */
   agentContextAttachments: IMongoFile[];
+  /** File-reading tools this turn runs, which decide when a tool-routed file falls back to text. */
+  fileConsumers?: TurnFileConsumers;
   toolContextMap: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
@@ -1371,6 +1375,10 @@ export async function initializeAgent(
    * that lookup runs whichever way the setting is configured. */
   const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
   const wantsSearchFiles = toolResourceSet.has(EToolResources.file_search);
+  const fileConsumers: TurnFileConsumers = {
+    executeCode: wantsCodeFiles,
+    fileSearch: wantsSearchFiles,
+  };
   const wantsProvisioning = wantsCodeFiles || wantsSearchFiles;
 
   if (
@@ -1552,6 +1560,16 @@ export async function initializeAgent(
     currentFiles = authorizedRunFiles.map((file) => structuredClone(file));
   } else if (requestFiles.length > 0 || toolFileIds.length > 0) {
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
+  }
+  if (currentFiles?.length) {
+    /* Before any check reads the route: endpoint filtering, model-bound limits and content
+     * inspection below all have to see the text this turn will deliver in place of a file no
+     * tool it runs can read. */
+    currentFiles = applyTurnTextFallback(currentFiles, {
+      agent,
+      config: appConfig,
+      consumers: fileConsumers,
+    });
   }
 
   let endpointFileType: EModelEndpoint | undefined;
@@ -2402,6 +2420,7 @@ export async function initializeAgent(
     requestAttachments,
     currentRequestAttachments,
     agentContextAttachments,
+    fileConsumers,
     toolContextMap: toolContextMap ?? {},
     dynamicToolContextMap: dynamicToolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

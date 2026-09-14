@@ -353,6 +353,91 @@ export function canToolResourceConsume(toolResource: string, mimeType: string): 
 const matchesMimeList = (mimeType: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(mimeType));
 
+/**
+ * The file-reading tools one agent's turn runs. Each flag is the deployment capability AND
+ * the caller's role grant, the same verdict the tool loader enforces.
+ */
+export interface TurnFileConsumers {
+  executeCode: boolean;
+  fileSearch: boolean;
+}
+
+/** Whether a tool this turn runs can read a file of this type. */
+export function hasTurnFileConsumer(mimeType: string, consumers: TurnFileConsumers): boolean {
+  return (
+    (consumers.executeCode && canToolResourceConsume(EToolResources.execute_code, mimeType)) ||
+    (consumers.fileSearch && canToolResourceConsume(EToolResources.file_search, mimeType))
+  );
+}
+
+/** The fields of an attachment record that decide its delivery on a turn. */
+export interface TurnDeliveryFile {
+  type?: string;
+  text?: string | null;
+  /** Stored as an upload-time inference, so any string may be read back. */
+  llmDeliveryPath?: string | null;
+  metadata?: { routingMimeType?: string; destinationChosen?: boolean } | null;
+}
+
+const isLLMDeliveryPath = (value: unknown): value is TDefaultLLMDeliveryPath =>
+  value === 'provider' || value === 'text' || value === 'none';
+
+/**
+ * Delivery path for one attachment on one agent's turn.
+ *
+ * A record predating routing and a destination the user chose keep what they stored. An
+ * inferred route re-resolves against the endpoint handling the turn. A `none` route leaves
+ * the file for a tool; where the endpoint enables `textFallbackWithoutTools` and this turn
+ * runs no tool that can read the file, the text extracted at upload is delivered rather than
+ * the file reaching nothing. Consumers left undefined are unknown and not judged, as in
+ * {@link resolveUploadDestination}.
+ */
+export function resolveTurnLLMDeliveryPath({
+  file,
+  consumers,
+  endpointConfig,
+  fileConfig,
+  endpoint,
+  endpointProvider,
+  useResponsesApi,
+  sttConfigured,
+}: {
+  file: TurnDeliveryFile;
+  consumers?: TurnFileConsumers;
+  endpointConfig?: EndpointFileConfig;
+  fileConfig?: FileConfig;
+  endpoint?: string;
+  endpointProvider?: string | null;
+  useResponsesApi?: boolean;
+  sttConfigured?: boolean;
+}): TDefaultLLMDeliveryPath | undefined {
+  if (file.llmDeliveryPath == null || file.metadata?.destinationChosen === true) {
+    return isLLMDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined;
+  }
+  /* Conversion changes the stored type, so use the type routing originally saw. */
+  const mimeType = file.metadata?.routingMimeType ?? file.type ?? '';
+  const path = resolveUploadLLMDeliveryPath({
+    mimeType,
+    endpointConfig,
+    fileConfig,
+    endpoint,
+    endpointProvider,
+    useResponsesApi,
+    sttConfigured,
+  });
+  const hasFallbackText = typeof file.text === 'string' && file.text.length > 0;
+  if (
+    path === 'none' &&
+    endpointConfig?.textFallbackWithoutTools === true &&
+    consumers != null &&
+    hasFallbackText &&
+    !hasTurnFileConsumer(mimeType, consumers)
+  ) {
+    return 'text';
+  }
+  return path;
+}
+
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
 export type UploadRejection = 'no-agent-resource' | 'context-disabled' | 'no-consumer';
 

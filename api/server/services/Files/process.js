@@ -31,11 +31,13 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
+  parseTextNative,
   processAudioFile,
   extractInspectableFileText,
   assertExtractedTextInspectable,
   getFileExtractionLogDetails,
   getUploadExtractedTextPlan,
+  resolveUploadFallbackText,
   UPLOAD_EXTRACTED_TEXT_PLANS,
   inspectContent,
   extractFileContent,
@@ -1152,6 +1154,25 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     return await createTextFile({ text });
   }
 
+  /* Extracted before storage, which may move the temporary upload the extractors read. */
+  const fallbackText = await resolveUploadFallbackText({
+    deliveryPath: llmDeliveryPath,
+    toolResource: tool_resource,
+    destinationToolResource: effectiveToolResource,
+    mimeType: file.mimetype,
+    endpointConfig,
+    filters: appConfig?.filters,
+    filename: file.originalname,
+    fileId: file_id,
+    extractDocument: () =>
+      getStrategyFunctions(FileSources.document_parser).handleFileUpload({
+        req,
+        file,
+        loadAuthValues,
+      }),
+    readNativeText: () => parseTextNative(file),
+  });
+
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
   let storedType = file.mimetype;
@@ -1348,6 +1369,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       width,
       tenantId: req.user.tenantId,
       llmDeliveryPath,
+      text: fallbackText,
     }),
     ...retentionExpiry,
   };

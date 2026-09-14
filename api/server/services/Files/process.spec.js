@@ -125,6 +125,9 @@ jest.mock('@librechat/api', () => {
     /** Grants both; these specs vary the capability set, not the role. */
     resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    parseTextNative: jest.fn(),
+    /** Stores no fallback text unless a test opts in; its own rules are covered in packages/api. */
+    resolveUploadFallbackText: jest.fn(async () => undefined),
     processAudioFile: jest.fn(),
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
     assertExtractedTextInspectable: jest.fn(),
@@ -3188,5 +3191,108 @@ describe('filterFile endpoint resolution', () => {
     req.body.endpoint = 'Disabled Provider';
 
     expect(() => filterFile({ req, image: true, isAvatar: true })).not.toThrow();
+  });
+});
+
+describe('fallback text for uploads left to tools', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      endpoints: {
+        'Custom Provider': {
+          defaultLLMDeliveryPath: { fallback: 'none' },
+          textFallbackWithoutTools: true,
+        },
+      },
+    });
+  });
+
+  const uploadCsv = (metadata) => {
+    const req = makeReq({ mimetype: 'text/csv', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+    return {
+      req,
+      upload: processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          file_id: 'file-uuid-csv',
+          effectiveEndpoint: 'Custom Provider',
+          ...metadata,
+        },
+      }),
+    };
+  };
+
+  test('stores the text a turn without a reading tool can fall back to', async () => {
+    const { createFile } = require('~/models');
+    const { resolveUploadFallbackText, parseTextNative } = require('@librechat/api');
+    setupStoredFileUpload();
+    parseTextNative.mockResolvedValueOnce({ text: 'region,total', bytes: 12, source: 'text' });
+    resolveUploadFallbackText.mockImplementationOnce(async ({ readNativeText }) => {
+      const result = await readNativeText();
+      return result.text;
+    });
+
+    const { req, upload } = uploadCsv();
+    await upload;
+
+    expect(resolveUploadFallbackText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryPath: 'none',
+        toolResource: undefined,
+        destinationToolResource: undefined,
+        mimeType: 'text/csv',
+        endpointConfig: expect.objectContaining({ textFallbackWithoutTools: true }),
+        fileId: 'file-uuid-csv',
+      }),
+    );
+    expect(parseTextNative).toHaveBeenCalledWith(req.file);
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
+      true,
+    );
+  });
+
+  test('tells extraction which tool the upload was filed under', async () => {
+    const { createFile } = require('~/models');
+    const { resolveUploadFallbackText } = require('@librechat/api');
+    setupStoredFileUpload();
+
+    const { upload } = uploadCsv({ agentTools: [EToolResources.execute_code] });
+    await upload;
+
+    expect(resolveUploadFallbackText).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationToolResource: EToolResources.execute_code }),
+    );
+    expect(createFile).toHaveBeenCalledWith(
+      expect.not.objectContaining({ text: expect.anything() }),
+      true,
+    );
+  });
+
+  test('runs the built-in document parser, not storage, for a spreadsheet', async () => {
+    const { resolveUploadFallbackText } = require('@librechat/api');
+    const parserUpload = jest.fn().mockResolvedValue({ text: 'Sheet1', bytes: 6 });
+    const storageUpload = setupStoredFileUpload();
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.document_parser
+        ? { handleFileUpload: parserUpload }
+        : { handleFileUpload: storageUpload },
+    );
+    resolveUploadFallbackText.mockImplementationOnce(async ({ extractDocument }) => {
+      const result = await extractDocument();
+      return result.text;
+    });
+
+    const { req, upload } = uploadCsv();
+    await upload;
+
+    expect(parserUpload).toHaveBeenCalledWith(expect.objectContaining({ req, file: req.file }));
   });
 });

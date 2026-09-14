@@ -52,6 +52,9 @@ export type EndpointFileConfig = {
   supportedMimeTypes?: RegexLike[];
   defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
   legacyFileUploadUX?: boolean;
+  /** Delivers the text extracted at upload for a file routed to tools (`none`) on a turn that
+   *  runs no tool able to read it. Off by default, which leaves such a file out of the prompt. */
+  textFallbackWithoutTools?: boolean;
 };
 
 export type FileConfig = {
@@ -88,6 +91,9 @@ export type FileConfig = {
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
   defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
   legacyFileUploadUX?: boolean;
+  /** Delivers the text extracted at upload for a file routed to tools (`none`) on a turn that
+   *  runs no tool able to read it. Off by default, which leaves such a file out of the prompt. */
+  textFallbackWithoutTools?: boolean;
 };
 
 export type FileConfigInput = {
@@ -119,6 +125,9 @@ export type FileConfigInput = {
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
   defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
   legacyFileUploadUX?: boolean;
+  /** Delivers the text extracted at upload for a file routed to tools (`none`) on a turn that
+   *  runs no tool able to read it. Off by default, which leaves such a file out of the prompt. */
+  textFallbackWithoutTools?: boolean;
 };
 
 /** The immutable origin of a file explicitly published from an agent execution. */
