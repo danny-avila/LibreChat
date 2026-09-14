@@ -10,7 +10,6 @@ import {
 } from 'librechat-data-provider';
 import type {
   TAgentQueuedTurnFileRef,
-  TFile,
   TMessage,
   TConversation,
   TMessageContentParts,
@@ -41,6 +40,7 @@ import {
   clearAllDrafts,
   getPendingDraftId,
   insertQueuedOrigin,
+  hydrateFileDeliveryMetadata,
   mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -271,36 +271,14 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
   return refs.length > 0 ? refs : undefined;
 }
 
-export function mergeQueuedTurnFileMetadata(
-  receiptFiles: TMessage['files'],
-  optimisticFiles: TMessage['files'],
-  storedFiles?: Readonly<Record<string, Pick<TFile, 'llmDeliveryPath'> | undefined>>,
-): TMessage['files'] {
-  if (receiptFiles == null || receiptFiles.length === 0) {
-    return receiptFiles;
-  }
-  const optimisticById = new Map(
-    (optimisticFiles ?? []).flatMap((file) =>
-      file.file_id != null ? [[file.file_id, file] as const] : [],
-    ),
-  );
-  return receiptFiles.map((file) => {
-    const optimistic = file.file_id == null ? undefined : optimisticById.get(file.file_id);
-    const stored = file.file_id == null ? undefined : storedFiles?.[file.file_id];
-    const llmDeliveryPath = optimistic?.llmDeliveryPath ?? stored?.llmDeliveryPath;
-    if (file.llmDeliveryPath != null || llmDeliveryPath == null) {
-      return file;
-    }
-    return { ...file, llmDeliveryPath };
-  });
-}
+export { hydrateFileDeliveryMetadata as mergeQueuedTurnFileMetadata } from '~/utils/files';
 
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
   settledByRequestId: ReadonlyMap<string, SettledQueuedTurnReceipt>,
   authoritativeSnapshot = true,
-  storedFiles?: Readonly<Record<string, Pick<TFile, 'llmDeliveryPath'> | undefined>>,
+  storedFiles?: Parameters<typeof hydrateFileDeliveryMetadata>[2],
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
     previous.flatMap((item) =>
@@ -333,7 +311,7 @@ function reconcileServerQueuedTurns(
     } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
       status = receipt.status;
     }
-    const files = mergeQueuedTurnFileMetadata(receipt.files, optimistic?.files, storedFiles);
+    const files = hydrateFileDeliveryMetadata(receipt.files, optimistic?.files, storedFiles);
     return [
       {
         id: optimistic?.id ?? receipt.clientRequestId,

@@ -16,6 +16,11 @@ const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
 const mockUseAgentQueuedTurns = jest.fn();
 const mockExtendActiveJobsGrace = jest.fn();
+let mockFileMap: Record<string, { llmDeliveryPath?: 'provider' | 'text' | 'none' }> = {};
+
+jest.mock('~/Providers', () => ({
+  useFileMapContext: () => mockFileMap,
+}));
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
@@ -213,6 +218,7 @@ describe('useResumeOnLoad', () => {
     mockUseAgentQueuedTurns.mockReset();
     mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1 });
     mockExtendActiveJobsGrace.mockReset();
+    mockFileMap = {};
   });
 
   afterEach(() => {
@@ -2238,6 +2244,7 @@ describe('useResumeOnLoad', () => {
     it('restores still-queued steers (with files) and drops chips absent from the server list', async () => {
       const observedSteers: PendingSteer[][] = [];
       const files = [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }];
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
       mockUseStreamStatus.mockReturnValue(
         buildActiveStatus([{ steerId: 'queued-1', text: 'still queued', createdAt: 5, files }]),
       );
@@ -2258,7 +2265,7 @@ describe('useResumeOnLoad', () => {
           text: 'still queued',
           status: 'pending',
           createdAt: 5,
-          files,
+          files: [{ ...files[0], llmDeliveryPath: 'text' }],
           generationCreatedAt: 1234,
           generationProtocolVersion: 2,
         },
