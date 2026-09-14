@@ -109,6 +109,7 @@ const {
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
+  stripFailedSummaryParts,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -4627,7 +4628,11 @@ class AgentClient extends BaseClient {
         boundaryTokenAdjustment,
         compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        payload,
+        /** A summarize round that errored keeps the deltas it streamed, and the
+         *  formatter's summary scan takes the last summary part with text as
+         *  the history boundary without reading `failed`. Left in, that prefix
+         *  would replace the history it never finished summarizing. */
+        stripFailedSummaryParts(payload),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -4719,7 +4724,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripActivityLabelParts(this.memoryPayload),
+              stripFailedSummaryParts(stripActivityLabelParts(this.memoryPayload)),
               undefined,
               toolSet,
               skillPrimeResult?.skills,

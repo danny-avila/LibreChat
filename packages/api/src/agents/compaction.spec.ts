@@ -15,6 +15,7 @@ import {
   resolveFailedTurnContent,
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
+  stripFailedSummaryParts,
 } from './compaction';
 
 const index = [
@@ -233,5 +234,46 @@ describe('resolveFailedTurnContent', () => {
     ['a request with no body', undefined],
   ])('leaves %s with its text-only shape', (_label, requestBody) => {
     expect(resolveFailedTurnContent(requestBody, 'Something failed')).toEqual({});
+  });
+});
+
+describe('stripFailedSummaryParts', () => {
+  const failedSummary = {
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'Half a checkpoint' }],
+    failed: true,
+  };
+  const completeSummary = {
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+  };
+  const text = { type: ContentTypes.TEXT, text: 'An answer' };
+
+  /** The formatter reads the last summary part with text as the history
+   *  boundary, so a failed one standing in the payload drops the turns it
+   *  never summarized. */
+  it('drops a failed summary and keeps the rest of the turn intact', () => {
+    const payload = [
+      { role: 'user', content: [{ type: ContentTypes.TEXT, text: 'First question' }] },
+      { role: 'assistant', content: [text, failedSummary] },
+    ];
+
+    const result = stripFailedSummaryParts(payload);
+
+    expect(result[0]).toBe(payload[0]);
+    expect(result[1].content).toEqual([text]);
+  });
+
+  it('keeps a complete summary, so a real checkpoint still bounds the history', () => {
+    const payload = [{ role: 'assistant', content: [completeSummary, failedSummary] }];
+
+    expect(stripFailedSummaryParts(payload)[0].content).toEqual([completeSummary]);
+  });
+
+  it.each<[string, { role: string; content?: unknown }[]]>([
+    ['no failed summary', [{ role: 'assistant', content: [completeSummary] }]],
+    ['string content', [{ role: 'user', content: 'Plain text turn' }]],
+  ])('returns the same payload reference for %s', (_label, payload) => {
+    expect(stripFailedSummaryParts(payload)).toBe(payload);
   });
 });

@@ -100,18 +100,53 @@ export function markCompactionOutcome(
   if (aborted) {
     throw Object.assign(new Error(COMPACTION_FAILED_ERROR), { code: 'COMPACTION_FAILED' });
   }
-  /** A failed round keeps whatever deltas it streamed. History loading skips a
-   *  `failed` summary instead of taking it as the conversation's checkpoint
-   *  (`BaseClient.findSummaryContentBlock`), so the truncated text no longer
-   *  replaces the history it failed to summarize — but it is not the turn's
-   *  outcome either. The typed failure is, and persisting the unusable summary
-   *  beside it would report the same failure twice. */
+  /** A failed round keeps whatever deltas it streamed, and a summary part with
+   *  text is the history boundary for everything downstream. Persisting a
+   *  truncated one would stand in for the history it failed to summarize, so
+   *  the unusable summary goes and the typed failure is the turn's whole
+   *  outcome. */
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     if (contentParts[index]?.type === ContentTypes.SUMMARY) {
       contentParts.splice(index, 1);
     }
   }
   contentParts.push(...compactionFailureContent());
+}
+
+type PayloadContentPart = { type?: unknown; failed?: unknown } | null | undefined;
+
+/**
+ * Removes failed summary parts from a message payload before any
+ * `formatAgentMessages` call. The SDK's summary scan takes the last summary
+ * part that carries text as the conversation's history boundary and drops
+ * every message before it, without reading `failed`. A summarize round that
+ * errored mid-stream keeps the deltas it streamed, so leaving that part in the
+ * payload replaces the history it never finished summarizing with the prefix
+ * it managed to produce. Message positions are preserved — only parts are
+ * dropped — so an index-keyed token map stays aligned. Non-mutating; returns
+ * the same reference when nothing needed stripping.
+ */
+export function stripFailedSummaryParts<T extends { content?: unknown }>(payload: T[]): T[] {
+  if (!Array.isArray(payload)) {
+    return payload;
+  }
+  let changed = false;
+  const result = payload.map((message) => {
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      return message;
+    }
+    const filtered = content.filter((part) => {
+      const candidate = part as PayloadContentPart;
+      return !(candidate?.type === ContentTypes.SUMMARY && candidate.failed === true);
+    });
+    if (filtered.length === content.length) {
+      return message;
+    }
+    changed = true;
+    return { ...message, content: filtered };
+  });
+  return changed ? result : payload;
 }
 
 function snapshotEntry(
