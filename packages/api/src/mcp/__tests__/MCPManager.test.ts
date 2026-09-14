@@ -2874,6 +2874,9 @@ describe('MCPManager', () => {
           options: { signal: controller.signal },
           oboTokenResolver: mockOboTokenResolver,
           upstreamTokenProvider: mockUpstreamTokenProvider,
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
         }),
       ).rejects.toMatchObject({ name: 'AbortError' });
       expect(mockConnection.client.request).not.toHaveBeenCalled();
