@@ -495,6 +495,23 @@ describe.each([
   });
 
   if (_version === 'v1') {
+    /** With content filters off the preflight reads nothing, so the vision check
+     *  must fall back to the snapshot authorization already read and pinned. */
+    it('checks vision support against the authorized assistant without reading it again', async () => {
+      req.config.filters = {};
+      mockGetRoleByName.mockResolvedValue(
+        roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
+      );
+      mockRetrieveAssistant.mockResolvedValue({ id: 'asst-1', tools: [{ type: 'file_search' }] });
+      req.body.endpointOption.attachments = Promise.resolve([{ source: 'local' }]);
+      mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+
+      await chatV1(req, res);
+
+      expect(mockRetrieveAssistant).toHaveBeenCalledTimes(1);
+      expect(mockInitThread).toHaveBeenCalledTimes(1);
+    });
+
     describe('V1 vision attachment failures', () => {
       it('does not log a signed storage URL from an image encoding error', async () => {
         const signedUrl =

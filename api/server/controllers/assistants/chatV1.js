@@ -431,7 +431,10 @@ const chatV1 = async (req, res) => {
         return;
       }
 
-      const assistant = persistedAssistant ?? (await openai.beta.assistants.retrieve(assistant_id));
+      const assistant =
+        persistedAssistant ??
+        runAuthorization.assistant ??
+        (await openai.beta.assistants.retrieve(assistant_id));
       const visionToolIndex = assistant.tools.findIndex(
         (tool) => tool?.function && tool?.function?.name === ImageVisionTool.function.name,
       );
