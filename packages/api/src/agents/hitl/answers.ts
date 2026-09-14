@@ -178,32 +178,23 @@ function readAskToolCall(part: unknown): RetainedAnswerSet | undefined {
 
 /**
  * Every answered `ask_user_question` call in `sources`, in the order the sources
- * are given. A later stamp for the same tool call replaces the earlier one in
- * place, so a row seen twice does not repeat itself.
+ * are given. Rows are already unique by message id after the branch walk, and
+ * tool-call ids are not conversation-global (a provider may reuse `call_0` on
+ * every turn), so nothing is merged across rows.
  */
 export function collectRetainedAnswers(
   sources: readonly RetainedAnswerSource[],
 ): RetainedAnswerSet[] {
   const sets: RetainedAnswerSet[] = [];
-  const indexByToolCallId = new Map<string, number>();
   for (const source of sources) {
     if (!Array.isArray(source?.content)) {
       continue;
     }
     for (const part of source.content) {
       const set = readAskToolCall(part);
-      if (set == null) {
-        continue;
+      if (set != null) {
+        sets.push(set);
       }
-      const existing = set.toolCallId == null ? undefined : indexByToolCallId.get(set.toolCallId);
-      if (existing != null) {
-        sets[existing] = set;
-        continue;
-      }
-      if (set.toolCallId != null) {
-        indexByToolCallId.set(set.toolCallId, sets.length);
-      }
-      sets.push(set);
     }
   }
   return sets;

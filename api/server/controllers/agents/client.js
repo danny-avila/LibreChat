@@ -2252,6 +2252,12 @@ class AgentClient extends BaseClient {
     void this.publishRunContextMeta?.();
   }
 
+  /** Every row `loadHistory` read this turn, held only until the retained
+   *  answers are built: the walk it returns stops at a checkpoint summary. */
+  onHistoryLoaded(rows) {
+    this.loadedHistoryRows = rows;
+  }
+
   async loadHistory(conversationId, parentMessageId = null) {
     if (this.eventActorContinuation === 'warm') {
       logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
@@ -2788,7 +2794,8 @@ class AgentClient extends BaseClient {
       }
     }
     /** The memory copy is built once the prompt copy is known to differ from
-     *  the rows: file context here, or the retained-answers block below. */
+     *  the rows (file context here, the retained-answers block below) and
+     *  memory extraction will read it. */
     const buildMemoryPayload = async () => {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
@@ -2848,24 +2855,23 @@ class AgentClient extends BaseClient {
      * adjusted here.
      */
     const retainedAnswersContext = await retainedAnswersPromise;
+    this.loadedHistoryRows = undefined;
     const retainedAnswersIndex =
       retainedAnswersContext == null
         ? -1
         : orderedMessages.findLastIndex((message) => message?.isCreatedByUser === true);
     if (retainedAnswersIndex >= 0) {
-      prependContextText(formattedMessages[retainedAnswersIndex], retainedAnswersContext, '\n\n');
-      const withAnswers = countFormattedMessageTokens(
-        formattedMessages[retainedAnswersIndex],
-        encoding,
-      );
-      const answerTokens = Math.max(
-        0,
-        (withAnswers ?? 0) - (indexTokenCountMap[retainedAnswersIndex] ?? 0),
-      );
+      const target = formattedMessages[retainedAnswersIndex];
+      /** The row's own count may be a stored, calibrated figure; the block is
+       *  measured as the difference between two fresh counts of the same copy. */
+      const beforeAnswers = countFormattedMessageTokens(target, encoding);
+      prependContextText(target, retainedAnswersContext, '\n\n');
+      const withAnswers = countFormattedMessageTokens(target, encoding);
+      const answerTokens = Math.max(0, (withAnswers ?? 0) - (beforeAnswers ?? 0));
       indexTokenCountMap[retainedAnswersIndex] =
         (indexTokenCountMap[retainedAnswersIndex] ?? 0) + answerTokens;
       promptTokens += answerTokens;
-      if (this.memoryPayload == null) {
+      if (this.memoryPayload == null && this.processMemory != null) {
         await buildMemoryPayload();
       }
     }

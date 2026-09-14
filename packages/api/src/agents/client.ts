@@ -109,7 +109,9 @@ export function applyAttachmentOnlyText(
 /**
  * Prepends context text to a formatted message: joined ahead of its string
  * content or first text part, or added as a leading text part when it has
- * neither. The prompt copy changes; the stored row does not.
+ * neither. Array content is replaced, never edited in place: a formatted copy
+ * shares its array with the stored row it came from, so the stored row and
+ * every other reader of it stay untouched.
  */
 export function prependContextText(
   formattedMessage: FormattedMessageWithContent,
@@ -129,13 +131,17 @@ export function prependContextText(
     return;
   }
 
-  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
-  if (textPart != null && typeof textPart.text === 'string') {
-    textPart.text = `${text}${separator}${textPart.text}`;
+  const index = formattedMessage.content.findIndex(
+    (part) => part.type === ContentTypes.TEXT && typeof part.text === 'string',
+  );
+  if (index < 0) {
+    formattedMessage.content = [{ type: ContentTypes.TEXT, text }, ...formattedMessage.content];
     return;
   }
-
-  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text });
+  const textPart = formattedMessage.content[index];
+  formattedMessage.content = formattedMessage.content.map((part, position) =>
+    position === index ? { ...textPart, text: `${text}${separator}${textPart.text}` } : part,
+  );
 }
 
 export function prependFileContext(

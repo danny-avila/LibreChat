@@ -137,17 +137,17 @@ describe('collectRetainedAnswers', () => {
     expect(sets).toEqual([]);
   });
 
-  test('a later stamp for the same tool call replaces the earlier one in place', () => {
+  test('keeps every answered call, even when a provider reuses a tool-call id across rows', () => {
     const sets = collectRetainedAnswers([
-      { content: [askPart(batchRequest, JSON.stringify({ answers: { environment: 'staging' } }))] },
-      { content: [askPart({ question: 'Other?' }, 'later', 'tc-9')] },
       {
         content: [
-          askPart(batchRequest, JSON.stringify({ answers: { environment: 'production' } })),
+          askPart(batchRequest, JSON.stringify({ answers: { environment: 'staging' } }), 'call_0'),
         ],
       },
+      { content: [askPart({ question: 'Other?' }, 'later', 'call_1')] },
+      { content: [askPart({ question: 'Ship it?' }, 'yes', 'call_0')] },
     ]);
-    expect(sets.map((set) => set.answers[0].answer)).toEqual(['production', 'later']);
+    expect(sets.map((set) => set.answers[0].answer)).toEqual(['staging', 'later', 'yes']);
   });
 });
 

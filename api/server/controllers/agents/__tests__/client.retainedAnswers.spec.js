@@ -185,16 +185,19 @@ describe('AgentClient retained answers', () => {
   it('completes the branch the history read cut at the summary and quotes the answer in the user turn', async () => {
     const client = makeClient();
     client.user = 'user-123';
+    client.processMemory = jest.fn();
     const rows = compactedBranch();
     getMessages.mockResolvedValue(rows);
     /** The real loader: one read of the conversation, then the summary-bounded walk. */
     const cut = await client.loadHistory('convo-123', 'u3');
     expect(cut.map((message) => message.messageId)).toEqual(['a2', 'u3']);
     expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(client.loadedHistoryRows).toBe(rows);
 
     const { prompt, tokenCountMap } = await client.buildMessages(cut, 'u3', {});
 
     expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(client.loadedHistoryRows).toBeUndefined();
     expect(prompt.map((message) => message.messageId)).not.toContain('a1');
     const latest = prompt[prompt.length - 1];
     const text = contentText(latest);
@@ -241,6 +244,52 @@ describe('AgentClient retained answers', () => {
 
     expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+  });
+
+  it('leaves an array-form user row and its memory copy untouched', async () => {
+    const client = makeClient();
+    client.shouldSummarize = false;
+    client.processMemory = jest.fn();
+    const rows = compactedBranch();
+    rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
+    const shared = [{ type: ContentTypes.TEXT, text: LATEST_TEXT }];
+    rows[4] = { ...rows[4], text: undefined, content: shared };
+
+    const { prompt } = await client.buildMessages(rows, 'u3', {});
+
+    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(shared).toEqual([{ type: ContentTypes.TEXT, text: LATEST_TEXT }]);
+    expect(rows[4].content).toBe(shared);
+    expect(contentText(client.memoryPayload[client.memoryPayload.length - 1])).toBe(LATEST_TEXT);
+  });
+
+  it('measures the block against a fresh count even when the stored count was calibrated', async () => {
+    const client = makeClient();
+    client.shouldSummarize = false;
+    const rows = compactedBranch();
+    rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
+    rows[4].tokenCount = 5000;
+
+    const { prompt, tokenCountMap } = await client.buildMessages(rows, 'u3', {});
+
+    expect(tokenCountMap.u3).toBe(5000);
+    const blockOnly = mockCountFormattedMessageTokens({
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT, text: ANSWER_LINE }],
+    });
+    expect(client.indexTokenCountMap[prompt.length - 1]).toBeGreaterThanOrEqual(5000 + blockOnly);
+  });
+
+  it('builds no memory copy when memory processing is inactive', async () => {
+    const client = makeClient();
+    client.shouldSummarize = false;
+    const rows = compactedBranch();
+    rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
+
+    const { prompt } = await client.buildMessages(rows, 'u3', {});
+
+    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(client.memoryPayload).toBeNull();
   });
 
   it('quotes into the turn being continued when the leaf is the unfinished response', async () => {
