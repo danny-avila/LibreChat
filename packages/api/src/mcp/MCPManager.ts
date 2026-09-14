@@ -32,7 +32,7 @@ import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } fro
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
-import { createLazyOboUpstreamTokenProvider } from '~/mcp/oauth/obo';
+import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
@@ -42,7 +42,6 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { detachOnAbort } from '~/utils/promises';
 import { isAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -1331,7 +1330,7 @@ Please follow these instructions when using tools from the respective MCP server
           }
           let oboTokens: MCPOAuthTokens;
           try {
-            oboTokens = await detachOnAbort(
+            oboTokens = await awaitOboOperation(
               resolveOboToken(
                 user,
                 oboConfig,

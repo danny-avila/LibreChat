@@ -2855,32 +2855,35 @@ describe('MCPManager', () => {
       expect(mockConnection.client.request).toHaveBeenCalled();
     });
 
-    it('detaches a cancelled tool from an uncooperative OBO exchange', async () => {
-      const controller = new AbortController();
-      mockResolveOboToken.mockImplementationOnce(() => {
-        queueMicrotask(() => controller.abort());
-        return new Promise(() => {});
-      });
-      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
-      await expect(
-        manager.callTool({
-          user: mockUser as IUser,
-          serverName,
-          toolName: 'test_tool',
-          provider: 'openai',
-          options: { signal: controller.signal },
-          oboTokenResolver: mockOboTokenResolver,
-          upstreamTokenProvider: mockUpstreamTokenProvider,
-          flowManager: mockFlowManager as unknown as Parameters<
-            typeof manager.callTool
-          >[0]['flowManager'],
-        }),
-      ).rejects.toMatchObject({ name: 'AbortError' });
-      expect(mockConnection.client.request).not.toHaveBeenCalled();
-    });
+    it.each([undefined, new Error('owner stopped'), 'stopped'])(
+      'detaches a cancelled tool from an uncooperative OBO exchange (%s)',
+      async (reason) => {
+        const controller = new AbortController();
+        mockResolveOboToken.mockImplementationOnce(() => {
+          queueMicrotask(() => controller.abort(reason));
+          return new Promise(() => {});
+        });
+        mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+        (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+        await expect(
+          manager.callTool({
+            user: mockUser as IUser,
+            serverName,
+            toolName: 'test_tool',
+            provider: 'openai',
+            options: { signal: controller.signal },
+            oboTokenResolver: mockOboTokenResolver,
+            upstreamTokenProvider: mockUpstreamTokenProvider,
+            flowManager: mockFlowManager as unknown as Parameters<
+              typeof manager.callTool
+            >[0]['flowManager'],
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mockConnection.client.request).not.toHaveBeenCalled();
+      },
+    );
 
     it('lazily resolves the upstream provider for an OBO tool call', async () => {
       mockResolveOboToken.mockImplementationOnce(async (_user, _config, _exchange, provider) => {

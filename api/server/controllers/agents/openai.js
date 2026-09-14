@@ -144,7 +144,7 @@ function createToolLoader({ req, res, signal, definitionsOnly = true }) {
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));

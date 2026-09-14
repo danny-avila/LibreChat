@@ -314,6 +314,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
+    const signal = new AbortController().signal;
     const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
       tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
       complete: false,
@@ -325,11 +326,13 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     const result = await reinitMCPServer({
       user,
       serverName,
+      signal,
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
     });
 
     expect(result.tools).toBeNull();
     expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
+    expect(fetchOrderedToolsSnapshot).toHaveBeenCalledWith(undefined, signal);
     expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 

@@ -48,9 +48,8 @@ import {
   createDeadlineAbortSignal,
 } from './utils';
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
-import { createLazyOboUpstreamTokenProvider } from '~/mcp/oauth/obo';
+import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { detachOnAbort } from '~/utils/promises';
 import { isAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -681,7 +680,7 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return detachOnAbort(
+    return awaitOboOperation(
       resolveOboToken(
         this.user,
         oboConfig,

@@ -347,9 +347,9 @@ async function reinitMCPServer({
         mcpManager.getToolPublicationGeneration(connection) ?? publicationGeneration;
       let snapshot;
       if (typeof connection.fetchOrderedToolsSnapshot === 'function') {
-        snapshot = await connection.fetchOrderedToolsSnapshot();
+        snapshot = await connection.fetchOrderedToolsSnapshot(undefined, signal);
       } else if (typeof connection.fetchToolsSnapshot === 'function') {
-        snapshot = await connection.fetchToolsSnapshot();
+        snapshot = await connection.fetchToolsSnapshot(undefined, signal);
       } else {
         snapshot = { tools: await connection.fetchTools(), complete: true };
       }

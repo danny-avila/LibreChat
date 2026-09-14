@@ -65,6 +65,27 @@ export function selectMCPUpstreamTokenProvider({
     : (upstreamTokenProvider ?? createSessionProvider());
 }
 
+function normalizeOboCancellation(error: unknown, signal?: AbortSignal): unknown {
+  if (signal?.aborted && error === signal.reason && !isAbortError(error)) {
+    return Object.assign(new Error('The operation was aborted.', { cause: error }), {
+      name: 'AbortError',
+    });
+  }
+  return error;
+}
+
+/** Detach cancelled callers and preserve cancellation for arbitrary AbortController reasons. */
+export async function awaitOboOperation<T>(
+  operation: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    return await detachOnAbort(operation, signal);
+  } catch (error) {
+    throw normalizeOboCancellation(error, signal);
+  }
+}
+
 /** Keep lookup failures inside resolveOboToken's typed failure boundary. */
 export function createLazyOboUpstreamTokenProvider(
   resolver: UpstreamTokenProviderResolver,
@@ -95,13 +116,7 @@ export function createLazyOboUpstreamTokenProvider(
         effectiveSignal,
       );
     } catch (error) {
-      if (effectiveSignal?.aborted && error === effectiveSignal.reason && !isAbortError(error)) {
-        // AbortController permits arbitrary reasons; retain the cause without classifying it as auth failure.
-        const aborted = new Error('The operation was aborted.', { cause: error });
-        aborted.name = 'AbortError';
-        throw aborted;
-      }
-      throw error;
+      throw normalizeOboCancellation(error, effectiveSignal);
     }
   };
 }
