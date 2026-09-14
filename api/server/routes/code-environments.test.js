@@ -38,7 +38,10 @@ const mockHandlers = {
     res.status(200).json({ conversationId: 'convo-1' }),
   ),
 };
-const mockGetJob = jest.fn();
+const mockGenerationJobManager = {
+  getJob: jest.fn(),
+  getCleanupBlockingJobIdsForConversations: jest.fn(),
+};
 let mockHandlerDeps;
 const mockModels = {
   isAgentTriggerPrincipalActive: jest.fn(),
@@ -51,7 +54,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  GenerationJobManager: { getJob: (...args) => mockGetJob(...args) },
+  GenerationJobManager: mockGenerationJobManager,
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn((deps) => {
     mockHandlerDeps = deps;
@@ -157,14 +160,12 @@ describe('code environment routes', () => {
     expect(mockHandlers.moveConversationDecision).toHaveBeenCalledTimes(1);
   });
 
-  it('gives the handlers owner-scoped conversation reads and the generation job lookup', async () => {
+  it('gives the handlers owner-scoped conversation reads and conversation-scoped generations', async () => {
     await request(createApp()).get('/api/code-environments').expect(200);
 
-    const { conversations } = mockHandlerDeps;
+    const { conversations, generations } = mockHandlerDeps;
     expect(conversations.get).toBe(mockModels.getConvo);
     expect(conversations.replaceDecision).toBe(mockModels.replaceConvoCodeEnvironmentDecision);
-    mockGetJob.mockResolvedValue({ status: 'running' });
-    await expect(conversations.getGenerationJob('convo-1')).resolves.toEqual({ status: 'running' });
-    expect(mockGetJob).toHaveBeenCalledWith('convo-1');
+    expect(generations).toBe(mockGenerationJobManager);
   });
 });

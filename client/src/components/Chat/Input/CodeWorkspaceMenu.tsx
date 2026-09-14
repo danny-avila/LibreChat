@@ -55,14 +55,18 @@ function describeRelocation(
     .map(({ environment }) => environment.name ?? environment.id)
     .join(', ');
   const previousNames = relocation.previous.map(({ id, name }) => name ?? id).join(', ');
+  let info = localize('com_ui_code_workspace_move_info', { 0: previousNames, 1: targetNames });
+  if (relocation.targets.length === 0) {
+    info = localize('com_ui_code_workspace_move_info_removed', { 0: previousNames });
+  } else if (!previousNames) {
+    info = localize('com_ui_code_workspace_move_info_added', { 0: targetNames });
+  }
   return {
     label:
       relocation.targets.length === 1
         ? localize('com_ui_code_workspace_move_to', { 0: targetNames })
         : localize('com_ui_code_workspace_move'),
-    info: previousNames
-      ? localize('com_ui_code_workspace_move_info', { 0: previousNames, 1: targetNames })
-      : localize('com_ui_code_workspace_move_info_added', { 0: targetNames }),
+    info,
   };
 }
 

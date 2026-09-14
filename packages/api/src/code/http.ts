@@ -91,7 +91,18 @@ export interface CodeEnvironmentConversationDeps {
     expected: Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
     codeWorkspaces: CodeWorkspaceSelection[];
   }) => Promise<StoredConversationDecision | null>;
-  getGenerationJob: (streamId: string) => Promise<CodeEnvironmentGenerationJob | null | undefined>;
+}
+
+/** Generation lookups a move needs to tell whether any run can still act for a conversation. */
+export interface CodeEnvironmentGenerationDeps {
+  getJob: (streamId: string) => Promise<CodeEnvironmentGenerationJob | null | undefined>;
+  /** Remote API runs use response IDs as stream identities, so the conversation's own stream
+   *  is not the only generation that can still act in its environment. */
+  getCleanupBlockingJobIdsForConversations: (
+    userId: string,
+    conversationIds: readonly string[],
+    tenantId?: string,
+  ) => Promise<string[]>;
 }
 
 /** The generation state a move reads to tell whether a run can still save its own decision. */
@@ -104,6 +115,7 @@ export interface CodeEnvironmentHttpDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   registry: Registry;
   conversations?: CodeEnvironmentConversationDeps;
+  generations?: CodeEnvironmentGenerationDeps;
   createEnvironmentId?: () => string;
   readSecret?: (name: string) => string | undefined;
   resolveTenantId?: (req: ServerRequest) => string;
@@ -358,8 +370,8 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const conversations = deps.conversations;
-    if (conversations == null) {
+    const { conversations, generations } = deps;
+    if (conversations == null || generations == null) {
       return res.status(503).json({ error: 'Conversation code environments are not configured' });
     }
     const conversationId = (
@@ -380,14 +392,19 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     const { from, to } = (req.body ?? {}) as { from?: unknown; to?: unknown };
     const userId = principal.userId.toString();
-    const [conversation, job] = await Promise.all([
+    const tenantId =
+      typeof req.user?.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined;
+    const [conversation, job, conversationRunIds] = await Promise.all([
       conversations.get(userId, conversationId),
-      conversations.getGenerationJob(conversationId),
+      generations.getJob(conversationId),
+      generations.getCleanupBlockingJobIdsForConversations(userId, [conversationId], tenantId),
     ]);
     if (conversation == null) {
       return res.status(404).json({ error: 'Conversation was not found' });
     }
-    if (isGenerationActive(job)) {
+    if (isGenerationActive(job) || conversationRunIds.length > 0) {
       return res
         .status(409)
         .json({ error: 'Wait for the current response to finish before moving this conversation' });
@@ -404,7 +421,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     try {
       await Promise.all(
-        move.added.map((selection) => assertWorkspaceRegistered(policy, selection)),
+        move.codeWorkspaces.map((selection) => assertWorkspaceRegistered(policy, selection)),
       );
     } catch (error) {
       if (error instanceof CodeWorkspaceSelectionError) {

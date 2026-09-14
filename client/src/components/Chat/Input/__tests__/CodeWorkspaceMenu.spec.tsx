@@ -352,6 +352,42 @@ describe('CodeWorkspaceMenu', () => {
       });
     });
 
+    test('drops a machine the agents stopped using with a single confirm', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
+        conversationId: 'existing',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [moved],
+      });
+      const setConversation = jest.fn();
+      const base = relocatable([]);
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={{
+            ...base,
+            relocation: {
+              ...base.relocation!,
+              from: [mac, moved],
+              previous: [{ id: 'mac', name: 'Danny Mac' }],
+              retained: [moved],
+            },
+          }}
+          disabled={false}
+        />,
+      );
+
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      expect(screen.getByText('com_ui_code_workspace_move_info_removed')).toBeInTheDocument();
+      await userEvent.click(await confirmItem());
+
+      await waitFor(() => expect(setConversation).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledWith({
+        conversationId: 'existing',
+        from: [mac, moved],
+        to: [moved],
+      });
+    });
+
     test('explains a new machine that advertises no workspace and cannot be moved to', async () => {
       const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment');
       renderMenu(

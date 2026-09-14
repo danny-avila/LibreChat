@@ -1551,14 +1551,17 @@ describe('moving a sealed conversation code-environment decision', () => {
       codeWorkspaces: [mac],
     },
     job,
+    conversationRunIds = [],
     fetchImpl = jest.fn().mockImplementation(async () => workerStatusResponse()),
   }: {
     movesEnabled?: boolean;
     stored?: StoredDecision;
     job?: CodeEnvironmentGenerationJob;
+    conversationRunIds?: string[];
     fetchImpl?: jest.Mock;
   } = {}) {
     const conversations = new Map<string, StoredDecision>([[stored.conversationId, stored]]);
+    const listConversationRuns = jest.fn(async () => conversationRunIds);
     const getConversation = jest.fn(async (user: string, conversationId: string) =>
       user === userId ? (conversations.get(conversationId) ?? null) : null,
     );
@@ -1620,7 +1623,10 @@ describe('moving a sealed conversation code-environment decision', () => {
       conversations: {
         get: getConversation,
         replaceDecision,
-        getGenerationJob: async () => job ?? null,
+      },
+      generations: {
+        getJob: async () => job ?? null,
+        getCleanupBlockingJobIdsForConversations: listConversationRuns,
       },
     });
     const move = async (
@@ -1634,7 +1640,14 @@ describe('moving a sealed conversation code-environment decision', () => {
       );
       return res;
     };
-    return { move, conversations, getConversation, replaceDecision, fetchImpl };
+    return {
+      move,
+      conversations,
+      getConversation,
+      listConversationRuns,
+      replaceDecision,
+      fetchImpl,
+    };
   }
 
   test('moves a sealed decision onto a workspace the new machine registers', async () => {
@@ -1690,6 +1703,59 @@ describe('moving a sealed conversation code-environment decision', () => {
       expect(replaceDecision).not.toHaveBeenCalled();
     },
   );
+
+  test('refuses while a remote run keyed by its response id still works on the conversation', async () => {
+    const { move, listConversationRuns, replaceDecision, fetchImpl } = setup({
+      conversationRunIds: ['resp_remote-run'],
+    });
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(listConversationRuns).toHaveBeenCalledWith(userId, ['conversation-1'], undefined);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(replaceDecision).not.toHaveBeenCalled();
+  });
+
+  test('drops an environment the agents stopped using after revalidating the one it keeps', async () => {
+    const gone = { environmentId: 'gone-vm', workspaceId: 'root' };
+    const { move, conversations, fetchImpl } = setup({
+      stored: {
+        conversationId: 'conversation-1',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [gone, vm],
+      },
+    });
+
+    const res = await move({ from: [gone, vm], to: [vm] });
+
+    expect(res.statusCode).toBe(200);
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([vm]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects a move whose kept workspace is no longer registered', async () => {
+    const gone = { environmentId: 'gone-vm', workspaceId: 'root' };
+    const { move, conversations, replaceDecision } = setup({
+      stored: {
+        conversationId: 'conversation-1',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [gone, vm],
+      },
+      fetchImpl: jest
+        .fn()
+        .mockImplementation(async () =>
+          workerStatusResponse({ workspaces: [{ id: 'another-project' }] }),
+        ),
+    });
+
+    const res = await move({ from: [gone, vm], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason: 'missing' }));
+    expect(replaceDecision).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([gone, vm]);
+  });
 
   test('moves once the previous generation has settled and saved', async () => {
     const { move } = setup({

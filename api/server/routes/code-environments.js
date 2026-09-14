@@ -23,8 +23,8 @@ function getHandlers() {
       conversations: {
         get: db.getConvo,
         replaceDecision: db.replaceConvoCodeEnvironmentDecision,
-        getGenerationJob: (streamId) => GenerationJobManager.getJob(streamId),
       },
+      generations: GenerationJobManager,
     });
   }
   return handlers;

@@ -145,7 +145,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [mac],
         to: [vm],
       }),
-    ).toEqual({ codeWorkspaces: [vm], added: [vm] });
+    ).toEqual({ codeWorkspaces: [vm] });
   });
 
   it('carries a covered environment over unchanged while adding a new one', () => {
@@ -156,7 +156,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [team],
         to: [vm, team],
       }),
-    ).toEqual({ codeWorkspaces: [team, vm], added: [vm] });
+    ).toEqual({ codeWorkspaces: [team, vm] });
   });
 
   it('moves a legacy decision inferred from its selections', () => {
@@ -166,7 +166,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [mac],
         to: [vm],
       }),
-    ).toEqual({ codeWorkspaces: [vm], added: [vm] });
+    ).toEqual({ codeWorkspaces: [vm] });
   });
 
   it('never switches the workspace of an environment the decision already covers', () => {
@@ -186,13 +186,23 @@ describe('resolveConversationCodeEnvironmentMove', () => {
     ).toThrow(locked);
   });
 
-  it('rejects a move that introduces no environment', () => {
+  it('drops an environment the agents stopped using without adding one', () => {
     const team = { environmentId: 'team', workspaceId: 'shared' };
-    expect(() =>
+    expect(
       resolveConversationCodeEnvironmentMove({
         conversation: sealedOn(mac, team),
         from: [mac, team],
         to: [team],
+      }),
+    ).toEqual({ codeWorkspaces: [team] });
+  });
+
+  it('rejects a move that changes nothing', () => {
+    expect(() =>
+      resolveConversationCodeEnvironmentMove({
+        conversation: sealedOn(mac),
+        from: [mac],
+        to: [mac],
       }),
     ).toThrow(locked);
   });

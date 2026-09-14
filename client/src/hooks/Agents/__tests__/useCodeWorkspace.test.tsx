@@ -521,6 +521,35 @@ describe('useCodeWorkspace', () => {
       });
     });
 
+    it('offers to drop a machine the agents stopped using instead of trimming the seal', () => {
+      const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+      const gone = { environmentId: 'gone-vm', workspaceId: 'root' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([gone, kept])));
+
+      expect(result.current.state).toBe('relocatable');
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.relocation).toEqual({
+        conversationId: 'existing',
+        from: [gone, kept],
+        previous: [{ id: 'gone-vm', name: undefined }],
+        retained: [kept],
+        targets: [],
+      });
+    });
+
+    it('never submits a trimmed seal when the API cannot move chats', () => {
+      mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
+      const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+      const gone = { environmentId: 'gone-vm', workspaceId: 'root' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([gone, kept])));
+
+      expect(result.current.state).toBe('choose');
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.resolveSubmission([gone, kept], 'attached')).toBeUndefined();
+    });
+
     it('treats a legacy selection-only seal the same way', () => {
       const { result } = renderHook(() =>
         useCodeWorkspace({ ...conversation([mac]), conversationId: 'existing' }),

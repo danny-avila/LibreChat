@@ -232,7 +232,10 @@ export default function useCodeWorkspace(
     required && selectionMetadataComplete,
   );
   const storedSelections = conversation?.codeWorkspaces;
-  const attachedEnvironmentIds = new Set(attachedEnvironments.map(({ id }) => id));
+  const attachedEnvironmentIds = useMemo(
+    () => new Set(attachedEnvironments.map(({ id }) => id)),
+    [attachedEnvironments],
+  );
   const hasForeignStoredSelection = storedSelections?.some(
     ({ environmentId }) => !attachedEnvironmentIds.has(environmentId),
   );
@@ -295,6 +298,14 @@ export default function useCodeWorkspace(
       if (!required || !selectionMetadataComplete || !isCodeWorkspaceSelections(selections ?? [])) {
         return undefined;
       }
+      /** A saved chat's decision is sealed as a whole: trimming a selection its agents no longer use
+       *  would submit a set the persisted decision rejects. */
+      if (
+        locked &&
+        selections?.some(({ environmentId }) => !attachedEnvironmentIds.has(environmentId))
+      ) {
+        return undefined;
+      }
       const resolved: CodeWorkspaceSelection[] = [];
       for (const result of environmentResults) {
         const requested = selections?.find(
@@ -321,7 +332,7 @@ export default function useCodeWorkspace(
       }
       return resolved.sort((a, b) => a.environmentId.localeCompare(b.environmentId));
     },
-    [environmentResults, required, selectionMetadataComplete],
+    [attachedEnvironmentIds, environmentResults, locked, required, selectionMetadataComplete],
   );
 
   const selections = resolveSelections(storedSelections);

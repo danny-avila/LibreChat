@@ -107,15 +107,13 @@ export function resolveConversationCodeEnvironmentDecision({
 
 export interface ConversationCodeEnvironmentMove {
   codeWorkspaces: CodeWorkspaceSelection[];
-  /** Selections for environments the decision did not cover; each needs a live worker check. */
-  added: CodeWorkspaceSelection[];
 }
 
 /**
  * Validates an owner's explicit move of a sealed attached decision onto the environments its
- * agents now use. A move may drop environments and add new ones, but never changes the workspace
- * of an environment the decision already covers and never upgrades a conversation that continues
- * without an attached environment. `from` must repeat the persisted selections, so a client acting
+ * agents now use. A move may drop environments the agents stopped using and add ones they now use,
+ * but never changes the workspace of an environment the decision already covers and never upgrades
+ * a conversation that continues without an attached environment. `from` must repeat the persisted selections, so a client acting
  * on a stale view of the conversation cannot replace a decision it has not seen.
  */
 export function resolveConversationCodeEnvironmentMove({
@@ -140,19 +138,19 @@ export function resolveConversationCodeEnvironmentMove({
   const sealed = new Map(
     persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
   );
-  const added: CodeWorkspaceSelection[] = [];
+  let adds = false;
   for (const selection of to) {
     const sealedWorkspaceId = sealed.get(selection.environmentId);
     if (sealedWorkspaceId == null) {
-      added.push(selection);
+      adds = true;
     } else if (sealedWorkspaceId !== selection.workspaceId) {
       throw new CodeWorkspaceSelectionError('locked');
     }
   }
-  if (added.length === 0) {
+  if (!adds && to.length === sealed.size) {
     throw new CodeWorkspaceSelectionError('locked');
   }
-  return { codeWorkspaces: canonicalSelections(to), added: canonicalSelections(added) };
+  return { codeWorkspaces: canonicalSelections(to) };
 }
 
 /**
