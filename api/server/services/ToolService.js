@@ -2217,6 +2217,7 @@ async function loadToolsForExecution({
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
+          workspaceId: codeExecutionContext.codeWorkspace?.workspaceId,
         };
         const ptcTool =
           codeExecutionContext.environmentType === 'attached'

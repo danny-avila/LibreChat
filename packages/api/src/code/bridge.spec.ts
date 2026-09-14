@@ -21,6 +21,7 @@ describe('getCodeBridgeWorkerStatus', () => {
             workspaceTools: {
               protocolVersion: 1,
               operations: ['read_file', 'execute_command'],
+              programmaticLanguages: ['bash'],
               workspaces: [
                 { id: 'project-a', name: 'Project A' },
                 { id: 'docs', operations: ['read_file'] },
@@ -47,6 +48,7 @@ describe('getCodeBridgeWorkerStatus', () => {
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
       operations: ['read_file', 'execute_command'],
+      programmaticLanguages: ['bash'],
       workspaces: [
         { id: 'project-a', name: 'Project A' },
         { id: 'docs', operations: ['read_file'] },
@@ -106,6 +108,22 @@ describe('getCodeBridgeWorkerStatus', () => {
       online: true,
       ready: true,
       capabilities: { sandboxProfile: 'native-srt', runtimes: Array(33).fill('bash') },
+    },
+    {
+      online: true,
+      ready: true,
+      leaseExpiresInMs: 5_000,
+      capabilities: {
+        statefulWorkspace: true,
+        sandboxProfile: 'native-srt',
+        runtimes: ['bash'],
+        workspaceTools: {
+          protocolVersion: 1,
+          operations: ['execute_command'],
+          programmaticLanguages: ['python'],
+          workspaces: [{ id: 'project-a' }],
+        },
+      },
     },
     {
       online: true,

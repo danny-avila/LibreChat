@@ -150,7 +150,7 @@ describe('supportsProgrammaticCodeExecution', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('suppresses generic programmatic Bash after an attached workspace is selected', async () => {
+  it('enables programmatic Bash only when the selected workspace advertises it', async () => {
     const fetchSpy = jest
       .spyOn(globalThis, 'fetch')
       .mockRejectedValue(new Error('Unexpected status request'));
@@ -163,11 +163,22 @@ describe('supportsProgrammaticCodeExecution', () => {
             environmentId: 'personal',
             workspaceId: 'project-a',
             operations: ['read_file', 'execute_command'],
+            programmaticLanguages: ['bash'],
           },
         },
         environments,
         getAppConfig,
       ),
+    ).toBe(true);
+    expect(
+      await supportsProgrammaticCodeExecution({
+        ...context,
+        codeWorkspace: {
+          environmentId: 'personal',
+          workspaceId: 'project-a',
+          operations: ['read_file', 'execute_command'],
+        },
+      }),
     ).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -283,7 +294,11 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     delete process.env.TEST_CODE_CAPABILITY_TOKEN;
   });
 
-  function workspaceStatus(workspaces: unknown[], statefulWorkspace: boolean = true): Response {
+  function workspaceStatus(
+    workspaces: unknown[],
+    statefulWorkspace: boolean = true,
+    programmaticLanguages?: string[],
+  ): Response {
     return new Response(
       JSON.stringify({
         protocolVersion: 1,
@@ -298,6 +313,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
           workspaceTools: {
             protocolVersion: 1,
             operations: ['read_file', 'list_files', 'execute_command'],
+            ...(programmaticLanguages ? { programmaticLanguages } : {}),
             workspaces,
           },
         },
@@ -354,6 +370,25 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     expect(await supportsProgrammaticCodeExecution(resolved, environments, getAppConfig)).toBe(
       false,
     );
+  });
+
+  it('carries selected-workspace programmatic support into the trusted context', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      workspaceStatus([{ id: 'project-a' }], false, ['bash']),
+    );
+    const resolved = await resolveCodeExecutionWorkspaceContext({
+      context,
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
+      environments,
+      getAppConfig,
+    });
+    expect(resolved.codeWorkspace).toEqual({
+      environmentId: 'personal',
+      workspaceId: 'project-a',
+      operations: ['read_file', 'list_files', 'execute_command'],
+      programmaticLanguages: ['bash'],
+    });
+    expect(await supportsProgrammaticCodeExecution(resolved)).toBe(true);
   });
 
   it.each([false, true])(

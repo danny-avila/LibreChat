@@ -178,21 +178,26 @@ export async function resolveCodeExecutionWorkspaceContext({
     codeWorkspace: {
       ...selection,
       operations: [...(workspace.operations ?? status.operations)],
+      ...(status.programmaticLanguages
+        ? { programmaticLanguages: [...status.programmaticLanguages] }
+        : {}),
     },
   };
 }
 
-/** Attached workers must confirm both a stateful workspace and the Bash runtime. */
+/** Attached workers must preserve the selected root while running Bash replay. */
 export async function supportsProgrammaticCodeExecution(
   context?: CodeExecutionContext,
   environments?: readonly CodeEnvironmentConfig[],
   getAppConfig?: CodeCapabilityConfigLoader,
 ): Promise<boolean> {
   if (context?.environmentType !== 'attached') return true;
-  /** Programmatic Bash uses Code API's generic exec endpoint, which has no
-   * workspace identifier. A fully resolved attached context therefore cannot
-   * use it until that protocol can preserve the selected-root boundary. */
-  if (context.codeWorkspace != null) return false;
+  if (context.codeWorkspace != null) {
+    return (
+      context.codeWorkspace.operations.includes('execute_command') &&
+      context.codeWorkspace.programmaticLanguages?.includes('bash') === true
+    );
+  }
   try {
     const status = await readAuthorizedAttachedWorkerStatus(context, environments, getAppConfig);
     return (

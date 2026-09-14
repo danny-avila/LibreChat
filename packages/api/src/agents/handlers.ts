@@ -4676,13 +4676,11 @@ async function handleReadFileCall(
     };
   }
 
-  /* Bundled skill files are primed into the sandbox under the `skills/`
-   * namespace (see `primeSkillFiles`), so the on-disk path is always
-   * `/mnt/data/skills/{skillName}/{relativePath}` regardless of whether the
-   * model addressed the file with or without the explicit prefix. Use this
-   * canonical path in the bash-fallback hints below so they never echo a
-   * prefix-less `args.path` that points nowhere on disk. */
-  const sandboxFilePath = `/mnt/data/${SKILL_FILE_PREFIX}${skillName}/${relativePath}`;
+  /* Code API exposes injected files through an execution-scoped data directory.
+   * Managed sandboxes keep the historic /mnt/data location; attached native
+   * workers provide LIBRECHAT_CODE_DATA_DIR so skill files never need to be
+   * copied into the persistent project root. */
+  const sandboxFilePath = `\${LIBRECHAT_CODE_DATA_DIR:-/mnt/data}/${SKILL_FILE_PREFIX}${skillName}/${relativePath}`;
 
   if (!getSkillFileByPath) {
     return {

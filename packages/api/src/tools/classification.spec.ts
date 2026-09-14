@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import type { AgentToolOptions } from 'librechat-data-provider';
+import type { AgentToolOptions, CodeWorkspaceOperation } from 'librechat-data-provider';
 import type { GenericTool } from '@librechat/agents';
 import type { CodeEnvironmentConfig } from '~/agents/execution';
 import type { LCToolRegistry } from './classification';
@@ -543,14 +543,14 @@ describe('classification.ts', () => {
 
     it.each(
       [false, true].flatMap((definitionsOnly) => [
-        { definitionsOnly, statefulWorkspace: false, runtimes: ['bash'], supported: false },
-        { definitionsOnly, statefulWorkspace: true, runtimes: ['py'], supported: false },
-        { definitionsOnly, statefulWorkspace: true, runtimes: ['bash'], supported: false },
+        { definitionsOnly, operations: ['execute_command'], languages: ['bash'], supported: true },
+        { definitionsOnly, operations: ['read_file'], languages: ['bash'], supported: false },
+        { definitionsOnly, operations: ['execute_command'], languages: [], supported: false },
       ]),
     )(
-      'gates attached PTC: definitionsOnly=$definitionsOnly stateful=$statefulWorkspace runtimes=$runtimes',
-      async ({ definitionsOnly, statefulWorkspace, runtimes, supported }) => {
-        const workerId = `worker-${definitionsOnly}-${statefulWorkspace}-${runtimes[0]}`;
+      'gates attached PTC by selected-root capability: definitionsOnly=$definitionsOnly supported=$supported',
+      async ({ definitionsOnly, operations, languages, supported }) => {
+        const workerId = `worker-${definitionsOnly}-${supported}`;
         process.env.TEST_CODE_CAPABILITY_TOKEN = 'capability-test-token';
         const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
           new Response(
@@ -561,9 +561,9 @@ describe('classification.ts', () => {
               ready: true,
               leaseExpiresInMs: 45_000,
               capabilities: {
-                statefulWorkspace,
+                statefulWorkspace: false,
                 sandboxProfile: 'native-srt',
-                runtimes,
+                runtimes: [],
               },
             }),
           ),
@@ -602,6 +602,12 @@ describe('classification.ts', () => {
               environmentType: 'attached',
               environmentId: 'attached',
               bridgeWorkerId: workerId,
+              codeWorkspace: {
+                environmentId: 'attached',
+                workspaceId: 'project-a',
+                operations: operations as CodeWorkspaceOperation[],
+                programmaticLanguages: languages,
+              },
             },
             codeEnvironments,
             getAppConfig: jest.fn().mockResolvedValue({

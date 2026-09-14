@@ -33,6 +33,7 @@ export type CodeBridgeWorkerStatus = {
   sandboxProfile?: string;
   runtimes?: string[];
   operations?: CodeWorkspaceOperation[];
+  programmaticLanguages?: string[];
   workspaces?: CodeWorkspaceDescriptor[];
 };
 
@@ -163,6 +164,7 @@ function validWorkspaceOperations(value: unknown): value is CodeWorkspaceOperati
 function validWorkspaceCapabilities(value: unknown): value is {
   protocolVersion: 1;
   operations: CodeWorkspaceOperation[];
+  programmaticLanguages?: string[];
   workspaces: CodeWorkspaceDescriptor[];
 } {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -170,6 +172,9 @@ function validWorkspaceCapabilities(value: unknown): value is {
   if (
     capabilities.protocolVersion !== 1 ||
     !validWorkspaceOperations(capabilities.operations) ||
+    (capabilities.programmaticLanguages !== undefined &&
+      (!validStatusStringArray(capabilities.programmaticLanguages) ||
+        capabilities.programmaticLanguages.some((language) => language !== 'bash'))) ||
     !Array.isArray(capabilities.workspaces) ||
     capabilities.workspaces.length < 1 ||
     capabilities.workspaces.length > CODE_WORKSPACE_MAX_COUNT
@@ -319,10 +324,16 @@ export async function getCodeBridgeWorkerStatus({
     if (status.online) {
       workerStatus = status.ready ? 'ready' : 'starting';
     }
-    let workspaceStatus: Pick<CodeBridgeWorkerStatus, 'operations' | 'workspaces'> = {};
+    let workspaceStatus: Pick<
+      CodeBridgeWorkerStatus,
+      'operations' | 'programmaticLanguages' | 'workspaces'
+    > = {};
     if (validWorkspaceCapabilities(capabilities?.workspaceTools)) {
       workspaceStatus = {
         operations: [...capabilities.workspaceTools.operations],
+        ...(capabilities.workspaceTools.programmaticLanguages
+          ? { programmaticLanguages: [...capabilities.workspaceTools.programmaticLanguages] }
+          : {}),
         workspaces: capabilities.workspaceTools.workspaces.map((workspace) => ({
           ...workspace,
           ...(workspace.operations ? { operations: [...workspace.operations] } : {}),

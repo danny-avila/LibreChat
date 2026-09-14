@@ -77,6 +77,7 @@ const mockResolveCodeExecutionWorkspaceContext = jest.fn(async ({ context }) => 
       environmentId,
       workspaceId: 'project-a',
       operations: attachedWorkspaceOperations,
+      programmaticLanguages: ['bash'],
     },
   };
 });
@@ -2785,6 +2786,45 @@ describe('ToolService - Action Capability Gating', () => {
       expect(result.loadedTools).toContainEqual({ name: AgentConstants.BASH_TOOL });
     });
 
+    it('binds bash PTC to the selected attached workspace', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.body = {
+        codeWorkspaces: [{ environmentId: 'personal-machine', workspaceId: 'project-a' }],
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveCodeExecutionContext.mockReturnValueOnce({
+        baseUrl: 'http://attached-code.test/v1',
+        codeSessionKey: 'execute_code:stateful:attached',
+        executionProfile: 'stateful',
+        statefulSessions: true,
+        environmentType: 'attached',
+        environmentId: 'personal-machine',
+        bridgeWorkerId: 'worker-abc',
+      });
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: {
+          id: 'attached-agent',
+          tools: [Tools.execute_code],
+          stateful_code_sessions: true,
+        },
+        toolNames: [AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry: new Map(),
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools).toHaveLength(1);
+      expect(result.loadedTools[0].description).toContain('selected persistent workspace');
+    });
+
     it('resolves stateful routing when handle_skill is the only requested tool', async () => {
       const capabilities = [
         AgentCapabilities.tools,
@@ -3052,7 +3092,7 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
-    it('does not lazily load PTC for an attached worker without confirmed stateful support', async () => {
+    it('does not lazily load PTC for an attached worker without confirmed workspace support', async () => {
       const capabilities = [
         AgentCapabilities.tools,
         AgentCapabilities.programmatic_tools,
@@ -3076,6 +3116,15 @@ describe('ToolService - Action Capability Gating', () => {
       mockResolveCodeExecutionContext.mockImplementationOnce(
         jest.requireActual('@librechat/api').resolveCodeExecutionContext,
       );
+      mockResolveCodeExecutionWorkspaceContext.mockImplementationOnce(async ({ context }) => ({
+        ...context,
+        codeWorkspace: {
+          environmentId: 'personal',
+          workspaceId: 'project-a',
+          operations: attachedWorkspaceOperations,
+          programmaticLanguages: [],
+        },
+      }));
       const result = await loadToolsForExecution({
         req,
         res: {},
@@ -3095,12 +3144,17 @@ describe('ToolService - Action Capability Gating', () => {
     });
 
     it.each([
-      { statefulWorkspace: false, runtimes: ['bash'], supported: false },
-      { statefulWorkspace: true, runtimes: ['py'], supported: false },
-      { statefulWorkspace: true, runtimes: ['bash'], supported: false },
+      { operations: attachedWorkspaceOperations, languages: [], supported: false },
+      { operations: attachedWorkspaceOperations, languages: ['py'], supported: false },
+      {
+        operations: attachedWorkspaceOperations.filter((operation) => operation !== 'execute_command'),
+        languages: ['bash'],
+        supported: false,
+      },
+      { operations: attachedWorkspaceOperations, languages: ['bash'], supported: true },
     ])(
-      'suppresses workspace-unaware attached PTC: stateful=$statefulWorkspace runtimes=$runtimes',
-      async ({ statefulWorkspace, runtimes, supported }) => {
+      'loads attached PTC only for a command-capable Bash workspace: operations=$operations languages=$languages',
+      async ({ operations, languages, supported }) => {
         const capabilities = [
           AgentCapabilities.tools,
           AgentCapabilities.programmatic_tools,
@@ -3114,9 +3168,9 @@ describe('ToolService - Action Capability Gating', () => {
           type: 'attached',
           owner: 'deployment',
           baseURL: 'https://attached.example',
-          workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
+          workerId: `worker-${supported}-${languages[0] ?? 'none'}`,
           pairing: {
-            workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
+            workerId: `worker-${supported}-${languages[0] ?? 'none'}`,
             tokenEnv: 'TEST_PTC_DEPLOYMENT_TOKEN',
           },
         };
@@ -3128,19 +3182,16 @@ describe('ToolService - Action Capability Gating', () => {
         mockResolveCodeExecutionContext.mockImplementationOnce(
           jest.requireActual('@librechat/api').resolveCodeExecutionContext,
         );
-        process.env.TEST_PTC_DEPLOYMENT_TOKEN = `deployment-token-${statefulWorkspace}`;
-        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-          new Response(
-            JSON.stringify({
-              protocolVersion: 1,
-              workerId: environment.workerId,
-              online: true,
-              ready: true,
-              leaseExpiresInMs: 45_000,
-              capabilities: { statefulWorkspace, sandboxProfile: 'native-srt', runtimes },
-            }),
-          ),
-        );
+        mockResolveCodeExecutionWorkspaceContext.mockImplementationOnce(async ({ context }) => ({
+          ...context,
+          codeWorkspace: {
+            environmentId: 'personal',
+            workspaceId: 'project-a',
+            operations,
+            programmaticLanguages: languages,
+          },
+        }));
+        process.env.TEST_PTC_DEPLOYMENT_TOKEN = `deployment-token-${supported}`;
         try {
           const result = await loadToolsForExecution({
             req,
@@ -3161,9 +3212,7 @@ describe('ToolService - Action Capability Gating', () => {
             ),
           ).toBe(supported);
           expect(mockGetAppConfig).not.toHaveBeenCalled();
-          expect(fetchSpy).not.toHaveBeenCalled();
         } finally {
-          fetchSpy.mockRestore();
           delete process.env.TEST_PTC_DEPLOYMENT_TOKEN;
         }
       },

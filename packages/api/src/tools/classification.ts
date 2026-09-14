@@ -389,7 +389,6 @@ export async function buildToolClassification(
     programmaticToolsEnabled &&
     codeExecutionEnabled &&
     agentHasProgrammaticTools(toolRegistry) &&
-    codeExecutionContext?.environmentType !== 'attached' &&
     (await supportsProgrammaticCodeExecution(codeExecutionContext, codeEnvironments, getAppConfig));
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 

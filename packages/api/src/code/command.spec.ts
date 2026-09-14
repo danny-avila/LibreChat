@@ -149,6 +149,87 @@ describe('createAttachedWorkspaceBashTool', () => {
     });
   });
 
+  test('stages injected skill files privately for attached Bash', async () => {
+    let receivedPath = '';
+    let receivedHeaders: typeof import('node:http').IncomingHttpHeaders = {};
+    let receivedBody: Record<string, unknown> = {};
+    const server = createServer(async (req, res) => {
+      receivedPath = req.url ?? '';
+      receivedHeaders = req.headers;
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      receivedBody = JSON.parse(body) as Record<string, unknown>;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          session_id: 'session-1',
+          stdout: 'skill output\n',
+          stderr: '',
+          files: [],
+        }),
+      );
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      authHeaders: () => ({ Authorization: 'Bearer jwt' }),
+      workspaceId: 'project-a',
+    });
+    try {
+      await bashTool.func(
+        { command: 'node "$LIBRECHAT_CODE_DATA_DIR/skills/report/run.js"', cwd: 'packages/api' },
+        undefined,
+        {
+          toolCall: {
+            _injected_files: [
+              {
+                id: 'file-1',
+                resource_id: 'skill-1',
+                storage_session_id: 'storage-1',
+                name: 'skills/report/run.js',
+                kind: 'skill',
+                version: 1,
+              },
+            ],
+          },
+        },
+      );
+      expect(receivedPath).toBe('/v1/exec/programmatic');
+      expect(receivedHeaders).toMatchObject({
+        authorization: 'Bearer jwt',
+        'x-librechat-code-workspace-id': 'project-a',
+      });
+      expect(receivedBody).toMatchObject({
+        lang: 'bash',
+        tools: [],
+        code: expect.stringContaining("cd -- 'packages/api'"),
+        timeout: 30_000,
+        files: [expect.objectContaining({ name: 'skills/report/run.js' })],
+      });
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
+
+  test('rejects an injected-file working directory outside the selected workspace', async () => {
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+    });
+
+    await expect(
+      bashTool.func(
+        { command: 'pwd', cwd: '../../sibling-project' },
+        undefined,
+        { toolCall: { _injected_files: [{ name: 'main.sh', content: 'pwd' }] } },
+      ),
+    ).rejects.toThrow('inside the selected workspace');
+  });
+
   test('forwards a bounded per-call execution timeout', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({

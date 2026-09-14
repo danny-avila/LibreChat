@@ -6511,7 +6511,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(result.status).toBe('success');
       expect(result.content).toContain(
-        'Use bash to process: /mnt/data/skills/brand-skill/references/guide.docx',
+        'Use bash to process: ${LIBRECHAT_CODE_DATA_DIR:-/mnt/data}/skills/brand-skill/references/guide.docx',
       );
     });
 
@@ -6560,7 +6560,9 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('success');
-      expect(result.content).toContain('/mnt/data/skills/brand-skill/references/guide.docx');
+      expect(result.content).toContain(
+        '${LIBRECHAT_CODE_DATA_DIR:-/mnt/data}/skills/brand-skill/references/guide.docx',
+      );
       expect(result.content).not.toContain('/mnt/data/brand-skill/references/guide.docx');
     });
 

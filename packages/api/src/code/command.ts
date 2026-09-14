@@ -3,6 +3,7 @@ import { tool } from '@librechat/agents/langchain/tools';
 import {
   BashExecutionToolDefinition,
   BashToolOutputReferencesGuide,
+  createBashExecutionTool,
   createBashProgrammaticToolCallingTool,
 } from '@librechat/agents';
 import type { AgentGitIdentity, CodeEnvironmentUserConfigSchema } from 'librechat-data-provider';
@@ -122,6 +123,21 @@ function quoteShellArgument(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
+function assertSafeAttachedWorkingDirectory(value: string | undefined): void {
+  if (value == null) return;
+  if (
+    value.length === 0 ||
+    value.length > 4096 ||
+    value.includes('\0') ||
+    value.includes('\\') ||
+    value.startsWith('/') ||
+    /^[A-Za-z]:/.test(value) ||
+    value.split('/').includes('..')
+  ) {
+    throw new Error('Working directory must remain inside the selected workspace.');
+  }
+}
+
 function commandWithArguments(command: string, args: string[] | undefined): string {
   if (!args?.length) return command;
   return `bash -c ${quoteShellArgument(command)} -- ${args.map(quoteShellArgument).join(' ')}`;
@@ -191,6 +207,13 @@ export function createAttachedWorkspaceBashTool({
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   const effectiveMaxTimeoutMs = normalizeAttachedWorkspaceCommandTimeoutMax(maxTimeoutMs);
+  const skillAwareBashTool = createBashExecutionTool({
+    authHeaders,
+    baseUrl,
+    executionProfile: 'stateful',
+    statefulSessions: true,
+    workspaceId,
+  });
   return tool(
     async (
       rawInput: {
@@ -202,6 +225,7 @@ export function createAttachedWorkspaceBashTool({
       },
       config,
     ): Promise<[string, Record<string, never>]> => {
+      assertSafeAttachedWorkingDirectory(rawInput.cwd);
       if (rawInput.timeoutMs != null && rawInput.timeoutMs > effectiveMaxTimeoutMs) {
         throw new Error(
           `Command timeout exceeds the deployment limit of ${effectiveMaxTimeoutMs} milliseconds.`,
@@ -213,6 +237,23 @@ export function createAttachedWorkspaceBashTool({
       );
       const timeoutMs =
         rawInput.timeoutMs ?? Math.min(WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS, effectiveMaxTimeoutMs);
+      const injectedFiles = (config?.toolCall as { _injected_files?: unknown[] } | null | undefined)
+        ?._injected_files;
+      if (Array.isArray(injectedFiles) && injectedFiles.length > 0) {
+        const scopedCommand = rawInput.cwd
+          ? `cd -- ${quoteShellArgument(rawInput.cwd)} && ${command}`
+          : command;
+        return await skillAwareBashTool.func(
+          {
+            command: scopedCommand,
+            // `/exec/programmatic` accepts milliseconds. Do not reuse the
+            // ordinary workspace tool's seconds conversion here.
+            timeout: timeoutMs,
+          },
+          undefined,
+          config,
+        );
+      }
       const signal = config?.signal;
       const trace = {
         runId: config?.metadata?.run_id,
