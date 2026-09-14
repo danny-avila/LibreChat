@@ -32,10 +32,18 @@ interface MermaidProps {
   onDownload?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   /** Reports whether the diagram is currently rendered as its trigger row. */
   onRowModeChange?: (isRow: boolean) => void;
+  /**
+   * Name to show on the trigger row, when the caller holds a friendlier one
+   * than the artifact's raw title — a sandbox-generated `_.flow-abcdef.mmd`
+   * reads as `.flow.mmd` through `displayFilename`, and the row (plus its
+   * download button's accessible name) must not regress to the internal
+   * filename the way it would by falling back to `artifact.title`.
+   */
+  rowTitle?: string;
 }
 
 interface MermaidRendererProps
-  extends Omit<MermaidProps, 'artifact' | 'onDownload' | 'onRowModeChange'> {
+  extends Omit<MermaidProps, 'artifact' | 'onDownload' | 'onRowModeChange' | 'rowTitle'> {
   fillContainer?: boolean;
   onExpand?: () => void;
   onExportReady?: (data: ProcessedMermaidSvg | null) => void;
@@ -45,7 +53,15 @@ interface MermaidRendererProps
 }
 
 const Mermaid: React.FC<MermaidProps> = memo((props) => {
-  const { children, id, theme, artifact: artifactProp, onDownload, onRowModeChange } = props;
+  const {
+    children,
+    id,
+    theme,
+    artifact: artifactProp,
+    onDownload,
+    onRowModeChange,
+    rowTitle,
+  } = props;
   const localize = useLocalize();
   const location = useLocation();
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -158,7 +174,7 @@ const Mermaid: React.FC<MermaidProps> = memo((props) => {
       <ArtifactRow
         ref={artifactButtonRef}
         artifactId={artifact.id}
-        title={artifact.title ?? defaultTitle}
+        title={rowTitle ?? artifact.title ?? defaultTitle}
         kind={artifactRowKind(artifact)}
         isSelected={isSelected}
         onOpen={handleArtifactClick}

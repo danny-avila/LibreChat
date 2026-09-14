@@ -98,6 +98,7 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
           artifact={artifact ?? undefined}
           onDownload={attachment.filepath ? handleDownload : undefined}
           onRowModeChange={setIsRowMode}
+          rowTitle={attachment.filename ? visibleFilename : undefined}
         >
           {text}
         </Mermaid>
@@ -106,6 +107,7 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
           artifact={artifact ?? undefined}
           onDownload={attachment.filepath ? handleDownload : undefined}
           onRowModeChange={setIsRowMode}
+          rowTitle={attachment.filename ? visibleFilename : undefined}
         >
           {text}
         </Mermaid>

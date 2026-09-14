@@ -236,6 +236,44 @@ describe('Mermaid Artifact expansion', () => {
     await waitFor(() => expect(rowModes[rowModes.length - 1]).toBe(true));
   });
 
+  it('shows the caller-supplied display name on the row, not the raw title', async () => {
+    /* A sandbox-generated `_.flow-abcdef.mmd` reads as `.flow.mmd` through
+     * `displayFilename`; the row and its download button must not regress
+     * to the internal filename once the diagram collapses. */
+    render(
+      <RecoilRoot>
+        <MemoryRouter initialEntries={['/c/conversation-1']}>
+          <MessageContext.Provider
+            value={{ messageId: 'message-1', conversationId: 'conversation-1', isExpanded: true }}
+          >
+            <Mermaid
+              id="flow-hidden"
+              artifact={
+                {
+                  id: 'tool-artifact-hidden',
+                  type: 'application/vnd.mermaid',
+                  title: '_.flow-abcdef.mmd',
+                  content: 'graph TD\nA-->B',
+                  lastUpdateTime: 1,
+                } as Artifact
+              }
+              rowTitle=".flow.mmd"
+              onDownload={jest.fn()}
+            >
+              {'graph TD\nA-->B'}
+            </Mermaid>
+          </MessageContext.Provider>
+        </MemoryRouter>
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: mockOpenAsArtifactLabel }));
+
+    expect(await screen.findByText('.flow.mmd')).toBeInTheDocument();
+    expect(screen.queryByText('_.flow-abcdef.mmd')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_download .flow.mmd' })).toBeInTheDocument();
+  });
+
   it('separates diagrams that sit in different content parts of one message', async () => {
     let state: ArtifactStateSnapshot = {
       artifacts: null,
