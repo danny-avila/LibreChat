@@ -22,6 +22,124 @@ test.describe('stream transport fidelity', () => {
   test.describe('terminal recovery', () => {
     /** Service workers can bypass Playwright's network fault injection. */
     test.use({ serviceWorkers: 'block' });
+    test('uses late startup config for a sidebar resume and bounds unnegotiated recovery', async ({
+      page,
+      context,
+    }) => {
+      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+      const label = `late-config-${Date.now()}`;
+      await sendMessageAndWaitForCompletion(page, `E2E_REPLY:${label}`);
+      const expected = `E2E reply ${label}`;
+      await expect(messagesView(page)).toContainText(expected);
+      const conversationUrl = page.url();
+      const conversationId = new URL(conversationUrl).pathname.split('/')[2];
+      let releaseConfig!: () => void;
+      const configReady = new Promise<void>((resolve) => {
+        releaseConfig = resolve;
+      });
+      await page.route('**/api/config', async (route) => {
+        if (!route.request().headers().authorization) {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        await configReady;
+        await route.fulfill({
+          response,
+          json: {
+            ...(await response.json()),
+            resumableStreams: { terminalRecoveryMaxRetries: 0 },
+          },
+        });
+      });
+      let attachments = 0;
+      let recovered = false;
+      let generationPosts = 0;
+      await page.route(`**/api/messages/${conversationId}`, async (route) => {
+        if (recovered) {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const messages: TMessage[] = await response.json();
+        const assistant = messages.findLast((message) => !message.isCreatedByUser);
+        if (assistant == null) throw new Error('Expected a persisted assistant response');
+        assistant.text = 'Pending recovery';
+        assistant.content = [{ type: ContentTypes.TEXT, text: 'Pending recovery' }];
+        await route.fulfill({ response, json: messages });
+      });
+      page.on('request', (request) => {
+        if (
+          request.method() === 'POST' &&
+          /^\/api\/agents\/chat(?:\/|$)/.test(new URL(request.url()).pathname)
+        ) {
+          generationPosts++;
+        }
+      });
+      /** Reproduce an active snapshot followed by a legacy responder during
+       * rollout. Keep real generation metadata and persisted messages. */
+      await page.route(`**/api/agents/chat/status/${conversationId}?*`, async (route) => {
+        if (recovered) {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const status = await response.json();
+        expect(status.resumeState).toBeTruthy();
+        const aggregatedContent = [{ type: ContentTypes.TEXT, text: 'Pending recovery' }];
+        await route.fulfill({
+          response,
+          json: {
+            ...status,
+            active: true,
+            status: 'running',
+            generationProtocolVersion: attachments === 0 ? 2 : 1,
+            aggregatedContent,
+            resumeState: { ...status.resumeState, aggregatedContent },
+          },
+        });
+      });
+      await page.route(`**/api/agents/chat/stream/${conversationId}?*`, async (route) => {
+        expect(new URL(route.request().url()).searchParams.get('resume')).toBe('true');
+        attachments++;
+        await route.fulfill({ status: 404, json: { error: 'Stream expired' } });
+      });
+      const configResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/config' &&
+          !!response.request().headers().authorization,
+      );
+      const unnegotiated = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/agents/chat/status/${conversationId}` &&
+          attachments > 0,
+      );
+      try {
+        /** A row for the current URL is intentionally a no-op; enter from new chat. */
+        await page.goto(NEW_CHAT_PATH);
+        await page.getByTestId('convo-item').first().click();
+        await unnegotiated;
+        expect(attachments).toBe(1);
+        await expect(messagesView(page)).toContainText('Pending recovery');
+        releaseConfig();
+        await (await configResponse).finished();
+        /** Observe beyond the one-second pending retry, not just its scheduling task. */
+        await page.waitForTimeout(1_500);
+        expect(attachments).toBe(1);
+        await expect(messagesView(page)).not.toContainText(expected);
+        recovered = true;
+        await context.setOffline(true);
+        await context.setOffline(false);
+        await expect(messagesView(page)).toContainText(expected);
+        expect(attachments).toBe(2);
+        expect(generationPosts).toBe(0);
+        expect(page.url()).toBe(conversationUrl);
+      } finally {
+        releaseConfig();
+      }
+    });
+
     for (const existingConversation of [false, true]) {
       const maxRetries = 2;
       const failureCount = maxRetries + 1;

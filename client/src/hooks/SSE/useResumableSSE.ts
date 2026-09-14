@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useStore } from 'jotai';
@@ -1263,6 +1263,11 @@ export default function useResumableSSE(
   const terminalRecoveryMaxRetries =
     startupConfig?.resumableStreams?.terminalRecoveryMaxRetries ??
     DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES;
+  const terminalRecoveryMaxRetriesRef = useRef(terminalRecoveryMaxRetries);
+  useLayoutEffect(() => {
+    /** Existing attachments and their recursive retries outlive this render. */
+    terminalRecoveryMaxRetriesRef.current = terminalRecoveryMaxRetries;
+  }, [terminalRecoveryMaxRetries]);
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
@@ -1383,6 +1388,8 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;
+      /** Pausing belongs to this attachment, even if a later config raises the budget. */
+      let terminalRecoveryPaused = false;
       /** This subscription must never be revived. Set by the terminal
        *  recoveries that do not ride a FINAL or served-error frame — the 404
        *  and retry-ceiling reconciles both leave the attachment pointing at a
@@ -1859,9 +1866,7 @@ export default function useResumableSSE(
       const handleForegroundReattach = (event: Event) => {
         if (
           document.visibilityState !== 'visible' ||
-          (event.type === 'online' &&
-            terminalRecoveryAttemptRef.current <= terminalRecoveryMaxRetries) ||
-          (finalReceived && terminalRecoveryAttemptRef.current <= terminalRecoveryMaxRetries) ||
+          ((event.type === 'online' || finalReceived) && !terminalRecoveryPaused) ||
           subscriptionRetired ||
           replacementHandoffRef.current ||
           !isCurrentSubscription() ||
@@ -2610,16 +2615,22 @@ export default function useResumableSSE(
           reconnectTimeoutRef.current = null;
         }
         const attempt = ++terminalRecoveryAttemptRef.current;
-        if (attempt > terminalRecoveryMaxRetries) {
+        if (attempt > terminalRecoveryMaxRetriesRef.current) {
           /** Preserve the unresolved run and accepted steers. Foreground or
            * restored connectivity can retry without inventing a terminal outcome or polling. */
           logger.warn('ResumableSSE', 'Terminal recovery paused until foreground or online', {
             reason,
           });
+          terminalRecoveryPaused = true;
           return;
         }
         reconnectTimeoutRef.current = setTimeout(() => {
           if (isCurrentSubscription() && submissionRef.current) {
+            reconnectTimeoutRef.current = null;
+            if (attempt > terminalRecoveryMaxRetriesRef.current) {
+              terminalRecoveryPaused = true;
+              return;
+            }
             subscribeToStream(
               currentStreamId,
               submissionRef.current,
@@ -2938,18 +2949,7 @@ export default function useResumableSSE(
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               !supportsGenerationProtocolV2(status)
             ) {
-              reconnectTimeoutRef.current = setTimeout(() => {
-                if (isCurrentSubscription() && submissionRef.current) {
-                  subscribeToStream(
-                    currentStreamId,
-                    submissionRef.current,
-                    true,
-                    generationCreatedAt,
-                    generationProtocolVersion,
-                    lifecycleSignal,
-                  );
-                }
-              }, 1_000);
+              retryFencedTerminalAttachment('expired stream status was unnegotiated');
               return;
             }
             if (
@@ -3687,7 +3687,6 @@ export default function useResumableSSE(
       getMessages,
       setMessages,
       startupConfig?.balance?.enabled,
-      terminalRecoveryMaxRetries,
       balanceQuery,
       removeActiveJob,
       queryClient,

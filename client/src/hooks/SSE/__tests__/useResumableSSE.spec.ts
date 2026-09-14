@@ -4159,36 +4159,43 @@ describe('useResumableSSE', () => {
 
   it.each(
     [undefined, 0, 2, 8].flatMap((maxRetries) =>
-      ['http', 'frame'].flatMap((kind) =>
+      ['http', 'frame', 'unnegotiated-http'].flatMap((kind) =>
         ['visibilitychange', 'online'].map((event) => ({ maxRetries, kind, event })),
       ),
     ),
   )(
-    'bounds terminal history retries ($maxRetries) across $kind attachments and rearms on $event',
+    'bounds terminal recovery retries ($maxRetries) across $kind attachments with late config and rearms on $event',
     async ({ maxRetries, kind, event }) => {
       jest.useFakeTimers();
-      if (maxRetries != null) {
-        mockStartupConfig.resumableStreams = { terminalRecoveryMaxRetries: maxRetries };
-      }
       (request.post as jest.Mock).mockResolvedValue({
         streamId: CONV_ID,
         generationCreatedAt: 1000,
         generationProtocolVersion: 2,
       });
       mockGetMessagesByConvoId.mockRejectedValue(new Error('history unavailable'));
-      mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        generationProtocolVersion: kind === 'unnegotiated-http' ? 1 : 2,
+      });
       const submission = buildSubmission();
       const chatHelpers = buildChatHelpers();
-      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      const { rerender, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
       await flushMicrotasks();
       const initialSSE = getLastSSE();
+      if (maxRetries != null) {
+        mockStartupConfig = { resumableStreams: { terminalRecoveryMaxRetries: maxRetries } };
+        rerender();
+      }
+      expect(getLastSSE()).toBe(initialSSE);
+      expect(initialSSE.close).not.toHaveBeenCalled();
+      chatHelpers.setMessages.mockClear();
       await act(async () => {
         window.dispatchEvent(new Event('online'));
       });
       expect(getLastSSE()).toBe(initialSSE);
       const receiveTerminal = async () => {
         await act(async () => {
-          if (kind === 'http') {
+          if (kind !== 'frame') {
             getLastSSE()._emit('open', { responseCode: 404 });
             getLastSSE()._emit('error', { responseCode: 404 });
           } else {
@@ -4221,12 +4228,17 @@ describe('useResumableSSE', () => {
       const pausedSSE = getLastSSE();
       await advanceRetryTimer(60_000);
       expect(getLastSSE()).toBe(pausedSSE);
-      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes((maxRetries ?? 5) + 1);
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes((maxRetries ?? 5) + 1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(
+        kind === 'unnegotiated-http' ? 0 : (maxRetries ?? 5) + 1,
+      );
+      expect(chatHelpers.setMessages).not.toHaveBeenCalled();
       expect(mockSetRunEnd).not.toHaveBeenCalled();
       expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
       expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
 
       mockGetMessagesByConvoId.mockResolvedValue([]);
+      mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
       const visibility = jest.spyOn(document, 'visibilityState', 'get');
       visibility.mockReturnValue('hidden');
       await act(async () => {
@@ -4256,6 +4268,92 @@ describe('useResumableSSE', () => {
       expect(mockSSEInstances).toHaveLength(countAfterUnmount);
     },
   );
+
+  it('applies late config to a pending terminal frame retry without restarting the generation', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+    mockGetMessagesByConvoId.mockRejectedValue(new Error('history unavailable'));
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { rerender, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'terminal_payload_missing',
+          terminalStatus: 'complete',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+        }),
+      });
+    });
+    await flushMicrotasks();
+    const failedSSE = getLastSSE();
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+    mockStartupConfig = { resumableStreams: { terminalRecoveryMaxRetries: 0 } };
+    rerender();
+    await advanceRetryTimer(60_000);
+    expect(getLastSSE()).toBe(failedSSE);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(getLastSSE()).not.toBe(failedSSE);
+    expect(request.post).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('keeps an exhausted terminal frame rearmable when late config raises the budget', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+    mockGetMessagesByConvoId.mockRejectedValue(new Error('history unavailable'));
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { rerender, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 60_000]) {
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            final: true,
+            reconcile: true,
+            reconcileReason: 'terminal_payload_missing',
+            terminalStatus: 'complete',
+            generationCreatedAt: 1000,
+            generationProtocolVersion: 2,
+          }),
+        });
+      });
+      await flushMicrotasks();
+      await advanceRetryTimer(delay);
+    }
+    const pausedSSE = getLastSSE();
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(6);
+    expect(mockSSEInstances).toHaveLength(6);
+    mockStartupConfig = { resumableStreams: { terminalRecoveryMaxRetries: 8 } };
+    rerender();
+    expect(getLastSSE()).toBe(pausedSSE);
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(getLastSSE()).not.toBe(pausedSSE);
+    expect(request.post).toHaveBeenCalledTimes(1);
+    unmount();
+  });
 
   it.each(
     ['http', 'frame'].flatMap((kind) =>
