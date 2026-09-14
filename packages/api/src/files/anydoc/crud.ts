@@ -3,7 +3,11 @@ import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, DocumentParser } from 'librechat-data-provider';
 import type { DocumentExtractionOptions } from '../documents/nativeProcess';
 import type { ParsedDocumentUploadResult } from '~/types';
-import { isParserOutputLimit, NoDocumentTextError } from '../documents/nativeProcess';
+import {
+  isParserOutputLimit,
+  NoDocumentTextError,
+  withStableParserInput,
+} from '../documents/nativeProcess';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
 import { ConcurrencyLimitError } from '~/utils/promise';
 import { mayEmbedMedia } from '../documents/media';
@@ -260,7 +264,9 @@ export async function parseWithAnydoc(
 
   let markdown: string;
   try {
-    markdown = await extractMarkdownIsolated(file.path, format, signal, options?.timeoutMs);
+    markdown = await withStableParserInput(buffer, name, (path) =>
+      extractMarkdownIsolated(path, format, signal, options?.timeoutMs),
+    );
   } catch (error) {
     /* Shed load and an oversized extraction surface as themselves. Reporting either as
      * a parse failure would send the caller down a fallback chain built for documents

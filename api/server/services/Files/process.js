@@ -1109,6 +1109,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           loadAuthValues,
           maxFileSize: fileConfig.documentParser?.fileSizeLimit,
           timeoutMs: fileConfig.documentParser?.timeoutMs,
+          /* Recovery hides the failure from the code below, and the engine has no way
+           * to know whether this deployment redacts filenames and parser errors. */
+          onEngineFallback: (err) => {
+            const { errorMetadata } = getExtractionLogDetails(err);
+            logger.warn(
+              `[processAgentFileUpload] Native PDF extraction failed for ${extractionFileLabel}, recovered with pdfjs:`,
+              errorMetadata,
+            );
+          },
         });
       } catch (err) {
         if (isDocumentParserRefusal(err)) {

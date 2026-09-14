@@ -1,4 +1,4 @@
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, fileConfig as defaultFileConfig } from 'librechat-data-provider';
 import type { FileConfig } from 'librechat-data-provider';
 import { getViableUploadOptions, type UploadOptionContext } from '../files';
 
@@ -163,6 +163,69 @@ describe('getViableUploadOptions', () => {
     it('yields a single option for a zip (code only) so it can auto-route', () => {
       expect(getViableUploadOptions([file('application/zip', 'a.zip')], baseCtx())).toEqual([
         EToolResources.execute_code,
+      ]);
+    });
+    it('does not route a non-readable binary type through the permissive default text config', () => {
+      const ctx = baseCtx({
+        fileConfig: defaultFileConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        ocrEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file('application/zip', 'archive.zip')], ctx)).toEqual([]);
+    });
+
+    it.each(['text/plain', 'text/csv'])(
+      'keeps natively readable %s on the permissive default text config',
+      (type) => {
+        const ctx = baseCtx({
+          fileConfig: defaultFileConfig,
+          fileSearchEnabled: false,
+          codeEnabled: false,
+          ocrEnabled: false,
+        });
+
+        expect(getViableUploadOptions([file(type, 'notes.txt')], ctx)).toEqual([
+          EToolResources.context,
+        ]);
+      },
+    );
+
+    it('routes a binary type through an enabled RAG text service with the permissive default', () => {
+      const ragTextConfig = {
+        ...defaultFileConfig,
+        text: { ...defaultFileConfig.text, enabled: true },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: ragTextConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        ocrEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file('application/zip', 'archive.zip')], ctx)).toEqual([
+        EToolResources.context,
+      ]);
+    });
+
+    it('routes a type named by a narrowed operator text allowlist', () => {
+      const narrowedTextConfig = {
+        ...defaultFileConfig,
+        text: { supportedMimeTypes: [/^application\/zip$/] },
+        ocr: { supportedMimeTypes: [] },
+        documentParser: { supportedMimeTypes: [] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: narrowedTextConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        ocrEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file('application/zip', 'archive.zip')], ctx)).toEqual([
+        EToolResources.context,
       ]);
     });
 

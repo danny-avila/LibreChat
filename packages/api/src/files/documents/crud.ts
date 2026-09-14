@@ -132,6 +132,7 @@ export async function parseDocument({
   signal,
   maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
   timeoutMs,
+  onEngineFallback,
 }: {
   file: Express.Multer.File;
   /** Cancels the parse and frees its admission slot when the caller stops waiting. */
@@ -143,6 +144,9 @@ export async function parseDocument({
   /** Deadline for the extraction child, in milliseconds. Each engine keeps its own
    * default; `fileConfig.documentParser.timeoutMs` reproduces it. */
   timeoutMs?: number;
+  /** Told when an engine recovered from a failure on its own, so the caller can log it
+   * under whatever redaction its deployment applies. */
+  onEngineFallback?: DocumentExtractionOptions['onEngineFallback'];
 }): Promise<ParsedDocumentUploadResult> {
   const fileSize = file.size ?? (file.path != null ? (await fs.promises.stat(file.path)).size : 0);
   if (fileSize > maxFileSize) {
@@ -160,7 +164,7 @@ export async function parseDocument({
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
   const result = await withParserAdmission(
-    () => extractor.extract(parserFile, signal, { timeoutMs }),
+    () => extractor.extract(parserFile, signal, { timeoutMs, onEngineFallback }),
     signal,
   );
 

@@ -287,11 +287,47 @@ describe('parseWithAnydoc', () => {
             mimetype: 'application/rtf',
           });
 
-          expect(toMarkdownBytes.mock.calls[0]?.slice(0, 2)).toEqual([combinedPath, 'rtf']);
+          expect(toMarkdownBytes.mock.calls[0]?.[1]).toBe('rtf');
           expect(result.text).toBe('# RTF document');
         });
       } finally {
         await fs.promises.unlink(combinedPath);
+      }
+    });
+
+    /**
+     * The upload route stages a document under its sanitized filename, so two concurrent
+     * uploads of the same name share one path. The guard reads the buffer in memory and
+     * the child reads a path, so without a private copy the second request's bytes would
+     * be what anydoc converts and what gets persisted — the bytes this guard never saw.
+     */
+    test('parses the bytes the guard validated, not whatever replaced them', async () => {
+      const stagedPath = path.join(fixtures, 'anydoc-staged-collision.docx');
+      const validated = await fs.promises.readFile(path.join(fixtures, 'structured.docx'));
+      await fs.promises.writeFile(stagedPath, validated);
+
+      let parsedBytes: Buffer | undefined;
+      const toMarkdownBytes = jest.fn(async (handedPath: string) => {
+        /* A concurrent upload of the same filename, landing between validation and the
+         * child's read. */
+        await fs.promises.writeFile(stagedPath, Buffer.from('replaced by another upload'));
+        parsedBytes = await fs.promises.readFile(handedPath);
+        return '# Quarterly Report';
+      });
+
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          const result = await run({
+            originalname: 'structured.docx',
+            path: stagedPath,
+            mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
+
+          expect(result.text).toBe('# Quarterly Report');
+          expect(parsedBytes?.equals(validated)).toBe(true);
+        });
+      } finally {
+        await fs.promises.unlink(stagedPath);
       }
     });
 

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { documentParserMimeTypes } from 'librechat-data-provider';
+import { isParsedDocument } from 'librechat-data-provider';
 import type { CodeArtifactCategory } from './classify';
 import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
 import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
@@ -155,42 +155,6 @@ export function extractCodeArtifactRawText(
   return buffer.toString('utf-8');
 }
 
-/**
- * Map a known office-document extension back to its canonical MIME so we can
- * route through `parseDocument` even when buffer-sniffing yielded a generic
- * value like `application/zip` or `application/octet-stream`. `parseDocument`
- * dispatches strictly by MIME, so without this remap a `.docx` with a sniffed
- * `application/zip` would silently fall back to `null`.
- */
-const documentMimeFromExtension = (name: string): string | null => {
-  const ext = path.extname(name).toLowerCase();
-  switch (ext) {
-    case '.docx':
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    case '.xlsx':
-      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    case '.pptx':
-      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-    case '.pptm':
-      return 'application/vnd.ms-powerpoint.presentation.macroenabled.12';
-    case '.ppsx':
-      return 'application/vnd.openxmlformats-officedocument.presentationml.slideshow';
-    case '.ppt':
-    case '.pps':
-      return 'application/vnd.ms-powerpoint';
-    case '.odp':
-      return 'application/vnd.oasis.opendocument.presentation';
-    case '.xls':
-      return 'application/vnd.ms-excel';
-    case '.ods':
-      return 'application/vnd.oasis.opendocument.spreadsheet';
-    case '.odt':
-      return 'application/vnd.oasis.opendocument.text';
-    default:
-      return null;
-  }
-};
-
 type ExtractedDocumentText = {
   readonly text: string;
   readonly pagesNeedingOcr?: number[];
@@ -202,7 +166,6 @@ const extractDocumentText = async (
   name: string,
   mimeType: string,
 ): Promise<ExtractedDocumentText | null> => {
-  const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
   const tempPath = path.join(os.tmpdir(), `code-artifact-${randomUUID()}`);
   await fs.writeFile(tempPath, buffer);
   /* The timeout gives up on the result; the abort gives up on the work. Without it the
@@ -216,7 +179,7 @@ const extractDocumentText = async (
         file: {
           path: tempPath,
           size: buffer.length,
-          mimetype: canonicalMime,
+          mimetype: mimeType,
           originalname: path.basename(name),
         } as Express.Multer.File,
         signal: cancellation.signal,
@@ -417,10 +380,7 @@ export async function extractCodeArtifactInspectionText(
       complete: true,
     };
   };
-  const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
-  const parserReadsDocument = documentParserMimeTypes.some((mimePattern) =>
-    mimePattern.test(canonicalMime),
-  );
+  const parserReadsDocument = isParsedDocument(mimeType, name);
   const inspectParsedDocument = async (): Promise<CodeArtifactInspectionText | null> => {
     const result = await extractDocumentText(buffer, name, mimeType);
     if (result == null) {

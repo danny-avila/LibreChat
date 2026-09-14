@@ -1,4 +1,8 @@
+import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+import { extname, join } from 'path';
 import { spawn } from 'child_process';
+import { unlink, writeFile } from 'fs/promises';
 import { megabyte } from 'librechat-data-provider';
 import { createConcurrencyLimiter } from '~/utils/promise';
 
@@ -78,6 +82,38 @@ export interface DocumentExtractionOptions {
   /** Deadline for the extraction child, in milliseconds. Each engine keeps its own
    * default, which is what a direct caller with no configuration gets. */
   readonly timeoutMs?: number;
+  /**
+   * Reports a failure the engine recovered from on its own. Recovery means the upload
+   * path never sees the error, and only the caller knows whether a filename and a
+   * parser's own message may be written to a log: under content protection both are
+   * redacted. Without this the engine logs only that it recovered.
+   */
+  readonly onEngineFallback?: (error: unknown) => void;
+}
+
+/**
+ * Runs a child parse against a private copy of bytes the caller has already validated.
+ *
+ * The children take a path and reopen it, and the upload route stages a document at a
+ * path derived from its sanitized filename, so two concurrent uploads of the same name
+ * by the same user share one staging path. Without this copy the second request can
+ * replace those bytes between the zip-decompression guard, which reads the buffer in
+ * memory, and the child, which reads the path: the parse would then convert bytes the
+ * guard never saw, and persist another request's content.
+ */
+export async function withStableParserInput<T>(
+  bytes: Buffer,
+  fileName: string,
+  run: (path: string) => Promise<T>,
+): Promise<T> {
+  const extension = extname(fileName);
+  const path = join(tmpdir(), `parser-${randomUUID()}${extension}`);
+  await writeFile(path, bytes);
+  try {
+    return await run(path);
+  } finally {
+    unlink(path).catch(() => {});
+  }
 }
 
 /**

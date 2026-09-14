@@ -16,6 +16,7 @@ import {
   EModelEndpoint,
   retrievalMimeTypes,
   documentParserMimeTypes,
+  isNativelyReadableText,
   isBedrockDocumentType,
   isExplicitMimeConfig,
   isPermissiveMimeConfig,
@@ -582,8 +583,14 @@ const isContextType = (
     allowConfiguredOcr &&
     fileConfig?.ocr?.enabled === true &&
     checkType(type, fileConfig.ocr.supportedMimeTypes || []);
+  const configuredTextType = checkType(type, fileConfig?.text?.supportedMimeTypes || []);
+  const textFallbackEnabled =
+    configuredTextType &&
+    (!isPermissiveMimeConfig(fileConfig?.text?.supportedMimeTypes) ||
+      fileConfig?.text?.enabled === true ||
+      isNativelyReadableText(type));
   return (
-    checkType(type, fileConfig?.text?.supportedMimeTypes || []) ||
+    textFallbackEnabled ||
     configuredOcrEnabled ||
     checkType(type, fileConfig?.stt?.supportedMimeTypes || [])
   );

@@ -4,11 +4,15 @@ import { DocumentParser } from 'librechat-data-provider';
 import type { DocumentExtractionOptions } from '../documents/nativeProcess';
 import type { ParsedDocumentUploadResult } from '~/types';
 import {
+  MAX_PARSER_OUTPUT_BYTES,
+  isParserOutputLimit,
+  withStableParserInput,
+} from '../documents/nativeProcess';
+import {
   extractDocumentTextWithPages,
   extractPageText,
   PdfPageLimitError,
 } from '../documents/pdfjs';
-import { MAX_PARSER_OUTPUT_BYTES, isParserOutputLimit } from '../documents/nativeProcess';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 import { ConcurrencyLimitError } from '~/utils/promise';
 import { MAX_PDF_PAGES } from './limits';
@@ -53,7 +57,12 @@ export async function parseWithPdfInspector(
   const data = await fs.promises.readFile(file.path, { signal });
   let parsed: ParsedDocument;
   try {
-    parsed = await extractPdf(file.path, data, signal, options?.timeoutMs);
+    /* Parsed from a private copy: the child reopens the path, and the staging path a
+     * concurrent upload of the same filename writes is the same one, so the bytes read
+     * here are the only ones this request can be sure it parsed. */
+    parsed = await withStableParserInput(data, file.originalname, (path) =>
+      extractPdf(path, data, signal, options?.timeoutMs),
+    );
   } catch (error) {
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
      * any of them: it would run the walk inline for a request the limiter just refused,
@@ -69,10 +78,14 @@ export async function parseWithPdfInspector(
     ) {
       throw error;
     }
-    logger.warn(
-      `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
-      error,
-    );
+    /* The recovery succeeds, so the upload path never logs this failure itself. Only the
+     * caller knows whether a filename and a parser error may be written down, so it gets
+     * the report and this keeps to what is safe without that answer. */
+    if (options?.onEngineFallback) {
+      options.onEngineFallback(error);
+    } else {
+      logger.warn('[pdfInspector] Native extraction failed, recovering with pdfjs');
+    }
     /* The whole-document fallback answers to the parser's own ceiling, not the recovery
      * walk's: they bound different work, and reusing the smaller one meant a PDF this
      * parser accepts with a good xref was refused with a damaged one, or on a platform
