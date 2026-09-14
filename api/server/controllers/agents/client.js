@@ -1,9 +1,5 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const {
-  logger,
-  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
-  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
-} = require('@librechat/data-schemas');
+const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -112,6 +108,8 @@ const {
   stripUnusableSummaryParts,
   recountStrippedIndexTokens,
   isUsableSummaryPart,
+  createAgentEventActorSummary,
+  normalizeAgentEventActorSummary,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -230,22 +228,6 @@ const loadAgent = (params) =>
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
-function normalizeEventActorSummary(summary) {
-  if (summary == null) {
-    return undefined;
-  }
-  if (
-    typeof summary.text !== 'string' ||
-    summary.text.length === 0 ||
-    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
-    !Number.isFinite(summary.tokenCount) ||
-    summary.tokenCount < 0
-  ) {
-    throw new RangeError('Event actor summary state is invalid');
-  }
-  return { text: summary.text, tokenCount: summary.tokenCount };
-}
-
 function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
     return undefined;
@@ -356,7 +338,7 @@ function getLatestEventActorSummary(contentParts) {
     if (!isUsableSummaryPart(part)) {
       continue;
     }
-    return normalizeEventActorSummary({
+    return createAgentEventActorSummary({
       text: getSummaryPartText(part),
       tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
     });
@@ -2126,7 +2108,7 @@ class AgentClient extends BaseClient {
     let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
-      summary = normalizeEventActorSummary(state.summary);
+      summary = normalizeAgentEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
       compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
         state.compactionSemanticIndex,

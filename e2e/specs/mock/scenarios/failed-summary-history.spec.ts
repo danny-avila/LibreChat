@@ -38,7 +38,10 @@ async function appendSummaryTurn(conversationId: string, part: Record<string, un
     if (!leaf) {
       throw new Error(`E2E seed: conversation ${conversationId} has no messages`);
     }
-    const { _id: _ignored, ...fields } = leaf;
+    /** Mongo assigns the new row its own `_id`; everything else (endpoint,
+     *  model, user, conversation) is cloned from the turn it hangs off. */
+    const fields = { ...leaf };
+    delete fields._id;
     const now = new Date();
     await db.collection('messages').insertOne({
       ...fields,
@@ -88,9 +91,9 @@ test.describe('failed summary history', () => {
     await expect(messagesView(page).getByText(token)).toBeVisible();
     await sendMessageAndWaitForCompletion(page, `E2E_ASSERT_HISTORY:${token}`);
 
-    await expect(messagesView(page).getByText(`E2E history assertion present: ${token}`)).toBeVisible(
-      { timeout: 30000 },
-    );
+    await expect(
+      messagesView(page).getByText(`E2E history assertion present: ${token}`),
+    ).toBeVisible({ timeout: 30000 });
   });
 
   /**
@@ -112,9 +115,9 @@ test.describe('failed summary history', () => {
     await expect(messagesView(page).getByText(token)).toBeVisible();
     await sendMessageAndWaitForCompletion(page, `E2E_ASSERT_HISTORY:${token}`);
 
-    await expect(messagesView(page).getByText(`E2E history assertion present: ${token}`)).toBeVisible(
-      { timeout: 30000 },
-    );
+    await expect(
+      messagesView(page).getByText(`E2E history assertion present: ${token}`),
+    ).toBeVisible({ timeout: 30000 });
   });
 
   /**
@@ -136,8 +139,8 @@ test.describe('failed summary history', () => {
     await expect(messagesView(page).getByText(token)).toBeVisible();
     await sendMessageAndWaitForCompletion(page, `E2E_ASSERT_HISTORY:${token}`);
 
-    await expect(messagesView(page).getByText(`E2E history assertion absent: ${token}`)).toBeVisible(
-      { timeout: 30000 },
-    );
+    await expect(
+      messagesView(page).getByText(`E2E history assertion absent: ${token}`),
+    ).toBeVisible({ timeout: 30000 });
   });
 });

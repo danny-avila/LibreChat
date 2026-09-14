@@ -289,7 +289,7 @@ describe('AgentClient - event actor history adapter', () => {
         contextFingerprint: fingerprint,
         skillManifest,
         discoveredToolNames: ['deferred_tool'],
-        summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+        summary: { text: 'Earlier compacted context.', tokenCount: 12, version: 1 },
         contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
         compactionSemanticIndex,
       }),
@@ -320,6 +320,7 @@ describe('AgentClient - event actor history adapter', () => {
     expect(client.eventActorSummary).toEqual({
       text: 'Earlier compacted context.',
       tokenCount: 12,
+      version: 1,
     });
     expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
     expect(client.compactionSemanticIndexSnapshot).toEqual({
@@ -3607,6 +3608,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(client.eventActorSummary).toEqual({
       text: 'Fresh compacted context.',
       tokenCount: 18,
+      version: 1,
     });
     expect(client.contentParts).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ type: ContentTypes.SUMMARY })]),
