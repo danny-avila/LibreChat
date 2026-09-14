@@ -1,11 +1,15 @@
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
+import type { TEndpoint } from './config';
 import {
   isNativelyReadableText,
   canToolResourceConsume,
   resolveUploadDestination,
+  getCustomEndpointProvider,
   resolveDefaultLLMDeliveryPath,
+  resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
+import { mergeFileConfig, supportedMimeTypes, getEndpointFileConfig } from './file-config';
 
 describe('resolveDefaultLLMDeliveryPath', () => {
   it('should return system default for images when no config provided', () => {
@@ -300,6 +304,97 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  describe('media a custom endpoint opted into', () => {
+    /* The encoders emit OpenAI-format media parts for an OpenAI-compatible endpoint only
+     * when the admin listed the type in its `supportedMimeTypes`, so the route has to
+     * agree: an explicit match is provider-capable, the inherited default list is not. */
+    const explicit = [/^image\/.*$/, /^application\/pdf$/, /^video\/.*$/, /^audio\/wav$/];
+    const resolve = (mimeType: string, endpoint: string, types?: RegExp[]) =>
+      resolveDefaultLLMDeliveryPath(
+        mimeType,
+        undefined,
+        undefined,
+        endpoint,
+        undefined,
+        true,
+        types,
+      );
+
+    it('keeps an explicitly allowed type on the provider path for a custom endpoint', () => {
+      expect(resolve('video/mp4', 'MyGateway', explicit)).toBe('provider');
+      expect(resolve('audio/wav', 'MyGateway', explicit)).toBe('provider');
+    });
+
+    it('still downgrades a media type the allowlist does not name', () => {
+      expect(resolve('audio/mpeg', 'MyGateway', explicit)).toBe('text');
+    });
+
+    it('does not read the inherited default list as an opt-in', () => {
+      expect(resolve('video/mp4', 'MyGateway', supportedMimeTypes)).toBe('none');
+      expect(resolve('video/mp4', 'MyGateway', [])).toBe('none');
+    });
+
+    it('does not opt in a built-in endpoint, which the client offers no media for', () => {
+      /* Anthropic and Bedrock encoders have no media branch at all, and OpenAI/Azure are
+       * left out because the picker and drag-drop only open media for custom endpoints:
+       * a route the client cannot send to is a capability with no entry point. */
+      expect(resolve('video/mp4', 'openAI', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'azureOpenAI', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'anthropic', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'bedrock', explicit)).toBe('none');
+    });
+
+    it('keeps a custom endpoint that runs as Anthropic on its previous route', () => {
+      /* A custom endpoint may declare `provider: anthropic`, and the encoders emit
+       * OpenAI-format parts only, so the opt-in would deliver nothing there. Audio keeps
+       * its transcription route and video stays off the model path. */
+      const endpointConfig = { supportedMimeTypes: explicit };
+      const anthropic = { mimeType: 'video/mp4', endpointConfig, endpoint: 'MyClaude' };
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'anthropic' })).toBe(
+        'none',
+      );
+      expect(
+        resolveUploadLLMDeliveryPath({
+          ...anthropic,
+          mimeType: 'audio/wav',
+          endpointProvider: 'anthropic',
+          sttConfigured: true,
+        }),
+      ).toBe('text');
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'openAI' })).toBe(
+        'provider',
+      );
+      expect(resolveUploadLLMDeliveryPath(anthropic)).toBe('provider');
+    });
+
+    it('reaches the upload resolver through the merged endpoint config', () => {
+      /* The real merge, so the identity check that separates a configured list from the
+       * inherited default is exercised the way the upload route exercises it. */
+      const fileConfig = mergeFileConfig({
+        endpoints: { MyGateway: { supportedMimeTypes: ['image/.*', 'video/.*'] } },
+      });
+      const configured = getEndpointFileConfig({ fileConfig, endpoint: 'MyGateway' });
+      const inherited = getEndpointFileConfig({ fileConfig, endpoint: 'OtherGateway' });
+
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: configured,
+          fileConfig,
+          endpoint: 'MyGateway',
+        }),
+      ).toBe('provider');
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: inherited,
+          fileConfig,
+          endpoint: 'OtherGateway',
+        }),
+      ).toBe('none');
+    });
+  });
+
   it('leaves media alone when no endpoint is resolved at all', () => {
     /* An ephemeral agent reports no usable endpoint, which is not the same as naming one
      * we cannot identify. */
@@ -542,6 +637,27 @@ describe('resolveUploadDestination', () => {
         isMessageAttachment: true,
       }).rejection,
     ).toBe('no-consumer');
+  });
+});
+
+describe('getCustomEndpointProvider', () => {
+  const custom = [
+    { name: 'My Claude', provider: 'anthropic' },
+    { name: 'Ollama', provider: 'anthropic' },
+    { name: 'MyGateway' },
+  ] as Array<Partial<Pick<TEndpoint, 'name' | 'provider'>>>;
+
+  it('returns the declared dialect for a custom endpoint, matching the normalized name', () => {
+    expect(getCustomEndpointProvider(custom, 'My Claude')).toBe('anthropic');
+    /* The same normalization the file config lookup applies to endpoint names. */
+    expect(getCustomEndpointProvider(custom, 'ollama')).toBe('anthropic');
+  });
+
+  it('returns nothing for an endpoint without a dialect, an unknown one, or no config', () => {
+    expect(getCustomEndpointProvider(custom, 'MyGateway')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, 'Other')).toBeUndefined();
+    expect(getCustomEndpointProvider(undefined, 'My Claude')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, undefined)).toBeUndefined();
   });
 });
 
