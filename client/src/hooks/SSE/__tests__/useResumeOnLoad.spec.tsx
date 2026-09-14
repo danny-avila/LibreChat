@@ -2244,17 +2244,24 @@ describe('useResumeOnLoad', () => {
     it('restores still-queued steers (with files) and drops chips absent from the server list', async () => {
       const observedSteers: PendingSteer[][] = [];
       const files = [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }];
-      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
       mockUseStreamStatus.mockReturnValue(
         buildActiveStatus([{ steerId: 'queued-1', text: 'still queued', createdAt: 5, files }]),
       );
 
-      renderUseResumeOnLoad({
+      const rendered = renderUseResumeOnLoad({
         messages: [buildUserMessage(CONVERSATION_ID)],
         pendingSteers: [staleChip],
         onPendingSteers: (steers) => observedSteers.push(steers),
       });
 
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedSteers[observedSteers.length - 1]?.[0].files).toEqual(files);
+
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
+      rendered.rerender();
       await act(async () => {
         await Promise.resolve();
       });

@@ -762,6 +762,8 @@ export default function useResumableSSE(
 
   const { token, isAuthenticated } = useAuthContext();
   const fileMap = useFileMapContext();
+  const fileMapRef = useRef(fileMap);
+  fileMapRef.current = fileMap;
   const { setMessages, getMessages, setConversation, setIsSubmitting, newConversation } =
     chatHelpers;
 
@@ -1061,7 +1063,7 @@ export default function useResumableSSE(
               const restoredFiles = hydrateFileDeliveryMetadata(
                 steer.files,
                 localChip?.files,
-                fileMap,
+                fileMapRef.current,
               );
               return {
                 steerId: steer.steerId,
@@ -1094,7 +1096,7 @@ export default function useResumableSSE(
           ];
         });
       },
-    [fileMap],
+    [],
   );
 
   const settleAppliedSteerParts = useRecoilCallback(

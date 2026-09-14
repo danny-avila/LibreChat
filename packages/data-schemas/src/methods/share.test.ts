@@ -64,6 +64,7 @@ describe('Share Methods', () => {
         textFormat: { type: String, enum: ['html', 'text'] },
         status: { type: String, enum: ['pending', 'ready', 'failed'] },
         previewError: String,
+        llmDeliveryPath: { type: String, enum: ['provider', 'text', 'none'] },
         metadata: mongoose.Schema.Types.Mixed,
         tenantId: String,
       },
@@ -1112,6 +1113,7 @@ describe('Share Methods', () => {
         source: 'local',
         type: 'image/png',
         bytes: 2048,
+        llmDeliveryPath: 'text',
       });
 
       const message = await Message.create({
@@ -1157,6 +1159,7 @@ describe('Share Methods', () => {
       // share-scoped route, storage/identity internals stripped, ids anonymized.
       expect(steerFile.filepath).toBe(`/api/share/${shareId}/files/steer-file-2`);
       expect(steerFile).toMatchObject({ filename: 'steer.png', type: 'image/png' });
+      expect(steerFile.llmDeliveryPath).toBe('text');
       expect(steerFile).not.toHaveProperty('storageKey');
       expect(steerFile).not.toHaveProperty('user');
       expect(steerFile.conversationId).toBe(result?.conversationId);
@@ -1164,6 +1167,7 @@ describe('Share Methods', () => {
 
       const share = await SharedLink.findOne({ shareId }).lean();
       expect(share?.fileSnapshots?.map((snapshot) => snapshot.file_id)).toContain('steer-file-2');
+      expect(share?.fileSnapshots?.[0].llmDeliveryPath).toBe('text');
     });
 
     test('leaves safe non-steer content untouched (same array reference)', () => {

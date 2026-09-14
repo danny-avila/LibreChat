@@ -176,6 +176,12 @@ const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.text,
 ]);
 
+function isLlmDeliveryPath(
+  value: unknown,
+): value is NonNullable<t.SharedFileSnapshot['llmDeliveryPath']> {
+  return value === 'provider' || value === 'text' || value === 'none';
+}
+
 /** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
 function collectFileIds(items: unknown, target: Set<string>): void {
   if (!Array.isArray(items)) {
@@ -262,6 +268,7 @@ async function buildFileSnapshots(
       width: file.width,
       height: file.height,
       model: file.model,
+      llmDeliveryPath: isLlmDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined,
       previewRevision: file.previewRevision,
       sourceDispatchedAt: file.metadata?.sourceDispatchedAt,
       tenantId: file.tenantId,
@@ -408,6 +415,7 @@ function applyShareFileRoute(
   shareId: string,
   snapshotIds: Set<string>,
   textSourceIds?: Set<string>,
+  deliveryPathById?: ReadonlyMap<string, t.SharedFileSnapshot['llmDeliveryPath']>,
 ): t.SharedFile {
   const fileId = file.file_id;
   if (typeof fileId === 'string' && snapshotIds.has(fileId)) {
@@ -418,6 +426,9 @@ function applyShareFileRoute(
       // General storage sources stay private, but `text` is a render semantic:
       // clients must preview the database-backed payload as text, not the original MIME.
       ...(textSourceIds?.has(fileId) && { source: FileSources.text }),
+      ...(deliveryPathById?.get(fileId) != null && {
+        llmDeliveryPath: deliveryPathById.get(fileId),
+      }),
     };
     for (const key of ['preview', 'uri', 'url'] as const) {
       if (file[key] !== undefined) {
@@ -450,6 +461,7 @@ export function anonymizeSharedContent(
     shareId: string;
     snapshotIds: Set<string>;
     textSourceIds?: Set<string>;
+    deliveryPathById?: ReadonlyMap<string, t.SharedFileSnapshot['llmDeliveryPath']>;
     includeFiles: boolean;
     sanitizeUIResourceMarkers?: boolean;
   },
@@ -481,6 +493,7 @@ export function anonymizeSharedContent(
             params.shareId,
             params.snapshotIds,
             params.textSourceIds,
+            params.deliveryPathById,
           ),
         )
       : undefined;
@@ -518,6 +531,7 @@ function anonymizeMessages(
   shareId: string,
   snapshotIds: Set<string>,
   textSourceIds: Set<string>,
+  deliveryPathById: ReadonlyMap<string, t.SharedFileSnapshot['llmDeliveryPath']>,
   includeFiles: boolean,
   anonymizeMessageId: (id: string) => string,
   anonymizeAssistantId: (id: string) => string,
@@ -548,6 +562,7 @@ function anonymizeMessages(
             shareId,
             snapshotIds,
             textSourceIds,
+            deliveryPathById,
           ),
         )
       : undefined;
@@ -564,6 +579,7 @@ function anonymizeMessages(
             shareId,
             snapshotIds,
             textSourceIds,
+            deliveryPathById,
           ),
         )
       : undefined;
@@ -586,6 +602,7 @@ function anonymizeMessages(
         shareId,
         snapshotIds,
         textSourceIds,
+        deliveryPathById,
         includeFiles,
         sanitizeUIResourceMarkers: message.isCreatedByUser !== true,
       }),
@@ -920,6 +937,15 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
               .map((snapshot) => snapshot.file_id),
           )
         : new Set<string>();
+      const deliveryPathById = includeFiles
+        ? new Map(
+            (fileSnapshots ?? []).flatMap((snapshot) =>
+              snapshot.llmDeliveryPath == null
+                ? []
+                : [[snapshot.file_id, snapshot.llmDeliveryPath] as const],
+            ),
+          )
+        : new Map<string, t.SharedFileSnapshot['llmDeliveryPath']>();
       /** The share view has no conversation in scope, so whether this link may reveal a
        *  model travels in the payload — read off the very messages being returned. */
       const { messages, hasConfiguredSender } = anonymizeMessages(
@@ -928,6 +954,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         resolvedShareId,
         snapshotIds,
         textSourceIds,
+        deliveryPathById,
         includeFiles,
         anonymizeMessageId,
         anonymizeAssistantId,

@@ -19,6 +19,9 @@ export interface SharedFileSnapshot {
   width?: number;
   height?: number;
   model?: string;
+  /** Determines whether the shared renderer previews the original object or
+   * the extracted text served by the share-scoped preview route. */
+  llmDeliveryPath?: 'provider' | 'text' | 'none';
   /** Deferred-preview generation marker captured at share time. The share routes
    * refuse to serve when the live file's revision no longer matches (the file_id
    * was reused/overwritten by a later turn), so a link can't surface post-share

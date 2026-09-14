@@ -266,6 +266,9 @@ export default function useResumeOnLoad(
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(runIndex));
+  const setPendingSteers = useSetRecoilState(
+    store.pendingSteersByConvoId(conversationId ?? Constants.NEW_CONVO),
+  );
   const attachedGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(conversationId ?? ''),
   );
@@ -274,6 +277,23 @@ export default function useResumeOnLoad(
   const endpointType = currentConversation?.endpointType;
   const actualEndpoint = endpointType ?? endpoint;
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
+  useEffect(() => {
+    if (!conversationId || fileMap == null) {
+      return;
+    }
+    setPendingSteers((previous) => {
+      let changed = false;
+      const hydrated = previous.map((steer) => {
+        const files = hydrateFileDeliveryMetadata(steer.files, undefined, fileMap);
+        if (files === steer.files) {
+          return steer;
+        }
+        changed = true;
+        return { ...steer, files };
+      });
+      return changed ? hydrated : previous;
+    });
+  }, [conversationId, fileMap, setPendingSteers]);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
   /**
