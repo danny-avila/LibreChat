@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import type { Query, UpdateQuery } from 'mongoose';
 import type { IArtifactVersion } from '~/types';
 
 const runtimeConfigSchema = new Schema(
@@ -95,6 +96,124 @@ const artifactVersionSchema: Schema<IArtifactVersion> = new Schema<IArtifactVers
     timestamps: { createdAt: true, updatedAt: false },
   },
 );
+
+const snapshotFields = [
+  'sourceSnapshot',
+  'artifactType',
+  'runtimeConfig',
+  'integrity',
+  'versionNumber',
+  'artifactAppId',
+  'artifactVersionId',
+] as const;
+
+function isSnapshotPath(path: string): boolean {
+  return snapshotFields.some((field) => path === field || path.startsWith(`${field}.`));
+}
+
+const previousSaveFilters = new WeakMap<IArtifactVersion, IArtifactVersion['$where']>();
+
+function restoreSaveFilter(document: IArtifactVersion): void {
+  if (previousSaveFilters.has(document)) {
+    document.$where = previousSaveFilters.get(document) ?? {};
+    previousSaveFilters.delete(document);
+  }
+}
+
+/** The predicate is part of the write so a concurrent release cannot race a pre-read. */
+artifactVersionSchema.pre('save', function () {
+  restoreSaveFilter(this);
+  if (this.isNew) {
+    return;
+  }
+  if (
+    snapshotFields.some((field) => this.isModified(field)) ||
+    (this.isModified('publication') &&
+      this.publication?.state !== 'released' &&
+      this.publication?.state !== 'withdrawn')
+  ) {
+    previousSaveFilters.set(this, this.$where);
+    this.$where = {
+      ...this.$where,
+      'publication.state': 'draft',
+      'publication.releasedAt': { $exists: false },
+    };
+  }
+});
+
+artifactVersionSchema.post('save', restoreSaveFilter);
+artifactVersionSchema.post(
+  'save',
+  function (error: Error, document: IArtifactVersion, next: (error?: Error) => void) {
+    if (document) {
+      restoreSaveFilter(document);
+    }
+    next(error);
+  },
+);
+
+function guardVersionUpdate(this: Query<unknown, IArtifactVersion>) {
+  const update = this.getUpdate();
+  if (!update) {
+    return;
+  }
+  if (Array.isArray(update)) {
+    throw new Error('Artifact versions do not support pipeline updates');
+  }
+  let requiresDraft = false;
+  for (const [operator, fields] of Object.entries(update as UpdateQuery<IArtifactVersion>)) {
+    if (!operator.startsWith('$')) {
+      throw new Error('Artifact versions require explicit update operators');
+    }
+    for (const [path, value] of Object.entries(fields)) {
+      if (
+        isSnapshotPath(path) ||
+        (operator === '$rename' && typeof value === 'string' && isSnapshotPath(value))
+      ) {
+        requiresDraft = true;
+      }
+      if (path === 'publication' || path === 'publication.state') {
+        const state =
+          path === 'publication' ? (value as IArtifactVersion['publication'] | null)?.state : value;
+        if (operator !== '$set' || (state !== 'released' && state !== 'withdrawn')) {
+          requiresDraft = true;
+        }
+      }
+      if (
+        operator === '$rename' &&
+        typeof value === 'string' &&
+        (value === 'publication' || value.startsWith('publication.'))
+      ) {
+        requiresDraft = true;
+      }
+    }
+  }
+  if (requiresDraft) {
+    this.setQuery({
+      $and: [
+        this.getFilter(),
+        { 'publication.state': 'draft', 'publication.releasedAt': { $exists: false } },
+      ],
+    });
+  }
+}
+
+artifactVersionSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], guardVersionUpdate);
+artifactVersionSchema.pre(['replaceOne', 'findOneAndReplace'], function () {
+  throw new Error('Artifact versions cannot be replaced');
+});
+artifactVersionSchema.pre('bulkWrite', function (next, operations) {
+  if (
+    operations.some(
+      (operation) =>
+        'updateOne' in operation || 'updateMany' in operation || 'replaceOne' in operation,
+    )
+  ) {
+    next(new Error('Artifact version mutations must use guarded document or query writes'));
+    return;
+  }
+  next();
+});
 
 artifactVersionSchema.index({ tenantId: 1, artifactAppId: 1, versionNumber: 1 }, { unique: true });
 artifactVersionSchema.index({ tenantId: 1, artifactVersionId: 1 }, { unique: true });

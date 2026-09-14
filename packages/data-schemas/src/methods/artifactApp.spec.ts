@@ -115,6 +115,149 @@ describe('createArtifactAppWithVersion', () => {
   });
 });
 
+describe('artifact version model immutability', () => {
+  const protectedEdits = [
+    { path: 'sourceSnapshot', value: '<div>changed</div>' },
+    { path: 'artifactType', value: 'html' },
+    { path: 'runtimeConfig', value: { entryPoint: 'other' } },
+    { path: 'runtimeConfig.entryPoint', value: 'other' },
+    { path: 'integrity', value: { sourceHash: 'changed', schemaVersion: 2 } },
+    { path: 'integrity.sourceHash', value: 'changed' },
+    { path: 'versionNumber', value: 20 },
+    { path: 'artifactAppId', value: 'other-app' },
+    { path: 'artifactVersionId', value: 'other-version' },
+  ];
+
+  describe.each(['released', 'withdrawn'] as const)('%s snapshots', (state) => {
+    test.each(protectedEdits)(
+      'blocks query and document writes to $path',
+      async ({ path, value }) => {
+        const { app, version } = await methods.createArtifactAppWithVersion(baseInput());
+        const query = { artifactAppId: app.artifactAppId };
+        await methods.releaseArtifactVersion(query, 'user-1');
+        if (state === 'withdrawn') {
+          await methods.withdrawArtifactVersion(query);
+        }
+        const filter = { artifactVersionId: version.artifactVersionId };
+        const original = await ArtifactVersion.findOne(filter).lean();
+        const result = await ArtifactVersion.updateOne(filter, { $set: { [path]: value } });
+        expect(result.matchedCount).toBe(0);
+        const document = await ArtifactVersion.findOne(filter).orFail();
+        document.set(path, value);
+        await expect(document.save()).rejects.toThrow();
+        expect(await ArtifactVersion.findOne(filter).lean()).toEqual(original);
+      },
+    );
+  });
+
+  test('keeps drafts editable and permits release, activation and withdrawal after a draft save', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const query = { artifactAppId: app.artifactAppId };
+    const document = await ArtifactVersion.findOne(query).orFail();
+    document.sourceSnapshot = 'draft edit';
+    await document.save();
+    document.publication = { state: 'released', releasedAt: new Date(), releasedBy: 'user-1' };
+    await document.save();
+    expect(await methods.activateArtifactVersion(query)).not.toBeNull();
+    document.publication.state = 'withdrawn';
+    await document.save();
+    expect(await ArtifactVersion.findOne(query).lean()).toMatchObject({
+      sourceSnapshot: 'draft edit',
+      publication: { state: 'withdrawn' },
+    });
+  });
+
+  test('blocks a stale draft document save after another writer releases it', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const query = { artifactAppId: app.artifactAppId };
+    const draft = await ArtifactVersion.findOne(query).orFail();
+    await methods.releaseArtifactVersion(query, 'user-1');
+    draft.sourceSnapshot = 'stale draft';
+    await expect(draft.save()).rejects.toThrow();
+    expect(await ArtifactVersion.findOne(query).lean()).toMatchObject({
+      sourceSnapshot: baseInput().version.sourceSnapshot,
+      publication: { state: 'released' },
+    });
+  });
+
+  test('does not unlock released content by resetting or removing publication state', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const query = { artifactAppId: app.artifactAppId };
+    await methods.releaseArtifactVersion(query, 'user-1');
+    expect(
+      await ArtifactVersion.findOneAndUpdate(
+        query,
+        {
+          $set: { publication: { state: 'draft' } },
+        },
+        { new: true },
+      ),
+    ).toBeNull();
+    expect(
+      (await ArtifactVersion.updateOne(query, { $unset: { publication: 1 } })).matchedCount,
+    ).toBe(0);
+    const document = await ArtifactVersion.findOne(query).orFail();
+    document.publication = { state: 'draft' };
+    await expect(document.save()).rejects.toThrow();
+  });
+
+  test('guards updateMany and rename paths without blocking editable drafts', async () => {
+    const released = await methods.createArtifactAppWithVersion(baseInput());
+    const draft = await methods.createArtifactAppWithVersion(baseInput());
+    await methods.releaseArtifactVersion({ artifactAppId: released.app.artifactAppId }, 'user-1');
+    expect(
+      (await ArtifactVersion.updateMany({}, { $set: { sourceSnapshot: 'new draft' } }))
+        .matchedCount,
+    ).toBe(1);
+    expect(
+      (
+        await ArtifactVersion.updateOne(
+          { artifactAppId: released.app.artifactAppId },
+          {
+            $rename: { sourceSnapshot: 'changelog' },
+          },
+        )
+      ).matchedCount,
+    ).toBe(0);
+    expect(
+      (
+        await ArtifactVersion.updateOne(
+          { artifactAppId: released.app.artifactAppId },
+          {
+            $rename: { changelog: 'sourceSnapshot' },
+          },
+        )
+      ).matchedCount,
+    ).toBe(0);
+    expect(
+      await ArtifactVersion.findOne({ artifactAppId: draft.app.artifactAppId }).lean(),
+    ).toMatchObject({ sourceSnapshot: 'new draft' });
+  });
+
+  test('rejects replacement, pipeline and bulk mutation bypasses', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const query = { artifactAppId: app.artifactAppId };
+    await methods.releaseArtifactVersion(query, 'user-1');
+    const original = await ArtifactVersion.findOne(query).lean();
+    const replacement = { ...original, sourceSnapshot: 'changed' };
+    await expect(ArtifactVersion.replaceOne(query, replacement)).rejects.toThrow(
+      'cannot be replaced',
+    );
+    await expect(ArtifactVersion.findOneAndReplace(query, replacement)).rejects.toThrow(
+      'cannot be replaced',
+    );
+    await expect(
+      ArtifactVersion.updateOne(query, [{ $set: { sourceSnapshot: 'changed' } }]),
+    ).rejects.toThrow('pipeline');
+    await expect(
+      ArtifactVersion.bulkWrite([
+        { updateOne: { filter: query, update: { $set: { sourceSnapshot: 'changed' } } } },
+      ]),
+    ).rejects.toThrow('guarded');
+    expect(await ArtifactVersion.findOne(query).lean()).toEqual(original);
+  });
+});
+
 describe('syncArtifactAppWithVersion', () => {
   const sourceMetadata = {
     conversationId: 'conversation-1',
@@ -122,6 +265,37 @@ describe('syncArtifactAppWithVersion', () => {
     originalArtifactId: 'render-id-1',
     sourceKey: 'artifact:v1:identifier:revenue-chart',
   };
+
+  test('imports released legacy history without changing the original snapshot or identity', async () => {
+    const legacy = await methods.createArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, sourceKey: 'identifier:revenue-chart:text/html' },
+      }),
+    );
+    await methods.releaseArtifactVersion({ artifactAppId: legacy.app.artifactAppId }, 'user-1');
+    const original = await ArtifactVersion.findOne({
+      artifactAppId: legacy.app.artifactAppId,
+    }).lean();
+    const survivor = await methods.createArtifactAppWithVersion(baseInput({ sourceMetadata }));
+
+    await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+
+    expect(
+      await ArtifactVersion.findOne({ artifactAppId: legacy.app.artifactAppId }).lean(),
+    ).toEqual(original);
+    const history = await ArtifactVersion.find({ artifactAppId: survivor.app.artifactAppId })
+      .sort({ versionNumber: 1 })
+      .lean();
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({
+      versionNumber: 2,
+      sourceSnapshot: original?.sourceSnapshot,
+      integrity: original?.integrity,
+      publication: original?.publication,
+    });
+    expect(history[1].artifactVersionId).not.toBe(original?.artifactVersionId);
+  });
 
   test('is idempotent when the source snapshot has not changed', async () => {
     const input = baseInput({ sourceMetadata });
@@ -703,6 +877,31 @@ describe('version lifecycle', () => {
 });
 
 describe('tenant isolation', () => {
+  test('snapshot save guards preserve caller predicates and tenant isolation across saves', async () => {
+    const document = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      const { app } = await methods.createArtifactAppWithVersion(
+        baseInput({ tenantId: 'tenant-a' }),
+      );
+      return ArtifactVersion.findOne({ artifactAppId: app.artifactAppId }).orFail().exec();
+    });
+    document.$where = { createdBy: 'not-the-owner' };
+    document.sourceSnapshot = 'draft edit';
+    await expect(
+      tenantStorage.run({ tenantId: 'tenant-a' }, async () => document.save()),
+    ).rejects.toThrow();
+    document.$where = { createdBy: 'user-1' };
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => document.save());
+    expect(document.$where.createdBy).toBe('user-1');
+    document.sourceSnapshot = 'cross-tenant edit';
+    await expect(
+      tenantStorage.run({ tenantId: 'tenant-b' }, async () => document.save()),
+    ).rejects.toThrow();
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      const stored = await ArtifactVersion.findById(document._id).orFail();
+      expect(stored.sourceSnapshot).toBe('draft edit');
+    });
+  });
+
   test('apps are scoped by tenant; cross-tenant reads return nothing', async () => {
     const appA = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
       methods.createArtifactAppWithVersion(baseInput({ tenantId: 'tenant-a' })),

@@ -195,15 +195,25 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       .sort({ createdAt: 1, versionNumber: 1, _id: 1 })
       .exec();
 
-    // Append duplicate histories to the survivor. Each move is atomic and can
-    // be resumed safely if a standalone deployment stops partway through.
+    // Drafts can move; released snapshots retain their original identity and
+    // are copied with deterministic IDs so interrupted imports are resumable.
     for (const version of duplicateVersions) {
       let moved = false;
+      const importedVersionId = `ver_${crypto
+        .createHash('sha256')
+        .update(JSON.stringify([survivor.artifactAppId, version.artifactVersionId]))
+        .digest('hex')}`;
       for (let attempt = 0; attempt < 20; attempt++) {
-        const current = await ArtifactVersion.findById(version._id)
-          .select({ artifactAppId: 1 })
-          .lean<Pick<IArtifactVersion, '_id' | 'artifactAppId'>>()
-          .exec();
+        if (
+          await ArtifactVersion.exists({
+            artifactAppId: survivor.artifactAppId,
+            artifactVersionId: importedVersionId,
+          })
+        ) {
+          moved = true;
+          break;
+        }
+        const current = await ArtifactVersion.findById(version._id).exec();
         if (!current || current.artifactAppId === survivor.artifactAppId) {
           moved = true;
           break;
@@ -214,6 +224,17 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           .lean<Pick<IArtifactVersion, 'versionNumber'>>()
           .exec();
         try {
+          if (current.publication.state !== 'draft' || current.publication.releasedAt != null) {
+            const { _id: _originalId, ...snapshot } = current.toObject<IArtifactVersion>();
+            await ArtifactVersion.create({
+              ...snapshot,
+              artifactVersionId: importedVersionId,
+              artifactAppId: survivor.artifactAppId,
+              versionNumber: (latest?.versionNumber ?? 0) + 1,
+            });
+            moved = true;
+            break;
+          }
           const result = await ArtifactVersion.updateOne(
             { _id: version._id, artifactAppId: current.artifactAppId },
             {
@@ -1036,12 +1057,30 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         'draft',
       );
       const createOptions = session ? { session } : undefined;
+      const updatedApp = await ArtifactApp.findOneAndUpdate(
+        {
+          _id: app._id,
+          latestVersionNumber: app.latestVersionNumber,
+          activeVersionId: app.activeVersionId ?? null,
+          deletion: { $exists: false },
+        },
+        {
+          $set: {
+            title: input.title,
+            sourceMetadata: canonicalSource,
+            'marketplace.listed': true,
+            latestVersionNumber: nextNumber,
+            activeVersionId: versionSeed.artifactVersionId,
+          },
+        },
+        { new: true, ...createOptions },
+      ).exec();
+      if (!updatedApp) {
+        throw new ArtifactSyncRetryError('[syncArtifactAppWithVersion] Concurrent app update');
+      }
       const [version] = await ArtifactVersion.create([versionSeed], createOptions);
-      app.latestVersionNumber = nextNumber;
-      app.activeVersionId = version.artifactVersionId;
-      await app.save(session ? { session } : undefined);
       return {
-        app: toAppRecord(app),
+        app: toAppRecord(updatedApp),
         version: toVersionRecord(version),
         created: false,
         versionCreated: true,
@@ -1061,19 +1100,26 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       throw new Error('[syncArtifactAppWithVersion] Standalone sync exhausted retries');
     }
 
-    const session = await mongoose.startSession();
-    try {
-      let result: SyncArtifactAppResult | undefined;
-      await session.withTransaction(async () => {
-        result = await applySync(session);
-      });
-      if (!result) {
-        throw new Error('[syncArtifactAppWithVersion] Transaction produced no result');
+    for (let attempt = 0; attempt < syncOptions.syncWriteRetryAttempts; attempt++) {
+      const session = await mongoose.startSession();
+      try {
+        let result: SyncArtifactAppResult | undefined;
+        await session.withTransaction(async () => {
+          result = await applySync(session);
+        });
+        if (!result) {
+          throw new Error('[syncArtifactAppWithVersion] Transaction produced no result');
+        }
+        return result;
+      } catch (error) {
+        if (!isRetryableWriteError(error) || attempt === syncOptions.syncWriteRetryAttempts - 1) {
+          throw error;
+        }
+      } finally {
+        await session.endSession();
       }
-      return result;
-    } finally {
-      await session.endSession();
     }
+    throw new Error('[syncArtifactAppWithVersion] Transaction sync exhausted retries');
   }
 
   async function resolveArtifactAppId(query: ArtifactAppQuery): Promise<string | null> {
