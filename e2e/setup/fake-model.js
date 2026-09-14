@@ -32,6 +32,7 @@ const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
 const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
+const ASSERT_HISTORY_MARKER = 'E2E_ASSERT_HISTORY:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
@@ -86,6 +87,8 @@ const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
 const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
+const HISTORY_ASSERTION_PRESENT_TEXT = 'E2E history assertion present';
+const HISTORY_ASSERTION_ABSENT_TEXT = 'E2E history assertion absent';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
 const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
@@ -401,6 +404,32 @@ function agentContextAssertionResponses({ messages, text }) {
       `E2E agent context assertion failed: expected ${expected}; saw ${
         promptText ? 'prompt context without marker' : 'no prompt context'
       }`,
+    ],
+  };
+}
+
+/**
+ * Answers whether a token from an EARLIER turn still reaches the model. Scans
+ * every prompt message except the current user turn: the marker line carries
+ * the token itself, so counting that turn would make every history pass.
+ * Presence and absence each get their own sentinel, so a spec asserts what the
+ * model saw rather than matching a failure string — a conversation whose
+ * history was replaced by a checkpoint is a correct absence.
+ */
+function historyAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_HISTORY_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const latestUserMessage = getLatestUserMessage(messages);
+  const priorMessages = (messages ?? []).filter((message) => message !== latestUserMessage);
+  const priorText = collectPromptText(priorMessages).join('\n');
+  return {
+    responses: [
+      priorText.includes(expected)
+        ? `${HISTORY_ASSERTION_PRESENT_TEXT}: ${expected}`
+        : `${HISTORY_ASSERTION_ABSENT_TEXT}: ${expected}`,
     ],
   };
 }
@@ -2818,6 +2847,14 @@ function resolveResponses({ graph, messages, text, toolNames }) {
       responses: [MOCK_REPLY],
       resolveOnStream: (streamMessages) =>
         agentContextAssertionResponses({ messages: streamMessages, text }),
+    };
+  }
+
+  if (text.includes(ASSERT_HISTORY_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) =>
+        historyAssertionResponses({ messages: streamMessages, text }),
     };
   }
 
