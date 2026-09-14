@@ -211,6 +211,154 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-chart-widget-stroke']).toBe('50 51 52');
   });
 
+  /** A deliberately different reference theme: it paints the whole seven-slot
+   *  scale and its own surfaces, so it predates slot 8 and cannot name it.
+   *  Falling back to the bundled indigo would paint a stop whose 3:1 mark
+   *  contrast was only ever measured against LibreChat's surfaces. */
+  const ownedScaleTheme: ThemeDefinition = {
+    version: 1,
+    name: 'owned-scale-reference',
+    modes: {
+      light: {
+        colors: {
+          'rgb-text-primary': '250 250 250',
+          'rgb-text-secondary': '215 215 215',
+          'rgb-surface-secondary': '18 18 24',
+          'rgb-surface-tertiary': '30 30 38',
+          'rgb-series-1': '120 200 255',
+          'rgb-series-2': '255 160 90',
+          'rgb-series-3': '110 230 210',
+          'rgb-series-4': '240 200 100',
+          'rgb-series-5': '250 150 200',
+          'rgb-series-6': '190 160 255',
+          'rgb-series-7': '130 220 120',
+        },
+      },
+    },
+  };
+
+  it('derives an omitted eighth series slot from an owned scale’s neutral text', () => {
+    const owned = resolveTheme(ownedScaleTheme, 'light');
+
+    expect(owned.colors['rgb-series-8']).toBe('215 215 215');
+    expect(owned.colors['rgb-series-7']).toBe('130 220 120');
+  });
+
+  it('derives it from the inherited text of an owned scale that names no text', () => {
+    /** The same reference theme minus its text overrides: it repaints the scale
+     *  and its surfaces but reads body copy in LibreChat's own colours, so the
+     *  stop tracks the text it will actually sit beside instead of reverting to
+     *  the bundled indigo. */
+    const inheritedText = resolveTheme(
+      {
+        ...ownedScaleTheme,
+        modes: {
+          light: {
+            colors: {
+              'rgb-surface-secondary': '18 18 24',
+              'rgb-surface-tertiary': '30 30 38',
+              'rgb-series-1': '120 200 255',
+              'rgb-series-7': '130 220 120',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(inheritedText.colors['rgb-series-8']).toBe(defaultTheme['rgb-text-secondary']);
+  });
+
+  it('lets an owned scale name the eighth slot itself', () => {
+    const named = resolveTheme(
+      {
+        ...ownedScaleTheme,
+        modes: {
+          light: {
+            colors: { ...ownedScaleTheme.modes.light?.colors, 'rgb-series-8': '10 20 30' },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(named.colors['rgb-series-8']).toBe('10 20 30');
+  });
+
+  it('keeps the bundled eighth slot for a theme that paints no series colors', () => {
+    expect(resolveTheme(compactTheme, 'dark').colors['rgb-series-8']).toBe(
+      darkTheme['rgb-series-8'],
+    );
+    expect(resolveTheme(compactTheme, 'light').colors['rgb-series-8']).toBe(
+      defaultTheme['rgb-series-8'],
+    );
+  });
+
+  it('keeps the verified mark on the success fill a theme already named', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-verified-reference',
+        modes: { dark: { colors: { 'rgb-status-success-strong': '8 135 89' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('8 135 89');
+  });
+
+  it('keeps the verified mark on a success fill the theme only inherits', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'partial-verified-reference',
+        modes: { dark: { colors: { 'rgb-surface-tertiary': '30 30 38' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe(darkTheme['rgb-status-success-strong']);
+  });
+
+  it('keeps the bundled verified fill for a theme with no colors of its own', () => {
+    expect(resolveTheme(libreChatTheme, 'dark').colors['rgb-status-verified']).toBe(
+      darkTheme['rgb-status-verified'],
+    );
+  });
+
+  it('keeps the bundled verified fill for a theme that repaints nothing around the mark', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'unrelated-partial-reference',
+        modes: { dark: { colors: { 'rgb-text-primary': '250 250 250' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe(darkTheme['rgb-status-verified']);
+  });
+
+  it('preserves an explicit verified fill', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-verified-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-status-success-strong': '8 135 89',
+              'rgb-status-verified': '26 127 216',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-status-verified']).toBe('26 127 216');
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

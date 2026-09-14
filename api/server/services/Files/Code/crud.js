@@ -185,7 +185,7 @@ async function deleteCodeEnvFile(req, file) {
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @param {AbortSignal} [params.signal] - Effective cancellation signal.
- * @returns {Promise<{ storage_session_id: string; file_id: string }>}
+ * @returns {Promise<{ storage_session_id: string; file_id: string; filename: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
  */
@@ -237,6 +237,7 @@ async function uploadCodeEnvFile({
     return {
       storage_session_id: result.storage_session_id,
       file_id: result.files[0].fileId,
+      filename: result.files[0].filename,
     };
   } catch (error) {
     throw wrapCodeApiUploadError(error, `Error uploading code environment file: ${error.message}`);

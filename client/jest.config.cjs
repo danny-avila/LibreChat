@@ -1,4 +1,4 @@
-/** v0.8.8-rc2 */
+/** v0.8.8-rc3 */
 const { maxWorkers } = require('../config/jest.workers.cjs');
 
 module.exports = {

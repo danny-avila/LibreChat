@@ -429,7 +429,11 @@ describe('Code CRUD', () => {
       });
 
       const result = await uploadCodeEnvFile(baseUploadParams);
-      expect(result).toEqual({ storage_session_id: 'sess-1', file_id: 'fid-1' });
+      expect(result).toEqual({
+        storage_session_id: 'sess-1',
+        file_id: 'fid-1',
+        filename: 'data.csv',
+      });
     });
 
     it('forwards Code API auth headers on upload requests', async () => {

@@ -419,6 +419,36 @@ const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
  * never the `news` collection). The JSON export mirrors this cache, so
  * fields removed here also leave user exports.
  */
+/**
+ * A response the server generated and sampled into a trace. Its trace fields are
+ * an ownership claim, so rows a client authored (the message-create route and
+ * imports stamp `isUserSubmitted: true`) never count, even if one was persisted
+ * with forged fields before those writes stripped them.
+ */
+/** A response's position in trace order: its creation time, then its `_id`. */
+function traceOrderKey(createdAt: Date, id: Types.ObjectId): string {
+  return `${createdAt.getTime().toString(36)}.${id.toString()}`;
+}
+
+function parseTraceOrderKey(key: string): { createdAt: Date; id: string } | undefined {
+  const [time, hex] = key.split('.');
+  const createdAt = new Date(Number.parseInt(time ?? '', 36));
+  if (Number.isNaN(createdAt.getTime()) || hex == null || !/^[0-9a-f]{24}$/.test(hex)) {
+    return undefined;
+  }
+  return { createdAt, id: hex };
+}
+
+/** An explicit tenant scope, so a read without request tenant context still cannot span tenants. */
+const traceTenantScope = (tenantId?: string) =>
+  tenantId == null ? { tenantId: { $exists: false } } : { tenantId };
+
+const SERVER_AUTHORED_SAMPLED_RESPONSE = {
+  langfuseSampled: true,
+  isCreatedByUser: false,
+  isUserSubmitted: { $ne: true },
+} as const;
+
 export const CLIENT_MESSAGE_SELECT: string = [
   '-_id',
   '-__v',
@@ -431,6 +461,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-contextMeta',
   '-langfuseSampled',
   '-langfuseDestinationIds',
+  '-langfuseRunId',
   '-metadata.thoughtSignatures',
   '-content.tool_call.backgroundTask.resultClaim',
   '-content.tool_call.backgroundTask.completionWakeup',
@@ -572,6 +603,25 @@ export type ParentSubagentTaskRecord = {
   >;
 };
 
+/** A response message whose run was sampled into a trace. */
+export interface SampledTraceMessage {
+  messageId: string;
+  createdAt?: Date;
+  /** Opaque ids of the tracing destinations eligible to hold the trace, when recorded. */
+  langfuseDestinationIds?: string[];
+  /** The run whose trace this response reports, when it is not the message's own id. */
+  langfuseRunId?: string;
+  /** Opaque position in the conversation's response order, which a later read can resume from. */
+  orderKey?: string;
+}
+
+export interface ConversationTraceRefs {
+  /** Creation time of the user's earliest message in the conversation. */
+  firstMessageAt?: Date;
+  /** Sampled response messages, oldest first. */
+  sampledMessages: SampledTraceMessage[];
+}
+
 export interface MessageMethods {
   saveMessage(
     ctx: {
@@ -586,6 +636,32 @@ export interface MessageMethods {
     },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
+  /**
+   * Reads the references a trace viewer needs for one of the user's
+   * conversations: when it began and which responses were sampled into traces.
+   */
+  getConversationTraceRefs(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    /** Only this response, when it is a sampled one. */
+    messageId?: string;
+    /** The newest response to include, by the `orderKey` a previous read returned for it. */
+    through?: { messageId: string; orderKey: string };
+    /** The most responses to return, newest first from `through`; all of them when absent. */
+    limit?: number;
+  }): Promise<ConversationTraceRefs>;
+  /**
+   * Whether any of the user's responses in the conversation was sampled into a
+   * trace that one of `destinationIds` can hold. A response with no recorded
+   * destinations predates the record and counts for every destination.
+   */
+  hasSampledTraceMessage(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    destinationIds: string[];
+  }): Promise<boolean>;
   recordSubagentTaskControlReceipt(input: {
     userId: string;
     conversationId: string;
@@ -1859,6 +1935,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         endpoint: updatedMessage.endpoint,
         langfuseSampled: updatedMessage.langfuseSampled,
         langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
+        langfuseRunId: updatedMessage.langfuseRunId,
       };
     } catch (err) {
       logger.error('Error updating message:', err);
@@ -3313,6 +3390,121 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     );
   }
 
+  async function getConversationTraceRefs({
+    user,
+    conversationId,
+    tenantId,
+    messageId,
+    through,
+    limit,
+  }: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    messageId?: string;
+    through?: { messageId: string; orderKey: string };
+    limit?: number;
+  }): Promise<ConversationTraceRefs> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const scope = { user, conversationId, ...traceTenantScope(tenantId) };
+      const anchor = through != null ? parseTraceOrderKey(through.orderKey) : undefined;
+      const range =
+        anchor != null
+          ? {
+              $or: [
+                { createdAt: { $lt: anchor.createdAt } },
+                {
+                  createdAt: anchor.createdAt,
+                  _id: { $lte: new mongoose.Types.ObjectId(anchor.id) },
+                },
+              ],
+            }
+          : {};
+      const query = Message.find({
+        ...scope,
+        ...SERVER_AUTHORED_SAMPLED_RESPONSE,
+        ...(messageId != null ? { messageId } : {}),
+        ...range,
+      }).select('_id messageId createdAt langfuseDestinationIds langfuseRunId');
+      const bounded = limit != null;
+      /** `_id` breaks ties between responses saved in the same millisecond, so every page
+       *  request rebuilds the same turn order its cursor was positioned in. */
+      const sorted = bounded
+        ? query.sort({ createdAt: -1, _id: -1 }).limit(limit)
+        : query.sort({ createdAt: 1, _id: 1 });
+      const [first, rows] = await Promise.all([
+        Message.findOne(scope)
+          .select('createdAt -_id')
+          .sort({ createdAt: 1 })
+          .lean<Pick<IMessage, 'createdAt'>>(),
+        through != null && anchor == null
+          ? []
+          : sorted.lean<
+              Array<
+                Pick<
+                  IMessage,
+                  'messageId' | 'createdAt' | 'langfuseDestinationIds' | 'langfuseRunId'
+                > & { _id: Types.ObjectId }
+              >
+            >(),
+      ]);
+      const sampled = bounded ? rows.reverse() : rows;
+      /** A position that no longer names its response (deleted, or never issued) resumes nothing. */
+      if (through != null && sampled[sampled.length - 1]?.messageId !== through.messageId) {
+        return { firstMessageAt: first?.createdAt, sampledMessages: [] };
+      }
+      return {
+        firstMessageAt: first?.createdAt,
+        sampledMessages: sampled
+          .filter((message) => typeof message.messageId === 'string')
+          .map(({ _id, messageId: id, createdAt, langfuseDestinationIds, langfuseRunId }) => ({
+            messageId: id,
+            ...(createdAt != null ? { createdAt, orderKey: traceOrderKey(createdAt, _id) } : {}),
+            ...(Array.isArray(langfuseDestinationIds) ? { langfuseDestinationIds } : {}),
+            ...(typeof langfuseRunId === 'string' && langfuseRunId.length > 0
+              ? { langfuseRunId }
+              : {}),
+          })),
+      };
+    } catch (err) {
+      logger.error('Error getting conversation trace references:', err);
+      throw err;
+    }
+  }
+
+  async function hasSampledTraceMessage({
+    user,
+    conversationId,
+    tenantId,
+    destinationIds,
+  }: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    destinationIds: string[];
+  }): Promise<boolean> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const match = await Message.findOne({
+        user,
+        conversationId,
+        ...traceTenantScope(tenantId),
+        ...SERVER_AUTHORED_SAMPLED_RESPONSE,
+        $or: [
+          { langfuseDestinationIds: null },
+          { langfuseDestinationIds: { $in: destinationIds } },
+        ],
+      })
+        .select('_id')
+        .lean();
+      return match != null;
+    } catch (err) {
+      logger.error('Error checking for a sampled trace message:', err);
+      throw err;
+    }
+  }
+
   /**
    * Retrieves a single message from the database.
    */
@@ -3411,6 +3603,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
+    getConversationTraceRefs,
+    hasSampledTraceMessage,
     getMessagesForSubagentThreadView,
     listSubagentTasksForThreads,
     getMessage,

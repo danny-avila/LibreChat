@@ -150,6 +150,28 @@ describe('isStepLimitError', () => {
     expect(isStepLimitError(looping)).toBe(false);
   });
 
+  it('treats hostile error accessors as an ordinary failure', () => {
+    const error = Object.create(null, {
+      lc_error_code: {
+        get() {
+          throw new Error('hostile code getter');
+        },
+      },
+      name: {
+        get() {
+          throw new Error('hostile name getter');
+        },
+      },
+      cause: {
+        get() {
+          throw new Error('hostile cause getter');
+        },
+      },
+    });
+
+    expect(isStepLimitError(error)).toBe(false);
+  });
+
   it.each([
     undefined,
     null,

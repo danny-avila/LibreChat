@@ -61,6 +61,7 @@ import {
   mergeRestagedQuotes,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  invalidateConversationLists,
   countTaggedApprovalParts,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
@@ -2809,7 +2810,7 @@ export default function useResumableSSE(
           if (!isCurrentSubscription()) {
             return;
           }
-          await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+          await invalidateConversationLists(queryClient);
           if (!isCurrentSubscription()) {
             return;
           }
@@ -3208,7 +3209,7 @@ export default function useResumableSSE(
               // persisted (the original completed and was cleaned up) or may never have
               // existed (the winner died before persisting). Don't guess: reconcile against
               // the server so a real conversation stays and a phantom is dropped.
-              queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              invalidateConversationLists(queryClient);
               queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
             } else {
               // Fresh optimistic stream that never started: prune immediately.
@@ -4203,7 +4204,7 @@ export default function useResumableSSE(
                 if (!isCurrentEffect()) {
                   return;
                 }
-                await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+                await invalidateConversationLists(queryClient);
                 if (!isCurrentEffect()) {
                   return;
                 }
@@ -4273,7 +4274,7 @@ export default function useResumableSSE(
                 if (!isCurrentEffect()) {
                   return;
                 }
-                await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+                await invalidateConversationLists(queryClient);
                 if (!isCurrentEffect()) {
                   return;
                 }
@@ -4419,7 +4420,7 @@ export default function useResumableSSE(
               if (!isCurrentEffect()) {
                 return;
               }
-              await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              await invalidateConversationLists(queryClient);
               if (!isCurrentEffect()) {
                 return;
               }

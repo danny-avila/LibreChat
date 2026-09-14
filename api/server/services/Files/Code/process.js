@@ -1,5 +1,4 @@
 const path = require('path');
-const { v4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
@@ -11,7 +10,6 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
-  isAbortError,
   getCodeApiUploadOptions,
   withCodeApiRateLimit,
   withCodeApiUploadRecovery,
@@ -25,6 +23,7 @@ const {
   extractCodeArtifactText,
   extractCodeArtifactRawText,
   extractCodeArtifactInspectionText,
+  prepareCodeOutputBufferForInspection,
   getBoundedCodeOutputByteLimit,
   getExtractedTextFormat,
   getStorageMetadata,
@@ -32,34 +31,30 @@ const {
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
   executeWorkspaceTool,
-  claimCodeDestination,
-  createCodeDestinationSet,
+  selectCodeFiles,
+  getCodeFileInfo,
+  getUploadedCodeEnvFilename,
+  checkCodeFileActive: checkIfActive,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
-  sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
+  processCodeOutput: processCodeOutputWithDeps,
   resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Tools,
   megabyte,
-  fileConfig,
   FileContext,
   FileSources,
-  imageExtRegex,
-  inferMimeType,
   EToolResources,
   EModelEndpoint,
   ErrorTypes,
   mergeFileConfig,
-  getCodeEnvRefs,
   mergeCodeEnvRef,
-  getCodeEnvRefForProfile,
   getEndpointFileConfig,
-  resolveSandboxFilename,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const { getFiles, updateFile, claimCodeFile, commitCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
@@ -318,66 +313,16 @@ const prepareCodeOutputForInspection = async ({
     executionProfile,
     executionRouteKey,
   });
-  const safeName = sanitizeArtifactPath(name);
-  const fallbackType = inferMimeType(name, '') || 'application/octet-stream';
-  if (!inspectContent) {
-    return {
-      buffer,
-      file: {
-        name,
-        filename: safeName,
-        type: fallbackType,
-      },
-    };
-  }
-  if (buffer.length > fileSizeLimit) {
-    return {
-      buffer,
-      extractedTextComplete: false,
-      file: {
-        name,
-        filename: safeName,
-        type: fallbackType,
-      },
-    };
-  }
-
-  const detectedType = await determineFileType(buffer, true);
-  const detectedMimeType = detectedType?.mime?.toLowerCase();
-  if (detectedMimeType?.startsWith('image/')) {
-    return {
-      buffer,
-      extractedTextComplete: false,
-      file: {
-        name,
-        filename: safeName,
-        type: detectedMimeType,
-      },
-    };
-  }
-
-  const leafName = path.basename(safeName);
-  const unknownText = detectedType == null ? extractCodeArtifactRawText(buffer, 'utf8-text') : null;
-  const mimeType = unknownText != null ? 'text/plain' : (detectedMimeType ?? fallbackType);
-  const category = unknownText != null ? 'utf8-text' : classifyCodeArtifact(leafName, mimeType);
-  const content = unknownText ?? extractCodeArtifactRawText(buffer, category);
-  const extractedText = await extractCodeArtifactInspectionText(
+  return prepareCodeOutputBufferForInspection({
     buffer,
-    leafName,
-    mimeType,
-    category,
-  );
-  return {
-    buffer,
-    extractedTextComplete: extractedText.complete,
-    file: {
-      name,
-      filename: safeName,
-      type: mimeType,
-      content: content ?? undefined,
-      extractedText: extractedText.text ?? undefined,
-    },
-  };
+    name,
+    fileSizeLimit,
+    inspectContent,
+    determineFileType,
+    classify: classifyCodeArtifact,
+    extractRawText: extractCodeArtifactRawText,
+    extractInspectionText: extractCodeArtifactInspectionText,
+  });
 };
 
 /**
@@ -639,559 +584,43 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
     });
 };
 
-/**
- * Process code execution output files — downloads and saves both images
- * and non-image files. All files are saved to local storage with
- * `codeEnvRef` metadata for code env re-upload.
- *
- * Returns a two-part shape so callers can ship the attachment to the
- * client immediately and run preview extraction in the background:
- *   - `file`: persisted metadata (file is on disk, downloadable, and
- *     has `status: 'pending'` if a preview is still being rendered).
- *   - `finalize` (optional): a thunk returning the deferred preview
- *     result promise. Present only when an inline HTML preview is
- *     expected (office buckets — DOCX/XLSX/XLS/ODS/CSV/PPTX). Caller
- *     decides whether to await or fire-and-forget.
- *
- * Existing fallback paths (size limit, missing storage strategy, error
- * catch) return `{ file }` with no `finalize` — there's nothing to
- * extract.
- *
- * @param {ServerRequest} params.req - The Express request object.
- * @param {string} params.id - The file ID from the code environment.
- * @param {string} params.name - The filename.
- * @param {string} params.toolCallId - The tool call ID that generated the file.
- * @param {string} params.session_id - The code execution session ID.
- * @param {string} params.conversationId - The current conversation ID.
- * @param {string} params.messageId - The current message ID.
- * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
- * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
- * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
- * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
- * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
- *   no-write content inspection preflight.
- * @param {boolean} [params.downloadFallback] - Return the bounded download
- *   fallback without downloading the generated bytes again.
- * @returns {Promise<{ file: MongoFile & { messageId: string, toolCallId: string }, finalize?: () => Promise<MongoFile | null> }>}
- */
-const processCodeOutput = async ({
-  req,
-  id,
-  name,
-  toolCallId,
-  conversationId,
-  messageId,
-  session_id,
-  agentId,
-  freshClaimAfter,
-  codeApiBaseUrl,
-  executionProfile = 'default',
-  executionRouteKey = executionProfile,
-  bridgeWorkerId,
-  preparedBuffer,
-  downloadFallback,
-}) => {
-  const appConfig = req.config;
-  const currentDate = new Date();
-  const fileExt = path.extname(name).toLowerCase();
-  const isImage = fileExt && imageExtRegex.test(name);
+const processCodeOutput = (params) =>
+  processCodeOutputWithDeps(params, {
+    getCodeOutputFileSettings,
+    downloadCodeOutputBuffer,
+    createDownloadFallback,
+    getRetentionExpiry,
+    convertImage,
+    getStrategyFunctions,
+    determineFileType,
+    claimCodeFile,
+    commitCodeFile,
+    finalizePreview,
+    hasOfficeHtmlPath,
+    sanitizeArtifactPath,
+    flattenArtifactPath,
+    classifyCodeArtifact,
+    extractCodeArtifactText,
+    getExtractedTextFormat,
+    getStorageMetadata,
+    logAxiosError,
+    logger,
+  });
 
-  const { endpointFileConfig, fileSizeLimit } = getCodeOutputFileSettings(req);
-
-  try {
-    const formattedDate = currentDate.toISOString();
-    if (downloadFallback === true) {
-      return {
-        file: createDownloadFallback({
-          id,
-          name,
-          agentId,
-          messageId,
-          toolCallId,
-          session_id,
-          conversationId,
-          executionProfile,
-          executionRouteKey,
-          expiresAt: currentDate.getTime() + 86400000,
-        }),
-      };
-    }
-    const retentionExpiryPromise = getRetentionExpiry(req);
-    const buffer =
-      preparedBuffer ??
-      (await downloadCodeOutputBuffer({
-        req,
-        id,
-        session_id,
-        maxBytes: fileSizeLimit,
-        codeApiBaseUrl,
-        executionProfile,
-        bridgeWorkerId,
-      }));
-
-    // Enforce file size limit
-    if (buffer.length > fileSizeLimit) {
-      logger.warn(
-        `[processCodeOutput] File "${name}" (${(buffer.length / megabyte).toFixed(2)} MB) exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
-      );
-      return {
-        file: createDownloadFallback({
-          id,
-          name,
-          agentId,
-          messageId,
-          toolCallId,
-          session_id,
-          conversationId,
-          executionProfile,
-          executionRouteKey,
-          expiresAt: currentDate.getTime() + 86400000,
-        }),
-      };
-    }
-
-    /* Code-output files belong to the user who ran the execution.
-     * SessionKey on codeapi will be `<tenant>:user:<userId>` for these,
-     * so cache and access stay user-private. */
-    const codeEnvRef = {
-      kind: 'user',
-      id: req.user.id,
-      storage_session_id: session_id,
-      file_id: id,
-      executionProfile,
-      ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
-    };
-
-    /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
-     * so the next prime() can place the file at the same nested path in the
-     * sandbox; flattening would re-create the bug where every nested artifact
-     * collapsed into the root and read_file calls 404'd. The flat-form
-     * storage key is composed below once `file_id` is known so we can cap
-     * the total length at filesystem NAME_MAX. */
-    const safeName = sanitizeArtifactPath(name);
-    if (safeName !== name) {
-      logger.warn(
-        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
-      );
-    }
-
-    /**
-     * Atomically claim a file_id for this (filename, conversationId, context) tuple.
-     * Uses $setOnInsert so concurrent calls for the same filename converge on
-     * a single record instead of creating duplicates (TOCTOU race fix).
-     *
-     * Claim by `safeName` (not raw `name`) so the claim and the eventual
-     * `createFile` agree on the filename column — otherwise weird inputs
-     * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
-     * then write under the sanitized one, leaving the claim row orphaned.
-     */
-    /**
-     * Dispatch-order stamp persisted with every write AND every claim insert
-     * (foreground writes dispatch ≈ now): the out-of-order guard below
-     * compares WRITER dispatch order, not wall-clock write time — an older
-     * task writing late must not make a newer task's harvest look stale, and
-     * a freshly claimed row must carry its claimant's stamp before the
-     * content write lands.
-     */
-    const sourceDispatchedAt = freshClaimAfter ?? Date.now();
-
-    const newFileId = v4();
-    const claimed = await claimCodeFile({
-      filename: safeName,
-      conversationId,
-      file_id: newFileId,
-      user: req.user.id,
-      tenantId: req.user.tenantId,
-      sourceDispatchedAt,
-    });
-    const file_id = claimed.file_id;
-    const isUpdate = file_id !== newFileId;
-
-    /**
-     * Out-of-order guard for detached (background) harvests: when the claimed
-     * row's last writer was dispatched AFTER this task (`freshClaimAfter` =
-     * this task's dispatch time), a newer run owns this filename slot. The
-     * `(filename, conversationId)` unique index means the stale bytes have
-     * nowhere else to live, so skip this file rather than overwrite fresh
-     * content — the harvest's stdout patch still lands, only the superseded
-     * attachment is omitted. Falls back to `updatedAt` for rows written
-     * before the stamp existed (the claim itself is timestamp-neutral).
-     */
-    const lastWriterDispatchedAt =
-      claimed.metadata?.sourceDispatchedAt ??
-      (claimed.updatedAt != null ? new Date(claimed.updatedAt).getTime() : null);
-    if (isUpdate && freshClaimAfter != null && lastWriterDispatchedAt > freshClaimAfter) {
-      logger.warn(
-        `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
-      );
-      return null;
-    }
-
-    if (isUpdate) {
-      logger.debug(
-        `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
-      );
-    }
-
-    /**
-     * Background harvests commit through a CONDITIONAL write: the ownership
-     * predicate (last writer's dispatch stamp not newer than ours) is part of
-     * the update's filter, so check and write are one atomic operation — a
-     * stale harvest's commit simply misses and its attachment is skipped.
-     * The row always exists here (the claim inserted it), so the non-upsert
-     * `updateFile` matches `createFile(data, true)` semantics ($set + TTL
-     * unset). Bytes a loser may have already uploaded to the shared storage
-     * key are a narrow residual that per-file locking would be needed to
-     * close. Foreground writes keep the unconditional `createFile` path.
-     */
-    const commitCodeFile = async (fileData) => {
-      if (freshClaimAfter == null) {
-        await createFile(fileData, true);
-        return true;
-      }
-      const committed = await updateFile(fileData, {
-        $or: [
-          { 'metadata.sourceDispatchedAt': { $exists: false } },
-          { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
-        ],
-      });
-      if (!committed) {
-        logger.warn(
-          `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
-        );
-        return false;
-      }
-      return true;
-    };
-
-    /**
-     * Preserve the original `messageId` on update. Each `processCodeOutput`
-     * call would otherwise overwrite it with the current run's run id, which
-     * decouples the file from the assistant message that originally created
-     * it. `getCodeGeneratedFiles` filters by `messageId IN <thread>`, so a
-     * stale id (e.g. from a later regeneration / failed re-read attempt)
-     * silently excludes the file from priming on subsequent turns.
-     */
-    const persistedMessageId = isUpdate ? (claimed.messageId ?? messageId) : messageId;
-    /* A generated-output write replaces the file's bytes, so pointers to
-     * earlier content in another profile must not survive as reusable refs. */
-    const codeEnvReferenceSet = mergeCodeEnvRef(undefined, codeEnvRef);
-    const codeEnvMetadata = {
-      ...claimed.metadata,
-      ...codeEnvReferenceSet,
-      sourceDispatchedAt,
-    };
-
-    if (isImage) {
-      const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
-      const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
-      const storageMetadata = getStorageMetadata({
-        filepath: _file.filepath,
-        source: appConfig.fileStrategy,
-        storageKey: _file.storageKey,
-        storageRegion: _file.storageRegion,
-      });
-      const file = {
-        ..._file,
-        filepath,
-        ...storageMetadata,
-        file_id,
-        messageId: persistedMessageId,
-        usage,
-        filename: safeName,
-        conversationId,
-        executionProfile,
-        user: req.user.id,
-        tenantId: req.user.tenantId,
-        type: `image/${appConfig.imageOutputType}`,
-        createdAt: isUpdate ? claimed.createdAt : formattedDate,
-        updatedAt: formattedDate,
-        source: appConfig.fileStrategy,
-        context: FileContext.execute_code,
-        metadata: codeEnvMetadata,
-        ...(await retentionExpiryPromise),
-      };
-      if (!(await commitCodeFile(file))) {
-        return null;
-      }
-      return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
-    }
-
-    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
-    if (!saveBuffer) {
-      logger.warn(
-        `[processCodeOutput] saveBuffer not available for strategy ${appConfig.fileStrategy}, falling back to download URL`,
-      );
-      return {
-        file: createDownloadFallback({
-          id,
-          name,
-          agentId,
-          messageId,
-          toolCallId,
-          session_id,
-          conversationId,
-          executionProfile,
-          executionRouteKey,
-          expiresAt: currentDate.getTime() + 86400000,
-        }),
-      };
-    }
-
-    const detectedType = await determineFileType(buffer, true);
-    const mimeType = detectedType?.mime || inferMimeType(name, '') || 'application/octet-stream';
-
-    /** Check MIME type support - for code-generated files, we're lenient but log unsupported types */
-    const isSupportedMimeType = fileConfig.checkType(
-      mimeType,
-      endpointFileConfig.supportedMimeTypes,
-    );
-    if (!isSupportedMimeType) {
-      logger.warn(
-        `[processCodeOutput] File "${name}" has unsupported MIME type "${mimeType}", proceeding with storage but may not be usable as tool resource`,
-      );
-    }
-
-    /* Compose the storage key here, after `file_id` is known, so the
-     * `flattenArtifactPath` cap budget can be calculated against the
-     * actual prefix length. The full key has to fit in one filesystem
-     * path component (NAME_MAX = 255 on most filesystems); without this
-     * cap, deeply-nested artifact paths whose individual segments were
-     * within bounds can still produce a flat form that overflows once
-     * `${file_id}__` is prepended, causing `ENAMETOOLONG` inside
-     * saveBuffer and falling back to a download URL. The 255 figure is
-     * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
-     */
-    const NAME_MAX = 255;
-    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
-    const fileName = `${file_id}__${flatName}`;
-    const filepath = await saveBuffer({
-      userId: req.user.id,
-      buffer,
-      fileName,
-      basePath: 'uploads',
-      tenantId: req.user.tenantId,
-    });
-    const storageMetadata = getStorageMetadata({
-      filepath,
-      source: appConfig.fileStrategy,
-    });
-
-    /* `classifyCodeArtifact` and `extractCodeArtifactText` make
-     * extension/bare-name decisions on the input string. With the
-     * path-preserving sanitizer they can now receive a nested path like
-     * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
-     * as `v1/Makefile` (the slice after the dot in the directory name)
-     * and the bare-name branch rejects because it sees a `.` anywhere in
-     * the string. Result: extensionless artifacts under dotted folders
-     * (Makefile, Dockerfile, etc.) get misclassified as `other` and
-     * skip text extraction. Pass the basename so classification matches
-     * what it would have gotten with the old flat-name flow. */
-    const leafName = path.basename(safeName);
-    const category = classifyCodeArtifact(leafName, mimeType);
-
-    /* Office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX) route through
-     * `bufferToOfficeHtml` which is CPU-heavy. Persist the record now
-     * with `status: 'pending'` and `text: null` so the agent's response
-     * isn't blocked, then return a `finalize` thunk the caller can run
-     * in the background. Non-office files have cheap or no extraction
-     * — run it inline so the caller gets a fully-resolved record
-     * without juggling a finalize step. */
-    const expectsPreview = hasOfficeHtmlPath(leafName, mimeType);
-
-    const baseFile = {
-      file_id,
-      filepath,
-      ...storageMetadata,
-      messageId: persistedMessageId,
-      object: 'file',
-      filename: safeName,
-      type: mimeType,
-      conversationId,
-      user: req.user.id,
-      tenantId: req.user.tenantId,
-      bytes: buffer.length,
-      updatedAt: formattedDate,
-      metadata: codeEnvMetadata,
-      source: appConfig.fileStrategy,
-      context: FileContext.execute_code,
-      usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
-      createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      ...(await retentionExpiryPromise),
-    };
-
-    if (expectsPreview) {
-      /* Persist with `status: 'pending'` and explicit
-       * `text: null` / `textFormat: null` so an update that previously
-       * had cached text gets cleared. The deferred finalize transitions
-       * to 'ready' (with text/textFormat) or 'failed' (with
-       * previewError).
-       *
-       * `previewRevision` is a fresh UUID stamped on every emit. The
-       * deferred finalize's `updateFile` is conditional on this — if
-       * a newer turn (cross-turn filename reuse) has rotated the
-       * revision before this render finishes, the stale render is
-       * silently discarded rather than overwriting the newer record.
-       * (Codex P1 review on PR #12957.) */
-      const previewRevision = v4();
-      const file = {
-        ...baseFile,
-        text: null,
-        textFormat: null,
-        status: 'pending',
-        previewError: null,
-        previewRevision,
-      };
-      if (!(await commitCodeFile(file))) {
-        return null;
-      }
-      return {
-        file: Object.assign(file, { messageId, toolCallId, agentId }),
-        finalize: () =>
-          finalizePreview({ buffer, leafName, mimeType, category, file_id, previewRevision }),
-        previewRevision,
-      };
-    }
-
-    /* Non-office path: extraction is cheap (utf8 decode, parseDocument
-     * for PDF/ODT, or null for binaries). Run inline and return a
-     * fully-resolved record — no `finalize` needed. */
-    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
-    /* `textFormat` accompanies `text` so the client can gate
-     * office-HTML-bucket routing on a trusted signal — clients MUST
-     * NOT inject `text` into the iframe as HTML unless `textFormat ===
-     * 'html'`. RAG-uploaded `.docx` etc. arrive with plain text from
-     * mammoth.extractRawText and would otherwise be hijacked by the
-     * extension-based office routing into the HTML-injection path
-     * (Codex P1 review on PR #12934). null on extract failure — the
-     * client treats absence as 'text' for safety. */
-    const textFormat = getExtractedTextFormat(leafName, mimeType, text);
-    const file = {
-      ...baseFile,
-      // Always set explicitly so an update which produces a binary or
-      // oversized artifact clears any previously cached text — createFile
-      // uses findOneAndUpdate with $set semantics.
-      text: text ?? null,
-      textFormat: textFormat ?? null,
-      // Clear deferred-preview lifecycle fields in case the prior emit
-      // at this (filename, conversationId) was an office file —
-      // otherwise stale `pending`/`failed` would persist and the client
-      // would render the wrong state for the now non-office artifact.
-      status: null,
-      previewError: null,
-      previewRevision: null,
-    };
-
-    if (!(await commitCodeFile(file))) {
-      return null;
-    }
-    return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
-  } catch (error) {
-    if (error?.code === 'CODE_OUTPUT_DOWNLOAD_LIMIT') {
-      logger.warn(
-        `[processCodeOutput] Generated file exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
-      );
-    }
-    if (error?.message === 'Path traversal detected in filename') {
-      logger.warn(
-        `[processCodeOutput] Path traversal blocked for file "${name}" | conv=${conversationId}`,
-      );
-    }
-    logAxiosError({
-      message: 'Error downloading/processing code environment file',
-      error,
-    });
-    logger.warn(
-      `[processCodeOutput] Falling back to Code API download URL for strategy ${appConfig.fileStrategy}`,
-    );
-
-    // Fallback for download errors - return download URL so user can still manually download
-    return {
-      file: createDownloadFallback({
-        id,
-        name,
-        agentId,
-        messageId,
-        toolCallId,
-        session_id,
-        conversationId,
-        executionProfile,
-        executionRouteKey,
-        expiresAt: currentDate.getTime() + 86400000,
-      }),
-    };
-  }
-};
-
-function checkIfActive(dateString) {
-  const givenDate = new Date(dateString);
-  const currentDate = new Date();
-  const timeDifference = currentDate - givenDate;
-  const hoursPassed = timeDifference / (1000 * 60 * 60);
-  return hoursPassed < 23;
+function getSessionFileInfo(ref, req, route = {}, signal) {
+  return getCodeFileInfo({
+    ref,
+    req,
+    route,
+    signal,
+    request: axios,
+    getBaseURL: getCodeBaseURL,
+    getAuthHeaders: getCodeApiAuthHeaders,
+  });
 }
 
-/**
- * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
- *
- * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
- *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
- *   codeapi resolves the sessionKey from the request's auth context.
- * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
- *   Trusted host-selected Code API route.
- * @param {AbortSignal} [signal] - Effective run cancellation signal.
- *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
- *          error in initialization or fetching the info.
- */
 async function getSessionInfo(ref, req, route = {}, signal) {
-  try {
-    signal?.throwIfAborted();
-    const baseURL = route.baseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
-    signal?.throwIfAborted();
-    /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
-     * middleware (post-Phase C). The middleware reconstructs the
-     * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
-     * requester's auth context, then matches it against the cached
-     * sessionKey on the storage bucket. We have the full `codeEnvRef`
-     * here, so pass kind+id (+version when skill) directly. */
-    const query = buildCodeEnvDownloadQuery({
-      kind: ref.kind,
-      id: ref.id,
-      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
-    });
-    const response = await axios({
-      method: 'get',
-      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        ...authHeaders,
-        ...(route.executionProfile
-          ? codeExecutionHeaders({
-              executionProfile: route.executionProfile,
-              bridgeWorkerId: route.bridgeWorkerId,
-            })
-          : {}),
-      },
-      httpAgent: codeServerHttpAgent,
-      httpsAgent: codeServerHttpsAgent,
-      timeout: 5000,
-      signal,
-    });
-    signal?.throwIfAborted();
-
-    return response.data?.lastModified;
-  } catch (error) {
-    if (signal?.aborted && isAbortError(error)) {
-      throw error;
-    }
-    logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
-    return null;
-  }
+  return (await getSessionFileInfo(ref, req, route, signal))?.lastModified ?? null;
 }
 
 const getPreviewContextSuffix = (file) => {
@@ -1357,44 +786,24 @@ const primeFiles = async (options) => {
   }
 
   const files = [];
-  const sessions = new Map();
   const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
 
-  /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
-   * when several share a filename, so it is fixed here rather than inherited
-   * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
-   * bump `updatedAt`, which would repoint paths between turns. `file_ids` are
-   * this agent's own resources; every other candidate came from the
-   * conversation and is therefore seen by every agent in the run, so shared
-   * files rank first and land on the same destination whichever agent primes
-   * them. */
-  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles, agentResourceIds);
-  const destinations = createCodeDestinationSet();
-
-  /* Per-file path counters — emitted at the bottom so a single
-   * grep on `[primeCodeFiles]` shows the input volume, the per-file
-   * paths taken, and the final dispatch summary in one trace. */
-  let skippedNoRef = 0;
+  const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
+    files: dbFiles,
+    privateFileIds: agentResourceIds,
+    routeKey: executionRouteKey,
+    getFileInfo: (ref) => getSessionFileInfo(ref, req, codeApiRoute, signal),
+    concurrency: uploadOptions.concurrency,
+    signal,
+  });
   let reuploadFailures = 0;
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < orderedFiles.length; i++) {
-    const file = orderedFiles[i];
-    if (!file) {
-      continue;
-    }
-
-    const ref = getCodeEnvRefForProfile(file.metadata, executionRouteKey);
-    const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
-    if (!sourceRef) {
-      skippedNoRef += 1;
-      logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
-      continue;
-    }
+  for (const { file, ref, sourceRef, sandboxName, isActive, getUploadTime } of selected) {
     requiredCodeFiles += 1;
     const session_id = sourceRef.storage_session_id;
     const id = sourceRef.file_id;
@@ -1415,26 +824,9 @@ const primeFiles = async (options) => {
      * codeapi can resolve sessionKey per-file (kind switch +
      * tenant prefix from auth context).
      */
-    const sandboxName = resolveSandboxFilename(file.filename, file.type);
-    let claimedDestination;
-    const getDestination = () => {
-      claimedDestination ??= claimCodeDestination(destinations, sandboxName, file.file_id);
-      return claimedDestination;
-    };
-
-    const pushFile = (overrideSessionId, overrideId) => {
-      /* Claimed here rather than up front so files that never reach the
-       * sandbox — no code-env ref, or a failed re-upload — do not reserve a
-       * name and push a file that does reach it onto a counter. */
+    const pushFile = (overrideSessionId, overrideId, destination = sandboxName) => {
       /* The sandbox holds the converted name, not the record's, so the mount path has
        * to follow the same rule provisioning uploaded under. */
-      const destination = getDestination();
-      if (destination !== file.filename) {
-        logger.debug(
-          `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
-            `reason=name-collision filename=${file.filename}`,
-        );
-      }
       toolContext = appendVisibleCodeFileContext(
         toolContext,
         getVisibleCodeFileContextLine(file, agentResourceIds, destination),
@@ -1486,7 +878,7 @@ const primeFiles = async (options) => {
             uploadCodeEnvFile({
               req: options.req,
               stream,
-              filename: getDestination(),
+              filename: sandboxName,
               kind: sourceRef.kind,
               id: sourceRef.id,
               ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1499,8 +891,8 @@ const primeFiles = async (options) => {
 
         /**
          * Use the FRESH `(storage_session_id, file_id)` from the
-         * reupload response and route it through the dedupe Map, the
-         * persisted record, and the in-memory `files` list. The
+         * reupload response and route it through the persisted record
+         * and the in-memory `files` list. The
          * original ref captured at the top of this iteration refers
          * to the old, expired/missing sandbox object — using it here
          * would silently re-introduce the bug `Graph.sessions`
@@ -1515,6 +907,7 @@ const primeFiles = async (options) => {
           id: sourceRef.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
+          sandboxFilename: getUploadedCodeEnvFilename(uploaded, sandboxName),
           executionProfile,
           ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1527,8 +920,7 @@ const primeFiles = async (options) => {
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
           [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
-        sessions.set(newRef.storage_session_id, true);
-        pushFile(newRef.storage_session_id, newRef.file_id);
+        pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
             `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
@@ -1556,14 +948,7 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (sessions.has(session_id)) {
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
-      );
-      pushFile();
-      continue;
-    }
-    const uploadTime = await getSessionInfo(ref, req, codeApiRoute, signal);
+    const uploadTime = await getUploadTime();
     signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
@@ -1573,7 +958,7 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (!checkIfActive(uploadTime)) {
+    if (!isActive) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=stale ` +
           `uploadTime=${uploadTime} storage_session_id=${session_id}`,
@@ -1581,7 +966,6 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    sessions.set(session_id, true);
     logger.debug(
       `[primeCodeFiles] file=${file.file_id} path=fresh-active storage_session_id=${session_id}`,
     );
@@ -1597,7 +981,8 @@ const primeFiles = async (options) => {
   const { requestId, runId } = getPrimingCorrelation(req);
   logger.debug(
     `[primeCodeFiles] out: returned=${files.length} ` +
-      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
+      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} ` +
+      `skippedSuperseded=${skippedSuperseded} reuploadFailures=${reuploadFailures}`,
   );
 
   if (allRequiredResourcesFailed) {

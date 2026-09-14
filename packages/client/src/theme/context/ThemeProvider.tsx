@@ -16,6 +16,8 @@ import {
   validateThemeDefinition,
 } from '../registry';
 import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/applyTheme';
+import { defaultTheme } from '../themes/default';
+import { darkTheme } from '../themes/dark';
 import '../highContrast.css';
 
 const THEME_KEY = 'color-theme';
@@ -626,7 +628,7 @@ export function ThemeProvider({
       }
 
       if (!highContrast && legacyThemeRGB) {
-        applyTheme(legacyThemeRGB, root);
+        applyTheme(legacyThemeRGB, root, mode === 'dark' ? darkTheme : defaultTheme);
         root.dataset.theme = definition.name;
         return;
       }

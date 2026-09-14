@@ -22,9 +22,11 @@ const {
   assertStoredMessageMutationAllowed,
   assertChatMutationAllowed,
   assertStoredMessageBranchAllowed,
+  reportLocatorTraversalFailure,
   mergeUserSubmittedPaths,
   mergeUserSubmittedMessageFieldPaths,
   isContentFilterError,
+  withoutTraceRefs,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
@@ -40,6 +42,8 @@ const db = require('~/models');
 
 const router = express.Router();
 const filterStoredMessageContent = createContentFilter({
+  messageCount: 1,
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   getMessageRoles: (req) => [req.body?.role],
   getOpaqueFileInput: (req) => req.body,
@@ -47,6 +51,7 @@ const filterStoredMessageContent = createContentFilter({
   extract: (req) => extractStoredMessageContent(req.body),
 });
 const filterFeedbackContent = createContentFilter({
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   extract: (req) => extractFeedbackContent(req.body),
 });
@@ -351,7 +356,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
         message: newMessage,
         user: req.user,
       },
-      { getFiles: db.getFiles },
+      { getFiles: db.getFiles, onTraversalFailure: reportLocatorTraversalFailure },
     );
 
     const savedMessage = await db.saveMessage(
@@ -518,7 +523,8 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     if (await rejectSubagentThreadWrite(req, res, req.params.conversationId)) {
       return;
     }
-    const message = { ...req.body, conversationId: req.params.conversationId };
+    /** Trace sampling fields are ownership claims only the server writes. */
+    const message = withoutTraceRefs({ ...req.body, conversationId: req.params.conversationId });
     delete message.isUserSubmitted;
     delete message.userSubmittedPaths;
     delete message.userSubmittedMessageFieldPaths;
@@ -712,7 +718,7 @@ router.put(
       // Best-effort: Assistants messages do not have deterministic AgentRun traces.
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
         sendFeedbackScore({
-          traceId: traceIdForMessage(messageId),
+          traceId: traceIdForMessage(updatedMessage.langfuseRunId ?? messageId),
           sampled: updatedMessage.langfuseSampled,
           destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,

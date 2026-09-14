@@ -90,6 +90,19 @@ export interface IThemeRGB {
   'rgb-status-neutral'?: string;
   'rgb-status-neutral-subtle'?: string;
   'rgb-status-neutral-border'?: string;
+  /**
+   * Solid fill of the verified mark — the badge a first-party item carries next
+   * to its name. The one status with no family around it: the mark is the only
+   * thing it paints, so there is no subtle fill, border or text weight to go
+   * with it. Blue rather than a reuse of `status-success-strong`, because a
+   * green check is the selected/complete cue everywhere else in the product
+   * (including the selected-tool check on the very same card) while blue is the
+   * cross-product convention for provenance. It carries `text-on-status`.
+   * A theme that repaints the mark's surroundings — the old
+   * `status-success-strong` fill, the check, or the card surfaces — keeps the
+   * mark on that success fill, which is what it wore before this token existed.
+   */
+  'rgb-status-verified'?: string;
   'rgb-text-on-status'?: string;
 
   // Brand colors
@@ -121,6 +134,7 @@ export interface IThemeRGB {
   'rgb-series-5'?: string;
   'rgb-series-6'?: string;
   'rgb-series-7'?: string;
+  'rgb-series-8'?: string;
 
   /**
    * Unchecked track of the shared `Switch`. A control state rather than a
@@ -213,6 +227,7 @@ export interface IThemeVariables {
   '--status-neutral': string;
   '--status-neutral-subtle': string;
   '--status-neutral-border': string;
+  '--status-verified': string;
   '--text-on-status': string;
   '--brand-purple': string;
 
@@ -232,6 +247,7 @@ export interface IThemeVariables {
   '--series-5': string;
   '--series-6': string;
   '--series-7': string;
+  '--series-8': string;
 
   '--switch-unchecked': string;
 
@@ -311,6 +327,7 @@ export interface IThemeColors {
   'status-neutral'?: string;
   'status-neutral-subtle'?: string;
   'status-neutral-border'?: string;
+  'status-verified'?: string;
   'text-on-status'?: string;
   'brand-purple'?: string;
 
@@ -322,6 +339,7 @@ export interface IThemeColors {
   'series-6'?: string;
   'series-7'?: string;
   'switch-unchecked'?: string;
+  'series-8'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)

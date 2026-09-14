@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { CODE_ENVIRONMENT_DECISION_VERSION, EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   AccessibleCodeEnvironmentConfiguration,
@@ -17,6 +17,29 @@ type StatefulCodeConfig = NonNullable<
   NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents]
 >['statefulCodeSessions'];
 type CodeEnvironmentConfig = NonNullable<NonNullable<StatefulCodeConfig>['environments']>[number];
+
+/**
+ * Resolves the deployment-wide browser protocol gate. The exact version match
+ * keeps older and future wire shapes on the legacy-safe path.
+ */
+export function resolveCodeEnvironmentDecisionVersion(
+  configuredVersion?: string,
+): typeof CODE_ENVIRONMENT_DECISION_VERSION | undefined {
+  return configuredVersion === String(CODE_ENVIRONMENT_DECISION_VERSION)
+    ? CODE_ENVIRONMENT_DECISION_VERSION
+    : undefined;
+}
+
+/** Enables the implicit managed route only after the versioned rollout is complete. */
+export function isImplicitStatefulCodeRouteAvailable(
+  configuredVersion?: string,
+  statefulBaseURL?: string,
+): boolean {
+  return (
+    resolveCodeEnvironmentDecisionVersion(configuredVersion) != null &&
+    (statefulBaseURL?.trim().length ?? 0) > 0
+  );
+}
 
 function isExecutableCodeEnvironment(environment: CodeEnvironmentConfig): boolean {
   return !(

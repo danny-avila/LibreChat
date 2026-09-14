@@ -5,7 +5,7 @@ import {
   fileConfig,
 } from 'librechat-data-provider';
 import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
-import type { RegexLike } from 'librechat-data-provider';
+import type { RegexLike, TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
 /**
@@ -65,10 +65,15 @@ export function isLegacyFileUploadUX(
   return endpointFileConfig?.legacyFileUploadUX === true;
 }
 
-export function filterFilesByEndpointRuntimeConfig(
+type EndpointPolicyFile = Pick<TFile, 'bytes' | 'type'> & {
+  source?: string;
+  metadata?: { routingMimeType?: string };
+};
+
+export function filterFilesByEndpointRuntimeConfig<T extends EndpointPolicyFile>(
   appConfig: AppConfig | undefined,
   params: {
-    files: IMongoFile[] | undefined;
+    files: T[] | undefined;
     endpoint?: string | null;
     endpointType?: string | null;
     /** Bytes already committed by an earlier call, so a request split across several
@@ -77,7 +82,7 @@ export function filterFilesByEndpointRuntimeConfig(
     skipTotalSizeLimit?: boolean;
     preserveTextSources?: boolean;
   },
-): IMongoFile[] {
+): T[] {
   const {
     files,
     endpoint,
@@ -133,7 +138,7 @@ export function filterFilesByEndpointRuntimeConfig(
   /** Filter by total size limit - keep files until total exceeds limit */
   if (!skipTotalSizeLimit && totalSizeLimit !== undefined && totalSizeLimit > 0) {
     let totalSize = consumedBytes;
-    const withinTotalLimit: IMongoFile[] = [];
+    const withinTotalLimit: T[] = [];
 
     for (let i = 0; i < filteredFiles.length; i++) {
       const file = filteredFiles[i];

@@ -4278,12 +4278,16 @@ describe('SubagentThreadTaskStore', () => {
     );
     const taskId = requireAccepted(started).task.taskId;
     const threadId = requireThreadId(started);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if ((await methods.getConvo(userId, threadId)) != null) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
     expect(await methods.getConvo(userId, threadId)).not.toBeNull();
 
     const accepted = await ownerStore.controlTask(

@@ -12,10 +12,15 @@ import type {
 } from './schemas';
 import type {
   CodeWorkspaceDescriptor,
+  CodeEnvironmentMode,
   CodeWorkspaceOperation,
   CodeWorkspaceSelection,
 } from './code/workspace';
-import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  TAgentsEndpoint,
+} from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { CodeApprovalMode } from './code/approval';
 import type { RefillIntervalUnit } from './balance';
@@ -157,6 +162,8 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Conversation-scoped preference for code tool approval behavior. */
     codeApprovalMode?: CodeApprovalMode;
+    /** Immutable conversation choice for attached code execution. */
+    codeEnvironmentMode?: CodeEnvironmentMode;
     /** Conversation-selected workspaces, with at most one binding per environment. */
     codeWorkspaces?: CodeWorkspaceSelection[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
@@ -240,6 +247,8 @@ export type TSubmission = {
   manualSkills?: string[];
   /** Conversation-scoped preference for code tool approval behavior. */
   codeApprovalMode?: CodeApprovalMode;
+  /** Immutable conversation choice for attached code execution. */
+  codeEnvironmentMode?: CodeEnvironmentMode;
   /** Conversation-selected workspaces, with at most one binding per environment. */
   codeWorkspaces?: CodeWorkspaceSelection[];
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
@@ -466,6 +475,9 @@ export type TPinConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
   langfuseSessionUrl?: string;
+  /** Whether the link was published with a configured sender label; withholds the
+   * model on hover. */
+  hasConfiguredSender?: boolean;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -632,6 +644,7 @@ export type TConfig = {
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
+  fileSharing?: TAgentsEndpoint['fileSharing'];
   /** Concurrent Code API uploads allowed per route and authenticated principal. */
   codeApiUploadConcurrency?: number;
   /** Milliseconds one operation may spend waiting on Code API rate limits. */
@@ -1051,4 +1064,6 @@ export type TLangfuseConnectionTestResponse =
 
 export type TLangfuseSessionLinkResponse = {
   url: string | null;
+  /** Opaque identity of the project `url` opens, so a caller can tell whether it holds what it showed. */
+  destinationId?: string;
 };

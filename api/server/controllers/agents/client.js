@@ -26,12 +26,15 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  resolveRunUsageContext,
+  recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  resolveRetainedToolTokens,
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
@@ -43,8 +46,8 @@ const {
   buildPendingAction,
   toClientPendingAction,
   captureCodeExecutionApprovalBinding,
-  getCodeWorkspaceSelections,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
   pickResumeContext,
@@ -145,6 +148,7 @@ const {
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   filterFilesByEndpointRuntimeConfig,
   createModelBoundChatModelCallback: createModelBoundContentCallback,
   createInitialModelBoundAdmissionCallback,
@@ -168,6 +172,10 @@ const {
   createContextMetaPublisher,
   selectRunContextMetaToPublish,
   resolveToolRoleGrants,
+  createTerminalRunErrorObserver,
+  isAgentRunCancellation,
+  getSummaryPartText,
+  markCompactionOutcome,
 } = require('@librechat/api');
 const {
   Run,
@@ -328,41 +336,6 @@ function captureRunContextMeta(client) {
   });
 }
 
-/** Text of a summary content part; empty for anything else. */
-function getSummaryPartText(part) {
-  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-    return '';
-  }
-  return part.content
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .join('')
-    .trim();
-}
-
-/**
- * A compaction turn's response is its summary. The run emits no text, so a
- * completion without a usable summary part means the summarizer produced
- * nothing. A run that already recorded why (an error part, e.g. a skipped
- * compaction) persists with that explanation; one that ended with neither
- * fails as a typed error instead of persisting an empty assistant message.
- * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
- */
-function markCompactionSummary(contentParts) {
-  const summary = contentParts.find(
-    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
-  );
-  if (summary != null) {
-    summary.initiatedBy = 'user';
-    return;
-  }
-  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
-    return;
-  }
-  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
-    code: 'COMPACTION_FAILED',
-  });
-}
-
 function getLatestEventActorSummary(contentParts) {
   if (!Array.isArray(contentParts)) {
     return undefined;
@@ -516,6 +489,7 @@ class AgentClient extends BaseClient {
   admitSteerAttachments(files, steerId) {
     const modelBoundFiles = files.filter(isModelBoundAttachmentFile);
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req?.config?.filters,
       files: modelBoundFiles,
     });
@@ -1995,6 +1969,7 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
+    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
 
     return removeNullishValues(
       Object.assign(
@@ -2009,9 +1984,12 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeWorkspaces: getCodeWorkspaceSelections(
-            collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
-          ),
+          codeEnvironmentMode:
+            codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
+          codeWorkspaces:
+            codeEnvironmentDecision != null
+              ? codeEnvironmentDecision.codeWorkspaces
+              : this.options.req.body.codeWorkspaces,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -2047,6 +2025,7 @@ class AgentClient extends BaseClient {
       return;
     }
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       legacyPii,
       storedMessages: this.modelBoundStoredMessages,
     });
@@ -2063,6 +2042,7 @@ class AgentClient extends BaseClient {
     const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
     return createModelBoundContentCallback(
       {
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req?.config?.filters,
         legacyPii: this.options.req?.config?.messageFilter?.pii,
         storedMessages: this.modelBoundStoredMessages,
@@ -2393,6 +2373,7 @@ class AgentClient extends BaseClient {
     ]);
     void earlySharedContextPromise.catch(() => {});
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req.config?.filters,
       legacyPii: this.options.req.config?.messageFilter?.pii,
       agents: allAgents.map(({ agent }) => agent),
@@ -2473,6 +2454,7 @@ class AgentClient extends BaseClient {
       this.modelBoundCurrentFiles = [...modelBoundRequestAttachments];
 
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req.config?.filters,
         files: modelBoundRequestAttachments,
       });
@@ -2720,6 +2702,7 @@ class AgentClient extends BaseClient {
        * user payload so strict file policy cannot be skipped by a late media
        * adapter. */
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: this.options.req.config?.filters,
         legacyPii: this.options.req.config?.messageFilter?.pii,
         submittedMessages: [{ role: 'user', content: latestFormatted.content }],
@@ -3013,6 +2996,7 @@ class AgentClient extends BaseClient {
       });
       if (assertLateBoundContent) {
         assertModelBoundContent({
+          onTraversalFailure: reportLocatorTraversalFailure,
           filters: this.options.req.config?.filters,
           legacyPii: this.options.req.config?.messageFilter?.pii,
           agents: [agent],
@@ -3041,6 +3025,7 @@ class AgentClient extends BaseClient {
     this.modelBoundMemoryContexts = [...modelBoundMemoryContexts];
     this.modelBoundFileContexts = [...modelBoundFileContexts];
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters: this.options.req.config?.filters,
       legacyPii: this.options.req.config?.messageFilter?.pii,
       agents: allAgents.map(({ agent }) => agent),
@@ -3308,6 +3293,7 @@ class AgentClient extends BaseClient {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        getRoleByName: db.getRoleByName,
       },
     );
 
@@ -3552,7 +3538,9 @@ class AgentClient extends BaseClient {
 
     const completion = filterMalformedContentParts(this.contentParts);
     if (this.isCompactionTurn()) {
-      markCompactionSummary(completion);
+      markCompactionOutcome(completion, {
+        aborted: this.abortController?.signal?.aborted === true,
+      });
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
@@ -3609,7 +3597,19 @@ class AgentClient extends BaseClient {
             event.runId === latestSnapshotRunId),
       );
     if (latestSnapshot && hasPrimaryAfterSnapshot) {
-      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+      /** The counted tool results this turn keeps past that snapshot — only a
+       *  tool-call-limit stop has any; see `resolveRetainedToolTokens`. */
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents, {
+        retainedToolTokens: resolveRetainedToolTokens({
+          stoppedAtToolLimit: this.stepLimitReached === true,
+          contentParts: this.contentParts,
+          priorToolCallIds: this.contextUsageSink?.latestToolCallIds,
+          encoding: this.getEncoding(),
+          maxCountChars:
+            this.options?.req?.config?.endpoints?.[EModelEndpoint.agents]
+              ?.maxRetainedToolCountChars,
+        }),
+      });
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
      *  the context, INDEPENDENT of the snapshot guard above. When the client has
@@ -4299,7 +4299,11 @@ class AgentClient extends BaseClient {
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
-      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Keep the legacy digest in its established field so an old replica can
+      // resume pauses written during a rolling deploy; current replicas also
+      // enforce the stricter code-environment-aware digest below.
+      requestFingerprint: computeLegacyAgentRequestFingerprint(this.options.req?.body ?? {}),
+      requestFingerprintV2: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
       // Persist those same fields verbatim so the resume route can REPLAY them — a
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
@@ -4366,6 +4370,12 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #sendCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -4499,6 +4509,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -4676,6 +4689,7 @@ class AgentClient extends BaseClient {
       }
 
       assertModelBoundContent({
+        onTraversalFailure: reportLocatorTraversalFailure,
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
         agents: reachableAgents,
@@ -4844,6 +4858,7 @@ class AgentClient extends BaseClient {
           modelCallbacks: [
             modelBoundCallback,
             createAgentMemoryCallback(this.attachmentMemoryContext ?? {}),
+            terminalRunError.modelCallback,
           ],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
@@ -4902,6 +4917,7 @@ class AgentClient extends BaseClient {
             this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
           ),
           subagentTasks: this.options.subagentTasks,
+          runFiles: this.options.runFiles,
         }).then((createdRun) => {
           if (!createdRun) {
             throw new Error('Failed to create run');
@@ -5065,7 +5081,7 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: err.message,
         });
-      } else if (abortController.signal.aborted) {
+      } else if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
@@ -5090,10 +5106,7 @@ class AgentClient extends BaseClient {
           },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -5103,16 +5116,19 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]:
             videoError ??
-            getUserFacingRequestError(
-              'An error occurred while processing the request',
-              err,
-              this.options.req.config,
+            terminalRunError.getUserFacingError(err, () =>
+              getUserFacingRequestError(
+                'An error occurred while processing the request',
+                err,
+                this.options.req.config,
+              ),
             ),
         });
       }
     } finally {
       /** An aborted/erroring run can still have completed compaction before
        * the failure; retain that model-visible state for actor reconciliation. */
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the
@@ -5138,20 +5154,14 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
-        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        } else {
-          logger.debug(
-            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
-          );
-        }
+        /** The run owns its usage even when stopped: `/api/agents/chat/abort`
+         *  only signals the abort, so nothing else records what was consumed.
+         *  A stopped turn is labelled as such on its transactions. */
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -5227,6 +5237,12 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    const terminalRunError = createTerminalRunErrorObserver({
+      logger,
+      responseMessageId: this.responseMessageId,
+      source: '[api/server/controllers/agents/client.js #resumeCompletion]',
+      genericMessage: '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+    });
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -5274,6 +5290,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeEnvironmentMode:
+                this.options.req.body.codeEnvironmentMode ??
+                this.options.req.resolvedConversation?.codeEnvironmentMode,
               codeWorkspaces:
                 this.options.req.body.codeWorkspaces ??
                 this.options.req.resolvedConversation?.codeWorkspaces,
@@ -5346,6 +5365,7 @@ class AgentClient extends BaseClient {
         },
         {
           getAgentCheckpointer,
+          onTraversalFailure: reportLocatorTraversalFailure,
           getMessages: db.getMessages,
           getFiles: db.getFiles,
         },
@@ -5433,6 +5453,7 @@ class AgentClient extends BaseClient {
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
             });
             assertModelBoundContent({
+              onTraversalFailure: reportLocatorTraversalFailure,
               filters: this.options.req.config?.filters,
               legacyPii: this.options.req.config?.messageFilter?.pii,
               agents: [agent],
@@ -5531,6 +5552,7 @@ class AgentClient extends BaseClient {
                   sharedRunContext: scopedContext ?? '',
                 });
                 assertModelBoundContent({
+                  onTraversalFailure: reportLocatorTraversalFailure,
                   filters: this.options.req.config?.filters,
                   legacyPii: this.options.req.config?.messageFilter?.pii,
                   agents: [agent],
@@ -5600,7 +5622,11 @@ class AgentClient extends BaseClient {
       run = await createRun({
         agents,
         conversationId: this.conversationId,
-        modelCallbacks: [modelBoundCallback, attachmentMemoryCallback],
+        modelCallbacks: [
+          modelBoundCallback,
+          attachmentMemoryCallback,
+          terminalRunError.modelCallback,
+        ],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
@@ -5651,6 +5677,7 @@ class AgentClient extends BaseClient {
           this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
         ),
         subagentTasks: this.options.subagentTasks,
+        runFiles: this.options.runFiles,
       });
 
       if (!run) {
@@ -5742,7 +5769,7 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-      if (abortController.signal.aborted) {
+      if (isAgentRunCancellation(err, abortController.signal)) {
         logger.debug(
           '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
           {
@@ -5760,20 +5787,20 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-          getSafeErrorMetadata(err),
-        );
+        terminalRunError.log(err, abortController.signal);
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: getUserFacingRequestError(
-            'An error occurred while resuming the request',
-            err,
-            appConfig,
+          [ContentTypes.ERROR]: terminalRunError.getUserFacingError(err, () =>
+            getUserFacingRequestError(
+              'An error occurred while resuming the request',
+              err,
+              appConfig,
+            ),
           ),
         });
       }
     } finally {
+      await this.options.runFiles?.close();
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** A run that never came to exist has no state of its own: keep the
@@ -5791,14 +5818,11 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        }
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
@@ -6106,13 +6130,19 @@ class AgentClient extends BaseClient {
     transactions,
     promptTokens,
     completionTokens,
-    context = 'message',
+    context,
   }) {
-    try {
-      await db.spendTokens(
-        {
+    await recordFallbackTokenUsage(
+      { spendTokens: db.spendTokens },
+      {
+        usage,
+        context,
+        collectedUsage: this.collectedUsage,
+        aborted: this.abortController?.signal?.aborted === true,
+        promptTokens,
+        completionTokens,
+        txMetadata: {
           model,
-          context,
           balance,
           transactions,
           messageId: this.responseMessageId,
@@ -6120,35 +6150,8 @@ class AgentClient extends BaseClient {
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            transactions,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
-    } catch (error) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        getSafeErrorMetadata(error),
-      );
-    }
+      },
+    );
   }
 
   /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */
