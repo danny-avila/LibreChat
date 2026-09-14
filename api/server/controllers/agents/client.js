@@ -106,7 +106,7 @@ const {
   settlePendingLabelFills,
   stripActivityLabelParts,
   stripUnusableSummaryParts,
-  recountStrippedIndexTokens,
+  dropUnusableSummaryParts,
   isUsableSummaryPart,
   createAgentEventActorSummary,
   normalizeAgentEventActorSummary,
@@ -2587,6 +2587,17 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      /**
+       * A summarize round that errored or was cut off never reaches the model:
+       * the formatter would take its partial text as the history boundary and
+       * drop everything older. Dropped from the prompt copy here, ahead of the
+       * counts, so the per-index count, the prompt total admission checks, and
+       * the steer-media adjustments below all describe what is actually sent.
+       * The stored message keeps the part — the renderer labels it — so a
+       * canonical recount reads an unstripped surface instead.
+       */
+      const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
       /**
@@ -2604,19 +2615,21 @@ class AgentClient extends BaseClient {
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
-         *  prompt copy, so the prompt copy is the counting surface; with it,
-         *  the canonical count must exclude the prepended context. */
+         *  prompt copy, so the prompt copy is the counting surface; with it (or
+         *  with a dropped summary), the canonical count must be taken from the
+         *  message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext) {
+        if (message.fileContext || droppedPromptSummary) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount = message.fileContext
-        ? countFormattedMessageTokens(formattedMessage, encoding)
-        : canonicalTokenCount;
+      const promptMessageTokenCount =
+        message.fileContext || droppedPromptSummary
+          ? countFormattedMessageTokens(formattedMessage, encoding)
+          : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -4617,22 +4630,10 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
-      /**
-       * A summarize round that errored or was cut off keeps the deltas it
-       * streamed, and the formatter's summary scan takes the last summary part
-       * with text as the history boundary, reading neither `failed` nor
-       * `summarizing`. Left in, that prefix would replace the history it never
-       * finished summarizing. The turns it changes are recounted: their
-       * persisted count covers summary text the model no longer receives, and
-       * the SDK treats a positive cached entry as authoritative, so a stale
-       * overcount would make its pruner discard history that still fits.
-       */
-      const promptPayload = stripUnusableSummaryParts(payload);
-      const promptIndexTokenCountMap = recountStrippedIndexTokens(
-        promptPayload,
-        this.indexTokenCountMap,
-        (message) => countFormattedMessageTokens(message, this.getEncoding()),
-      );
+      /** The payload reached here already free of unusable summary parts:
+       *  `buildMessages` drops them from each prompt copy before counting it,
+       *  so the formatter's summary scan cannot take a failed round's prefix as
+       *  the history boundary and every count describes what is sent. */
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -4640,8 +4641,8 @@ class AgentClient extends BaseClient {
         boundaryTokenAdjustment,
         compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        promptPayload.payload,
-        promptIndexTokenCountMap,
+        payload,
+        this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
         formatOptions,
@@ -4732,7 +4733,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)).payload,
+              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)),
               undefined,
               toolSet,
               skillPrimeResult?.skills,

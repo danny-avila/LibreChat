@@ -11,10 +11,10 @@ import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-pr
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
   createCompactionSemanticIndexProjection,
+  dropUnusableSummaryParts,
   findCheckpointSummaryPart,
   getSummaryPartText,
   markCompactionOutcome,
-  recountStrippedIndexTokens,
   resolveFailedTurnContent,
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
@@ -295,7 +295,7 @@ describe('findCheckpointSummaryPart', () => {
   });
 });
 
-describe('stripUnusableSummaryParts', () => {
+describe('unusable summary parts', () => {
   const failedSummary = {
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'Half a checkpoint' }],
@@ -314,70 +314,54 @@ describe('stripUnusableSummaryParts', () => {
   const text = { type: ContentTypes.TEXT, text: 'An answer' };
 
   /** The formatter reads the last summary part with text as the history
-   *  boundary, so an unusable one standing in the payload drops the turns it
+   *  boundary, so an unusable one left on the prompt copy drops the turns it
    *  never summarized. */
   it.each([
     ['a failed summary', failedSummary],
     ['a summary whose round never finished', unfinishedSummary],
-  ])('drops %s and keeps the rest of the turn intact', (_label, summary) => {
+  ])('drops %s from a prompt copy and keeps the rest of the turn', (_label, summary) => {
+    const message = { role: 'assistant', content: [text, summary] };
+
+    expect(dropUnusableSummaryParts(message)).toBe(true);
+    expect(message.content).toEqual([text]);
+  });
+
+  it('keeps a complete summary, so a real checkpoint still bounds the history', () => {
+    const message = { role: 'assistant', content: [completeSummary, failedSummary] };
+
+    expect(dropUnusableSummaryParts(message)).toBe(true);
+    expect(message.content).toEqual([completeSummary]);
+  });
+
+  it.each<[string, { role: string; content?: unknown }]>([
+    ['no unusable summary', { role: 'assistant', content: [completeSummary] }],
+    ['an empty summary, which bounds nothing', { role: 'assistant', content: [emptySummary] }],
+    ['string content', { role: 'user', content: 'Plain text turn' }],
+  ])('reports nothing dropped for %s', (_label, message) => {
+    const before = JSON.stringify(message);
+
+    expect(dropUnusableSummaryParts(message)).toBe(false);
+    expect(JSON.stringify(message)).toBe(before);
+  });
+
+  /** The memory payload is not the caller's to mutate, so that path gets a copy
+   *  with the same parts removed and the same positions. */
+  it('strips a payload the caller does not own without touching it', () => {
     const payload = [
       { role: 'user', content: [{ type: ContentTypes.TEXT, text: 'First question' }] },
-      { role: 'assistant', content: [text, summary] },
+      { role: 'assistant', content: [text, failedSummary] },
     ];
 
     const result = stripUnusableSummaryParts(payload);
 
-    expect(result.payload[0]).toBe(payload[0]);
-    expect(result.payload[1].content).toEqual([text]);
-    expect(result.changed).toEqual([1]);
-    expect(payload[1].content).toEqual([text, summary]);
+    expect(result[0]).toBe(payload[0]);
+    expect(result[1].content).toEqual([text]);
+    expect(payload[1].content).toEqual([text, failedSummary]);
   });
 
-  it('keeps a complete summary, so a real checkpoint still bounds the history', () => {
-    const payload = [{ role: 'assistant', content: [completeSummary, failedSummary] }];
+  it('returns the same payload reference when nothing needed stripping', () => {
+    const payload = [{ role: 'assistant', content: [completeSummary] }];
 
-    expect(stripUnusableSummaryParts(payload).payload[0].content).toEqual([completeSummary]);
-  });
-
-  it.each<[string, { role: string; content?: unknown }[]]>([
-    ['no unusable summary', [{ role: 'assistant', content: [completeSummary] }]],
-    ['an empty summary, which bounds nothing', [{ role: 'assistant', content: [emptySummary] }]],
-    ['string content', [{ role: 'user', content: 'Plain text turn' }]],
-  ])('reports no change for %s', (_label, payload) => {
-    const result = stripUnusableSummaryParts(payload);
-
-    expect(result.payload).toBe(payload);
-    expect(result.changed).toEqual([]);
-  });
-});
-
-describe('recountStrippedIndexTokens', () => {
-  const stripped = (changed: number[]) => ({
-    payload: [{ role: 'user' }, { role: 'assistant' }],
-    changed,
-  });
-
-  /** The stored count covers summary text the model no longer receives, and the
-   *  SDK keeps a positive entry as authoritative, so leaving it would have the
-   *  pruner discard history that still fits. */
-  it('recounts only the stripped positions', () => {
-    const count = jest.fn(() => 7);
-
-    const result = recountStrippedIndexTokens(stripped([1]), { 0: 40, 1: 900 }, count);
-
-    expect(result).toEqual({ 0: 40, 1: 7 });
-    expect(count).toHaveBeenCalledTimes(1);
-  });
-
-  it('records zero when a stripped turn no longer counts', () => {
-    expect(recountStrippedIndexTokens(stripped([0]), { 0: 900 }, () => Number.NaN)).toEqual({
-      0: 0,
-    });
-  });
-
-  it('passes the map through untouched when nothing was stripped', () => {
-    const map = { 0: 40 };
-
-    expect(recountStrippedIndexTokens(stripped([]), map, () => 7)).toBe(map);
+    expect(stripUnusableSummaryParts(payload)).toBe(payload);
   });
 });
