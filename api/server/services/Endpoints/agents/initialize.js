@@ -732,6 +732,7 @@ const initializeClientWithProvider = async ({
       skillStates,
       defaultActiveOnShare,
       manualSkills,
+      signal,
     },
     {
       getFiles: db.getFiles,
@@ -905,6 +906,7 @@ const initializeClientWithProvider = async ({
     toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
+    signal,
   });
 
   if (updatedMCPAuthMap) {
@@ -1307,6 +1309,7 @@ const initializeClientWithProvider = async ({
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,
+          signal: context.signal,
         },
         {
           getFiles: db.getFiles,

@@ -3,10 +3,19 @@ import {
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
-import { isAbortError } from '~/utils/errors';
+import { isOwnedAbortError } from '~/utils/errors';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
+
+const FATAL_AGENT_INITIALIZATION_CODES = new Set(
+  [
+    AGENT_ATTACHMENT_LIMIT_EXCEEDED,
+    ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+  ].filter((code): code is string => typeof code === 'string'),
+);
 
 export function createStatefulCodeEnvironmentPolicyError(environment: string): Error {
   return Object.assign(
@@ -48,12 +57,8 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
-    (options.signal?.aborted === true &&
-      (isAbortError(error) || error === options.signal.reason)) ||
-    code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
-    code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
-    code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||
-    code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE ||
+    isOwnedAbortError(error, options.signal) ||
+    FATAL_AGENT_INITIALIZATION_CODES.has(code as string) ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)
   );
 }

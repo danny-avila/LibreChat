@@ -1363,10 +1363,14 @@ function createToolInstance({
        *  alerts; the wrapping below still reports it to the turn. The error has
        *  to look like an abort as well: a permission, OAuth, or upstream failure
        *  can reject in the same tick as the Stop and must stay visible. */
-      if (config?.signal?.aborted === true && isAbortError(error)) {
+      if (
+        config?.signal?.aborted === true &&
+        (isAbortError(error) || error === config.signal.reason)
+      ) {
         logger.debug(
           `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
         );
+        throw error;
       } else {
         logger.error(
           `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,

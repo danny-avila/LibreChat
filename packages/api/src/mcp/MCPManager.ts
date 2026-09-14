@@ -42,7 +42,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { isAbortError } from '~/utils/errors';
+import { isOwnedAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -1620,7 +1620,7 @@ Please follow these instructions when using tools from the respective MCP server
          *  cancellation working, not a fault, so it stays out of the error log.
          *  The error must look like an abort too — a real failure can reject in
          *  the same tick as the Stop and has to stay visible. */
-        if (options?.signal?.aborted === true && isAbortError(error)) {
+        if (isOwnedAbortError(error, options?.signal)) {
           logger.debug(`${logPrefix}[${toolName}] Tool call cancelled by user abort`);
           throw error;
         }

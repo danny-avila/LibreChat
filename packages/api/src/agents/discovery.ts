@@ -26,6 +26,7 @@ import { createEdgeCollector, resolveReachableGraph } from './edges';
 import { isFatalAgentInitializationError } from './errors';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { createSequentialChainEdges } from './chain';
+import { detachOnAbort } from '~/utils/promises';
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -197,7 +198,7 @@ async function initializeReferencedAgent(
   params: DiscoverConnectedAgentsParams,
   deps: DiscoverConnectedAgentsDeps,
 ): Promise<{ agent: Agent; config: InitializedAgent } | null> {
-  const agent = await deps.getAgent({ id: agentId });
+  const agent = await detachOnAbort(deps.getAgent({ id: agentId }), params.signal);
   if (!agent) {
     logger.warn(`[initializeReferencedAgent] Agent ${agentId} not found, skipping`);
     deps.onAgentSkipped?.(agentId);
@@ -211,13 +212,16 @@ async function initializeReferencedAgent(
     return null;
   }
 
-  const hasAccess = await deps.checkPermission({
-    userId,
-    role: params.req.user?.role,
-    resourceType: params.resourceType ?? ResourceType.AGENT,
-    resourceId: agent._id,
-    requiredPermission: PermissionBits.VIEW,
-  });
+  const hasAccess = await detachOnAbort(
+    deps.checkPermission({
+      userId,
+      role: params.req.user?.role,
+      resourceType: params.resourceType ?? ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermission: PermissionBits.VIEW,
+    }),
+    params.signal,
+  );
   if (!hasAccess) {
     logger.warn(`[initializeReferencedAgent] User ${userId} lacks VIEW access to agent ${agentId}`);
     deps.onAgentSkipped?.(agentId);
@@ -225,48 +229,55 @@ async function initializeReferencedAgent(
   }
 
   const validateAgentModel = deps.validateAgentModel ?? defaultValidateAgentModel;
-  const validation = await validateAgentModel({
-    req: params.req,
-    res: params.res,
-    agent,
-    modelsConfig: params.modelsConfig,
-    logViolation: deps.logViolation,
-  });
+  const validation = await detachOnAbort(
+    validateAgentModel({
+      req: params.req,
+      res: params.res,
+      agent,
+      modelsConfig: params.modelsConfig,
+      logViolation: deps.logViolation,
+    }),
+    params.signal,
+  );
   if (!validation.isValid) {
     throw new Error(validation.error?.message);
   }
 
   const scopedSkillIds = params.computeAccessibleSkillIds?.(agent);
   const initializeAgent = deps.initializeAgent ?? defaultInitializeAgent;
-  const config = await initializeAgent(
-    {
-      req: params.req,
-      res: params.res,
-      agent,
-      loadTools: params.loadTools,
-      requestFiles: params.requestFiles,
-      conversationId: params.conversationId,
-      parentMessageId: params.parentMessageId,
-      requestBody: params.requestBody,
-      endpointOption: {
-        ...(params.endpointOption ?? {}),
-        endpoint: EModelEndpoint.agents,
+  const config = await detachOnAbort(
+    initializeAgent(
+      {
+        req: params.req,
+        res: params.res,
+        agent,
+        loadTools: params.loadTools,
+        requestFiles: params.requestFiles,
+        conversationId: params.conversationId,
+        parentMessageId: params.parentMessageId,
+        requestBody: params.requestBody,
+        endpointOption: {
+          ...(params.endpointOption ?? {}),
+          endpoint: EModelEndpoint.agents,
+        },
+        allowedProviders: params.allowedProviders,
+        accessibleSkillIds: scopedSkillIds,
+        skillAuthoringAvailable: params.computeSkillAuthoringAvailable?.(agent, scopedSkillIds),
+        skillStates: params.skillStates,
+        defaultActiveOnShare: params.defaultActiveOnShare,
+        codeEnvAvailable: params.codeEnvAvailable,
+        fileSearchAvailable: params.fileSearchAvailable,
+        resolveWebSearchGrant: params.resolveWebSearchGrant,
+        backgroundToolsAvailable: params.backgroundToolsAvailable,
+        toolIntentsAvailable: params.toolIntentsAvailable,
+        statefulSessionsAvailable: params.statefulSessionsAvailable,
+        allowedStatefulCodeEnvironments: params.allowedStatefulCodeEnvironments,
+        memoryAvailable: params.memoryAvailable,
+        signal: params.signal,
       },
-      allowedProviders: params.allowedProviders,
-      accessibleSkillIds: scopedSkillIds,
-      skillAuthoringAvailable: params.computeSkillAuthoringAvailable?.(agent, scopedSkillIds),
-      skillStates: params.skillStates,
-      defaultActiveOnShare: params.defaultActiveOnShare,
-      codeEnvAvailable: params.codeEnvAvailable,
-      fileSearchAvailable: params.fileSearchAvailable,
-      resolveWebSearchGrant: params.resolveWebSearchGrant,
-      backgroundToolsAvailable: params.backgroundToolsAvailable,
-      toolIntentsAvailable: params.toolIntentsAvailable,
-      statefulSessionsAvailable: params.statefulSessionsAvailable,
-      allowedStatefulCodeEnvironments: params.allowedStatefulCodeEnvironments,
-      memoryAvailable: params.memoryAvailable,
-    },
-    deps.db,
+      deps.db,
+    ),
+    params.signal,
   );
   deps.onAgentInitialized?.(agentId, agent, config);
   return { agent, config };

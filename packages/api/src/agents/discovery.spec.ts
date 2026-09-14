@@ -1211,7 +1211,6 @@ describe('discoverConnectedAgents', () => {
   ])('propagates owning-run cancellation during %s discovery', async (_case, edges, agentIds) => {
     const controller = new AbortController();
     controller.abort();
-    mockInitializeAgent.mockRejectedValueOnce(controller.signal.reason);
 
     await expect(
       discoverConnectedAgents(
@@ -1234,6 +1233,61 @@ describe('discoverConnectedAgents', () => {
       ),
     ).rejects.toBe(controller.signal.reason);
   });
+
+  it.each(['getAgent', 'checkPermission', 'validateAgentModel', 'initializeAgent'] as const)(
+    'detaches promptly when cancellation occurs during %s',
+    async (stage) => {
+      const controller = new AbortController();
+      const reason = new Error(`stopped during ${stage}`);
+      let settlePending!: (value: unknown) => void;
+      const pending = new Promise<unknown>((resolve) => {
+        settlePending = resolve;
+      });
+      const getAgent = jest.fn(async () => makeAgent('B', []));
+      const checkPermission = jest.fn().mockResolvedValue(true);
+
+      if (stage === 'getAgent') {
+        getAgent.mockReturnValueOnce(pending as Promise<Agent>);
+      } else if (stage === 'checkPermission') {
+        checkPermission.mockReturnValueOnce(pending as Promise<boolean>);
+      } else if (stage === 'validateAgentModel') {
+        mockValidateAgentModel.mockReturnValueOnce(pending as Promise<{ isValid: boolean }>);
+      } else {
+        mockInitializeAgent.mockReturnValueOnce(pending as Promise<InitializedAgent>);
+      }
+
+      const discovery = discoverConnectedAgents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          signal: controller.signal,
+          primaryConfig: makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' as const }]),
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+        },
+        {
+          getAgent,
+          checkPermission,
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort(reason);
+
+      await expect(discovery).rejects.toBe(reason);
+      if (stage === 'getAgent') {
+        settlePending(makeAgent('B', []));
+      } else if (stage === 'checkPermission') {
+        settlePending(true);
+      } else if (stage === 'validateAgentModel') {
+        settlePending({ isValid: true });
+      } else {
+        settlePending(makeConfig('B'));
+      }
+    },
+  );
 
   it('skips when request has no authenticated user', async () => {
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
@@ -1343,7 +1397,6 @@ describe('resolveSubagentGraphs', () => {
   it('propagates owning-run cancellation while resolving a graph member', async () => {
     const controller = new AbortController();
     controller.abort();
-    mockInitializeAgent.mockRejectedValueOnce(controller.signal.reason);
     const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
     primaryConfig.subagents = {
       enabled: true,

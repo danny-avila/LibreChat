@@ -5627,6 +5627,43 @@ describe('MCPConnectionFactory', () => {
       },
     );
 
+    it.each([undefined, new Error('owner stopped during trust check'), 'stopped'])(
+      'detaches connection initialization from a pending OBO trust check (%s)',
+      async (reason) => {
+        const controller = new AbortController();
+        const oboTrustChecker = jest.fn().mockImplementation(
+          () =>
+            new Promise<boolean>(() => {
+              queueMicrotask(() => controller.abort(reason));
+            }),
+        );
+        const { resolveOboToken } = jest.requireMock('~/mcp/oauth');
+        resolveOboToken.mockClear();
+
+        await expect(
+          MCPConnectionFactory.create(
+            { serverName: 'obo-srv', serverConfig: oboServerConfig },
+            {
+              useOAuth: true,
+              user: mockUser,
+              flowManager: mockFlowManager,
+              tokenMethods: {
+                findToken: jest.fn(),
+                createToken: jest.fn(),
+                updateToken: jest.fn(),
+                deleteTokens: jest.fn(),
+              },
+              signal: controller.signal,
+              oboTokenResolver: jest.fn(),
+              upstreamTokenProvider: jest.fn(),
+              oboTrustChecker,
+            },
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(resolveOboToken).not.toHaveBeenCalled();
+      },
+    );
+
     it('does not look up credentials for an untrusted OBO configuration', async () => {
       const upstreamTokenProviderResolver = jest.fn();
       const oboTrustChecker = jest.fn().mockResolvedValue(false);

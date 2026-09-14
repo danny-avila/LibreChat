@@ -882,6 +882,7 @@ const executeResponse = async (envelope, { req, res }) => {
           skillStates,
           defaultActiveOnShare,
           manualSkills,
+          signal: execution.signal,
         },
         dbMethods,
       );

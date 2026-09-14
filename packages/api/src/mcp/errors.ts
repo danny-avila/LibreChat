@@ -7,12 +7,12 @@ import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 import { OboTokenResolutionError } from './oauth/obo';
-import { isAbortError } from '~/utils/errors';
+import { isOwnedAbortError } from '~/utils/errors';
 
 /** These outcomes must reach the owning run instead of hiding a tool during discovery. */
 export function isMCPInitializationError(error: unknown, signal?: AbortSignal): boolean {
   return (
-    (signal?.aborted === true && (isAbortError(error) || error === signal.reason)) ||
+    isOwnedAbortError(error, signal) ||
     error instanceof MCPAuthenticationRejectedError ||
     error instanceof MCPAuthenticationRefreshError ||
     error instanceof OboTokenResolutionError ||

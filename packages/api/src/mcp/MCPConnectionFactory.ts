@@ -666,11 +666,14 @@ export class MCPConnectionFactory {
 
     if (this.oboTrustChecker) {
       const config = this.serverConfig as t.ParsedServerConfig;
-      const trusted = await this.oboTrustChecker({
-        source: config.source,
-        author: config.author,
-        dbId: config.dbId,
-      });
+      const trusted = await awaitOboOperation(
+        this.oboTrustChecker({
+          source: config.source,
+          author: config.author,
+          dbId: config.dbId,
+        }),
+        this.signal,
+      );
       if (!trusted) {
         logger.warn(
           `${this.logPrefix} OBO config not trusted (author lacks CONFIGURE_OBO permission); skipping OBO token exchange`,

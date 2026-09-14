@@ -1392,16 +1392,19 @@ async function loadToolDefinitionsWrapper({
           return { serverName, success: true };
         }
         return { serverName, success: false };
-      } catch {
+      } catch (error) {
+        if (isFatalAgentInitializationError(error, { signal })) {
+          throw error;
+        }
         logger.debug('[Tool Definitions] MCP OAuth wait failed for one server');
         return { serverName, success: false };
       }
     });
 
-    const results = await Promise.allSettled(oauthWaitPromises);
+    const results = await Promise.all(oauthWaitPromises);
     const successfulServers = results
-      .filter((r) => r.status === 'fulfilled' && r.value.success)
-      .map((r) => r.value.serverName);
+      .filter((result) => result.success)
+      .map((result) => result.serverName);
 
     if (successfulServers.length > 0) {
       logger.info(

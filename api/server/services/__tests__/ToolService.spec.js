@@ -94,8 +94,17 @@ const mockGetUserMCPAuthMap = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
-  isFatalAgentInitializationError: (error) =>
+  isFatalAgentInitializationError: (error, { signal } = {}) =>
+    (signal?.aborted === true && (error === signal.reason || error?.name === 'AbortError')) ||
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+  selectMCPUpstreamTokenProvider: ({
+    upstreamTokenProvider,
+    upstreamTokenProviderResolver,
+    createSessionProvider,
+  }) =>
+    upstreamTokenProviderResolver
+      ? upstreamTokenProvider
+      : (upstreamTokenProvider ?? createSessionProvider()),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
   createAuthIdentityContext: ({ user, tenantId }) => ({
@@ -1919,6 +1928,55 @@ describe('ToolService - Action Capability Gating', () => {
           }),
         }),
       );
+    });
+
+    it('propagates owning-run cancellation from the pending OAuth fan-out', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `${Constants.mcp_all}${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      const controller = new AbortController();
+      const reason = new Error('generation stopped');
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockImplementation(
+        ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+
+      const loading = loadAgentTools({
+        req,
+        res,
+        signal: controller.signal,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort(reason);
+
+      await expect(loading).rejects.toBe(reason);
     });
 
     it('should re-emit pending MCP OAuth prompts when selected MCP tools are already concrete', async () => {

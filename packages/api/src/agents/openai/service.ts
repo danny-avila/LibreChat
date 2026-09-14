@@ -777,6 +777,7 @@ export async function createAgentChatCompletion(
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
       toolIntentsAvailable,
+      signal: abortController.signal,
     });
 
     const modelBoundAgents = collectReachableAgents([initializedAgent]);
