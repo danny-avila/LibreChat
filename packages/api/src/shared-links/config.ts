@@ -94,11 +94,14 @@ export function buildSharedLinkStartupPayload(
     payload.customFooter = env.CUSTOM_FOOTER;
   }
 
-  const { privacyPolicy, termsOfService } = appConfig?.interfaceConfig ?? {};
-  if (privacyPolicy || termsOfService) {
+  const { privacyPolicy, termsOfService, artifactUndocking } = appConfig?.interfaceConfig ?? {};
+  /* A shared conversation shows the same artifacts pane, so it needs the same
+   * answer about opening that pane in its own window. */
+  if (privacyPolicy || termsOfService || artifactUndocking === false) {
     payload.interface = {
       ...(privacyPolicy ? { privacyPolicy } : {}),
       ...(termsOfService ? { termsOfService } : {}),
+      ...(artifactUndocking === false ? { artifactUndocking } : {}),
     };
   }
 
