@@ -4,7 +4,7 @@ import {
   buildCreatedInitialResponse,
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
-  retainMidRunCodeApprovalMode,
+  keepLocalCodeApprovalMode,
   buildRecoveryPreset,
   mergeErrorMessages,
   mergeRegenerateFinalMessages,
@@ -292,48 +292,44 @@ describe('mergeErrorMessages', () => {
   });
 });
 
-describe('retainMidRunCodeApprovalMode', () => {
-  const sentWith = (codeApprovalMode?: 'ask' | 'acceptEdits' | 'fullAccess') =>
-    ({ conversationId: 'conversation-1', codeApprovalMode }) as TConversation;
+describe('keepLocalCodeApprovalMode', () => {
+  const server = { conversationId: 'conversation-1', codeApprovalMode: 'ask' } as TConversation;
+  const local = {
+    conversationId: 'conversation-1',
+    codeApprovalMode: 'acceptEdits',
+  } as TConversation;
 
-  it('keeps a mode picked while the run streamed', () => {
-    expect(retainMidRunCodeApprovalMode(sentWith('acceptEdits'), sentWith('ask'))).toBe(
+  it('keeps a locally picked mode over the server copy', () => {
+    expect(keepLocalCodeApprovalMode(server, local, 'conversation-1').codeApprovalMode).toBe(
       'acceptEdits',
     );
   });
 
-  it('keeps a pick made during a run that was sent without a mode', () => {
-    expect(retainMidRunCodeApprovalMode(sentWith('fullAccess'), sentWith())).toBe('fullAccess');
-  });
-
-  it('defers to the server when the selection did not move', () => {
-    expect(retainMidRunCodeApprovalMode(sentWith('acceptEdits'), sentWith('acceptEdits'))).toBe(
-      undefined,
-    );
-  });
-
-  it('defers to the server when the conversation never held a mode', () => {
-    expect(retainMidRunCodeApprovalMode(sentWith(), sentWith('ask'))).toBe(undefined);
-    expect(retainMidRunCodeApprovalMode(null, sentWith('ask'))).toBe(undefined);
+  it('lets the server copy win when nothing was picked locally', () => {
+    const unset = { conversationId: 'conversation-1' } as TConversation;
+    expect(keepLocalCodeApprovalMode(server, unset, 'conversation-1')).toBe(server);
+    expect(keepLocalCodeApprovalMode(server, null, 'conversation-1')).toBe(server);
   });
 
   it('ignores the mode of a conversation the user navigated to mid-run', () => {
     const elsewhere = { conversationId: 'conversation-2', codeApprovalMode: 'fullAccess' };
-    expect(retainMidRunCodeApprovalMode(elsewhere as TConversation, sentWith('ask'))).toBe(
-      undefined,
+    expect(keepLocalCodeApprovalMode(server, elsewhere as TConversation, 'conversation-1')).toBe(
+      server,
     );
-    expect(
-      retainMidRunCodeApprovalMode(elsewhere as TConversation, sentWith('ask'), 'conversation-1'),
-    ).toBe(undefined);
   });
 
   it('follows a new chat to the id the server assigned', () => {
-    const sentAsNew = { conversationId: Constants.NEW_CONVO, codeApprovalMode: 'ask' };
-    const live = { conversationId: 'server-id', codeApprovalMode: 'acceptEdits' } as TConversation;
-    expect(retainMidRunCodeApprovalMode(live, sentAsNew as TConversation, 'server-id')).toBe(
-      'acceptEdits',
+    const assigned = { conversationId: 'server-id', codeApprovalMode: 'acceptEdits' };
+    expect(
+      keepLocalCodeApprovalMode(
+        { conversationId: 'server-id' } as TConversation,
+        assigned as TConversation,
+        'server-id',
+      ).codeApprovalMode,
+    ).toBe('acceptEdits');
+    expect(keepLocalCodeApprovalMode(server, assigned as TConversation, Constants.NEW_CONVO)).toBe(
+      server,
     );
-    expect(retainMidRunCodeApprovalMode(live, sentAsNew as TConversation)).toBe(undefined);
   });
 });
 
@@ -345,13 +341,14 @@ describe('buildRecoveryPreset', () => {
     codeApprovalMode: 'ask',
   } as TConversation;
 
-  it('carries a mode retained from the failed run', () => {
-    const preset = buildRecoveryPreset(sent, 'acceptEdits');
+  it('carries the mode the detail cache holds for the rebuilt conversation', () => {
+    const cached = { ...sent, codeApprovalMode: 'acceptEdits' } as TConversation;
+    const preset = buildRecoveryPreset(sent, cached, 'conversation-1');
     expect(preset.codeApprovalMode).toBe('acceptEdits');
     expect(preset.agent_id).toBe('agent-1');
   });
 
-  it('keeps the sent mode when nothing was retained', () => {
-    expect(buildRecoveryPreset(sent, undefined).codeApprovalMode).toBe('ask');
+  it('falls back to the sent mode when no record exists', () => {
+    expect(buildRecoveryPreset(sent, undefined, '_fresh').codeApprovalMode).toBe('ask');
   });
 });

@@ -1,4 +1,6 @@
 import * as Ariakit from '@ariakit/react';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import { Check, ChevronDown, FilePen, FileQuestionMark, FileTerminal } from 'lucide-react';
 import type { CodeApprovalMode, TConversation } from 'librechat-data-provider';
@@ -47,6 +49,7 @@ export default function CodeApprovalMenu({
   disabled: boolean;
 }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { available, modes, selected } = useCodeApprovalMode(conversation, addedConversation);
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
@@ -55,12 +58,22 @@ export default function CodeApprovalMenu({
     return null;
   }
 
+  /** Navigation rebuilds the conversation from its detail cache, so the pick
+   *  lands there too. A chat without a record yet keeps it in conversation
+   *  state alone until a run saves it. */
   const selectMode = (mode: CodeApprovalMode) => {
     if (!modes.includes(mode)) {
       return;
     }
     setConversation((current) =>
       current == null ? current : { ...current, codeApprovalMode: mode },
+    );
+    const conversationId = conversation?.conversationId;
+    if (conversationId == null) {
+      return;
+    }
+    queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) =>
+      cached ? { ...cached, codeApprovalMode: mode } : cached,
     );
   };
 

@@ -19,9 +19,8 @@ import type {
   TConversation,
   EventSubmission,
   TStartupConfig,
-  CodeApprovalMode,
 } from 'librechat-data-provider';
-import type { QueryClient, InfiniteData } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConversationCursorData } from '~/utils';
@@ -301,57 +300,36 @@ const createErrorMessage = ({
 };
 
 /**
- * A code approval mode picked while a run streams applies to the NEXT send. The
- * conversation the final and abort events return carries the mode the run
- * started with, so merging it verbatim would silently revert the pick. Returns
- * the mode to keep when the local selection moved during the run, `undefined`
- * when the server value should win.
- *
- * The conversation atom is index-global, so the pick counts only while the live
- * conversation is the one the run submitted: after navigating elsewhere mid-run,
- * that conversation's mode must not be written back into this one. `resolvedId`
- * is the id the server assigned when the submission started as a new chat.
+ * A code approval mode picked locally is newer than any server copy of the
+ * conversation: the final and abort events return the mode the run STARTED
+ * with, and error recovery rebuilds from the pre-run capture. The local mode
+ * therefore survives every merge and the next send carries it. Identity is
+ * checked because the conversation atom is index-global: after navigating
+ * elsewhere mid-run, that conversation's mode must not land in this one.
  */
-export const retainMidRunCodeApprovalMode = (
-  liveConversation: TConversation | null | undefined,
-  submissionConvo: Partial<TConversation> | undefined,
-  resolvedId?: string | null,
-): CodeApprovalMode | undefined => {
-  const localMode = liveConversation?.codeApprovalMode;
-  if (localMode == null || localMode === submissionConvo?.codeApprovalMode) {
-    return undefined;
+export const keepLocalCodeApprovalMode = <T extends Partial<TConversation>>(
+  merged: T,
+  local: Partial<TConversation> | null | undefined,
+  conversationId: string | null | undefined,
+): T => {
+  const localMode = local?.codeApprovalMode;
+  if (localMode == null || local?.conversationId !== conversationId) {
+    return merged;
   }
-  const liveId = liveConversation?.conversationId;
-  if (liveId !== submissionConvo?.conversationId && liveId !== resolvedId) {
-    return undefined;
-  }
-  return localMode;
+  return merged.codeApprovalMode === localMode
+    ? merged
+    : { ...merged, codeApprovalMode: localMode };
 };
 
-/** Preset for a conversation rebuilt after a failed or aborted run; it keeps a
- *  mode picked while that run streamed instead of the pre-run capture. */
+/** Preset for a conversation rebuilt after a failed or aborted run. The detail
+ *  cache holds a mode picked while that run streamed; the capture only the
+ *  pre-run one. */
 export const buildRecoveryPreset = (
   submissionConvo: Partial<TConversation>,
-  retainedMode: CodeApprovalMode | undefined,
+  cachedConvo: TConversation | null | undefined,
+  conversationId: string,
 ): TPreset =>
-  tPresetSchema.parse(
-    retainedMode == null ? submissionConvo : { ...submissionConvo, codeApprovalMode: retainedMode },
-  );
-
-/** The detail cache rebuilds the conversation on navigation, so a retained pick
- *  has to land there too or leaving and returning restores the run's old mode. */
-const retainCodeApprovalModeInCache = (
-  queryClient: QueryClient,
-  conversationId: string | null | undefined,
-  mode: CodeApprovalMode | undefined,
-): void => {
-  if (mode == null || !conversationId) {
-    return;
-  }
-  queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) =>
-    cached ? { ...cached, codeApprovalMode: mode } : cached,
-  );
-};
+  tPresetSchema.parse(keepLocalCodeApprovalMode(submissionConvo, cachedConvo, conversationId));
 
 export const getConvoTitle = ({
   parentId,
@@ -404,30 +382,21 @@ export default function useEventHandlers({
    *  would inherit a stale baseline. Navigation teardown deliberately does not
    *  clear it — a reattach to a still-live run keeps its original start. */
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
-  const getLiveConversation = useRecoilCallback(
-    ({ snapshot }) =>
-      () =>
-        snapshot.getLoadable(store.conversationByIndex(runIndex)).getValue(),
-    [runIndex],
-  );
-  const retainSubmittedCodeApprovalMode = useCallback(
-    (submissionConvo: Partial<TConversation>, resolvedId?: string | null) =>
-      retainMidRunCodeApprovalMode(getLiveConversation(), submissionConvo, resolvedId),
-    [getLiveConversation],
-  );
   const recoverConversation = useCallback(
     (conversationId: string, submission: EventSubmission) => {
       if (!newConversation) {
         return;
       }
-      const retainedMode = retainSubmittedCodeApprovalMode(submission.conversation, conversationId);
+      const cachedConvo = queryClient.getQueryData<TConversation>([
+        QueryKeys.conversation,
+        conversationId,
+      ]);
       newConversation({
         template: { conversationId },
-        preset: buildRecoveryPreset(submission.conversation, retainedMode),
+        preset: buildRecoveryPreset(submission.conversation, cachedConvo, conversationId),
       });
-      retainCodeApprovalModeInCache(queryClient, conversationId, retainedMode);
     },
-    [newConversation, retainSubmittedCodeApprovalMode, queryClient],
+    [newConversation, queryClient],
   );
   const navigate = useNavigate();
   const location = useLocation();
@@ -590,30 +559,18 @@ export default function useEventHandlers({
       }
 
       if (setConversation && !isAddedRequest) {
-        const retainedMode = retainSubmittedCodeApprovalMode(
-          submission.conversation,
-          convoUpdate.conversationId,
+        setConversation((prevState) =>
+          keepLocalCodeApprovalMode(
+            { ...prevState, ...convoUpdate },
+            prevState,
+            convoUpdate.conversationId,
+          ),
         );
-        setConversation((prevState) => {
-          const update = { ...prevState, ...convoUpdate };
-          if (retainedMode != null) {
-            update.codeApprovalMode = retainedMode;
-          }
-          return update;
-        });
-        retainCodeApprovalModeInCache(queryClient, convoUpdate.conversationId, retainedMode);
       }
 
       setIsSubmitting(false);
     },
-    [
-      setMessages,
-      setConversation,
-      isAddedRequest,
-      queryClient,
-      setIsSubmitting,
-      retainSubmittedCodeApprovalMode,
-    ],
+    [setMessages, setConversation, isAddedRequest, queryClient, setIsSubmitting],
   );
 
   const syncHandler = useCallback(
@@ -1017,20 +974,14 @@ export default function useEventHandlers({
          *  holds for a stopped turn too: the server persists a title that finished
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
-          const retainedMode = retainSubmittedCodeApprovalMode(
-            submissionConvo,
-            conversation.conversationId,
-          );
           setConversation((prevState) => {
-            const update = {
-              ...prevState,
-              ...(conversation as TConversation),
-            };
+            const update = keepLocalCodeApprovalMode(
+              { ...prevState, ...(conversation as TConversation) },
+              prevState,
+              conversation.conversationId,
+            );
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
-            }
-            if (retainedMode != null) {
-              update.codeApprovalMode = retainedMode;
             }
             const prevTitle = prevState?.title;
             if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
@@ -1040,13 +991,11 @@ export default function useEventHandlers({
               queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
                 (cachedConvo) => {
-                  const merged = {
-                    ...cachedConvo,
-                    ...serverConversation,
-                  } as TConversation;
-                  if (retainedMode != null) {
-                    merged.codeApprovalMode = retainedMode;
-                  }
+                  const merged = keepLocalCodeApprovalMode(
+                    { ...cachedConvo, ...serverConversation } as TConversation,
+                    cachedConvo ?? prevState,
+                    conversation.conversationId,
+                  );
                   const cachedTitle = cachedConvo?.title;
                   if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
                     merged.title = cachedTitle;
@@ -1100,7 +1049,6 @@ export default function useEventHandlers({
       attachmentHandler,
       setSubmissionStart,
       restorePendingQuotes,
-      retainSubmittedCodeApprovalMode,
     ],
   );
 
