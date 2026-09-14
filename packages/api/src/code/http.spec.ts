@@ -1501,3 +1501,267 @@ describe('code environment HTTP handlers', () => {
     expect(res.body).toEqual(body);
   });
 });
+
+describe('moving a sealed conversation code-environment decision', () => {
+  type Selection = { environmentId: string; workspaceId: string };
+  type StoredDecision = {
+    conversationId: string;
+    codeEnvironmentMode?: 'attached' | 'without_attached';
+    codeWorkspaces?: Selection[];
+  };
+
+  const userId = '68b2f0c498f24c1e78fa0001';
+  const mac: Selection = { environmentId: 'mac', workspaceId: 'primary' };
+  const vm: Selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+  const controlPlane = {
+    id: 'self-service',
+    name: 'Self service',
+    type: 'attached' as const,
+    baseURL: 'https://code.example.com/v1',
+    owner: 'deployment' as const,
+    pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+  };
+
+  function workerStatusResponse({
+    ready = true,
+    workspaces = [{ id: 'project-a', name: 'Project A' }],
+  }: { ready?: boolean; workspaces?: Array<{ id: string; name?: string }> } = {}) {
+    return new Response(
+      JSON.stringify({
+        protocolVersion: 1,
+        workerId: 'personal-vm',
+        online: true,
+        ready,
+        leaseExpiresInMs: 50_000,
+        capabilities: {
+          sandboxProfile: 'native-srt',
+          runtimes: ['bash'],
+          workspaceTools: { protocolVersion: 1, operations: ['read_file'], workspaces },
+        },
+      }),
+    );
+  }
+
+  function setup({
+    stored = {
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [mac],
+    },
+    jobStatus,
+    fetchImpl = jest.fn().mockImplementation(async () => workerStatusResponse()),
+  }: {
+    stored?: StoredDecision;
+    jobStatus?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
+    fetchImpl?: jest.Mock;
+  } = {}) {
+    const conversations = new Map<string, StoredDecision>([[stored.conversationId, stored]]);
+    /** Mirrors the data-schemas compare-and-swap: the write lands only on the decision it read. */
+    const replaceDecision = jest.fn(
+      async ({
+        conversationId,
+        expected,
+        codeWorkspaces,
+      }: {
+        conversationId: string;
+        expected: Pick<StoredDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+        codeWorkspaces: Selection[];
+      }) => {
+        const current = conversations.get(conversationId);
+        const decisionOf = (decision: Partial<StoredDecision> | undefined) =>
+          JSON.stringify([decision?.codeEnvironmentMode ?? null, decision?.codeWorkspaces ?? null]);
+        if (current == null || decisionOf(current) !== decisionOf(expected)) {
+          return null;
+        }
+        const moved: StoredDecision = {
+          ...current,
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces,
+        };
+        conversations.set(conversationId, moved);
+        return moved;
+      },
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [controlPlane] } },
+        },
+      } as unknown as AppConfig),
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://stale.example.com/v1',
+            controlPlaneId: 'self-service',
+            owner: 'principal',
+            workerId: 'personal-vm',
+          },
+        ]),
+        remove: jest.fn(),
+      },
+      readSecret: jest.fn(() => 'administrator-token'),
+      fetchImpl,
+      conversations: {
+        get: async (user, conversationId) =>
+          user === userId ? (conversations.get(conversationId) ?? null) : null,
+        replaceDecision,
+        getGenerationJob: async () => (jobStatus == null ? null : { status: jobStatus }),
+      },
+    });
+    const move = async (
+      body: { from?: unknown; to?: unknown },
+      conversationId = 'conversation-1',
+    ) => {
+      const res = response();
+      await handlers.moveConversationDecision(
+        { user: { id: userId, role: 'USER' }, params: { conversationId }, body } as never,
+        res as never,
+      );
+      return res;
+    };
+    return { move, conversations, replaceDecision, fetchImpl };
+  }
+
+  test('moves a sealed decision onto a workspace the new machine registers', async () => {
+    const { move, conversations, fetchImpl } = setup();
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [vm],
+    });
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([vm]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/personal-vm/status',
+      expect.objectContaining({ headers: { Authorization: 'Bearer administrator-token' } }),
+    );
+  });
+
+  test('moves a legacy decision that only stored its selections', async () => {
+    const { move, conversations } = setup({
+      stored: { conversationId: 'conversation-1', codeWorkspaces: [mac] },
+    });
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(200);
+    expect(conversations.get('conversation-1')).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [vm],
+    });
+  });
+
+  test.each(['running', 'requires_action'] as const)(
+    'refuses while a generation is %s, since it saves the decision it started with',
+    async (jobStatus) => {
+      const { move, replaceDecision, fetchImpl } = setup({ jobStatus });
+
+      const res = await move({ from: [mac], to: [vm] });
+
+      expect(res.statusCode).toBe(409);
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(replaceDecision).not.toHaveBeenCalled();
+    },
+  );
+
+  test('moves once the previous generation has settled', async () => {
+    const { move } = setup({ jobStatus: 'complete' });
+
+    expect((await move({ from: [mac], to: [vm] })).statusCode).toBe(200);
+  });
+
+  test.each([
+    {
+      name: 'a workspace the machine does not register',
+      fetchImpl: jest
+        .fn()
+        .mockImplementation(async () =>
+          workerStatusResponse({ workspaces: [{ id: 'another-project' }] }),
+        ),
+      reason: 'missing',
+    },
+    {
+      name: 'a machine that is not ready',
+      fetchImpl: jest.fn().mockImplementation(async () => workerStatusResponse({ ready: false })),
+      reason: 'worker_unavailable',
+    },
+  ])('rejects $name without persisting', async ({ fetchImpl, reason }) => {
+    const { move, conversations, replaceDecision } = setup({ fetchImpl });
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason }));
+    expect(replaceDecision).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([mac]);
+  });
+
+  test.each([
+    {
+      name: 'an environment the caller cannot access',
+      body: { from: [mac], to: [{ environmentId: 'another-users-vm', workspaceId: 'root' }] },
+      reason: 'invalid',
+      polls: 0,
+    },
+    {
+      name: 'a stale view of the decision',
+      body: { from: [{ environmentId: 'old-vm', workspaceId: 'primary' }], to: [vm] },
+      reason: 'locked',
+      polls: 0,
+    },
+    {
+      name: 'a workspace switch inside a sealed environment',
+      body: { from: [mac], to: [{ environmentId: 'mac', workspaceId: 'canary' }] },
+      reason: 'locked',
+      polls: 0,
+    },
+  ])('rejects $name without polling any worker', async ({ body, reason, polls }) => {
+    const { move, replaceDecision, fetchImpl } = setup();
+
+    const res = await move(body);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason }));
+    expect(fetchImpl).toHaveBeenCalledTimes(polls);
+    expect(replaceDecision).not.toHaveBeenCalled();
+  });
+
+  test('keeps a decision another writer replaced while the worker was checked', async () => {
+    const concurrent: StoredDecision = {
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'without_attached',
+    };
+    const holder: { conversations?: Map<string, StoredDecision> } = {};
+    const fetchImpl = jest.fn().mockImplementation(async () => {
+      holder.conversations?.set('conversation-1', concurrent);
+      return workerStatusResponse();
+    });
+    const context = setup({ fetchImpl });
+    holder.conversations = context.conversations;
+
+    const res = await context.move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason: 'locked' }));
+    expect(context.conversations.get('conversation-1')).toEqual(concurrent);
+  });
+
+  test('reports a conversation the caller does not own as not found', async () => {
+    const { move, fetchImpl } = setup();
+
+    const res = await move({ from: [mac], to: [vm] }, 'someone-elses-conversation');
+
+    expect(res.statusCode).toBe(404);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { logger, type AppConfig } from '@librechat/data-schemas';
+import type { CodeWorkspaceSelection } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type {
   CodeEnvironmentLifecycleTarget,
@@ -10,9 +11,11 @@ import type {
   AccessibleCodeEnvironmentDetails,
   AccessibleCodeEnvironmentConfiguration,
 } from './environments';
+import type { ConversationCodeEnvironmentMove, StoredConversationDecision } from './decision';
+import type { CodeBridgeFetch, CodeBridgeWorkerStatus } from './bridge';
+import type { JobStatus } from '~/stream/interfaces/IJobStore';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
-import type { CodeBridgeFetch } from './bridge';
 import {
   CodeBridgeLifecycleError,
   CodeBridgePairingError,
@@ -37,7 +40,9 @@ import {
   CodeEnvironmentSettingsValidationError,
   validateCodeEnvironmentUserSettings,
 } from './settings';
+import { resolveConversationCodeEnvironmentMove } from './decision';
 import { resolveCodeWorkerEnrollmentLimit } from './enrollment';
+import { CodeWorkspaceSelectionError } from './capabilities';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
@@ -76,9 +81,22 @@ type ConfiguredCodeEnvironment = NonNullable<
   NonNullable<StatefulCodeConfig>['environments']
 >[number];
 
+/** Owner-scoped conversation access for moving a sealed code-environment decision. */
+export interface CodeEnvironmentConversationDeps {
+  get: (userId: string, conversationId: string) => Promise<StoredConversationDecision | null>;
+  replaceDecision: (params: {
+    user: string;
+    conversationId: string;
+    expected: Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: CodeWorkspaceSelection[];
+  }) => Promise<StoredConversationDecision | null>;
+  getGenerationJob: (streamId: string) => Promise<{ status: JobStatus } | null | undefined>;
+}
+
 export interface CodeEnvironmentHttpDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   registry: Registry;
+  conversations?: CodeEnvironmentConversationDeps;
   createEnvironmentId?: () => string;
   readSecret?: (name: string) => string | undefined;
   resolveTenantId?: (req: ServerRequest) => string;
@@ -153,6 +171,54 @@ function configuredAttachedControlPlane(
   );
 }
 
+type WorkerPolicy = {
+  configurations: AccessibleCodeEnvironmentConfiguration[];
+  effectiveConfig: AppConfig;
+  deploymentConfig: AppConfig;
+};
+
+type WorkerTarget = { controlPlane: ConfiguredCodeEnvironment; workerId: string };
+
+/** Resolves the deployment control plane and worker a principal may poll for one environment. */
+function selectWorkerTarget(policy: WorkerPolicy, environmentId: string): WorkerTarget | undefined {
+  const { configurations, effectiveConfig, deploymentConfig } = policy;
+  const configuration = configurations.find(({ id }) => id === environmentId);
+  if (configuration == null) {
+    const effectiveEnvironment = configuredControlPlane(effectiveConfig, environmentId);
+    const deploymentEnvironment = configuredControlPlane(deploymentConfig, environmentId);
+    const workerId = deploymentEnvironment?.pairing?.workerId;
+    if (
+      effectiveEnvironment == null ||
+      deploymentEnvironment == null ||
+      workerId == null ||
+      effectiveEnvironment.pairing?.workerId !== workerId
+    ) {
+      return undefined;
+    }
+    return { controlPlane: deploymentEnvironment, workerId };
+  }
+  const { controlPlaneId, workerId } = configuration;
+  if (
+    controlPlaneId == null ||
+    workerId == null ||
+    configuredAttachedControlPlane(effectiveConfig, controlPlaneId) == null
+  ) {
+    return undefined;
+  }
+  const controlPlane = configuredAttachedControlPlane(deploymentConfig, controlPlaneId);
+  return controlPlane == null ? undefined : { controlPlane, workerId };
+}
+
+function isGenerationActive(job: { status: JobStatus } | null | undefined): boolean {
+  return job?.status === 'running' || job?.status === 'requires_action';
+}
+
+function selectionErrorResponse(error: CodeWorkspaceSelectionError, res: Response): Response {
+  return res
+    .status(error.status)
+    .json({ error: error.message, code: error.code, reason: error.reason });
+}
+
 class CodeEnvironmentLifecycleHttpError extends Error {
   constructor(
     public readonly status: number,
@@ -196,6 +262,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   status: (req: ServerRequest, res: Response) => Promise<Response>;
   updateSettings: (req: ServerRequest, res: Response) => Promise<Response>;
   remove: (req: ServerRequest, res: Response) => Promise<Response>;
+  moveConversationDecision: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const createEnvironmentId = deps.createEnvironmentId ?? (() => `code-${nanoid(20)}`);
   const readSecret = deps.readSecret ?? readCodeBridgeSecret;
@@ -204,6 +271,150 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const principalAuthReady = deps.principalAuthReady ?? assertCodeApiJwtSigningReady;
   const principalIsActive = deps.principalIsActive ?? (async () => true);
   const workerStatus = createCodeBridgeStatusPoller({ fetchImpl: deps.fetchImpl });
+
+  async function loadWorkerPolicy(
+    req: ServerRequest,
+    principal: CodeEnvironmentPrincipalContext,
+  ): Promise<WorkerPolicy> {
+    const principals = await deps.registry.resolvePrincipals?.(principal);
+    const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
+    const [configurations, effectiveConfig, deploymentConfig] = await Promise.all([
+      deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
+      deps.getAppConfig({
+        ...getAppConfigOptionsFromUser(req.user),
+        ...(principals == null ? {} : { resolvedPrincipals: principals }),
+        failClosed: true,
+        skipRuntimeAugmentation: true,
+      }),
+      deps.getAppConfig({ baseOnly: true }),
+    ]);
+    return { configurations, effectiveConfig, deploymentConfig };
+  }
+
+  function readControlPlaneToken(controlPlane: ConfiguredCodeEnvironment): string | undefined {
+    const tokenEnv = controlPlane.pairing?.tokenEnv;
+    return tokenEnv == null ? undefined : readSecret(tokenEnv)?.trim();
+  }
+
+  /** Applies the run path's live workspace checks to a selection before it is persisted. */
+  async function assertWorkspaceRegistered(
+    policy: WorkerPolicy,
+    selection: CodeWorkspaceSelection,
+  ): Promise<void> {
+    const target = selectWorkerTarget(policy, selection.environmentId);
+    if (target == null) {
+      throw new CodeWorkspaceSelectionError('invalid');
+    }
+    const token = readControlPlaneToken(target.controlPlane);
+    if (!token) {
+      throw new CodeWorkspaceSelectionError('worker_unavailable');
+    }
+    let current: CodeBridgeWorkerStatus;
+    try {
+      current = await workerStatus({
+        baseURL: target.controlPlane.baseURL,
+        token,
+        workerId: target.workerId,
+      });
+    } catch (error) {
+      if (error instanceof CodeBridgeStatusError) {
+        throw new CodeWorkspaceSelectionError('worker_unavailable');
+      }
+      throw error;
+    }
+    if (current.status !== 'ready') {
+      throw new CodeWorkspaceSelectionError('worker_unavailable');
+    }
+    if (!current.workspaces || !current.operations) {
+      throw new CodeWorkspaceSelectionError('unsupported');
+    }
+    if (!current.workspaces.some(({ id }) => id === selection.workspaceId)) {
+      throw new CodeWorkspaceSelectionError('missing');
+    }
+  }
+
+  /**
+   * Moves a sealed attached decision onto the environments a conversation's agents now use. A
+   * generation in flight saves the decision it started with when it settles, so a move is refused
+   * while one is running or awaiting approval. A run admitted after that check reads either the
+   * moved decision or the replaced one; on the stale chats a move exists to recover, the replaced
+   * decision no longer covers the agents, so that run fails initialization before it can save.
+   */
+  async function moveConversationDecision(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const conversations = deps.conversations;
+    if (conversations == null) {
+      return res.status(503).json({ error: 'Conversation code environments are not configured' });
+    }
+    const conversationId = (
+      req.params as { conversationId?: string } | undefined
+    )?.conversationId?.trim();
+    if (!conversationId) {
+      return res.status(400).json({ error: 'Conversation id is required' });
+    }
+    const { from, to } = (req.body ?? {}) as { from?: unknown; to?: unknown };
+    const userId = principal.userId.toString();
+    const [conversation, job] = await Promise.all([
+      conversations.get(userId, conversationId),
+      conversations.getGenerationJob(conversationId),
+    ]);
+    if (conversation == null) {
+      return res.status(404).json({ error: 'Conversation was not found' });
+    }
+    if (isGenerationActive(job)) {
+      return res
+        .status(409)
+        .json({ error: 'Wait for the current response to finish before moving this conversation' });
+    }
+
+    let move: ConversationCodeEnvironmentMove;
+    try {
+      move = resolveConversationCodeEnvironmentMove({ conversation, from, to });
+    } catch (error) {
+      if (error instanceof CodeWorkspaceSelectionError) {
+        return selectionErrorResponse(error, res);
+      }
+      throw error;
+    }
+    let policy: WorkerPolicy;
+    try {
+      policy = await loadWorkerPolicy(req, principal);
+    } catch (error) {
+      logger.error('[codeEnvironments] move policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
+    try {
+      await Promise.all(
+        move.added.map((selection) => assertWorkspaceRegistered(policy, selection)),
+      );
+    } catch (error) {
+      if (error instanceof CodeWorkspaceSelectionError) {
+        return selectionErrorResponse(error, res);
+      }
+      throw error;
+    }
+
+    const moved = await conversations.replaceDecision({
+      user: userId,
+      conversationId,
+      expected: {
+        codeEnvironmentMode: conversation.codeEnvironmentMode,
+        codeWorkspaces: conversation.codeWorkspaces,
+      },
+      codeWorkspaces: move.codeWorkspaces,
+    });
+    if (moved == null) {
+      return selectionErrorResponse(new CodeWorkspaceSelectionError('locked'), res);
+    }
+    return res.status(200).json({
+      conversationId,
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: move.codeWorkspaces,
+    });
+  }
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -659,62 +870,25 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(400).json({ error: 'Code environment id is required' });
     }
 
-    let configuration: AccessibleCodeEnvironmentConfiguration | undefined;
-    let controlPlane: ConfiguredCodeEnvironment | undefined;
-    let workerId: string | undefined;
+    let target: WorkerTarget | undefined;
     try {
-      const principals = await deps.registry.resolvePrincipals?.(principal);
-      const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
-      const [configurations, effectiveConfig, deploymentConfig] = await Promise.all([
-        deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
-        deps.getAppConfig({
-          ...getAppConfigOptionsFromUser(req.user),
-          ...(principals == null ? {} : { resolvedPrincipals: principals }),
-          failClosed: true,
-          skipRuntimeAugmentation: true,
-        }),
-        deps.getAppConfig({ baseOnly: true }),
-      ]);
-      configuration = configurations.find(({ id }) => id === environmentId);
-      const controlPlaneId = configuration?.controlPlaneId;
-      const effectiveControlPlane =
-        controlPlaneId == null
-          ? undefined
-          : configuredAttachedControlPlane(effectiveConfig, controlPlaneId);
-      controlPlane =
-        effectiveControlPlane == null || controlPlaneId == null
-          ? undefined
-          : configuredAttachedControlPlane(deploymentConfig, controlPlaneId);
-      workerId = configuration?.workerId;
-      if (configuration == null) {
-        const effectiveEnvironment = configuredControlPlane(effectiveConfig, environmentId);
-        const deploymentEnvironment = configuredControlPlane(deploymentConfig, environmentId);
-        if (
-          effectiveEnvironment != null &&
-          deploymentEnvironment != null &&
-          effectiveEnvironment.pairing?.workerId === deploymentEnvironment.pairing?.workerId
-        ) {
-          controlPlane = deploymentEnvironment;
-          workerId = deploymentEnvironment.pairing?.workerId;
-        }
-      }
+      target = selectWorkerTarget(await loadWorkerPolicy(req, principal), environmentId);
     } catch (error) {
       logger.error('[codeEnvironments] status policy resolution failed:', error);
       return res.status(503).json({ error: 'Code environment policy is unavailable' });
     }
-    if (workerId == null || controlPlane == null) {
+    if (target == null) {
       return res.status(404).json({ error: 'Code environment was not found' });
     }
-    const tokenEnv = controlPlane.pairing?.tokenEnv;
-    const token = tokenEnv == null ? undefined : readSecret(tokenEnv)?.trim();
+    const token = readControlPlaneToken(target.controlPlane);
     if (!token) {
       return res.status(503).json({ error: 'Code environment status is not configured' });
     }
     try {
       const currentStatus = await workerStatus({
-        baseURL: controlPlane.baseURL,
+        baseURL: target.controlPlane.baseURL,
         token,
-        workerId,
+        workerId: target.workerId,
       });
       return res.status(200).json({ environmentId, ...currentStatus });
     } catch (error) {
@@ -781,5 +955,5 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
   }
 
-  return { list, register, pair, status, updateSettings, remove };
+  return { list, register, pair, status, updateSettings, remove, moveConversationDecision };
 }

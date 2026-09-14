@@ -11,7 +11,7 @@ export interface ConversationCodeEnvironmentDecision {
   codeWorkspaces?: CodeWorkspaceSelection[];
 }
 
-type StoredConversationDecision = Pick<
+export type StoredConversationDecision = Pick<
   TConversation,
   'conversationId' | 'codeEnvironmentMode' | 'codeWorkspaces'
 >;
@@ -49,6 +49,16 @@ function validateDecision(mode: unknown, selections: unknown): ConversationCodeE
   return { mode, codeWorkspaces: canonicalSelections(selections) };
 }
 
+/** A stored conversation always carries a decision; legacy rows infer it from their selections. */
+function readPersistedDecision(
+  conversation: StoredConversationDecision,
+): ConversationCodeEnvironmentDecision {
+  const mode =
+    conversation.codeEnvironmentMode ??
+    (conversation.codeWorkspaces?.length ? 'attached' : 'without_attached');
+  return validateDecision(mode, conversation.codeWorkspaces);
+}
+
 /** Resolves one immutable conversation choice before attached tools are registered. */
 export function resolveConversationCodeEnvironmentDecision({
   conversationId,
@@ -61,16 +71,8 @@ export function resolveConversationCodeEnvironmentDecision({
   requestedSelections?: unknown;
   conversation?: StoredConversationDecision | null;
 }): ConversationCodeEnvironmentDecision {
-  const ownsConversation = conversation != null && conversation.conversationId === conversationId;
-  const persistedMode = ownsConversation ? conversation.codeEnvironmentMode : undefined;
-  const persistedSelections = ownsConversation ? conversation.codeWorkspaces : undefined;
-  let inferredPersistedMode: unknown = persistedMode;
-  if (inferredPersistedMode == null && ownsConversation) {
-    inferredPersistedMode = persistedSelections?.length ? 'attached' : 'without_attached';
-  }
-
-  if (inferredPersistedMode != null) {
-    const persisted = validateDecision(inferredPersistedMode, persistedSelections);
+  if (conversation != null && conversation.conversationId === conversationId) {
+    const persisted = readPersistedDecision(conversation);
     if (requestedMode !== undefined && requestedMode !== persisted.mode) {
       throw new CodeWorkspaceSelectionError('locked');
     }
@@ -101,4 +103,54 @@ export function resolveConversationCodeEnvironmentDecision({
       ? 'attached'
       : 'without_attached');
   return validateDecision(mode, requestedSelections);
+}
+
+export interface ConversationCodeEnvironmentMove {
+  codeWorkspaces: CodeWorkspaceSelection[];
+  /** Selections for environments the decision did not cover; each needs a live worker check. */
+  added: CodeWorkspaceSelection[];
+}
+
+/**
+ * Validates an owner's explicit move of a sealed attached decision onto the environments its
+ * agents now use. A move may drop environments and add new ones, but never changes the workspace
+ * of an environment the decision already covers and never upgrades a conversation that continues
+ * without an attached environment. `from` must repeat the persisted selections, so a client acting
+ * on a stale view of the conversation cannot replace a decision it has not seen.
+ */
+export function resolveConversationCodeEnvironmentMove({
+  conversation,
+  from,
+  to,
+}: {
+  conversation: StoredConversationDecision;
+  from: unknown;
+  to: unknown;
+}): ConversationCodeEnvironmentMove {
+  const persisted = readPersistedDecision(conversation);
+  if (persisted.mode !== 'attached' || persisted.codeWorkspaces == null) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  if (!isCodeWorkspaceSelections(from) || !sameSelections(from, persisted.codeWorkspaces)) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  if (!isCodeWorkspaceSelections(to) || to.length === 0) {
+    throw new CodeWorkspaceSelectionError('invalid');
+  }
+  const sealed = new Map(
+    persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
+  );
+  const added: CodeWorkspaceSelection[] = [];
+  for (const selection of to) {
+    const sealedWorkspaceId = sealed.get(selection.environmentId);
+    if (sealedWorkspaceId == null) {
+      added.push(selection);
+    } else if (sealedWorkspaceId !== selection.workspaceId) {
+      throw new CodeWorkspaceSelectionError('locked');
+    }
+  }
+  if (added.length === 0) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  return { codeWorkspaces: canonicalSelections(to), added: canonicalSelections(added) };
 }

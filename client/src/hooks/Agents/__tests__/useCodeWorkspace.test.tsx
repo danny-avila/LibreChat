@@ -464,6 +464,162 @@ describe('useCodeWorkspace', () => {
     expect(result.current.state).toBe('choose');
     expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
+    expect(result.current.relocation).toBeUndefined();
+  });
+
+  describe('a saved chat sealed to a machine its agent no longer uses', () => {
+    const sealed = (codeWorkspaces: TConversation['codeWorkspaces']): TConversation =>
+      ({
+        ...conversation(codeWorkspaces),
+        conversationId: 'existing',
+        codeEnvironmentMode: 'attached',
+      }) as TConversation;
+    const mac = { environmentId: 'mac', workspaceId: 'primary' };
+
+    it('offers to move the chat instead of an unusable workspace choice', () => {
+      mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+        id: 'mac',
+        name: 'Danny Mac',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+      });
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+
+      expect(result.current.locked).toBe(true);
+      expect(result.current.state).toBe('relocatable');
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.relocation).toEqual({
+        conversationId: 'existing',
+        from: [mac],
+        previous: [{ id: 'mac', name: 'Danny Mac' }],
+        retained: [],
+        targets: [
+          expect.objectContaining({
+            environment: expect.objectContaining({ id: 'personal-vm' }),
+            state: 'choose',
+            workspaces: [{ id: 'project-a', name: 'Project A' }],
+          }),
+        ],
+      });
+    });
+
+    it('treats a legacy selection-only seal the same way', () => {
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation([mac]), conversationId: 'existing' }),
+      );
+
+      expect(result.current.state).toBe('relocatable');
+      expect(result.current.relocation?.previous).toEqual([{ id: 'mac', name: undefined }]);
+    });
+
+    it('carries over a sealed workspace the agents still use', () => {
+      const primary = {
+        id: 'agent_primary',
+        stateful_code_sessions: true,
+        code_environment_id: 'personal-vm',
+        tools: [Tools.execute_code],
+        subagents: { enabled: true, agent_ids: ['child'] },
+      };
+      mockAgentPermissions.mockImplementation((id?: string) => ({
+        agent: id === 'agent_primary' ? primary : undefined,
+        tools: id === 'agent_primary' ? primary.tools : undefined,
+      }));
+      mockAgentsMap.mockReturnValue({
+        child: {
+          id: 'child',
+          stateful_code_sessions: true,
+          code_environment_id: 'team-vm',
+          tools: [Tools.execute_code],
+        },
+      });
+      mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+        id: 'team-vm',
+        name: 'Team VM',
+        type: 'attached',
+        baseURL: 'https://two.example.com',
+      });
+      mockStatus.mockReturnValue([
+        mockStatus()[0],
+        {
+          data: {
+            environmentId: 'team-vm',
+            status: 'ready',
+            statefulWorkspace: true,
+            workspaces: [{ id: 'project-b' }],
+          },
+          isLoading: false,
+          isError: false,
+        },
+      ]);
+      const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([kept])));
+
+      expect(result.current.state).toBe('relocatable');
+      expect(result.current.relocation?.previous).toEqual([]);
+      expect(result.current.relocation?.retained).toEqual([kept]);
+      expect(result.current.relocation?.targets.map(({ environment }) => environment.id)).toEqual([
+        'team-vm',
+      ]);
+    });
+
+    it('waits for the new machine before offering a move', () => {
+      mockStatus.mockReturnValue([{ isLoading: true, isError: false }]);
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+
+      expect(result.current.state).toBe('loading');
+      expect(result.current.relocation).toBeUndefined();
+    });
+
+    it('does not offer a move when the sealed machine lost its workspace', () => {
+      const removed = { environmentId: 'personal-vm', workspaceId: 'removed-project' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([removed])));
+
+      expect(result.current.state).toBe('missing');
+      expect(result.current.relocation).toBeUndefined();
+    });
+
+    it('does not offer an attached machine to a chat that continues without one', () => {
+      const { result } = renderHook(() =>
+        useCodeWorkspace({
+          ...conversation(),
+          conversationId: 'existing',
+          codeEnvironmentMode: 'without_attached',
+        } as TConversation),
+      );
+
+      expect(result.current.state).toBe('without_attached');
+      expect(result.current.canSubmit).toBe(true);
+      expect(result.current.relocation).toBeUndefined();
+    });
+
+    it('does not auto-select a sole workspace the saved decision never covered', () => {
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.state).toBe('without_attached');
+      expect(result.current.selections).toBeUndefined();
+      expect(result.current.resolveSubmission()).toEqual({
+        codeEnvironmentMode: 'without_attached',
+      });
+    });
+
+    it('keeps auto-selecting for an API that does not seal decisions', () => {
+      mockStartupConfig.mockReturnValue({});
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.state).toBe('ready');
+      expect(result.current.selections).toEqual([
+        { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      ]);
+    });
   });
 
   it('invalidates readiness when current agent metadata changes environments', () => {
