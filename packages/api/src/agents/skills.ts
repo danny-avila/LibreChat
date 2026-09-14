@@ -2,12 +2,12 @@ import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
 import { SkillsScope, isEphemeralAgentId, resolveAgentSkillsScope } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
-import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type {
   Agent,
   CodeWorkspaceOperation,
   CodeWorkspaceDescriptor,
 } from 'librechat-data-provider';
+import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Types } from 'mongoose';
 import { createSkillContentDigest } from './compatibility';
