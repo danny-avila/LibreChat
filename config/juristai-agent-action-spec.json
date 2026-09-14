@@ -5306,6 +5306,53 @@
           }
         }
       }
+    },
+    "/api/core/in-house/requests/": {
+      "get": {
+        "operationId": "in-house-request-list",
+        "summary": "List In-House legal requests.",
+        "description": "List only the authenticated user's organization-scoped In-House legal requests.",
+        "tags": ["llm-tools"],
+        "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}],
+        "responses": {"200": {"description": "In-House legal requests."}},
+        "x-llm-callable": true
+      },
+      "post": {
+        "operationId": "in-house-request-create",
+        "summary": "Create an In-House legal request.",
+        "description": "Create a new organization-scoped In-House legal request. Require the user's requested fields and never invent missing facts.",
+        "tags": ["llm-tools"],
+        "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}],
+        "parameters": [{"in": "header", "name": "Idempotency-Key", "required": true, "schema": {"type": "string"}, "description": "Stable key for this exact user-confirmed request; reuse it only when retrying the same request."}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["subject", "description"], "properties": {"subject": {"type": "string"}, "description": {"type": "string"}, "request_type": {"type": "string"}, "business_unit": {"type": "string"}, "desired_date": {"type": "string", "format": "date"}, "urgency": {"type": "string"}, "sensitivity": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Request created."}},
+        "x-llm-callable": true
+      }
+    },
+    "/api/core/in-house/matters/": {
+      "get": {"operationId": "in-house-matter-list", "summary": "List In-House matters.", "description": "List only organization-scoped In-House matters.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "responses": {"200": {"description": "In-House matters."}}, "x-llm-callable": true},
+      "post": {"operationId": "in-house-matter-create", "summary": "Create an In-House matter.", "description": "Create an organization-scoped In-House matter after the user confirms the matter identity.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["case_id", "matter_type"], "properties": {"case_id": {"type": "string"}, "matter_type": {"type": "string"}, "legal_owner_id": {"type": "string"}, "business_stakeholder_id": {"type": "string"}, "business_unit": {"type": "string"}, "priority": {"type": "string"}, "risk": {"type": "string"}}}}}}, "responses": {"201": {"description": "Matter created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/requests/{request_id}/comments/": {
+      "post": {"operationId": "in-house-request-comment-create", "summary": "Add an In-House request comment.", "description": "Add a user-visible comment to the selected organization-scoped request.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "parameters": [{"in": "path", "name": "request_id", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"in": "header", "name": "Idempotency-Key", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["body"], "properties": {"body": {"type": "string"}, "is_internal": {"type": "boolean"}}}}}}, "responses": {"201": {"description": "Comment created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/requests/{request_id}/transition/": {
+      "post": {"operationId": "in-house-request-transition", "summary": "Transition an In-House request.", "description": "Transition the selected request only when the authenticated user has staff decision access and the requested status is explicit.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "parameters": [{"in": "path", "name": "request_id", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"in": "header", "name": "Idempotency-Key", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string"}}}}}}, "responses": {"200": {"description": "Request transitioned."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/contracts/": {
+      "post": {"operationId": "in-house-contract-create", "summary": "Create an In-House contract.", "description": "Create an organization-scoped contract for an explicitly selected In-House matter.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["counterparty", "contract_type"], "properties": {"matter": {"type": "string", "format": "uuid"}, "counterparty": {"type": "string"}, "contract_type": {"type": "string"}, "legal_owner_id": {"type": "string"}, "business_owner_id": {"type": "string"}}}}}}, "responses": {"201": {"description": "Contract created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/contracts/{contract_id}/versions/": {
+      "post": {"operationId": "in-house-contract-version-create", "summary": "Upload an In-House contract version.", "description": "Record a source-backed contract version for the selected organization-scoped contract.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "parameters": [{"in": "path", "name": "contract_id", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["content_hash", "filename", "storage_reference"], "properties": {"content_hash": {"type": "string"}, "filename": {"type": "string"}, "storage_reference": {"type": "string"}, "parent_version": {"type": "string", "format": "uuid"}}}}}}, "responses": {"201": {"description": "Contract version created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/obligations/": {
+      "post": {"operationId": "in-house-obligation-create", "summary": "Create an In-House obligation.", "description": "Create an obligation only from an explicitly selected organization-scoped contract version.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["contract_version", "obligation_type"], "properties": {"contract_version": {"type": "string", "format": "uuid"}, "owner_id": {"type": "string"}, "obligation_type": {"type": "string"}, "source_anchor": {"type": "object"}, "trigger_rule": {"type": "object"}, "due_date": {"type": "string", "format": "date"}}}}}}, "responses": {"201": {"description": "Obligation created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/contracts/{contract_id}/approvals/": {
+      "post": {"operationId": "in-house-contract-approval-create", "summary": "Create an In-House approval workflow.", "description": "Create an approval workflow only for the selected organization-scoped contract and version.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "parameters": [{"in": "path", "name": "contract_id", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["contract_version", "approver_ids"], "properties": {"contract_version": {"type": "string", "format": "uuid"}, "approver_ids": {"type": "array", "items": {"type": "string"}}}}}}}, "responses": {"201": {"description": "Approval workflow created."}}, "x-llm-callable": true}
+    },
+    "/api/core/in-house/approvals/{workflow_id}/steps/{step_id}/decision/": {
+      "post": {"operationId": "in-house-approval-decision", "summary": "Decide an In-House approval step.", "description": "Approve or reject the selected approval step only with explicit user direction and staff authorization.", "tags": ["llm-tools"], "security": [{"chatMintedBearerAuth": []}, {"juristBearerAuth": []}], "parameters": [{"in": "path", "name": "workflow_id", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"in": "path", "name": "step_id", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["decision"], "properties": {"decision": {"type": "string", "enum": ["approved", "rejected", "changes_requested"]}, "comment": {"type": "string"}}}}}}, "responses": {"200": {"description": "Approval decision recorded."}}, "x-llm-callable": true}
     }
   },
   "components": {

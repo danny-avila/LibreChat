@@ -202,6 +202,11 @@ describe('juristai agent action spec — parity denylist', () => {
       'summarize-document',
       'retrieve-document-summary',
       'send-client-invoice',
+      'in-house-request-create',
+      'in-house-matter-create',
+      'in-house-contract-create',
+      'in-house-contract-version-create',
+      'in-house-obligation-create',
     ]) {
       expect(operationIds).toContain(op);
     }
