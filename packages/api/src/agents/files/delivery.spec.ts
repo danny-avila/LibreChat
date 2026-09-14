@@ -87,6 +87,30 @@ describe('applyTurnTextFallback', () => {
     );
   });
 
+  it('reads the opt-in under the custom endpoint an initialized agent names', () => {
+    /* After initialization the provider is the backing client and the endpoint keeps the name
+     * the upload resolved, so a setting made only on that endpoint still applies. */
+    const files = [csv];
+    const customOnly = {
+      fileConfig: {
+        endpoints: {
+          MyGateway: {
+            defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' as const } },
+            textFallbackWithoutTools: true,
+          },
+        },
+      },
+    };
+
+    expect(
+      applyTurnTextFallback(files, {
+        agent: { provider: 'openAI', endpoint: 'MyGateway' },
+        config: customOnly,
+        consumers: noReader,
+      }),
+    ).toEqual([{ ...csv, llmDeliveryPath: 'text' }]);
+  });
+
   it('marks nothing when the agent or the tools it runs are unknown', () => {
     const files = [csv];
 

@@ -4513,20 +4513,24 @@ describe('initializeAgent tool-routed text fallback', () => {
     tools,
     csv,
     textFallbackWithoutTools = true,
+    provider = Providers.OPENAI,
+    overrideProvider,
   }: {
     tools: string[];
     csv: IMongoFile;
     textFallbackWithoutTools?: boolean;
+    provider?: string;
+    overrideProvider?: string;
   }) {
     const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
       filterFilesByEndpointRuntimeConfig: jest.Mock;
     };
-    const { agent, req, res, loadTools, db } = createMocks();
+    const { agent, req, res, loadTools, db } = createMocks({ provider, overrideProvider });
     agent.tools = tools;
     req.config = {
       fileConfig: {
         endpoints: {
-          [Providers.OPENAI]: {
+          [provider]: {
             defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
             textFallbackWithoutTools,
           },
@@ -4547,7 +4551,7 @@ describe('initializeAgent tool-routed text fallback', () => {
         requestFiles: [csv],
         codeEnvAvailable: true,
         endpointOption: { endpoint: EModelEndpoint.agents },
-        allowedProviders: new Set([Providers.OPENAI]),
+        allowedProviders: new Set([provider]),
         isInitialAgent: true,
       },
       db,
@@ -4566,6 +4570,27 @@ describe('initializeAgent tool-routed text fallback', () => {
     );
     expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: false });
     expect(csv.llmDeliveryPath).toBe('none');
+  });
+
+  it('resolves a custom endpoint agent under the endpoint its upload was routed by', async () => {
+    /* Uploads resolve the agent's saved provider, which for a custom endpoint is its name.
+     * Initialization later swaps the provider for the backing client, so an opt-in set only
+     * on the custom endpoint must still be read under that name, here and after the swap. */
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv,
+      provider: 'MyGateway',
+      overrideProvider: Providers.OPENAI,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...csv, llmDeliveryPath: 'text' }] }),
+    );
+    expect(result.provider).toBe(Providers.OPENAI);
+    expect(result.endpoint).toBe('MyGateway');
   });
 
   it('leaves the file on its tool route where the endpoint has not enabled the fallback', async () => {
