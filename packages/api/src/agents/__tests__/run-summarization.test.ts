@@ -1307,23 +1307,112 @@ describe('Azure deployment alias', () => {
     },
   );
 
-  it('reports an unreachable OpenAI summarizer once across runs', async () => {
+  it('reports an unreachable OpenAI summarizer once per tenant across runs', async () => {
     jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: undefined });
-    const run = () =>
+    const run = (tenantId?: string) =>
       callAndCapture({
         agents: [azureAstraAgent()],
         appConfig: makeAppConfig([]),
+        tenantId,
         summarizationConfig: { provider: EModelEndpoint.openAI, model: 'o4-mini' },
       });
 
-    await run();
-    (Run.create as jest.Mock).mockClear();
-    await run();
+    for (const tenantId of [undefined, undefined, 'tenant-a', 'tenant-a', 'tenant-b']) {
+      (Run.create as jest.Mock).mockClear();
+      await run(tenantId);
+    }
 
     const warnings = (logger.warn as jest.Mock).mock.calls.filter(([message]) =>
       String(message).includes('"o4-mini"'),
     );
-    expect(warnings).toHaveLength(1);
+    expect(warnings.map(([, meta]) => meta)).toEqual([
+      undefined,
+      { tenantId: 'tenant-a' },
+      { tenantId: 'tenant-b' },
+    ]);
+  });
+
+  it('expands environment placeholders in OpenAI and Azure summarizer credentials', async () => {
+    jest.replaceProperty(process, 'env', {
+      ...process.env,
+      OPENAI_API_KEY: 'openai-summary-key',
+      SUMMARY_OPENAI_KEY: 'expanded-openai-key',
+      SUMMARY_OPENAI_URL: 'https://expanded-gateway.example/v1',
+      SUMMARY_AZURE_KEY: 'expanded-azure-key',
+    });
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-6-astra', 'gpt-4.1-mini'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'gpt-4.1-mini': { group: 'summary' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'test-instance',
+          version: '2025-04-01-preview',
+          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+        },
+        summary: {
+          apiKey: 'summary-key',
+          instanceName: 'summary-instance',
+          version: '2024-10-21',
+          models: { 'gpt-4.1-mini': { deploymentName: 'summary-production' } },
+        },
+      },
+    };
+    const compact = async (summarizationConfig: SummarizationConfig) => {
+      (Run.create as jest.Mock).mockClear();
+      const agents = await callAndCapture({
+        agents: [azureAstraAgent()],
+        appConfig,
+        summarizeOnly: true,
+        summarizationConfig,
+      });
+      const { requests } = await compactSummary(agents);
+      expect(requests).toHaveLength(1);
+      return requests[0];
+    };
+
+    const openAI = await compact({
+      provider: EModelEndpoint.openAI,
+      model: 'gpt-4.1-mini',
+      parameters: {
+        streaming: false,
+        apiKey: '${SUMMARY_OPENAI_KEY}',
+        baseURL: '${SUMMARY_OPENAI_URL}',
+      },
+    });
+    expect(openAI.url.origin).toBe('https://expanded-gateway.example');
+    expect(openAI.headers.get('authorization')).toBe('Bearer expanded-openai-key');
+
+    const azure = await compact({
+      model: 'gpt-4.1-mini',
+      parameters: { streaming: false, apiKey: '${SUMMARY_AZURE_KEY}' },
+    });
+    expect(azure.url.origin).toBe('https://summary-instance.openai.azure.com');
+    expect(azure.headers.get('api-key')).toBe('expanded-azure-key');
+  });
+
+  it('disables summarization when a credential placeholder has no environment value', async () => {
+    jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: 'openai-summary-key' });
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig: makeAppConfig([]),
+      summarizeOnly: true,
+      summarizationConfig: {
+        provider: EModelEndpoint.openAI,
+        model: 'gpt-4.1',
+        parameters: { streaming: false, apiKey: '${UNSET_SUMMARY_KEY}' },
+      },
+    });
+
+    expect(agents[0].summarizationEnabled).toBe(false);
+    const requests: CapturedRequest[] = [];
+    await expect(compactSummary(agents, requests)).rejects.toThrow(
+      'Compaction skipped: summarization is not enabled for this agent',
+    );
+    expect(requests).toHaveLength(0);
   });
 
   it.each([

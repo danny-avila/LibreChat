@@ -736,15 +736,55 @@ function resolveBuiltInClientOverrides(
   return Object.keys(shaping).length > 0 ? shaping : undefined;
 }
 
-/** Reported summarization misconfigurations, so a setting read on every run logs once. */
+/** Distinct misconfiguration warnings retained before the set resets, so changing configs cannot grow it. */
+const MAX_UNRESOLVED_SUMMARIZATION_WARNINGS = 256;
+/** Reported summarization misconfigurations per tenant, so a setting read on every run logs once. */
 const unresolvedSummarizationWarnings = new Set<string>();
 
-function warnUnresolvedSummarization(message: string): void {
-  if (unresolvedSummarizationWarnings.has(message)) {
+function warnUnresolvedSummarization(message: string, tenantId?: string): void {
+  const key = `${tenantId ?? ''}\n${message}`;
+  if (unresolvedSummarizationWarnings.has(key)) {
     return;
   }
-  unresolvedSummarizationWarnings.add(message);
-  logger.warn(`[createRun] ${message}`);
+  if (unresolvedSummarizationWarnings.size >= MAX_UNRESOLVED_SUMMARIZATION_WARNINGS) {
+    unresolvedSummarizationWarnings.clear();
+  }
+  unresolvedSummarizationWarnings.add(key);
+  if (tenantId == null) {
+    logger.warn(`[createRun] ${message}`);
+    return;
+  }
+  logger.warn(`[createRun] ${message}`, { tenantId });
+}
+
+/** Azure base URL templates the client fills from its own options rather than the environment. */
+const AZURE_URL_TEMPLATE_PLACEHOLDERS = /\$\{(?:INSTANCE_NAME|DEPLOYMENT_NAME)\}/g;
+
+/**
+ * Admin-authored transport values may reference environment variables, as endpoint credentials
+ * do. Expanded once, before resolution and before the parameters are layered over the client.
+ */
+function expandSummarizationTransport(
+  parameters: SummarizationConfig['parameters'],
+): SummarizationConfig['parameters'] {
+  if (!isPlainObject(parameters)) {
+    return parameters;
+  }
+  const params = parameters as Record<string, unknown>;
+  const expanded: Record<string, unknown> = { ...params };
+  if (typeof params.apiKey === 'string') {
+    expanded.apiKey = extractEnvVariable(params.apiKey);
+  }
+  if (typeof params.baseURL === 'string') {
+    expanded.baseURL = extractEnvVariable(params.baseURL);
+  }
+  if (isPlainObject(params.configuration) && typeof params.configuration.baseURL === 'string') {
+    expanded.configuration = {
+      ...params.configuration,
+      baseURL: extractEnvVariable(params.configuration.baseURL),
+    };
+  }
+  return expanded as SummarizationConfig['parameters'];
 }
 
 /** The base URL and API key a summarization target's own parameters set, which replace the resolved ones. */
@@ -778,9 +818,16 @@ function resolveOpenAISummarization(
   const overrides = summarizationTransportOverrides(parameters);
   const baseURL = overrides.baseURL ?? getBuiltInBaseURL(EModelEndpoint.openAI);
   const apiKey = overrides.apiKey ?? process.env.OPENAI_API_KEY;
-  if (!apiKey || isUserProvided(baseURL) || isUserProvided(apiKey)) {
+  if (
+    !apiKey ||
+    isUserProvided(baseURL) ||
+    isUserProvided(apiKey) ||
+    hasUnresolvedPlaceholder(apiKey) ||
+    (baseURL != null && hasUnresolvedPlaceholder(baseURL))
+  ) {
     warnUnresolvedSummarization(
       `Summarization with OpenAI model "${model}" is disabled for Azure OpenAI agents: it needs a server-configured OpenAI API key and base URL.`,
+      headerContext.tenantId,
     );
     return undefined;
   }
@@ -835,6 +882,7 @@ type AzureSummarizationTarget = Omit<ReturnType<typeof mapModelToAzureConfig>, '
 function resolveAzureSummarizationTarget(
   model: string,
   azureConfig: TAzureConfig | undefined,
+  tenantId: string | undefined,
 ): AzureSummarizationTarget | undefined {
   if (!azureConfig) {
     return { azureOptions: getAzureCredentials() };
@@ -852,6 +900,7 @@ function resolveAzureSummarizationTarget(
   } catch (error) {
     warnUnresolvedSummarization(
       `Summarization with Azure OpenAI model "${model}" is disabled: ${(error as Error).message}`,
+      tenantId,
     );
     return undefined;
   }
@@ -872,6 +921,7 @@ function resolveAzureSummarization(
   const target = resolveAzureSummarizationTarget(
     model,
     appConfig?.endpoints?.[EModelEndpoint.azureOpenAI],
+    headerContext.tenantId,
   );
   if (!target) {
     return undefined;
@@ -887,10 +937,14 @@ function resolveAzureSummarization(
   if (
     !azureOptions.azureOpenAIApiKey ||
     isUserProvided(resolvedBaseURL) ||
-    isUserProvided(azureOptions.azureOpenAIApiKey)
+    isUserProvided(azureOptions.azureOpenAIApiKey) ||
+    hasUnresolvedPlaceholder(azureOptions.azureOpenAIApiKey) ||
+    (resolvedBaseURL != null &&
+      hasUnresolvedPlaceholder(resolvedBaseURL.replace(AZURE_URL_TEMPLATE_PLACEHOLDERS, '')))
   ) {
     warnUnresolvedSummarization(
       `Summarization with Azure OpenAI model "${model}" is disabled: it needs a server-configured Azure OpenAI API key and base URL.`,
+      headerContext.tenantId,
     );
     return undefined;
   }
@@ -1139,6 +1193,7 @@ function shapeSummarizationConfig(
     normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
 
   const model = config?.model ?? fallbackModel;
+  const userParameters = expandSummarizationTransport(config?.parameters);
 
   const selectsAzureDeployment =
     (rawProvider === EModelEndpoint.azureOpenAI ||
@@ -1147,7 +1202,7 @@ function shapeSummarizationConfig(
     config?.enabled !== false &&
     (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel);
   const azureOverrides = selectsAzureDeployment
-    ? resolveAzureSummarization(model, appConfig, config?.parameters, headerContext)
+    ? resolveAzureSummarization(model, appConfig, userParameters, headerContext)
     : undefined;
   const selectsOpenAIForAzureAgent =
     agentEndpoint === EModelEndpoint.azureOpenAI &&
@@ -1155,7 +1210,7 @@ function shapeSummarizationConfig(
     config.enabled !== false &&
     isNonEmptyString(model);
   const openAIOverrides = selectsOpenAIForAzureAgent
-    ? resolveOpenAISummarization(model, appConfig, config.parameters, headerContext)
+    ? resolveOpenAISummarization(model, appConfig, userParameters, headerContext)
     : undefined;
   /**
    * A target resolved here is not handed to another client when resolution fails. Azure Responses
@@ -1172,7 +1227,7 @@ function shapeSummarizationConfig(
       ? { provider: fallbackProvider, clientOverrides: undefined }
       : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
           model,
-          parameters: config?.parameters,
+          parameters: userParameters,
           agentProvider: fallbackProvider,
         }));
   const trigger =
@@ -1195,9 +1250,7 @@ function shapeSummarizationConfig(
    * and `defaultHeaders` rather than replacing the whole object.
    */
   const mergedParameters =
-    clientOverrides != null
-      ? mergeParameters(clientOverrides, config?.parameters)
-      : config?.parameters;
+    clientOverrides != null ? mergeParameters(clientOverrides, userParameters) : userParameters;
   /** Placed first so an explicit user `modelKwargs` still replaces the agent's wholesale. */
   const modelKwargs =
     provider === fallbackProvider
