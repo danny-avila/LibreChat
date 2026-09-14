@@ -4270,6 +4270,8 @@ export enum LocalStorageKeys {
   PIN_WEB_SEARCH_ = 'PIN_WEB_SEARCH_',
   /** Pin state for Code Interpreter per conversation ID */
   PIN_CODE_INTERPRETER_ = 'PIN_CODE_INTERPRETER_',
+  /** Selected message-branch target per conversation ID */
+  BRANCH_TARGET_ = 'branchTarget_',
 }
 
 export enum ForkOptions {
