@@ -3,20 +3,10 @@ import {
   ViolationTypes,
   isCodeWorkspaceSelectionErrorReason,
 } from 'librechat-data-provider';
-import type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import type { ErrorRendererProps } from './parts';
-import type { TranslationKeys } from '~/hooks';
 import { getProviderName, readNumber, readString, useErrorEndpoint } from './parts';
+import { codeWorkspaceErrorKeys } from '~/utils/errors';
 import { useLocalize } from '~/hooks';
-
-const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, TranslationKeys> = {
-  required: 'com_error_code_workspace_required',
-  invalid: 'com_error_code_workspace_invalid',
-  worker_unavailable: 'com_error_code_workspace_worker_unavailable',
-  unsupported: 'com_error_code_workspace_unsupported',
-  missing: 'com_error_code_workspace_missing',
-  locked: 'com_error_code_workspace_locked',
-};
 
 /**
  * Failures naming a provider, a model or a workspace selection. Each payload carries the identity

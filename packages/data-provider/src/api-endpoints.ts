@@ -55,6 +55,8 @@ export const codeEnvironmentById = (id: string) =>
   `${codeEnvironments()}/${encodeURIComponent(id)}`;
 export const codeEnvironmentSettings = (id: string) => `${codeEnvironmentById(id)}/settings`;
 export const codeEnvironmentStatus = (id: string) => `${codeEnvironmentById(id)}/status`;
+export const codeEnvironmentConversationDecision = (conversationId: string) =>
+  `${codeEnvironments()}/conversations/${encodeURIComponent(conversationId)}/decision`;
 
 const messagesRoot = `${BASE_URL}/api/messages`;
 

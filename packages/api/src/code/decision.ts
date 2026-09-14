@@ -11,7 +11,7 @@ export interface ConversationCodeEnvironmentDecision {
   codeWorkspaces?: CodeWorkspaceSelection[];
 }
 
-type StoredConversationDecision = Pick<
+export type StoredConversationDecision = Pick<
   TConversation,
   'conversationId' | 'codeEnvironmentMode' | 'codeWorkspaces'
 >;
@@ -49,6 +49,16 @@ function validateDecision(mode: unknown, selections: unknown): ConversationCodeE
   return { mode, codeWorkspaces: canonicalSelections(selections) };
 }
 
+/** A stored conversation always carries a decision; legacy rows infer it from their selections. */
+function readPersistedDecision(
+  conversation: StoredConversationDecision,
+): ConversationCodeEnvironmentDecision {
+  const mode =
+    conversation.codeEnvironmentMode ??
+    (conversation.codeWorkspaces?.length ? 'attached' : 'without_attached');
+  return validateDecision(mode, conversation.codeWorkspaces);
+}
+
 /** Resolves one immutable conversation choice before attached tools are registered. */
 export function resolveConversationCodeEnvironmentDecision({
   conversationId,
@@ -61,16 +71,8 @@ export function resolveConversationCodeEnvironmentDecision({
   requestedSelections?: unknown;
   conversation?: StoredConversationDecision | null;
 }): ConversationCodeEnvironmentDecision {
-  const ownsConversation = conversation != null && conversation.conversationId === conversationId;
-  const persistedMode = ownsConversation ? conversation.codeEnvironmentMode : undefined;
-  const persistedSelections = ownsConversation ? conversation.codeWorkspaces : undefined;
-  let inferredPersistedMode: unknown = persistedMode;
-  if (inferredPersistedMode == null && ownsConversation) {
-    inferredPersistedMode = persistedSelections?.length ? 'attached' : 'without_attached';
-  }
-
-  if (inferredPersistedMode != null) {
-    const persisted = validateDecision(inferredPersistedMode, persistedSelections);
+  if (conversation != null && conversation.conversationId === conversationId) {
+    const persisted = readPersistedDecision(conversation);
     if (requestedMode !== undefined && requestedMode !== persisted.mode) {
       throw new CodeWorkspaceSelectionError('locked');
     }
@@ -101,4 +103,96 @@ export function resolveConversationCodeEnvironmentDecision({
       ? 'attached'
       : 'without_attached');
   return validateDecision(mode, requestedSelections);
+}
+
+export interface ConversationCodeEnvironmentMove {
+  codeWorkspaces: CodeWorkspaceSelection[];
+}
+
+/**
+ * Validates an owner's explicit move of a sealed attached decision onto the environments its
+ * agents now use. A move may drop environments the agents stopped using and add ones they now use,
+ * but never changes the workspace of an environment the decision already covers and never upgrades
+ * a conversation that continues without an attached environment. `from` must repeat the persisted selections, so a client acting
+ * on a stale view of the conversation cannot replace a decision it has not seen.
+ */
+export function resolveConversationCodeEnvironmentMove({
+  conversation,
+  from,
+  to,
+}: {
+  conversation: StoredConversationDecision;
+  from: unknown;
+  to: unknown;
+}): ConversationCodeEnvironmentMove {
+  const persisted = readPersistedDecision(conversation);
+  if (persisted.mode !== 'attached' || persisted.codeWorkspaces == null) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  if (!isCodeWorkspaceSelections(from) || !sameSelections(from, persisted.codeWorkspaces)) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  if (!isCodeWorkspaceSelections(to) || to.length === 0) {
+    throw new CodeWorkspaceSelectionError('invalid');
+  }
+  const sealed = new Map(
+    persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
+  );
+  let adds = false;
+  for (const selection of to) {
+    const sealedWorkspaceId = sealed.get(selection.environmentId);
+    if (sealedWorkspaceId == null) {
+      adds = true;
+    } else if (sealedWorkspaceId !== selection.workspaceId) {
+      throw new CodeWorkspaceSelectionError('locked');
+    }
+  }
+  if (!adds && to.length === sealed.size) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  return { codeWorkspaces: canonicalSelections(to) };
+}
+
+type PersistableDecisionFields = Pick<
+  StoredConversationDecision,
+  'codeEnvironmentMode' | 'codeWorkspaces'
+>;
+
+/**
+ * Returns the decision fields a run may persist. A stored conversation keeps the decision it
+ * already holds, because only its owner's explicit move replaces one: a run from any ingress that
+ * settles after a move would otherwise write its run-start decision back over it. A legacy row
+ * records the mode it inferred without touching the selections it already stores. A caller that
+ * never resolved a decision falls back to the fields its request carried, under the same rule.
+ */
+export function resolvePersistableCodeEnvironmentDecision({
+  conversationId,
+  decision,
+  conversation,
+  requested,
+}: {
+  conversationId: string;
+  decision?: ConversationCodeEnvironmentDecision | null;
+  conversation?: StoredConversationDecision | null;
+  requested?: PersistableDecisionFields | null;
+}): PersistableDecisionFields {
+  const candidate: PersistableDecisionFields =
+    decision != null
+      ? {
+          codeEnvironmentMode: decision.mode,
+          ...(decision.codeWorkspaces != null && { codeWorkspaces: decision.codeWorkspaces }),
+        }
+      : {
+          ...(requested?.codeEnvironmentMode != null && {
+            codeEnvironmentMode: requested.codeEnvironmentMode,
+          }),
+          ...(requested?.codeWorkspaces != null && { codeWorkspaces: requested.codeWorkspaces }),
+        };
+  if (conversation == null || conversation.conversationId !== conversationId) {
+    return candidate;
+  }
+  if (conversation.codeEnvironmentMode != null || candidate.codeEnvironmentMode == null) {
+    return {};
+  }
+  return { codeEnvironmentMode: candidate.codeEnvironmentMode };
 }

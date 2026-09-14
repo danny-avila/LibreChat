@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { CODE_ENVIRONMENT_DECISION_VERSION, EModelEndpoint } from 'librechat-data-provider';
+import {
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   AccessibleCodeEnvironmentConfiguration,
@@ -27,6 +31,16 @@ export function resolveCodeEnvironmentDecisionVersion(
 ): typeof CODE_ENVIRONMENT_DECISION_VERSION | undefined {
   return configuredVersion === String(CODE_ENVIRONMENT_DECISION_VERSION)
     ? CODE_ENVIRONMENT_DECISION_VERSION
+    : undefined;
+}
+
+/** Advertises owner moves of a sealed decision only where the effective policy enables them. */
+export function resolveCodeEnvironmentMoveVersion(
+  appConfig?: Pick<AppConfig, 'endpoints'> | null,
+): typeof CODE_ENVIRONMENT_MOVE_VERSION | undefined {
+  return appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.conversationMoves
+    ?.enabled === true
+    ? CODE_ENVIRONMENT_MOVE_VERSION
     : undefined;
 }
 

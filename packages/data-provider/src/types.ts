@@ -612,6 +612,20 @@ export type TCodeEnvironmentStatusResponse = {
   workspaces?: CodeWorkspaceDescriptor[];
 };
 
+/** Moves a sealed attached decision onto the environments a conversation's agents now use. */
+export type TCodeEnvironmentMoveRequest = {
+  conversationId: string;
+  /** The persisted selections being replaced; a mismatch rejects the move as stale. */
+  from: CodeWorkspaceSelection[];
+  to: CodeWorkspaceSelection[];
+};
+
+export type TCodeEnvironmentMoveResponse = {
+  conversationId: string;
+  codeEnvironmentMode: 'attached';
+  codeWorkspaces: CodeWorkspaceSelection[];
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;

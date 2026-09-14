@@ -285,6 +285,12 @@ export interface ConversationMethods {
     conversationId: string,
     pinned: boolean,
   ): Promise<IConversation | null>;
+  replaceConvoCodeEnvironmentDecision(params: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }): Promise<IConversation | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
     user: string,
@@ -2532,6 +2538,41 @@ export function createConversationMethods(
   }
 
   /**
+   * Compare-and-swap for an owner's explicit move of an attached code-environment decision.
+   * The filter repeats the stored decision being replaced, so a writer that changed it first
+   * leaves this update unmatched rather than overwritten. A missing and a null mode both
+   * describe a legacy decision inferred from its selections.
+   */
+  async function replaceConvoCodeEnvironmentDecision({
+    user,
+    conversationId,
+    expected,
+    codeWorkspaces,
+  }: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        {
+          conversationId,
+          user,
+          codeEnvironmentMode: expected.codeEnvironmentMode ?? { $in: [null] },
+          codeWorkspaces: expected.codeWorkspaces ?? { $in: [null] },
+        },
+        { $set: { codeEnvironmentMode: 'attached', codeWorkspaces } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[replaceConvoCodeEnvironmentDecision] Error moving code environment', error);
+      throw new Error('Error moving code environment');
+    }
+  }
+
+  /**
    * Saves multiple conversations in bulk.
    */
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
@@ -3348,6 +3389,7 @@ export function createConversationMethods(
     deleteNullOrEmptyConversations,
     saveConvo,
     setConvoPinned,
+    replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,
     getConvosQueried,
