@@ -109,7 +109,9 @@ const {
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
-  stripFailedSummaryParts,
+  stripUnusableSummaryParts,
+  recountStrippedIndexTokens,
+  isUsableSummaryPart,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -338,18 +340,24 @@ function captureRunContextMeta(client) {
   });
 }
 
+/**
+ * The summary a warm event-actor continuation carries forward. A failed or
+ * unfinished round's partial deltas would otherwise be persisted as actor
+ * state and handed to the next run as its `initialSummary`, which skips
+ * durable history entirely — the same defect the payload strip closes, on the
+ * path that does not read the payload.
+ */
 function getLatestEventActorSummary(contentParts) {
   if (!Array.isArray(contentParts)) {
     return undefined;
   }
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     const part = contentParts[index];
-    const text = getSummaryPartText(part);
-    if (text.length === 0) {
+    if (!isUsableSummaryPart(part)) {
       continue;
     }
     return normalizeEventActorSummary({
-      text,
+      text: getSummaryPartText(part),
       tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
     });
   }
@@ -4621,6 +4629,22 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
+      /**
+       * A summarize round that errored or was cut off keeps the deltas it
+       * streamed, and the formatter's summary scan takes the last summary part
+       * with text as the history boundary, reading neither `failed` nor
+       * `summarizing`. Left in, that prefix would replace the history it never
+       * finished summarizing. The turns it changes are recounted: their
+       * persisted count covers summary text the model no longer receives, and
+       * the SDK treats a positive cached entry as authoritative, so a stale
+       * overcount would make its pruner discard history that still fits.
+       */
+      const promptPayload = stripUnusableSummaryParts(payload);
+      const promptIndexTokenCountMap = recountStrippedIndexTokens(
+        promptPayload,
+        this.indexTokenCountMap,
+        (message) => countFormattedMessageTokens(message, this.getEncoding()),
+      );
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -4628,12 +4652,8 @@ class AgentClient extends BaseClient {
         boundaryTokenAdjustment,
         compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        /** A summarize round that errored keeps the deltas it streamed, and the
-         *  formatter's summary scan takes the last summary part with text as
-         *  the history boundary without reading `failed`. Left in, that prefix
-         *  would replace the history it never finished summarizing. */
-        stripFailedSummaryParts(payload),
-        this.indexTokenCountMap,
+        promptPayload.payload,
+        promptIndexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
         formatOptions,
@@ -4724,7 +4744,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripFailedSummaryParts(stripActivityLabelParts(this.memoryPayload)),
+              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)).payload,
               undefined,
               toolSet,
               skillPrimeResult?.skills,

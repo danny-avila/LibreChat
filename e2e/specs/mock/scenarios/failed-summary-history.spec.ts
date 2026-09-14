@@ -94,6 +94,30 @@ test.describe('failed summary history', () => {
   });
 
   /**
+   * The same rule for a round that never reported at all: the part is left
+   * mid-stream (`summarizing: true`) with whatever text it produced, which is
+   * no more a checkpoint than an errored round's prefix.
+   */
+  test('a turn after an interrupted summarization still sends the earlier history @scenario:unfinished-summary-keeps-prior-history', async ({
+    page,
+  }) => {
+    const { conversationId, token } = await startConversation(page);
+    conversationIds.push(conversationId);
+    await appendSummaryTurn(
+      conversationId,
+      summaryPart('Partial summary of the conve', { summarizing: true }),
+    );
+
+    await page.goto(`/c/${conversationId}`);
+    await expect(messagesView(page).getByText(token)).toBeVisible();
+    await sendMessageAndWaitForCompletion(page, `E2E_ASSERT_HISTORY:${token}`);
+
+    await expect(messagesView(page).getByText(`E2E history assertion present: ${token}`)).toBeVisible(
+      { timeout: 30000 },
+    );
+  });
+
+  /**
    * The other half of the same invariant: a summary that completed is still the
    * conversation's checkpoint, so the turns it covers are replaced by it and
    * the passphrase no longer reaches the model.

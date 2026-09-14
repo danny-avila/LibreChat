@@ -45,11 +45,12 @@ export function getSummaryPartText(part: TMessageContentParts | null | undefined
 
 /**
  * A summary that can stand for the history it covers: it carries text, and its
- * round did not error. A summarize round that failed keeps whatever deltas it
- * streamed, so its text is a truncated prefix of the history it was
- * summarizing rather than a checkpoint for it.
+ * round both finished and did not error. A round that failed or was cut off
+ * keeps whatever deltas it streamed, so its text is a truncated prefix of the
+ * history it was summarizing rather than a checkpoint for it — the same test
+ * `isCompactedLeaf` applies when deciding whether a compaction can be retried.
  */
-function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
+export function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
   if (part == null || typeof part !== 'object' || !('type' in part)) {
     return false;
   }
@@ -58,7 +59,10 @@ function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
   }
   /** Narrowed by the discriminant above: this is the summary union member. */
   const summary = part as SummaryContentPart;
-  return summary.failed !== true && getSummaryPartText(summary).length > 0;
+  if (summary.failed === true || summary.summarizing === true) {
+    return false;
+  }
+  return getSummaryPartText(summary).length > 0;
 }
 
 /**
@@ -158,40 +162,88 @@ export function markCompactionOutcome(
   contentParts.push(...compactionFailureContent());
 }
 
-type PayloadContentPart = { type?: unknown; failed?: unknown } | null | undefined;
+/** A payload with the summary parts that cannot bound history removed, and the
+ *  positions of the messages that changed. */
+export interface StrippedSummaryPayload<T> {
+  payload: T[];
+  /** Indices into `payload`; empty when nothing was stripped. */
+  changed: number[];
+}
 
 /**
- * Removes failed summary parts from a message payload before any
- * `formatAgentMessages` call. The SDK's summary scan takes the last summary
- * part that carries text as the conversation's history boundary and drops
- * every message before it, without reading `failed`. A summarize round that
- * errored mid-stream keeps the deltas it streamed, so leaving that part in the
- * payload replaces the history it never finished summarizing with the prefix
- * it managed to produce. Message positions are preserved — only parts are
- * dropped — so an index-keyed token map stays aligned. Non-mutating; returns
- * the same reference when nothing needed stripping.
+ * Removes unusable summary parts that carry text from a message payload before
+ * any `formatAgentMessages` call. The SDK's summary scan takes the last summary
+ * part carrying text as the conversation's history boundary and drops every
+ * message before it, reading neither `failed` nor `summarizing`. A round that
+ * errored or was cut off keeps the deltas it streamed, so leaving that part in
+ * the payload replaces the history it never finished summarizing with the
+ * prefix it managed to produce. An empty summary part is left alone: it bounds
+ * nothing, and the renderer still owns how it appears.
+ *
+ * Message positions are preserved — only parts are dropped — so an index-keyed
+ * token map stays aligned; the changed positions are reported so their counts
+ * can be recomputed. Non-mutating: the input payload and its messages are
+ * untouched.
  */
-export function stripFailedSummaryParts<T extends { content?: unknown }>(payload: T[]): T[] {
+export function stripUnusableSummaryParts<T extends { content?: unknown }>(
+  payload: T[],
+): StrippedSummaryPayload<T> {
   if (!Array.isArray(payload)) {
-    return payload;
+    return { payload, changed: [] };
   }
-  let changed = false;
-  const result = payload.map((message) => {
+  const changed: number[] = [];
+  const result = payload.map((message, index) => {
     const content = message?.content;
     if (!Array.isArray(content)) {
       return message;
     }
-    const filtered = content.filter((part) => {
-      const candidate = part as PayloadContentPart;
-      return !(candidate?.type === ContentTypes.SUMMARY && candidate.failed === true);
-    });
+    const filtered = content.filter(
+      (part) => isUsableSummaryPart(part) || !isSummaryPartWithText(part),
+    );
     if (filtered.length === content.length) {
       return message;
     }
-    changed = true;
+    changed.push(index);
     return { ...message, content: filtered };
   });
-  return changed ? result : payload;
+  return changed.length > 0 ? { payload: result, changed } : { payload, changed };
+}
+
+function isSummaryPartWithText(part: unknown): boolean {
+  if (part == null || typeof part !== 'object' || !('type' in part)) {
+    return false;
+  }
+  if (part.type !== ContentTypes.SUMMARY) {
+    return false;
+  }
+  /** Narrowed by the discriminant above: this is the summary union member. */
+  const summary = part as SummaryContentPart;
+  return getSummaryPartText(summary).length > 0;
+}
+
+/**
+ * The prompt-side token map corrected for the parts a strip removed. A turn's
+ * persisted `tokenCount` covers the summary text the model no longer receives,
+ * and the SDK keeps a positive cached entry as authoritative, so an
+ * uncorrected overcount makes its pruner discard history that still fits.
+ * Only the stripped positions are recounted; every other entry is carried
+ * through, and the stored counts stay as they are because they still describe
+ * what is stored. `count` is supplied by the caller, which owns the encoding.
+ */
+export function recountStrippedIndexTokens<T>(
+  stripped: StrippedSummaryPayload<T>,
+  indexTokenCountMap: Record<number, number> | undefined,
+  count: (message: T) => number,
+): Record<number, number> | undefined {
+  if (stripped.changed.length === 0) {
+    return indexTokenCountMap;
+  }
+  const corrected: Record<number, number> = { ...(indexTokenCountMap ?? {}) };
+  for (const index of stripped.changed) {
+    const recounted = count(stripped.payload[index]);
+    corrected[index] = Number.isFinite(recounted) && recounted > 0 ? recounted : 0;
+  }
+  return corrected;
 }
 
 function snapshotEntry(
