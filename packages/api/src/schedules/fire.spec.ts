@@ -953,23 +953,6 @@ it('bounds MCP preflight by the claim lease and the stricter concurrency config'
   );
 });
 
-it('forwards an upstream token provider to MCP preflight', async () => {
-  const { methods } = makeMethods();
-  const preflightMCP = jest.fn(async () => []);
-  const upstreamTokenProvider = jest.fn(async () => ({ access_token: 'current-token' }));
-  const deps = makeDeps(methods, { preflightMCP });
-
-  await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'), {
-    upstreamTokenProvider,
-  });
-
-  expect(preflightMCP).toHaveBeenCalledWith(
-    'agent-1',
-    OWNER,
-    expect.objectContaining({ upstreamTokenProvider }),
-  );
-});
-
 it('bounds MCP preflight by the stricter owner and deployment timeout', async () => {
   const { methods } = makeMethods();
   const startedAt = Date.now();

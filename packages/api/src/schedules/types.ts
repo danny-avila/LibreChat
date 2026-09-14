@@ -7,7 +7,6 @@ import type {
 import type { ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { AgentTriggerEnqueueOptions, AgentTriggerEnvelope } from '../agents/triggers';
-import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { SlotClaimResult } from './capacity';
 
 export interface ScheduleLimits {
@@ -330,10 +329,5 @@ export type FireableSchedule = ISchedule;
 export type ScheduleMCPPreflight = (
   agentId: string,
   user: ScheduleUserContext,
-  options: {
-    concurrency: number;
-    signal?: AbortSignal;
-    deadlineMs?: number;
-    upstreamTokenProvider?: UpstreamTokenProvider;
-  },
+  options: { concurrency: number; signal?: AbortSignal; deadlineMs?: number },
 ) => Promise<ScheduleMCPOutcome[]>;

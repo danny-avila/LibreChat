@@ -43,6 +43,7 @@ import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServers
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
+import { OboTokenResolutionError } from '../mcp/oauth/obo';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { resolveReachableGraph } from '../agents/edges';
 import { formatMCPServerTools } from '../mcp/tools';
@@ -576,9 +577,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       throwError: true,
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
-    const upstreamTokenProvider =
-      options.upstreamTokenProvider ??
-      (await deps.resolveUpstreamTokenProvider?.(user, { signal: options.signal }));
+    const upstreamTokenProvider = await deps.resolveUpstreamTokenProvider?.(user, {
+      signal: options.signal,
+    });
     throwIfAborted();
     const requestBody = {
       messageId: randomUUID(),
@@ -661,6 +662,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                     reauth ||
                       error instanceof MCPAuthenticationRejectedError ||
                       error instanceof OpenIDReauthRequiredError ||
+                      (error instanceof OboTokenResolutionError && !error.retryable) ||
                       error instanceof MCPOAuthSecretReentryRequiredError ||
                       isOAuthAuthenticationError(error)
                       ? 'mcp_reauth_required'

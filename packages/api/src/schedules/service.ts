@@ -15,7 +15,6 @@ import type {
 } from './types';
 import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { AgentCheckpointGeneration } from '../agents/checkpointer';
-import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import {
@@ -191,7 +190,7 @@ export interface SchedulesService {
   fireScheduleNow: (
     schedule: FireableSchedule,
     limits: ScheduleLimits,
-    options?: { signal?: AbortSignal; upstreamTokenProvider?: UpstreamTokenProvider },
+    options?: { signal?: AbortSignal },
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
@@ -773,7 +772,7 @@ export function createSchedulesService(
   async function fireScheduleNow(
     schedule: FireableSchedule,
     limits: ScheduleLimits,
-    options?: { signal?: AbortSignal; upstreamTokenProvider?: UpstreamTokenProvider },
+    options?: { signal?: AbortSignal },
   ): Promise<FireResult | null> {
     // The global stop means STOP: a manual run dispatches the same billed generation as
     // an automatic one, so gating only the engine tick would leave Run Now wide open.
@@ -796,7 +795,6 @@ export function createSchedulesService(
       return await fireSchedule(engineDeps, leased, limits, new Date(), {
         manual: true,
         signal: options?.signal,
-        upstreamTokenProvider: options?.upstreamTokenProvider,
       });
     } catch (err) {
       const released =

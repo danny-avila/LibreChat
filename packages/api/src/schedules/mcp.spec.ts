@@ -3,6 +3,7 @@ import type { IUser, IRole, AppConfig, AgentGraphNode } from '@librechat/data-sc
 import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
+import { OboTokenResolutionError } from '../mcp/oauth/obo';
 
 const principal = { id: 'owner', role: 'USER' };
 const server: ParsedServerConfig = { type: 'streamable-http', url: 'https://mcp.example.test/mcp' };
@@ -52,12 +53,7 @@ function setup(tools = ['search_mcp_docs']) {
     check: (
       agentId: string,
       user: typeof principal,
-      options?: {
-        concurrency?: number;
-        signal?: AbortSignal;
-        deadlineMs?: number;
-        upstreamTokenProvider?: UpstreamTokenProvider;
-      },
+      options?: { concurrency?: number; signal?: AbortSignal; deadlineMs?: number },
     ) => preflight(agentId, user, { concurrency: 3, ...options }),
   };
 }
@@ -84,17 +80,6 @@ it('uses persisted identity with isolated connections and disposes them after di
   expect(disconnect).toHaveBeenCalledTimes(1);
 });
 
-it('forwards a request-scoped upstream token provider to MCP connections', async () => {
-  const { check, deps } = setup();
-  const upstreamTokenProvider: UpstreamTokenProvider = jest.fn(async () => ({
-    access_token: 'current-token',
-  }));
-
-  await check('agent', principal, { upstreamTokenProvider });
-
-  expect(deps.connect).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
-});
-
 it('resolves an upstream token provider for unattended preflight', async () => {
   const { check, deps } = setup();
   const upstreamTokenProvider: UpstreamTokenProvider = jest.fn(async () => ({
@@ -109,21 +94,6 @@ it('resolves an upstream token provider for unattended preflight', async () => {
     { signal: undefined },
   );
   expect(deps.connect).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
-});
-
-it('prefers a request-scoped provider over the unattended resolver', async () => {
-  const { check, deps } = setup();
-  const requestProvider: UpstreamTokenProvider = jest.fn(async () => ({
-    access_token: 'request-token',
-  }));
-  deps.resolveUpstreamTokenProvider = jest.fn();
-
-  await check('agent', principal, { upstreamTokenProvider: requestProvider });
-
-  expect(deps.resolveUpstreamTokenProvider).not.toHaveBeenCalled();
-  expect(deps.connect).toHaveBeenCalledWith(
-    expect.objectContaining({ upstreamTokenProvider: requestProvider }),
-  );
 });
 
 it('rejects partial readiness and reports each server without exception details', async () => {
@@ -175,6 +145,28 @@ it('classifies a transport outage as retryable', async () => {
   await expect(check('agent', principal)).rejects.toMatchObject({
     code: 'mcp_unavailable',
     message: 'mcp_unavailable: [{"server":"docs","status":"mcp_unavailable"}]',
+  });
+});
+
+it('classifies a permanent OBO credential failure as requiring reauthentication', async () => {
+  const { check, deps } = setup();
+  deps.connect = async () => {
+    throw new OboTokenResolutionError('session_refresh_failed', 'Sign-in expired.');
+  };
+
+  await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_reauth_required',
+  });
+});
+
+it('classifies a retryable OBO credential failure as unavailable', async () => {
+  const { check, deps } = setup();
+  deps.connect = async () => {
+    throw new OboTokenResolutionError('session_refresh_failed', 'Refresh unavailable.', true);
+  };
+
+  await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_unavailable',
   });
 });
 

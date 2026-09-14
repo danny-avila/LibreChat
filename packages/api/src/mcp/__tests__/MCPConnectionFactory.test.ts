@@ -5578,6 +5578,52 @@ describe('MCPConnectionFactory', () => {
       ).rejects.toThrow(/upstreamTokenProvider not plumbed/);
       expect(resolveOboToken).not.toHaveBeenCalled();
     });
+
+    it('preserves OBO resolution failure metadata at connection establishment', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      const OboError = OboTokenResolutionError as unknown as jest.Mock;
+      OboError.mockImplementation(
+        (reason: string, userMessage: string, retryable = false, cause?: unknown) => {
+          const error = new Error(userMessage);
+          Object.setPrototypeOf(error, OboError.prototype);
+          return Object.assign(error, {
+            name: 'OboTokenResolutionError',
+            reason,
+            retryable,
+            userMessage,
+            cause,
+          });
+        },
+      );
+      resolveOboToken.mockRejectedValueOnce(
+        new OboTokenResolutionError('session_refresh_failed', 'Sign-in expired.'),
+      );
+
+      await expect(
+        MCPConnectionFactory.create(
+          { serverName: 'obo-srv', serverConfig: oboServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+            oboTokenResolver: jest.fn(),
+            upstreamTokenProvider: jest.fn(),
+          },
+        ),
+      ).rejects.toMatchObject({
+        name: 'OboTokenResolutionError',
+        reason: 'session_refresh_failed',
+        retryable: false,
+      });
+    });
   });
 
   describe('OBO authentication failures', () => {
