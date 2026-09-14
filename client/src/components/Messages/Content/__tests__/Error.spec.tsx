@@ -882,6 +882,30 @@ describe('Error — saved agents', () => {
     expect(document.body.textContent).not.toContain('agent_research');
   });
 
+  /** An ephemeral agent's row stores the model itself, since there is no agent id to store. */
+  it("keeps an agents row's recorded model when no saved agent resolves", () => {
+    renderError({ type: ErrorTypes.REFUSAL }, {
+      endpoint: EModelEndpoint.agents,
+      model: 'gpt-4o',
+    } as TMessage);
+
+    expect(screen.getByText(localized('com_error_refusal', 'gpt-4o'))).toBeInTheDocument();
+  });
+
+  it('resolves an ephemeral agent id to the endpoint and model it encodes', () => {
+    mockEndpointsData = { agents: {}, openAI: { userProvide: true } };
+    renderError(
+      { type: ErrorTypes.NO_USER_KEY },
+      { endpoint: EModelEndpoint.agents, model: 'gpt-4o' } as TMessage,
+      { conversation: { endpoint: EModelEndpoint.agents, agent_id: 'openAI__gpt-4o___GPT-4o' } },
+    );
+
+    expect(screen.getByText(localized('com_error_no_user_key', 'OpenAI'))).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: catalog.com_error_user_key_add }),
+    ).toBeInTheDocument();
+  });
+
   it('lets an expired key name the endpoint its payload reports over the row', () => {
     const expiredAt = '2026-08-01T09:30:00.000Z';
     renderError(
@@ -1018,6 +1042,27 @@ describe('Error — agent handoffs within a row', () => {
     });
 
     expect(screen.getByText(localized('com_error_no_user_key', 'Google'))).toBeInTheDocument();
+  });
+
+  it('resolves a handoff to a parallel ephemeral agent through the id it encodes', () => {
+    const parallelRow = {
+      ...handoffRow,
+      content: [
+        { type: ContentTypes.TEXT, text: 'Drafting the outline.' },
+        {
+          type: ContentTypes.AGENT_UPDATE,
+          agent_update: { agentId: 'anthropic__claude-sonnet-4-5___Claude____1', index: 1 },
+        },
+        { type: ContentTypes.ERROR, error: JSON.stringify({ type: ErrorTypes.NO_USER_KEY }) },
+      ],
+    } as unknown as TMessage;
+    renderError({ type: ErrorTypes.NO_USER_KEY }, undefined, {
+      source: parallelRow,
+      partIndex: 2,
+      agents: { [rootAgent.id]: rootAgent },
+    });
+
+    expect(screen.getByText(localized('com_error_no_user_key', 'Anthropic'))).toBeInTheDocument();
   });
 
   it('names no provider when the agent handed to cannot be resolved', () => {

@@ -6,6 +6,8 @@ import {
   getEndpointField,
   isAgentsEndpoint,
   isEphemeralAgentId,
+  stripAgentIdSuffix,
+  parseEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
   Agent,
@@ -100,26 +102,47 @@ export type ErrorEndpoint = {
   endpointsConfig?: TEndpointsConfig;
 };
 
+/** What an agent ran against: its provider (an endpoint id) and model, and the saved agent if any. */
+type AgentIdentity = { agent?: Agent; endpoint?: string; model?: string };
+
 /**
- * The saved agent behind a failure: the agent a handoff made active for the failing part,
- * otherwise the agent id a saved agent's row stores as its model, otherwise the conversation's.
- * A handoff the map cannot resolve resolves nothing, rather than falling back to the agent that
- * handed off.
+ * Resolves an agent id the way the transcript's sibling headers do: a saved agent through the
+ * agents map (without the `____N` suffix parallel runs append), an ephemeral agent through the
+ * endpoint and model its id encodes.
  */
-function findFailingAgent(
+function resolveAgentId(agentsMap: TAgentsMap | undefined, agentId: string): AgentIdentity {
+  const agent = agentsMap?.[stripAgentIdSuffix(agentId)];
+  if (agent != null) {
+    return { agent, endpoint: agent.provider || undefined, model: agent.model ?? undefined };
+  }
+  const ephemeral = isEphemeralAgentId(agentId) ? parseEphemeralAgentId(agentId) : undefined;
+  return ephemeral == null ? {} : { endpoint: ephemeral.endpoint, model: ephemeral.model };
+}
+
+/**
+ * Who ran the failing part of an agents row. A handoff names the agent it made active; a saved
+ * agent's row stores the agent id as its model; failing both, the conversation's agent answers.
+ * An id that resolves to nothing names nothing, so neither an agent id nor the agent that handed
+ * off is ever shown in its place, but a row whose model is a model name (an ephemeral agent's,
+ * or a live row's) keeps it when no agent resolves.
+ */
+function resolveAgentRow(
   agentsMap: TAgentsMap | undefined,
   {
     handoffAgentId,
     rowModel,
     conversationAgentId,
   }: { handoffAgentId?: string; rowModel?: string; conversationAgentId?: string },
-): Agent | undefined {
+): AgentIdentity {
   if (handoffAgentId != null) {
-    return agentsMap?.[handoffAgentId];
+    return resolveAgentId(agentsMap, handoffAgentId);
   }
-  const agentId =
-    rowModel != null && !isEphemeralAgentId(rowModel) ? rowModel : conversationAgentId;
-  return agentId != null ? agentsMap?.[agentId] : undefined;
+  if (rowModel != null && !isEphemeralAgentId(rowModel)) {
+    return resolveAgentId(agentsMap, rowModel);
+  }
+  const conversationAgent =
+    conversationAgentId != null ? resolveAgentId(agentsMap, conversationAgentId) : {};
+  return conversationAgent.endpoint != null ? conversationAgent : { model: rowModel };
 }
 
 /**
@@ -179,10 +202,10 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
 
   return useMemo(() => {
     const agentRow = handoffAgentId != null || isAgentsEndpoint(rowEndpoint);
-    const agent = agentRow
-      ? findFailingAgent(agentsMap, { handoffAgentId, rowModel, conversationAgentId })
+    const agentIdentity = agentRow
+      ? resolveAgentRow(agentsMap, { handoffAgentId, rowModel, conversationAgentId })
       : undefined;
-    const rowProvider = agentRow ? (agent?.provider ?? undefined) : rowEndpoint;
+    const rowProvider = agentRow ? agentIdentity?.endpoint : rowEndpoint;
     const endpoint = payloadEndpoint ?? rowProvider;
     const endpointType = endpoint
       ? (getEndpointField(endpointsConfig, endpoint, 'type') as EModelEndpoint | undefined)
@@ -191,8 +214,8 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
       endpoint,
       endpointType,
       provider: endpoint ? getProviderName(endpoint) : undefined,
-      model: agentRow ? (agent?.model ?? undefined) : rowModel,
-      agent,
+      model: agentRow ? agentIdentity?.model : rowModel,
+      agent: agentIdentity?.agent,
       userProvidesCredentials: resolveCredentialOwnership(endpointsConfig, endpoint),
       compactionAvailable:
         startupConfig?.compactionEnabled === true &&
