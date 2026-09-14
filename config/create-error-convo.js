@@ -2,7 +2,7 @@
  * Seeds a mock conversation that renders every client-facing error shape.
  *
  * The chat client decides how to render a failure from the persisted row alone:
- * `error: true` sends `text` through `Messages/Content/Error.tsx`, `unfinished`
+ * `error: true` sends `text` through `Messages/Content/Error`, `unfinished`
  * renders the incomplete/step-budget cards, and a `ContentTypes.ERROR` part
  * renders inline between ordinary parts. This script writes one user turn plus
  * one response turn for every one of those shapes, so the whole error surface
@@ -83,7 +83,18 @@ const ERROR_CASES = [
     },
     { endpoint: 'google', model: 'gemini-2.5-pro' },
   ),
+  /** Rows persisted before the server stamped ISO timestamps carry its own locale format. */
+  payloadCase('Expired key stamped in a server locale (shown as written)', {
+    type: ErrorTypes.EXPIRED_USER_KEY,
+    expiredAt: '01/08/2026, 09:30:00',
+    endpoint: 'openAI',
+  }),
   payloadCase('Invalid user-provided key', { type: ErrorTypes.INVALID_USER_KEY }),
+  payloadCase(
+    'Unreadable key on a user-provided endpoint',
+    { type: ErrorTypes.INVALID_USER_KEY },
+    { endpoint: 'google', model: 'gemini-2.5-pro' },
+  ),
   payloadCase('No base URL provided', { type: ErrorTypes.NO_BASE_URL }),
   payloadCase('Base URL targets a restricted address', { type: ErrorTypes.INVALID_BASE_URL }),
   payloadCase('No model selected', { type: ErrorTypes.MISSING_MODEL, info: 'openAI' }),
@@ -106,9 +117,22 @@ const ERROR_CASES = [
   payloadCase('Provider rejected the request', { type: ErrorTypes.INVALID_REQUEST }),
   payloadCase('Action domain not allowed', { type: ErrorTypes.INVALID_ACTION }),
   payloadCase('Provider forbids system messages', { type: ErrorTypes.NO_SYSTEM_MESSAGES }),
-  payloadCase('Model refused to answer', {
+  /** `ModelEndHandler` persists the provider's stop metadata object itself as `info`. */
+  payloadCase('Model refused to answer (Anthropic stop details)', {
     type: ErrorTypes.REFUSAL,
-    info: "I can't help with that request.",
+    info: {
+      stop_reason: 'refusal',
+      stop_sequence: null,
+      stop_details: {
+        type: 'refusal',
+        category: 'cyber',
+        explanation: 'The request could enable malware development.',
+      },
+    },
+  }),
+  payloadCase('Model refused to answer (Bedrock content filter)', {
+    type: ErrorTypes.REFUSAL,
+    info: { stop_reason: 'content_filtered' },
   }),
 
   /* ---------- Google-specific ---------- */
@@ -349,6 +373,13 @@ const ERROR_CASES = [
     code: 'insufficient_quota',
     message: 'You exceeded your current quota, please check your plan and billing details.',
   }),
+  payloadCase('Provider body nesting its message under error', {
+    error: {
+      message: 'Rate limit reached for gpt-4o in organization org-123 on tokens per min.',
+      type: 'tokens',
+      code: 'rate_limit_exceeded',
+    },
+  }),
   payloadCase('Unrecognized provider code (default fallback)', {
     code: 'im_a_teapot',
     message: 'The provider returned a code the client does not classify.',
@@ -548,6 +579,11 @@ function buildMessages({ conversationId, user, endpoint, model, startedAt }) {
     });
   } catch (error) {
     console.red(`Error: ${error.message}`);
+    /** Without its conversation, every inserted row is unreachable debris that a rerun would add to. */
+    await Promise.allSettled([
+      Message.deleteMany({ conversationId }),
+      Conversation.deleteMany({ conversationId }),
+    ]);
     silentExit(1);
   }
 
