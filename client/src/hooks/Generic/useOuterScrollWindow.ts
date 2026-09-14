@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 interface OuterScrollWindow {
   /** Attach to the element the windowed content starts at. */
   ref: (node: HTMLElement | null) => void;
-  /** Height of the attached element that is actually on screen: zero while it
-   *  sits entirely below the fold, the viewport's height once it fills it. */
+  /** Height of the attached element that is actually on screen: a single pixel
+   *  while it sits below the fold, the viewport's height once it fills it. */
   height: number;
   /** Viewport scroll offset expressed in the attached element's own coordinates. */
   scrollTop: number;
@@ -43,11 +43,17 @@ export default function useOuterScrollWindow(
        *  Reporting the whole viewport instead would have a list that is still
        *  below the fold believe a screenful of it is on display, and anything
        *  windowing on that — row rendering, reaching the end of a page — would
-       *  act before the reader has seen a row of it. */
+       *  act before the reader has seen a row of it.
+       *
+       *  The floor of one pixel is what keeps that honest window from becoming
+       *  a trap: a windowed list renders nothing at zero, and a list that
+       *  renders nothing reports no height, so the container it sits in would
+       *  never grow enough to scroll it into view. One pixel renders its first
+       *  row, which is what gives the list its own height back. */
       const onScreen =
         Math.min(nodeRect.bottom, viewportRect.bottom) - Math.max(nodeRect.top, viewportRect.top);
       const next = {
-        height: Math.max(0, Math.round(onScreen)),
+        height: Math.max(1, Math.round(onScreen)),
         scrollTop: Math.max(0, viewport.scrollTop - offsetTop),
       };
       setMetrics((prev) =>

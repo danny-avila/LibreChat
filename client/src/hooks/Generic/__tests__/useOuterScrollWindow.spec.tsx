@@ -148,12 +148,15 @@ describe('useOuterScrollWindow', () => {
     expect(result.current.height).toBe(420);
   });
 
-  it('reports no window while the list sits entirely below the fold', () => {
+  it('keeps a single pixel of window while the list sits below the fold', () => {
     const { viewport, content, node } = layout({ offset: 700 });
     const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
     act(() => result.current.ref(node));
 
-    expect(result.current.height).toBe(0);
+    /** Not a screenful — nothing of it is on display — but not nothing either:
+     *  a list told it has no window renders no rows, and a list that renders
+     *  no rows has no height to be scrolled into view with. */
+    expect(result.current.height).toBe(1);
   });
 
   it('translates the viewport scroll into the list own coordinates', () => {

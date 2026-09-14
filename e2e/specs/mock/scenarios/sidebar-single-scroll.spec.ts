@@ -396,18 +396,26 @@ test.describe('sidebar single scroll', () => {
 
     /** The pins arrive on their own query, so until they land the chats hold
      *  the sidebar and reading them is exactly what a person does. The claim
-     *  is about the settled layout: once they sit below a screenful of pins,
-     *  rendering no rows, nothing keeps asking the server for more of them. */
+     *  is about the settled layout: once the chats sit below a screenful of
+     *  pins, nothing keeps asking the server for more of them. */
     await expect
       .poll(
         () =>
           historyRegion(page).evaluate((region) => {
             const grid = region.querySelector('.ReactVirtualized__Grid');
-            return grid ? Math.round(grid.getBoundingClientRect().height) : -1;
+            const surface = Array.from(region.querySelectorAll('*')).find((node) => {
+              const style = getComputedStyle(node);
+              return style.overflowY === 'auto' || style.overflowY === 'scroll';
+            });
+            if (!grid || !surface) {
+              return false;
+            }
+            /** Its first row starts past the bottom edge of the surface. */
+            return grid.getBoundingClientRect().top >= surface.getBoundingClientRect().bottom;
           }),
         { timeout: 30_000 },
       )
-      .toBe(0);
+      .toBe(true);
 
     const settled = pages.length;
     await page.waitForTimeout(3_000);
