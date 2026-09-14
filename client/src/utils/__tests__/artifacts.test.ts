@@ -1024,15 +1024,36 @@ describe('getArtifactDownloadFilename', () => {
   });
 
   it.each(['flow.mermaid', 'flow.mmd'])(
-    'keeps a mermaid diagram under its own name rather than marking it a preview: %s',
+    'marks a file-backed mermaid blob as a preview of its stored file: %s',
     (filename) => {
-      /* The panel renders, edits and downloads exactly the bytes the stored
-       * `.mmd` holds, so there is no cached derivative to warn about. */
+      /* The blob is the cached extraction, which the backend truncates past
+       * 512 KB — only the original-file route delivers the stored `.mmd`,
+       * so these bytes must not take the stored file's name. */
       const artifact = fileToArtifact({ file_id: 'file', filename, text: 'graph TD\nA-->B' });
       expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.MERMAID);
-      expect(getArtifactDownloadFilename(artifact!, 'diagram.mmd')).toBe(filename);
+      const dot = filename.lastIndexOf('.');
+      expect(getArtifactDownloadFilename(artifact!, 'diagram.mmd')).toBe(
+        `${filename.slice(0, dot)}.preview${filename.slice(dot)}`,
+      );
     },
   );
+
+  it('keeps a model-authored mermaid diagram under its own name', () => {
+    /* No stored file exists for an authored diagram, so its content is the
+     * only artifact there is and nothing is being previewed. */
+    expect(
+      getArtifactDownloadFilename(
+        {
+          id: 'artifact-1',
+          lastUpdateTime: 0,
+          type: TOOL_ARTIFACT_TYPES.MERMAID,
+          title: 'Flow',
+          content: 'graph TD\nA-->B',
+        },
+        'diagram.mmd',
+      ),
+    ).toBe('Flow.mmd');
+  });
 
   it.each(['untitled', 'Generated artifact'])(
     'preserves the real attachment filename %s',

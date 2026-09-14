@@ -436,9 +436,9 @@ describe('DownloadArtifact', () => {
   });
 
   it('serializes an edited mermaid diagram from the panel content', async () => {
-    /* Edits live only in the editor, so the stored file is the wrong
-     * bytes; the blob keeps the real `.mmd` name because the content is
-     * the diagram itself rather than a preview of some other format. */
+    /* Edits live only in the editor, so the stored file is the wrong bytes.
+     * The blob is named as a preview of that file: the panel's copy is the
+     * cached extraction, which the backend truncates past 512 KB. */
     mockFileKey = 'diagram.mmd';
     mockCurrentCode = 'graph TD\nA-->C';
     const artifact = fileToArtifact({
@@ -455,7 +455,7 @@ describe('DownloadArtifact', () => {
     });
     expect(mockFileDownload).not.toHaveBeenCalled();
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(anchorClick.mock.instances[0].download).toBe('flow.mmd');
+    expect(anchorClick.mock.instances[0].download).toBe('flow.preview.mmd');
   });
 
   it('serializes content as a blob for a non-file-backed (LLM-authored) artifact', async () => {

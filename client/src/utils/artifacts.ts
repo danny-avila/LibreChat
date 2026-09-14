@@ -171,10 +171,12 @@ export function getArtifactDownloadFilename(
     filename = hasSourceFilename || hasMatchingExtension ? title : `${title}${extension}`;
   }
   filename = filenamify(filename, { replacement: '_' });
-  /* File-backed blobs export cached preview content, not the original file.
-   * Mermaid is the exception: the panel renders, edits and downloads the very
-   * bytes the stored `.mmd` holds, so calling it a preview would be a lie. */
-  if (artifact.download && artifact.type !== TOOL_ARTIFACT_TYPES.MERMAID) {
+  /* A file-backed artifact's blob is the cached extraction (or an edit of
+   * it), never the stored file: `extractUtf8` truncates past 512 KB, so
+   * handing these bytes over under the original name would claim to be
+   * the file. Mermaid is no exception — a share that dropped the download
+   * route leaves only that same cached text. */
+  if (artifact.download) {
     const dot = filename.lastIndexOf('.');
     filename =
       dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
