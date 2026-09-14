@@ -18,15 +18,65 @@ import type {
 } from '@librechat/data-schemas';
 import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 
-/** Text of a summary content part; empty for anything else. */
+/** Text of a summary content part, in any persisted shape — `content` blocks
+ *  today, a string `content` or a bare `text` on rows written before them.
+ *  Empty for anything else. */
 export function getSummaryPartText(part: TMessageContentParts | null | undefined): string {
-  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+  if (part?.type !== ContentTypes.SUMMARY) {
     return '';
   }
-  return part.content
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .join('')
-    .trim();
+  /** Widened on purpose: rows written before summary `content` blocks hold a
+   *  string `content` or a bare `text`, neither of which the part type models. */
+  const content: unknown = part.content;
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    let text = '';
+    for (const block of content) {
+      if (block != null && typeof block === 'object' && 'text' in block) {
+        text += typeof block.text === 'string' ? block.text : '';
+      }
+    }
+    return text.trim();
+  }
+  return 'text' in part && typeof part.text === 'string' ? part.text.trim() : '';
+}
+
+/**
+ * A summary that can stand for the history it covers: it carries text, and its
+ * round did not error. A summarize round that failed keeps whatever deltas it
+ * streamed, so its text is a truncated prefix of the history it was
+ * summarizing rather than a checkpoint for it.
+ */
+function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
+  if (part == null || typeof part !== 'object' || !('type' in part)) {
+    return false;
+  }
+  if (part.type !== ContentTypes.SUMMARY) {
+    return false;
+  }
+  /** Narrowed by the discriminant above: this is the summary union member. */
+  const summary = part as SummaryContentPart;
+  return summary.failed !== true && getSummaryPartText(summary).length > 0;
+}
+
+/**
+ * The summary a message offers as the conversation's checkpoint: the last
+ * usable one in its content (last-summary-wins). Null when the message carries
+ * none — an empty or failed summary leaves the history it hangs off in place.
+ */
+export function findCheckpointSummaryPart(content: unknown): SummaryContentPart | null {
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  let checkpoint: SummaryContentPart | null = null;
+  for (const part of content) {
+    if (isUsableSummaryPart(part)) {
+      checkpoint = part;
+    }
+  }
+  return checkpoint;
 }
 
 /** The typed failure a manual compaction reports when it produced no summary. */
@@ -77,12 +127,7 @@ export function markCompactionOutcome(
   contentParts: TMessageContentParts[],
   { aborted = false }: { aborted?: boolean } = {},
 ): void {
-  const summary = contentParts.find(
-    (part): part is SummaryContentPart =>
-      part?.type === ContentTypes.SUMMARY &&
-      part.failed !== true &&
-      getSummaryPartText(part).length > 0,
-  );
+  const summary = contentParts.find(isUsableSummaryPart);
   if (summary != null) {
     summary.initiatedBy = 'user';
     return;

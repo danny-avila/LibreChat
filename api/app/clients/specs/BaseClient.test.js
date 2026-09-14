@@ -616,66 +616,6 @@ describe('BaseClient', () => {
     });
   });
 
-  describe('findSummaryContentBlock', () => {
-    it('should find a summary block in the content array', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'summary', text: 'Summary of conversation', tokenCount: 50 },
-        ],
-      };
-      const result = TestClient.constructor.findSummaryContentBlock(message);
-      expect(result).toBeTruthy();
-      expect(result.text).toBe('Summary of conversation');
-      expect(result.tokenCount).toBe(50);
-    });
-
-    it('should return null when no summary block exists', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'tool_call', tool_call: {} },
-        ],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for string content', () => {
-      const message = { content: 'just a string' };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for missing content', () => {
-      expect(TestClient.constructor.findSummaryContentBlock({})).toBeNull();
-      expect(TestClient.constructor.findSummaryContentBlock(null)).toBeNull();
-    });
-
-    it('should skip summary blocks with no text', () => {
-      const message = {
-        content: [{ type: 'summary', tokenCount: 10 }],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should skip a failed summary block and keep the last complete one', () => {
-      const message = {
-        content: [
-          { type: 'summary', text: 'Complete summary', tokenCount: 50 },
-          { type: 'summary', text: 'Partial sum', tokenCount: 5, failed: true },
-        ],
-      };
-      const result = TestClient.constructor.findSummaryContentBlock(message);
-      expect(result.text).toBe('Complete summary');
-    });
-
-    it('should return null when the only summary block failed', () => {
-      const message = {
-        content: [{ type: 'summary', content: [{ type: 'text', text: 'Partial' }], failed: true }],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-  });
-
   describe('sendMessage', () => {
     test('sendMessage should return a response message', async () => {
       const expectedResult = expect.objectContaining({

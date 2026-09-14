@@ -11,6 +11,8 @@ import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-pr
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
   createCompactionSemanticIndexProjection,
+  findCheckpointSummaryPart,
+  getSummaryPartText,
   markCompactionOutcome,
   resolveFailedTurnContent,
   restoreCompactionSemanticIndex,
@@ -234,6 +236,58 @@ describe('resolveFailedTurnContent', () => {
     ['a request with no body', undefined],
   ])('leaves %s with its text-only shape', (_label, requestBody) => {
     expect(resolveFailedTurnContent(requestBody, 'Something failed')).toEqual({});
+  });
+});
+
+describe('findCheckpointSummaryPart', () => {
+  const legacySummary = { type: ContentTypes.SUMMARY, text: 'Summary of conversation' };
+
+  it('takes the last summary that carries text', () => {
+    const content = [
+      { type: ContentTypes.TEXT, text: 'some text' },
+      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'First' }] },
+      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Latest' }] },
+    ];
+
+    expect(getSummaryPartText(findCheckpointSummaryPart(content))).toBe('Latest');
+  });
+
+  /** Rows persisted before summary `content` blocks carry a bare `text`. */
+  it('reads a legacy summary’s text field', () => {
+    expect(findCheckpointSummaryPart([legacySummary])).toBe(legacySummary);
+  });
+
+  /** A failed round's text is a truncated prefix of the history it was
+   *  summarizing, so the turn offers no checkpoint at all. */
+  it('offers no checkpoint when the only summary failed', () => {
+    const content = [
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Partial' }],
+        failed: true,
+      },
+    ];
+
+    expect(findCheckpointSummaryPart(content)).toBeNull();
+  });
+
+  it('keeps the last complete summary when a later round failed', () => {
+    const content = [
+      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Complete' }] },
+      { type: ContentTypes.SUMMARY, text: 'Partial', failed: true },
+    ];
+
+    expect(getSummaryPartText(findCheckpointSummaryPart(content))).toBe('Complete');
+  });
+
+  it.each([
+    ['content without a summary', [{ type: ContentTypes.TEXT, text: 'some text' }]],
+    ['an empty summary', [{ type: ContentTypes.SUMMARY, tokenCount: 10 }]],
+    ['a whitespace-only summary', [{ type: ContentTypes.SUMMARY, text: '  \n' }]],
+    ['string content', 'just a string'],
+    ['missing content', undefined],
+  ])('returns null for %s', (_label, content) => {
+    expect(findCheckpointSummaryPart(content)).toBeNull();
   });
 });
 

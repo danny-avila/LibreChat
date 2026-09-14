@@ -21,6 +21,8 @@ const {
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
   withBalanceReservations,
+  findCheckpointSummaryPart,
+  getSummaryPartText,
 } = require('@librechat/api');
 const {
   Constants,
@@ -1266,11 +1268,11 @@ class BaseClient {
           continue;
         }
 
-        const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+        const summaryBlock = findCheckpointSummaryPart(msg.content);
         if (summaryBlock) {
           this.previous_summary = {
             ...msg,
-            summary: BaseClient.getSummaryText(summaryBlock),
+            summary: getSummaryPartText(summaryBlock),
             summaryTokenCount: summaryBlock.tokenCount,
           };
           break;
@@ -1434,43 +1436,6 @@ class BaseClient {
     await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
-  /** Extracts text from a summary block (handles both legacy `text` field and new `content` array format). */
-  static getSummaryText(summaryBlock) {
-    if (Array.isArray(summaryBlock.content)) {
-      return summaryBlock.content.map((b) => b.text ?? '').join('');
-    }
-    if (typeof summaryBlock.content === 'string') {
-      return summaryBlock.content;
-    }
-    return summaryBlock.text ?? '';
-  }
-
-  /**
-   * Finds the last summary content block in a message's content array
-   * (last-summary-wins). A summarize round that errored keeps whatever deltas
-   * it already streamed and is stamped `failed: true`, so its text is a
-   * truncated prefix of the history it was summarizing; accepting it as the
-   * conversation's checkpoint would drop everything older than the turn it
-   * failed on. Only a complete summary is a checkpoint — the renderer already
-   * labels a failed one "Summarization failed" rather than a summary.
-   */
-  static findSummaryContentBlock(message) {
-    if (!Array.isArray(message?.content)) {
-      return null;
-    }
-    let lastSummary = null;
-    for (const part of message.content) {
-      if (
-        part?.type === ContentTypes.SUMMARY &&
-        part.failed !== true &&
-        BaseClient.getSummaryText(part).trim().length > 0
-      ) {
-        lastSummary = part;
-      }
-    }
-    return lastSummary;
-  }
-
   /**
    * Iterate through messages, building an array based on the parentMessageId.
    *
@@ -1532,9 +1497,9 @@ class BaseClient {
       let resolved = message;
       let hasSummary = false;
       if (summary) {
-        const summaryBlock = BaseClient.findSummaryContentBlock(message);
+        const summaryBlock = findCheckpointSummaryPart(message.content);
         if (summaryBlock) {
-          const summaryText = BaseClient.getSummaryText(summaryBlock);
+          const summaryText = getSummaryPartText(summaryBlock);
           resolved = {
             ...message,
             role: 'system',
