@@ -122,6 +122,22 @@ describe('useTokenUsage — post-snapshot output', () => {
     expect(result.current.runwayTurns).toBe(3);
   });
 
+  it('charges retained tool results in the gauge, tool share, and runway', () => {
+    const retainedSnapshot = {
+      ...tailSnapshot,
+      retainedToolTokens: 700,
+      breakdown: { ...tailSnapshot.breakdown, toolMessageTokens: 900 },
+    } as ContextSnapshot;
+    const { result } = renderTokenUsage(undefined, { snapshot: retainedSnapshot });
+
+    /** The retained result is post-snapshot context: 195000 pre-invoke used +
+     *  2000 finalized output + 700 retained tool tokens = 197700. The split
+     *  widens from 900 to 1600, while runway headroom falls to 2300 (2 turns). */
+    expect(result.current.usedTokens).toBe(197700);
+    expect(result.current.toolCallTokens).toBe(1600);
+    expect(result.current.runwayTurns).toBe(2);
+  });
+
   it('counts the finalized output in what a summarization could reclaim', () => {
     const { result } = renderTokenUsage();
 

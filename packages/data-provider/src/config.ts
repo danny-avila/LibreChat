@@ -22,9 +22,13 @@ import {
   MIN_BALANCE_RESERVATION_TTL_MS,
   DEFAULT_BALANCE_RESERVATION_TTL_MS,
 } from './balance';
+import {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+} from './limits';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
-import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';
@@ -40,6 +44,7 @@ export {
   MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
@@ -1196,6 +1201,18 @@ export const agentsEndpointSchema = baseEndpointSchema
        * disables the guard for that tool only. Merged over LibreChat's shipped default of
        * `{ create_file: 131072 }`. */
       maxToolCallArgBytesByTool: z.record(z.number()).optional(),
+      /** Characters of retained tool output the save path may tokenize exactly for the
+       * context gauge when a turn stops at the tool-call limit (see
+       * `retainedToolTokens`). Tokenizing costs ~60 ms/MB and runs once per stopped
+       * turn; past this ceiling the figure is withdrawn rather than estimated, so the
+       * gauge under-reports that turn instead of blocking the save. Raise it for
+       * deployments whose tools legitimately return more, lower it on slow hardware. */
+      maxRetainedToolCountChars: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .default(DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),

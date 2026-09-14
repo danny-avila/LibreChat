@@ -18,8 +18,78 @@ import {
   buildAbortedResponseMetadata,
   computeSummaryUsedTokens,
   priorRunOutputTokens,
+  resolveRetainedToolTokens,
 } from './usage';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+import Tokenizer from '~/utils/tokenizer';
+
+describe('resolveRetainedToolTokens', () => {
+  const toolPart = (id: string, output: string) => ({
+    type: 'tool_call',
+    tool_call: { id, name: 'read_file', args: '{"path":"a"}', output },
+  });
+
+  beforeAll(async () => {
+    await Tokenizer.initEncoding('o200k_base');
+  });
+
+  it('counts the results retained past the snapshot when the tool limit stopped the turn', () => {
+    /** Left to its default, the counter is the run's own tokenizer — the one the
+     *  snapshot was measured with — so the figure is the real token count of the
+     *  retained result and nothing else. */
+    const retained = resolveRetainedToolTokens({
+      stoppedAtToolLimit: true,
+      contentParts: [
+        toolPart('call_1', 'the result the snapshot counted'),
+        toolPart('call_2', 'the retained result'),
+      ],
+      priorToolCallIds: new Set(['call_1']),
+      encoding: 'o200k_base',
+    });
+    expect(retained).toBe(Tokenizer.countExactTokens('the retained result', 'o200k_base'));
+  });
+
+  it('reports nothing for every other ending, whatever the turn produced', () => {
+    /** Its tools were followed by another model call, hence another snapshot that
+     *  already counts them as kept-message context. */
+    expect(
+      resolveRetainedToolTokens({
+        stoppedAtToolLimit: false,
+        contentParts: [toolPart('call_1', 'a result the next call re-counted')],
+        priorToolCallIds: new Set(),
+        encoding: 'o200k_base',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('passes the deployment ceiling on to the counter', () => {
+    /** `endpoints.agents.maxRetainedToolCountChars`: past it the figure is withdrawn
+     *  rather than estimated, so the gauge under-reports instead of stalling a save. */
+    expect(
+      resolveRetainedToolTokens({
+        stoppedAtToolLimit: true,
+        contentParts: [toolPart('call_1', 'a result longer than the ceiling allows')],
+        priorToolCallIds: new Set(),
+        encoding: 'o200k_base',
+        maxCountChars: 4,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('takes a supplied counter instead of reaching for the shared tokenizer', () => {
+    const countExact = jest.fn((text: string) => text.length);
+    expect(
+      resolveRetainedToolTokens({
+        stoppedAtToolLimit: true,
+        contentParts: [toolPart('call_1', 'result')],
+        priorToolCallIds: new Set(),
+        encoding: 'claude',
+        countExact,
+      }),
+    ).toBe(Math.ceil('result'.length * 1.1));
+    expect(countExact).toHaveBeenCalledWith('result');
+  });
+});
 
 describe('aggregateCollectedUsage', () => {
   it('preserves the no-child baseline and ignores absent entries', () => {
@@ -2058,6 +2128,32 @@ describe('buildPersistedContextUsage', () => {
     const result = buildPersistedContextUsage(baseSnapshot, events);
     /** Last PRIMARY call's completion (25), skipping the trailing subagent event */
     expect(result.completedOutputTokens).toBe(25);
+  });
+
+  it('carries a counted retained tool figure as a second post-snapshot delta', () => {
+    /** A turn stopped at the tool-call limit keeps the results of the tools its
+     *  final call ran. They are outside the pre-invoke breakdown AND outside the
+     *  final call's output, so they ride as their own field — never folded into
+     *  the provider-reconciled `messageTokens`. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events, { retainedToolTokens: 640 });
+    expect(result.retainedToolTokens).toBe(640);
+    expect(result.completedOutputTokens).toBe(25);
+    /** The provider-reconciled message total is untouched: the retained result is
+     *  an addend the client applies, not part of the exact accounting. */
+    expect(result.breakdown).toEqual(buildPersistedContextUsage(baseSnapshot, events).breakdown);
+  });
+
+  it.each([
+    ['a normal turn passes nothing', undefined],
+    ['no tool result was retained', 0],
+    ['the count is negative', -5],
+    ['the count is not finite', Number.NaN],
+  ])('omits the retained tool figure when %s', (_label, retainedToolTokens) => {
+    const result = buildPersistedContextUsage(baseSnapshot, [], { retainedToolTokens });
+    expect(Object.prototype.hasOwnProperty.call(result, 'retainedToolTokens')).toBe(false);
   });
 
   it.each(['openAI', 'bedrock'])('persists the final primary cache split for %s', (provider) => {

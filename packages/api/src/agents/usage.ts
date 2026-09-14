@@ -24,7 +24,9 @@ import {
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import Tokenizer, { type EncodingName } from '~/utils/tokenizer';
 import { getSafeErrorMetadata } from '~/utils/errors';
+import { countRetainedToolTokens } from './client';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -389,6 +391,51 @@ const normalizePersistedTokenRecord = (
 };
 
 /**
+ * The counted tool results a save path attaches to its snapshot, or `undefined`
+ * when there are none to attach.
+ *
+ * Only a turn that stopped at the tool-call limit retains any: it keeps the
+ * results of the tools its final call requested, and the snapshot describing that
+ * call precedes them with no further call to produce a new one. Every other
+ * ending leaves nothing behind — a turn that finishes normally ends on model
+ * text, and a turn whose tools ran gets another call, hence another snapshot.
+ * A result that cannot be counted exactly withdraws the whole figure rather than
+ * contributing a guess (see `countRetainedToolTokens`).
+ *
+ * `countExact` is the run's own exact counter. It defaults to the shared
+ * tokenizer for the given encoding — the same one the SDK counted the snapshot
+ * with, which is the point — and is a parameter so a caller (or a test) can
+ * supply its own without reaching into module state. `maxCountChars` is the
+ * deployment's ceiling on that work (`endpoints.agents.maxRetainedToolCountChars`).
+ */
+export function resolveRetainedToolTokens({
+  stoppedAtToolLimit,
+  contentParts,
+  priorToolCallIds,
+  encoding,
+  maxCountChars,
+  countExact = (text: string) => Tokenizer.countExactTokens(text, encoding),
+}: {
+  stoppedAtToolLimit: boolean;
+  contentParts: ReadonlyArray<unknown> | null | undefined;
+  priorToolCallIds: ReadonlySet<string> | null | undefined;
+  encoding: EncodingName;
+  maxCountChars?: number;
+  countExact?: (text: string) => number | undefined;
+}): number | undefined {
+  if (!stoppedAtToolLimit) {
+    return undefined;
+  }
+  return countRetainedToolTokens({
+    contentParts,
+    priorToolCallIds,
+    countExact,
+    maxCountChars,
+    isClaude: encoding === 'claude',
+  });
+}
+
+/**
  * Projects the latest live context snapshot into the blob persisted on
  * `responseMessage.metadata.contextUsage`. Reconciles the calibrated estimate to
  * the final call's ACTUAL prompt tokens (the SDK multiplier over-inflates
@@ -399,10 +446,19 @@ const normalizePersistedTokenRecord = (
  * `completedOutputTokens` so rehydration adds the same post-snapshot delta the
  * live gauge did. The client re-anchors the blob to the response message id on
  * load.
+ *
+ * `retainedToolTokens` is the second post-snapshot delta: the counted tool
+ * results a turn that stopped at the tool-call limit keeps beyond its last
+ * snapshot (see `countRetainedToolTokens`). It stays a separate field rather than
+ * being folded into `breakdown.messageTokens`, which is provider-reconciled — a
+ * locally counted figure added there would silently become part of the exact
+ * accounting. Zero and malformed values are dropped, so a normal turn carries
+ * nothing new.
  */
 export function buildPersistedContextUsage(
   snapshot: TContextUsageEvent,
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
+  options: { retainedToolTokens?: number } = {},
 ): TContextUsageEvent {
   const finalCall = finalPrimaryCall(usageEvents, snapshot.runId);
   const reconciled = finalCall ? reconcileContextUsageFromEvent(snapshot, finalCall) : snapshot;
@@ -433,9 +489,11 @@ export function buildPersistedContextUsage(
       persistedBreakdown.toolMessageTokenCounts = toolMessageTokenCounts;
     }
   }
+  const retainedToolTokens = finiteNonNegativeInteger(options.retainedToolTokens);
   return {
     ...reconciled,
     breakdown: persistedBreakdown,
+    ...(retainedToolTokens != null && retainedToolTokens > 0 && { retainedToolTokens }),
   };
 }
 

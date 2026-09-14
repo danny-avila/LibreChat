@@ -2,6 +2,7 @@ import type { TEndpointsConfig } from './types';
 import {
   allowedAddressesSchema,
   agentsEndpointSchema,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
   excludedKeys,
@@ -21,6 +22,26 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('retained tool-count ceiling', () => {
+  it('ships the exact-count budget a deployment can raise or lower', () => {
+    /** The save path tokenizes a stopped turn's retained tool results to add an
+     *  exact figure to the context gauge; this bounds that work. */
+    expect(agentsEndpointSchema.parse({}).maxRetainedToolCountChars).toBe(
+      DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+    );
+    expect(
+      agentsEndpointSchema.parse({ maxRetainedToolCountChars: 1_048_576 })
+        .maxRetainedToolCountChars,
+    ).toBe(1_048_576);
+    /** Zero withholds the figure entirely; a fraction of a character is nonsense. */
+    expect(
+      agentsEndpointSchema.parse({ maxRetainedToolCountChars: 0 }).maxRetainedToolCountChars,
+    ).toBe(0);
+    expect(agentsEndpointSchema.safeParse({ maxRetainedToolCountChars: -1 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ maxRetainedToolCountChars: 1.5 }).success).toBe(false);
+  });
+});
 
 describe('run-scoped subagent file sharing config', () => {
   it('preserves the opt-in default for existing configurations', () => {

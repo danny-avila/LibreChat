@@ -1,9 +1,11 @@
-import { ContentTypes } from 'librechat-data-provider';
 import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
 import { Providers, StandardGraph } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { ContentTypes, DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
+  collectToolCallIds,
+  countRetainedToolTokens,
   createCachedTokenCounter,
   prependQuotes,
   prependFileContext,
@@ -42,6 +44,146 @@ describe('createCachedTokenCounter', () => {
     } finally {
       getTokenCount.mockRestore();
     }
+  });
+});
+
+describe('countRetainedToolTokens', () => {
+  const toolPart = (id: string, name: string, output?: string) => ({
+    type: ContentTypes.TOOL_CALL,
+    tool_call: { id, name, args: '{"path":"a"}', ...(output != null && { output }) },
+  });
+  /** Stands in for the run's tokenizer: one token per four characters, so every
+   *  expectation below is a plain arithmetic consequence of what was counted. */
+  const countExact = (text: string) => Math.ceil(text.length / 4);
+
+  it('counts only the results of calls the snapshot had not seen', () => {
+    const contentParts = [
+      toolPart('call_1', 'grep', 'x'.repeat(4000)),
+      { type: ContentTypes.TEXT, text: 'calling the tool' },
+      toolPart('call_2', 'read_file', 'the retained result'),
+    ];
+
+    /** The earlier call is already inside the snapshot's own message tokens;
+     *  counting it again would double the whole loop. */
+    expect(
+      countRetainedToolTokens({
+        contentParts,
+        priorToolCallIds: new Set(['call_1']),
+        countExact,
+      }),
+    ).toBe(countExact('the retained result'));
+  });
+
+  it('follows the call ids through a reshaped content array', () => {
+    /** Completion unshifts skill cards and can filter hidden sequential output,
+     *  so the retained call moves; its id does not. */
+    const retained = toolPart('call_2', 'read_file', 'the retained result');
+    const reshaped = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'skill_card', name: 'prime' } },
+      retained,
+    ];
+    expect(
+      countRetainedToolTokens({
+        contentParts: reshaped,
+        priorToolCallIds: new Set(['call_1']),
+        countExact,
+      }),
+    ).toBe(countExact('the retained result'));
+  });
+
+  it('ignores the model-authored call and everything that is not a tool result', () => {
+    /** Name and arguments are output tokens the snapshot's `completedOutputTokens`
+     *  already carries, and assistant text is output too. An id-less call cannot be
+     *  placed against the boundary at all. */
+    const contentParts = [
+      toolPart('call_1', 'read_file'),
+      { type: ContentTypes.TEXT, text: 'a long assistant explanation of the call' },
+      { type: ContentTypes.THINK, think: 'reasoning that never re-enters context' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { name: 'read_file', output: 'unplaceable' } },
+    ];
+    expect(countRetainedToolTokens({ contentParts, priorToolCallIds: new Set(), countExact })).toBe(
+      0,
+    );
+    expect(
+      countRetainedToolTokens({ contentParts: undefined, priorToolCallIds: null, countExact }),
+    ).toBe(0);
+  });
+
+  it('applies the Claude framing correction, matching the counter the snapshot used', () => {
+    const contentParts = [toolPart('call_1', 'read_file', 'r'.repeat(500))];
+    const base = countRetainedToolTokens({
+      contentParts,
+      priorToolCallIds: new Set(),
+      countExact,
+    });
+    expect(
+      countRetainedToolTokens({
+        contentParts,
+        priorToolCallIds: new Set(),
+        countExact,
+        isClaude: true,
+      }),
+    ).toBe(Math.ceil((base ?? 0) * 1.1));
+  });
+
+  it('reports nothing rather than an estimate when a result cannot be counted', () => {
+    /** A gauge missing the retained result is better than exact provider figures
+     *  with a guess folded in, so one uncountable result withdraws the whole value. */
+    expect(
+      countRetainedToolTokens({
+        contentParts: [
+          toolPart('call_1', 'read_file', 'countable'),
+          toolPart('call_2', 'grep', 'uncountable'),
+        ],
+        priorToolCallIds: new Set(),
+        countExact: (text) => (text === 'uncountable' ? undefined : countExact(text)),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('withdraws once the turn exhausts its tokenization budget', () => {
+    /** Tokenizing costs ~60 ms/MB, so the deployment's ceiling covers the whole
+     *  turn: a final call requesting several tools cannot multiply it per result. */
+    const counted = jest.fn(countExact);
+    expect(
+      countRetainedToolTokens({
+        contentParts: [
+          toolPart('call_1', 'grep', 'a'.repeat(60)),
+          toolPart('call_2', 'read_file', 'b'.repeat(60)),
+        ],
+        priorToolCallIds: new Set(),
+        countExact: counted,
+        maxCountChars: 100,
+      }),
+    ).toBeUndefined();
+    /** It stops at the budget rather than counting the rest for nothing. */
+    expect(counted).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults the budget to the shipped ceiling', () => {
+    const output = 'a'.repeat(1024);
+    expect(
+      countRetainedToolTokens({
+        contentParts: [toolPart('call_1', 'grep', output)],
+        priorToolCallIds: new Set(),
+        countExact,
+      }),
+    ).toBe(countExact(output));
+    expect(DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS).toBe(8 * 1024 * 1024);
+  });
+});
+
+describe('collectToolCallIds', () => {
+  it('collects the ids a snapshot has seen and skips everything else', () => {
+    expect(
+      collectToolCallIds([
+        { type: ContentTypes.TOOL_CALL, tool_call: { id: 'call_1', name: 'grep' } },
+        { type: ContentTypes.TEXT, text: 'text carries no call' },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'no id' } },
+        undefined,
+      ]),
+    ).toEqual(new Set(['call_1']));
+    expect(collectToolCallIds(undefined)).toEqual(new Set());
   });
 });
 

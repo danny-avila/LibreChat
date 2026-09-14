@@ -322,6 +322,39 @@ describe('TokenUsage Breakdown', () => {
       expect(rowFor('com_ui_context_messages').textContent).toContain('400');
       expect(rowFor('com_ui_context_tool_calls').textContent).toContain('150');
     });
+
+    it('widens the tool-call row for retained results without exceeding used tokens', async () => {
+      const retainedToolSplit = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
+      retainedToolSplit.usedTokens = 1075;
+      retainedToolSplit.percent = 53.75;
+      retainedToolSplit.snapshot!.retainedToolTokens = 75;
+
+      renderBreakdown({ view: retainedToolSplit });
+      await userEvent.click(toggle());
+
+      const breakdown = screen.getByTestId('context-breakdown');
+      const rowFor = (label: string) =>
+        within(breakdown).getByText(label).parentElement?.parentElement as HTMLElement;
+
+      /** 1075 used − 400 instructions − 50 summary − 225 tool calls = 400
+       *  messages: the 75 retained tokens sit outside the pre-invoke 550 total. */
+      expect(rowFor('com_ui_context_messages').textContent).toContain('400');
+      expect(rowFor('com_ui_context_tool_calls').textContent).toContain('225');
+
+      /** The free track is the only visible peer outside the used context; all
+       *  other peer rows must still add up exactly to the meter total. */
+      const peerTotal = Array.from(breakdown.children)
+        .filter(
+          (child) =>
+            !child.className.includes('pl-6') &&
+            !child.textContent?.includes('com_ui_context_free'),
+        )
+        .reduce(
+          (sum, child) => sum + Number.parseInt(child.lastElementChild?.textContent ?? '0', 10),
+          0,
+        );
+      expect(peerTotal).toBe(1075);
+    });
     it('shows every named tool result, including known zeroes, in the disclosure', async () => {
       const manyTools = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
       manyTools.snapshot!.breakdown.toolMessageTokenCounts = {
