@@ -53,6 +53,7 @@ const {
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
+  cacheConfig,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -408,7 +409,7 @@ if (cluster.isMaster) {
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
   /** Redis coordinates sweep ownership across every worker and pod. Without
    * Redis, retain the primary process's single-worker IPC assignment. */
-  let shouldStartExpiredFileSweep = process.env.USE_REDIS === 'true';
+  let shouldStartExpiredFileSweep = cacheConfig.USE_REDIS;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
