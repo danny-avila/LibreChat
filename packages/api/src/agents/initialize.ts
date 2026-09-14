@@ -790,6 +790,8 @@ export function optsOutOfAttachedCodeEnvironment(
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
  */
 export interface InitializeAgentParams {
+  /** Cancellation signal owned by the run performing initialization. */
+  signal?: AbortSignal;
   /** Explicit transport-free execution state. */
   runtime?: AgentExecutionContext;
   /** Request-backed compatibility adapter for callers not yet migrated. */
@@ -1815,7 +1817,12 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
-    if (isFatalAgentInitializationError(err, { allowExpectedMCPFallback: true })) {
+    if (
+      isFatalAgentInitializationError(err, {
+        signal: params.signal,
+        allowExpectedMCPFallback: true,
+      })
+    ) {
       throw err;
     }
     if (extraAllowedToolNames.length > 0) {
