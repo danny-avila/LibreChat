@@ -171,7 +171,7 @@ function createToolLoader(
         upstreamTokenProviderResolver,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -1180,7 +1180,7 @@ const initializeClientWithProvider = async ({
     try {
       return await loading;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error loading subagent metadata ${agentId}:`, error);
@@ -1490,7 +1490,7 @@ const initializeClientWithProvider = async ({
       graphMemberConfigsById.set(memberId, config);
       return config;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error initializing graph member ${memberId}:`, error);

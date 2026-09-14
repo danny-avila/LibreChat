@@ -285,7 +285,7 @@ async function reinitMCPServer({
 
       logger.info('[MCP Reinitialize] Successfully established connection');
     } catch (err) {
-      if (isMCPInitializationError(err)) {
+      if (isMCPInitializationError(err, signal)) {
         throw err;
       }
       logger.info('[MCP Reinitialize] Connection attempt failed');
@@ -332,7 +332,7 @@ async function reinitMCPServer({
             );
           }
         } catch (error) {
-          if (isMCPInitializationError(error)) {
+          if (isMCPInitializationError(error, signal)) {
             throw error;
           }
           logger.debug('[MCP Reinitialize] Tool discovery failed');
@@ -451,7 +451,7 @@ async function reinitMCPServer({
 
     return result;
   } catch (error) {
-    if (isMCPInitializationError(error)) {
+    if (isMCPInitializationError(error, signal)) {
       throw error;
     }
     logger.error('[MCP Reinitialize] Error loading MCP tools; servers may still be initializing');

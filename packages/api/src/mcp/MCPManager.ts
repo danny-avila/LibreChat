@@ -42,6 +42,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { detachOnAbort } from '~/utils/promises';
 import { isAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -1330,13 +1331,16 @@ Please follow these instructions when using tools from the respective MCP server
           }
           let oboTokens: MCPOAuthTokens;
           try {
-            oboTokens = await resolveOboToken(
-              user,
-              oboConfig,
-              oboTokenResolver,
-              oboUpstreamTokenProvider,
-              oboIdentityContext,
-              forceRefresh,
+            oboTokens = await detachOnAbort(
+              resolveOboToken(
+                user,
+                oboConfig,
+                oboTokenResolver,
+                oboUpstreamTokenProvider,
+                oboIdentityContext,
+                forceRefresh,
+              ),
+              options?.signal,
             );
           } catch (error) {
             if (error instanceof OboTokenResolutionError) {

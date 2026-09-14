@@ -1186,6 +1186,7 @@ async function loadToolDefinitionsWrapper({
     };
 
     const result = await reinitMCPServer({
+      signal,
       user: req.user,
       oauthStart,
       flowManager,
@@ -1216,6 +1217,7 @@ async function loadToolDefinitionsWrapper({
       }
     };
     const result = await reinitMCPServer({
+      signal,
       user: req.user,
       forceNew: true,
       oauthStart,
@@ -1367,6 +1369,7 @@ async function loadToolDefinitionsWrapper({
         }
 
         const result = await reinitMCPServer({
+          signal,
           user: req.user,
           serverName,
           configServers,
@@ -1484,7 +1487,7 @@ async function loadToolDefinitionsWrapper({
         primedCodeFiles = files;
       }
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(
@@ -1613,7 +1616,7 @@ async function loadAgentTools({
       });
     } catch (error) {
       if (
-        isFatalAgentInitializationError(error) ||
+        isFatalAgentInitializationError(error, { signal }) ||
         isContentFilterError(error) ||
         !agent.tools?.some(isExpectedMCPTool)
       ) {

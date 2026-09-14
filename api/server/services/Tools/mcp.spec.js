@@ -555,11 +555,14 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
 
   it('propagates cancellation instead of hiding the server tool', async () => {
     const abort = new DOMException('Stopped', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abort);
     mockGetConnection.mockRejectedValue(abort);
     await expect(
       reinitMCPServer({
         user: { id: 'user-123' },
         serverName: 'example-mcp',
+        signal: controller.signal,
         serverConfig: { type: 'streamable-http', url: 'https://mcp.example.com', source: 'yaml' },
       }),
     ).rejects.toBe(abort);

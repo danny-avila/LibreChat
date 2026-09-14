@@ -10,9 +10,9 @@ import { OboTokenResolutionError } from './oauth/obo';
 import { isAbortError } from '~/utils/errors';
 
 /** These outcomes must reach the owning run instead of hiding a tool during discovery. */
-export function isMCPInitializationError(error: unknown): boolean {
+export function isMCPInitializationError(error: unknown, signal?: AbortSignal): boolean {
   return (
-    isAbortError(error) ||
+    (signal?.aborted === true && (isAbortError(error) || error === signal.reason)) ||
     error instanceof MCPAuthenticationRejectedError ||
     error instanceof MCPAuthenticationRefreshError ||
     error instanceof OboTokenResolutionError ||

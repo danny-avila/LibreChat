@@ -20,6 +20,7 @@ export function createStatefulCodeEnvironmentPolicyError(environment: string): E
 }
 
 export interface FatalAgentInitializationOptions {
+  signal?: AbortSignal;
   /**
    * Skill `allowed-tools` may add an MCP tool beyond the agent's configured
    * baseline. That union load is allowed to retry without the skill extras;
@@ -47,7 +48,8 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
-    isAbortError(error) ||
+    (options.signal?.aborted === true &&
+      (isAbortError(error) || error === options.signal.reason)) ||
     code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
     code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
     code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||

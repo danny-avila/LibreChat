@@ -14,7 +14,15 @@ import {
 describe('isFatalAgentInitializationError', () => {
   it('propagates cancellation even when optional MCP fallback is allowed', () => {
     const abort = new DOMException('Stopped', 'AbortError');
-    expect(isFatalAgentInitializationError(abort, { allowExpectedMCPFallback: true })).toBe(true);
+    const controller = new AbortController();
+    expect(isFatalAgentInitializationError(abort, { signal: controller.signal })).toBe(false);
+    controller.abort(abort);
+    expect(
+      isFatalAgentInitializationError(abort, {
+        allowExpectedMCPFallback: true,
+        signal: controller.signal,
+      }),
+    ).toBe(true);
   });
   it.each([
     ErrorTypes.RESOURCE_RECOVERY_REQUIRED,

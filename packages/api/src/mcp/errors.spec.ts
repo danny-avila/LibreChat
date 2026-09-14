@@ -16,7 +16,17 @@ describe('MCP initialization propagation', () => {
     new OboTokenResolutionError('session_refresh_failed', 'Retry later', true),
     new OboTokenResolutionError('session_refresh_failed', 'Sign in', false),
   ])('propagates cancellation and typed credential failures: %s', (error) => {
-    expect(isMCPInitializationError(error)).toBe(true);
+    const controller = new AbortController();
+    controller.abort(error);
+    expect(isMCPInitializationError(error, controller.signal)).toBe(true);
+  });
+  it('does not confuse a dependency abort with cancellation of a live run', () => {
+    expect(
+      isMCPInitializationError(
+        new DOMException('timeout', 'AbortError'),
+        new AbortController().signal,
+      ),
+    ).toBe(false);
   });
   it('keeps unrelated optional-tool failures eligible for fallback', () => {
     expect(isMCPInitializationError(new Error('optional tool unavailable'))).toBe(false);
