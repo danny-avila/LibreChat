@@ -4532,6 +4532,9 @@ class AgentClient extends BaseClient {
         payload,
       );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      /** A compaction summarizes what was already said. It submits no user
+       * turn, so it must not upload or prime fresh skill files. */
+      const isCompactionTurn = this.isCompactionTurn();
       const reachableAgents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.values() ?? []),
@@ -4542,12 +4545,14 @@ class AgentClient extends BaseClient {
        * agent as one deduplicated batch; the profile primer then fans that
        * batch only to the distinct selected Code API routes. */
       const freshExecutionSkillNames = new Set();
-      for (const agent of reachableAgents) {
-        for (const name of collectFreshSkillPrimeNames({
-          manualSkillPrimes: agent.manualSkillPrimes,
-          alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
-        })) {
-          freshExecutionSkillNames.add(name);
+      if (!isCompactionTurn) {
+        for (const agent of reachableAgents) {
+          for (const name of collectFreshSkillPrimeNames({
+            manualSkillPrimes: agent.manualSkillPrimes,
+            alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+          })) {
+            freshExecutionSkillNames.add(name);
+          }
         }
       }
 
@@ -4590,10 +4595,8 @@ class AgentClient extends BaseClient {
        * synthetic prefix. Names NOT primed this turn still reconstruct from
        * history, preserving sticky manual re-priming across turns.
        */
-      /** A compaction summarizes what was already said. No user turn was
-       *  submitted, so it primes no skills into the transcript it is about
-       *  to summarize and runs no memory pass over it. */
-      const isCompactionTurn = this.isCompactionTurn();
+      /** A compaction primes no skill bodies into the transcript it is about
+       * to summarize and runs no memory pass over it. */
       const manualSkillPrimes = isCompactionTurn
         ? undefined
         : this.options.agent?.manualSkillPrimes;
