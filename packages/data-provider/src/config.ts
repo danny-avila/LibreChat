@@ -1266,6 +1266,13 @@ export const agentsEndpointSchema = baseEndpointSchema
               maxPerUser: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
             })
             .optional(),
+          /** Server-only policy letting a conversation's owner move its sealed attached decision
+           * onto the environments its agents now use. Omit to keep sealed decisions immovable. */
+          conversationMoves: z
+            .object({
+              enabled: z.boolean().optional(),
+            })
+            .optional(),
           /** Operator-managed execution environments. Attached entries route to a
            * Code API deployment backed by an outbound librechat-code worker. */
           environments: z

@@ -530,7 +530,11 @@ describe('useCodeWorkspace', () => {
       expect(result.current.relocation?.previous).toEqual([{ id: 'mac', name: undefined }]);
     });
 
-    it('carries over a sealed workspace the agents still use', () => {
+    it.each([
+      { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 },
+      { codeEnvironmentMoveVersion: 1 },
+    ])('carries over a sealed workspace the agents still use: %j', (startupConfig) => {
+      mockStartupConfig.mockReturnValue(startupConfig);
       const primary = {
         id: 'agent_primary',
         stateful_code_sessions: true,

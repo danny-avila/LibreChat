@@ -1544,6 +1544,7 @@ describe('moving a sealed conversation code-environment decision', () => {
   }
 
   function setup({
+    movesEnabled = true,
     stored = {
       conversationId: 'conversation-1',
       codeEnvironmentMode: 'attached',
@@ -1552,11 +1553,15 @@ describe('moving a sealed conversation code-environment decision', () => {
     job,
     fetchImpl = jest.fn().mockImplementation(async () => workerStatusResponse()),
   }: {
+    movesEnabled?: boolean;
     stored?: StoredDecision;
     job?: CodeEnvironmentGenerationJob;
     fetchImpl?: jest.Mock;
   } = {}) {
     const conversations = new Map<string, StoredDecision>([[stored.conversationId, stored]]);
+    const getConversation = jest.fn(async (user: string, conversationId: string) =>
+      user === userId ? (conversations.get(conversationId) ?? null) : null,
+    );
     /** Mirrors the data-schemas compare-and-swap: the write lands only on the decision it read. */
     const replaceDecision = jest.fn(
       async ({
@@ -1586,7 +1591,12 @@ describe('moving a sealed conversation code-environment decision', () => {
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
-          [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [controlPlane] } },
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [controlPlane],
+              conversationMoves: { enabled: movesEnabled },
+            },
+          },
         },
       } as unknown as AppConfig),
       registry: {
@@ -1608,8 +1618,7 @@ describe('moving a sealed conversation code-environment decision', () => {
       readSecret: jest.fn(() => 'administrator-token'),
       fetchImpl,
       conversations: {
-        get: async (user, conversationId) =>
-          user === userId ? (conversations.get(conversationId) ?? null) : null,
+        get: getConversation,
         replaceDecision,
         getGenerationJob: async () => job ?? null,
       },
@@ -1625,7 +1634,7 @@ describe('moving a sealed conversation code-environment decision', () => {
       );
       return res;
     };
-    return { move, conversations, replaceDecision, fetchImpl };
+    return { move, conversations, getConversation, replaceDecision, fetchImpl };
   }
 
   test('moves a sealed decision onto a workspace the new machine registers', async () => {
@@ -1764,6 +1773,17 @@ describe('moving a sealed conversation code-environment decision', () => {
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual(expect.objectContaining({ reason: 'locked' }));
     expect(context.conversations.get('conversation-1')).toEqual(concurrent);
+  });
+
+  test('refuses every move when the effective policy does not enable them', async () => {
+    const { move, getConversation, replaceDecision, fetchImpl } = setup({ movesEnabled: false });
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(403);
+    expect(getConversation).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(replaceDecision).not.toHaveBeenCalled();
   });
 
   test('reports a conversation the caller does not own as not found', async () => {

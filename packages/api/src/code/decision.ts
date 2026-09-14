@@ -154,3 +154,30 @@ export function resolveConversationCodeEnvironmentMove({
   }
   return { codeWorkspaces: canonicalSelections(to), added: canonicalSelections(added) };
 }
+
+/**
+ * Returns the decision fields a run may persist. A stored conversation keeps the decision it
+ * already holds, because only its owner's explicit move replaces one: a run from any ingress that
+ * settles after a move would otherwise write its run-start decision back over it. A legacy row
+ * records the mode it inferred without touching the selections it already stores.
+ */
+export function resolvePersistableCodeEnvironmentDecision({
+  conversationId,
+  decision,
+  conversation,
+}: {
+  conversationId: string;
+  decision?: ConversationCodeEnvironmentDecision | null;
+  conversation?: StoredConversationDecision | null;
+}): Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'> {
+  if (decision == null) {
+    return {};
+  }
+  if (conversation == null || conversation.conversationId !== conversationId) {
+    return {
+      codeEnvironmentMode: decision.mode,
+      ...(decision.codeWorkspaces != null && { codeWorkspaces: decision.codeWorkspaces }),
+    };
+  }
+  return conversation.codeEnvironmentMode == null ? { codeEnvironmentMode: decision.mode } : {};
+}

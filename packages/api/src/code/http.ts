@@ -42,6 +42,7 @@ import {
 } from './settings';
 import { resolveConversationCodeEnvironmentMove } from './decision';
 import { resolveCodeWorkerEnrollmentLimit } from './enrollment';
+import { resolveCodeEnvironmentMoveVersion } from './config';
 import { CodeWorkspaceSelectionError } from './capabilities';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
@@ -346,11 +347,11 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   }
 
   /**
-   * Moves a sealed attached decision onto the environments a conversation's agents now use. A
-   * generation in flight saves the decision it started with when it settles, so a move is refused
-   * while one is running or awaiting approval. A run admitted after that check reads either the
-   * moved decision or the replaced one; on the stale chats a move exists to recover, the replaced
-   * decision no longer covers the agents, so that run fails initialization before it can save.
+   * Moves a sealed attached decision onto the environments a conversation's agents now use, when
+   * the effective policy enables moves. Runs never rewrite a stored decision, so no run from any
+   * ingress can write its run-start decision back over a move. A move is still refused while a
+   * generation is running, awaiting approval, or saving its response, so that generation does not
+   * keep working in the previous environment after the conversation has left it.
    */
   async function moveConversationDecision(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -366,6 +367,16 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     )?.conversationId?.trim();
     if (!conversationId) {
       return res.status(400).json({ error: 'Conversation id is required' });
+    }
+    let policy: WorkerPolicy;
+    try {
+      policy = await loadWorkerPolicy(req, principal);
+    } catch (error) {
+      logger.error('[codeEnvironments] move policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
+    if (resolveCodeEnvironmentMoveVersion(policy.effectiveConfig) == null) {
+      return res.status(403).json({ error: 'Conversation code environment moves are disabled' });
     }
     const { from, to } = (req.body ?? {}) as { from?: unknown; to?: unknown };
     const userId = principal.userId.toString();
@@ -390,13 +401,6 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         return selectionErrorResponse(error, res);
       }
       throw error;
-    }
-    let policy: WorkerPolicy;
-    try {
-      policy = await loadWorkerPolicy(req, principal);
-    } catch (error) {
-      logger.error('[codeEnvironments] move policy resolution failed:', error);
-      return res.status(503).json({ error: 'Code environment policy is unavailable' });
     }
     try {
       await Promise.all(

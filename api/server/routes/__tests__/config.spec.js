@@ -354,8 +354,27 @@ describe('GET /api/config', () => {
       expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
     });
 
-    it('advertises owner moves of a sealed code environment regardless of decision activation', async () => {
+    it('does not advertise conversation moves unless the effective policy enables them', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentMoveVersion).toBeUndefined();
+    });
+
+    it('advertises enabled conversation moves regardless of decision activation', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              conversationMoves: { enabled: true },
+            },
+          },
+        },
+      });
       delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
       const app = createApp(mockUser);
 

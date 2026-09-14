@@ -251,6 +251,8 @@ jest.mock('@librechat/api', () => ({
       ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     };
   },
+  resolvePersistableCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolvePersistableCodeEnvironmentDecision(...args),
   getCodeWorkspaceSelections: jest.fn(),
   createMCPRuntimeRequestBody: ({
     messageId,
@@ -659,6 +661,32 @@ describe('createResponse controller', () => {
       expect(api.getCodeWorkspaceSelections).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps the stored decision when a continued conversation is saved', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: {
+        model: 'agent-123',
+        input: 'Hello',
+        stream: false,
+        store: true,
+        previous_response_id: 'previous',
+      },
+    });
+    db.getConvo.mockResolvedValueOnce({
+      conversationId: 'previous',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'projects' }],
+    });
+
+    await createResponse(req, res);
+
+    const saved = db.saveConvo.mock.calls.at(-1)[1];
+    expect(saved).toEqual(expect.objectContaining({ conversationId: 'previous' }));
+    expect(saved).not.toHaveProperty('codeEnvironmentMode');
+    expect(saved).not.toHaveProperty('codeWorkspaces');
+  });
 
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await createResponse(req, res);

@@ -268,9 +268,10 @@ export default function useCodeWorkspace(
       workspaces,
       stored,
       /** A saved chat already holds the server's decision, so a sole workspace is not a draft
-       *  choice there: auto-selecting it would submit a selection its persisted decision rejects. */
+       *  choice there: auto-selecting it would submit a selection its persisted decision rejects.
+       *  Attached selections are sealed whether or not selection-less decisions are advertised. */
       hasStoredSelections:
-        (locked && supportsEnvironmentDecisions) ||
+        (locked && (supportsEnvironmentDecisions || (storedSelections?.length ?? 0) > 0)) ||
         stored != null ||
         conflictingDefaults ||
         hasForeignStoredSelection === true,

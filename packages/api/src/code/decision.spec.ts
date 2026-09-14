@@ -1,6 +1,7 @@
 import {
   resolveConversationCodeEnvironmentDecision,
   resolveConversationCodeEnvironmentMove,
+  resolvePersistableCodeEnvironmentDecision,
 } from './decision';
 import { CodeWorkspaceSelectionError } from './capabilities';
 
@@ -221,4 +222,68 @@ describe('resolveConversationCodeEnvironmentMove', () => {
       );
     },
   );
+});
+
+describe('resolvePersistableCodeEnvironmentDecision', () => {
+  const mac = { environmentId: 'mac', workspaceId: 'primary' };
+  const vm = { environmentId: 'vm', workspaceId: 'projects' };
+
+  it('persists the decision a new conversation establishes', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'attached', codeWorkspaces: [mac] },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'attached', codeWorkspaces: [mac] });
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'without_attached' },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'without_attached' });
+  });
+
+  it('never writes a run-start decision over a stored one that a move replaced', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'attached', codeWorkspaces: [mac] },
+        conversation: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [vm],
+        },
+      }),
+    ).toEqual({});
+  });
+
+  it('records the mode a legacy row inferred without rewriting its selections', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'attached', codeWorkspaces: [mac] },
+        conversation: { conversationId: 'conversation-1', codeWorkspaces: [vm] },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'attached' });
+  });
+
+  it('treats a resolved conversation for another id as a new conversation', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'attached', codeWorkspaces: [mac] },
+        conversation: {
+          conversationId: 'another-conversation',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [vm],
+        },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'attached', codeWorkspaces: [mac] });
+  });
+
+  it('persists nothing without a validated decision', () => {
+    expect(resolvePersistableCodeEnvironmentDecision({ conversationId: 'conversation-1' })).toEqual(
+      {},
+    );
+  });
 });
