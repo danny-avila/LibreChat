@@ -254,10 +254,31 @@ router.delete('/', async (req, res) => {
         return;
       }
 
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
+      const ownedAgentFiles = [];
+      const unlinkedAgentFiles = [];
+
+      for (const af of agentFiles) {
+        const dbFile = dbFiles.find((f) => f.file_id === af.file_id);
+        if (dbFile && dbFile.user?.toString() === req.user.id.toString()) {
+          ownedAgentFiles.push(dbFile);
+        } else {
+          unlinkedAgentFiles.push(af);
+        }
+      }
+
+      if (unlinkedAgentFiles.length > 0) {
+        await db.removeAgentResourceFiles({
+          agent_id: req.body.agent_id,
+          files: unlinkedAgentFiles,
+        });
+      }
+
+      if (ownedAgentFiles.length > 0) {
+        const result = await processDeleteRequest({ req, files: ownedAgentFiles });
+        sendDeleteResult(result, 'Files deleted successfully');
+        return;
+      }
+
       res.status(200).json({ message: 'File associations removed successfully from agent' });
       return;
     }
