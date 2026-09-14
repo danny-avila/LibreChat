@@ -69,6 +69,8 @@ function routeDocument(
   };
 }
 
+/** Ceiling a caller that supplies no configured limit gets, and the compatibility
+ * default of `fileConfig.documentParser.fileSizeLimit`. */
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 
 export class ParserInputLimitError extends Error {
@@ -123,14 +125,19 @@ export function annotateMissingPages(text: string, pagesNeedingOcr?: number[]): 
 export async function parseDocument({
   file,
   signal,
+  maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
 }: {
   file: Express.Multer.File;
   /** Cancels the parse and frees its admission slot when the caller stops waiting. */
   signal?: AbortSignal;
+  /** Largest document to parse, in bytes. Defaults to the parser's own ceiling, which
+   * `fileConfig.documentParser.fileSizeLimit` reproduces, so a direct caller that
+   * carries no config is still bounded. */
+  maxFileSize?: number;
 }): Promise<ParsedDocumentUploadResult> {
   const fileSize = file.size ?? (file.path != null ? (await fs.promises.stat(file.path)).size : 0);
-  if (fileSize > DOCUMENT_PARSER_MAX_FILE_SIZE) {
-    const limitMB = DOCUMENT_PARSER_MAX_FILE_SIZE / megabyte;
+  if (fileSize > maxFileSize) {
+    const limitMB = maxFileSize / megabyte;
     const sizeMB = Math.ceil(fileSize / megabyte);
     throw new ParserInputLimitError(
       `File "${file.originalname}" exceeds the ${limitMB}MB document parser limit (${sizeMB}MB).`,

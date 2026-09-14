@@ -26,7 +26,6 @@ const {
   isResponsesApiUpload,
   isSpeechProviderConfigured,
   getCustomEndpointProvider,
-  documentParserMimeTypes,
   resolveEffectiveMimeType,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
@@ -38,8 +37,7 @@ const {
   extractInspectableFileText,
   assertExtractedTextInspectable,
   getFileExtractionLogDetails,
-  getUploadExtractedTextPlan,
-  UPLOAD_EXTRACTED_TEXT_PLANS,
+  planDocumentExtraction,
   inspectContent,
   extractFileContent,
   hasActiveFileFieldPolicy,
@@ -1082,32 +1080,22 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
     const effectiveMimeType = resolveUploadMimeType(file);
-    const extractedTextPlan = getUploadExtractedTextPlan({
+    const {
+      parserMimeType: parserResolvedMimeType,
+      parserEligible: isDocumentParserEligible,
+      isBuiltInDocumentType: isKnownDocumentType,
+      useConfiguredText: shouldUseConfiguredText,
+      useConfiguredOCR: shouldUseConfiguredOCR,
+      useDocumentParser: shouldUseDocumentParser,
+    } = planDocumentExtraction({
       endpoint: metadata.endpoint,
       toolResource: effectiveToolResource,
       mimeType: effectiveMimeType,
+      fileName: file.originalname,
       fileConfig,
       ocrConfigured: appConfig?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
     });
-    const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
-    const parserMimeTypes =
-      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes;
-    const isKnownDocumentType = fileConfig.checkType(effectiveMimeType, documentParserMimeTypes);
-    const isDocumentParserEligible = fileConfig.checkType(effectiveMimeType, parserMimeTypes);
-    const parserResolvedMimeType =
-      !isKnownDocumentType && isDocumentParserEligible
-        ? resolveEffectiveMimeType(file.originalname, '')
-        : effectiveMimeType;
-    const parserAliasSupportsOCR =
-      !shouldUseConfiguredText &&
-      !isKnownDocumentType &&
-      isDocumentParserEligible &&
-      fileConfig.checkType(parserResolvedMimeType, fileConfig.ocr?.supportedMimeTypes ?? []);
-    const shouldUseConfiguredOCR =
-      appConfig?.ocr != null &&
-      (extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR || parserAliasSupportsOCR);
-    const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
     const resolveDocumentText = async () => {
       if (!isDocumentParserEligible) {
@@ -1115,7 +1103,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
       try {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
-        return await handleFileUpload({ req, file, loadAuthValues });
+        return await handleFileUpload({
+          req,
+          file,
+          loadAuthValues,
+          maxFileSize: fileConfig.documentParser?.fileSizeLimit,
+        });
       } catch (err) {
         if (isDocumentParserRefusal(err)) {
           throw err;

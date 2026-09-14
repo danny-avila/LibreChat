@@ -619,6 +619,9 @@ export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
 const defaultSkillImportSizeLimit = mbToBytes(50);
+/** The built-in document parser reads a whole document into memory to extract it, so
+ * it takes a far lower ceiling than transfer does. Matches the parser's own default. */
+const defaultDocumentParserSizeLimit = mbToBytes(15);
 const defaultTokenLimit = 100000;
 const defaultContextSizeLimit = mbToBytes(128);
 const defaultContextCharLimit = 1_000_000;
@@ -670,6 +673,7 @@ export const fileConfig = {
   },
   documentParser: {
     supportedMimeTypes: documentParserMimeTypes,
+    fileSizeLimit: defaultDocumentParserSizeLimit,
   },
   text: {
     supportedMimeTypes: defaultTextMimeTypes,
@@ -740,6 +744,10 @@ export const fileConfigSchema = z.object({
   documentParser: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
+      /** Largest document handed to the built-in parser, in bytes. Parsing loads and
+       * decompresses the whole document in a child process, so the ceiling bounds
+       * memory per upload rather than transfer; raising it costs memory. */
+      fileSizeLimit: z.number().min(0).optional(),
     })
     .optional(),
   text: z

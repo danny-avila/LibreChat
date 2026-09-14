@@ -107,6 +107,8 @@ export type FileConfig = {
   };
   documentParser?: {
     supportedMimeTypes?: RegexLike[];
+    /** Largest document the built-in parser accepts, in bytes. */
+    fileSizeLimit?: number;
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
@@ -144,6 +146,7 @@ export type FileConfigInput = {
   };
   documentParser?: {
     supportedMimeTypes?: string[];
+    fileSizeLimit?: number;
   };
   text?: {
     supportedMimeTypes?: string[];

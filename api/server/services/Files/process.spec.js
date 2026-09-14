@@ -98,29 +98,55 @@ jest.mock('@librechat/api', () => {
       errorMetadata: contentProtected ? getSafeErrorMetadata(error) : error,
     };
   });
-  const getUploadExtractedTextPlan = jest.fn(
-    ({ mimeType, fileConfig, ocrConfigured, ragConfigured }) => {
+  /**
+   * Stands in for the real planner in `packages/api`, whose own suite owns its
+   * precedence rules. What these specs exercise is what `process.js` does with the
+   * answer, so the mock reproduces only the decisions the route branches on.
+   */
+  const planDocumentExtraction = jest.fn(
+    ({ mimeType, fileName, fileConfig, ocrConfigured, ragConfigured }) => {
       const checkType = fileConfig.checkType;
-      if (ocrConfigured && checkType(mimeType, fileConfig.ocr?.supportedMimeTypes ?? [])) {
-        return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
-      }
       const parserMimeTypes =
         fileConfig.documentParser?.supportedMimeTypes ?? actualDataProvider.documentParserMimeTypes;
       const isKnownDocumentType = actualDataProvider.documentParserMimeTypes.some((pattern) =>
         pattern.test(mimeType),
       );
-      const isDocumentParserEligible = checkType(mimeType, parserMimeTypes);
-      if (!isKnownDocumentType && !isDocumentParserEligible) {
-        return null;
-      }
-      if (
-        ragConfigured &&
-        !actualDataProvider.isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
-        checkType(mimeType, fileConfig.text?.supportedMimeTypes ?? [])
-      ) {
-        return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
-      }
-      return isDocumentParserEligible ? UPLOAD_EXTRACTED_TEXT_PLANS.documentParser : null;
+      const parserEligible = checkType(mimeType, parserMimeTypes);
+      const plan = (() => {
+        if (ocrConfigured && checkType(mimeType, fileConfig.ocr?.supportedMimeTypes ?? [])) {
+          return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
+        }
+        if (!isKnownDocumentType && !parserEligible) {
+          return null;
+        }
+        if (
+          ragConfigured &&
+          !actualDataProvider.isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+          checkType(mimeType, fileConfig.text?.supportedMimeTypes ?? [])
+        ) {
+          return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+        }
+        return parserEligible ? UPLOAD_EXTRACTED_TEXT_PLANS.documentParser : null;
+      })();
+      const useConfiguredText = plan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+      const isAlias = !isKnownDocumentType && parserEligible;
+      const parserMimeType = isAlias
+        ? actualDataProvider.resolveEffectiveMimeType(fileName ?? '', '')
+        : mimeType;
+      const aliasSupportsOCR =
+        isAlias &&
+        !useConfiguredText &&
+        checkType(parserMimeType, fileConfig.ocr?.supportedMimeTypes ?? []);
+      return {
+        plan,
+        parserMimeType,
+        isBuiltInDocumentType: isKnownDocumentType,
+        parserEligible,
+        useConfiguredText,
+        useConfiguredOCR:
+          ocrConfigured && (plan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR || aliasSupportsOCR),
+        useDocumentParser: !useConfiguredText && parserEligible,
+      };
     },
   );
   return {
@@ -132,7 +158,7 @@ jest.mock('@librechat/api', () => {
     processAudioFile: jest.fn(),
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
     assertExtractedTextInspectable: jest.fn(),
-    getUploadExtractedTextPlan,
+    planDocumentExtraction,
     UPLOAD_EXTRACTED_TEXT_PLANS,
     getFileExtractionLogDetails,
     getSafeErrorMetadata,
@@ -2297,8 +2323,10 @@ describe('processAgentFileUpload', () => {
     it('defers an inferred file-search destination until tool execution', async () => {
       const { uploadVectors } = require('~/server/services/Files/VectorDB/crud');
       setupStoredFileUpload();
+      /* A type file search can read and no extractor can: a presentation itself is
+       * parsed to text now, which would route it to context instead of deferring. */
       const req = makeReq({
-        mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.template',
         ocrConfig: null,
       });
       req.body.endpoint = EModelEndpoint.agents;
@@ -2787,7 +2815,7 @@ describe('processAgentFileUpload', () => {
     });
 
     test('plans extraction with the promoted context resource for auto-routed text uploads', async () => {
-      const { getUploadExtractedTextPlan } = require('@librechat/api');
+      const { planDocumentExtraction } = require('@librechat/api');
       mergeFileConfig.mockReturnValue(makeFileConfig());
       const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
 
@@ -2799,7 +2827,7 @@ describe('processAgentFileUpload', () => {
         metadata: { agent_id: 'agent-abc', file_id: 'file-uuid-123' },
       }).catch(() => {});
 
-      expect(getUploadExtractedTextPlan).toHaveBeenCalledWith(
+      expect(planDocumentExtraction).toHaveBeenCalledWith(
         expect.objectContaining({ toolResource: EToolResources.context }),
       );
     });

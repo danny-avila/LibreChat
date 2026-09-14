@@ -228,6 +228,26 @@ describe('Document Parser', () => {
     );
   });
 
+  /* An operator who raises the endpoint and server limits above the parser's default
+   * otherwise gets an unconditional 413 on an upload the rest of the stack admitted. */
+  test('parses a file above the default ceiling when the operator raised it', async () => {
+    const file = {
+      ...fixture(
+        'sample.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ),
+      size: 16 * 1024 * 1024,
+    } as Express.Multer.File;
+
+    await expect(parseDocument({ file, maxFileSize: 32 * 1024 * 1024 })).resolves.toEqual(
+      expect.objectContaining({ filepath: 'anydoc' }),
+    );
+    await expect(parseDocument({ file, maxFileSize: 8 * 1024 * 1024 })).rejects.toMatchObject({
+      code: 'PARSER_INPUT_LIMIT',
+      message: expect.stringMatching(/exceeds the 8MB document parser limit \(16MB\)/),
+    });
+  });
+
   describe('annotateMissingPages()', () => {
     test('returns text unchanged when no pages are missing', () => {
       expect(annotateMissingPages('body', undefined)).toBe('body');

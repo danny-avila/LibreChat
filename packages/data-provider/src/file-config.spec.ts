@@ -441,6 +441,22 @@ describe('documentParser file config', () => {
     expect(logged).toHaveBeenCalledTimes(1);
     logged.mockRestore();
   });
+
+  /* The parser refuses anything above this, so an operator who raises the endpoint and
+   * server limits needs a lever here or their admitted uploads get an unconditional
+   * 413. The default is the parser's own compatibility ceiling. */
+  it('exposes the parser input ceiling with a 15MB default', () => {
+    expect(mergeFileConfig(undefined).documentParser?.fileSizeLimit).toBe(15 * 1024 * 1024);
+
+    const parsed = fileConfigSchema.parse({
+      documentParser: { fileSizeLimit: 32 * 1024 * 1024 },
+    });
+    const merged = mergeFileConfig(parsed);
+
+    expect(merged.documentParser?.fileSizeLimit).toBe(32 * 1024 * 1024);
+    /* Raising the ceiling must not silently discard the type allowlist beside it. */
+    expect(merged.documentParser?.supportedMimeTypes).toEqual(documentParserMimeTypes);
+  });
 });
 
 describe('stt file config', () => {
