@@ -15,6 +15,8 @@ const {
   preflightAssistantRunContent,
   reportLocatorTraversalFailure,
   preflightAssistantUserMessageContent,
+  isAssistantToolPermissionError,
+  assertAssistantRunToolsPermitted,
 } = require('@librechat/api');
 const {
   Time,
@@ -49,6 +51,7 @@ const {
   renewBalanceReservation,
   releaseBalanceReservation,
   getFiles,
+  getRoleByName,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
 const { getOpenAIClient } = require('./helpers');
@@ -207,6 +210,20 @@ const chatV2 = async (req, res) => {
 
     openai = _openai;
     await validateAuthor({ req, openai });
+    try {
+      await assertAssistantRunToolsPermitted({
+        req,
+        getRoleByName,
+        openai,
+        assistantId: assistant_id,
+      });
+    } catch (error) {
+      if (!isAssistantToolPermissionError(error)) {
+        throw error;
+      }
+      contentRejected = true;
+      return res.status(error.statusCode).json(error.body);
+    }
     try {
       await preflightAssistantRunContent({
         onTraversalFailure: reportLocatorTraversalFailure,

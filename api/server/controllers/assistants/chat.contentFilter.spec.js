@@ -11,6 +11,7 @@ const mockRetrieveAssistant = jest.fn();
 const mockListThreadMessages = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetFiles = jest.fn();
+const mockGetRoleByName = jest.fn();
 const mockEncodeAndFormat = jest.fn();
 const mockGetOpenAIClient = jest.fn().mockResolvedValue({
   openai: {
@@ -119,6 +120,7 @@ jest.mock('~/models', () => ({
   getMultiplier: jest.fn(),
   getConvo: (...args) => mockGetConvo(...args),
   getFiles: (...args) => mockGetFiles(...args),
+  getRoleByName: (...args) => mockGetRoleByName(...args),
 }));
 
 jest.mock('~/cache', () => ({
@@ -138,7 +140,17 @@ const chatV1 = require('./chatV1');
 const chatV2 = require('./chatV2');
 const { logger } = require('@librechat/data-schemas');
 const { checkBalance, getBalanceConfig } = require('@librechat/api');
-const { ImageVisionTool } = require('librechat-data-provider');
+const { ImageVisionTool, PermissionTypes, Permissions } = require('librechat-data-provider');
+
+const roleWith = (overrides = {}) => ({
+  name: 'USER',
+  permissions: {
+    [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
+    ...overrides,
+  },
+});
 
 describe.each([
   ['v1', chatV1],
@@ -160,6 +172,7 @@ describe.each([
       has_more: false,
     });
     mockGetFiles.mockReset().mockResolvedValue([]);
+    mockGetRoleByName.mockReset().mockResolvedValue(roleWith());
     mockGetConvo.mockReset().mockResolvedValue(null);
     mockEncodeAndFormat.mockReset().mockResolvedValue({ files: [], image_urls: [] });
     mockInitThread.mockReset();
@@ -174,7 +187,7 @@ describe.each([
           },
         },
       },
-      user: { id: 'user-1' },
+      user: { id: 'user-1', role: 'USER' },
       body: {
         text: 'Safe current message',
         model: 'gpt-4',
@@ -388,6 +401,58 @@ describe.each([
 
     await closeHandler();
     expect(mockHandleError).not.toHaveBeenCalled();
+  });
+
+  /** The allowlist and author checks have already passed by here, and the
+   *  controller's own client does the read, so a refused run costs no second
+   *  client and makes no thread, message, run, or stream call. */
+  it('refuses a run whose stored native tool the role denies before any side effect', async () => {
+    req.config.filters = {};
+    mockGetRoleByName.mockResolvedValue(
+      roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
+    );
+    mockRetrieveAssistant.mockResolvedValueOnce({
+      id: 'asst-1',
+      tools: [{ type: 'code_interpreter' }, { type: 'function' }],
+    });
+
+    await chatController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'assistant_tool_not_permitted',
+        deniedTools: ['code_interpreter'],
+        text: expect.stringContaining('Code Interpreter'),
+      }),
+    );
+    expect(mockRetrieveAssistant).toHaveBeenCalledWith('asst-1');
+    expect(mockInitThread).not.toHaveBeenCalled();
+    expect(mockSaveUserMessage).not.toHaveBeenCalled();
+    expect(mockCreateRun).not.toHaveBeenCalled();
+    expect(mockRunAssistant).not.toHaveBeenCalled();
+    expect(mockStreamRunManager).not.toHaveBeenCalled();
+    expect(mockSendEvent).not.toHaveBeenCalled();
+    expect(res.writeHead).not.toHaveBeenCalled();
+    expect(res.headersSentAtStatus).toBe(false);
+
+    await closeHandler();
+    expect(mockHandleError).not.toHaveBeenCalled();
+    expect(mockSendResponse).not.toHaveBeenCalled();
+  });
+
+  it('runs an assistant that stores none of the tools the role is denied', async () => {
+    req.config.filters = {};
+    mockGetRoleByName.mockResolvedValue(
+      roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
+    );
+    mockRetrieveAssistant.mockResolvedValueOnce({ id: 'asst-1', tools: [{ type: 'file_search' }] });
+    mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+
+    await chatController(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mockInitThread).toHaveBeenCalledTimes(1);
   });
 
   it('does not read remote policy state for explicitly inactive selections', async () => {
