@@ -1,13 +1,12 @@
 import {
   ErrorTypes,
-  alternateName,
   ViolationTypes,
   isCodeWorkspaceSelectionErrorReason,
 } from 'librechat-data-provider';
 import type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
-import type { TranslationKeys } from '~/hooks';
-import { readNumber, readString, useErrorEndpoint } from './parts';
 import type { ErrorRendererProps } from './parts';
+import type { TranslationKeys } from '~/hooks';
+import { getProviderName, readNumber, readString, useErrorEndpoint } from './parts';
 import { useLocalize } from '~/hooks';
 
 const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, TranslationKeys> = {
@@ -30,9 +29,7 @@ export default function ModelError({ json, message }: ErrorRendererProps) {
   const errorKey = readString(json, 'code') ?? readString(json, 'type');
   const info = readString(json, 'info');
   /** `info` is an endpoint id on these payloads; the conversation's own provider is the fallback. */
-  const provider =
-    (info != null ? ((alternateName[info] as string | undefined) ?? info) : undefined) ??
-    conversationProvider;
+  const provider = info != null ? getProviderName(info) : conversationProvider;
 
   if (errorKey === ErrorTypes.MISSING_MODEL) {
     return provider != null
@@ -49,9 +46,7 @@ export default function ModelError({ json, message }: ErrorRendererProps) {
   if (errorKey === ViolationTypes.ILLEGAL_MODEL_REQUEST) {
     const [endpoint, model] = info?.split('|') ?? [];
     const requestedProvider =
-      endpoint != null && endpoint !== ''
-        ? ((alternateName[endpoint] as string | undefined) ?? endpoint)
-        : conversationProvider;
+      endpoint != null && endpoint !== '' ? getProviderName(endpoint) : conversationProvider;
     if (model == null || model === '' || requestedProvider == null) {
       return localize('com_error_model_not_found');
     }
@@ -66,7 +61,12 @@ export default function ModelError({ json, message }: ErrorRendererProps) {
   }
 
   const status = readNumber(json, 'status');
+  if (provider == null) {
+    return status != null
+      ? localize('com_error_upstream_model_status', { 0: status })
+      : localize('com_error_upstream_model');
+  }
   return status != null
-    ? localize('com_error_upstream_model_status', { 0: status })
-    : localize('com_error_upstream_model');
+    ? localize('com_error_provider_failed_status', { 0: provider, 1: status })
+    : localize('com_error_provider_failed', { 0: provider });
 }

@@ -1,3 +1,4 @@
+import type { ErrorRendererProps, JsonValue } from './parts';
 import {
   ErrorBody,
   ErrorDetails,
@@ -6,7 +7,6 @@ import {
   readNumber,
   readString,
 } from './parts';
-import type { ErrorPayload, ErrorRendererProps } from './parts';
 import { useLocalize } from '~/hooks';
 
 type GenerationRow = {
@@ -15,12 +15,11 @@ type GenerationRow = {
   completionTokens: string;
 };
 
-function readGeneration(value: unknown): GenerationRow | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+function readGeneration(generation: JsonValue): GenerationRow | null {
+  if (typeof generation !== 'object' || generation === null || Array.isArray(generation)) {
     return null;
   }
 
-  const generation = value as ErrorPayload;
   const model = readString(generation, 'model');
   const promptTokens = readNumber(generation, 'promptTokens');
   const completionTokens = readNumber(generation, 'completionTokens');

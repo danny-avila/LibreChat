@@ -1,29 +1,49 @@
 import { useContext, useId, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { Button } from '@librechat/client';
-import { alternateName, getEndpointField } from 'librechat-data-provider';
-import type { EModelEndpoint, TEndpointsConfig, TMessage } from 'librechat-data-provider';
+import { ChevronRight } from 'lucide-react';
+import {
+  alternateName,
+  getEndpointField,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+} from 'librechat-data-provider';
+import type { Agent, EModelEndpoint, TAgentsMap, TEndpointsConfig } from 'librechat-data-provider';
+import type { ErrorSource } from './source';
 import { isUserProvidedEndpointConfig } from '~/components/Nav/SettingsTabs/ProviderKeys/utils';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { supportsCompaction } from '~/hooks/Chat/useCompactConversation';
-import { ChatContext } from '~/Providers/ChatContext';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { useExpandCollapse, useLocalize } from '~/hooks';
+import { ChatContext } from '~/Providers/ChatContext';
 import { cn } from '~/utils';
 
+/** A value as `JSON.parse` produces it. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | ErrorPayload;
+
 /** A parsed error payload. Producers are free-form, so every field is read defensively. */
-export type ErrorPayload = Record<string, unknown>;
+export type ErrorPayload = { [key: string]: JsonValue | undefined };
 
 export type ErrorRendererProps = {
   /** The payload parsed out of the message text. */
   json: ErrorPayload;
   /** The message text as persisted, including any prefix around the payload. */
   text: string;
-  /** The row this error belongs to; absent when an error content part renders on its own. */
-  message?: TMessage;
+  /** The row this error belongs to; absent only where no row supplies an `ErrorSource`. */
+  message?: ErrorSource;
 };
 
 /** The fallback renderer also runs when there is no payload at all. */
 export type UnclassifiedErrorProps = Omit<ErrorRendererProps, 'json'> & { json?: ErrorPayload };
+
+/**
+ * Provider error codes that are not LibreChat's own. They reach the client when a provider's error
+ * body is persisted as the message text, which is also why they are plain strings rather than
+ * `ErrorTypes` members.
+ */
+export const ProviderErrorCodes = {
+  INVALID_API_KEY: 'invalid_api_key',
+  INSUFFICIENT_QUOTA: 'insufficient_quota',
+} as const;
 
 export function readString(json: ErrorPayload | undefined, key: string): string | undefined {
   const value = json?.[key];
@@ -42,20 +62,42 @@ export function readNumber(json: ErrorPayload | undefined, key: string): number 
   return undefined;
 }
 
+export function readObject(json: ErrorPayload | undefined, key: string): ErrorPayload | undefined {
+  const value = json?.[key];
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : undefined;
+}
+
+/** The name a reader recognizes for an endpoint id. */
+export const getProviderName = (endpoint: string): string =>
+  (alternateName[endpoint] as string | undefined) ?? endpoint;
+
 export type ErrorEndpoint = {
-  /** Endpoint id (`openAI`, `anthropic`, an agents endpoint, …) when it is knowable. */
+  /** The endpoint the failed request ran against, when it is knowable. */
   endpoint?: string;
   endpointType?: EModelEndpoint;
   /** Display name for the provider; undefined when the endpoint cannot be resolved. */
   provider?: string;
-  /** Display name for the model or agent that produced the failure. */
+  /** The model that produced the failure. */
   model?: string;
+  /** The saved agent the row belongs to, when the agents map can resolve it. */
+  agent?: Agent;
   /** The endpoint takes its key from the user rather than from the deployment. */
   userProvidesKey: boolean;
   /** Manual context compaction can be triggered for this conversation. */
   compactionAvailable: boolean;
   endpointsConfig?: TEndpointsConfig;
 };
+
+/** A saved agent's row stores the agent id as its model; the conversation's agent is the fallback. */
+function findRowAgent(
+  agentsMap: TAgentsMap | undefined,
+  rowModel: string | undefined,
+  conversationAgentId: string | undefined,
+): Agent | undefined {
+  const agentId =
+    rowModel != null && !isEphemeralAgentId(rowModel) ? rowModel : conversationAgentId;
+  return agentId != null ? agentsMap?.[agentId] : undefined;
+}
 
 /**
  * Resolves who produced the failure.
@@ -65,33 +107,51 @@ export type ErrorEndpoint = {
  * authenticated, so the endpoint queries stay disabled outside the chat rather than firing a
  * request that would resolve to a login redirect. Copy therefore has to work without a provider
  * name, which is why `provider` and `model` are optional.
+ *
+ * A saved agent's row names the `agents` endpoint and carries the agent id as its model, while the
+ * request ran against the agent's own provider and model, so those are what identity, key
+ * ownership and the key dialog resolve against. An endpoint named by the payload itself outranks
+ * both. Compaction is a conversation action, so it stays keyed to the row's endpoint.
  */
-export function useErrorEndpoint(message?: TMessage): ErrorEndpoint {
+export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string): ErrorEndpoint {
   const chat = useContext(ChatContext);
+  const agentsMap = useAgentsMapContext();
   const inChat = chat != null;
   const { data: endpointsConfig } = useGetEndpointsQuery({ enabled: inChat });
   const { data: startupConfig } = useGetStartupConfig({ enabled: inChat });
 
-  const endpoint = message?.endpoint ?? chat?.conversation?.endpoint ?? undefined;
-  const model = message?.model ?? chat?.conversation?.model ?? undefined;
+  const rowEndpoint = source?.endpoint ?? chat?.conversation?.endpoint ?? undefined;
+  const rowModel = source?.model ?? chat?.conversation?.model ?? undefined;
+  const conversationAgentId = chat?.conversation?.agent_id ?? undefined;
 
   return useMemo(() => {
+    const agentRow = isAgentsEndpoint(rowEndpoint);
+    const agent = agentRow ? findRowAgent(agentsMap, rowModel, conversationAgentId) : undefined;
+    const rowProvider = agentRow ? (agent?.provider ?? undefined) : rowEndpoint;
+    const endpoint = payloadEndpoint ?? rowProvider;
     const endpointType = endpoint
       ? (getEndpointField(endpointsConfig, endpoint, 'type') as EModelEndpoint | undefined)
       : undefined;
     return {
-      endpoint: endpoint ?? undefined,
+      endpoint,
       endpointType,
-      provider: endpoint
-        ? ((alternateName[endpoint] as string | undefined) ?? endpoint)
-        : undefined,
-      model: model ?? undefined,
+      provider: endpoint ? getProviderName(endpoint) : undefined,
+      model: agentRow ? (agent?.model ?? undefined) : rowModel,
+      agent,
       userProvidesKey: endpoint ? isUserProvidedEndpointConfig(endpointsConfig?.[endpoint]) : false,
       compactionAvailable:
-        startupConfig?.compactionEnabled === true && supportsCompaction(endpoint),
+        startupConfig?.compactionEnabled === true && supportsCompaction(rowEndpoint),
       endpointsConfig,
     };
-  }, [endpoint, model, endpointsConfig, startupConfig?.compactionEnabled]);
+  }, [
+    rowEndpoint,
+    rowModel,
+    conversationAgentId,
+    payloadEndpoint,
+    agentsMap,
+    endpointsConfig,
+    startupConfig?.compactionEnabled,
+  ]);
 }
 
 /** Stacks an error's sentences, details and actions without inheriting prose spacing. */
@@ -175,8 +235,18 @@ export const formatNumber = (value: number): string => new Intl.NumberFormat().f
 export const formatCredits = (value: number): string =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 
-/** A stored timestamp is an ISO string or epoch ms; anything unparseable is shown verbatim. */
+const isoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
+ * Formats a stored timestamp in the reader's locale. Only epoch milliseconds and ISO 8601 strings
+ * are parsed: rows persisted by older servers carry an expiry in the server's own locale format,
+ * which another locale can misread (a day-first date read month-first), so any other string is
+ * shown as persisted.
+ */
 export function formatTimestamp(value: string | number): string {
+  if (typeof value === 'string' && !isoTimestamp.test(value)) {
+    return value;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return String(value);

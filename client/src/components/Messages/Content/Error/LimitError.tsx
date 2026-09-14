@@ -1,23 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ViolationTypes } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import type { ErrorRendererProps } from './parts';
 import {
   ErrorBody,
-  formatDuration,
-  formatNumber,
   readNumber,
   readString,
+  formatNumber,
+  formatDuration,
   useWindowLabel,
+  formatTimestamp,
 } from './parts';
-
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
+import { useLocalize } from '~/hooks';
 
 type RetryTargetInput = {
   type: string | undefined;
   resetAt?: number;
   retryAfterSeconds?: number;
   createdAt?: string | Date;
+  windowInMinutes?: number;
 };
 
 function getCreatedAtMs(createdAt?: string | Date): number | undefined {
@@ -28,11 +28,17 @@ function getCreatedAtMs(createdAt?: string | Date): number | undefined {
   return Number.isNaN(timestamp) ? undefined : timestamp;
 }
 
+/**
+ * The moment the limiter's window reopens. A reset already in the past still resolves, and reads as
+ * "you can send another message now". A future one is bounded by the limiter's own window, which is
+ * as far ahead as a reset can lie, rather than by a fixed horizon an operator's window may exceed.
+ */
 function resolveRetryTarget({
   type,
   resetAt,
   retryAfterSeconds,
   createdAt,
+  windowInMinutes,
 }: RetryTargetInput): number | undefined {
   if (type !== ViolationTypes.MESSAGE_LIMIT) {
     return undefined;
@@ -47,8 +53,10 @@ function resolveRetryTarget({
     return undefined;
   }
 
-  const now = Date.now();
-  return target > now + DAY_IN_MS || target < now - DAY_IN_MS ? undefined : target;
+  if (windowInMinutes != null && target - Date.now() > windowInMinutes * 60 * 1000) {
+    return undefined;
+  }
+  return target;
 }
 
 /** Keeps a rate-limit countdown local to the rendered error row. */
@@ -103,6 +111,7 @@ export default function LimitError({ json, message }: ErrorRendererProps) {
     resetAt,
     retryAfterSeconds,
     createdAt,
+    windowInMinutes,
   });
   const remaining = useRetryCountdown(retryTarget);
 
@@ -153,14 +162,28 @@ export default function LimitError({ json, message }: ErrorRendererProps) {
       headline = localize('com_error_limit_reached');
   }
 
+  /**
+   * The error box is an assertive live region, so a line that changes every second would be
+   * announced every second. The ticking countdown is hidden from assistive technology, which reads
+   * the moment the window reopens instead; that sentence changes once, when sending is allowed again.
+   */
   return (
     <ErrorBody>
       <p>{headline}</p>
       {retryTarget != null && remaining != null && (
         <p className="text-text-secondary">
-          {remaining > 0
-            ? localize('com_error_retry_countdown', { 0: formatDuration(remaining) })
-            : localize('com_error_retry_available')}
+          {remaining > 0 ? (
+            <>
+              <span aria-hidden="true">
+                {localize('com_error_retry_countdown', { 0: formatDuration(remaining) })}
+              </span>
+              <span className="sr-only">
+                {localize('com_error_retry_at', { 0: formatTimestamp(retryTarget) })}
+              </span>
+            </>
+          ) : (
+            localize('com_error_retry_available')
+          )}
         </p>
       )}
     </ErrorBody>

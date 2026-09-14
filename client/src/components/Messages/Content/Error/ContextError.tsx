@@ -1,6 +1,6 @@
 import { ErrorTypes } from 'librechat-data-provider';
+import type { ErrorRendererProps } from './parts';
 import type { TranslationKeys } from '~/hooks';
-import { useLocalize } from '~/hooks';
 import {
   ErrorBody,
   ErrorDetails,
@@ -9,7 +9,7 @@ import {
   readString,
   useErrorEndpoint,
 } from './parts';
-import type { ErrorRendererProps } from './parts';
+import { useLocalize } from '~/hooks';
 
 const emptyMessagesBoilerplate = [
   'Message pruning removed all messages as none fit in the context window.',
@@ -103,10 +103,11 @@ export default function ContextError({ json, message }: ErrorRendererProps) {
             1: formatNumber(parsed[1]),
           });
 
+    /** The latest message alone exceeds the limit; compacting earlier history cannot make it fit. */
     return (
       <ErrorBody>
         <p>{headline}</p>
-        <p className="text-text-secondary">{nextSteps}</p>
+        <p className="text-text-secondary">{localize('com_error_context_next_steps')}</p>
         {info != null && parsed == null && (
           <ErrorDetails label={localize('com_error_context_token_budget')}>{info}</ErrorDetails>
         )}

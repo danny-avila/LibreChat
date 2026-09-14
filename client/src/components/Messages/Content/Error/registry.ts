@@ -1,24 +1,15 @@
 import { ErrorTypes, ViolationTypes } from 'librechat-data-provider';
 import type { ComponentType } from 'react';
-import type { TranslationKeys } from '~/hooks';
 import type { ErrorRendererProps } from './parts';
-import UserKeyError from './UserKeyError';
+import type { TranslationKeys } from '~/hooks';
+import { ProviderErrorCodes } from './parts';
 import ProviderError from './ProviderError';
+import UserKeyError from './UserKeyError';
 import BalanceError from './BalanceError';
 import ContextError from './ContextError';
 import ModelError from './ModelError';
 import LimitError from './LimitError';
 import AgentError from './AgentError';
-
-/**
- * Provider error codes that are not LibreChat's own. They reach the client when a provider's error
- * body is persisted as the message text, which is also why they are plain strings rather than
- * `ErrorTypes` members.
- */
-export const ProviderErrorCodes = {
-  INVALID_API_KEY: 'invalid_api_key',
-  INSUFFICIENT_QUOTA: 'insufficient_quota',
-} as const;
 
 /**
  * Codes whose whole rendering is one localized sentence.
@@ -28,7 +19,6 @@ export const ProviderErrorCodes = {
  */
 export const errorCopy: Record<string, TranslationKeys> = {
   [ErrorTypes.MODERATION]: 'com_error_moderation',
-  [ErrorTypes.INVALID_USER_KEY]: 'com_error_invalid_user_key',
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
   [ErrorTypes.INVALID_BASE_URL]: 'com_error_invalid_base_url',
   [ErrorTypes.INVALID_ACTION]: 'com_error_invalid_action_error',
@@ -61,6 +51,7 @@ export const errorCopy: Record<string, TranslationKeys> = {
 export const errorRenderers: Record<string, ComponentType<ErrorRendererProps>> = {
   [ErrorTypes.NO_USER_KEY]: UserKeyError,
   [ErrorTypes.EXPIRED_USER_KEY]: UserKeyError,
+  [ErrorTypes.INVALID_USER_KEY]: UserKeyError,
   [ProviderErrorCodes.INVALID_API_KEY]: UserKeyError,
   [ProviderErrorCodes.INSUFFICIENT_QUOTA]: UserKeyError,
   [ErrorTypes.INVALID_AGENT_PROVIDER]: AgentError,

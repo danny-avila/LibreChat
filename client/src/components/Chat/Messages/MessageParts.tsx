@@ -11,6 +11,7 @@ import {
 } from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
+import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
@@ -166,24 +167,26 @@ function MessageParts(props: TMessageProps) {
             </SubRow>
           }
         >
-          <ContentParts
-            edit={edit}
-            isLast={isLast}
-            enterEdit={enterEdit}
-            siblingIdx={siblingIdx}
-            attachments={attachments}
-            isSubmitting={isSubmitting}
-            searchResults={searchResults}
-            manualSkills={message.manualSkills}
-            messageId={message.messageId}
-            authorHeader={authorHeader}
-            setSiblingIdx={setSiblingIdx}
-            isCreatedByUser={message.isCreatedByUser}
-            conversationId={conversation?.conversationId}
-            showThinking={showThinking}
-            isLatestMessage={messageId === latestMessageId}
-            content={message.content as Array<TMessageContentParts | undefined>}
-          />
+          <ErrorSourceProvider message={message}>
+            <ContentParts
+              edit={edit}
+              isLast={isLast}
+              enterEdit={enterEdit}
+              siblingIdx={siblingIdx}
+              attachments={attachments}
+              isSubmitting={isSubmitting}
+              searchResults={searchResults}
+              manualSkills={message.manualSkills}
+              messageId={message.messageId}
+              authorHeader={authorHeader}
+              setSiblingIdx={setSiblingIdx}
+              isCreatedByUser={message.isCreatedByUser}
+              conversationId={conversation?.conversationId}
+              showThinking={showThinking}
+              isLatestMessage={messageId === latestMessageId}
+              content={message.content as Array<TMessageContentParts | undefined>}
+            />
+          </ErrorSourceProvider>
         </MessageRow>
       </div>
     </div>

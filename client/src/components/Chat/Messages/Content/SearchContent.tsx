@@ -10,7 +10,8 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
-import { UnfinishedMessage } from './MessageContent';
+import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
+import { ErrorMessage, UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -24,7 +25,7 @@ import Part from './Part';
  * `enableUserMsgMarkdown`. Callers that copy the message need the same answer.
  */
 export const rendersMarkdownLite = (message: TMessage): boolean =>
-  !Array.isArray(message.content) || message.content.length === 0;
+  message.error !== true && (!Array.isArray(message.content) || message.content.length === 0);
 
 const SearchContent = ({
   message,
@@ -51,53 +52,60 @@ const SearchContent = ({
      *  `ContentParts`' `postSteerAuthors` scan. */
     let activeAgentId: string | undefined;
     return (
-      <SearchContext.Provider value={{ searchResults }}>
-        {parts.map((part: TMessageContentParts, idx: number) => {
-          const toolCallId =
-            (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-          const partAttachments = attachmentMap[toolCallId];
-          const resumesAfterSteer =
-            authorHeader != null &&
-            idx > 0 &&
-            parts[idx - 1].type === ContentTypes.STEER &&
-            part.type !== ContentTypes.STEER;
-          const resumeAgentId = resumesAfterSteer ? activeAgentId : undefined;
-          if (part.type === ContentTypes.AGENT_UPDATE) {
-            activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
-          }
-          const rendered: ReactElement = (
-            <Part
-              key={`display-${messageId}-${idx}`}
-              showCursor={false}
-              isSubmitting={false}
-              isCreatedByUser={message.isCreatedByUser}
-              attachments={partAttachments}
-              part={part}
-            />
-          );
-          if (!resumesAfterSteer) {
-            return rendered;
-          }
-          return (
-            <Fragment key={`display-${messageId}-${idx}`}>
-              {resumeAgentId != null ? (
-                <AgentUpdate currentAgentId={resumeAgentId} />
-              ) : (
-                authorHeader
-              )}
-              {rendered}
-            </Fragment>
-          );
-        })}
-        {message.unfinished === true && (
-          <Suspense>
-            <DelayedRender delay={250}>
-              <UnfinishedMessage message={message} key={`unfinished-${messageId}`} />
-            </DelayedRender>
-          </Suspense>
-        )}
-      </SearchContext.Provider>
+      <ErrorSourceProvider message={message}>
+        <SearchContext.Provider value={{ searchResults }}>
+          {parts.map((part: TMessageContentParts, idx: number) => {
+            const toolCallId =
+              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+            const partAttachments = attachmentMap[toolCallId];
+            const resumesAfterSteer =
+              authorHeader != null &&
+              idx > 0 &&
+              parts[idx - 1].type === ContentTypes.STEER &&
+              part.type !== ContentTypes.STEER;
+            const resumeAgentId = resumesAfterSteer ? activeAgentId : undefined;
+            if (part.type === ContentTypes.AGENT_UPDATE) {
+              activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
+            }
+            const rendered: ReactElement = (
+              <Part
+                key={`display-${messageId}-${idx}`}
+                showCursor={false}
+                isSubmitting={false}
+                isCreatedByUser={message.isCreatedByUser}
+                attachments={partAttachments}
+                part={part}
+              />
+            );
+            if (!resumesAfterSteer) {
+              return rendered;
+            }
+            return (
+              <Fragment key={`display-${messageId}-${idx}`}>
+                {resumeAgentId != null ? (
+                  <AgentUpdate currentAgentId={resumeAgentId} />
+                ) : (
+                  authorHeader
+                )}
+                {rendered}
+              </Fragment>
+            );
+          })}
+          {message.unfinished === true && (
+            <Suspense>
+              <DelayedRender delay={250}>
+                <UnfinishedMessage message={message} key={`unfinished-${messageId}`} />
+              </DelayedRender>
+            </Suspense>
+          )}
+        </SearchContext.Provider>
+      </ErrorSourceProvider>
     );
+  }
+
+  /** A failed row persists its failure as text, which only the error dispatcher can read. */
+  if (message.error === true) {
+    return <ErrorMessage message={message} text={message.text ?? ''} />;
   }
 
   return (

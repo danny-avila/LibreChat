@@ -1,41 +1,38 @@
 import { useState } from 'react';
-import { ErrorTypes, alternateName, getEndpointField } from 'librechat-data-provider';
-import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
-import type { TranslationKeys } from '~/hooks';
-import { useLocalize } from '~/hooks';
+import { ErrorTypes, getEndpointField } from 'librechat-data-provider';
 import type { ErrorRendererProps } from './parts';
+import type { TranslationKeys } from '~/hooks';
 import {
+  ErrorBody,
+  readString,
   ErrorAction,
   ErrorActions,
-  ErrorBody,
   formatTimestamp,
-  readString,
   useErrorEndpoint,
+  ProviderErrorCodes,
 } from './parts';
-
-const providerErrorCodes = {
-  INVALID_API_KEY: 'invalid_api_key',
-  INSUFFICIENT_QUOTA: 'insufficient_quota',
-} as const;
+import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { useLocalize } from '~/hooks';
 
 type UserKeyErrorCode =
   | ErrorTypes.NO_USER_KEY
   | ErrorTypes.EXPIRED_USER_KEY
-  | (typeof providerErrorCodes)[keyof typeof providerErrorCodes];
+  | ErrorTypes.INVALID_USER_KEY
+  | (typeof ProviderErrorCodes)[keyof typeof ProviderErrorCodes];
 
 export default function UserKeyError({ json, message }: ErrorRendererProps) {
   const localize = useLocalize();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { endpoint, endpointType, provider, userProvidesKey, endpointsConfig } =
-    useErrorEndpoint(message);
-  const errorKey = readString(json, 'code') ?? readString(json, 'type');
-  const payloadEndpoint = readString(json, 'endpoint');
-  const displayProvider =
-    provider ??
-    (errorKey === ErrorTypes.EXPIRED_USER_KEY && payloadEndpoint != null
-      ? ((alternateName[payloadEndpoint] as string | undefined) ?? payloadEndpoint)
-      : undefined);
-  const code = errorKey as UserKeyErrorCode | undefined;
+  const code = (readString(json, 'code') ?? readString(json, 'type')) as
+    | UserKeyErrorCode
+    | undefined;
+  /** An expired key's payload names the endpoint whose key expired, which outranks the row's. */
+  const payloadEndpoint =
+    code === ErrorTypes.EXPIRED_USER_KEY ? readString(json, 'endpoint') : undefined;
+  const { endpoint, endpointType, provider, userProvidesKey, endpointsConfig } = useErrorEndpoint(
+    message,
+    payloadEndpoint,
+  );
   const expiredAt = readString(json, 'expiredAt');
 
   /**
@@ -47,10 +44,10 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
     userProvided: TranslationKeys,
     admin: TranslationKeys,
   ): string => {
-    if (displayProvider == null) {
+    if (provider == null) {
       return localize(generic);
     }
-    return localize(userProvidesKey ? userProvided : admin, { 0: displayProvider });
+    return localize(userProvidesKey ? userProvided : admin, { 0: provider });
   };
 
   let errorMessage: string;
@@ -65,25 +62,32 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
     case ErrorTypes.EXPIRED_USER_KEY:
       if (expiredAt == null) {
         errorMessage = localize('com_error_invalid_user_key');
-      } else if (displayProvider == null) {
+      } else if (provider == null) {
         errorMessage = localize('com_error_expired_user_key_generic', {
           0: formatTimestamp(expiredAt),
         });
       } else {
         errorMessage = localize('com_error_expired_user_key', {
-          0: displayProvider,
+          0: provider,
           1: formatTimestamp(expiredAt),
         });
       }
       break;
-    case providerErrorCodes.INVALID_API_KEY:
+    case ErrorTypes.INVALID_USER_KEY:
+      /** Only a key the user stored can fail to parse, so there is no administrator variant. */
+      errorMessage =
+        userProvidesKey && provider != null
+          ? localize('com_error_invalid_user_key_provider', { 0: provider })
+          : localize('com_error_invalid_user_key');
+      break;
+    case ProviderErrorCodes.INVALID_API_KEY:
       errorMessage = byOwnership(
         'com_error_invalid_api_key_generic',
         'com_error_invalid_api_key',
         'com_error_invalid_api_key_admin',
       );
       break;
-    case providerErrorCodes.INSUFFICIENT_QUOTA:
+    case ProviderErrorCodes.INSUFFICIENT_QUOTA:
       errorMessage = byOwnership(
         'com_error_insufficient_quota_generic',
         'com_error_insufficient_quota',

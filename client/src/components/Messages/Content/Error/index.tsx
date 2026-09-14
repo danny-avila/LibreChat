@@ -1,11 +1,12 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
 import { parseLangChainErrorCode } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
-import { extractJson, isJson } from '~/utils/json';
-import { UnclassifiedError } from './ProviderError';
-import { errorCopy, errorRenderers } from './registry';
+import type { ErrorSource } from './source';
 import type { ErrorPayload } from './parts';
+import { errorCopy, errorRenderers } from './registry';
+import { UnclassifiedError } from './ProviderError';
+import { extractJson, isJson } from '~/utils/json';
+import { useErrorSource } from './source';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -30,9 +31,14 @@ function getLangChainErrorKey(text: string): TranslationKeys | undefined {
  * and unclassified prose. A payload with copy wins, because it is the only one written for a
  * reader; everything else is shown through `UnclassifiedError`, which leads with what is known and
  * keeps the raw provider text as a detail rather than as the headline.
+ *
+ * `message` is the row when the caller has it; an error content part renders without one and reads
+ * its row's identity from `ErrorSourceProvider` instead.
  */
-const Error = ({ text, message }: { text: string; message?: TMessage }) => {
+const Error = ({ text, message: rowMessage }: { text: string; message?: ErrorSource }) => {
   const localize = useLocalize();
+  const contextSource = useErrorSource();
+  const message = rowMessage ?? contextSource;
 
   const langChainErrorKey = getLangChainErrorKey(text);
   if (langChainErrorKey != null) {

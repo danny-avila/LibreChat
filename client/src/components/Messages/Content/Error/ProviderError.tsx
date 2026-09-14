@@ -1,8 +1,8 @@
 import { ErrorTypes, stripLangChainTroubleshootingUrl } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
+import type { ErrorPayload, ErrorRendererProps, UnclassifiedErrorProps } from './parts';
+import { ErrorBody, ErrorDetails, readObject, readString, useErrorEndpoint } from './parts';
 import { extractJson } from '~/utils/json';
-import type { ErrorRendererProps, UnclassifiedErrorProps } from './parts';
-import { ErrorBody, ErrorDetails, readString, useErrorEndpoint } from './parts';
+import { useLocalize } from '~/hooks';
 
 function withHeadline(
   headline: string,
@@ -20,6 +20,23 @@ function withHeadline(
   );
 }
 
+/**
+ * A refusal's explanation. Anthropic reports one under `stop_details`, which the server persists
+ * inside `info` with the rest of the stop metadata; a Bedrock content filter reports none. A plain
+ * string `info` is read as the explanation too.
+ */
+function readRefusalExplanation(json: ErrorPayload): string | undefined {
+  return (
+    readString(json, 'info') ??
+    readString(readObject(readObject(json, 'info'), 'stop_details'), 'explanation')
+  );
+}
+
+/** A provider's own message, flat or nested under `error` the way OpenAI-style bodies carry it. */
+function readProviderError(json: ErrorPayload | undefined): string | undefined {
+  return readString(json, 'error') ?? readString(readObject(json, 'error'), 'message');
+}
+
 /** Renders provider-produced failures with identity-aware copy and readable provider details. */
 export default function ProviderError({ json, message }: ErrorRendererProps) {
   const localize = useLocalize();
@@ -31,12 +48,12 @@ export default function ProviderError({ json, message }: ErrorRendererProps) {
       model != null
         ? localize('com_error_refusal', { 0: model })
         : localize('com_error_refusal_unknown');
-    const info = readString(json, 'info');
-    return info == null
+    const explanation = readRefusalExplanation(json);
+    return explanation == null
       ? headline
       : withHeadline(headline, {
           label: localize('com_error_refusal_reason'),
-          value: info,
+          value: explanation,
         });
   }
 
@@ -57,7 +74,7 @@ export default function ProviderError({ json, message }: ErrorRendererProps) {
         ? localize('com_error_invalid_request_error', { 0: provider })
         : localize('com_error_invalid_request_error_unknown');
     const detail =
-      [readString(json, 'error'), readString(json, 'message'), readString(json, 'info')]
+      [readProviderError(json), readString(json, 'message'), readString(json, 'info')]
         .filter((value): value is string => value != null)
         .join('\n\n') || undefined;
     return detail == null
@@ -85,7 +102,7 @@ export function UnclassifiedError({ json, text, message }: UnclassifiedErrorProp
   const remainder = jsonString !== '' ? text.replace(jsonString, '') : text;
   const prose =
     stripLangChainTroubleshootingUrl(remainder).trim() ||
-    readString(json, 'error') ||
+    readProviderError(json) ||
     readString(json, 'message') ||
     readString(json, 'info');
   /** A payload that told us nothing usable is its own statement; otherwise name who failed. */
