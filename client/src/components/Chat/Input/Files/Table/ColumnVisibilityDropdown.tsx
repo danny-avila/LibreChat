@@ -1,4 +1,4 @@
-import { useState, useId, useMemo } from 'react';
+import { useState, useId } from 'react';
 import { ListFilter } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
 import { DropdownPopup } from '@librechat/client';
@@ -21,19 +21,19 @@ export function ColumnVisibilityDropdown<TData>({
   const menuId = useId();
   const [isOpen, setIsOpen] = useState(false);
 
-  const dropdownItems = useMemo(
-    () =>
-      table
-        .getAllColumns()
-        .filter((column) => column.getCanHide())
-        .map((column) => ({
-          label: localize(contextMap[column.id]),
-          onClick: () => column.toggleVisibility(!column.getIsVisible()),
-          icon: column.getIsVisible() ? '✓' : '',
-          id: column.id,
-        })),
-    [table, contextMap, localize],
-  );
+  /** Built on every render rather than memoized: the checked state lives in the
+   * table instance, which keeps a stable identity as visibility changes, so a
+   * memo keyed on `table` would keep serving the first render's checkmarks. */
+  const dropdownItems = table
+    .getAllColumns()
+    .filter((column) => column.getCanHide())
+    .map((column) => ({
+      label: localize(contextMap[column.id]),
+      onClick: () => column.toggleVisibility(!column.getIsVisible()),
+      icon: column.getIsVisible() ? '✓' : '',
+      ariaChecked: column.getIsVisible(),
+      id: column.id,
+    }));
 
   return (
     <DropdownPopup
