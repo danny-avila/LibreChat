@@ -444,7 +444,13 @@ function encodeAgentSortCursor(
   } else if (valueType === 'number') {
     primary = String(rawValue ?? 0);
   } else {
-    primary = String(rawValue ?? AUTHOR_SORT_SENTINEL).toLowerCase();
+    /* The row already carries the key `$sort` compared — `$toLower` of the display name —
+       so it is serialized as it stands. Lowercasing it again here would normalize what the
+       database did not: `$toLower` is only defined over ASCII and leaves `Émile` uppercase,
+       while JavaScript lowercases the whole of Unicode. The boundary would then land on
+       `émile` (U+00E9) and the next page's `$match` would skip every key between it and
+       `Émile` (U+00C9). */
+    primary = String(rawValue ?? AUTHOR_SORT_SENTINEL);
   }
 
   const secondary = String(lastAgent._id);
