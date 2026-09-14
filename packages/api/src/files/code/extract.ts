@@ -440,7 +440,10 @@ export async function extractCodeArtifactInspectionText(
       if (category === 'utf8-text') {
         return bounded(extractCodeArtifactRawText(buffer, category));
       }
-      if (category === 'document' || (category === 'presentation' && parserReadsDocument)) {
+      /* The classifier's category and the parser's catalog answer different questions:
+       * a legacy or macro-enabled presentation is categorized `other` and still parses.
+       * What decides whether the parse runs is whether the parser reads the type. */
+      if (category === 'document' || parserReadsDocument) {
         try {
           const parsed = await inspectParsedDocument();
           if (parsed != null) {
@@ -455,7 +458,7 @@ export async function extractCodeArtifactInspectionText(
     if (category === 'utf8-text') {
       return bounded(extractCodeArtifactRawText(buffer, category));
     }
-    if (category !== 'document' && !(category === 'presentation' && parserReadsDocument)) {
+    if (category !== 'document' && !parserReadsDocument) {
       return incomplete();
     }
 

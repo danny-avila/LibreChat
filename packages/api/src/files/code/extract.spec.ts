@@ -599,6 +599,27 @@ describe('extractCodeArtifactInspectionText', () => {
     });
   });
 
+  /* The classifier has no `presentation` category for these: a legacy or macro-enabled
+   * deck is `other`, and the parser reads all of them. */
+  it.each([
+    ['deck.ppt', 'application/vnd.ms-powerpoint'],
+    ['deck.pptm', 'application/octet-stream'],
+    ['deck.pps', 'application/octet-stream'],
+    ['deck.odp', 'application/vnd.oasis.opendocument.presentation'],
+  ])('parses %s even though the classifier calls it other', async (name, mimeType) => {
+    const result = await extractCodeArtifactInspectionText(
+      Buffer.from('PK'),
+      name,
+      mimeType,
+      'other',
+    );
+
+    expect(result).toEqual({
+      text: docxText,
+      complete: true,
+    });
+  });
+
   it('marks parser-readable PPTX text incomplete when pages need OCR', async () => {
     const text = 'text from the readable slides';
     jest.mocked(parseDocument).mockResolvedValueOnce({
