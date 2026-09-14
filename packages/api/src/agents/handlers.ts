@@ -2,7 +2,11 @@ import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
-import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
+import {
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+  hasToolCallErrorPrefix,
+} from 'librechat-data-provider';
 import type {
   LCTool,
   FileRefs,
@@ -13,6 +17,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  SubagentExecutionContext,
   CallerCapabilityProjectionSnapshot,
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
@@ -39,6 +44,7 @@ import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
+import type { RunFileSession } from './files/session';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -76,8 +82,18 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
+  isCodeFileToolName,
   isCodeSessionToolName,
+  isFileResourceToolName,
 } from './tools';
+import {
+  createCodeApiRateLimitBudget,
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
 import {
   ContentFilterError,
   contentFilterModelBoundBlockResponse,
@@ -87,13 +103,6 @@ import {
   BACKGROUND_TASK_ABORT_GRACE_MS,
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
-import {
-  isAbortError,
-  logAxiosError,
-  truncateMiddle,
-  runOutsideTracing,
-  getSafeErrorMetadata,
-} from '~/utils';
 import {
   WorkspaceToolHttpError,
   WORKSPACE_EDIT_MAX_COUNT,
@@ -181,6 +190,8 @@ export interface EventActorDetachedActionLifecycle {
 }
 
 export interface ToolEndCallbackMetadata {
+  /** SDK-authored lineage for artifacts generated inside a child execution. */
+  executionContext?: SubagentExecutionContext;
   run_id?: string;
   thread_id?: string;
   [key: string]: unknown;
@@ -237,6 +248,10 @@ export interface ToolExecuteOptions {
     configurable?: Record<string, unknown>,
     /** SDK-owned live caller capability projection for this agent context. */
     callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
+    /** Effective cancellation signal for this tool-execute batch. */
+    signal?: AbortSignal,
+    /** SDK-authored lineage; never derive child identity from saved agent IDs. */
+    executionContext?: SubagentExecutionContext,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -244,6 +259,8 @@ export interface ToolExecuteOptions {
   }>;
   /** Trusted detached-subagent task scope for polling and parent controls. */
   subagentTasks?: SubagentTaskConfig;
+  /** Shared-file grants and tool contexts scoped to the executing run instance. */
+  runFiles?: Pick<RunFileSession, 'isActive' | 'prepareTools' | 'withCodeExecution'>;
   /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
   ordinaryToolCancellation?: boolean;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
@@ -257,6 +274,7 @@ export interface ToolExecuteOptions {
     toolNames: string[],
     agentId?: string,
     signal?: AbortSignal,
+    executionContext?: SubagentExecutionContext,
   ) => Promise<CodeEnvFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
@@ -466,6 +484,7 @@ export interface ToolExecuteOptions {
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
+    signal?: AbortSignal;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -626,6 +645,7 @@ export interface ToolExecuteOptions {
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<
     | { base64: string; bytes: number }
     /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
@@ -2119,6 +2139,7 @@ async function handleSandboxImageRead(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const filtered = filteredBinaryFileResult(tc, req, filePath);
   if (filtered != null) {
@@ -2153,6 +2174,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...(signal ? { signal } : {}),
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
@@ -2235,10 +2257,20 @@ async function handleSandboxFileFallback(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
+    return handleSandboxImageRead(
+      tc,
+      filePath,
+      ext,
+      options,
+      req,
+      codeExecutionContext,
+      onSuccess,
+      signal,
+    );
   }
   const filteredName = filteredFileNameResult(tc, req, filePath);
   if (filteredName != null) {
@@ -4366,6 +4398,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4402,6 +4435,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4429,6 +4463,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4498,6 +4533,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4544,6 +4580,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4869,6 +4906,8 @@ async function handleSkillToolCall(
   options: ToolExecuteOptions,
   agentId?: string,
   req?: ServerRequest,
+  signal?: AbortSignal,
+  rateLimitBudget?: import('~/utils').CodeApiRateLimitBudget,
 ): Promise<ToolExecuteResult> {
   const {
     getSkillByName,
@@ -4984,7 +5023,9 @@ async function handleSkillToolCall(
   ) {
     let primeResult: PrimeSkillFilesResult | null = null;
     try {
+      signal?.throwIfAborted();
       const skillFiles = await listSkillFiles(skill._id);
+      signal?.throwIfAborted();
       primeResult = await primeSkillFiles({
         skill,
         skillFiles,
@@ -4995,6 +5036,8 @@ async function handleSkillToolCall(
         checkIfActive,
         updateSkillFileCodeEnvIds,
         codeExecutionContext,
+        signal,
+        rateLimitBudget,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -5019,6 +5062,9 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isContentFilterError(error)) {
         return error instanceof ContentFilterError
           ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))
@@ -5093,7 +5139,7 @@ function getFileAuthoringQueueKey(
  * failed background run renders as clean stdout.
  */
 function toBackgroundToolFailure(toolName: string, message: string): string {
-  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
+  if (hasToolCallErrorPrefix(message)) {
     return message;
   }
   return `Error: [${toolName}] tool call failed: ${message}`;
@@ -5211,6 +5257,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    runFiles,
     ordinaryToolCancellation = false,
     provisionFiles,
   } = options;
@@ -5220,12 +5267,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       const {
         toolCalls,
         agentId,
-        configurable,
-        metadata,
+        configurable: incomingConfigurable,
+        metadata: incomingMetadata,
         signal: eventRunSignal,
         resolve,
         reject,
       } = data;
+      const executionContext = (
+        data as ToolExecuteBatchRequest & { executionContext?: SubagentExecutionContext }
+      ).executionContext;
+      // Only the SDK-owned batch field may establish a child execution. Runtime
+      // configurable and callback metadata can otherwise carry inherited values.
+      const configurable: Record<string, unknown> | undefined =
+        incomingConfigurable == null ? undefined : { ...incomingConfigurable, executionContext };
+      const metadata: Record<string, unknown> | undefined =
+        incomingMetadata == null && executionContext == null
+          ? undefined
+          : { ...incomingMetadata, executionContext };
       let eventRunId: string | undefined;
       if (typeof metadata?.run_id === 'string') {
         eventRunId = metadata.run_id;
@@ -5294,8 +5352,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
 
+            const runFileSharingActive = runFiles?.isActive() === true;
+            if (runFileSharingActive) {
+              if (!agentId) throw new Error('Shared-file tools require an executing agent.');
+              await runFiles!.prepareTools(
+                agentId,
+                executionContext,
+                runSignal ?? new AbortController().signal,
+                toolNames.some(isFileResourceToolName) ? 'refresh' : 'snapshot',
+              );
+            }
             const provisionedCodeFiles = provisionFiles
-              ? await provisionFiles(toolNames, agentId, runSignal)
+              ? await provisionFiles(toolNames, agentId, runSignal, executionContext)
               : undefined;
 
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
@@ -5303,6 +5371,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               agentId,
               sourceConfigurable,
               callerCapabilityProjection,
+              runSignal,
+              executionContext,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -5310,6 +5380,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            if (mergedConfigurable != null) mergedConfigurable.executionContext = executionContext;
             /* The graph populated each call's code-session context from the sessions that
              * existed at run start, before this batch provisioned anything, and nothing
              * downstream refreshes it. buildToolCallConfig reads `_injected_files` from
@@ -5317,7 +5388,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
              * a sandbox that cannot see the file. */
             if (provisionedCodeFiles && provisionedCodeFiles.length > 0) {
               for (const tc of allowedToolCalls) {
-                if (!isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !(runFileSharingActive && isCodeFileToolName(tc.name))
+                ) {
                   continue;
                 }
                 const merged = mergeCodeFilesIntoContext(
@@ -5332,6 +5406,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            if (runFileSharingActive && executionContext != null) {
+              for (const tc of allowedToolCalls) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !isCodeFileToolName(tc.name)
+                )
+                  continue;
+                if (!runtimeSessionHint || codeExecutionContext?.environmentType === 'attached') {
+                  throw new Error('This child execution has no isolated file workspace.');
+                }
+                // SDK tool configs may still carry a parent's runtime hint. The
+                // host prepared this partition using the authorized child identity.
+                tc.runtimeSessionHint = runtimeSessionHint;
+              }
+            }
             const executionRouteKey =
               codeExecutionContext?.executionRouteKey ?? codeExecutionContext?.executionProfile;
             const sandboxConversationId =
@@ -6186,6 +6275,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               };
             };
 
+            const batchReq = mergedConfigurable?.req as ServerRequest | undefined;
+            const batchCodeApiRateLimitBudget = createCodeApiRateLimitBudget(
+              batchReq?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+            );
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 const preloadedNameBlock = preloadedNameBlocks.get(tc);
@@ -6429,6 +6522,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   });
                 }
 
+                const usesCodeFiles =
+                  isCodeFileToolName(tc.name) ||
+                  isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+                if (runFileSharingActive && usesCodeFiles && isBackgroundRequested(tc.args)) {
+                  return reportResult(
+                    errorResult(tc, 'Shared-file code tools require foreground execution.'),
+                  );
+                }
+
                 if (
                   backgroundToolSet.has(tc.name) &&
                   isBackgroundRequested(tc.args) &&
@@ -6478,6 +6580,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           agentId,
                           req,
+                          runSignal,
+                          batchCodeApiRateLimitBudget,
                         );
                       } else if (tc.name === Constants.READ_FILE) {
                         handlerResult = await handleReadFileCall(
@@ -6977,9 +7081,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
 
+                const executeWithFileScope = (sandboxContext?: SandboxSessionContext) =>
+                  runFileSharingActive && usesCodeFiles && runFiles != null && agentId != null
+                    ? runFiles.withCodeExecution(
+                        agentId,
+                        executionContext,
+                        runSignal ?? new AbortController().signal,
+                        () => execute(sandboxContext),
+                      )
+                    : execute(sandboxContext);
                 const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
-                  return reportResult(await execute());
+                  return reportResult(await executeWithFileScope());
                 }
                 let sandboxContext: SandboxSessionContext | undefined;
                 if (queueKey.startsWith('sandbox:')) {
@@ -6990,8 +7103,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 }
                 const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
                 const resultPromise = previous.then(
-                  () => execute(sandboxContext),
-                  () => execute(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
                 );
                 authoringQueues.set(
                   queueKey,

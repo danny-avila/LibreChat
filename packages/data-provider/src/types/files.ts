@@ -31,6 +31,7 @@ export enum FileContext {
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
+  run_artifact = 'run_artifact',
   skill_file = 'skill_file',
   filename = 'filename',
   updatedAt = 'updatedAt',
@@ -120,6 +121,19 @@ export type FileConfigInput = {
   legacyFileUploadUX?: boolean;
 };
 
+/** The immutable origin of a file explicitly published from an agent execution. */
+export type RunFileProvenance = {
+  runId: string;
+  executionId: string;
+  agentId: string;
+  parentExecutionId?: string;
+  parentAgentId?: string;
+  recipientAgentIds?: string[];
+  sourceFileId: string;
+  publishedAt: string;
+  inputFileIds: string[];
+};
+
 export type TFile = {
   _id?: string;
   __v?: number;
@@ -170,6 +184,7 @@ export type TFile = {
    */
   previewError?: string;
   metadata?: {
+    runFile?: RunFileProvenance;
     fileIdentifier?: string;
     /**
      * Structured form of `fileIdentifier`. Persisted alongside the

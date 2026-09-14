@@ -2312,6 +2312,37 @@ describe('MCPManager', () => {
       requiresOAuth: false,
     };
 
+    it('forwards the OAuth credential mutation callback to the connection factory', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [] }),
+        on: jest.fn(),
+      } as unknown as MCPConnection;
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const onOAuthCredentialsChanged = jest.fn().mockResolvedValue(undefined);
+      const oauthConfig = { ...serverConfig, requiresOAuth: true };
+
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig: oauthConfig,
+        flowManager: {} as Parameters<typeof manager.getUserConnection>[0]['flowManager'],
+        onOAuthCredentialsChanged,
+      });
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({
+          useOAuth: true,
+          onOAuthCredentialsChanged,
+        }),
+      );
+    });
+
     it('waits for an active recovery before reusing a cached connection', async () => {
       mockAppConnections({
         has: jest.fn().mockResolvedValue(false),
@@ -4068,6 +4099,51 @@ describe('MCPManager', () => {
       expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
+    it('classifies a dynamically detected authentication challenge as OAuth', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: null,
+        connection: null,
+        oauthRequired: true,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
+    });
+
+    it('keeps an authentication challenge server-managed when OAuth is explicitly disabled', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        requiresOAuth: false,
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: null,
+        connection: null,
+        oauthRequired: true,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('server');
+    });
+
     it('should forward runtime context to discoverTools in the non-OAuth path', async () => {
       const mockUser = { id: 'user123', email: 'test@example.com' } as unknown as IUser;
       const customUserVars = { MY_CUSTOM_KEY: 'c527bd0abc123' };
@@ -4176,6 +4252,7 @@ describe('MCPManager', () => {
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
     });
 
@@ -4195,6 +4272,7 @@ describe('MCPManager', () => {
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
       expect(mockLogger.warn).toHaveBeenCalledWith(
         '[MCP][Discovery] OAuth server requires a user and flow manager',
       );
@@ -4225,23 +4303,27 @@ describe('MCPManager', () => {
         oauthUrl: 'https://auth.example.com/authorize',
       });
 
+      const onDiscoveryDetached = jest.fn();
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({
         serverName,
         user: mockUser,
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
         graphTokenResolver: jest.fn(),
+        onDiscoveryDetached,
       });
 
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(true);
       expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
+      expect(result.authenticationKind).toBe('oauth');
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
         expect.objectContaining({ serverName }),
         expect.objectContaining({
           user: mockUser,
           useOAuth: true,
           graphTokenResolver: expect.any(Function),
+          onDiscoveryDetached,
         }),
       );
     });
@@ -4270,6 +4352,58 @@ describe('MCPManager', () => {
         removeAllListeners: jest.fn(),
         dispose: jest.fn().mockResolvedValue(undefined),
       }) as unknown as MCPConnection;
+
+    /** An OAuth server whose connection build refreshes credentials, fencing the catalog mid-build. */
+    const refreshingOAuthServer = () => {
+      const connection = newUserConnection();
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://oauth-mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+        requiresOAuth: true,
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (_basic: t.BasicConnectionOptions, options: t.OAuthConnectionOptions) => {
+          const publish = await options.onOAuthCredentialsChanging?.({ userId, serverName });
+          await publish?.();
+          return connection;
+        },
+      );
+      return {
+        connection,
+        serverConfig,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      };
+    };
+
+    const adoptingOAuthServer = (
+      adopt: (options: t.OAuthConnectionOptions) => Promise<void> | void,
+    ) => {
+      const connection = newUserConnection();
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://oauth-mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+        requiresOAuth: true,
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (_basic: t.BasicConnectionOptions, options: t.OAuthConnectionOptions) => {
+          await adopt(options);
+          return connection;
+        },
+      );
+      return {
+        connection,
+        serverConfig,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      };
+    };
 
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
       mockAppConnections({
@@ -4962,6 +5096,17 @@ describe('MCPManager', () => {
       }
     });
 
+    it('clears catalog recovery suppression for mutations but preserves it for lifecycle cleanup', async () => {
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const clearRecoveryState = jest.spyOn(manager.getCatalogRecoveryTracker(), 'clear');
+
+      await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
+      expect(clearRecoveryState).not.toHaveBeenCalled();
+
+      await manager.disconnectUserConnection(userId, serverName);
+      expect(clearRecoveryState).toHaveBeenCalledWith(userId, serverName, undefined);
+    });
+
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
@@ -5383,6 +5528,153 @@ describe('MCPManager', () => {
       }
     });
 
+    it('leases a new connection under the generation its own credential refresh published', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const { serverConfig, flowManager } = refreshingOAuthServer();
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          flowManager,
+          serverConfig,
+          onOAuthCredentialsChanging: async () => async () => 'generation-b',
+        });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-b',
+        });
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('still fences a new connection when a rotation follows its own credential refresh', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(false);
+      const { serverConfig, flowManager, connection } = refreshingOAuthServer();
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.getUserConnection({
+            serverName,
+            user: mockUser,
+            flowManager,
+            serverConfig,
+            onOAuthCredentialsChanging: async () => async () => 'generation-b',
+          }),
+        ).rejects.toThrow('Publication lease is no longer current');
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-b',
+        });
+        expect(connection.dispose).toHaveBeenCalled();
+        expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('leases a new connection under the carried generation while it is the one currently stored', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const { serverConfig, flowManager } = adoptingOAuthServer(async (options) => {
+        generationSpy.mockResolvedValue('generation-b');
+        await options.onOAuthCredentialsAdopted?.('generation-b');
+      });
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser, flowManager, serverConfig });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-b',
+        });
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('keeps its captured generation when the carried one is no longer stored', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const { serverConfig, flowManager } = adoptingOAuthServer((options) =>
+        options.onOAuthCredentialsAdopted?.('generation-b'),
+      );
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser, flowManager, serverConfig });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-a',
+        });
+        expect(renewalSpy).not.toHaveBeenCalledWith(
+          expect.objectContaining({ publicationGeneration: 'generation-b' }),
+        );
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
+    it('re-captures the generation before re-reading credentials a change invalidated', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const { serverConfig, flowManager } = adoptingOAuthServer(async (options) => {
+        generationSpy.mockResolvedValue('generation-c');
+        await options.onOAuthCredentialsInvalidated?.();
+      });
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser, flowManager, serverConfig });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-c',
+        });
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
     it('does not return a reused connection cancelled while its lease renewal is pending', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
@@ -5691,6 +5983,48 @@ describe('MCPManager', () => {
       expect(first).toBe(firstConnection);
       expect(second).toBe(secondConnection);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('isolates an unattended probe from a live user connection', async () => {
+      const config: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'user',
+        requiresOAuth: false,
+      };
+      const live = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+        on: jest.fn(),
+        disconnect: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
+      const probe = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
+      } as unknown as MCPConnection;
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(live)
+        .mockResolvedValueOnce(probe);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      expect(await manager.getUserConnection({ serverName, user: mockUser })).toBe(live);
+      const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
+        connections: new Map(),
+        pending: new Map(),
+      };
+      expect(
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          ephemeralConnection: true,
+          requestScopedConnections,
+        }),
+      ).toBe(probe);
+      expect(await manager.getUserConnection({ serverName, user: mockUser })).toBe(live);
+      expect(live.disconnect).not.toHaveBeenCalled();
+      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(probe);
     });
 
     it('should reuse BODY-scoped connections within a request-scoped connection store', async () => {

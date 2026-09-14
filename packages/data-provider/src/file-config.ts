@@ -791,6 +791,13 @@ const documentMimeExtensions: ReadonlyArray<readonly [string, readonly string[]]
   ['message/rfc822', ['.eml']],
 ];
 
+/** Preferred extension for a known document MIME type, including its leading dot. */
+export function getDocumentFileExtension(mimeType?: string): string | undefined {
+  const normalized = mimeType?.split(';', 1)[0].trim().toLowerCase();
+  const canonical = normalized === 'text/comma-separated-values' ? 'text/csv' : normalized;
+  return documentMimeExtensions.find(([type]) => type === canonical)?.[1][0];
+}
+
 const documentMimeSet = new Set(documentMimeExtensions.map(([mimeType]) => mimeType));
 
 /** Every MIME type LibreChat may accept, used to detect patterns that reach beyond the representable set. */

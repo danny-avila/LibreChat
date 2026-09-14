@@ -14,6 +14,7 @@ export * from './Projects';
 export * from './Schedules';
 export * from './Subagents';
 export * from './Tools';
+export * from './Traces';
 export * from './connection';
 export * from './Favorites';
 export * from './CodeEnvironments';

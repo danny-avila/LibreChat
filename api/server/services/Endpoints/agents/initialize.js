@@ -2,6 +2,8 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   resolveSender,
+  resolveRunConversation,
+  resolveConversationCodeEnvironmentDecision,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
@@ -22,11 +24,22 @@ const {
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  optsOutOfAttachedCodeEnvironment,
+  isImplicitStatefulCodeRouteAvailable,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
   createLazyAgentHistoryResolver,
   resolveToolRoleGrants,
+  createChatRunFileBindings,
+  createAxiosInstance,
+  getCodeApiAuthHeaders,
+  getCodeExecutionBaseUrl,
+  getAuthorizedRunFileSnapshot,
+  encodeAndFormatDocuments,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  extractFileContext,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -37,6 +50,7 @@ const {
   AgentCapabilities,
   normalizeServerName,
   Tools,
+  VisionModes,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
@@ -85,6 +99,10 @@ const {
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
+const { determineFileType } = require('~/server/utils');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -191,14 +209,13 @@ const initializeClient = async ({
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
-  const conversationId = req.body?.conversationId;
-  const runtimeRequestBody = requestBody ?? req.body;
-  let requestConversationPromise = Promise.resolve(null);
-  if (Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
-    requestConversationPromise = Promise.resolve(req.resolvedConversation);
-  } else if (typeof conversationId === 'string' && conversationId !== '') {
-    requestConversationPromise = db.getConvo(req.user.id, conversationId);
-  }
+  let runtimeRequestBody = requestBody ?? req.body;
+  const conversationId = runtimeRequestBody?.conversationId;
+  const requestConversationPromise = resolveRunConversation({
+    request: req,
+    conversationId,
+    loadConversation: (conversationId) => db.getConvo(req.user.id, conversationId),
+  });
   const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
@@ -346,6 +363,7 @@ const initializeClient = async ({
    * }>}
    */
   const agentToolContexts = new Map();
+  let runFileBindings;
   const resolveMcpServerName = (toolName, agentId) => {
     if (typeof toolName !== 'string' || typeof agentId !== 'string') {
       return undefined;
@@ -400,7 +418,7 @@ const initializeClient = async ({
     if (trustedContext?.codeExecutionContext) {
       callbackMetadata.codeExecutionContext = trustedContext.codeExecutionContext;
     }
-    return artifactToolEndCallback(data, callbackMetadata);
+    return runFileBindings.deliverToolEnd(artifactToolEndCallback, data, callbackMetadata);
   };
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
@@ -413,20 +431,31 @@ const initializeClient = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
-    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
-      const ctx = agentToolContexts.get(agentId) ?? {};
+    loadTools: async (
+      toolNames,
+      agentId,
+      _configurable,
+      callerCapabilityProjection,
+      runSignal,
+      executionContext,
+    ) => {
+      const ctx = runFileBindings.getContext(agentId, executionContext) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
 
       const result = await loadToolsForExecution({
         req,
         res,
-        signal,
+        signal: runSignal ?? signal,
         streamId,
         conversationId,
         requestBody: runtimeRequestBody,
         toolNames,
         agent: ctx.agent,
+        runFileCodeExecutionContext: runFileBindings.getCodeExecutionContext(
+          agentId,
+          executionContext,
+        ),
         toolRegistry: ctx.toolRegistry,
         callerCapabilityProjection,
         backgroundToolNames: ctx.backgroundToolNames,
@@ -556,6 +585,27 @@ const initializeClient = async ({
     requestConversationPromise,
     toolRoleGrantsPromise,
   ]);
+  /** Preserve the owner-scoped fallback for loaders that share this request. */
+  req.resolvedConversation = requestConversation;
+  const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+    conversationId,
+    requestedMode: runtimeRequestBody?.codeEnvironmentMode,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    conversation: requestConversation,
+  });
+  /** Trusted, normalized pair used by every persistence path, including init failures. */
+  req._codeEnvironmentDecision = codeEnvironmentDecision;
+  runtimeRequestBody = {
+    ...runtimeRequestBody,
+    codeEnvironmentMode: codeEnvironmentDecision.mode,
+    codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
+  };
+  req.body.codeEnvironmentMode = codeEnvironmentDecision.mode;
+  if (codeEnvironmentDecision.codeWorkspaces == null) {
+    delete req.body.codeWorkspaces;
+  } else {
+    req.body.codeWorkspaces = codeEnvironmentDecision.codeWorkspaces;
+  }
   delete endpointOption.agent;
 
   /** The deployment switch AND the role grant. `initializeAgent` rebuilds
@@ -684,6 +734,7 @@ const initializeClient = async ({
       checkSessionsAlive,
       loadCodeApiKey,
       updateFile: db.updateFile,
+      getRoleByName: db.getRoleByName,
     },
   );
 
@@ -774,6 +825,7 @@ const initializeClient = async ({
         checkSessionsAlive,
         loadCodeApiKey,
         updateFile: db.updateFile,
+        getRoleByName: db.getRoleByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -1004,8 +1056,21 @@ const initializeClient = async ({
   });
 
   const toLazySubagentMetadata = async (agent) => {
+    const configuredCodeEnvironments =
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+      agent,
+      runtimeRequestBody,
+      configuredCodeEnvironments,
+      isImplicitStatefulCodeRouteAvailable(
+        process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+        process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+      ),
+    );
     const lazyCodeEnvAvailable =
-      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true;
+      codeEnvAvailable === true &&
+      agent.tools?.includes(Tools.execute_code) === true &&
+      !attachedEnvironmentOptOut;
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       lazyCodeEnvAvailable &&
@@ -1018,28 +1083,22 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
-    const configuredCodeEnvironments =
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
-    const hasConfiguredCodeEnvironment =
-      agent.code_environment_id != null ||
-      configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const baseCodeExecutionContext =
-      lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
-        ? resolveCodeExecutionContext({
-            statefulSessions: statefulCodeSessions,
-            environment: statefulCodeEnvironment,
-            environmentId: agent.code_environment_id,
-            environments: configuredCodeEnvironments,
-            userId,
-            agentId: agent.id,
-            conversationId,
-          })
-        : undefined;
+    const baseCodeExecutionContext = lazyCodeEnvAvailable
+      ? resolveCodeExecutionContext({
+          statefulSessions: statefulCodeSessions,
+          environment: statefulCodeEnvironment,
+          environmentId: agent.code_environment_id,
+          environments: configuredCodeEnvironments,
+          userId,
+          agentId: agent.id,
+          conversationId,
+        })
+      : undefined;
     const codeExecutionContext = baseCodeExecutionContext
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,
           requestedSelections: runtimeRequestBody?.codeWorkspaces,
-          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          persistedSelections: requestConversation?.codeWorkspaces,
           environments: configuredCodeEnvironments,
           getAppConfig,
         })
@@ -1191,6 +1250,11 @@ const initializeClient = async ({
           agent,
           loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
           requestFiles,
+          authorizedRunFiles: getAuthorizedRunFileSnapshot({
+            policy: appConfig.endpoints?.agents?.fileSharing,
+            agent: primaryConfig,
+            files: primaryConfig.currentRequestAttachments,
+          }),
           conversationId,
           parentMessageId,
           requestBody: runtimeRequestBody,
@@ -1235,6 +1299,7 @@ const initializeClient = async ({
           checkSessionsAlive,
           loadCodeApiKey,
           updateFile: db.updateFile,
+          getRoleByName: db.getRoleByName,
         },
       ),
       context.signal,
@@ -1599,6 +1664,7 @@ const initializeClient = async ({
           req,
           payload,
           skillNames,
+          signal,
           accessibleSkillIds,
           executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),
@@ -1644,6 +1710,54 @@ const initializeClient = async ({
             subagentThreadTaskStore.publishTaskActivity(conversationId, eventTaskId, event),
         }
       : null;
+
+  runFileBindings = createChatRunFileBindings({
+    req,
+    contexts: agentToolContexts,
+    createdAt: jobCreatedAt,
+    requestFiles,
+    audit: (event) => logger.info('[agents:run-files]', event),
+    getInputs: () => primaryConfig.currentRequestAttachments,
+    loadFiles: (fileIds) => db.getRunFileCandidates(fileIds, req.user.tenantId),
+    filterFiles: filterFilesByAgentAccess,
+    listPublications: db.listRunArtifacts,
+    provisioning: {
+      provisionToCodeEnv,
+      provisionToVectorDB,
+      updateFile: db.updateFile,
+      updateCodeEnvRef: db.updateFileCodeEnvRef,
+      addEmbeddedEntity: db.addFileEmbeddedEntity,
+    },
+    fileMethods: {
+      claimRunArtifactFile: db.claimRunArtifactFile,
+      publishRunArtifactFile: db.publishRunArtifactFile,
+      findRunArtifactFile: db.findRunArtifactFile,
+    },
+    processCodeOutput,
+    snapshotAdapter: {
+      request: createAxiosInstance(),
+      getAuthHeaders: getCodeApiAuthHeaders,
+      getBaseURL: getCodeExecutionBaseUrl,
+      determineFileType,
+    },
+    finalize: runPreviewFinalize,
+    getStrategyFunctions,
+    artifactPromises,
+    emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
+    encoder: {
+      getAgent: (agentId) => agentToolContexts.get(agentId)?.fileEncodingAgent,
+      encodeImages: (request, files, params) =>
+        encodeAndFormat(request, files, params, VisionModes.agents),
+      encodeDocuments: encodeAndFormatDocuments,
+      encodeAudios: encodeAndFormatAudios,
+      encodeVideos: encodeAndFormatVideos,
+      extractText: extractFileContext,
+    },
+  });
+  toolExecuteOptions.runFiles = runFileBindings.session;
+  toolExecuteOptions.provisionFiles = runFileBindings.wrapProvision(
+    toolExecuteOptions.provisionFiles,
+  );
 
   const eventHandlers = getDefaultHandlers({
     res,
@@ -1694,6 +1808,7 @@ const initializeClient = async ({
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
     subagentAggregatorsByToolCallId,
     subagentTasks,
+    runFiles: runFileBindings.session,
     /** Resolved endpoint token/pricing config so spending and cost reflect
      *  configured rates for custom-endpoint agents instead of defaults. */
     endpointTokenConfig: primaryConfig.endpointTokenConfig,

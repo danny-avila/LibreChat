@@ -338,6 +338,77 @@ describe('useSteering', () => {
       );
     });
 
+    it.each([
+      ['new response', 'user-message_'],
+      ['regenerated response', 'old-assistant_'],
+      ['edited response', 'old-assistant'],
+    ])('anchors an optimistic %s through its durable user parent', async (_label, messageId) => {
+      mockMessages = [
+        {
+          messageId: 'user-message',
+          parentMessageId: Constants.NO_PARENT,
+          isCreatedByUser: true,
+          createdAt: '2026-09-09T12:00:00.000Z',
+          updatedAt: '2026-09-09T12:00:00.000Z',
+        } as TMessage,
+        ...(messageId === 'old-assistant_'
+          ? [
+              {
+                messageId: 'old-assistant',
+                parentMessageId: 'user-message',
+                isCreatedByUser: false,
+                createdAt: '2026-09-09T12:00:01.000Z',
+                updatedAt: '2026-09-09T12:00:01.000Z',
+              } as TMessage,
+            ]
+          : []),
+        {
+          messageId,
+          parentMessageId: 'user-message',
+          isCreatedByUser: false,
+          clientQueueParentMessageId: 'user-message',
+        } as TMessage,
+      ];
+      const { result } = setupServerQueue();
+
+      await act(async () => {
+        expect(result.current.steering.queueFromComposer('follow the pending answer')).toBe(true);
+        await Promise.resolve();
+      });
+
+      expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ parentMessageId: 'user-message' }),
+        expect.any(Object),
+      );
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ parentMessageId: 'user-message' }),
+      ]);
+    });
+
+    it('preserves an exact persisted assistant id ending in an underscore', async () => {
+      mockMessages = [
+        {
+          messageId: 'persisted-assistant_',
+          parentMessageId: 'user-message',
+          isCreatedByUser: false,
+        } as TMessage,
+      ];
+      const { result } = setupServerQueue();
+
+      await act(async () => {
+        expect(result.current.steering.queueFromComposer('keep the exact branch')).toBe(true);
+        await Promise.resolve();
+      });
+
+      expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ parentMessageId: 'persisted-assistant_' }),
+        expect.any(Object),
+      );
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ parentMessageId: 'persisted-assistant_' }),
+      ]);
+    });
+
     it('applies an admitted POST replay to the consumed predecessor set', async () => {
       mockEnqueueQueuedTurn.mockImplementation((input, options) => {
         options.onSuccess({

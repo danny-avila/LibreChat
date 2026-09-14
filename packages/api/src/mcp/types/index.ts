@@ -28,7 +28,7 @@ import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
 export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
-  Pick<RequestBody, 'parentMessageId' | 'codeWorkspaces'>;
+  Pick<RequestBody, 'parentMessageId' | 'codeEnvironmentMode' | 'codeWorkspaces'>;
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -261,6 +261,36 @@ export interface UserConnectionContext {
    *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
    *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
   deadlineMs?: number;
+  /** Advances application authorization state after OAuth token persistence succeeds. */
+  onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  /**
+   * Persists authorization-fence intent before OAuth token rows change and returns its publisher.
+   * The publisher reports the generation it wrote, so a caller that fenced its own credential
+   * change can adopt that generation instead of the one it captured beforehand.
+   */
+  onOAuthCredentialsChanging?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<() => Promise<string | undefined>>;
+  /**
+   * Receives discovery work the caller stopped waiting for at its deadline or abort, such as an
+   * OAuth token flow still persisting a refresh. The work keeps running; the promise settles with it.
+   */
+  onDiscoveryDetached?: (work: Promise<unknown>) => void;
+  /**
+   * Reports the publication generation carried by credentials the factory adopted from an
+   * authorization or refresh it did not perform. A caller leasing a generation captured before it
+   * resolved credentials moves the lease to the reported one while that is the generation
+   * currently stored: the build then leases under the publication that stored its credentials
+   * and stays fenced by any rotation that followed them.
+   */
+  onOAuthCredentialsAdopted?: (publicationGeneration: string) => Promise<void>;
+  /**
+   * Runs before the factory re-reads credentials from storage because a credential change
+   * invalidated its cached token flow. A caller leasing a generation captured earlier re-captures
+   * it here, ahead of the read, so a rotation that follows the read still fences the build.
+   */
+  onOAuthCredentialsInvalidated?: () => Promise<void>;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -324,6 +354,9 @@ export interface ToolDiscoveryOptions {
   connectionTimeout?: number;
   /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
   deadlineMs?: number;
+  onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
+  onDiscoveryDetached?: UserConnectionContext['onDiscoveryDetached'];
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
@@ -336,4 +369,5 @@ export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  authenticationKind?: 'oauth' | 'obo' | 'server';
 }

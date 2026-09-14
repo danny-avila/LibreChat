@@ -306,6 +306,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               persistedContent={persistedContent}
+              subagentIdentity={toolCall.subagentIdentity}
               hideAttachments={hideAttachments}
             />
           );

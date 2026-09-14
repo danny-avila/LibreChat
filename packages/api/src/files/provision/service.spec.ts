@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { AxiosError, AxiosHeaders } from 'axios';
 import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
@@ -20,9 +21,14 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: () => 'http://code.test/v1',
 }));
 
+import { createCodeApiUploadRegistry } from '~/utils';
 import { createProvisionService } from './service';
+import { selectCodeFiles } from '../code/priming';
 
-const req = { user: { id: 'u1' } } as unknown as ServerRequest;
+const req = {
+  user: { id: 'u1' },
+  app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+} as unknown as ServerRequest;
 
 const makeFile = (overrides: Partial<TFile> = {}): TFile =>
   ({
@@ -73,6 +79,48 @@ describe('createProvisionService', () => {
   });
 
   describe('provisionToCodeEnv', () => {
+    it('waits out Code API throttling and reopens the upload stream', async () => {
+      const rateLimit = new AxiosError('Request failed', 'ERR_BAD_REQUEST');
+      rateLimit.response = {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: new AxiosHeaders({ 'retry-after': '0' }),
+        config: { headers: new AxiosHeaders() },
+        data: {},
+      };
+      const streams = [Readable.from('first'), Readable.from('second')];
+      const getDownloadStream = jest
+        .fn()
+        .mockResolvedValueOnce(streams[0])
+        .mockResolvedValueOnce(streams[1]);
+      const uploadCodeEnvFile = jest
+        .fn()
+        .mockRejectedValueOnce(rateLimit)
+        .mockResolvedValueOnce({ storage_session_id: 's1', file_id: 'remote-1' });
+      const { service } = buildService({
+        getStrategyFunctions: (source: string) =>
+          source === 'execute_code'
+            ? { handleFileUpload: uploadCodeEnvFile }
+            : { getDownloadStream },
+      });
+
+      await expect(
+        service.provisionToCodeEnv({
+          req,
+          file: makeFile(),
+          rateLimitBudget: {
+            limitMs: 2_000,
+            waitedMs: 0,
+            activeWaitEnds: new Set(),
+          },
+        }),
+      ).resolves.toMatchObject({ referenceSet: { codeEnvRef: { file_id: 'remote-1' } } });
+
+      expect(uploadCodeEnvFile).toHaveBeenCalledTimes(2);
+      expect(getDownloadStream).toHaveBeenCalledTimes(2);
+      expect(uploadCodeEnvFile.mock.calls.map(([args]) => args.stream)).toEqual(streams);
+    });
+
     it('renames a converted image to match its stored MIME type', async () => {
       const { service, uploadCodeEnvFile } = buildService();
 
@@ -85,6 +133,43 @@ describe('createProvisionService', () => {
         expect.objectContaining({ filename: 'photo.webp' }),
       );
       expect(result.referenceSet.codeEnvRefs?.default?.file_id).toBe('remote-1');
+      expect(result.refUpdate.ref.sandboxFilename).toBe('photo.webp');
+      expect(result.referenceSet.codeEnvRef?.sandboxFilename).toBe('photo.webp');
+    });
+
+    it('persists an assigned alias and preserves it through the next priming pass', async () => {
+      const { service } = buildService();
+      const original = makeFile();
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: original,
+        sandboxFilename: 'data-alias.csv',
+      });
+      const { selected } = await selectCodeFiles({
+        files: [{ ...original, metadata: { ...original.metadata, ...result.referenceSet } }],
+        routeKey: 'default',
+        getFileInfo: async () => null,
+      });
+      expect(result.refUpdate.ref.sandboxFilename).toBe('data-alias.csv');
+      expect(selected[0].sandboxName).toBe('data-alias.csv');
+    });
+
+    it('persists the adapter receipt after normalizing a nested upload name', async () => {
+      const { service, uploadCodeEnvFile } = buildService();
+      uploadCodeEnvFile.mockResolvedValue({
+        storage_session_id: 's1',
+        file_id: 'remote-1',
+        filename: 'file.csv',
+      });
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: makeFile({ filename: 'my dir/file.csv' }),
+      });
+      expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'file.csv' }),
+      );
+      expect(result.refUpdate.ref.sandboxFilename).toBe('file.csv');
+      expect(result.sandboxFilename).toBe('file.csv');
     });
 
     it('refuses a source whose download contract differs', async () => {
@@ -112,9 +197,14 @@ describe('createProvisionService', () => {
     it('cancels storage acquisition and destroys a stream returned after cancellation', async () => {
       const controller = new AbortController();
       let resolveDownload!: (stream: Readable) => void;
+      let markDownloadStarted!: () => void;
+      const downloadStarted = new Promise<void>((resolve) => {
+        markDownloadStarted = resolve;
+      });
       const getDownloadStream = jest.fn(
         () =>
           new Promise<Readable>((resolve) => {
+            markDownloadStarted();
             resolveDownload = resolve;
           }),
       );
@@ -128,6 +218,7 @@ describe('createProvisionService', () => {
         signal: controller.signal,
       });
 
+      await downloadStarted;
       controller.abort();
       const stream = new Readable({ read() {} });
       const destroy = jest.spyOn(stream, 'destroy');

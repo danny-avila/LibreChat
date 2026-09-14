@@ -437,8 +437,21 @@ describe('ImportBatchBuilder content filtering', () => {
     const messageCalls = mockAssertModelBoundContent.mock.calls.filter(
       ([input]) => input.storedMessages != null,
     );
-    expect(fileCalls).toEqual([[{ filters, resolvedFiles: [canonicalFile] }]]);
+    expect(fileCalls).toEqual([
+      [
+        {
+          filters,
+          resolvedFiles: [canonicalFile],
+          onTraversalFailure: actualApi.reportLocatorTraversalFailure,
+        },
+      ],
+    ]);
     expect(messageCalls).toHaveLength(2);
+    expect(
+      messageCalls.every(
+        ([input]) => input.onTraversalFailure === actualApi.reportLocatorTraversalFailure,
+      ),
+    ).toBe(true);
     expect(messageCalls.every(([input]) => input.storedMessages.length === 1)).toBe(true);
     expect(messageCalls.every(([input]) => input.resolvedFiles == null)).toBe(true);
   });
@@ -742,8 +755,21 @@ describe('ImportBatchBuilder content filtering', () => {
     const messageCalls = mockAssertModelBoundContent.mock.calls.filter(
       ([input]) => input.storedMessages != null,
     );
-    expect(fileCalls).toEqual([[{ filters, resolvedFiles: [canonicalFile] }]]);
+    expect(fileCalls).toEqual([
+      [
+        {
+          filters,
+          resolvedFiles: [canonicalFile],
+          onTraversalFailure: actualApi.reportLocatorTraversalFailure,
+        },
+      ],
+    ]);
     expect(messageCalls).toHaveLength(2);
+    expect(
+      messageCalls.every(
+        ([input]) => input.onTraversalFailure === actualApi.reportLocatorTraversalFailure,
+      ),
+    ).toBe(true);
     expect(messageCalls.every(([input]) => input.storedMessages.length === 1)).toBe(true);
     expect(messageCalls.every(([input]) => input.resolvedFiles == null)).toBe(true);
     expect(bulkSaveMessages).not.toHaveBeenCalled();

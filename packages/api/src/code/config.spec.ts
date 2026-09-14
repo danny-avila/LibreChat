@@ -1,6 +1,59 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { mergeAccessibleCodeEnvironments } from './config';
+import {
+  isImplicitStatefulCodeRouteAvailable,
+  mergeAccessibleCodeEnvironments,
+  resolveCodeEnvironmentDecisionVersion,
+  resolveCodeEnvironmentMoveVersion,
+} from './config';
+
+describe('resolveCodeEnvironmentDecisionVersion', () => {
+  it('advertises the exact supported protocol version', () => {
+    expect(resolveCodeEnvironmentDecisionVersion('1')).toBe(1);
+  });
+
+  it.each([undefined, '0', '2', '1.0', 'true'])(
+    'keeps unsupported configured version %s on the legacy-safe path',
+    (version) => {
+      expect(resolveCodeEnvironmentDecisionVersion(version)).toBeUndefined();
+    },
+  );
+});
+
+describe('resolveCodeEnvironmentMoveVersion', () => {
+  const withMoves = (conversationMoves?: { enabled?: boolean }) =>
+    ({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'], conversationMoves },
+        },
+      },
+    }) as unknown as AppConfig;
+
+  it('advertises moves only where the effective policy enables them', () => {
+    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
+  });
+
+  it.each([undefined, {}, { enabled: false }])(
+    'keeps sealed decisions immovable by default: %j',
+    (conversationMoves) => {
+      expect(resolveCodeEnvironmentMoveVersion(withMoves(conversationMoves))).toBeUndefined();
+    },
+  );
+
+  it('keeps moves off without any stateful code configuration', () => {
+    expect(resolveCodeEnvironmentMoveVersion({} as AppConfig)).toBeUndefined();
+    expect(resolveCodeEnvironmentMoveVersion(undefined)).toBeUndefined();
+  });
+});
+
+describe('isImplicitStatefulCodeRouteAvailable', () => {
+  it('requires both the deployed protocol version and a non-empty managed base URL', () => {
+    expect(isImplicitStatefulCodeRouteAvailable('1', 'https://code.example/v1')).toBe(true);
+    expect(isImplicitStatefulCodeRouteAvailable(undefined, 'https://code.example/v1')).toBe(false);
+    expect(isImplicitStatefulCodeRouteAvailable('1', '  ')).toBe(false);
+  });
+});
 
 describe('mergeAccessibleCodeEnvironments', () => {
   test('adds principal environments without allowing them to shadow deployment entries', async () => {

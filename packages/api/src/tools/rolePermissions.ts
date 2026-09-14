@@ -18,6 +18,7 @@ import { checkAccessWithRequestCache } from '../middleware/access';
 export const toolRolePermissions: Partial<Record<string, PermissionTypes>> = {
   [Tools.file_search]: PermissionTypes.FILE_SEARCH,
   [Tools.execute_code]: PermissionTypes.RUN_CODE,
+  [Tools.web_search]: PermissionTypes.WEB_SEARCH,
 };
 
 /**
@@ -252,34 +253,66 @@ export interface ToolRoleGrants {
   runCode: boolean;
   /** `FILE_SEARCH.USE` — the search tool and its uploads. */
   fileSearch: boolean;
+  /** `WEB_SEARCH.USE` — the `web_search` tool and provider-native web search. */
+  webSearch: boolean;
 }
 
 export interface ResolveToolRoleGrantsParams {
   req?: ServerRequest;
+  /**
+   * Whose grants to resolve. Defaults to `req.user`, which is all a route-backed
+   * caller needs. Callers that carry the user outside the request — the agent
+   * execution context, whose `runtime` is the canonical source and whose `req` is
+   * a compatibility adapter some routes no longer pass — supply it here, or the
+   * absent `req.user` would read as a denial.
+   */
+  user?: CheckAccessParams['user'] | null;
   getRoleByName: CheckAccessParams['getRoleByName'];
   context?: string;
 }
 
 /**
- * Resolves both tool grants for a request, once.
+ * Resolves all three tool grants for a request, once.
  *
- * Every gate on `AgentCapabilities.execute_code` / `file_search` reads its role
- * half from here, so a boundary is authorized by pairing the capability with a
- * field of this object rather than by repeating a permission check. The two
- * lookups run together and the result is memoized on the request, so a startup
- * that consults several gates — the tool loader, the agent initializer, an
- * upload handler — pays one role read between them.
+ * Every gate on `AgentCapabilities.execute_code` / `file_search` / `web_search`
+ * reads its role half from here, so a boundary is authorized by pairing the
+ * capability with a field of this object rather than by repeating a permission
+ * check. The three lookups run together and the result is memoized on the
+ * request, so a startup that consults several gates — the tool loader, the
+ * agent initializer, an upload handler — pays one role read between them.
  *
  * Callers that want the read off their critical path can start it early without
  * awaiting; the memoized promise is what later callers join.
  *
- * Fails closed: a missing user or a check that throws denies both.
+ * Fails closed: a missing user or a check that throws denies all three.
  */
 export function resolveToolRoleGrants({
   req,
+  user,
   getRoleByName,
   context = 'toolRoleGrants',
 }: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
+  const subject = (user ?? req?.user) as CheckAccessParams['user'];
+  /** The three checks below read the same role. A request-backed call dedupes
+   *  them in `checkAccess`'s per-request cache, but a caller with no `req` — the
+   *  OpenAI-compatible and Responses routes, which carry the user on `runtime` —
+   *  has no such cache and would issue three identical reads. Sharing one
+   *  in-flight promise per role name makes it one read either way. */
+  const roleReads = new Map<string, ReturnType<typeof getRoleByName>>();
+  const getRoleOnce: typeof getRoleByName = (roleName, fieldsToSelect) => {
+    let pending = roleReads.get(roleName);
+    if (!pending) {
+      pending = Promise.resolve(getRoleByName(roleName, fieldsToSelect)).catch((error) => {
+        roleReads.delete(roleName);
+        throw error;
+      });
+      roleReads.set(roleName, pending);
+    }
+    return pending;
+  };
+  /** Keyed on the request alone, so it assumes one subject per request — true of
+   *  every caller, since a request authorizes the user who made it. Pass no `req`
+   *  to resolve a different subject without reading another's cached grants. */
   const cache = req as
     | (ServerRequest & { [toolRoleGrantsKey]?: Promise<ToolRoleGrants> })
     | undefined;
@@ -291,19 +324,26 @@ export function resolveToolRoleGrants({
   const pending = Promise.all([
     checkToolRolePermission({
       req,
-      user: req?.user as CheckAccessParams['user'],
+      user: subject,
       permissionType: PermissionTypes.RUN_CODE,
-      getRoleByName,
+      getRoleByName: getRoleOnce,
       context,
     }),
     checkToolRolePermission({
       req,
-      user: req?.user as CheckAccessParams['user'],
+      user: subject,
       permissionType: PermissionTypes.FILE_SEARCH,
-      getRoleByName,
+      getRoleByName: getRoleOnce,
       context,
     }),
-  ]).then(([runCode, fileSearch]) => ({ runCode, fileSearch }));
+    checkToolRolePermission({
+      req,
+      user: subject,
+      permissionType: PermissionTypes.WEB_SEARCH,
+      getRoleByName: getRoleOnce,
+      context,
+    }),
+  ]).then(([runCode, fileSearch, webSearch]) => ({ runCode, fileSearch, webSearch }));
 
   if (cache) {
     Object.defineProperty(cache, toolRoleGrantsKey, { value: pending, enumerable: false });

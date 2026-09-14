@@ -1851,6 +1851,51 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('lets persistence settle the flow inside its rollback boundary', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: 123,
+          metadata: {
+            serverName: 'test-server',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      mockExchangeAuthorization.mockResolvedValue({
+        access_token: 'test-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+      const persistBeforeComplete = jest.fn(
+        async (
+          tokens: MCPOAuthTokens,
+          completePersistedFlow: (tokens: MCPOAuthTokens) => Promise<void>,
+        ) => {
+          const storedTokens = { ...tokens, expires_at: 123456 };
+          await completePersistedFlow(storedTokens);
+          return storedTokens;
+        },
+      );
+      const rollbackPersistedTokens = jest.fn(async () => undefined);
+
+      const result = await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+        persistBeforeComplete,
+        rollbackPersistedTokens,
+      );
+
+      expect(result.expires_at).toBe(123456);
+      expect(mockFlowManager.completeFlowIfCurrent).toHaveBeenCalledTimes(1);
+      expect(rollbackPersistedTokens).not.toHaveBeenCalled();
+    });
+
     it('rejects a replaced callback attempt before exchanging its authorization code', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({

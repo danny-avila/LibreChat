@@ -94,12 +94,16 @@ beforeAll(async () => {
   };
 
   const aclEntryMethods = createAclEntryMethods(mongoose);
-  const { getSoleOwnedResourceIds } = aclEntryMethods;
+  const { getSoleOwnedResourceIds, findAccessibleResources } = aclEntryMethods;
 
   methods = createAgentMethods(mongoose, {
     removeAllPermissions,
     getActions,
     getSoleOwnedResourceIds,
+    getUserPrincipals: async ({ userId }) => [
+      { principalType: 'user', principalId: new mongoose.Types.ObjectId(userId) },
+    ],
+    findAccessibleResources,
     isExternalSkillId: (id) => externalSkillIds.has(id),
   });
   createAgent = methods.createAgent;
@@ -558,6 +562,44 @@ describe('Agent Methods', () => {
       });
 
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('loads ACL-visible graph nodes by logical ID without exposing storage IDs', async () => {
+      const { agentId, authorId } = createTestIds();
+      const visible = await createAgent({
+        id: agentId,
+        name: 'Visible graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [`search${Constants.mcp_delimiter}docs`],
+      });
+      const privateAgent = await createAgent({
+        id: `private-${agentId}`,
+        name: 'Private graph agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: visible._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: authorId,
+      });
+
+      const access = await methods.resolveAgentGraphAccess({
+        userId: authorId.toString(),
+      });
+      const nodes = await methods.getAgentGraphNodes([visible.id, privateAgent.id], access);
+
+      expect(nodes).toEqual([
+        expect.objectContaining({ id: visible.id, mcpServerNames: ['docs'] }),
+      ]);
+      expect(nodes[0]).not.toHaveProperty('_id');
     });
 
     describe('MCP server name candidate lookups', () => {
@@ -2396,6 +2438,22 @@ describe('Agent Methods', () => {
       expect(updated!.code_environment_id).toBeUndefined();
       expect(updated!.versions).toHaveLength(2);
       expect(updated!.versions![1].code_environment_id).toBeUndefined();
+    });
+
+    test('persists and restores the workspace default without retaining a later preference', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { code_workspace_id: 'project-a' });
+      expect((await getAgent({ id: agentId }))?.code_workspace_id).toBe('project-a');
+      await updateAgent({ id: agentId }, { code_workspace_id: '' });
+      expect((await getAgent({ id: agentId }))?.code_workspace_id).toBe('');
+      expect((await revertAgentVersion({ id: agentId }, 1))?.code_workspace_id).toBe('project-a');
+      expect((await revertAgentVersion({ id: agentId }, 0))?.code_workspace_id).toBeUndefined();
     });
 
     test('should handle parameter objects correctly', async () => {
@@ -4961,6 +5019,69 @@ describe('Support Contact Field', () => {
 
       expect(result.data).toHaveLength(1);
       expect(result.data[0].conversation_starters).toEqual(starters);
+    });
+
+    test('should include workspace execution metadata only when explicitly requested', async () => {
+      const scopedAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Workspace Agent',
+        description: 'Agent with attached workspace defaults',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        tools: [EToolResources.execute_code, 'private_mcp_tool'],
+        stateful_code_sessions: true,
+        code_environment_id: 'machine-a',
+        code_workspace_id: 'project-a',
+        agent_ids: [agentA1.id],
+        edges: [{ from: 'source', to: agentA1.id, prompt: 'Private routing prompt' }],
+        subagents: {
+          enabled: true,
+          agent_ids: [agentA1.id],
+          graphs: [
+            {
+              type: 'collapsed_team',
+              name: 'Private graph name',
+              agent_ids: [agentA1.id],
+              edges: [],
+              entry_agent_id: agentA1.id,
+              result_agent_id: agentA1.id,
+            },
+          ],
+        },
+      });
+
+      const defaultResult = await getListAgentsByAccess({
+        accessibleIds: [scopedAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+      });
+      expect(defaultResult.data[0].tools).toBeUndefined();
+      expect(defaultResult.data[0].code_workspace_id).toBeUndefined();
+      expect(defaultResult.data[0].edges).toBeUndefined();
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [scopedAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        includeExecutionConfig: true,
+      });
+
+      expect(result.data[0]).toMatchObject({
+        tools: [EToolResources.execute_code],
+        stateful_code_sessions: true,
+        code_environment_id: 'machine-a',
+        code_workspace_id: 'project-a',
+        agent_ids: [agentA1.id],
+        edges: [{ from: 'source', to: agentA1.id }],
+        subagents: {
+          enabled: true,
+          agent_ids: [agentA1.id],
+          graphs: [{ agent_ids: [agentA1.id] }],
+        },
+      });
+      expect(result.data[0].tools).not.toContain('private_mcp_tool');
+      expect(result.data[0].edges).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ prompt: expect.anything() })]),
+      );
     });
 
     test('should return multiple accessible agents when provided', async () => {

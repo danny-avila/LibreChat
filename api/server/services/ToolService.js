@@ -32,6 +32,7 @@ const {
   inspectContentWithTraversal,
   ContentFilterError,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   extractToolArgumentContent,
   contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
@@ -51,6 +52,7 @@ const {
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  resolveRunFileCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
@@ -149,6 +151,7 @@ const getActiveToolResources = (toolResources, tools) => {
 const toolCapabilityGates = {
   [Tools.file_search]: AgentCapabilities.file_search,
   [Tools.execute_code]: AgentCapabilities.execute_code,
+  [Tools.web_search]: AgentCapabilities.web_search,
 };
 
 /**
@@ -183,6 +186,7 @@ const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
     Array.isArray(resource?.files) ? resource.files : [],
   );
   assertModelBoundContent({
+    onTraversalFailure: reportLocatorTraversalFailure,
     filters,
     agents: [{ tool_resources: activeResources }],
     files,
@@ -200,6 +204,7 @@ const withoutEncryptedActionSecrets = (action) => {
 const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
   if (filters != null) {
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters,
       actions: actions.map(withoutEncryptedActionSecrets),
     });
@@ -220,7 +225,11 @@ const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
     })),
   );
   if (filters != null) {
-    assertModelBoundContent({ filters, actions: decryptedActions });
+    assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
+      filters,
+      actions: decryptedActions,
+    });
   }
   return decryptedActions;
 };
@@ -773,6 +782,7 @@ const isBuiltInTool = (toolName) =>
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
+ * @param {AbortSignal} [params.signal] - Effective run cancellation signal
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -792,6 +802,7 @@ async function loadToolDefinitionsWrapper({
   tool_resources,
   codeExecutionContext,
   accessibleMcpServerNames,
+  signal,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -855,7 +866,7 @@ async function loadToolDefinitionsWrapper({
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
-      return checkCapability(AgentCapabilities.web_search);
+      return checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1181,6 +1192,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1210,6 +1222,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1360,6 +1373,7 @@ async function loadToolDefinitionsWrapper({
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
           oboIdentityContext,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
 
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
@@ -1448,6 +1462,7 @@ async function loadToolDefinitionsWrapper({
         tool_resources,
         agentId: agent.id,
         agentResourceType,
+        signal,
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
         executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
@@ -1581,6 +1596,7 @@ async function loadAgentTools({
         tool_resources,
         codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
+        signal,
       });
     } catch (error) {
       if (
@@ -1636,7 +1652,7 @@ async function loadAgentTools({
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
-      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      includesWebSearch = checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
       return includesWebSearch;
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -2036,6 +2052,7 @@ async function loadToolsForExecution({
   conversationId,
   actionsEnabled,
   accessibleMcpServerNames,
+  runFileCodeExecutionContext,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -2134,6 +2151,10 @@ async function loadToolsForExecution({
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
+  Object.assign(
+    codeExecutionContext,
+    resolveRunFileCodeExecutionContext(codeExecutionContext, runFileCodeExecutionContext),
+  );
   configurable.codeExecutionContext = codeExecutionContext;
 
   const isPTC =

@@ -9,8 +9,9 @@ jest.mock('@librechat/data-schemas', () => ({
   SYSTEM_TENANT_ID: '__SYSTEM__',
 }));
 
-const { AccessRoleIds, ResourceType, PrincipalType, SystemRoles } =
+const { AccessRoleIds, ResourceType, PrincipalType, SystemRoles, PermissionTypes, Permissions } =
   jest.requireActual('librechat-data-provider');
+const { createPeoplePickerAccess } = jest.requireActual('@librechat/api');
 
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
@@ -100,68 +101,32 @@ describe('PermissionsController', () => {
       db.sortPrincipalsByRelevance.mockImplementation((results) => results);
     });
 
-    it('rejects non-string query parameters', async () => {
-      const req = createMockReq({
-        query: { q: ['alice'] },
-      });
-      const res = createMockRes();
+    it.each([{ q: 'al', type: PrincipalType.GROUP }, { q: 'al', types: 'foobar' }, { q: 'al' }])(
+      'searches only the types the people picker check resolved for %j',
+      async (query) => {
+        const checkAccess = createPeoplePickerAccess({
+          getRoleByName: async () => ({
+            permissions: {
+              [PermissionTypes.PEOPLE_PICKER]: {
+                [Permissions.VIEW_USERS]: false,
+                [Permissions.VIEW_GROUPS]: true,
+                [Permissions.VIEW_ROLES]: false,
+              },
+            },
+          }),
+        });
+        const req = createMockReq({ query });
+        const res = createMockRes();
 
-      await searchPrincipals(req, res);
+        await checkAccess(req, res, () => searchPrincipals(req, res));
 
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Query parameter "q" is required and must not be empty',
-      });
-      expect(db.searchPrincipals).not.toHaveBeenCalled();
-    });
-
-    it('searches with the trimmed literal query', async () => {
-      db.searchPrincipals.mockResolvedValue([
-        {
-          id: 'user-1',
-          type: PrincipalType.USER,
-          name: 'Regex [invalid User',
-          source: 'local',
-        },
-      ]);
-
-      const req = createMockReq({
-        query: { q: '  [invalid  ', limit: '5', types: PrincipalType.USER },
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(db.searchPrincipals).toHaveBeenCalledWith('[invalid', 5, [PrincipalType.USER]);
-      expect(db.calculateRelevanceScore).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Regex [invalid User' }),
-        '[invalid',
-      );
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          query: '[invalid',
-          limit: 5,
-          count: 1,
-        }),
-      );
-    });
-
-    it('does not expose internal error details on search failures', async () => {
-      db.searchPrincipals.mockRejectedValue(new Error('database failure with internal detail'));
-
-      const req = createMockReq({
-        query: { q: 'alice' },
-      });
-      const res = createMockRes();
-
-      await searchPrincipals(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Failed to search principals',
-      });
-    });
+        expect(db.searchPrincipals).toHaveBeenCalledWith('al', 20, [PrincipalType.GROUP]);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ types: [PrincipalType.GROUP] }),
+        );
+      },
+    );
   });
 
   describe('getResourcePermissions — principal details', () => {

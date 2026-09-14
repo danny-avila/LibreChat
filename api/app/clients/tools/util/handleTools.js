@@ -388,6 +388,7 @@ const loadTools = async ({
           });
         const { files, toolContext } = await primeCodeFiles({
           ...options,
+          signal,
           agentId: agent?.id,
           codeApiBaseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
