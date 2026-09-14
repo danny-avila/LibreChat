@@ -18,7 +18,10 @@ function MockMenu({ conversation, onTagsUpdated }: BookmarkMenuProps) {
 }
 jest.mock('recoil', () => ({ useRecoilValue: () => false }));
 jest.mock('react-router-dom', () => ({ useParams: () => ({ conversationId: 'original' }) }));
-jest.mock('~/store', () => ({ __esModule: true, default: { sidebarExpanded: {} } }));
+jest.mock('~/store', () => ({
+  __esModule: true,
+  default: { sidebarExpanded: {}, isSubmittingFamily: () => ({}) },
+}));
 jest.mock('~/hooks', () => ({ useHasAccess: () => true }));
 jest.mock('~/data-provider', () => ({ useGetStartupConfig: () => ({ data: { interface: {} } }) }));
 jest.mock('../Menus', () => ({
@@ -30,6 +33,10 @@ jest.mock('../Menus', () => ({
 jest.mock('../Menus/BookmarkMenu', () => ({
   __esModule: true,
   default: (props: BookmarkMenuProps) => <MockMenu {...props} />,
+}));
+jest.mock('../Trace', () => ({
+  TraceButton: () => null,
+  useTraceControl: () => ({ show: false, open: jest.fn() }),
 }));
 jest.mock('../TemporaryChat', () => ({
   TemporaryChat: () => null,
