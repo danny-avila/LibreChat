@@ -161,6 +161,22 @@ describe('configureSocialLogins OpenID session expiry', () => {
     });
     expect(mockSetupOpenId).toHaveBeenCalledTimes(1);
   });
+
+  it('prefers librechat.yaml discovery retry settings over the environment', async () => {
+    process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS = '2';
+    process.env.OPENID_DISCOVERY_RETRY_DELAY_MS = '1000';
+    const app = { use: jest.fn() };
+
+    await configureSocialLogins(app, {
+      registration: { openidDiscovery: { startupAttempts: 0, retryDelayMs: 250 } },
+    });
+
+    expect(mockRegisterOpenIdWithRetry).toHaveBeenCalledWith({
+      register: expect.any(Function),
+      startupAttempts: 0,
+      retryDelayMs: 250,
+    });
+  });
 });
 
 describe('configureSocialLogins OAuth state options', () => {

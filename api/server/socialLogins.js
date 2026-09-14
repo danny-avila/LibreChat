@@ -58,9 +58,10 @@ async function registerOpenIdStrategies() {
 /**
  * Configures OpenID Connect for the application.
  * @param {Express.Application} app - The Express application instance.
+ * @param {AppConfig} [appConfig] - Base app config, read for OpenID discovery retry settings.
  * @returns {Promise<void>}
  */
-async function configureOpenId(app) {
+async function configureOpenId(app, appConfig) {
   logger.info('Configuring OpenID Connect...');
   const sessionExpiry = getOpenIdSessionExpiry();
   const sessionOptions = {
@@ -78,8 +79,12 @@ async function configureOpenId(app) {
 
   await registerOpenIdWithRetry({
     register: registerOpenIdStrategies,
-    startupAttempts: process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
-    retryDelayMs: process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+    startupAttempts:
+      appConfig?.registration?.openidDiscovery?.startupAttempts ??
+      process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
+    retryDelayMs:
+      appConfig?.registration?.openidDiscovery?.retryDelayMs ??
+      process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
   });
 }
 
@@ -123,7 +128,7 @@ const configureSocialLogins = async (app, appConfig) => {
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET
   ) {
-    await configureOpenId(app);
+    await configureOpenId(app, appConfig);
   }
   if (
     process.env.SAML_ENTRY_POINT &&
