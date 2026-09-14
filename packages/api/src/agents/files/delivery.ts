@@ -4,6 +4,7 @@ import {
   resolveUseResponsesApi,
   isSpeechProviderConfigured,
   resolveTurnLLMDeliveryPath,
+  hasInferredLLMDeliveryPath,
 } from 'librechat-data-provider';
 import type {
   FileConfig,
@@ -53,22 +54,18 @@ export function resolveAgentDeliveryRouting({
   };
 }
 
-const hasStoredToolRouteText = (file: TurnDeliveryFile): boolean =>
-  file.llmDeliveryPath === 'none' && typeof file.text === 'string' && file.text.length > 0;
-
 /**
- * Marks the records stored for tools (`none`) that this turn delivers as text: because no tool
- * it runs can read them and the endpoint enables the fallback, or because the endpoint now
- * routes their type to text.
+ * Gives each attachment record whose route upload inferred the route this turn delivers it by.
  *
  * Endpoint filtering, model-bound limits, content inspection, usage accounting and
- * `extractFileContext` read the stored route, so without the mark they would judge a file the
- * turn is about to send as text as one that never reaches the model. Every place a turn loads
- * attachment records applies it before those checks run. Unchanged records are returned as they
- * are, and a marked record is a copy, so the stored route is never rewritten. A record with no
- * stored text has nothing to deliver and is left as it is.
+ * `extractFileContext` read the stored route, while delivery resolves it again for the endpoint
+ * and tools handling the turn, text fallback included. Every place a turn loads attachment
+ * records applies this before those checks run, so what is admitted is what is delivered, the
+ * same way the run-file encoder resolves each child's copies. A record predating routing and a
+ * destination the user chose keep their stored route. Unchanged records are returned as they
+ * are, and a changed record is a copy, so the stored route is never rewritten.
  */
-export function applyTurnTextDelivery<T extends TurnDeliveryFile>(
+export function applyTurnDelivery<T extends TurnDeliveryFile>(
   files: T[],
   {
     agent,
@@ -80,20 +77,21 @@ export function applyTurnTextDelivery<T extends TurnDeliveryFile>(
     consumers?: TurnFileConsumers;
   },
 ): T[] {
-  if (agent == null || !files.some(hasStoredToolRouteText)) {
+  if (agent == null || !files.some(hasInferredLLMDeliveryPath)) {
     return files;
   }
   const routing = resolveAgentDeliveryRouting({ agent, config });
-  let marked = false;
+  let changed = false;
   const result = files.map((file) => {
-    if (
-      !hasStoredToolRouteText(file) ||
-      resolveTurnLLMDeliveryPath({ file, consumers, ...routing }) !== 'text'
-    ) {
+    if (!hasInferredLLMDeliveryPath(file)) {
       return file;
     }
-    marked = true;
-    return { ...file, llmDeliveryPath: 'text' as const };
+    const llmDeliveryPath = resolveTurnLLMDeliveryPath({ file, consumers, ...routing });
+    if (llmDeliveryPath == null || llmDeliveryPath === file.llmDeliveryPath) {
+      return file;
+    }
+    changed = true;
+    return { ...file, llmDeliveryPath };
   });
-  return marked ? result : files;
+  return changed ? result : files;
 }

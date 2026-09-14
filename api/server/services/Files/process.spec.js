@@ -125,7 +125,6 @@ jest.mock('@librechat/api', () => {
     /** Grants both; these specs vary the capability set, not the role. */
     resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
-    parseTextNative: jest.fn(),
     /** Stores no fallback text unless a test opts in; its own rules are covered in packages/api. */
     resolveUploadFallbackText: jest.fn(async () => undefined),
     MAX_STORED_EXTRACTED_TEXT_BYTES: 15 * 1024 * 1024,
@@ -3232,28 +3231,23 @@ describe('fallback text for uploads left to tools', () => {
 
   test('stores the text a turn without a reading tool can fall back to', async () => {
     const { createFile } = require('~/models');
-    const { resolveUploadFallbackText, parseTextNative } = require('@librechat/api');
+    const { resolveUploadFallbackText } = require('@librechat/api');
     setupStoredFileUpload();
-    parseTextNative.mockResolvedValueOnce({ text: 'region,total', bytes: 12, source: 'text' });
-    resolveUploadFallbackText.mockImplementationOnce(async ({ readNativeText }) => {
-      const result = await readNativeText();
-      return result.text;
-    });
+    resolveUploadFallbackText.mockResolvedValueOnce('region,total');
 
     const { req, upload } = uploadCsv();
     await upload;
 
     expect(resolveUploadFallbackText).toHaveBeenCalledWith(
       expect.objectContaining({
+        file: req.file,
+        fileId: 'file-uuid-csv',
         deliveryPath: 'none',
         toolResource: undefined,
         isMessageAttachment: true,
-        mimeType: 'text/csv',
         endpointConfig: expect.objectContaining({ textFallbackWithoutTools: true }),
-        fileId: 'file-uuid-csv',
       }),
     );
-    expect(parseTextNative).toHaveBeenCalledWith(req.file);
     expect(createFile).toHaveBeenCalledWith(
       expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
       true,
@@ -3276,25 +3270,5 @@ describe('fallback text for uploads left to tools', () => {
       expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
       true,
     );
-  });
-
-  test('runs the built-in document parser, not storage, for a spreadsheet', async () => {
-    const { resolveUploadFallbackText } = require('@librechat/api');
-    const parserUpload = jest.fn().mockResolvedValue({ text: 'Sheet1', bytes: 6 });
-    const storageUpload = setupStoredFileUpload();
-    getStrategyFunctions.mockImplementation((source) =>
-      source === FileSources.document_parser
-        ? { handleFileUpload: parserUpload }
-        : { handleFileUpload: storageUpload },
-    );
-    resolveUploadFallbackText.mockImplementationOnce(async ({ extractDocument }) => {
-      const result = await extractDocument();
-      return result.text;
-    });
-
-    const { req, upload } = uploadCsv();
-    await upload;
-
-    expect(parserUpload).toHaveBeenCalledWith(expect.objectContaining({ req, file: req.file }));
   });
 });

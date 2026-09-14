@@ -1,10 +1,16 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { FiltersConfig } from 'librechat-data-provider';
+import type { UploadFallbackTextExtractors } from './fallback';
 import {
   UPLOAD_FALLBACK_TEXT_PLANS,
   getUploadFallbackTextPlan,
   resolveUploadFallbackText,
 } from './fallback';
 import { MAX_STORED_EXTRACTED_TEXT_BYTES } from '~/files/extract';
+import { parseDocument } from '~/files/documents/crud';
+import { parseTextNative } from '~/files/text';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const csvRoute = {
@@ -55,6 +61,7 @@ describe('getUploadFallbackTextPlan', () => {
 });
 
 describe('resolveUploadFallbackText', () => {
+  const { mimeType: _mimeType, ...route } = csvRoute;
   const privateTokenFilters: FiltersConfig = {
     files: {
       pii: {
@@ -64,89 +71,139 @@ describe('resolveUploadFallbackText', () => {
       },
     },
   };
+  let uploadDir: string;
 
-  function setup({
-    documentText = 'Sheet1\nregion,total\nwest,4',
-    nativeText = 'region,total\nwest,4',
-  }: { documentText?: string | null; nativeText?: string | null } = {}) {
-    const extractDocument = jest.fn(async () => ({ text: documentText }));
-    const readNativeText = jest.fn(async () => ({ text: nativeText }));
-    return {
-      extractDocument,
-      readNativeText,
-      base: { filename: 'sales.csv', fileId: 'file-1', extractDocument, readNativeText },
-    };
-  }
-
-  it('stores native text for a CSV without running the document parser', async () => {
-    const { base, extractDocument, readNativeText } = setup();
-
-    await expect(resolveUploadFallbackText({ ...base, ...csvRoute })).resolves.toBe(
-      'region,total\nwest,4',
-    );
-    expect(readNativeText).toHaveBeenCalledTimes(1);
-    expect(extractDocument).not.toHaveBeenCalled();
+  beforeAll(() => {
+    uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fallback-text-'));
   });
 
-  it('stores parsed text for a spreadsheet without decoding its bytes', async () => {
-    const { base, extractDocument, readNativeText } = setup();
+  afterAll(() => {
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  });
+
+  /** A CSV upload as multer leaves it; without content, its temporary file is already gone. */
+  function csvUpload(name: string, content?: string): Express.Multer.File {
+    const filePath = path.join(uploadDir, name);
+    if (content != null) {
+      fs.writeFileSync(filePath, content);
+    }
+    return {
+      originalname: name,
+      path: filePath,
+      mimetype: 'text/csv',
+      size: content != null ? Buffer.byteLength(content) : 0,
+    } as Express.Multer.File;
+  }
+
+  /** The real built-in extractors, observed. */
+  function spiedExtractors() {
+    return {
+      parseDocument: jest.fn(parseDocument),
+      parseTextNative: jest.fn(parseTextNative),
+    } satisfies UploadFallbackTextExtractors;
+  }
+
+  it('stores the native text of a CSV without running the document parser', async () => {
+    const extractors = spiedExtractors();
+    const file = csvUpload('sales.csv', 'region,total\nwest,4');
 
     await expect(
-      resolveUploadFallbackText({ ...base, ...csvRoute, mimeType: XLSX_MIME }),
-    ).resolves.toBe('Sheet1\nregion,total\nwest,4');
-    expect(extractDocument).toHaveBeenCalledTimes(1);
-    expect(readNativeText).not.toHaveBeenCalled();
+      resolveUploadFallbackText({ ...route, file, fileId: 'file-1', extractors }),
+    ).resolves.toBe('region,total\nwest,4');
+    expect(extractors.parseTextNative).toHaveBeenCalledWith(file);
+    expect(extractors.parseDocument).not.toHaveBeenCalled();
+  });
+
+  it('stores the parsed text of a spreadsheet without decoding its bytes', async () => {
+    const extractors = spiedExtractors();
+    const file = {
+      originalname: 'sample.xlsx',
+      path: path.join(__dirname, '../documents/sample.xlsx'),
+      mimetype: XLSX_MIME,
+    } as Express.Multer.File;
+
+    await expect(
+      resolveUploadFallbackText({ ...route, file, fileId: 'file-1', extractors }),
+    ).resolves.toBe('Sheet One:\nData,on,first,sheet\nSecond Sheet:\nData,On\nSecond,Sheet\n');
+    expect(extractors.parseDocument).toHaveBeenCalledWith({ file });
+    expect(extractors.parseTextNative).not.toHaveBeenCalled();
   });
 
   it('extracts nothing when no plan applies', async () => {
-    const { base, extractDocument, readNativeText } = setup();
+    const extractors = spiedExtractors();
 
     await expect(
-      resolveUploadFallbackText({ ...base, ...csvRoute, isMessageAttachment: false }),
+      resolveUploadFallbackText({
+        ...route,
+        isMessageAttachment: false,
+        file: csvUpload('kept.csv', 'region,total'),
+        fileId: 'file-1',
+        extractors,
+      }),
     ).resolves.toBeUndefined();
-    expect(extractDocument).not.toHaveBeenCalled();
-    expect(readNativeText).not.toHaveBeenCalled();
+    expect(extractors.parseDocument).not.toHaveBeenCalled();
+    expect(extractors.parseTextNative).not.toHaveBeenCalled();
   });
 
   it('keeps the upload when extraction fails', async () => {
-    const { base, readNativeText } = setup();
-    readNativeText.mockRejectedValueOnce(new Error('unreadable'));
-
-    await expect(resolveUploadFallbackText({ ...base, ...csvRoute })).resolves.toBeUndefined();
+    await expect(
+      resolveUploadFallbackText({ ...route, file: csvUpload('missing.csv'), fileId: 'file-1' }),
+    ).resolves.toBeUndefined();
   });
 
   it('stores nothing for text with no content', async () => {
-    const { base } = setup({ nativeText: '  \n ' });
-
-    await expect(resolveUploadFallbackText({ ...base, ...csvRoute })).resolves.toBeUndefined();
+    await expect(
+      resolveUploadFallbackText({ ...route, file: csvUpload('blank.csv', '  \n '), fileId: 'f' }),
+    ).resolves.toBeUndefined();
   });
 
   it('stores nothing past the extracted-text storage cap', async () => {
-    const { base } = setup({ nativeText: 'a'.repeat(MAX_STORED_EXTRACTED_TEXT_BYTES + 1) });
+    const extractors: UploadFallbackTextExtractors = {
+      parseDocument,
+      parseTextNative: async () => ({ text: 'a'.repeat(MAX_STORED_EXTRACTED_TEXT_BYTES + 1) }),
+    };
 
-    await expect(resolveUploadFallbackText({ ...base, ...csvRoute })).resolves.toBeUndefined();
+    await expect(
+      resolveUploadFallbackText({
+        ...route,
+        file: csvUpload('huge.csv', 'a'),
+        fileId: 'file-1',
+        extractors,
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('stores nothing a configured content policy flags, and keeps text it does not', async () => {
-    const flagged = setup({ nativeText: 'token,PRIVATE-SECRET' });
-    const clean = setup({ nativeText: 'region,total' });
-
     await expect(
-      resolveUploadFallbackText({ ...flagged.base, ...csvRoute, filters: privateTokenFilters }),
+      resolveUploadFallbackText({
+        ...route,
+        file: csvUpload('flagged.csv', 'token,PRIVATE-SECRET'),
+        fileId: 'file-1',
+        filters: privateTokenFilters,
+      }),
     ).resolves.toBeUndefined();
     await expect(
-      resolveUploadFallbackText({ ...clean.base, ...csvRoute, filters: privateTokenFilters }),
+      resolveUploadFallbackText({
+        ...route,
+        file: csvUpload('clean.csv', 'region,total'),
+        fileId: 'file-2',
+        filters: privateTokenFilters,
+      }),
     ).resolves.toBe('region,total');
   });
 
   it('stores nothing a blocking policy cannot inspect', async () => {
-    const { base } = setup({ nativeText: null });
     const filters: FiltersConfig = {
       files: { pii: { fields: ['extracted_text'], starterPatterns: [], uninspectable: 'block' } },
     };
 
     await expect(
-      resolveUploadFallbackText({ ...base, ...csvRoute, filters }),
+      resolveUploadFallbackText({
+        ...route,
+        file: csvUpload('empty.csv', ''),
+        fileId: 'file-1',
+        filters,
+      }),
     ).resolves.toBeUndefined();
   });
 });

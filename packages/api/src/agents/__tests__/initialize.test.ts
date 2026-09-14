@@ -4572,6 +4572,29 @@ describe('initializeAgent tool-routed text fallback', () => {
     expect(csv.llmDeliveryPath).toBe('none');
   });
 
+  it('hands endpoint filtering the provider route a tool-routed file takes on this turn', async () => {
+    /* Admission reads the route, so a record left for tools that this endpoint sends to the
+     * provider must reach filtering, limits and inspection as a provider file. */
+    const image = {
+      file_id: 'image-file',
+      filename: 'chart.png',
+      type: 'image/png',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    } as IMongoFile;
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv: image,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...image, llmDeliveryPath: 'provider' }] }),
+    );
+    expect(image.llmDeliveryPath).toBe('none');
+  });
+
   it('resolves a custom endpoint agent under the endpoint its upload was routed by', async () => {
     /* Uploads resolve the agent's saved provider, which for a custom endpoint is its name.
      * Initialization later swaps the provider for the backing client, so an opt-in set only

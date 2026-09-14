@@ -115,10 +115,10 @@ import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
-import { applyTurnTextDelivery } from './files/delivery';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
+import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
@@ -1563,8 +1563,8 @@ export async function initializeAgent(
   }
   if (currentFiles?.length) {
     /* Before any check reads the route: endpoint filtering, model-bound limits and content
-     * inspection below all have to see the text this turn delivers for a file stored for tools. */
-    currentFiles = applyTurnTextDelivery(currentFiles, {
+     * inspection below all have to judge each file by the route this turn delivers it by. */
+    currentFiles = applyTurnDelivery(currentFiles, {
       agent,
       config: appConfig,
       consumers: fileConsumers,

@@ -382,6 +382,11 @@ export interface TurnDeliveryFile {
 const isLLMDeliveryPath = (value: unknown): value is TDefaultLLMDeliveryPath =>
   value === 'provider' || value === 'text' || value === 'none';
 
+/** Whether a record's stored route was inferred at upload, so each turn resolves it again. */
+export function hasInferredLLMDeliveryPath(file: TurnDeliveryFile): boolean {
+  return file.llmDeliveryPath != null && file.metadata?.destinationChosen !== true;
+}
+
 /**
  * Delivery path for one attachment on one agent's turn.
  *
@@ -411,7 +416,7 @@ export function resolveTurnLLMDeliveryPath({
   useResponsesApi?: boolean;
   sttConfigured?: boolean;
 }): TDefaultLLMDeliveryPath | undefined {
-  if (file.llmDeliveryPath == null || file.metadata?.destinationChosen === true) {
+  if (!hasInferredLLMDeliveryPath(file)) {
     return isLLMDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined;
   }
   /* Conversion changes the stored type, so use the type routing originally saw. */

@@ -2694,6 +2694,38 @@ describe('BaseClient', () => {
         expect(message.fileContext).toBe('region,total');
       });
 
+      test('admits a historical tool-routed file this turn sends to the provider', async () => {
+        const routedImage = {
+          file_id: 'image-file',
+          filename: 'chart.png',
+          filepath: '/uploads/chart.png',
+          source: 'local',
+          type: 'image/png',
+          user: 'user-1',
+          llmDeliveryPath: 'none',
+          metadata: { destinationChosen: false },
+        };
+        getFiles.mockResolvedValueOnce([routedImage]);
+        TestClient.options.req.config = { fileConfig: { endpoints: {} } };
+        TestClient.options.agent = {
+          provider: EModelEndpoint.openAI,
+          fileConsumers: { executeCode: false, fileSearch: false },
+        };
+        TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+        await TestClient.addPreviousAttachments([
+          {
+            messageId: 'msg-image',
+            text: 'What does it show?',
+            files: [{ file_id: 'image-file' }],
+          },
+        ]);
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([
+          { ...routedImage, llmDeliveryPath: 'provider' },
+        ]);
+      });
+
       test('keeps the file off the prompt when this turn can read it with code', async () => {
         const message = await replayCsv({ executeCode: true, fileSearch: false });
 

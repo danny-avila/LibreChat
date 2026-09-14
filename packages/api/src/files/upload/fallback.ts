@@ -12,7 +12,9 @@ import {
 } from '~/files/extract';
 import { extractFileContent } from '~/protection/adapters/submissions';
 import { hasActiveFileFieldPolicy } from '~/protection/files';
+import { parseDocument } from '~/files/documents/crud';
 import { inspectContent } from '~/protection/runtime';
+import { parseTextNative } from '~/files/text';
 
 export const UPLOAD_FALLBACK_TEXT_PLANS = {
   documentParser: 'document_parser',
@@ -34,7 +36,17 @@ export interface UploadFallbackTextRoute {
   endpointConfig?: Pick<EndpointFileConfig, 'textFallbackWithoutTools'>;
 }
 
-type FallbackTextExtractor = () => Promise<{ readonly text?: string | null } | null | undefined>;
+interface ExtractedText {
+  readonly text?: string | null;
+}
+
+/** The built-in readers fallback text comes from. */
+export interface UploadFallbackTextExtractors {
+  parseDocument: (params: { file: Express.Multer.File }) => Promise<ExtractedText>;
+  parseTextNative: (file: Express.Multer.File) => Promise<ExtractedText>;
+}
+
+const builtInExtractors: UploadFallbackTextExtractors = { parseDocument, parseTextNative };
 
 /**
  * Which built-in extractor stores text for an upload left to tools, or `null` when none runs.
@@ -67,33 +79,32 @@ export function getUploadFallbackTextPlan(
 /**
  * Text a turn without a reading tool can fall back to for this upload, when one applies.
  *
- * Best effort by design: an extractor failure, text a policy cannot inspect, an overrun of the
- * storage cap, or a content finding leaves the upload without fallback text rather than
- * refusing a file whose primary reader is a tool. Text that is delivered later is inspected
- * again as model-bound content.
+ * Reads the upload before storage can move it, with the extractor its plan names. Best effort by
+ * design: an extractor failure, text a policy cannot inspect, an overrun of the storage cap, or a
+ * content finding leaves the upload without fallback text rather than refusing a file whose
+ * primary reader is a tool. Text that is delivered later is inspected again as model-bound
+ * content.
  */
 export async function resolveUploadFallbackText({
-  filters,
-  filename,
+  file,
   fileId,
-  extractDocument,
-  readNativeText,
+  filters,
+  extractors = builtInExtractors,
   ...route
-}: UploadFallbackTextRoute & {
-  filters?: FiltersConfig;
-  filename: string;
+}: Omit<UploadFallbackTextRoute, 'mimeType'> & {
+  file: Express.Multer.File;
   fileId: string;
-  extractDocument: FallbackTextExtractor;
-  readNativeText: FallbackTextExtractor;
+  filters?: FiltersConfig;
+  extractors?: UploadFallbackTextExtractors;
 }): Promise<string | undefined> {
-  const plan = getUploadFallbackTextPlan(route);
+  const plan = getUploadFallbackTextPlan({ ...route, mimeType: file.mimetype });
   if (plan == null) {
     return undefined;
   }
   const skip = (reason: string, error?: unknown): undefined => {
     const { fileLabel, errorMetadata } = getFileExtractionLogDetails({
       filters,
-      filename,
+      filename: file.originalname,
       fileId,
       error,
     });
@@ -106,8 +117,10 @@ export async function resolveUploadFallbackText({
   try {
     const result = await extractInspectableFileText({
       filters,
-      extract:
-        plan === UPLOAD_FALLBACK_TEXT_PLANS.documentParser ? extractDocument : readNativeText,
+      extract: () =>
+        plan === UPLOAD_FALLBACK_TEXT_PLANS.documentParser
+          ? extractors.parseDocument({ file })
+          : extractors.parseTextNative(file),
     });
     const text = result?.text;
     if (typeof text !== 'string' || text.trim().length === 0) {

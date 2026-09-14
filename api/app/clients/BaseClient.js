@@ -9,7 +9,7 @@ const {
   sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
-  applyTurnTextDelivery,
+  applyTurnDelivery,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   getTransactionsConfig,
@@ -1806,7 +1806,7 @@ class BaseClient {
 
   /** The turn's view of stored attachment records, applied wherever this client loads them. */
   resolveTurnAttachments(files) {
-    return applyTurnTextDelivery(files, {
+    return applyTurnDelivery(files, {
       agent: this.options.agent,
       config: this.options.req?.config,
       consumers: this.options.agent?.fileConsumers,

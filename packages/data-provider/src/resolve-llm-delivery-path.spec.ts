@@ -9,6 +9,7 @@ import {
   resolveUploadDestination,
   getCustomEndpointProvider,
   resolveTurnLLMDeliveryPath,
+  hasInferredLLMDeliveryPath,
   resolveDefaultLLMDeliveryPath,
   resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
@@ -764,6 +765,25 @@ describe('hasTurnFileConsumer', () => {
 
   it('does not count a tool that cannot read the type', () => {
     expect(hasTurnFileConsumer('video/mp4', { executeCode: false, fileSearch: true })).toBe(false);
+  });
+});
+
+describe('hasInferredLLMDeliveryPath', () => {
+  it('re-resolves only a route upload inferred', () => {
+    expect(hasInferredLLMDeliveryPath({ llmDeliveryPath: 'none' })).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      }),
+    ).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: true },
+      }),
+    ).toBe(false);
+    expect(hasInferredLLMDeliveryPath({ type: 'text/csv' })).toBe(false);
   });
 });
 
