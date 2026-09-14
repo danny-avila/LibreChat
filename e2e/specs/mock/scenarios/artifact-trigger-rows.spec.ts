@@ -110,6 +110,8 @@ test.describe('artifact trigger rows', () => {
         await expect(rows).toHaveCount(5);
         await expect(rows.nth(4)).toHaveAttribute('data-artifact-trigger', /^mermaid-artifact-/);
 
+        /* Opening an artifact narrows the chat column, so the axis is only
+         * meaningful when every row is measured in the same layout state. */
         const finalBoxes = await rows.evaluateAll((elements) =>
           elements.map((element) => {
             const box = element.getBoundingClientRect();
@@ -117,8 +119,10 @@ test.describe('artifact trigger rows', () => {
           }),
         );
         expect(finalBoxes).toHaveLength(5);
-        expect(finalBoxes[4].y).toBeGreaterThan(finalBoxes[3].y);
-        expect(Math.abs(finalBoxes[4].x - boxes[0].x)).toBeLessThanOrEqual(1);
+        for (let index = 1; index < finalBoxes.length; index++) {
+          expect(finalBoxes[index].y).toBeGreaterThan(finalBoxes[index - 1].y);
+          expect(Math.abs(finalBoxes[index].x - finalBoxes[0].x)).toBeLessThanOrEqual(1);
+        }
         await expect(mermaidRow.getByText('Diagram', { exact: true })).toBeVisible();
       } finally {
         await deleteMessagesByConversation([conversationId]);
@@ -171,7 +175,7 @@ test.describe('artifact trigger rows', () => {
         await expect(ingest).toHaveAttribute('aria-expanded', 'true');
         await expect(ingest).toHaveAccessibleName(/Click to close/);
 
-        const panel = messages.locator('#artifact-viewer');
+        const panel = page.locator('#artifact-viewer');
         await expect(panel).toBeVisible();
         await expect(panel).toHaveAttribute('aria-label', 'ingest.py');
         await expect(panel.getByRole('radio', { name: 'Preview', exact: true })).toHaveCount(0);
