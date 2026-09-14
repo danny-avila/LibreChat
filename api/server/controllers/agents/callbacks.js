@@ -31,6 +31,7 @@ const {
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
   captureSubagentIdentity,
+  collectToolCallIds,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -385,7 +386,9 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
  * @param {{ latest: TContextUsageEvent | null, count: number }} [options.contextUsageSink] - Mutable
  *   holder for the latest visible context snapshot + a count of visible snapshots (model calls),
- *   used to persist the breakdown only when the final call emitted usage.
+ *   used to persist the breakdown only when the final call emitted usage. Also records that
+ *   snapshot's position in the usage stream and in `contentParts`, so the save path can tell
+ *   which usage events and which content parts came after it.
  * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
  *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
  * @param {(toolName: string, agentId?: string) => string | undefined} [options.resolveMcpServerName]
@@ -851,6 +854,13 @@ function getDefaultHandlers({
           contextUsageSink.latest = data;
           contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
           contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
+          /** Which tool calls this snapshot already accounts for. A turn that
+           *  stops at the tool-call limit counts the results of the calls missing
+           *  from this set — the ones its own call produced, which no later
+           *  snapshot describes. Ids, not a content index: completion reshapes the
+           *  array (skill cards unshifted, hidden sequential output filtered), so
+           *  an index recorded here would mean something else by save time. */
+          contextUsageSink.latestToolCallIds = collectToolCallIds(contentParts);
         }
         /** Every agent's snapshot publishes the run's context meta, hidden
          *  sequential agents included: their model calls latch tiers too, and a

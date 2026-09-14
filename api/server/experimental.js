@@ -37,6 +37,7 @@ const {
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
+  injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -52,6 +53,8 @@ const {
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
+  cacheConfig,
+  createClusteredFileSweep,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -405,14 +408,7 @@ if (cluster.isMaster) {
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
-  /**
-   * The master may assign the sweep worker before or after this worker has
-   * loaded app config. These flags join the IPC assignment with config
-   * availability and ensure the background sweep starts only once.
-   */
-  let shouldStartExpiredFileSweep = false;
-  let expiredFileSweepOptions = null;
-  let expiredFileSweepStarted = false;
+  const expiredFileSweep = createClusteredFileSweep(cacheConfig.USE_REDIS, startExpiredFileSweep);
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   const rejectScheduleWritesUntilReady = (req, res, next) => {
@@ -423,15 +419,6 @@ if (cluster.isMaster) {
       code: 'SCHEDULES_NOT_SUPPORTED',
       error: 'Scheduled chats are not available in clustered mode.',
     });
-  };
-
-  const startExpiredFileSweepOnce = () => {
-    if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
-      return;
-    }
-
-    expiredFileSweepStarted = true;
-    startExpiredFileSweep(expiredFileSweepOptions);
   };
 
   /** Handle inter-process messages from master */
@@ -451,12 +438,10 @@ if (cluster.isMaster) {
   });
   process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
-      shouldStartExpiredFileSweep = true;
       logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
-      startExpiredFileSweepOnce();
+      expiredFileSweep.assign();
     }
   });
-
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
 
@@ -528,8 +513,7 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
-    startExpiredFileSweepOnce();
+    expiredFileSweep.configure({ appConfig, loadAppConfig: getAppConfig });
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
       await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
@@ -550,6 +534,15 @@ if (cluster.isMaster) {
         indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
       }
     }
+
+    /* The composer lays out against whether a footer bar sits beneath it, and
+       `/api/config` answers that only after it has painted. One shell serves
+       every request, before there is a caller whose overrides could be resolved,
+       so the answer is the deployment's base configuration, like index.js. */
+    indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
+      customFooter: process.env.CUSTOM_FOOTER,
+      interfaceConfig: baseAppConfig?.interfaceConfig,
+    });
 
     const cspPolicy = createCspPolicy();
     const shellCache = shellCacheHeaders(cspPolicy != null);

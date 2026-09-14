@@ -110,6 +110,48 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     expect(store.get(liveTokensFamily(convo))).toBe(500);
   });
 
+  it('carries retained tool tokens from response metadata into the live snapshot', () => {
+    const convo = 'convo-finalize-retained';
+    const submission = {
+      userMessage: { messageId: 'u-retained', conversationId: convo },
+      conversation: { conversationId: convo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+
+    result.current.contextHandler(inflatedSnapshot(), submission);
+    result.current.finalizeUsage(
+      {
+        conversation: { conversationId: convo },
+        responseMessage: {
+          messageId: 'a-retained',
+          conversationId: convo,
+          metadata: { contextUsage: { retainedToolTokens: 321 } },
+        },
+      },
+      submission,
+    );
+    expect(store.get(contextSnapshotFamily(convo))?.retainedToolTokens).toBe(321);
+
+    const noRetainedConvo = 'convo-finalize-without-retained';
+    const noRetainedSubmission = {
+      userMessage: { messageId: 'u-no-retained', conversationId: noRetainedConvo },
+      conversation: { conversationId: noRetainedConvo },
+    };
+    result.current.contextHandler(inflatedSnapshot(), noRetainedSubmission);
+    result.current.finalizeUsage(
+      {
+        conversation: { conversationId: noRetainedConvo },
+        responseMessage: {
+          messageId: 'a-no-retained',
+          conversationId: noRetainedConvo,
+        },
+      },
+      noRetainedSubmission,
+    );
+    expect(store.get(contextSnapshotFamily(noRetainedConvo))?.retainedToolTokens).toBeUndefined();
+  });
+
   it('does not reconcile a replayed (already-folded) primary usage', () => {
     /** On resume, backfill marks the run's collected usages folded; a replayed
      *  `on_token_usage` then arrives folded=false. Since tool-loop calls share the

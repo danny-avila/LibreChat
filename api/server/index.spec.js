@@ -280,6 +280,9 @@ describe('Server Configuration', () => {
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
+    /* This deployment configures a footer, so the shell it serves has to say so
+       before any `/api/config` request: the composer lays out against it. */
+    process.env.CUSTOM_FOOTER = 'Operator policy footer';
     /* index.js listens at module scope and exports only the app, so capture the server to close it. */
     const listenSpy = jest.spyOn(express.application, 'listen');
     app = require('~/server');
@@ -294,6 +297,7 @@ describe('Server Configuration', () => {
     await promisify(server.close).call(server);
     await mongoServer.stop();
     await mongoose.disconnect();
+    delete process.env.CUSTOM_FOOTER;
   });
 
   it('should return OK for /health', async () => {
@@ -389,6 +393,19 @@ describe('Server Configuration', () => {
     expect(directIndexResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
     expect(directIndexResponse.text).toContain('data-librechat-query-devtools="true"');
     expect(directIndexResponse.text).toContain('"enableQueryDevtools":true');
+  });
+
+  it('serves the configured-footer answer with the shell', async () => {
+    const [fallbackResponse, indexResponse] = await Promise.all([
+      request(app).get('/this/does/not/exist'),
+      request(app).get('/index.html'),
+    ]);
+
+    for (const response of [fallbackResponse, indexResponse]) {
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('window.__LIBRECHAT_CONFIG__');
+      expect(response.text).toContain('"hasConfiguredFooter":true');
+    }
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {

@@ -110,9 +110,9 @@ const failedControlLocaleKey = (reason?: string) => {
 };
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
-  /** `present` carries the remembered answer while the config is in flight, so
-   *  this surface lays out once, like the composer beside it. */
-  const clearsFooter = useConfiguredFooter().present;
+  /** The shell carries the deployment's answer, so this surface lays out once,
+   *  like the composer beside it. */
+  const clearsFooter = useConfiguredFooter();
   const localize = useLocalize();
   const panelStore = useStore();
   const { showToast } = useToastContext();

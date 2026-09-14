@@ -78,11 +78,13 @@ const {
   createAggregatorEventHandlers,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
+  stripUnusableSummaryParts,
   CHILD_THREAD_READ_ONLY_ERROR,
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
   resolveConversationCodeEnvironmentDecision,
+  resolvePersistableCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
 } = require('@librechat/api');
 const {
@@ -194,7 +196,7 @@ function createToolLoader({ req, res, signal, definitionsOnly = true }) {
         streamId: null,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));
@@ -446,16 +448,10 @@ async function saveResponseOutput(
  * @param {string} conversationId
  * @param {string} agentId
  * @param {object} agent
+ * @param {import('@librechat/api').ConversationCodeEnvironmentDecision} codeEnvironmentDecision
  * @returns {Promise<void>}
  */
-async function saveConversation(
-  req,
-  conversationId,
-  agentId,
-  agent,
-  codeEnvironmentMode,
-  codeWorkspaces,
-) {
+async function saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
     {
@@ -468,8 +464,11 @@ async function saveConversation(
       conversationId,
       endpoint: EModelEndpoint.agents,
       agent_id: agentId,
-      codeEnvironmentMode,
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+      ...resolvePersistableCodeEnvironmentDecision({
+        conversationId,
+        decision: codeEnvironmentDecision,
+        conversation: req.resolvedConversation,
+      }),
       ...(title != null && { title }),
       model: agent?.model,
     },
@@ -884,6 +883,7 @@ const executeResponse = async (envelope, { req, res }) => {
           skillStates,
           defaultActiveOnShare,
           manualSkills,
+          signal: execution.signal,
         },
         dbMethods,
       );
@@ -920,6 +920,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const discoveryParams = {
           req,
           res,
+          signal: execution.signal,
           primaryConfig,
           endpointOption,
           allowedProviders,
@@ -1090,7 +1091,11 @@ const executeResponse = async (envelope, { req, res }) => {
         allMessages,
         true,
       );
-      const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
+      const formatted = formatAgentMessages(
+        stripUnusableSummaryParts(stripActivityLabelParts(allMessages)),
+        {},
+        toolSet,
+      );
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
       let indexTokenCountMap = formatted.indexTokenCountMap;
@@ -1360,14 +1365,7 @@ const executeResponse = async (envelope, { req, res }) => {
         if (request.store === true) {
           try {
             // Save conversation
-            await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              codeEnvironmentDecision.mode,
-              codeEnvironmentDecision.codeWorkspaces,
-            );
+            await saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision);
 
             // Save input messages
             await saveInputMessages(req, conversationId, inputMessages, agentId);
@@ -1599,14 +1597,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
         if (request.store === true) {
           try {
-            await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              codeEnvironmentDecision.mode,
-              codeEnvironmentDecision.codeWorkspaces,
-            );
+            await saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision);
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);
 

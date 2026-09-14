@@ -94,12 +94,17 @@ const buttonVariantRecipe = cva(
          * A control floating on the presentation surface — the sidebar
          * toggle in the chat header and its mirror in the mobile drawer
          * header, so the pair reads as one persistent button across views.
+         * The fill is opaque and not transparent: the chat header is a
+         * gradient that fades to nothing while the conversation scrolls
+         * underneath, so a see-through control has message text moving
+         * through it, and every neighbour in that row — model selector, new
+         * chat, overflow menu — already sits on `bg-presentation`.
          * `duration-0` makes the hover fill instant: these sit over a
          * scrolling gradient, where the shared color transition reads as
          * lag rather than polish.
          */
         'header-action':
-          'rounded-xl border border-border-light bg-transparent text-text-primary duration-0 hover:bg-surface-active-alt hover:text-text-primary',
+          'rounded-xl border border-border-light bg-presentation text-text-primary duration-0 hover:bg-surface-active-alt hover:text-text-primary',
       },
       size: {
         default: 'h-10 px-4 py-2',
@@ -137,6 +142,18 @@ const buttonVariantRecipe = cva(
         variant: 'section-header',
         size: 'default',
         class: 'h-auto px-1 py-2',
+      },
+      /* `size: 'sm'` brings its own `rounded-lg`, emitted after the variant
+       * and so winning the merge. A text-bearing header control keeps the
+       * row's `rounded-xl` corner, matching the icon-sized ones beside it.
+       * Gated on `shape: 'unset'` like `subtle` above: a compound is emitted
+       * after the shape recipe, so an ungated one would silently outrank a
+       * caller that asked for `shape="theme"` or `shape="round"`. */
+      {
+        variant: 'header-action',
+        size: 'sm',
+        shape: 'unset',
+        class: 'rounded-xl',
       },
     ],
     defaultVariants: {

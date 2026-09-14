@@ -8,6 +8,7 @@ import {
 import {
   AgentCapabilities,
   CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
@@ -33,6 +34,7 @@ export type CodeWorkspaceState =
   | 'without_attached'
   | 'loading'
   | 'choose'
+  | 'relocatable'
   | 'ready'
   | 'missing'
   | 'unavailable'
@@ -40,9 +42,28 @@ export type CodeWorkspaceState =
 
 export interface CodeWorkspaceEnvironmentResult {
   environment: TPublicCodeEnvironment;
-  state: Exclude<CodeWorkspaceState, 'not_required'>;
+  state: Exclude<CodeWorkspaceState, 'not_required' | 'relocatable'>;
   workspaces: CodeWorkspaceDescriptor[];
   selected?: CodeWorkspaceSelection;
+}
+
+/**
+ * A saved chat whose attached decision no longer covers every environment its agents use, most
+ * often because an agent was pointed at a different machine after the chat was created. The
+ * decision stays sealed against implicit changes; only its owner's explicit move replaces it.
+ */
+export interface CodeWorkspaceRelocation {
+  conversationId: string;
+  /** The persisted selections a move replaces, exactly as the conversation stores them. */
+  from: CodeWorkspaceSelection[];
+  /** Environments the decision covered that the agents no longer use. */
+  previous: Array<
+    Pick<TPublicCodeEnvironment, 'id'> & Partial<Pick<TPublicCodeEnvironment, 'name'>>
+  >;
+  /** Sealed selections the agents still use; a move carries them over unchanged. */
+  retained: CodeWorkspaceSelection[];
+  /** Environments the agents now use that the decision does not cover. */
+  targets: CodeWorkspaceEnvironmentResult[];
 }
 
 export interface CodeWorkspaceResult {
@@ -53,6 +74,7 @@ export interface CodeWorkspaceResult {
   state: CodeWorkspaceState;
   canSubmit: boolean;
   environments: CodeWorkspaceEnvironmentResult[];
+  relocation?: CodeWorkspaceRelocation;
   selections?: CodeWorkspaceSelection[];
   resolveSelections: (
     selections?: CodeWorkspaceSelection[],
@@ -111,6 +133,8 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
+  const supportsEnvironmentMoves =
+    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -208,7 +232,10 @@ export default function useCodeWorkspace(
     required && selectionMetadataComplete,
   );
   const storedSelections = conversation?.codeWorkspaces;
-  const attachedEnvironmentIds = new Set(attachedEnvironments.map(({ id }) => id));
+  const attachedEnvironmentIds = useMemo(
+    () => new Set(attachedEnvironments.map(({ id }) => id)),
+    [attachedEnvironments],
+  );
   const hasForeignStoredSelection = storedSelections?.some(
     ({ environmentId }) => !attachedEnvironmentIds.has(environmentId),
   );
@@ -243,8 +270,14 @@ export default function useCodeWorkspace(
       status: status?.data,
       workspaces,
       stored,
+      /** A saved chat already holds the server's decision, so a sole workspace is not a draft
+       *  choice there: auto-selecting it would submit a selection its persisted decision rejects.
+       *  Attached selections are sealed whether or not selection-less decisions are advertised. */
       hasStoredSelections:
-        stored != null || conflictingDefaults || hasForeignStoredSelection === true,
+        (locked && (supportsEnvironmentDecisions || (storedSelections?.length ?? 0) > 0)) ||
+        stored != null ||
+        conflictingDefaults ||
+        hasForeignStoredSelection === true,
     });
     let state: CodeWorkspaceEnvironmentResult['state'] = 'choose';
     if (status == null || status.isLoading) state = 'loading';
@@ -263,6 +296,14 @@ export default function useCodeWorkspace(
   const resolveSelections = useCallback(
     (selections?: CodeWorkspaceSelection[]): CodeWorkspaceSelection[] | undefined => {
       if (!required || !selectionMetadataComplete || !isCodeWorkspaceSelections(selections ?? [])) {
+        return undefined;
+      }
+      /** A saved chat's decision is sealed as a whole: trimming a selection its agents no longer use
+       *  would submit a set the persisted decision rejects. */
+      if (
+        locked &&
+        selections?.some(({ environmentId }) => !attachedEnvironmentIds.has(environmentId))
+      ) {
         return undefined;
       }
       const resolved: CodeWorkspaceSelection[] = [];
@@ -291,7 +332,7 @@ export default function useCodeWorkspace(
       }
       return resolved.sort((a, b) => a.environmentId.localeCompare(b.environmentId));
     },
-    [environmentResults, required, selectionMetadataComplete],
+    [attachedEnvironmentIds, environmentResults, locked, required, selectionMetadataComplete],
   );
 
   const selections = resolveSelections(storedSelections);
@@ -313,6 +354,33 @@ export default function useCodeWorkspace(
     state = 'loading';
   } else {
     state = aggregateState(required, metadataComplete, environmentResults, selections);
+  }
+  let relocation: CodeWorkspaceRelocation | undefined;
+  if (
+    supportsEnvironmentMoves &&
+    locked &&
+    state === 'choose' &&
+    inferredMode === 'attached' &&
+    conversation?.conversationId != null &&
+    storedSelections != null &&
+    storedSelections.length > 0
+  ) {
+    const configuredEnvironments = statefulCodeSessions?.environments;
+    relocation = {
+      conversationId: conversation.conversationId,
+      from: storedSelections,
+      previous: storedSelections
+        .filter(({ environmentId }) => !attachedEnvironmentIds.has(environmentId))
+        .map(({ environmentId }) => ({
+          id: environmentId,
+          name: configuredEnvironments?.find(({ id }) => id === environmentId)?.name,
+        })),
+      retained: environmentResults.flatMap((result) =>
+        result.state === 'ready' && result.selected != null ? [result.selected] : [],
+      ),
+      targets: environmentResults.filter((result) => result.state === 'choose'),
+    };
+    state = 'relocatable';
   }
   const resolveSubmission = useCallback(
     (
@@ -360,6 +428,7 @@ export default function useCodeWorkspace(
     state,
     canSubmit,
     environments: environmentResults,
+    relocation,
     selections,
     resolveSelections,
     resolveSubmission,

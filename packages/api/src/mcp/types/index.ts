@@ -20,7 +20,12 @@ import type {
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -253,6 +258,8 @@ export interface UserConnectionContext {
   graphTokenResolver?: GraphTokenResolver;
   /** Live OpenID session credential source for trusted direct bearer and OBO configurations. */
   upstreamTokenProvider?: UpstreamTokenProvider;
+  /** Deferred credential source used only after a server is confirmed to require OBO. */
+  upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   connectionTimeout?: number;
   /** Cancels the connection's SDK requests when the caller itself is cancelled; previously only
    *  OAuth connections could carry a signal, leaving non-OAuth discovery uncancellable. */
@@ -362,6 +369,7 @@ export interface ToolDiscoveryOptions {
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
   upstreamTokenProvider?: UpstreamTokenProvider;
+  upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   oboIdentityContext?: AuthIdentityContext;
 }
 

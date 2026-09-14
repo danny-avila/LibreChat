@@ -7,6 +7,8 @@ import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
 import { getSkewedTokenExpiresAtMs, getTokenExpiresAtMs } from '~/oauth/expiry';
 import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
+import { detachOnAbort } from '~/utils/promises';
+import { isAbortError } from '~/utils/errors';
 
 export interface OboConfig {
   scopes: string;
@@ -42,6 +44,82 @@ export type UpstreamTokenProvider = (options?: {
   forceRefresh?: boolean;
   signal?: AbortSignal;
 }) => Promise<OIDCTokens | null>;
+
+/** Lazily supplies a renewable upstream-token provider when an OBO server actually needs one. */
+export type UpstreamTokenProviderResolver = (options?: {
+  signal?: AbortSignal;
+}) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
+
+/** Scheduled OBO credentials must not replace the browser's direct-bearer source. */
+export function selectMCPUpstreamTokenProvider({
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
+  createSessionProvider,
+}: {
+  upstreamTokenProvider?: UpstreamTokenProvider | null;
+  upstreamTokenProviderResolver?: UpstreamTokenProviderResolver | null;
+  createSessionProvider: () => UpstreamTokenProvider;
+}): UpstreamTokenProvider | null | undefined {
+  return upstreamTokenProviderResolver
+    ? upstreamTokenProvider
+    : (upstreamTokenProvider ?? createSessionProvider());
+}
+
+function normalizeOboCancellation(error: unknown, signal?: AbortSignal): unknown {
+  if (signal?.aborted && error === signal.reason && !isAbortError(error)) {
+    return Object.assign(new Error('The operation was aborted.', { cause: error }), {
+      name: 'AbortError',
+    });
+  }
+  return error;
+}
+
+/** Detach cancelled callers and preserve cancellation for arbitrary AbortController reasons. */
+export async function awaitOboOperation<T>(
+  operation: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    return await detachOnAbort(operation, signal);
+  } catch (error) {
+    throw normalizeOboCancellation(error, signal);
+  }
+}
+
+/** Keep lookup failures inside resolveOboToken's typed failure boundary. */
+export function createLazyOboUpstreamTokenProvider(
+  resolver: UpstreamTokenProviderResolver,
+  signal?: AbortSignal,
+): UpstreamTokenProvider {
+  let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
+  return async (options) => {
+    const effectiveSignal = options?.signal ?? signal;
+    try {
+      effectiveSignal?.throwIfAborted();
+      pending ??= Promise.resolve()
+        .then(() => {
+          effectiveSignal?.throwIfAborted();
+          return resolver({ signal: effectiveSignal });
+        })
+        .catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+      const provider = await detachOnAbort(pending, effectiveSignal);
+      effectiveSignal?.throwIfAborted();
+      if (!provider) {
+        pending = undefined;
+        throw new Error('Renewable upstream credentials are unavailable.');
+      }
+      return await detachOnAbort(
+        provider({ ...options, signal: effectiveSignal }),
+        effectiveSignal,
+      );
+    } catch (error) {
+      throw normalizeOboCancellation(error, effectiveSignal);
+    }
+  };
+}
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
@@ -212,6 +290,7 @@ export async function resolveOboToken(
   try {
     liveTokens = await upstreamTokenProvider();
   } catch (error) {
+    if (isAbortError(error)) throw error;
     logger.error('[OBO] Upstream session refresh failed:', error);
     const retryable = isRetryableOboExchangeError(error);
     throw new OboTokenResolutionError(
@@ -292,6 +371,7 @@ export async function resolveOboToken(
       expires_at: skewedExpiresAt,
     };
   } catch (error) {
+    if (isAbortError(error)) throw error;
     if (error instanceof OboTokenResolutionError) {
       throw error;
     }

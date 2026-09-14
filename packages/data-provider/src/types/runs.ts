@@ -295,6 +295,15 @@ export type TContextUsageEvent = {
   /** Completed output in a resumable job. Separate from the saved-message field
    * so older clients do not add it alongside their trailing-text estimate. */
   resumedOutputTokens?: number;
+  /** Tool-result tokens retained AFTER this pre-invoke snapshot, counted with the
+   *  run's own tokenizer. A run that stops at the tool-call limit keeps the result
+   *  its final call's tools produced, and no later snapshot describes it: the
+   *  snapshot precedes the call, and the limit means no further call is made. The
+   *  client adds this the way it adds `completedOutputTokens`, so the gauge and the
+   *  tool-call share include the retained result instead of missing it until the
+   *  next turn's snapshot carries it as kept-message context. Counted, never
+   *  estimated — the per-tool `toolMessageTokenCounts` stay a subset of the share. */
+  retainedToolTokens?: number;
 };
 
 /**
