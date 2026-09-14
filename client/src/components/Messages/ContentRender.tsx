@@ -14,6 +14,7 @@ import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat
 import { useLocalize, useAttachments, useMessageActions, useContentMetadata } from '~/hooks';
 import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
+import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import { getHeaderHoverLabel } from '~/components/Chat/Messages/ui/HeaderLabel';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -213,25 +214,27 @@ const ContentRender = memo(function ContentRender({
         </SubRow>
       }
     >
-      <ContentParts
-        edit={edit}
-        isLast={isLast}
-        enterEdit={enterEdit}
-        siblingIdx={siblingIdx}
-        messageId={msg.messageId}
-        attachments={attachments}
-        searchResults={searchResults}
-        manualSkills={msg.manualSkills}
-        authorHeader={authorHeader}
-        setSiblingIdx={setSiblingIdx}
-        isLatestMessage={isLatestMessage}
-        isSubmitting={isSubmitting}
-        isCreatedByUser={msg.isCreatedByUser}
-        createdAt={msg.createdAt ?? msg.clientTimestamp}
-        showThinking={showThinking}
-        conversationId={conversation?.conversationId}
-        content={msg.content as Array<TMessageContentParts | undefined>}
-      />
+      <ErrorSourceProvider message={msg}>
+        <ContentParts
+          edit={edit}
+          isLast={isLast}
+          enterEdit={enterEdit}
+          siblingIdx={siblingIdx}
+          messageId={msg.messageId}
+          attachments={attachments}
+          searchResults={searchResults}
+          manualSkills={msg.manualSkills}
+          authorHeader={authorHeader}
+          setSiblingIdx={setSiblingIdx}
+          isLatestMessage={isLatestMessage}
+          isSubmitting={isSubmitting}
+          isCreatedByUser={msg.isCreatedByUser}
+          createdAt={msg.createdAt ?? msg.clientTimestamp}
+          showThinking={showThinking}
+          conversationId={conversation?.conversationId}
+          content={msg.content as Array<TMessageContentParts | undefined>}
+        />
+      </ErrorSourceProvider>
       {/** A turn that ran out of agent steps is incomplete, not broken. Rendered
        *   here rather than inside `ContentParts` because it is a message-level
        *   outcome, and `ContentParts` also serves surfaces (subagent panels,
