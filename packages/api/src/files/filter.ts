@@ -67,7 +67,8 @@ export function isLegacyFileUploadUX(
 
 type EndpointPolicyFile = Pick<TFile, 'bytes' | 'type'> & {
   source?: string;
-  llmDeliveryPath?: TFile['llmDeliveryPath'];
+  /** Loose on purpose: `TFile` narrows it to a union, `IMongoFile` stores a string. */
+  llmDeliveryPath?: string;
   metadata?: { routingMimeType?: string };
 };
 

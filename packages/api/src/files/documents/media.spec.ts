@@ -149,7 +149,13 @@ describe('mayEmbedMedia', () => {
     }) as unknown as yauzl.ZipFile;
     const fromBuffer = jest
       .spyOn(yauzl, 'fromBuffer')
-      .mockImplementation((_buffer, _options, callback) => callback(null, zipfile));
+      /* @types/yauzl types the last overload as `(buffer, callback?)`, which is not the
+       * one the implementation calls; the cast keeps the three-argument form the code uses. */
+      .mockImplementation(((
+        _buffer: Buffer,
+        _options: yauzl.Options,
+        callback: (error: Error | null, opened: yauzl.ZipFile) => void,
+      ) => callback(null, zipfile)) as unknown as typeof yauzl.fromBuffer);
 
     try {
       const pending = mayEmbedMedia(archive, controller.signal);

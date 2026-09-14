@@ -203,15 +203,15 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
        * declared entry count is safe to trust here: it is exactly the
        * number of entries yauzl will emit before ending the walk, so
        * understating it only buys the attacker less work, never more. */
-      if (zipfile.entryCount > maxEntries) {
+      if (openedZipfile.entryCount > maxEntries) {
         return finish(
           new ZipBombError(
-            `${label}: entry count (${zipfile.entryCount}) exceeds the ${maxEntries}-entry cap (zip bomb suspected)`,
+            `${label}: entry count (${openedZipfile.entryCount}) exceeds the ${maxEntries}-entry cap (zip bomb suspected)`,
           ),
         );
       }
 
-      zipfile.on('entry', (entry: yauzl.Entry) => {
+      openedZipfile.on('entry', (entry: yauzl.Entry) => {
         if (settled) {
           return;
         }
@@ -219,11 +219,11 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
          * need to be opened. Saves a stream allocation per directory
          * in archives like .docx that have nested subfolders. */
         if (/\/$/.test(entry.fileName)) {
-          zipfile.readEntry();
+          openedZipfile.readEntry();
           return;
         }
 
-        zipfile.openReadStream(entry, (streamErr, readStream) => {
+        openedZipfile.openReadStream(entry, (streamErr, readStream) => {
           if (settled) {
             readStream?.destroy();
             return;
@@ -273,7 +273,7 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
               activeReadStream = undefined;
             }
             if (!settled) {
-              zipfile.readEntry();
+              openedZipfile.readEntry();
             }
           });
           readStream.on('error', (readErr: Error) => {
@@ -284,8 +284,8 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
         });
       });
 
-      zipfile.on('end', () => finish(null));
-      zipfile.on('error', (zipErr: Error) => finish(zipErr));
+      openedZipfile.on('end', () => finish(null));
+      openedZipfile.on('error', (zipErr: Error) => finish(zipErr));
       zipfile.readEntry();
     });
   });

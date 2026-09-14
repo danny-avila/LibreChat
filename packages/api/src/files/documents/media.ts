@@ -75,16 +75,16 @@ function zipContainsMedia(buffer: Buffer, signal?: AbortSignal): Promise<boolean
       }
       zipfile = openedZipfile;
 
-      zipfile.on('entry', (entry: yauzl.Entry) => {
+      openedZipfile.on('entry', (entry: yauzl.Entry) => {
         if (isMediaEntry(entry.fileName)) {
           finish(true);
           return;
         }
-        zipfile.readEntry();
+        openedZipfile.readEntry();
       });
-      zipfile.on('end', () => finish(false));
-      zipfile.on('error', () => finish(false));
-      zipfile.readEntry();
+      openedZipfile.on('end', () => finish(false));
+      openedZipfile.on('error', () => finish(false));
+      openedZipfile.readEntry();
     });
   });
 }
