@@ -201,7 +201,10 @@ export async function initializeOpenAI(
     modelOptions,
   };
 
-  const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
+  const options: InitializeResultBase = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
+  if (clientOptions.azure) {
+    options.azureOptions = { ...clientOptions.azure };
+  }
 
   /** Set useLegacyContent for Azure serverless deployments */
   if (isServerless) {

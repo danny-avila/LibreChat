@@ -605,6 +605,8 @@ function resolveProviderToolConflicts({
  * Extended agent type with additional fields needed after initialization
  */
 export type InitializedAgent = Agent & {
+  /** Request-resolved Azure identity for self-summarization; never persisted on the agent. */
+  azureOptions?: InitializeResultBase['azureOptions'];
   tools: GenericTool[];
   /** @deprecated use requestAttachments or agentContextAttachments based on sharing semantics. */
   attachments: IMongoFile[];
@@ -2363,6 +2365,7 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
+    azureOptions: options.azureOptions,
     resendFiles,
     imageDetail,
     toolRegistry,
