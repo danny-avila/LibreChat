@@ -467,9 +467,12 @@ export default function useStepHandler({
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
       incomingPhase?: 'commentary' | 'final_answer',
+      firstPartFolded = false,
     ): number => {
       /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
       if (
+        !firstPartFolded &&
+        serverIndex === 0 &&
         editPrefixOffset > 0 &&
         (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
       ) {
@@ -866,11 +869,9 @@ export default function useStepHandler({
        * They are equal until a reconnect, so the non-resumed path is
        * unaffected.
        *
-       * `editPrefixCleared` means that sync also replaced the RENDERED
-       * content: the prefix is gone from the message and server indices are
-       * already absolute, so any offset would write past the end. Activity
-       * labels honor the same flag — both must agree, or a batch's tool
-       * cards and its header land in different index spaces.
+       * `editPrefixCleared` is the legacy-server fallback for a sync that did
+       * not carry retained content. New snapshots restore the server-captured
+       * prefix and retain this offset across reconnects and page reloads.
        *
        * `initialContent` stays the live array: it seeds a response that is
        * not in the map yet, and post-sync the seeding path correctly falls
@@ -878,9 +879,16 @@ export default function useStepHandler({
        */
       let initialContent: TMessageContentParts[] = [];
       let editPrefixOffset = 0;
-      if (submission?.editedContent != null && submission?.editPrefixCleared !== true) {
+      const capturedPrefixLength = submission?.editPrefixLength;
+      if (
+        submission?.editPrefixCleared !== true &&
+        (capturedPrefixLength != null || submission?.editedContent != null)
+      ) {
         initialContent = submission?.initialResponse?.content ?? initialContent;
-        editPrefixOffset = submission?.editPrefixLength ?? initialContent.length;
+        editPrefixOffset = capturedPrefixLength ?? initialContent.length;
+        if (submission.editPrefixFirstPartFolded === true && editPrefixOffset > 0) {
+          editPrefixOffset -= 1;
+        }
       }
 
       if (stepEvent.event === StepEvents.ON_RUN_STEP) {
@@ -1104,14 +1112,17 @@ export default function useStepHandler({
               phasedContentPart.type || '',
               updatedResponse.content,
               phase,
+              submission.editPrefixFirstPartFolded === true,
             );
             if (
               submission != null &&
+              submission.editPrefixFirstPartFolded !== true &&
               runStep.index === 0 &&
               editPrefixOffset > 0 &&
               currentIndex === editPrefixOffset - 1
             ) {
               submission.editPrefixFirstPartFolded = true;
+              editPrefixOffset -= 1;
             }
             if (phasedContentPart.type === ContentTypes.THINK) {
               updatedResponse = prepareReasoningPartForStep(
@@ -1169,14 +1180,18 @@ export default function useStepHandler({
               editPrefixOffset,
               contentPart.type || '',
               updatedResponse.content,
+              undefined,
+              submission.editPrefixFirstPartFolded === true,
             );
             if (
               submission != null &&
+              submission.editPrefixFirstPartFolded !== true &&
               runStep.index === 0 &&
               editPrefixOffset > 0 &&
               currentIndex === editPrefixOffset - 1
             ) {
               submission.editPrefixFirstPartFolded = true;
+              editPrefixOffset -= 1;
             }
             updatedResponse = prepareReasoningPartForStep(
               updatedResponse,

@@ -13,6 +13,7 @@ import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { EarlyBufferOverflowState } from './earlyBufferRecovery';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
+import type { RetainedContent } from '../stream/retained';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
@@ -31,6 +32,10 @@ export interface GenerationJobMetadata {
   responseMessageId?: string;
   /** Whether this generation replaces an existing assistant branch. */
   isRegenerate?: boolean;
+  /** An edited generation is not resumable until its server-loaded prefix is captured. */
+  retainedContentPending?: boolean;
+  /** Server-loaded response prefix retained outside completion-local stream content. */
+  retainedContent?: RetainedContent;
   /** Exact normalized MCP placeholder identity for this turn. Persisted so HITL
    * resume does not reconstruct a different parent or overridden conversation. */
   mcpRequestBody?: MCPRuntimeRequestBody;

@@ -3899,6 +3899,60 @@ describe('useStepHandler', () => {
       ).toBe(true);
     });
 
+    it.each([false, true])(
+      'keeps later parts contiguous after a folded prefix (restored=%s)',
+      (restored) => {
+        const submission = createSubmission({
+          initialResponse: createResponseMessage({
+            content: [keptToolPart(), textPart(restored ? 'prefix suffix' : 'prefix')],
+          }),
+        });
+        submission.editPrefixLength = 2;
+        submission.editPrefixFirstPartFolded = restored;
+        let currentMessages = [submission.initialResponse as TMessage];
+        mockGetMessages.mockImplementation(() => currentMessages);
+        mockSetMessages.mockImplementation((messages: TMessage[]) => {
+          currentMessages = messages;
+        });
+        const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+        act(() => {
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createRunStep() },
+            submission,
+          );
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_MESSAGE_DELTA,
+              data: createMessageDelta('step-1', restored ? ' more' : ' suffix more'),
+            },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createToolCallRunStep({ index: 1 }) },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createRunStep({ id: 'step-2', index: 2 }) },
+            submission,
+          );
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_MESSAGE_DELTA,
+              data: createMessageDelta('step-2', 'Final answer'),
+            },
+            submission,
+          );
+        });
+
+        const response = currentMessages.find((message) => !message.isCreatedByUser);
+        expect(response?.content).toHaveLength(4);
+        expect(response?.content?.[1]).toMatchObject({ text: 'prefix suffix more' });
+        expect(getToolCallName(response?.content?.[2])).toBe('test_tool');
+        expect(response?.content?.[3]).toMatchObject({ text: 'Final answer' });
+      },
+    );
+
     it('does not merge final-answer text into a retained commentary phase', () => {
       const commentary = {
         type: ContentTypes.TEXT,

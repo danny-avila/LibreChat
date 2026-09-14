@@ -2176,6 +2176,56 @@ describe('useResumeOnLoad', () => {
     ]);
   });
 
+  it('restores an edited response from server retained content after refresh', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const retainedContent = [{ type: ContentTypes.TEXT, text: 'Edited prefix' }];
+    const generatedContent = [{ type: ContentTypes.TEXT, text: ' generated suffix' }];
+    const observedSubmissions: Array<TSubmission | null> = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: generatedContent,
+          retainedContent: {
+            parts: retainedContent,
+            type: ContentTypes.TEXT,
+          },
+          responseMessageId: 'edited-response',
+          isRegenerate: true,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: rootUser.messageId,
+            parentMessageId: rootUser.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: rootUser.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.initialResponse?.content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Edited prefix generated suffix' },
+    ]);
+    expect(submission?.editPrefixLength).toBe(1);
+    expect(submission?.editPrefixFirstPartFolded).toBe(true);
+  });
+
   describe('steer chip restore', () => {
     const staleChip: PendingSteer = {
       steerId: 'stale-1',

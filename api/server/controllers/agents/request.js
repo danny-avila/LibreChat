@@ -14,7 +14,8 @@ const {
   getReferencedQuotes,
   resolveTitleTiming,
   GenerationJobManager,
-  filterPersistableAbortContent,
+  projectRetainedMessageContent,
+  getRetainedContentMetadata,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
@@ -1654,6 +1655,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          *  no user message of its own, the response parented onto an
          *  existing message. A reconnecting client rebuilds it that way. */
         ...((isRegenerate || isCompaction) && { isRegenerate: true }),
+        ...getRetainedContentMetadata(editedContent),
         ...(scheduleId
           ? {
               scheduleId,
@@ -1840,42 +1842,49 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      * overwrite this with the complete response using the same messageId pattern.
      */
     job.emitter.on('allSubscribersLeft', async (aggregatedContent) => {
-      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
+      if (partialResponseSaved || !aggregatedContent) {
         return;
       }
-
-      const persistableContent = filterPersistableAbortContent(aggregatedContent);
-      if (persistableContent.length === 0) {
-        logger.debug('[ResumableAgentController] No persistable content to save partial response');
-        return;
-      }
-
-      const [resumeState, jobRecord] = await Promise.all([
-        GenerationJobManager.getResumeState(streamId, jobCreatedAt),
-        GenerationJobManager.getJobStore().getJob(streamId),
-      ]);
-      if (!resumeState?.userMessage) {
-        logger.debug('[ResumableAgentController] No user message to save partial response for');
-        return;
-      }
-
-      partialResponseSaved = true;
-      const responseConversationId = resumeState.conversationId || conversationId;
-      /** The run publishes its calibration and fading tiers onto the job; a
-       * partial response saved on disconnect must carry them like the Stop and
-       * pause paths do, or a turn continued from it re-derives its provider
-       * projection of history and loses the cached prefix. The same-epoch job
-       * record is the source, since the client-facing resume snapshot never
-       * carries server-private state. */
-      const contextMeta = jobRecord?.createdAt === jobCreatedAt ? jobRecord.contextMeta : undefined;
 
       try {
+        const [resumeState, jobRecord] = await Promise.all([
+          GenerationJobManager.getResumeState(streamId, jobCreatedAt),
+          GenerationJobManager.getJobStore().getJob(streamId),
+        ]);
+        if (!resumeState?.userMessage) {
+          logger.debug('[ResumableAgentController] No user message to save partial response for');
+          return;
+        }
+
+        const persistedContent = projectRetainedMessageContent(aggregatedContent, jobRecord, {
+          abort: true,
+          expectedCreatedAt: jobCreatedAt,
+        });
+        const persistableContent = persistedContent.content;
+        if (persistableContent.length === 0) {
+          logger.debug(
+            '[ResumableAgentController] No persistable content to save partial response',
+          );
+          return;
+        }
+
+        partialResponseSaved = true;
+        const responseConversationId = resumeState.conversationId || conversationId;
+        /** The run publishes its calibration and fading tiers onto the job; a
+         * partial response saved on disconnect must carry them like the Stop and
+         * pause paths do, or a turn continued from it re-derives its provider
+         * projection of history and loses the cached prefix. The same-epoch job
+         * record is the source, since the client-facing resume snapshot never
+         * carries server-private state. */
+        const contextMeta =
+          jobRecord?.createdAt === jobCreatedAt ? jobRecord.contextMeta : undefined;
+
         const partialMessage = {
           messageId: resumeState.responseMessageId || `${resumeState.userMessage.messageId}_`,
           conversationId: responseConversationId,
           parentMessageId: resumeState.userMessage.messageId,
           sender: client?.sender ?? 'AI',
-          content: persistableContent,
+          ...persistedContent,
           unfinished: true,
           error: false,
           isCreatedByUser: false,
@@ -2332,6 +2341,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           isRegenerate,
           isCompaction,
           editedContent,
+          onRetainedContent: (parts, type, provenance) =>
+            GenerationJobManager.captureRetainedContent(
+              streamId,
+              parts,
+              type,
+              jobCreatedAt,
+              provenance,
+            ),
           conversationId,
           parentMessageId,
           abortController: job.abortController,

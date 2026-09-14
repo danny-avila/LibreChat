@@ -28,12 +28,11 @@ const {
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
-  filterMalformedContentParts,
   getAgentCheckpointer,
   isContentFilterError,
   preflightResumeContent,
   reportLocatorTraversalFailure,
-  getResumeProvenance,
+  projectResumedMessageContent,
   getUserFacingResumeError,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
@@ -277,7 +276,7 @@ async function resolveSegmentContent(client, streamId, expectedCreatedAt) {
       ? liveContent
       : ((await GenerationJobManager.getResumeState(streamId, expectedCreatedAt))
           ?.aggregatedContent ?? []);
-  return filterMalformedContentParts(rawContent);
+  return rawContent;
 }
 
 /**
@@ -295,14 +294,15 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
   if (!responseMessageId) {
     return;
   }
-  const content = await resolveSegmentContent(client, streamId, job.createdAt);
-  const { userSubmittedPaths, userSubmittedMessageFieldPaths } = getResumeProvenance({
-    content,
-    pendingAction: meta.pendingAction,
-    body: req.body,
-    existingPaths: meta.userSubmittedPaths,
-    existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
-  });
+  const { content, userSubmittedPaths, userSubmittedMessageFieldPaths } =
+    projectResumedMessageContent({
+      content: await resolveSegmentContent(client, streamId, job.createdAt),
+      retainedContent: meta.retainedContent,
+      pendingAction: meta.pendingAction,
+      body: req.body,
+      existingPaths: meta.userSubmittedPaths,
+      existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
+    });
   const attachments = await resolveAccumulatedAttachments({
     client,
     conversationId,
@@ -325,8 +325,8 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
       conversationId,
       ...(content.length > 0 && { content }),
       ...(attachments.length > 0 && { attachments }),
-      ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
-      ...(userSubmittedMessageFieldPaths.length > 0 && { userSubmittedMessageFieldPaths }),
+      userSubmittedPaths,
+      userSubmittedMessageFieldPaths,
       unfinished: true,
       user: userId,
     },
@@ -436,14 +436,15 @@ async function finalizeResumedTurn({
   // Parity with the normal agents path (AgentClient strips these before saving):
   // drop empty/malformed tool_call parts so a resumed turn can't persist an invalid
   // part that breaks reload/rendering.
-  const content = filterMalformedContentParts(rawContent);
-  const { userSubmittedPaths, userSubmittedMessageFieldPaths } = getResumeProvenance({
-    content,
-    pendingAction: meta.pendingAction,
-    body: req.body,
-    existingPaths: meta.userSubmittedPaths,
-    existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
-  });
+  const { content, userSubmittedPaths, userSubmittedMessageFieldPaths } =
+    projectResumedMessageContent({
+      content: rawContent,
+      retainedContent: meta.retainedContent,
+      pendingAction: meta.pendingAction,
+      body: req.body,
+      existingPaths: meta.userSubmittedPaths,
+      existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
+    });
 
   /**
    * A resumed segment can end on an empty preempt boundary just as a fresh
@@ -472,8 +473,8 @@ async function finalizeResumedTurn({
     error: false,
     isCreatedByUser: false,
     user: userId,
-    ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
-    ...(userSubmittedMessageFieldPaths.length > 0 && { userSubmittedMessageFieldPaths }),
+    userSubmittedPaths,
+    userSubmittedMessageFieldPaths,
   };
   if (meta.agent_id ?? req.body?.agent_id) {
     responseMessage.agent_id = meta.agent_id ?? req.body.agent_id;

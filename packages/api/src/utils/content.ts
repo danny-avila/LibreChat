@@ -74,7 +74,13 @@ function rebaseBound(bound: number, retainedBefore: number[], sourceLength: numb
  * Markers are copied rather than mutated: the caller's array stays in its own
  * coordinate space, which the live stream and the resume snapshot still use.
  */
-function compactContentParts(contentParts: TMessageContentParts[]): TMessageContentParts[] {
+export function compactContentParts(
+  contentParts: TMessageContentParts[],
+  options?: {
+    retain?: (part: TMessageContentParts) => boolean;
+    indices?: Map<number, number>;
+  },
+): TMessageContentParts[] {
   const retained: TMessageContentParts[] = [];
   const retainedBefore: number[] = new Array<number>(contentParts.length + 1);
   let phaseMarkerCount = 0;
@@ -82,9 +88,10 @@ function compactContentParts(contentParts: TMessageContentParts[]): TMessageCont
   for (let index = 0; index < contentParts.length; index += 1) {
     retainedBefore[index] = retained.length;
     const part = contentParts[index];
-    if (!isRetainablePart(part)) {
+    if (!isRetainablePart(part) || (options?.retain != null && !options.retain(part))) {
       continue;
     }
+    options?.indices?.set(index, retained.length);
     if (isPhaseMarker(part)) {
       phaseMarkerCount += 1;
     }

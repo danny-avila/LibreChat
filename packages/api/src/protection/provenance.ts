@@ -6,6 +6,49 @@ import { CONTENT_TRAVERSAL_MAX_NODES } from './adapters/nested';
 export const MAX_USER_SUBMITTED_PATHS = 256;
 export const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
 
+export const mergeUserSubmittedPaths = (
+  ...pathLists: readonly (readonly (string | null | undefined)[] | null | undefined)[]
+): string[] => [
+  ...new Set(
+    pathLists
+      .flatMap((paths) => paths ?? [])
+      .filter(
+        (path): path is string =>
+          typeof path === 'string' && path.startsWith('/') && path.length <= 2048,
+      ),
+  ),
+];
+
+export const mergeUserSubmittedMessageFieldPaths = (
+  ...entryLists: readonly (
+    | readonly (UserSubmittedMessageFieldPath | null | undefined)[]
+    | null
+    | undefined
+  )[]
+): UserSubmittedMessageFieldPath[] => {
+  const entries: UserSubmittedMessageFieldPath[] = [];
+  const seen = new Set<string>();
+  const allowedFields = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
+  for (const entry of entryLists.flatMap((values) => values ?? [])) {
+    if (
+      entry == null ||
+      typeof entry.path !== 'string' ||
+      !entry.path.startsWith('/') ||
+      entry.path.length > 2048 ||
+      !allowedFields.has(entry.field)
+    ) {
+      continue;
+    }
+    const key = `${entry.field}:${entry.path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    entries.push(entry);
+  }
+  return entries;
+};
+
 const BLOCKED_POINTER_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 const STORED_MESSAGE_SUBMITTED_ROOTS = new Set([

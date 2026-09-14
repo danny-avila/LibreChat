@@ -21,6 +21,7 @@ const {
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
   withBalanceReservations,
+  applyRetainedContentEdit,
 } = require('@librechat/api');
 const {
   Constants,
@@ -39,7 +40,7 @@ const {
   isBedrockDocumentType,
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
-  stripReasoningLabelMetadata,
+  mergeEditedMessageContent,
   resolveUploadLLMDeliveryPath,
   isSpeechProviderConfigured,
   resolveUseResponsesApi,
@@ -588,6 +589,12 @@ class BaseClient {
       conversationId,
     });
 
+    await applyRetainedContentEdit(
+      this.currentMessages[this.currentMessages.length - 1],
+      opts.editedContent,
+      opts.onRetainedContent,
+    );
+
     /**
      * Attach quoted excerpts (the "Add to chat" selections from `req.body.quotes`)
      * before `getReqData`/`onStart` fire, so the optimistic bubble, resumable job
@@ -762,8 +769,6 @@ class BaseClient {
       });
     }
 
-    const { editedContent } = opts;
-
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response
@@ -779,35 +784,6 @@ class BaseClient {
           sender: this.sender,
         };
         this.currentMessages.push(userMessage, latestMessage);
-      } else if (editedContent != null) {
-        // Handle editedContent for content parts
-        if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
-          const { index, type } = editedContent;
-          const text = editedContent[type];
-          if (index >= 0 && index < latestMessage.content.length) {
-            const contentPart = latestMessage.content[index];
-            let didApplyEdit = false;
-            if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
-              contentPart[ContentTypes.THINK] = text;
-              didApplyEdit = true;
-              delete contentPart.reasoning_label;
-              delete contentPart.reasoning_label_step_id;
-              delete contentPart.reasoning_label_attempts;
-              delete contentPart.reasoning_label_submitted_chars;
-              delete contentPart.reasoning_label_revision;
-              delete contentPart.reasoning_label_status;
-            } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
-              contentPart[ContentTypes.TEXT] = text;
-              didApplyEdit = true;
-            }
-            if (didApplyEdit) {
-              latestMessage.userSubmittedPaths = mergeUserSubmittedPaths(
-                latestMessage.userSubmittedPaths,
-                [`/content/${index}/${type}`],
-              );
-            }
-          }
-        }
       }
       this.continued = true;
     } else if (opts.isCompaction !== true) {
@@ -1654,82 +1630,7 @@ class BaseClient {
    * @returns {Array} The merged content array
    */
   mergeEditedContent(existingContent, newCompletion, editedType) {
-    if (!newCompletion.length) {
-      return existingContent.concat(newCompletion);
-    }
-
-    const lastIndex = existingContent.length - 1;
-    const lastExisting = existingContent[lastIndex];
-    const firstNew = newCompletion[0];
-    /** Phased and legacy/unphased text are distinct semantic streams. Merging
-     *  either direction would stamp retained text with the wrong phase. */
-    const textPhaseCompatible =
-      editedType !== ContentTypes.TEXT ||
-      (lastExisting?.phase ?? null) === (firstNew?.phase ?? null);
-    const mergesFirstPart =
-      (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
-      lastExisting?.type === firstNew?.type &&
-      firstNew?.type === editedType &&
-      textPhaseCompatible;
-    /** Phase bounds are completion-local while the run streams. Persist them
-     *  in the same absolute index space as the edited response assembled
-     *  here. When the first new text/think part merges into the retained tail,
-     *  every completion index shifts by prefixLength - 1; otherwise it shifts
-     *  by the full retained prefix. */
-    const phaseIndexOffset = mergesFirstPart ? lastIndex : existingContent.length;
-    const adjustedCompletion = newCompletion.map((part) => {
-      if (
-        part?.type !== ContentTypes.ACTIVITY_LABEL ||
-        part.activity_label_type !== 'phase' ||
-        typeof part.activity_start_index !== 'number'
-      ) {
-        return part;
-      }
-      return {
-        ...part,
-        activity_start_index: part.activity_start_index + phaseIndexOffset,
-        ...(typeof part.activity_end_index === 'number' && {
-          activity_end_index: part.activity_end_index + phaseIndexOffset,
-        }),
-      };
-    });
-
-    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
-      return existingContent.concat(adjustedCompletion);
-    }
-
-    if (!mergesFirstPart) {
-      return existingContent.concat(adjustedCompletion);
-    }
-
-    const mergedContent = [...existingContent];
-    if (editedType === ContentTypes.TEXT) {
-      mergedContent[lastIndex] = {
-        ...mergedContent[lastIndex],
-        ...(firstNew.phase != null && { phase: firstNew.phase }),
-        [ContentTypes.TEXT]:
-          (mergedContent[lastIndex][ContentTypes.TEXT] || '') +
-          (adjustedCompletion[0][ContentTypes.TEXT] || ''),
-      };
-    } else {
-      mergedContent[lastIndex] = {
-        ...stripReasoningLabelMetadata(mergedContent[lastIndex]),
-        ...(adjustedCompletion[0].reasoning_label_step_id != null && {
-          reasoning_label: adjustedCompletion[0].reasoning_label,
-          reasoning_label_step_id: adjustedCompletion[0].reasoning_label_step_id,
-          reasoning_label_attempts: adjustedCompletion[0].reasoning_label_attempts,
-          reasoning_label_submitted_chars: adjustedCompletion[0].reasoning_label_submitted_chars,
-          reasoning_label_revision: adjustedCompletion[0].reasoning_label_revision,
-          reasoning_label_status: adjustedCompletion[0].reasoning_label_status,
-        }),
-        [ContentTypes.THINK]:
-          (mergedContent[lastIndex][ContentTypes.THINK] || '') +
-          (adjustedCompletion[0][ContentTypes.THINK] || ''),
-      };
-    }
-
-    // Add remaining completion items
-    return mergedContent.concat(adjustedCompletion.slice(1));
+    return mergeEditedMessageContent(existingContent, newCompletion, editedType).content;
   }
 
   async sendPayload(payload, opts = {}) {

@@ -18,7 +18,6 @@ const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
-const mockFilterPersistableAbortContent = jest.fn((content) => content);
 const mockCheckAndIncrementPendingRequest = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
 const mockGenerationJobManager = {
@@ -69,6 +68,8 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
+  projectRetainedMessageContent: jest.requireActual('@librechat/api').projectRetainedMessageContent,
+  getRetainedContentMetadata: jest.requireActual('@librechat/api').getRetainedContentMetadata,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn(() => null),
   cleanupMCPRequestContext: jest.fn(),
@@ -82,7 +83,6 @@ jest.mock('@librechat/api', () => ({
     pending: new Map(),
     cleanupStarted: false,
   })),
-  filterPersistableAbortContent: (...args) => mockFilterPersistableAbortContent(...args),
   cleanupMCPRequestContextForReq: jest.fn(),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
@@ -234,14 +234,20 @@ describe('ResumableAgentController tenant context', () => {
     );
   });
 
-  it('leaves context meta off the partial response when the job record belongs to another epoch', async () => {
-    await firePartialDisconnect(
-      { id: 'user-123', tenantId: 'tenant-a' },
-      { createdAt: 2000, contextMeta: partialContextMeta },
+  it("does not persist a partial response with another epoch's metadata", async () => {
+    await expect(
+      firePartialDisconnect(
+        { id: 'user-123', tenantId: 'tenant-a' },
+        { createdAt: 2000, contextMeta: partialContextMeta },
+      ),
+    ).resolves.toBeUndefined();
+    expect(mockSaveMessage).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[ResumableAgentController] Error saving partial response:',
+      expect.objectContaining({
+        message: 'Generation changed before partial response persistence',
+      }),
     );
-
-    const [, savedMessage] = mockSaveMessage.mock.calls[0];
-    expect(savedMessage).not.toHaveProperty('contextMeta');
   });
 
   it('restores the authenticated tenant before saving a partial response on disconnect', async () => {

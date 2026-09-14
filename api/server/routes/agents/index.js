@@ -752,7 +752,8 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
          * reconciliation frame instead of an unsafe normal FINAL. */
         beforePublish: async (pendingAbortResult) => {
           const persistenceErrors = [];
-          const { jobData, text, content } = pendingAbortResult;
+          const { jobData, text, content, userSubmittedPaths, userSubmittedMessageFieldPaths } =
+            pendingAbortResult;
           /** `abortJob` treats a delivered `created` event as a real turn even
            * when every streamed part is filtered out (for example, an
            * interrupt before the model's first non-whitespace token). Its
@@ -800,14 +801,8 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               unfinished: true,
               error: false,
               isCreatedByUser: false,
-              ...(Array.isArray(jobData.userSubmittedPaths) &&
-                jobData.userSubmittedPaths.length > 0 && {
-                  userSubmittedPaths: jobData.userSubmittedPaths,
-                }),
-              ...(Array.isArray(jobData.userSubmittedMessageFieldPaths) &&
-                jobData.userSubmittedMessageFieldPaths.length > 0 && {
-                  userSubmittedMessageFieldPaths: jobData.userSubmittedMessageFieldPaths,
-                }),
+              userSubmittedPaths,
+              userSubmittedMessageFieldPaths,
               /** The run published its compact context meta onto the job ahead
                * of each model call; the stopped response must carry it so the
                * next turn seeds the same tiers. A job with none unsets what an

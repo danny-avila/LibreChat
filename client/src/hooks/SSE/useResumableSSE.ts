@@ -22,6 +22,7 @@ import {
   createPayload,
   ApprovalEvents,
   ViolationTypes,
+  mergeEditedMessageContent,
   removeNullishValues,
 } from 'librechat-data-provider';
 import type {
@@ -52,7 +53,6 @@ import {
   findSteerMessageIndex,
   applyActivityLabelPart,
   applyReasoningLabel,
-  offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
   findReasoningLabelMessageIndex,
   appendAppliedSteerIds,
@@ -585,12 +585,22 @@ const buildResumeEventSubmission = (
     currentSubmission.initialResponse?.messageId ??
     `${userMessage.messageId}_`;
 
+  const retainedContent = resumeState.retainedContent;
+  const mergedResumeContent = retainedContent
+    ? mergeEditedMessageContent(
+        retainedContent.parts,
+        resumeState.aggregatedContent ?? [],
+        retainedContent.type,
+      )
+    : undefined;
+
   const initialResponse = {
     ...(currentSubmission.initialResponse as TMessage),
     messageId: responseMessageId,
     parentMessageId: userMessage.messageId,
     conversationId,
     content:
+      mergedResumeContent?.content ??
       resumeState.aggregatedContent ??
       (currentSubmission.initialResponse as TMessage | undefined)?.content,
     sender: resumeState.sender ?? currentSubmission.initialResponse?.sender,
@@ -607,6 +617,11 @@ const buildResumeEventSubmission = (
     },
     userMessage,
     initialResponse,
+    ...(retainedContent && {
+      editPrefixLength: retainedContent.parts.length,
+      editPrefixFirstPartFolded: mergedResumeContent?.firstPartMerged === true,
+      editPrefixCleared: false,
+    }),
   } as EventSubmission;
 };
 
@@ -855,18 +870,11 @@ export default function useResumableSSE(
    *  could apply a stale label to a replacement generation that reuses the
    *  same response id (edits do). */
   const activityLabelRetryFramesRef = useRef<Set<number>>(new Set());
-  /**
-   * Set once a SYNC has replaced the response with the server's
-   * completion-local snapshot, which discards the prefix an edited
-   * resubmission retained. From that point incoming indices are absolute and
-   * `editPrefixLength` must no longer be applied — by run steps or labels.
-   */
+  /** Legacy servers return completion-local snapshots without retained content. */
   const editPrefixClearedRef = useRef(false);
   const editPrefixFirstPartFoldedRef = useRef(false);
-  /** Generation the cleared-prefix state above belongs to, so it is dropped
-   *  when a new generation starts rather than when a subscribe happens to be
-   *  live. Keyed by response message id — the stream id is the conversation
-   *  id and is therefore shared by every generation within it. */
+  /** Prefix state belongs to the request ID or restored generation epoch,
+   *  not the response ID that SYNC can replace within the same generation. */
   const prefixStateGenerationIdRef = useRef<string | null>(null);
 
   const restoreQueuedSubmission = useRecoilCallback(
@@ -1233,23 +1241,18 @@ export default function useResumableSSE(
     setShowStopButton,
   });
 
-  /**
-   * Run steps and activity labels must resolve indices in ONE space, and the
-   * resume SYNC boundary that invalidates the edit prefix is owned here — so
-   * this transport stamps its cleared state onto every dispatched
-   * submission. `useStepHandler` reads the flag (alongside the captured
-   * `editPrefixLength`) instead of measuring the live
-   * `initialResponse.content`, which SYNC replaces with the server's
-   * completion-local snapshot.
-   *
-   * Only allocates once the prefix is actually cleared; before that, and on
-   * the non-resumable transport, the submission passes through untouched.
-   */
+  /** Share the generation's cleared/folded prefix state with run steps so
+   *  they use the same index offset as labels, including after reconnects. */
   const stepHandler = useCallback(
     (...[event, submission]: Parameters<typeof rawStepHandler>) => {
-      const eventSubmission = editPrefixClearedRef.current
-        ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
-        : submission;
+      const eventSubmission =
+        editPrefixClearedRef.current || editPrefixFirstPartFoldedRef.current
+          ? {
+              ...submission,
+              editPrefixCleared: editPrefixClearedRef.current,
+              editPrefixFirstPartFolded: editPrefixFirstPartFoldedRef.current,
+            }
+          : submission;
       rawStepHandler(event, eventSubmission);
       if (eventSubmission.editPrefixFirstPartFolded === true) {
         editPrefixFirstPartFoldedRef.current = true;
@@ -1364,17 +1367,18 @@ export default function useResumableSSE(
        *     that same id (`editedMessageId`), so re-editing one response
        *     produced the same key twice.
        * `clientRequestId` is minted per submission and forwarded unchanged on
-       * retries, which is exactly "new per edit attempt, stable across
-       * reconnects".
+       * retries. Reloaded submissions instead use the server generation epoch,
+       * which is likewise stable across reconnects.
        */
       const generationId =
         currentSubmission.clientRequestId ??
+        (generationCreatedAt != null ? `${currentStreamId}:${generationCreatedAt}` : undefined) ??
         (currentSubmission.initialResponse as TMessage | undefined)?.messageId ??
         currentStreamId;
       if (prefixStateGenerationIdRef.current !== generationId) {
         prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;
-        editPrefixFirstPartFoldedRef.current = false;
+        editPrefixFirstPartFoldedRef.current = currentSubmission.editPrefixFirstPartFolded === true;
       }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
@@ -1553,12 +1557,17 @@ export default function useResumableSSE(
        * length is used over the live array because a resume sync replaces
        * `initialResponse.content` with the server's completion-local snapshot.
        */
-      const editPrefixLength = () =>
-        currentSubmission.editedContent != null && !editPrefixClearedRef.current
-          ? (currentSubmission.editPrefixLength ??
-            currentSubmission.initialResponse?.content?.length ??
-            0)
-          : 0;
+      const editPrefixOffset = () => {
+        if (editPrefixClearedRef.current) {
+          return 0;
+        }
+        const length =
+          currentSubmission.editPrefixLength ??
+          (currentSubmission.editedContent != null
+            ? (currentSubmission.initialResponse?.content?.length ?? 0)
+            : 0);
+        return length > 0 && editPrefixFirstPartFoldedRef.current ? length - 1 : length;
+      };
 
       /**
        * Places an injected steer part on the in-flight response message and
@@ -1609,7 +1618,7 @@ export default function useResumableSSE(
           retryNextFrame();
           return;
         }
-        const prefixLength = editPrefixLength();
+        const prefixLength = editPrefixOffset();
         const updated = applySteerPart(
           messages[index],
           typeof event.index === 'number' && prefixLength > 0
@@ -1686,7 +1695,7 @@ export default function useResumableSSE(
          *  space — a label shifting differently from its tools would overwrite
          *  another part, and a gap fill would miss its own reservation and
          *  leave the placeholder pending forever. */
-        const prefixLength = editPrefixLength();
+        const prefixLength = editPrefixOffset();
         const phasePart = event.part as TActivityLabelEvent['part'] & {
           activity_label_type?: 'phase';
           activity_start_index?: number;
@@ -1703,29 +1712,11 @@ export default function useResumableSSE(
             phasePart.activity_label_type === 'phase' &&
             typeof phasePart.activity_start_index === 'number'
           ) {
-            let activityStartIndex = phasePart.activity_start_index + prefixLength;
-            const foldedFirstPart = editPrefixFirstPartFoldedRef.current;
-            const targetContent = messages[index]?.content;
-            /** The step handler records an actual server-index-zero text/think
-             *  merge. An empty +prefix slot is insufficient evidence because
-             *  a delayed tool may not have materialized there yet. */
-            if (
-              phasePart.activity_start_index === 0 &&
-              activityStartIndex > 0 &&
-              foldedFirstPart &&
-              targetContent?.[activityStartIndex - 1] != null
-            ) {
-              activityStartIndex -= 1;
-            }
             offsetPart = {
               ...phasePart,
-              activity_start_index: activityStartIndex,
+              activity_start_index: phasePart.activity_start_index + prefixLength,
               ...(typeof phasePart.activity_end_index === 'number' && {
-                activity_end_index: offsetActivityPhaseBoundary(
-                  phasePart.activity_end_index,
-                  prefixLength,
-                  foldedFirstPart,
-                ),
+                activity_end_index: phasePart.activity_end_index + prefixLength,
               }),
             };
           }
@@ -1768,16 +1759,7 @@ export default function useResumableSSE(
           retryNextFrame();
           return;
         }
-        const prefixLength = editPrefixLength();
-        let contentIndex = event.index + prefixLength;
-        if (
-          prefixLength > 0 &&
-          event.index === 0 &&
-          editPrefixFirstPartFoldedRef.current &&
-          messages[messageIndex]?.content?.[contentIndex - 1]?.type === ContentTypes.THINK
-        ) {
-          contentIndex -= 1;
-        }
+        const contentIndex = event.index + editPrefixOffset();
         const updated = applyReasoningLabel(messages[messageIndex], {
           ...event,
           index: contentIndex,
@@ -2181,6 +2163,12 @@ export default function useResumableSSE(
             currentSubmission = resumeSubmission;
             submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
+            const hasServerRetainedContent = data.resumeState?.retainedContent != null;
+            if (hasServerRetainedContent) {
+              editPrefixClearedRef.current = false;
+              editPrefixFirstPartFoldedRef.current =
+                resumeSubmission.editPrefixFirstPartFolded === true;
+            }
             /**
              * Totals rebuild from the persisted backfill at sync. Replayed or
              * gap usage events already represented in the snapshot are skipped
@@ -2224,6 +2212,7 @@ export default function useResumableSSE(
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
+              const snapshotContent = resumeSubmission.initialResponse.content ?? [];
               const responseId = resumeSubmission.initialResponse.messageId;
               const messageIndexes = getResumeMessageIndexes(
                 messages,
@@ -2253,18 +2242,18 @@ export default function useResumableSSE(
                  *  and leave a bare cursor. Require an existing content array so it is never
                  *  swapped for `undefined`. */
                 const preserveLoadedContent =
-                  !hasResumedContent && Array.isArray(oldContent) && oldContent.length > 0;
+                  !hasServerRetainedContent &&
+                  !hasResumedContent &&
+                  Array.isArray(oldContent) &&
+                  oldContent.length > 0;
                 /**
-                 * Replacing the response with `aggregatedContent` drops the
-                 * prefix an edited resubmission had retained: the snapshot is
-                 * completion-local, indexed from zero. Every later event must
-                 * therefore stop offsetting, or it writes past the end of the
-                 * shorter array — for an activity label that means the fill
-                 * misses its own reservation and the placeholder never
-                 * resolves. Preserving `oldContent` keeps the prefix, and with
-                 * it the offset. Run steps and labels both read this.
+                 * Legacy snapshots are completion-local, so replacing with one
+                 * drops the retained prefix and disables its offset. New
+                 * snapshots carry the server-captured prefix separately and
+                 * `buildResumeEventSubmission` reconstructs the full answer;
+                 * later events keep using that same prefix offset.
                  */
-                if (!preserveLoadedContent) {
+                if (!preserveLoadedContent && !hasServerRetainedContent) {
                   editPrefixClearedRef.current = true;
                 }
                 const responseMessage = {
@@ -2272,7 +2261,7 @@ export default function useResumableSSE(
                   ...messages[responseIdx],
                   messageId: responseId,
                   parentMessageId: userMsgId,
-                  content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
+                  content: preserveLoadedContent ? oldContent : snapshotContent,
                   sender: messages[responseIdx]?.sender ?? resumeSubmission.initialResponse.sender,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
@@ -2300,18 +2289,14 @@ export default function useResumableSSE(
                 syncStepMessage(responseMessage);
                 logger.log('ResumableSSE', 'SYNC complete, handlers synced');
               } else {
-                /** Same reasoning as the matched branch above: this row is
-                 *  built straight from the server's completion-local
-                 *  `aggregatedContent`, so it holds no retained prefix and
-                 *  later steps and labels must stop offsetting. Setting it
-                 *  only in the matched branch left this path adding an offset
-                 *  to indices that were already absolute. */
-                editPrefixClearedRef.current = true;
+                if (!hasServerRetainedContent) {
+                  editPrefixClearedRef.current = true;
+                }
                 const newMessage = {
                   ...resumeSubmission.initialResponse,
                   messageId: responseId,
                   parentMessageId: userMsgId,
-                  content: data.resumeState.aggregatedContent,
+                  content: snapshotContent,
                   isCreatedByUser: false,
                 } as TMessage;
                 setMessages(mergeResumeMessages(messages, userMessage, newMessage, messageIndexes));
