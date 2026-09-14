@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { getE2EUser } from '../../../setup/user';
 import {
@@ -7,9 +7,10 @@ import {
   deleteMessagesByConversation,
   seedConversations,
   seedMessages,
+  withMongo,
 } from '../db';
 import type { SeedMessage } from '../db';
-import { messagesView } from '../helpers';
+import { messagesView, sendMessageAndWaitForCompletion } from '../helpers';
 
 const userEmail = getE2EUser().email;
 const ROOT_PARENT = '00000000-0000-0000-0000-000000000000';
@@ -77,7 +78,55 @@ function precedingTurns(label: string) {
   };
 }
 
+/** The summarizer the mock deployment's endpoints call. */
+const LABEL_SERVER = `http://127.0.0.1:${process.env.E2E_LABEL_PORT || '8889'}`;
+
+/**
+ * A real conversation whose manual compaction produces nothing: the summarizer
+ * is switched to blank output for the compaction run, which is what a model
+ * returning no checkpoint looks like. Seeding cannot stand in for this — the
+ * point is what a compaction run records when it has neither a summary nor an
+ * explanation to carry, and only a real run reaches that path.
+ *
+ * Returns the conversation and the turn the compaction produced.
+ */
+async function compactWithEmptySummarizer(page: Page, request: APIRequestContext, label: string) {
+  await page.goto('/c/new');
+  await sendMessageAndWaitForCompletion(page, `tell me about ${label}`);
+  const conversationId = new URL(page.url()).pathname.replace('/c/', '');
+  expect(conversationId).not.toBe('new');
+
+  const behavior = await request.post(`${LABEL_SERVER}/__e2e/behavior`, {
+    data: { mode: 'blank' },
+  });
+  expect(behavior.ok()).toBeTruthy();
+
+  await page.getByTestId('token-usage').click();
+  await page.getByRole('button', { name: 'Compact context' }).click();
+  await expect(
+    messagesView(page).getByText('Could not compact the context', { exact: false }),
+  ).toBeVisible({ timeout: 60_000 });
+
+  const compactionId = await withMongo(async (db) => {
+    const row = await db
+      .collection('messages')
+      .findOne({ conversationId, 'content.type': 'error' });
+    return row?.messageId as string | undefined;
+  });
+  expect(compactionId).toBeTruthy();
+  return { conversationId, compactionId: compactionId as string };
+}
+
 test.describe('compaction rerun controls', () => {
+  /** `compactWithEmptySummarizer` switches the shared fixture summarizer to
+   *  blank output before it returns, so a failure inside it would leave every
+   *  later mock test summarizing to nothing. Restoring here runs whether the
+   *  helper returned, failed, or the test was retried. */
+  test.afterEach(async ({ request }) => {
+    const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
+    expect(response.ok()).toBeTruthy();
+  });
+
   test('a finished compaction offers no rerun controls @scenario:compaction-turn-offers-no-rerun-controls', async ({
     page,
   }) => {
@@ -175,6 +224,97 @@ test.describe('compaction rerun controls', () => {
     }
   });
 
+  test('a failed compaction hanging off a user turn offers no rerun controls @scenario:failed-compaction-on-user-turn-offers-no-rerun-controls', async ({
+    page,
+  }) => {
+    const userMessageId = randomUUID();
+    const compactionId = randomUUID();
+    const conversationId = await seedBranch([
+      {
+        messageId: userMessageId,
+        parentMessageId: ROOT_PARENT,
+        text: 'Compact this before I continue',
+        isCreatedByUser: true,
+        sender: 'User',
+      },
+      {
+        messageId: compactionId,
+        parentMessageId: userMessageId,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'OpenAI',
+        content: [
+          {
+            type: 'error',
+            error: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+            initiatedBy: 'user',
+          },
+        ],
+      },
+    ]);
+    try {
+      const row = await openRow(page, conversationId, compactionId);
+
+      await expect(row.getByText('Nothing to compact', { exact: false })).toBeVisible();
+      /* The compaction marks its failure, so the turn is still a compaction:
+         replaying the user message behind it would answer it instead. */
+      await expect(page.locator(`[id="edit-${compactionId}"]`)).toHaveCount(0);
+      await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
+      await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
+    } finally {
+      await cleanup(conversationId);
+    }
+  });
+
+  /* A real compaction run, not a seeded row: the summarizer returns nothing, so
+     the turn has no summary and no explanation of its own and must record the
+     marked failure itself. Without that the row is indistinguishable from an
+     answer to the message it hangs off. */
+  test('a compaction whose summarizer returns nothing offers no rerun controls @scenario:empty-compaction-run-offers-no-rerun-controls', async ({
+    page,
+    request,
+  }) => {
+    const { conversationId, compactionId } = await compactWithEmptySummarizer(
+      page,
+      request,
+      'empty-compaction',
+    );
+    try {
+      await page.locator(`[id="${compactionId}"]`).hover();
+      await expect(page.locator(`[id="edit-${compactionId}"]`)).toHaveCount(0);
+      await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
+      await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
+      /* The redo path a compaction keeps is the indicator's own action. */
+      await page.getByTestId('token-usage').click();
+      await expect(page.getByRole('button', { name: 'Compact context' })).toBeEnabled();
+    } finally {
+      await cleanup(conversationId);
+    }
+  });
+
+  /* The same turn read back from storage: a reload rebuilds the row from what
+     the server persisted, so the marker has to survive the round trip. */
+  test('a compaction that produced nothing stays free of rerun controls after a reload @scenario:empty-compaction-run-survives-reload-without-rerun-controls', async ({
+    page,
+    request,
+  }) => {
+    const { conversationId, compactionId } = await compactWithEmptySummarizer(
+      page,
+      request,
+      'reloaded-compaction',
+    );
+    try {
+      const row = await openRow(page, conversationId, compactionId);
+
+      await expect(row.getByText('Could not compact the context', { exact: false })).toBeVisible();
+      await expect(page.locator(`[id="edit-${compactionId}"]`)).toHaveCount(0);
+      await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);
+      await expect(page.getByTestId('continue-generation-button')).toHaveCount(0);
+    } finally {
+      await cleanup(conversationId);
+    }
+  });
+
   test('a turn that only auto-summarized keeps its rerun controls @scenario:auto-summarized-turn-keeps-rerun-controls', async ({
     page,
   }) => {
@@ -228,7 +368,7 @@ test.describe('compaction rerun controls', () => {
       },
     ]);
     try {
-      const row = await openRow(page, conversationId, chainedId);
+      await openRow(page, conversationId, chainedId);
 
       /* No user turn to replay, so the rerun shapes go... */
       await expect(page.getByTestId('regenerate-generation-button')).toHaveCount(0);

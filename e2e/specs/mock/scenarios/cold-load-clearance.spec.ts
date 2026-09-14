@@ -5,10 +5,11 @@ import { getE2EUser } from '../../../setup/user';
 import { deleteConversations, deleteMessagesByConversation, seedConversations } from '../db';
 
 /**
- * Whether a conversation carries a footer is an answer from the startup config,
- * and on a cold load of `/c/<id>` that answer arrives after the composer has
- * already been painted. Guessing "no footer" until then moves the composer twice
- * — down to the bare clearance, then back up when the footer appears.
+ * Whether a conversation carries a footer decides where its composer sits, and
+ * on a cold load of `/c/<id>` the startup config answers only after the composer
+ * has already been painted. The server knows when it serves the document, so it
+ * says so there and the composer lays out once — on a first-ever visit, with
+ * nothing remembered from a previous one.
  */
 
 const COMPOSER = '[data-testid="composer-surface"]';
@@ -19,14 +20,18 @@ declare global {
   interface Window {
     /** Every composer bottom painted since the document started. */
     __composerBottomSamples?: number[];
+    /** The answers the server emitted with the document. */
+    __LIBRECHAT_CONFIG__?: { hasConfiguredFooter?: boolean };
   }
 }
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
-/** A configured footer whose answer is deliberately slow, plus a sampler that
- *  runs from the document's first frame. Both are in place before the app's own
- *  scripts, so nothing about the app's own timing is assumed. */
+/** A deployment whose footer the shell already reports: the e2e deployment
+ *  configures none, so its own answer in the served document is flipped to the
+ *  one a configured deployment would emit. The `/api/config` answer that agrees
+ *  is deliberately slow — the composer has to be in its final position long
+ *  before it lands. */
 async function serveSlowConfiguredFooter(page: Page) {
   await page.route('**/api/config', async (route) => {
     const response = await route.fetch();
@@ -36,12 +41,14 @@ async function serveSlowConfiguredFooter(page: Page) {
     await delayed.promise;
     await route.fulfill({ response, json: { ...config, customFooter: CUSTOM_FOOTER } });
   });
-  await installSampler(page);
+  await installSampler(page, (html) =>
+    html.replace('"hasConfiguredFooter":false', '"hasConfiguredFooter":true'),
+  );
 }
 
 /** A sampler that records the composer's bottom from the document's first frame,
  *  served with the HTML so it is in place before the app's own scripts. */
-async function installSampler(page: Page) {
+async function installSampler(page: Page, serveShell: (html: string) => string = (html) => html) {
   await page.route('**/*', async (route) => {
     if (route.request().resourceType() !== 'document') {
       return route.fallback();
@@ -63,7 +70,7 @@ async function installSampler(page: Page) {
     }
   })();
 </script>`;
-    const body = (await response.text()).replace('<head>', `<head>${sampler}`);
+    const body = serveShell((await response.text()).replace('<head>', `<head>${sampler}`));
     await route.fulfill({ response, body });
   });
 }
@@ -80,12 +87,14 @@ test.describe('cold load clearance', () => {
 
     try {
       await serveSlowConfiguredFooter(page);
-      /** The first visit is what records the deployment's answer; the load under
-       *  test is every one after it, where the composer must lay out once. */
-      await page.goto(`/c/${conversationId}`, { timeout: 15000 });
-      await expect(page.getByText(CUSTOM_FOOTER)).toBeVisible({ timeout: 15000 });
+      /** A first-ever visit: nothing about this deployment is remembered, and
+       *  nothing has to be — the document carries the answer. */
       await page.goto(`/c/${conversationId}`, { timeout: 15000 });
       await expect(page.locator(COMPOSER)).toBeVisible();
+      expect(
+        await page.evaluate(() => window.__LIBRECHAT_CONFIG__?.hasConfiguredFooter),
+        'the shell did not carry the deployment’s footer answer',
+      ).toBe(true);
       /** Past the delayed config answer and any correction it would cause. */
       await expect(page.getByText(CUSTOM_FOOTER)).toBeVisible({ timeout: 15000 });
       await page.waitForTimeout(800);

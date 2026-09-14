@@ -1,3 +1,4 @@
+import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
 import {
   COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION,
   MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
@@ -15,6 +16,102 @@ import type {
   ICompactionSemanticIndexProjection,
   TCompactionSemanticIndexEntry,
 } from '@librechat/data-schemas';
+import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
+
+/** Text of a summary content part; empty for anything else. */
+export function getSummaryPartText(part: TMessageContentParts | null | undefined): string {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/** The typed failure a manual compaction reports when it produced no summary. */
+const COMPACTION_FAILED_ERROR = JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED });
+
+/**
+ * The content a failed manual compaction persists: the typed failure, marked as
+ * the compaction's own outcome. A turn saved from a thrown failure has no
+ * content of its own, so without this the row is indistinguishable from an
+ * answer to the message it hangs off and keeps that message's rerun controls.
+ */
+function compactionFailureContent(
+  errorText: string = COMPACTION_FAILED_ERROR,
+): TMessageContentParts[] {
+  return [{ type: ContentTypes.ERROR, error: errorText, initiatedBy: 'user' }];
+}
+
+/**
+ * The content fields a failed turn is persisted with. A manual compaction owns
+ * its identity through content, so its row carries the marked failure; every
+ * other failed turn contributes nothing and keeps its text-only shape. Callers
+ * spread the result rather than deciding which turns are compactions.
+ */
+export function resolveFailedTurnContent(
+  requestBody: { compact?: boolean } | null | undefined,
+  errorText: string,
+): { content?: TMessageContentParts[] } {
+  if (requestBody?.compact !== true) {
+    return {};
+  }
+  return { content: compactionFailureContent(errorText) };
+}
+
+/**
+ * Stamps `initiatedBy: 'user'` on the part that carries a manual compaction's
+ * outcome, which is the turn's only record of having been one: the run emits no
+ * text of its own, and a compaction hangs off whatever leaf the branch ends
+ * with, so a reader cannot infer it from the turn's shape or its parent.
+ *
+ * Every outcome is marked. A run that produced a summary marks it; a run that
+ * recorded why it could not (an error part, e.g. a skipped compaction) marks
+ * that instead; a run that produced neither records the typed failure here, so
+ * it persists and streams like any other failed compaction rather than as an
+ * empty assistant message. A cancelled run keeps failing as a typed error: the
+ * turn stopped early rather than failing, and the abort path owns it.
+ */
+export function markCompactionOutcome(
+  contentParts: TMessageContentParts[],
+  { aborted = false }: { aborted?: boolean } = {},
+): void {
+  const summary = contentParts.find(
+    (part): part is SummaryContentPart =>
+      part?.type === ContentTypes.SUMMARY &&
+      part.failed !== true &&
+      getSummaryPartText(part).length > 0,
+  );
+  if (summary != null) {
+    summary.initiatedBy = 'user';
+    return;
+  }
+  let markedFailure = false;
+  for (const part of contentParts) {
+    if (part?.type === ContentTypes.ERROR) {
+      part.initiatedBy = 'user';
+      markedFailure = true;
+    }
+  }
+  if (markedFailure) {
+    return;
+  }
+  if (aborted) {
+    throw Object.assign(new Error(COMPACTION_FAILED_ERROR), { code: 'COMPACTION_FAILED' });
+  }
+  /** A failed round keeps whatever deltas it streamed, and history loading
+   *  accepts any nonempty summary as the conversation's checkpoint
+   *  (`BaseClient.findSummaryContentBlock`). Persisting a truncated one would
+   *  replace the history it failed to summarize, so the unusable summary goes
+   *  and the typed failure is the turn's whole outcome. */
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    if (contentParts[index]?.type === ContentTypes.SUMMARY) {
+      contentParts.splice(index, 1);
+    }
+  }
+  contentParts.push(...compactionFailureContent());
+}
 
 function snapshotEntry(
   entry: CompactionSemanticIndexEntry,
