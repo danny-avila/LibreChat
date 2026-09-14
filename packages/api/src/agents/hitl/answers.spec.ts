@@ -33,6 +33,7 @@ function askPart(args: unknown, output: unknown, id = 'tc-1') {
       args: typeof args === 'string' ? args : JSON.stringify(args),
       output,
       progress: 1,
+      inputValidationError: undefined as true | undefined,
     },
   };
 }
@@ -88,6 +89,28 @@ describe('collectRetainedAnswers', () => {
       '{"answer":"yes","reason":"it is late"}',
       '{"answers":{"x":"y"}}',
     ]);
+  });
+
+  test('reads a pause record whose stored args are the bare question string', () => {
+    const sets = collectRetainedAnswers([
+      { content: [askPart('"What should I name the file?"', 'notes.md', 'tc-s')] },
+    ]);
+    expect(sets).toEqual([
+      {
+        toolCallId: 'tc-s',
+        answers: [{ question: 'What should I name the file?', answer: 'notes.md' }],
+      },
+    ]);
+  });
+
+  test('skips a call whose input failed validation, whose output is the error', () => {
+    const failed = askPart(
+      { question: 'Deploy where?' },
+      'Option labels must be 280 characters or fewer.',
+      'tc-f',
+    );
+    failed.tool_call.inputValidationError = true;
+    expect(collectRetainedAnswers([{ content: [failed] }])).toEqual([]);
   });
 
   test('ignores other tools, unanswered asks, and malformed stamps', () => {
@@ -365,6 +388,26 @@ describe('buildRetainedAnswersContext', () => {
       RETAINED_ANSWER_ROW_FIELDS,
     );
     expect(RETAINED_ANSWER_ROW_FIELDS).toBe('messageId parentMessageId content');
+  });
+
+  test('completes the branch from the rows the turn already read instead of querying again', async () => {
+    const getMessages = jest.fn(async () => rows);
+    const cut = [
+      { ...rows[3], content: [{ type: 'text', text: 'Earlier context, compacted.' }] },
+      rows[4],
+    ];
+    const text = await buildRetainedAnswersContext({
+      messages: cut,
+      parentMessageId: 'u3',
+      storedRows: rows,
+      getMessages,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(text).toContain(ANSWER_LINE);
+    expect(getMessages).not.toHaveBeenCalled();
   });
 
   test('completes a lone event message the same way', async () => {

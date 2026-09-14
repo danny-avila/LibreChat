@@ -2283,12 +2283,14 @@ class AgentClient extends BaseClient {
      * rows before `messages` is narrowed to `orderedMessages`; when those rows
      * stop short of the branch root (the history read stopped at a checkpoint
      * summary, or a warm event-actor turn holds only its new event message) the
-     * module completes the branch through the stored-row query. Rendered here,
-     * quoted into the current user turn after the context kickoff below.
+     * module completes the branch from the rows that read already fetched, or
+     * through the stored-row query when there was no read. Rendered here,
+     * quoted into the latest user turn after the context kickoff below.
      */
     const retainedAnswersPromise = buildRetainedAnswersContext({
       messages,
       parentMessageId,
+      storedRows: this.loadedHistoryRows,
       getMessages: db.getMessages,
       conversationId: this.conversationId,
       userId: this.user ?? this.options.req.user?.id,

@@ -184,19 +184,17 @@ describe('AgentClient retained answers', () => {
 
   it('completes the branch the history read cut at the summary and quotes the answer in the user turn', async () => {
     const client = makeClient();
+    client.user = 'user-123';
     const rows = compactedBranch();
-    /** Exactly what `loadHistory` hands to `buildMessages` once a checkpoint summary exists. */
-    const cut = AgentClient.getMessagesForConversation({
-      messages: rows,
-      parentMessageId: 'u3',
-      summary: true,
-    });
-    expect(cut.map((message) => message.messageId)).toEqual(['a2', 'u3']);
     getMessages.mockResolvedValue(rows);
+    /** The real loader: one read of the conversation, then the summary-bounded walk. */
+    const cut = await client.loadHistory('convo-123', 'u3');
+    expect(cut.map((message) => message.messageId)).toEqual(['a2', 'u3']);
+    expect(getMessages).toHaveBeenCalledTimes(1);
 
     const { prompt, tokenCountMap } = await client.buildMessages(cut, 'u3', {});
 
-    expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
+    expect(getMessages).toHaveBeenCalledTimes(1);
     expect(prompt.map((message) => message.messageId)).not.toContain('a1');
     const latest = prompt[prompt.length - 1];
     const text = contentText(latest);

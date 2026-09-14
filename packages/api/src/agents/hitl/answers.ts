@@ -48,7 +48,13 @@ const RETAINED_ANSWERS_HEADER = [
 
 interface AskToolCallPart {
   type?: string;
-  tool_call?: { id?: unknown; name?: unknown; args?: unknown; output?: unknown };
+  tool_call?: {
+    id?: unknown;
+    name?: unknown;
+    args?: unknown;
+    output?: unknown;
+    inputValidationError?: unknown;
+  };
 }
 
 interface AskedQuestion {
@@ -78,9 +84,28 @@ function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
   }
 }
 
+/** A stored `args` value that is a JSON-encoded string: the question itself, as
+ *  pause records written before the structured request shape carried it. */
+function parseJsonString(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.startsWith('"')) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'string' && parsed.length > 0 ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The questions an ask call put to the user, from its stored `args`: the batched
- *  `{ questions: [...] }` shape or the legacy single `{ question }`. */
+ *  `{ questions: [...] }` shape, the legacy single `{ question }`, or the bare
+ *  question string of a pause record that predates both. */
 function readRequest(args: unknown): AskedRequest | undefined {
+  const bare = parseJsonString(args);
+  if (bare != null) {
+    return { batched: false, questions: [{ question: bare }] };
+  }
   const request = parseJsonObject(args);
   if (request == null) {
     return undefined;
@@ -128,12 +153,15 @@ function readAnswers(output: unknown, request: AskedRequest): RetainedAnswer[] {
   });
 }
 
+/** A call whose input failed schema validation persisted the validation error
+ *  as its `output`; that text is not an answer. */
 function readAskToolCall(part: unknown): RetainedAnswerSet | undefined {
   const candidate = part as AskToolCallPart | null | undefined;
   const toolCall = candidate?.tool_call;
   if (
     candidate?.type !== ContentTypes.TOOL_CALL ||
-    toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME
+    toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
+    toolCall.inputValidationError === true
   ) {
     return undefined;
   }
@@ -320,16 +348,40 @@ async function loadBranchRows(
   }
 }
 
+/** The owner-scoped read of the branch rows, when the caller supplied what it needs. */
+function resolveRowLoad(
+  getMessages: RetainedAnswerRowQuery | undefined,
+  conversationId: string | null | undefined,
+  userId: string | null | undefined,
+): (() => Promise<readonly RetainedAnswerSource[]>) | undefined {
+  if (
+    getMessages == null ||
+    typeof conversationId !== 'string' ||
+    conversationId.length === 0 ||
+    typeof userId !== 'string' ||
+    userId.length === 0
+  ) {
+    return undefined;
+  }
+  return () => loadBranchRows(getMessages, conversationId, userId);
+}
+
 export interface RetainedAnswersContextInput {
   /** The rows in memory, which may stop short of the branch root. */
   messages: readonly RetainedAnswerSource[];
   parentMessageId: string | null | undefined;
   /**
-   * The stored-row query used to complete the branch when the rows in memory do
-   * not reach its root (a checkpoint summary bounded the history read, or a warm
+   * Every row the turn's history read already fetched, when it made one; used
+   * to complete a branch whose rows in memory do not reach its root (a
+   * checkpoint summary bounded the walk) without reading the conversation a
+   * second time. Stored rows outrank the copies in memory, which may already be
+   * prompt-shaped.
+   */
+  storedRows?: readonly RetainedAnswerSource[] | null;
+  /**
+   * The stored-row query, for a turn that made no history read (a warm
    * event-actor turn holds only its new event message). Called only when
-   * retention is on and the branch is incomplete; stored rows outrank the copies
-   * in memory, which may already be prompt-shaped.
+   * retention is on, the branch is incomplete and no `storedRows` were given.
    */
   getMessages?: RetainedAnswerRowQuery;
   conversationId?: string | null;
@@ -341,6 +393,7 @@ export interface RetainedAnswersContextInput {
 async function buildContext({
   messages,
   parentMessageId,
+  storedRows,
   getMessages,
   conversationId,
   userId,
@@ -355,15 +408,12 @@ async function buildContext({
     return undefined;
   }
   let branch = orderConversationBranch(messages, parentMessageId);
-  const canLoad =
-    getMessages != null &&
-    typeof conversationId === 'string' &&
-    conversationId.length > 0 &&
-    typeof userId === 'string' &&
-    userId.length > 0;
-  if (!reachesBranchRoot(branch) && canLoad) {
-    const stored = await loadBranchRows(getMessages, conversationId, userId);
-    branch = orderConversationBranch([...stored, ...messages], parentMessageId);
+  if (!reachesBranchRoot(branch)) {
+    const load = resolveRowLoad(getMessages, conversationId, userId);
+    const stored = storedRows ?? (load == null ? undefined : await load());
+    if (stored != null) {
+      branch = orderConversationBranch([...stored, ...messages], parentMessageId);
+    }
   }
   const sets = collectRetainedAnswers(branch);
   return renderRetainedAnswers(sets, resolved.maxTokens, countTokens);

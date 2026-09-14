@@ -1247,6 +1247,9 @@ class BaseClient {
     }
 
     const messages = (await db.getMessages({ conversationId, user: this.user })) ?? [];
+    /** Every row of the conversation, kept for a reader that needs the branch
+     *  beyond the walk below (which stops at a checkpoint summary). */
+    this.loadedHistoryRows = messages;
 
     if (messages.length === 0) {
       return [];
