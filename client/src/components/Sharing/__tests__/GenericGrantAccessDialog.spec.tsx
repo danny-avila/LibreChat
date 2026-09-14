@@ -3,8 +3,11 @@ import { ResourceType } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import GenericGrantAccessDialog from '../GenericGrantAccessDialog';
+import { getResourceConfig } from '~/utils/resources';
 
 const mockRefetchPermissions = jest.fn();
+const mockCopyResourceUrl = jest.fn();
+const mockShowToast = jest.fn();
 const mockUseResourcePermissionState = jest.fn();
 const mockUseAuthContext = jest.fn(() => ({ user: { role: 'ADMIN' } }));
 const mockUsePeoplePickerPermissions = jest.fn(() => ({
@@ -18,7 +21,7 @@ const config = {
   defaultOwnerRoleId: 'owner',
   getShareMessage: () => 'Share Agent',
   getResourceUrl: () => 'http://localhost/agent/1',
-  getCopyUrlMessage: () => 'Copied',
+  copyUrlMessageKey: 'com_ui_agent_url_copied',
 };
 
 const baseState = (overrides: Record<string, unknown> = {}) => ({
@@ -45,12 +48,12 @@ jest.mock('~/hooks', () => ({
   useResourcePermissionState: () => mockUseResourcePermissionState(),
   usePeoplePickerPermissions: () => mockUsePeoplePickerPermissions(),
   useCanSharePublic: () => mockUseCanSharePublic(),
-  useCopyToClipboard: () => jest.fn(),
+  useCopyToClipboard: () => mockCopyResourceUrl,
 }));
 
 jest.mock('@librechat/client', () => ({
   ...jest.requireActual('@librechat/client'),
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
 jest.mock('../PeoplePicker/UnifiedPeopleSearch', () => ({
@@ -90,6 +93,27 @@ describe('GenericGrantAccessDialog - permissions load failure', () => {
       peoplePickerTypeFilter: '',
     });
     mockUseCanSharePublic.mockReturnValue(true);
+  });
+
+  it.each([
+    [ResourceType.ARTIFACT_APP, 'com_ui_artifact_link_copied'],
+    [ResourceType.AGENT, 'com_ui_agent_url_copied'],
+    [ResourceType.REMOTE_AGENT, 'com_ui_api_endpoint_copied'],
+  ])('uses the localized copy toast for %s', (resourceType, message) => {
+    mockUseResourcePermissionState.mockReturnValue(
+      baseState({ config: getResourceConfig(resourceType) }),
+    );
+    mockCopyResourceUrl.mockReturnValue(true);
+    render(
+      <GenericGrantAccessDialog
+        resourceDbId="resource-db-1"
+        resourceId="resource-1"
+        resourceType={resourceType}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_share_var' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_copy_url_to_clipboard' }));
+    expect(mockShowToast).toHaveBeenCalledWith({ message, status: 'success' });
   });
 
   it('renders a compact alert button (not the share trigger, not raw text) when permissions fail to load', () => {

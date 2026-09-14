@@ -435,7 +435,9 @@ export default function GenericGrantAccessDialog({
             {resourceId && resourceUrl && (
               <TooltipAnchor
                 description={
-                  isCopying ? config?.getCopyUrlMessage() : localize('com_ui_copy_url_to_clipboard')
+                  isCopying
+                    ? localize(config.copyUrlMessageKey)
+                    : localize('com_ui_copy_url_to_clipboard')
                 }
                 render={
                   <Button
@@ -444,7 +446,7 @@ export default function GenericGrantAccessDialog({
                       if (isCopying) return;
                       if (!copyResourceUrl(setIsCopying)) return;
                       showToast({
-                        message: localize('com_ui_agent_url_copied'),
+                        message: localize(config.copyUrlMessageKey),
                         status: 'success',
                       });
                     }}
@@ -454,7 +456,7 @@ export default function GenericGrantAccessDialog({
                   >
                     <MorphIcon icon={isCopying ? CopyCheck : Link} className="size-4" />
                     {isCopying
-                      ? config?.getCopyUrlMessage()
+                      ? localize(config.copyUrlMessageKey)
                       : localize('com_ui_copy_url_to_clipboard')}
                   </Button>
                 }

@@ -37,8 +37,19 @@ Store a **full inline snapshot** on each `ArtifactVersion` document:
 Immutability is enforced at the schema level: once a version's
 `publication.state` is `released`, the content fields (`sourceSnapshot`,
 `artifactType`, `runtimeConfig`, `integrity`, `versionNumber`) can never be
-mutated (pre-update/save guards + method-level checks). New content always
-creates a **new version**; rollback only flips the App's `activeVersionId`.
+mutated, including after withdrawal. The model's save and query-update guards
+include a draft-only predicate in the database write, so concurrent publication
+cannot race a pre-read. Identity fields are protected as well. Replacement,
+pipeline, and bulk mutation paths are rejected; inserts and deletes retain their
+normal behavior. These are Mongoose model guarantees, not protection against an
+administrator bypassing the model through the raw MongoDB driver.
+
+When consolidating legacy duplicate apps, draft versions can be moved, but
+released versions retain their original identity and version number. Copies are
+imported into the survivor's history using deterministic IDs for retry safety.
+
+New content always creates a **new version**; rollback only flips the App's
+`activeVersionId`.
 
 ### Why inline (option 2) over external storage (option 3)
 
@@ -52,7 +63,7 @@ creates a **new version**; rollback only flips the App's `activeVersionId`.
   still need the same hash.
 
 If artifact sizes grow (e.g. bundled assets in a later WP), the `runtimeConfig`
-+ `integrity` split leaves room to move large blobs behind a content-addressed
+and `integrity` split leaves room to move large blobs behind a content-addressed
 pointer without changing the App/Version contract.
 
 ## Consequences
@@ -64,4 +75,3 @@ pointer without changing the App/Version contract.
 - Deleting/editing the source conversation has zero effect on any version
   (verified by WP3 "snapshot independence" tests).
 - Tenant isolation applies to both collections; every query is tenant-scoped.
-</content>

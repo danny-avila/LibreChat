@@ -1,4 +1,5 @@
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 
 export interface ResourceConfig {
   resourceType: ResourceType;
@@ -9,7 +10,7 @@ export interface ResourceConfig {
   getResourceName: (resourceName?: string) => string;
   getShareMessage: (resourceName?: string) => string;
   getManageMessage: (resourceName?: string) => string;
-  getCopyUrlMessage: () => string;
+  copyUrlMessageKey: TranslationKeys;
 }
 
 export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
@@ -23,7 +24,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getShareMessage: (name?: string) => (name && name !== '' ? name : 'agent'),
     getManageMessage: (name?: string) =>
       `Manage permissions for ${name && name !== '' ? name : 'agent'}`,
-    getCopyUrlMessage: () => 'Agent URL copied',
+    copyUrlMessageKey: 'com_ui_agent_url_copied',
   },
   [ResourceType.PROMPTGROUP]: {
     resourceType: ResourceType.PROMPTGROUP,
@@ -34,7 +35,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getShareMessage: (name?: string) => (name && name !== '' ? name : 'prompt'),
     getManageMessage: (name?: string) =>
       `Manage permissions for ${name && name !== '' ? name : 'prompt'}`,
-    getCopyUrlMessage: () => 'Prompt URL copied',
+    copyUrlMessageKey: 'com_ui_prompt_url_copied',
   },
   [ResourceType.MCPSERVER]: {
     resourceType: ResourceType.MCPSERVER,
@@ -45,7 +46,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getShareMessage: (name?: string) => (name && name !== '' ? name : 'MCP server'),
     getManageMessage: (name?: string) =>
       `Manage permissions for ${name && name !== '' ? name : 'MCP server'}`,
-    getCopyUrlMessage: () => 'MCP Server URL copied',
+    copyUrlMessageKey: 'com_ui_mcp_server_url_copied',
   },
   [ResourceType.REMOTE_AGENT]: {
     resourceType: ResourceType.REMOTE_AGENT,
@@ -58,7 +59,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
       name && name !== '' ? `"${name}" (API Access)` : 'remote agent access',
     getManageMessage: (name?: string) =>
       `Manage API access for ${name && name !== '' ? `"${name}"` : 'agent'}`,
-    getCopyUrlMessage: () => 'API endpoint copied',
+    copyUrlMessageKey: 'com_ui_api_endpoint_copied',
   },
   [ResourceType.SKILL]: {
     resourceType: ResourceType.SKILL,
@@ -69,7 +70,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getShareMessage: (name?: string) => (name && name !== '' ? name : 'skill'),
     getManageMessage: (name?: string) =>
       `Manage permissions for ${name && name !== '' ? name : 'skill'}`,
-    getCopyUrlMessage: () => 'Skill URL copied',
+    copyUrlMessageKey: 'com_ui_skill_url_copied',
   },
   [ResourceType.SHARED_LINK]: {
     resourceType: ResourceType.SHARED_LINK,
@@ -79,7 +80,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getResourceName: (name?: string) => name || 'shared link',
     getShareMessage: (name?: string) => name || 'shared link',
     getManageMessage: (name?: string) => `Manage access for ${name || 'shared link'}`,
-    getCopyUrlMessage: () => 'Share link copied',
+    copyUrlMessageKey: 'com_ui_link_copied',
   },
   [ResourceType.ARTIFACT_APP]: {
     resourceType: ResourceType.ARTIFACT_APP,
@@ -90,7 +91,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
     getResourceName: (name?: string) => name || 'artifact',
     getShareMessage: (name?: string) => name || 'artifact',
     getManageMessage: (name?: string) => `Manage access for ${name || 'artifact'}`,
-    getCopyUrlMessage: () => 'Artifact link copied',
+    copyUrlMessageKey: 'com_ui_artifact_link_copied',
   },
 };
 

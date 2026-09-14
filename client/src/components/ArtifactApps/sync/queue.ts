@@ -19,6 +19,13 @@ type QueueListener = () => void;
 const memoryQueue = new Map<string, ArtifactSyncQueueEntry>();
 const listeners = new Set<QueueListener>();
 let hydrationPromise: Promise<void> | null = null;
+let persistencePromise: Promise<void> = Promise.resolve();
+
+/** Order operations before opening IndexedDB; connection timing must not reorder snapshots. */
+function persistQueueChange(operation: () => Promise<void>): Promise<void> {
+  persistencePromise = persistencePromise.then(operation).catch(() => undefined);
+  return persistencePromise;
+}
 
 function notifyListeners(): void {
   for (const listener of listeners) {
@@ -95,23 +102,7 @@ async function hydrateQueue(): Promise<void> {
   await hydrationPromise;
 }
 
-async function writeStoredEntry(entry: ArtifactSyncQueueEntry): Promise<void> {
-  const database = await openDatabase();
-  if (!database) {
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
-    transaction.objectStore(STORE_NAME).put(entry);
-    transaction.oncomplete = () => {
-      database.close();
-      resolve();
-    };
-    transaction.onerror = () => reject(transaction.error ?? new Error('Unable to save sync item'));
-  });
-}
-
-async function writeStoredEntryIfCurrent(entry: ArtifactSyncQueueEntry): Promise<void> {
+async function writeStoredEntry(entry: ArtifactSyncQueueEntry, retry = false): Promise<void> {
   const database = await openDatabase();
   if (!database) {
     return;
@@ -122,7 +113,7 @@ async function writeStoredEntryIfCurrent(entry: ArtifactSyncQueueEntry): Promise
     const readRequest = store.get(entry.id);
     readRequest.onsuccess = () => {
       const stored = readRequest.result;
-      if (!isQueueEntry(stored) || stored.signature === entry.signature) {
+      if (!retry || !isQueueEntry(stored) || stored.signature === entry.signature) {
         store.put(entry);
       }
     };
@@ -180,8 +171,9 @@ export async function enqueueArtifactSync(
     updatedAt: Date.now(),
   };
   memoryQueue.set(id, entry);
+  const persisted = persistQueueChange(() => writeStoredEntry(entry));
   notifyListeners();
-  await writeStoredEntry(entry).catch(() => undefined);
+  await persisted;
 }
 
 export async function listArtifactSyncQueue(ownerId: string): Promise<ArtifactSyncQueueEntry[]> {
@@ -195,8 +187,9 @@ export async function completeArtifactSync(id: string, signature: string): Promi
     return;
   }
   memoryQueue.delete(id);
+  const persisted = persistQueueChange(() => deleteStoredEntry(id, signature));
   notifyListeners();
-  await deleteStoredEntry(id, signature).catch(() => undefined);
+  await persisted;
 }
 
 export async function rescheduleArtifactSync(
@@ -216,8 +209,9 @@ export async function rescheduleArtifactSync(
     updatedAt: Date.now(),
   };
   memoryQueue.set(id, updated);
+  const persisted = persistQueueChange(() => writeStoredEntry(updated, true));
   notifyListeners();
-  await writeStoredEntryIfCurrent(updated).catch(() => undefined);
+  await persisted;
 }
 
 export function subscribeToArtifactSyncQueue(listener: QueueListener): () => void {
@@ -227,6 +221,7 @@ export function subscribeToArtifactSyncQueue(listener: QueueListener): () => voi
 
 /** Test-only reset; production callers must retain queued registrations. */
 export async function clearArtifactSyncQueueForTests(): Promise<void> {
+  await persistencePromise;
   memoryQueue.clear();
   hydrationPromise = null;
   const database = await openDatabase();
