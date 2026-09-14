@@ -123,6 +123,12 @@ function EnvironmentWorkspaces({
               {descriptor.name && (
                 <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
               )}
+              {descriptor.environment?.repo && (
+                <p className="truncate text-xs text-text-secondary">
+                  {descriptor.environment.repo}
+                  {descriptor.environment.ref ? ` · ${descriptor.environment.ref}` : ''}
+                </p>
+              )}
             </div>
             {selected && (
               <Check className="mt-0.5 size-4 shrink-0 text-text-primary" aria-hidden="true" />
