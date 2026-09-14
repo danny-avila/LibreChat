@@ -246,10 +246,7 @@ test.describe('sidebar single scroll', () => {
     await expect(page.getByTestId('convo-item').first()).toBeVisible({ timeout: 30_000 });
 
     const surfaces = await scrollingSurfaces(page);
-    expect(
-      surfaces,
-      'the sidebar should present exactly one scrolling surface',
-    ).toHaveLength(1);
+    expect(surfaces, 'the sidebar should present exactly one scrolling surface').toHaveLength(1);
 
     const pinnedBefore = await pinnedRegion(page).boundingBox();
     expect(pinnedBefore).not.toBeNull();
@@ -286,10 +283,9 @@ test.describe('sidebar single scroll', () => {
     await expect(page.getByTestId('convo-item').first()).toBeVisible({ timeout: 30_000 });
 
     const oldestRow = page.getByTestId('convo-item').filter({ hasText: oldest });
-    expect(
-      await oldestRow.count(),
-      'the oldest chat should still be beyond the first page',
-    ).toBe(0);
+    expect(await oldestRow.count(), 'the oldest chat should still be beyond the first page').toBe(
+      0,
+    );
 
     await scrollToBottom(page, 12);
 
@@ -317,9 +313,10 @@ test.describe('sidebar single scroll', () => {
      * resizing either the viewport or the list, which is exactly the change
      * that leaves a windowed list painting the wrong slice. */
     await pinnedRegion(page).getByRole('button', { name: PINNED_REGION }).click();
-    await expect(
-      pinnedRegion(page).getByRole('button', { name: PINNED_REGION }),
-    ).toHaveAttribute('aria-expanded', 'false');
+    await expect(pinnedRegion(page).getByRole('button', { name: PINNED_REGION })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
     await page.waitForTimeout(600);
 
     const after = await bandSample(page);
@@ -368,5 +365,42 @@ test.describe('sidebar single scroll', () => {
         { timeout: 10_000 },
       )
       .toBeGreaterThan(100);
+  });
+
+  test('chats load their next page only once chats are on screen @scenario:chats-page-loads-only-when-chats-come-into-view', async ({
+    page,
+  }) => {
+    await clearUserConversations(userEmail);
+    /* Enough pins to hold the chats list below the fold on both a desktop
+     * panel and an emulated handset. */
+    remember(await seedPins('E2E pin', 24));
+    remember(await seedChats('E2E chat', 60));
+
+    const pages: string[] = [];
+    page.on('request', (request) => {
+      const { pathname, searchParams } = new URL(request.url());
+      if (request.method() === 'GET' && pathname === '/api/convos' && !searchParams.has('pinned')) {
+        pages.push(request.url());
+      }
+    });
+
+    await page.goto('/c/new', { timeout: 30_000 });
+    await openSidebar(page);
+    await expect(pinnedRegion(page).getByTestId('convo-item').first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.waitForTimeout(2_000);
+
+    /* The chats sit under a screenful of pins, so nothing about them has been
+     * read yet: asking the server for a second page before the reader has seen
+     * a single chat row is a request nobody needed. */
+    expect(
+      pages.length,
+      `only the first page should have been fetched, got ${pages.join(', ')}`,
+    ).toBe(1);
+
+    await scrollToBottom(page, 8);
+
+    await expect.poll(() => pages.length, { timeout: 30_000 }).toBeGreaterThan(1);
   });
 });

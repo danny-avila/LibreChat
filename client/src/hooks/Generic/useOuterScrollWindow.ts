@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 interface OuterScrollWindow {
   /** Attach to the element the windowed content starts at. */
   ref: (node: HTMLElement | null) => void;
-  /** Visible height of the scroll viewport. */
+  /** Height of the attached element that is actually on screen: zero while it
+   *  sits entirely below the fold, the viewport's height once it fills it. */
   height: number;
   /** Viewport scroll offset expressed in the attached element's own coordinates. */
   scrollTop: number;
@@ -35,12 +36,18 @@ export default function useOuterScrollWindow(
     const measure = () => {
       /** Read against the viewport rather than `offsetTop`, whose origin is the
        *  nearest positioned ancestor and so moves with unrelated styling. */
-      const offsetTop =
-        node.getBoundingClientRect().top -
-        viewport.getBoundingClientRect().top +
-        viewport.scrollTop;
+      const nodeRect = node.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      const offsetTop = nodeRect.top - viewportRect.top + viewport.scrollTop;
+      /** The window is the slice of the element the viewport actually shows.
+       *  Reporting the whole viewport instead would have a list that is still
+       *  below the fold believe a screenful of it is on display, and anything
+       *  windowing on that — row rendering, reaching the end of a page — would
+       *  act before the reader has seen a row of it. */
+      const onScreen =
+        Math.min(nodeRect.bottom, viewportRect.bottom) - Math.max(nodeRect.top, viewportRect.top);
       const next = {
-        height: viewport.clientHeight,
+        height: Math.max(0, Math.round(onScreen)),
         scrollTop: Math.max(0, viewport.scrollTop - offsetTop),
       };
       setMetrics((prev) =>

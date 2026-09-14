@@ -127,12 +127,13 @@ describe('useOuterScrollWindow', () => {
     expect(result.current).toMatchObject({ height: 0, scrollTop: 0 });
   });
 
-  it('holds the window at the top while the list is still below the fold', () => {
+  it('windows only the slice of the list the viewport shows', () => {
     const { viewport, content, node, scrollTo } = layout({ offset: 200 });
     const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
     act(() => result.current.ref(node));
 
-    expect(result.current.height).toBe(500);
+    /** 200px of other content sits above it in a 500px viewport. */
+    expect(result.current.height).toBe(300);
     expect(result.current.scrollTop).toBe(0);
 
     act(() => {
@@ -142,8 +143,17 @@ describe('useOuterScrollWindow', () => {
     });
 
     /** Scrolled less than the content above the list: the list has not started
-     *  moving through the viewport yet. */
+     *  moving through the viewport yet, it has only grown into it. */
     expect(result.current.scrollTop).toBe(0);
+    expect(result.current.height).toBe(420);
+  });
+
+  it('reports no window while the list sits entirely below the fold', () => {
+    const { viewport, content, node } = layout({ offset: 700 });
+    const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
+    act(() => result.current.ref(node));
+
+    expect(result.current.height).toBe(0);
   });
 
   it('translates the viewport scroll into the list own coordinates', () => {

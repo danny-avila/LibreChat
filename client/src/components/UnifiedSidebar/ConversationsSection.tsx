@@ -162,6 +162,18 @@ const ConversationsSection = memo(() => {
   const [scrollViewport, setScrollViewport] = useState<HTMLDivElement | null>(null);
   const [scrollContent, setScrollContent] = useState<HTMLDivElement | null>(null);
 
+  /** Searching replaces what the surface holds: Projects and Pinned leave and
+   *  the chats become results. A scroll position kept from the previous
+   *  contents would open those results partway down whenever they are long
+   *  enough for the browser not to clamp it, so the surface returns to the top
+   *  whenever it changes what it is showing. */
+  const isSearching = Boolean(search.query);
+  useEffect(() => {
+    if (scrollViewport) {
+      scrollViewport.scrollTop = 0;
+    }
+  }, [isSearching, scrollViewport]);
+
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-2"
