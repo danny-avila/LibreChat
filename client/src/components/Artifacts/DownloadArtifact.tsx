@@ -17,7 +17,10 @@ import { useLocalize } from '~/hooks';
 
 const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const localize = useLocalize();
-  const { currentCode } = useCodeState();
+  const { currentCode, codeArtifactId } = useCodeState();
+  /* The buffer outlives a pane remount and belongs to whichever artifact last
+   * wrote it, so downloading another artifact must not export those edits. */
+  const editedCode = codeArtifactId === artifact.id ? currentCode : undefined;
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
 
@@ -37,7 +40,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     (download?.file_id != null &&
       download?.user != null &&
       isLocallyStoredSource(download?.source));
-  const hasEdits = currentCode != null && currentCode !== artifact.content;
+  const hasEdits = editedCode != null && editedCode !== artifact.content;
   const downloadOriginalFile =
     hasUsableRoute && (isPreviewOnlyArtifact(artifact.type) || !hasEdits);
   const { handleDownload: downloadAttachment } = useAttachmentLink({
@@ -54,7 +57,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   };
 
   const downloadContent = () => {
-    const content = currentCode ?? artifact.content;
+    const content = editedCode ?? artifact.content;
     if (content == null) {
       return;
     }

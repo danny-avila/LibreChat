@@ -3,12 +3,14 @@ import { useRecoilValue } from 'recoil';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { EModelEndpoint, FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
+import useArtifactsRegistryLifetime from '~/hooks/Artifacts/useArtifactsRegistryLifetime';
+import { useDeleteFilesMutation, useGetStartupConfig } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
+import UndockedArtifacts from '~/components/Artifacts/UndockedArtifacts';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
+import { artifactsUndocked } from '~/components/Artifacts/state';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
-import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanelGroup } from '~/components/SidePanel';
 import AppChatSurface from '~/components/Chat/Surface';
 import { useSetFilesToDelete } from '~/hooks';
@@ -32,12 +34,13 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const conversationId = useRecoilValue(store.conversationIdByIndex(0));
   const conversationEndpoint = useRecoilValue(store.effectiveEndpointByIndex(0));
   const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+  const isUndocked = useAtomValue(artifactsUndocked);
   const selectedSubagent = useAtomValue(activeSubagentPanel);
   const setSelectedSubagent = useSetAtom(activeSubagentPanel);
   const resetSelectedSubagent = useCallback(() => setSelectedSubagent(null), [setSelectedSubagent]);
   const previousConversationIdRef = useRef<string | null>(null);
 
-  useResetArtifactsOnConversationChange();
+  useArtifactsRegistryLifetime();
 
   useEffect(() => {
     const previous = previousConversationIdRef.current;
@@ -48,6 +51,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   const setFilesToDelete = useSetFilesToDelete();
 
+  const { data: startupConfig, isSuccess: hasStartupConfig } = useGetStartupConfig();
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: (result) => {
       console.log('Temporary Files deleted');
@@ -99,6 +103,14 @@ export default function Presentation({ children }: { children: React.ReactNode }
     mutateAsync({ files });
   }, [mutateAsync]);
 
+  /* The deployment's answer about the undocked window, resolved once by the
+   * host and handed to the pane. Until the config has actually answered the
+   * capability is unknown, and offering the control then would both let a user
+   * undock a pane the deployment forbids and take the Dock control away from
+   * them when the answer arrived. */
+  const canUndock = hasStartupConfig && startupConfig?.interface?.artifactUndocking !== false;
+  const artifactsProviderValue = useMemo(() => ({ canUndock }), [canUndock]);
+
   const artifactsElement = useMemo(() => {
     if (
       artifactsVisibility === true &&
@@ -106,21 +118,24 @@ export default function Presentation({ children }: { children: React.ReactNode }
       Object.keys(artifacts ?? {}).length > 0
     ) {
       return (
-        <ArtifactsProvider>
-          <EditorProvider>
-            <Suspense fallback={null}>
-              <Artifacts />
-            </Suspense>
-          </EditorProvider>
+        <ArtifactsProvider value={artifactsProviderValue}>
+          <Suspense fallback={null}>
+            <Artifacts />
+          </Suspense>
         </ArtifactsProvider>
       );
     }
     return null;
-  }, [artifactsVisibility, artifacts, currentArtifactId]);
+  }, [artifactsVisibility, artifacts, currentArtifactId, artifactsProviderValue]);
 
+  /* The two panels are mutually exclusive only while they compete for the same
+   * slot. Undocked, the artifacts pane is in its own window and the side panel
+   * is free, so a child-activity panel opened there must survive. */
   useEffect(() => {
-    if (artifactsElement != null && selectedSubagent != null) resetSelectedSubagent();
-  }, [artifactsElement, resetSelectedSubagent, selectedSubagent]);
+    if (!isUndocked && artifactsElement != null && selectedSubagent != null) {
+      resetSelectedSubagent();
+    }
+  }, [artifactsElement, isUndocked, resetSelectedSubagent, selectedSubagent]);
 
   const subagentElement = useMemo(() => {
     if (
@@ -137,21 +152,30 @@ export default function Presentation({ children }: { children: React.ReactNode }
     );
   }, [conversationId, selectedSubagent]);
 
-  const panelElement = artifactsElement ?? subagentElement;
+  /* Undocked, the pane renders into its own window: the side panel gives its
+   * width back to the conversation instead of holding an empty column. */
+  const panelElement = (isUndocked ? null : artifactsElement) ?? subagentElement;
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       <AppChatSurface>
-        <ParentSubagentsProvider
-          conversationId={conversationId ?? ''}
-          enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
-        >
-          <SidePanelGroup panel={panelElement}>
-            <main className="flex h-full flex-col overflow-y-auto" role="main">
-              {children}
-            </main>
-          </SidePanelGroup>
-        </ParentSubagentsProvider>
+        {/* The editor buffer belongs to the pane's session, not to the window
+            it happens to be in: hoisted, an undock keeps unsaved edits. */}
+        <EditorProvider>
+          <ParentSubagentsProvider
+            conversationId={conversationId ?? ''}
+            enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
+          >
+            <SidePanelGroup panel={panelElement}>
+              <main className="flex h-full flex-col overflow-y-auto" role="main">
+                {children}
+              </main>
+            </SidePanelGroup>
+          </ParentSubagentsProvider>
+          {isUndocked && artifactsElement != null && (
+            <UndockedArtifacts>{artifactsElement}</UndockedArtifacts>
+          )}
+        </EditorProvider>
       </AppChatSurface>
     </DragDropWrapper>
   );
