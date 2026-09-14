@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToastContext } from '@librechat/client';
 import type { Artifact } from '~/common';
 import {
   getArtifactDownloadFilename,
@@ -11,15 +12,17 @@ import {
 } from '~/components/Chat/Messages/Content/Parts/LogLink';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useCodeState } from '~/Providers/EditorContext';
+import useLocalize from '~/hooks/useLocalize';
 
 export interface ArtifactDownload {
   /** Briefly true after a file actually reached the user, for the check-mark swap. */
   isDownloaded: boolean;
   /**
-   * Resolves to whether bytes actually reached the user: the attachment
-   * route swallows fetch errors, so a caller that announces completion
-   * (the mermaid export menu) has to gate it on this rather than on the
-   * promise resolving.
+   * Resolves to whether bytes actually reached the user, and every `false`
+   * has already been reported to them: the attachment route swallows fetch
+   * errors and toasts them itself, and the blob path below does the same,
+   * so a caller that announces completion (the mermaid export menu) gates
+   * it on this result and only has to speak in its own live region.
    */
   handleDownload: (event: React.MouseEvent<HTMLElement>) => Promise<boolean>;
 }
@@ -35,6 +38,8 @@ export interface ArtifactDownload {
  */
 export default function useArtifactDownload(artifact: Artifact): ArtifactDownload {
   const { currentCode } = useCodeState();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
   const resetTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -96,6 +101,9 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
         }
         const content = currentCode ?? artifact.content;
         if (content == null) {
+          /* Nothing to serialize and no route to fetch: the press has to
+           * say something, or it looks like the download worked. */
+          showToast({ status: 'error', message: localize('com_ui_download_error') });
           return false;
         }
         const blob = new Blob([content], { type: 'text/plain' });
@@ -111,10 +119,20 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
         return true;
       } catch (error) {
         console.error('Download failed:', error);
+        showToast({ status: 'error', message: localize('com_ui_download_error') });
         return false;
       }
     },
-    [artifact, currentCode, downloadAttachment, downloadOriginalFile, fileName, markDownloaded],
+    [
+      artifact,
+      currentCode,
+      downloadAttachment,
+      downloadOriginalFile,
+      fileName,
+      localize,
+      markDownloaded,
+      showToast,
+    ],
   );
 
   return { isDownloaded, handleDownload };

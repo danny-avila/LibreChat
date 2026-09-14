@@ -64,6 +64,10 @@ export const useAttachmentLink = ({
    * error or an empty/denied response (e.g. an expired code-output URL or
    * a 404 share download). Callers that show success feedback should gate
    * it on this result rather than on the promise merely resolving.
+   *
+   * Every `false` is announced here, by the layer that knows the cause, so
+   * a caller can report the failure in its own live region without racing
+   * this toast — one press never raises two notifications.
    */
   const handleDownload = async (event: React.MouseEvent<HTMLElement>): Promise<boolean> => {
     event.preventDefault();
@@ -92,6 +96,7 @@ export const useAttachmentLink = ({
       return true;
     } catch (error) {
       console.error('Error downloading file:', error);
+      showToast({ status: 'error', message: localize('com_ui_download_error') });
       return false;
     }
   };

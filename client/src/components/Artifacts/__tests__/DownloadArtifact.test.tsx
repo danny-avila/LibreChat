@@ -408,6 +408,26 @@ describe('DownloadArtifact', () => {
     expect(container.querySelector('[data-icon="download"]')).not.toBeNull();
   });
 
+  it('reports a failed blob export instead of looking like it worked', async () => {
+    /* The mermaid export menu only speaks in its live region for a reported
+     * failure, on the rule that whichever layer returned `false` already
+     * told the user. This is that layer for the blob path. */
+    createObjectURL.mockImplementation(() => {
+      throw new Error('no object url');
+    });
+    const { container } = render(<DownloadArtifact artifact={htmlArtifact} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    /* The hook localizes through `~/hooks/useLocalize` directly, outside
+     * this file's `~/hooks` mock, so the real string lands here. */
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message: 'Error downloading file. The file may have been deleted.',
+    });
+    expect(container.querySelector('[data-icon="circle-check-big"]')).toBeNull();
+  });
+
   it('downloads an unedited mermaid diagram from its stored file, not the cached text', async () => {
     /* `attachment.text` is the backend's cached extraction, and
      * `extractUtf8` keeps only the first 512 KB of it, so a large stored
