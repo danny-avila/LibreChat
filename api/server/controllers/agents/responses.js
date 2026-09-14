@@ -78,6 +78,7 @@ const {
   createAggregatorEventHandlers,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
+  stripUnusableSummaryParts,
   CHILD_THREAD_READ_ONLY_ERROR,
   executeAgentRun,
   waitForAgentExecutionWrites,
@@ -1088,7 +1089,11 @@ const executeResponse = async (envelope, { req, res }) => {
         allMessages,
         true,
       );
-      const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
+      const formatted = formatAgentMessages(
+        stripUnusableSummaryParts(stripActivityLabelParts(allMessages)),
+        {},
+        toolSet,
+      );
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
       let indexTokenCountMap = formatted.indexTokenCountMap;
