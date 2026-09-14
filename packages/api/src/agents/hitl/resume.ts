@@ -9,6 +9,7 @@ import type {
 } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { isToolApprovalPayloadValid } from './policy';
 
 /**
  * Translate the host-facing approval wire format into the SDK's resume value.
@@ -334,6 +335,39 @@ export function findIncompleteDecisions(
       return false;
     })
     .map((r) => r.tool_call_id);
+}
+
+/** Validate and translate one complete tool-approval batch for the resume controller. */
+export function resolveToolApprovalResume(
+  payload: Agents.ToolApprovalInterruptPayload,
+  resolutions: readonly Agents.ToolApprovalResolution[],
+):
+  | { resumeValue: ToolApprovalDecisionMap }
+  | { status: 400; error: string; undecided?: string[]; incomplete?: string[] }
+  | { status: 403; error: string; disallowed: string[] } {
+  if (!isToolApprovalPayloadValid(payload)) {
+    return { status: 400, error: 'Invalid tool approval payload' };
+  }
+  if (hasInvalidToolApprovalResolutions(payload, resolutions)) {
+    return { status: 400, error: 'Invalid tool approval decisions' };
+  }
+  const undecided = findUndecidedToolCalls(payload, resolutions);
+  if (undecided.length > 0) {
+    return { status: 400, error: 'Every paused tool call must be decided', undecided };
+  }
+  const disallowed = findDisallowedDecisions(payload, resolutions);
+  if (disallowed.length > 0) {
+    return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
+  }
+  const incomplete = findIncompleteDecisions(resolutions);
+  if (incomplete.length > 0) {
+    return {
+      status: 400,
+      error: 'edit requires editedArguments and respond requires responseText',
+      incomplete,
+    };
+  }
+  return { resumeValue: mapToolApprovalResolutions(resolutions) };
 }
 
 /**

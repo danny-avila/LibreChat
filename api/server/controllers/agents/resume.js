@@ -13,17 +13,12 @@ const {
   GenerationJobManager,
   GENERATION_RECOVERY_FAILED_ERROR,
   isPendingActionStale,
-  mapToolApprovalResolutions,
+  resolveToolApprovalResume,
   resolveAskUserQuestionResume,
   buildResolvedAskUserQuestion,
   appendResolvedAskUserQuestion,
   attachAskUserQuestionAnswers,
   findAskUserQuestionContentIndex,
-  findUndecidedToolCalls,
-  hasInvalidToolApprovalResolutions,
-  findDisallowedDecisions,
-  findIncompleteDecisions,
-  isToolApprovalPayloadValid,
   computeAgentRequestFingerprint,
   computeLegacyAgentRequestFingerprint,
   captureAgentCheckpointGeneration,
@@ -353,33 +348,7 @@ function resolveResumeValue(pendingAction, body) {
   const payload = pendingAction.payload;
   if (payload?.type === 'tool_approval') {
     const resolutions = Array.isArray(body.decisions) ? body.decisions : [];
-    if (!isToolApprovalPayloadValid(payload)) {
-      return { status: 400, error: 'Invalid tool approval payload' };
-    }
-    if (hasInvalidToolApprovalResolutions(payload, resolutions)) {
-      return { status: 400, error: 'Invalid tool approval decisions' };
-    }
-    const undecided = findUndecidedToolCalls(payload, resolutions);
-    if (undecided.length > 0) {
-      return { status: 400, error: 'Every paused tool call must be decided', undecided };
-    }
-    // Enforce the policy's per-tool allowed_decisions — a crafted POST must not
-    // approve a tool the policy restricted to (e.g.) reject/respond.
-    const disallowed = findDisallowedDecisions(payload, resolutions);
-    if (disallowed.length > 0) {
-      return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
-    }
-    // `edit`/`respond` must carry their payload — otherwise toSdkDecision's defensive
-    // defaults ({} / '') would resume with an empty input/result the user didn't approve.
-    const incomplete = findIncompleteDecisions(resolutions);
-    if (incomplete.length > 0) {
-      return {
-        status: 400,
-        error: 'edit requires editedArguments and respond requires responseText',
-        incomplete,
-      };
-    }
-    return { resumeValue: mapToolApprovalResolutions(resolutions) };
+    return resolveToolApprovalResume(payload, resolutions);
   }
   if (payload?.type === 'ask_user_question') {
     return resolveAskUserQuestionResume(payload, body);
