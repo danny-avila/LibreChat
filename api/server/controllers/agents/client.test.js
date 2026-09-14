@@ -437,6 +437,7 @@ describe('AgentClient - event actor history adapter', () => {
         type: ContentTypes.SUMMARY,
         content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
         tokenCount: 18,
+        boundary: { messageId: 'step_summary', contentIndex: 0 },
       },
     ];
     client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
@@ -3503,6 +3504,7 @@ describe('AgentClient - startup telemetry', () => {
           type: ContentTypes.SUMMARY,
           content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
           tokenCount: 18,
+          boundary: { messageId: 'step_summary', contentIndex: 0 },
         },
         { type: ContentTypes.TEXT, text: 'Done.' },
       );

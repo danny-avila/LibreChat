@@ -3646,6 +3646,7 @@ describe('BaseClient compaction turns', () => {
           {
             type: ContentTypes.SUMMARY,
             content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+            boundary: { messageId: 'step_summary', contentIndex: 0 },
           },
         ],
       },

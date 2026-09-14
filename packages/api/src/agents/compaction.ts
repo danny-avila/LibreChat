@@ -49,6 +49,14 @@ export function getSummaryPartText(part: TMessageContentParts | null | undefined
  * keeps whatever deltas it streamed, so its text is a truncated prefix of the
  * history it was summarizing rather than a checkpoint for it — the same test
  * `isCompactedLeaf` applies when deciding whether a compaction can be retried.
+ *
+ * `failed` has only been stamped since the server began recording errored
+ * rounds, so the flags alone cannot vouch for older rows. The aggregator gives
+ * the structural answer: deltas stream `content` blocks into the part, and only
+ * a completed round replaces it with the final block, which is the only writer
+ * of `boundary`. A `content`-block summary without one therefore never
+ * finished, however it was stored. Rows in the bare-`text` shape predate that
+ * aggregator and are left to the flags.
  */
 export function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
   if (part == null || typeof part !== 'object' || !('type' in part)) {
@@ -60,6 +68,9 @@ export function isUsableSummaryPart(part: unknown): part is SummaryContentPart {
   /** Narrowed by the discriminant above: this is the summary union member. */
   const summary = part as SummaryContentPart;
   if (summary.failed === true || summary.summarizing === true) {
+    return false;
+  }
+  if (Array.isArray(summary.content) && summary.boundary == null) {
     return false;
   }
   return getSummaryPartText(summary).length > 0;

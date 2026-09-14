@@ -146,6 +146,9 @@ describe('compaction semantic index continuation projection', () => {
   });
 });
 
+/** Only a completed round's final block carries a boundary; streamed deltas never do. */
+const completedBoundary = { messageId: 'step_summary', contentIndex: 0 };
+
 describe('markCompactionOutcome', () => {
   const summary = (
     text: string,
@@ -153,6 +156,7 @@ describe('markCompactionOutcome', () => {
   ): TMessageContentParts => ({
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text }],
+    boundary: completedBoundary,
     ...overrides,
   });
   const failure = (error: string): TMessageContentParts => ({ type: ContentTypes.ERROR, error });
@@ -246,8 +250,16 @@ describe('findCheckpointSummaryPart', () => {
   it('takes the last summary that carries text', () => {
     const content = [
       { type: ContentTypes.TEXT, text: 'some text' },
-      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'First' }] },
-      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Latest' }] },
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'First' }],
+        boundary: completedBoundary,
+      },
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Latest' }],
+        boundary: completedBoundary,
+      },
     ];
 
     expect(getSummaryPartText(findCheckpointSummaryPart(content))).toBe('Latest');
@@ -268,6 +280,7 @@ describe('findCheckpointSummaryPart', () => {
       {
         type: ContentTypes.SUMMARY,
         content: [{ type: ContentTypes.TEXT, text: 'Partial' }],
+        boundary: completedBoundary,
         ...state,
       },
     ];
@@ -275,9 +288,37 @@ describe('findCheckpointSummaryPart', () => {
     expect(findCheckpointSummaryPart(content)).toBeNull();
   });
 
+  /** A round that errored before failures were stamped kept its deltas and no
+   *  flag. Deltas never carry a boundary, so the part still reads as unfinished. */
+  it('offers no checkpoint for a streamed summary that never recorded a boundary', () => {
+    const content = [
+      { type: ContentTypes.TEXT, text: 'An answer' },
+      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Partial' }] },
+    ];
+
+    expect(findCheckpointSummaryPart(content)).toBeNull();
+  });
+
+  it('keeps the last complete summary when a later round never recorded a boundary', () => {
+    const content = [
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Complete' }],
+        boundary: completedBoundary,
+      },
+      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Partial' }] },
+    ];
+
+    expect(getSummaryPartText(findCheckpointSummaryPart(content))).toBe('Complete');
+  });
+
   it('keeps the last complete summary when a later round failed', () => {
     const content = [
-      { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Complete' }] },
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Complete' }],
+        boundary: completedBoundary,
+      },
       { type: ContentTypes.SUMMARY, text: 'Partial', failed: true },
     ];
 
@@ -299,16 +340,23 @@ describe('unusable summary parts', () => {
   const failedSummary = {
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'Half a checkpoint' }],
+    boundary: completedBoundary,
     failed: true,
   };
   const unfinishedSummary = {
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'Half a checkpoint' }],
+    boundary: completedBoundary,
     summarizing: true,
+  };
+  const unstampedSummary = {
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'Half a checkpoint' }],
   };
   const completeSummary = {
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+    boundary: completedBoundary,
   };
   const emptySummary = { type: ContentTypes.SUMMARY, content: [], failed: true };
   const text = { type: ContentTypes.TEXT, text: 'An answer' };
@@ -319,6 +367,7 @@ describe('unusable summary parts', () => {
   it.each([
     ['a failed summary', failedSummary],
     ['a summary whose round never finished', unfinishedSummary],
+    ['a streamed summary stored without a boundary or a flag', unstampedSummary],
   ])('drops %s from a prompt copy and keeps the rest of the turn', (_label, summary) => {
     const message = { role: 'assistant', content: [text, summary] };
 

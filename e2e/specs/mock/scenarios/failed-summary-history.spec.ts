@@ -11,6 +11,10 @@ const summaryPart = (text: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+/** Only a completed round's final summary block carries a boundary; the deltas a
+ *  failed or interrupted round leaves behind never do. */
+const completedBoundary = { messageId: 'step_summary', contentIndex: 0 };
+
 /** A real turn carrying a passphrase only this conversation's history holds. */
 async function startConversation(page: Page) {
   const token = `OLDFACT-${randomUUID().slice(0, 8)}`;
@@ -125,6 +129,27 @@ test.describe('failed summary history', () => {
    * conversation's checkpoint, so the turns it covers are replaced by it and
    * the passphrase no longer reaches the model.
    */
+  /**
+   * Errored rounds were only stamped `failed` from #14546 on. One stored
+   * earlier kept its streamed deltas with no flag at all, so the only record that
+   * it never finished is the boundary a completed block would have written.
+   */
+  test('a turn after a summarization stored without a boundary still sends the earlier history @scenario:unstamped-summary-keeps-prior-history', async ({
+    page,
+  }) => {
+    const { conversationId, token } = await startConversation(page);
+    conversationIds.push(conversationId);
+    await appendSummaryTurn(conversationId, summaryPart('Partial summary of the conve'));
+
+    await page.goto(`/c/${conversationId}`);
+    await expect(messagesView(page).getByText(token)).toBeVisible();
+    await sendMessageAndWaitForCompletion(page, `E2E_ASSERT_HISTORY:${token}`);
+
+    await expect(
+      messagesView(page).getByText(`E2E history assertion present: ${token}`),
+    ).toBeVisible({ timeout: 30000 });
+  });
+
   test('a completed summary still replaces the history it covers @scenario:complete-summary-replaces-prior-history', async ({
     page,
   }) => {
@@ -132,7 +157,9 @@ test.describe('failed summary history', () => {
     conversationIds.push(conversationId);
     await appendSummaryTurn(
       conversationId,
-      summaryPart('The user shared a passphrase and it was acknowledged.'),
+      summaryPart('The user shared a passphrase and it was acknowledged.', {
+        boundary: completedBoundary,
+      }),
     );
 
     await page.goto(`/c/${conversationId}`);
