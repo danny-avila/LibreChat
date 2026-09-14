@@ -71,6 +71,16 @@ export class NoDocumentTextError extends Error {
 }
 
 /**
+ * What a caller may tune about one extraction, shared by every engine so the dispatcher
+ * hands the same object to whichever one claims the document.
+ */
+export interface DocumentExtractionOptions {
+  /** Deadline for the extraction child, in milliseconds. Each engine keeps its own
+   * default, which is what a direct caller with no configuration gets. */
+  readonly timeoutMs?: number;
+}
+
+/**
  * Matched on the code rather than the class: it arrives from a child process as a wire
  * field, and the same string is what the upload path reads to decide the response.
  */

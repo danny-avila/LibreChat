@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, DocumentParser } from 'librechat-data-provider';
+import type { DocumentExtractionOptions } from '../documents/nativeProcess';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { isParserOutputLimit, NoDocumentTextError } from '../documents/nativeProcess';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
@@ -232,6 +233,7 @@ function assertSupportedType(name: string, type: string, extensionFormat: string
 export async function parseWithAnydoc(
   file: Express.Multer.File,
   signal?: AbortSignal,
+  options?: DocumentExtractionOptions,
 ): Promise<ParsedDocumentUploadResult> {
   const name = file.originalname ?? file.path;
   const type = normalizeType(file.mimetype);
@@ -258,7 +260,7 @@ export async function parseWithAnydoc(
 
   let markdown: string;
   try {
-    markdown = await extractMarkdownIsolated(file.path, format, signal);
+    markdown = await extractMarkdownIsolated(file.path, format, signal, options?.timeoutMs);
   } catch (error) {
     /* Shed load and an oversized extraction surface as themselves. Reporting either as
      * a parse failure would send the caller down a fallback chain built for documents

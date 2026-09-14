@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { megabyte, DocumentParser } from 'librechat-data-provider';
+import type { DocumentExtractionOptions } from './nativeProcess';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { pdfInspectorSupportedMimeTypes, parseWithPdfInspector } from '~/files/pdfInspector';
 import { NoDocumentTextError, withParserAdmission } from './nativeProcess';
@@ -21,7 +22,11 @@ export interface DocumentExtractor {
   claimsMimeType(mimeType: string): boolean;
   /** Whether this engine reads the file on its name alone, for generic declared types. */
   claimsFileName?(fileName: string): boolean;
-  extract(file: Express.Multer.File, signal?: AbortSignal): Promise<ParsedDocumentUploadResult>;
+  extract(
+    file: Express.Multer.File,
+    signal?: AbortSignal,
+    options?: DocumentExtractionOptions,
+  ): Promise<ParsedDocumentUploadResult>;
 }
 
 /**
@@ -126,6 +131,7 @@ export async function parseDocument({
   file,
   signal,
   maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
+  timeoutMs,
 }: {
   file: Express.Multer.File;
   /** Cancels the parse and frees its admission slot when the caller stops waiting. */
@@ -134,6 +140,9 @@ export async function parseDocument({
    * `fileConfig.documentParser.fileSizeLimit` reproduces, so a direct caller that
    * carries no config is still bounded. */
   maxFileSize?: number;
+  /** Deadline for the extraction child, in milliseconds. Each engine keeps its own
+   * default; `fileConfig.documentParser.timeoutMs` reproduces it. */
+  timeoutMs?: number;
 }): Promise<ParsedDocumentUploadResult> {
   const fileSize = file.size ?? (file.path != null ? (await fs.promises.stat(file.path)).size : 0);
   if (fileSize > maxFileSize) {
@@ -150,7 +159,10 @@ export async function parseDocument({
   /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
-  const result = await withParserAdmission(() => extractor.extract(parserFile, signal), signal);
+  const result = await withParserAdmission(
+    () => extractor.extract(parserFile, signal, { timeoutMs }),
+    signal,
+  );
 
   if (!result.text?.trim()) {
     throw new NoDocumentTextError();

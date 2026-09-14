@@ -23,7 +23,8 @@ import { MAX_PDF_PAGES } from './limits';
  * and can fall back to pdfjs without risking the API process.
  */
 
-/** Bounds a parse that never returns; the main thread is free to fire this timer. */
+/** Bounds a parse that never returns; the main thread is free to fire this timer. The
+ * caller's configured deadline replaces it when one is supplied. */
 const PDF_CHILD_TIMEOUT_MS = 30_000;
 
 /** Optional scan classification receives its own killable deadline. */
@@ -141,6 +142,7 @@ function runPdfChild(
   op: PdfChildOp,
   filePath: string,
   signal?: AbortSignal,
+  timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
 ): Promise<PdfChildResult> {
   const modulePath = require.resolve('@firecrawl/pdf-inspector');
   return runNativeParserChild<PdfChildResult>({
@@ -154,7 +156,7 @@ function runPdfChild(
       maxPages: MAX_PARSER_PAGES,
       pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
     },
-    timeoutMs: PDF_CHILD_TIMEOUT_MS,
+    timeoutMs,
     signal,
   });
 }
@@ -182,15 +184,16 @@ function runPdfClassifierChild(
 export async function extractPagesMarkdownIsolated(
   filePath: string,
   signal?: AbortSignal,
+  timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
 ): Promise<PdfPageExtraction> {
   const startedAt = Date.now();
-  const { pages } = await runPdfChild('pages', filePath, signal);
+  const { pages } = await runPdfChild('pages', filePath, signal, timeoutMs);
   const extractedPages = pages ?? [];
   if (extractedPages.length > MAX_PDF_PAGES) {
     throw new PdfPageLimitError(extractedPages.length, MAX_PDF_PAGES);
   }
   let scannedPages: number[] = [];
-  const remainingMs = PDF_CHILD_TIMEOUT_MS - (Date.now() - startedAt);
+  const remainingMs = timeoutMs - (Date.now() - startedAt);
   if (remainingMs <= 0) {
     return { pages: extractedPages, scannedPages };
   }
@@ -216,7 +219,11 @@ export async function extractPagesMarkdownIsolated(
  * Unlike the per-page markdown extractor, this one re-segments words from glyph
  * positions, which is what makes it readable on documents with a poor OCR layer.
  */
-export async function extractTextIsolated(filePath: string, signal?: AbortSignal): Promise<string> {
-  const { text } = await runPdfChild('text', filePath, signal);
+export async function extractTextIsolated(
+  filePath: string,
+  signal?: AbortSignal,
+  timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
+): Promise<string> {
+  const { text } = await runPdfChild('text', filePath, signal, timeoutMs);
   return text ?? '';
 }

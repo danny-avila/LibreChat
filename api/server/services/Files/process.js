@@ -1108,6 +1108,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           file,
           loadAuthValues,
           maxFileSize: fileConfig.documentParser?.fileSizeLimit,
+          timeoutMs: fileConfig.documentParser?.timeoutMs,
         });
       } catch (err) {
         if (isDocumentParserRefusal(err)) {

@@ -442,20 +442,29 @@ describe('documentParser file config', () => {
     logged.mockRestore();
   });
 
-  /* The parser refuses anything above this, so an operator who raises the endpoint and
-   * server limits needs a lever here or their admitted uploads get an unconditional
-   * 413. The default is the parser's own compatibility ceiling. */
-  it('exposes the parser input ceiling with a 15MB default', () => {
+  /* The parser refuses anything above its ceiling, so an operator who raises the
+   * endpoint and server limits needs a lever here or their admitted uploads get an
+   * unconditional 413. Written in megabytes like every other size limit in this file,
+   * and consumed in bytes. */
+  it('exposes the parser input ceiling in megabytes with a 15MB default', () => {
     expect(mergeFileConfig(undefined).documentParser?.fileSizeLimit).toBe(15 * 1024 * 1024);
 
-    const parsed = fileConfigSchema.parse({
-      documentParser: { fileSizeLimit: 32 * 1024 * 1024 },
-    });
+    const parsed = fileConfigSchema.parse({ documentParser: { fileSizeLimit: 32 } });
     const merged = mergeFileConfig(parsed);
 
     expect(merged.documentParser?.fileSizeLimit).toBe(32 * 1024 * 1024);
     /* Raising the ceiling must not silently discard the type allowlist beside it. */
     expect(merged.documentParser?.supportedMimeTypes).toEqual(documentParserMimeTypes);
+  });
+
+  /* A document big enough to need a raised ceiling also needs longer to convert, and
+   * the child is killed on this deadline. */
+  it('exposes the extraction deadline in milliseconds with a 30s default', () => {
+    expect(mergeFileConfig(undefined).documentParser?.timeoutMs).toBe(30_000);
+
+    const parsed = fileConfigSchema.parse({ documentParser: { timeoutMs: 90_000 } });
+
+    expect(mergeFileConfig(parsed).documentParser?.timeoutMs).toBe(90_000);
   });
 });
 

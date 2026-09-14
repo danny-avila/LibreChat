@@ -622,6 +622,8 @@ const defaultSkillImportSizeLimit = mbToBytes(50);
 /** The built-in document parser reads a whole document into memory to extract it, so
  * it takes a far lower ceiling than transfer does. Matches the parser's own default. */
 const defaultDocumentParserSizeLimit = mbToBytes(15);
+/** Deadline one extraction child gets; the value both parser engines were built with. */
+const defaultDocumentParserTimeoutMs = 30_000;
 const defaultTokenLimit = 100000;
 const defaultContextSizeLimit = mbToBytes(128);
 const defaultContextCharLimit = 1_000_000;
@@ -674,6 +676,7 @@ export const fileConfig = {
   documentParser: {
     supportedMimeTypes: documentParserMimeTypes,
     fileSizeLimit: defaultDocumentParserSizeLimit,
+    timeoutMs: defaultDocumentParserTimeoutMs,
   },
   text: {
     supportedMimeTypes: defaultTextMimeTypes,
@@ -744,10 +747,14 @@ export const fileConfigSchema = z.object({
   documentParser: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
-      /** Largest document handed to the built-in parser, in bytes. Parsing loads and
-       * decompresses the whole document in a child process, so the ceiling bounds
+      /** Largest document handed to the built-in parser, in megabytes. Parsing loads
+       * and decompresses the whole document in a child process, so the ceiling bounds
        * memory per upload rather than transfer; raising it costs memory. */
       fileSizeLimit: z.number().min(0).optional(),
+      /** How long one extraction child may run before it is killed, in milliseconds.
+       * A document large enough to need a raised `fileSizeLimit` usually needs longer
+       * than the default to convert. */
+      timeoutMs: z.number().min(0).optional(),
     })
     .optional(),
   text: z
@@ -1375,14 +1382,22 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
   }
 
   if (dynamic.documentParser !== undefined) {
-    const { supportedMimeTypes: documentParserTypes, ...documentParserRest } =
-      dynamic.documentParser;
+    const {
+      supportedMimeTypes: documentParserTypes,
+      fileSizeLimit: documentParserSizeLimit,
+      ...documentParserRest
+    } = dynamic.documentParser;
     mergedConfig.documentParser = {
       ...mergedConfig.documentParser,
       ...documentParserRest,
     };
     if (documentParserTypes) {
       mergedConfig.documentParser.supportedMimeTypes = convertStringsToRegex(documentParserTypes);
+    }
+    /* Megabytes in the file, bytes in the merged config, the same way every other size
+     * limit here is written and consumed. */
+    if (documentParserSizeLimit !== undefined) {
+      mergedConfig.documentParser.fileSizeLimit = mbToBytes(documentParserSizeLimit);
     }
   }
 

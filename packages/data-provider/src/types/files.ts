@@ -109,6 +109,8 @@ export type FileConfig = {
     supportedMimeTypes?: RegexLike[];
     /** Largest document the built-in parser accepts, in bytes. */
     fileSizeLimit?: number;
+    /** Deadline for one extraction child, in milliseconds. */
+    timeoutMs?: number;
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
@@ -146,7 +148,9 @@ export type FileConfigInput = {
   };
   documentParser?: {
     supportedMimeTypes?: string[];
+    /** Megabytes, converted on merge like every other size limit here. */
     fileSizeLimit?: number;
+    timeoutMs?: number;
   };
   text?: {
     supportedMimeTypes?: string[];

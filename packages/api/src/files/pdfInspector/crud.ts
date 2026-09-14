@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { DocumentParser } from 'librechat-data-provider';
+import type { DocumentExtractionOptions } from '../documents/nativeProcess';
 import type { ParsedDocumentUploadResult } from '~/types';
 import {
   extractDocumentTextWithPages,
@@ -42,13 +43,17 @@ export const pdfInspectorSupportedMimeTypes: RegExp[] = [/^application\/pdf$/];
 export async function parseWithPdfInspector(
   file: Express.Multer.File,
   signal?: AbortSignal,
+  options?: DocumentExtractionOptions,
 ): Promise<ParsedDocumentUploadResult> {
   assertSupportedMimeType(file);
 
-  const data = await fs.promises.readFile(file.path);
+  /* Cancellable like every later stage: on a network-backed upload directory this read
+   * is the long part, and ignoring the signal would hold the shared admission slot for
+   * bytes nobody is waiting for. */
+  const data = await fs.promises.readFile(file.path, { signal });
   let parsed: ParsedDocument;
   try {
-    parsed = await extractPdf(file.path, data, signal);
+    parsed = await extractPdf(file.path, data, signal, options?.timeoutMs);
   } catch (error) {
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
      * any of them: it would run the walk inline for a request the limiter just refused,
@@ -121,8 +126,9 @@ export async function extractPdf(
   filePath: string,
   data: Buffer,
   signal?: AbortSignal,
+  timeoutMs?: number,
 ): Promise<ParsedDocument> {
-  const extraction = await extractPagesMarkdownIsolated(filePath, signal);
+  const extraction = await extractPagesMarkdownIsolated(filePath, signal, timeoutMs);
   const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');
@@ -210,7 +216,7 @@ export async function extractPdf(
   const everyDroppedPageProbed = droppedPages.length === recoverablePages.length;
   if (everyDroppedPageProbed && droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
     try {
-      const plain = await extractTextIsolated(filePath, signal);
+      const plain = await extractTextIsolated(filePath, signal, timeoutMs);
       if (plain.trim()) {
         return withMediaSignal({ text: plain, pagesNeedingOcr: ocrResult }, recovered);
       }

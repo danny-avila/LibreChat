@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { documentParserMimeTypes } from 'librechat-data-provider';
 import type { CodeArtifactCategory } from './classify';
 import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
 import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
@@ -170,6 +171,15 @@ const documentMimeFromExtension = (name: string): string | null => {
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     case '.pptx':
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    case '.pptm':
+      return 'application/vnd.ms-powerpoint.presentation.macroenabled.12';
+    case '.ppsx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.slideshow';
+    case '.ppt':
+    case '.pps':
+      return 'application/vnd.ms-powerpoint';
+    case '.odp':
+      return 'application/vnd.oasis.opendocument.presentation';
     case '.xls':
       return 'application/vnd.ms-excel';
     case '.ods':
@@ -181,11 +191,17 @@ const documentMimeFromExtension = (name: string): string | null => {
   }
 };
 
+type ExtractedDocumentText = {
+  readonly text: string;
+  readonly pagesNeedingOcr?: number[];
+  readonly mayOmitContent?: boolean;
+};
+
 const extractDocumentText = async (
   buffer: Buffer,
   name: string,
   mimeType: string,
-): Promise<string | null> => {
+): Promise<ExtractedDocumentText | null> => {
   const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
   const tempPath = path.join(os.tmpdir(), `code-artifact-${randomUUID()}`);
   await fs.writeFile(tempPath, buffer);
@@ -211,7 +227,11 @@ const extractDocumentText = async (
     if (!result?.text) {
       return null;
     }
-    return result.text;
+    return {
+      text: result.text,
+      pagesNeedingOcr: result.pagesNeedingOcr,
+      mayOmitContent: result.mayOmitContent,
+    };
   } finally {
     cancellation.abort();
     fs.unlink(tempPath).catch(() => {});
@@ -223,8 +243,8 @@ const extractDocument = async (
   name: string,
   mimeType: string,
 ): Promise<string | null> => {
-  const text = await extractDocumentText(buffer, name, mimeType);
-  return text == null ? null : truncate(text);
+  const result = await extractDocumentText(buffer, name, mimeType);
+  return result == null ? null : truncate(result.text);
 };
 
 /**
@@ -397,6 +417,21 @@ export async function extractCodeArtifactInspectionText(
       complete: true,
     };
   };
+  const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
+  const parserReadsDocument = documentParserMimeTypes.some((mimePattern) =>
+    mimePattern.test(canonicalMime),
+  );
+  const inspectParsedDocument = async (): Promise<CodeArtifactInspectionText | null> => {
+    const result = await extractDocumentText(buffer, name, mimeType);
+    if (result == null) {
+      return null;
+    }
+    const boundedResult = bounded(result.text);
+    if (result.pagesNeedingOcr?.length || result.mayOmitContent === true) {
+      return incomplete(boundedResult.text);
+    }
+    return boundedResult;
+  };
   if (buffer.length > MAX_TEXT_EXTRACT_BYTES) {
     return incomplete();
   }
@@ -405,9 +440,12 @@ export async function extractCodeArtifactInspectionText(
       if (category === 'utf8-text') {
         return bounded(extractCodeArtifactRawText(buffer, category));
       }
-      if (category === 'document') {
+      if (category === 'document' || (category === 'presentation' && parserReadsDocument)) {
         try {
-          return bounded(await extractDocumentText(buffer, name, mimeType));
+          const parsed = await inspectParsedDocument();
+          if (parsed != null) {
+            return parsed;
+          }
         } catch {
           // Compatibility mode can still inspect the available preview below.
         }
@@ -417,11 +455,11 @@ export async function extractCodeArtifactInspectionText(
     if (category === 'utf8-text') {
       return bounded(extractCodeArtifactRawText(buffer, category));
     }
-    if (category !== 'document') {
+    if (category !== 'document' && !(category === 'presentation' && parserReadsDocument)) {
       return incomplete();
     }
 
-    return bounded(await extractDocumentText(buffer, name, mimeType));
+    return (await inspectParsedDocument()) ?? incomplete();
   } catch {
     logger.debug('[extractCodeArtifactInspectionText] Artifact inspection failed');
     return incomplete();

@@ -585,6 +585,85 @@ describe('extractCodeArtifactInspectionText', () => {
     });
   });
 
+  it('routes a parser-readable PPTX through parseDocument as complete inspection text', async () => {
+    const result = await extractCodeArtifactInspectionText(
+      Buffer.from('PK'),
+      'slides.pptx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'presentation',
+    );
+
+    expect(result).toEqual({
+      text: docxText,
+      complete: true,
+    });
+  });
+
+  it('marks parser-readable PPTX text incomplete when pages need OCR', async () => {
+    const text = 'text from the readable slides';
+    jest.mocked(parseDocument).mockResolvedValueOnce({
+      filename: 'slides.pptx',
+      bytes: Buffer.byteLength(text),
+      filepath: 'document_parser',
+      text,
+      images: [],
+      pagesNeedingOcr: [2],
+    });
+
+    const result = await extractCodeArtifactInspectionText(
+      Buffer.from('PK'),
+      'slides.pptx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'presentation',
+    );
+
+    expect(result).toEqual({
+      text,
+      complete: false,
+    });
+  });
+
+  it('marks parsed document text incomplete when the parser may omit content', async () => {
+    const text = 'text from the readable document';
+    jest.mocked(parseDocument).mockResolvedValueOnce({
+      filename: 'report.pdf',
+      bytes: Buffer.byteLength(text),
+      filepath: 'document_parser',
+      text,
+      images: [],
+      mayOmitContent: true,
+    });
+
+    const result = await extractCodeArtifactInspectionText(
+      Buffer.from('%PDF'),
+      'report.pdf',
+      'application/pdf',
+      'document',
+    );
+
+    expect(result).toEqual({
+      text,
+      complete: false,
+    });
+  });
+
+  it('keeps an unsupported presentation format on the incomplete office preview path', async () => {
+    const html = '<!DOCTYPE html><html><body>template</body></html>';
+    mockOfficeHtml.mockResolvedValueOnce(html);
+
+    const result = await extractCodeArtifactInspectionText(
+      Buffer.from('PK'),
+      'template.potx',
+      'application/vnd.openxmlformats-officedocument.presentationml.template',
+      'presentation',
+    );
+
+    expect(result).toEqual({
+      text: html,
+      complete: false,
+    });
+  });
+
   it('marks parsed document text incomplete when the derived output exceeds the inspection limit', async () => {
     const suffix = 'BLOCK-DOCUMENT-SUFFIX';
     const text = `${'a'.repeat(MAX_TEXT_EXTRACT_BYTES + 1)}${suffix}`;
@@ -609,8 +688,8 @@ describe('extractCodeArtifactInspectionText', () => {
   });
 
   it('marks an oversized office preview banner as incomplete', async () => {
+    jest.mocked(parseDocument).mockRejectedValueOnce(new Error('parser unavailable'));
     mockOfficeHtml.mockResolvedValueOnce('x'.repeat(MAX_TEXT_CACHE_BYTES + 1));
-
     const result = await extractCodeArtifactInspectionText(
       Buffer.from('PK'),
       'slides.pptx',

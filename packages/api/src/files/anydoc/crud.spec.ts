@@ -127,7 +127,7 @@ describe('parseWithAnydoc', () => {
           mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         });
 
-        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+        expect(toMarkdownBytes.mock.calls[0]?.[1]).toBe('docx');
       });
     });
 
@@ -142,7 +142,7 @@ describe('parseWithAnydoc', () => {
         });
 
         expect(result.text).toBe('# Quarterly Report');
-        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+        expect(toMarkdownBytes.mock.calls[0]?.[1]).toBe('docx');
       });
     });
 
@@ -171,7 +171,7 @@ describe('parseWithAnydoc', () => {
           mimetype: 'application/octet-stream',
         });
 
-        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+        expect(toMarkdownBytes.mock.calls[0]?.[1]).toBe('docx');
       });
     });
   });
@@ -287,7 +287,7 @@ describe('parseWithAnydoc', () => {
             mimetype: 'application/rtf',
           });
 
-          expect(toMarkdownBytes).toHaveBeenCalledWith(combinedPath, 'rtf', undefined);
+          expect(toMarkdownBytes.mock.calls[0]?.slice(0, 2)).toEqual([combinedPath, 'rtf']);
           expect(result.text).toBe('# RTF document');
         });
       } finally {

@@ -248,6 +248,20 @@ describe('Document Parser', () => {
     });
   });
 
+  /* The deadline is an operator lever, and only the child enforces it: a document that
+   * converts fine on the default has to be killed on a 1ms budget. */
+  test('kills an extraction that exceeds the configured deadline', async () => {
+    const file = fixture(
+      'sample.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+
+    await expect(parseDocument({ file, timeoutMs: 1 })).rejects.toThrow(/timed out after 1ms/);
+    await expect(parseDocument({ file })).resolves.toEqual(
+      expect.objectContaining({ filepath: 'anydoc' }),
+    );
+  });
+
   describe('annotateMissingPages()', () => {
     test('returns text unchanged when no pages are missing', () => {
       expect(annotateMissingPages('body', undefined)).toBe('body');

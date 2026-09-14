@@ -1,5 +1,6 @@
 import { MAX_PARSER_OUTPUT_BYTES, runNativeParserChild } from '../documents/nativeProcess';
 
+/** Deadline a caller that configures none gets. */
 const ANYDOC_CHILD_TIMEOUT_MS = 30_000;
 
 /** Measured here so an oversized conversion never crosses IPC into the API process. */
@@ -36,6 +37,7 @@ export function extractMarkdownIsolated(
   filePath: string,
   format: string | null,
   signal?: AbortSignal,
+  timeoutMs: number = ANYDOC_CHILD_TIMEOUT_MS,
 ): Promise<string> {
   return runNativeParserChild<string>({
     childSource: CHILD_SOURCE,
@@ -46,7 +48,7 @@ export function extractMarkdownIsolated(
       modulePath: require.resolve('@firecrawl/anydoc'),
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
     },
-    timeoutMs: ANYDOC_CHILD_TIMEOUT_MS,
+    timeoutMs,
     signal,
   });
 }
