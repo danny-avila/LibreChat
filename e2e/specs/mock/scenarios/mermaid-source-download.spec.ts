@@ -10,6 +10,7 @@ const CACHED_DIAGRAM = `flowchart LR
 const STORED_DIAGRAM = `flowchart LR\n  A[Start] --> B[Middle]\n  B --> Z[StoredOnly]\n`;
 const FAILURE_MESSAGE = 'Could not export this diagram. Please try again.';
 const SUCCESS_MESSAGE = 'Diagram download started.';
+const DOWNLOAD_ERROR_MESSAGE = 'Error downloading file. The file may have been deleted.';
 
 async function installFixture(page: Page, fail: boolean) {
   const conversationId = `e2e-mermaid-source-${randomUUID()}`;
@@ -148,7 +149,12 @@ test.describe('Mermaid source downloads', () => {
       const status = panel.getByRole('status');
       await expect(status).toHaveText(FAILURE_MESSAGE);
       await expect(status).not.toHaveText(SUCCESS_MESSAGE);
-      await expect(page.getByText(FAILURE_MESSAGE, { exact: true }).last()).toBeVisible();
+      /* One press, one toast: the download layer names the cause in the
+       * notification, and the menu's live region carries the export's own
+       * failure phrase. */
+      const toasts = page.getByRole('region', { name: /Notifications/ });
+      await expect(toasts.getByText(DOWNLOAD_ERROR_MESSAGE, { exact: true })).toHaveCount(1);
+      await expect(toasts.getByText(FAILURE_MESSAGE, { exact: true })).toHaveCount(0);
     },
   );
 

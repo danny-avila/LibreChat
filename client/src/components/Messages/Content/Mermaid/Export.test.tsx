@@ -221,10 +221,12 @@ describe('MermaidExport', () => {
     );
   });
 
-  it('reports a failure when the source download delivers nothing', async () => {
+  it('announces a failed source download without a second toast', async () => {
     /* The stored file can be gone (expired code-output URL, deleted file):
-     * the download helper reports that as `false` instead of throwing, and
-     * announcing "export complete" over it would be a lie. */
+     * the download helper reports that as `false` after raising its own
+     * "Error downloading file" toast, so the menu only updates its live
+     * region — announcing "export complete" would be a lie and a second
+     * toast would be noise. */
     const user = userEvent.setup();
     const onDownloadSource = jest.fn().mockResolvedValue(false);
     render(<MermaidExport filename="flow.mmd" onDownloadSource={onDownloadSource} />);
@@ -236,9 +238,25 @@ describe('MermaidExport', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_export_failed'),
     );
-    expect(mockShowToast).toHaveBeenCalledWith({
-      status: 'error',
-      message: 'com_ui_mermaid_export_failed',
-    });
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('raises its own toast when an export throws', async () => {
+    /* A thrown task told nobody, so this menu is the only layer that can
+     * report it. */
+    const user = userEvent.setup();
+    const onDownloadSource = jest.fn().mockRejectedValue(new Error('boom'));
+    render(<MermaidExport filename="flow.mmd" onDownloadSource={onDownloadSource} />);
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_export_mermaid' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'com_ui_export_mermaid_source' }));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith({
+        status: 'error',
+        message: 'com_ui_mermaid_export_failed',
+      }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_export_failed');
   });
 });

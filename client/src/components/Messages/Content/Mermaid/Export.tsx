@@ -80,10 +80,19 @@ const MermaidExport = memo(function MermaidExport({
   const isBusy = exporting != null;
   const liveMessage = exporting == null ? exportStatus : localize(EXPORTING_KEYS[exporting]);
 
+  /* A task that throws told nobody, so the menu raises the toast itself. */
   const showExportError = useCallback(() => {
     setExportStatus(localize('com_ui_mermaid_export_failed'));
     showToast({ status: 'error', message: localize('com_ui_mermaid_export_failed') });
   }, [localize, showToast]);
+
+  /* A task that reports `false` failed inside a layer that names the cause
+   * better than this menu can — `useAttachmentLink` already toasts
+   * "Error downloading file" — so only the live region speaks here, or one
+   * press raises two toasts. */
+  const announceExportError = useCallback(() => {
+    setExportStatus(localize('com_ui_mermaid_export_failed'));
+  }, [localize]);
 
   const restoreTriggerFocus = useCallback(() => {
     requestAnimationFrame(() => triggerRef.current?.focus());
@@ -116,7 +125,7 @@ const MermaidExport = memo(function MermaidExport({
              * download fetches the stored file and swallows an expired or
              * denied route — so the menu must not announce completion. */
             if (delivered === false) {
-              showExportError();
+              announceExportError();
               return;
             }
             setExportStatus(localize('com_ui_mermaid_export_complete'));
@@ -126,7 +135,7 @@ const MermaidExport = memo(function MermaidExport({
       }, 0);
       restoreTriggerFocus();
     },
-    [exporting, localize, restoreTriggerFocus, showExportError],
+    [announceExportError, exporting, localize, restoreTriggerFocus, showExportError],
   );
 
   const handleSvgExport = useCallback(() => {
