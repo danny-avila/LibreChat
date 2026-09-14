@@ -160,9 +160,7 @@ describe('Mermaid Artifact expansion', () => {
     const artifactButton = await screen.findByRole('button', { expanded: true });
     expect(screen.queryByTestId('mermaid-dialog')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_mermaid_diagram')).toBeInTheDocument();
-    expect(artifactButton).toHaveAccessibleName(
-      expect.stringContaining('com_ui_click_to_close') as unknown as string,
-    );
+    expect(artifactButton).toHaveAccessibleName(/com_ui_click_to_close/);
     expect(artifactButton).toHaveAttribute('aria-controls', 'artifact-viewer');
     /* The mermaid trigger is an `ArtifactRow` like every other artifact in
      * the stream: the diagram glyph sits in the row's glyph slot, tinted
@@ -188,9 +186,7 @@ describe('Mermaid Artifact expansion', () => {
     expect(state.currentArtifactId).toBeNull();
     expect(state.visible).toBe(false);
     expect(artifactButton).not.toHaveClass('text-text-primary');
-    expect(artifactButton).toHaveAccessibleName(
-      expect.stringContaining('com_ui_artifact_click') as unknown as string,
-    );
+    expect(artifactButton).toHaveAccessibleName(/com_ui_artifact_click/);
 
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(state.currentArtifactId).toBe(artifact?.id);

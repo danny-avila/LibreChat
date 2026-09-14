@@ -4,7 +4,6 @@ import {
   getArtifactDownloadFilename,
   getOriginalArtifactFilename,
   isPreviewOnlyArtifact,
-  TOOL_ARTIFACT_TYPES,
 } from '~/utils/artifacts';
 import {
   useAttachmentLink,
@@ -16,7 +15,13 @@ import { useCodeState } from '~/Providers/EditorContext';
 export interface ArtifactDownload {
   /** Briefly true after a file actually reached the user, for the check-mark swap. */
   isDownloaded: boolean;
-  handleDownload: (event: React.MouseEvent<HTMLElement>) => Promise<void>;
+  /**
+   * Resolves to whether bytes actually reached the user: the attachment
+   * route swallows fetch errors, so a caller that announces completion
+   * (the mermaid export menu) has to gate it on this rather than on the
+   * promise resolving.
+   */
+  handleDownload: (event: React.MouseEvent<HTMLElement>) => Promise<boolean>;
 }
 
 /**
@@ -53,17 +58,15 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
       isLocallyStoredSource(download?.source));
   const hasEdits = currentCode != null && currentCode !== artifact.content;
   /**
-   * A mermaid artifact's content *is* its file — the panel renders the
-   * diagram straight from it — so fetching the original adds nothing and
-   * only introduces a way to fail: an expired code-output URL, a deleted
-   * file or a share that dropped the route ends in "Error downloading
-   * file" with the identical bytes sitting on screen. That is not the
-   * office case, where the content is a lossy HTML render of a binary and
-   * substituting it silently would be wrong.
+   * Mermaid is no exception, even though the panel renders the diagram
+   * straight from `content`: that content is the cached extraction, and
+   * `extractUtf8` keeps only the first 512 KB plus a truncation marker, so
+   * a stored `.mmd` above that cap would otherwise be saved corrupt. When
+   * the route is missing (a share that dropped it) or the panel holds
+   * edits, the content blob below is still the right bytes.
    */
-  const contentIsTheFile = artifact.type === TOOL_ARTIFACT_TYPES.MERMAID;
   const downloadOriginalFile =
-    hasUsableRoute && !contentIsTheFile && (isPreviewOnlyArtifact(artifact.type) || !hasEdits);
+    hasUsableRoute && (isPreviewOnlyArtifact(artifact.type) || !hasEdits);
   const { handleDownload: downloadAttachment } = useAttachmentLink({
     href: download?.filepath ?? '',
     filename: getOriginalArtifactFilename(artifact, fileName),
@@ -79,7 +82,7 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
   }, []);
 
   const handleDownload = useCallback(
-    async (event: React.MouseEvent<HTMLElement>) => {
+    async (event: React.MouseEvent<HTMLElement>): Promise<boolean> => {
       try {
         if (downloadOriginalFile) {
           // Only flag success when a file was actually delivered; the
@@ -89,11 +92,11 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
           if (downloaded) {
             markDownloaded();
           }
-          return;
+          return downloaded;
         }
         const content = currentCode ?? artifact.content;
         if (content == null) {
-          return;
+          return false;
         }
         const blob = new Blob([content], { type: 'text/plain' });
         const url = window.URL.createObjectURL(blob);
@@ -105,8 +108,10 @@ export default function useArtifactDownload(artifact: Artifact): ArtifactDownloa
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
         markDownloaded();
+        return true;
       } catch (error) {
         console.error('Download failed:', error);
+        return false;
       }
     },
     [artifact, currentCode, downloadAttachment, downloadOriginalFile, fileName, markDownloaded],

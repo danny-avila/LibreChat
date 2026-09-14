@@ -408,18 +408,17 @@ describe('DownloadArtifact', () => {
     expect(container.querySelector('[data-icon="download"]')).not.toBeNull();
   });
 
-  it('serializes a mermaid diagram from its own content, never the stored file', async () => {
-    /* The panel renders the diagram straight from `content`, so the stored
-     * `.mmd` holds the identical bytes. Fetching it can only add a way to
-     * fail — a dead code-output URL used to surface "Error downloading file"
-     * with the same source visible on screen. Unlike the office previews,
-     * this content is not a lossy derivative of the original. */
+  it('downloads an unedited mermaid diagram from its stored file, not the cached text', async () => {
+    /* `attachment.text` is the backend's cached extraction, and
+     * `extractUtf8` keeps only the first 512 KB of it, so a large stored
+     * `.mmd` would be saved truncated if the panel serialized `content`
+     * instead of fetching the file. */
     mockFileKey = 'diagram.mmd';
     const artifact = fileToArtifact({
       file_id: 'file',
       filename: 'flow.mmd',
-      text: 'graph TD\nA-->B',
-      filepath: '/api/files/code/output/expired/flow.mmd',
+      text: 'graph TD\nA-->B\n\n…[truncated]',
+      filepath: '/api/files/code/output/session/flow.mmd',
       source: FileSources.execute_code,
       user: 'user-1',
     });
@@ -428,11 +427,35 @@ describe('DownloadArtifact', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button'));
     });
+    expect(mockFileDownload).toHaveBeenCalledTimes(1);
+    expect(mockAttachmentOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: 'flow.mmd' }),
+    );
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-icon="circle-check-big"]')).not.toBeNull();
+  });
+
+  it('serializes an edited mermaid diagram from the panel content', async () => {
+    /* Edits live only in the editor, so the stored file is the wrong
+     * bytes; the blob keeps the real `.mmd` name because the content is
+     * the diagram itself rather than a preview of some other format. */
+    mockFileKey = 'diagram.mmd';
+    mockCurrentCode = 'graph TD\nA-->C';
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: 'flow.mmd',
+      text: 'graph TD\nA-->B',
+      filepath: '/api/files/code/output/session/flow.mmd',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
+    render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
     expect(mockFileDownload).not.toHaveBeenCalled();
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-    /* Identical bytes to the stored file, so no `.preview` marker. */
     expect(anchorClick.mock.instances[0].download).toBe('flow.mmd');
-    expect(container.querySelector('[data-icon="circle-check-big"]')).not.toBeNull();
   });
 
   it('serializes content as a blob for a non-file-backed (LLM-authored) artifact', async () => {

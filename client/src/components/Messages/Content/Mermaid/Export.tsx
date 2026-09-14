@@ -26,7 +26,9 @@ interface MermaidExportProps {
    * Unlike the rendered formats it does not need a preview, so it stays
    * available while the panel is on the code tab.
    */
-  onDownloadSource?: (event: React.MouseEvent<HTMLElement>) => void | Promise<void>;
+  onDownloadSource?: (
+    event: React.MouseEvent<HTMLElement>,
+  ) => boolean | void | Promise<boolean | void>;
 }
 
 function surfaceBackground(): string | undefined {
@@ -100,7 +102,7 @@ const MermaidExport = memo(function MermaidExport({
    * serving animation frames, and an export must not stall until refocus.
    */
   const runExport = useCallback(
-    (format: ExportFormat, task: () => void | Promise<void>) => {
+    (format: ExportFormat, task: () => boolean | void | Promise<boolean | void>) => {
       if (exporting != null) {
         return;
       }
@@ -109,7 +111,16 @@ const MermaidExport = memo(function MermaidExport({
       setTimeout(() => {
         void Promise.resolve()
           .then(task)
-          .then(() => setExportStatus(localize('com_ui_mermaid_export_complete')))
+          .then((delivered) => {
+            /* A task that reports `false` delivered nothing — the source
+             * download fetches the stored file and swallows an expired or
+             * denied route — so the menu must not announce completion. */
+            if (delivered === false) {
+              showExportError();
+              return;
+            }
+            setExportStatus(localize('com_ui_mermaid_export_complete'));
+          })
           .catch(showExportError)
           .finally(() => setExporting(null));
       }, 0);

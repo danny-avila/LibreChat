@@ -561,7 +561,10 @@ const ARTIFACT_ROW_KINDS: Record<string, ArtifactRowKind> = {
   [TOOL_ARTIFACT_TYPES.PLAIN_TEXT]: {
     lang: '',
     label: { key: 'com_ui_artifact_format_text' },
-    rendersPreview: false,
+    /* `useArtifactProps` routes plain text through `getMarkdownFiles` and
+     * `isCodeOnlyArtifact` covers only CODE, so the panel opens a `.txt`
+     * on its rendered preview tab — the row must say so. */
+    rendersPreview: true,
     fallbackGlyph: 'text',
   },
 };

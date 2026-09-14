@@ -556,13 +556,17 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   // engines (V8 ≥ 7.0) so equal-weight entries keep their input order.
   fileAttachments.sort(bySalience);
   textAttachments.sort(bySalience);
-  /* Sort only the typed (resolved) entries; pending placeholders bubble
-   * to the end of the row so resolved siblings catch the eye first. */
-  const resolvedPanel = panelRow.filter(
-    (e): e is { attachment: TAttachment; type: ToolArtifactType } => e.type != null,
+  /* Salience-sort the resolved entries among themselves, then put them
+   * back into the slots they arrived in. A pending placeholder keeps its
+   * row, so the deferred office render upgrades in place instead of
+   * sitting at the end of the row and jumping up once it resolves. */
+  const sortedResolved = panelRow
+    .filter((e): e is { attachment: TAttachment; type: ToolArtifactType } => e.type != null)
+    .sort(byEntrySalience);
+  let nextResolved = 0;
+  const orderedPanel = panelRow.map((entry) =>
+    entry.type == null ? entry : sortedResolved[nextResolved++],
   );
-  const pendingPanel = panelRow.filter((e) => e.type == null);
-  resolvedPanel.sort(byEntrySalience);
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 
@@ -585,23 +589,28 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       {groupedFileAttachments.length > 0 && (
         <FileAttachmentGroup attachments={groupedFileAttachments} />
       )}
-      {(resolvedPanel.length > 0 || pendingPanel.length > 0) && (
+      {orderedPanel.length > 0 && (
         <div className="my-2 flex w-full max-w-full flex-col" data-testid="artifact-row-group">
-          {resolvedPanel.map(({ attachment, type }, index) => (
-            <PanelArtifact
-              attachment={attachment}
-              type={type}
-              key={renderAttachmentKey('artifact', attachment, index)}
-            />
-          ))}
-          {pendingPanel.map(({ attachment }, index) =>
-            attachment.filepath ? (
+          {orderedPanel.map(({ attachment, type }, index) => {
+            if (type != null) {
+              return (
+                <PanelArtifact
+                  attachment={attachment}
+                  type={type}
+                  key={renderAttachmentKey('artifact', attachment, index)}
+                />
+              );
+            }
+            if (!attachment.filepath) {
+              return null;
+            }
+            return (
               <FileAttachment
                 attachment={attachment}
                 key={renderAttachmentKey('pending', attachment, index)}
               />
-            ) : null,
-          )}
+            );
+          })}
         </div>
       )}
       {mermaidArtifacts.length > 0 && (

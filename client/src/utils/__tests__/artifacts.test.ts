@@ -1143,7 +1143,10 @@ describe('artifactRowKind', () => {
     expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.CODE, title: 'a.py' }).rendersPreview).toBe(
       false,
     );
-    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.PLAIN_TEXT }).rendersPreview).toBe(false);
+    /* Plain text opens on the panel's rendered markdown preview
+     * (`useArtifactProps` -> `getMarkdownFiles`), so the row announces a
+     * preview rather than source. */
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.PLAIN_TEXT }).rendersPreview).toBe(true);
   });
 
   it('names each rendered format with its own label', () => {

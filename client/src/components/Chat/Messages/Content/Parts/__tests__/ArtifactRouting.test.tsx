@@ -850,6 +850,31 @@ describe('AttachmentGroup routing', () => {
     expect(group).not.toContainElement(screen.getByText('archive.zip'));
   });
 
+  it('keeps a pending placeholder in the row slot it arrived in', () => {
+    /* Sinking every pending entry to the end of the group made the
+     * placeholder jump the moment its preview resolved and joined the
+     * salience-sorted siblings. The slot it arrived in is the slot it
+     * upgrades in. */
+    const attachments = [
+      baseAttachment({
+        file_id: 'pending-1',
+        filename: 'data.xlsx',
+        status: 'pending',
+      } as Partial<TAttachment>),
+      baseAttachment({
+        file_id: 'resolved',
+        filename: 'index.html',
+        text: '<h1>hi</h1>',
+      } as Partial<TAttachment>),
+    ] as TAttachment[];
+
+    renderWith(<AttachmentGroup attachments={attachments} />);
+
+    const rows = Array.from(screen.getByTestId('artifact-row-group').children);
+    expect(rows.findIndex((row) => row.textContent?.includes('data.xlsx'))).toBe(0);
+    expect(rows.findIndex((row) => row.textContent?.includes('index.html'))).toBe(1);
+  });
+
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({

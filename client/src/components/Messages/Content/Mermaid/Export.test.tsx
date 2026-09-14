@@ -199,4 +199,45 @@ describe('MermaidExport', () => {
     await waitFor(() => expect(mockDownloadMermaidSvg).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(trigger).not.toHaveAttribute('aria-busy'));
   });
+
+  it('saves the diagram source from the menu before any preview SVG exists', async () => {
+    /* The source is the artifact's own content, so it is the one item that
+     * never waits on a render — and the only enabled item on the code tab. */
+    const user = userEvent.setup();
+    const onDownloadSource = jest.fn().mockResolvedValue(true);
+    render(<MermaidExport filename="flow.mmd" onDownloadSource={onDownloadSource} />);
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_export_mermaid' }));
+    const sourceItem = await screen.findByRole('menuitem', {
+      name: 'com_ui_export_mermaid_source',
+    });
+    expect(sourceItem).not.toHaveAttribute('aria-disabled', 'true');
+
+    await user.click(sourceItem);
+    await waitFor(() => expect(onDownloadSource).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_export_complete'),
+    );
+  });
+
+  it('reports a failure when the source download delivers nothing', async () => {
+    /* The stored file can be gone (expired code-output URL, deleted file):
+     * the download helper reports that as `false` instead of throwing, and
+     * announcing "export complete" over it would be a lie. */
+    const user = userEvent.setup();
+    const onDownloadSource = jest.fn().mockResolvedValue(false);
+    render(<MermaidExport filename="flow.mmd" onDownloadSource={onDownloadSource} />);
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_export_mermaid' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'com_ui_export_mermaid_source' }));
+
+    await waitFor(() => expect(onDownloadSource).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_export_failed'),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message: 'com_ui_mermaid_export_failed',
+    });
+  });
 });
