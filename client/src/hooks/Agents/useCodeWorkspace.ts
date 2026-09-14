@@ -8,6 +8,7 @@ import {
 import {
   AgentCapabilities,
   CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
@@ -132,6 +133,8 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
+  const supportsEnvironmentMoves =
+    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -342,6 +345,7 @@ export default function useCodeWorkspace(
   }
   let relocation: CodeWorkspaceRelocation | undefined;
   if (
+    supportsEnvironmentMoves &&
     locked &&
     state === 'choose' &&
     inferredMode === 'attached' &&

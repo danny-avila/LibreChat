@@ -1,5 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { CodeEnvironmentGenerationJob } from './http';
 import { CodeEnvironmentLimitError, CodeEnvironmentValidationError } from './environments';
 import { createCodeEnvironmentHttpHandlers } from './http';
 
@@ -1548,11 +1549,11 @@ describe('moving a sealed conversation code-environment decision', () => {
       codeEnvironmentMode: 'attached',
       codeWorkspaces: [mac],
     },
-    jobStatus,
+    job,
     fetchImpl = jest.fn().mockImplementation(async () => workerStatusResponse()),
   }: {
     stored?: StoredDecision;
-    jobStatus?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
+    job?: CodeEnvironmentGenerationJob;
     fetchImpl?: jest.Mock;
   } = {}) {
     const conversations = new Map<string, StoredDecision>([[stored.conversationId, stored]]);
@@ -1610,7 +1611,7 @@ describe('moving a sealed conversation code-environment decision', () => {
         get: async (user, conversationId) =>
           user === userId ? (conversations.get(conversationId) ?? null) : null,
         replaceDecision,
-        getGenerationJob: async () => (jobStatus == null ? null : { status: jobStatus }),
+        getGenerationJob: async () => job ?? null,
       },
     });
     const move = async (
@@ -1661,10 +1662,17 @@ describe('moving a sealed conversation code-environment decision', () => {
     });
   });
 
-  test.each(['running', 'requires_action'] as const)(
-    'refuses while a generation is %s, since it saves the decision it started with',
-    async (jobStatus) => {
-      const { move, replaceDecision, fetchImpl } = setup({ jobStatus });
+  test.each([
+    { name: 'running', job: { status: 'running' as const } },
+    { name: 'awaiting approval', job: { status: 'requires_action' as const } },
+    {
+      name: 'settled but still saving its response',
+      job: { status: 'complete' as const, metadata: { terminalPersistencePending: true } },
+    },
+  ])(
+    'refuses while a generation is $name, since it saves the decision it started with',
+    async ({ job }) => {
+      const { move, replaceDecision, fetchImpl } = setup({ job });
 
       const res = await move({ from: [mac], to: [vm] });
 
@@ -1674,8 +1682,10 @@ describe('moving a sealed conversation code-environment decision', () => {
     },
   );
 
-  test('moves once the previous generation has settled', async () => {
-    const { move } = setup({ jobStatus: 'complete' });
+  test('moves once the previous generation has settled and saved', async () => {
+    const { move } = setup({
+      job: { status: 'complete', metadata: { terminalPersistencePending: false } },
+    });
 
     expect((await move({ from: [mac], to: [vm] })).statusCode).toBe(200);
   });

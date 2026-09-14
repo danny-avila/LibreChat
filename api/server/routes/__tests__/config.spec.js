@@ -354,6 +354,17 @@ describe('GET /api/config', () => {
       expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
     });
 
+    it('advertises owner moves of a sealed code environment regardless of decision activation', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
+      expect(response.body.codeEnvironmentMoveVersion).toBe(1);
+    });
+
     it('advertises code environment decisions only after deployment-wide activation', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       process.env.CODE_ENVIRONMENT_DECISION_VERSION = '1';

@@ -476,6 +476,23 @@ describe('useCodeWorkspace', () => {
       }) as TConversation;
     const mac = { environmentId: 'mac', workspaceId: 'primary' };
 
+    beforeEach(() => {
+      mockStartupConfig.mockReturnValue({
+        codeEnvironmentDecisionVersion: 1,
+        codeEnvironmentMoveVersion: 1,
+      });
+    });
+
+    it('keeps the recovery status for an API that cannot move chats', () => {
+      mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+
+      expect(result.current.state).toBe('choose');
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.relocation).toBeUndefined();
+    });
+
     it('offers to move the chat instead of an unusable workspace choice', () => {
       mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
         id: 'mac',

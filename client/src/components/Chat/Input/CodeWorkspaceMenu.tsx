@@ -1,9 +1,15 @@
+import { useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Check, ChevronDown, Folder, FolderSync, FolderX } from 'lucide-react';
 import { TooltipAnchor, composerControlClasses, useToastContext } from '@librechat/client';
 import type { CodeWorkspaceSelection, TConversation } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
-import type { CodeWorkspaceRelocation, CodeWorkspaceResult, TranslationKeys } from '~/hooks';
+import type {
+  CodeWorkspaceEnvironmentResult,
+  CodeWorkspaceRelocation,
+  CodeWorkspaceResult,
+  TranslationKeys,
+} from '~/hooks';
 import {
   cn,
   codeWorkspaceErrorKeys,
@@ -60,6 +66,70 @@ function describeRelocation(
   };
 }
 
+/** A sole advertised workspace is the only valid pick, so it counts as chosen until changed. */
+function chosenWorkspaceId(
+  target: CodeWorkspaceEnvironmentResult,
+  choices: Record<string, string>,
+): string | undefined {
+  const choice = choices[target.environment.id];
+  if (choice != null && target.workspaces.some(({ id }) => id === choice)) return choice;
+  return target.workspaces.length === 1 ? target.workspaces[0].id : undefined;
+}
+
+function EnvironmentWorkspaces({
+  environment,
+  workspaces,
+  emptyLabel,
+  hideOnClick,
+  isSelected,
+  onSelect,
+}: {
+  environment: CodeWorkspaceEnvironmentResult['environment'];
+  workspaces: CodeWorkspaceEnvironmentResult['workspaces'];
+  emptyLabel: string;
+  hideOnClick: boolean;
+  isSelected: (workspaceId: string) => boolean;
+  onSelect: (selection: CodeWorkspaceSelection) => void;
+}) {
+  return (
+    <div>
+      <Ariakit.MenuHeading render={<div />} className={headingClasses}>
+        {environment.name ?? environment.id}
+      </Ariakit.MenuHeading>
+      {workspaces.length === 0 && (
+        <div className="px-2.5 py-2 text-sm text-text-secondary">{emptyLabel}</div>
+      )}
+      {workspaces.map((descriptor) => {
+        const selected = isSelected(descriptor.id);
+        return (
+          <Ariakit.MenuItemRadio
+            key={descriptor.id}
+            name={`codeWorkspace:${environment.id}`}
+            value={descriptor.id}
+            checked={selected}
+            hideOnClick={hideOnClick}
+            onChange={() => onSelect({ environmentId: environment.id, workspaceId: descriptor.id })}
+            className={menuItemClasses(selected)}
+          >
+            <Folder className="mt-0.5 size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            <div className="min-w-0 flex-1 text-left">
+              <div className="truncate text-sm font-medium text-text-primary">
+                {descriptor.name ?? descriptor.id}
+              </div>
+              {descriptor.name && (
+                <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
+              )}
+            </div>
+            {selected && (
+              <Check className="mt-0.5 size-4 shrink-0 text-text-primary" aria-hidden="true" />
+            )}
+          </Ariakit.MenuItemRadio>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CodeWorkspaceMenu({
   setConversation,
   workspace,
@@ -74,6 +144,7 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
   const moveMutation = useMoveConversationCodeEnvironmentMutation();
+  const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
 
   if (!workspace.required) return null;
 
@@ -105,28 +176,6 @@ export default function CodeWorkspaceMenu({
             codeEnvironmentMode: 'without_attached',
             codeWorkspaces: undefined,
           },
-    );
-  };
-  const moveToWorkspace = (target: CodeWorkspaceRelocation, selection: CodeWorkspaceSelection) => {
-    moveMutation.mutate(
-      {
-        conversationId: target.conversationId,
-        from: target.from,
-        to: [...target.retained, selection],
-      },
-      {
-        onSuccess: ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
-          workspace.rememberSelection(selection);
-          setConversation((current) =>
-            current?.conversationId === conversationId
-              ? { ...current, codeEnvironmentMode, codeWorkspaces }
-              : current,
-          );
-        },
-        onError: (error) => {
-          showToast({ message: localize(moveErrorKey(error)), status: 'error' });
-        },
-      },
     );
   };
   const onlyEnvironment = workspace.environments.length === 1 ? workspace.environments[0] : null;
@@ -174,6 +223,37 @@ export default function CodeWorkspaceMenu({
   }
 
   const relocationText = relocation == null ? null : describeRelocation(relocation, localize);
+  /** Every target needs a workspace, so the whole move lands in one validated write. */
+  const chosenTargets =
+    relocation?.targets.flatMap((target) => {
+      const workspaceId = chosenWorkspaceId(target, moveChoices);
+      return workspaceId == null ? [] : [{ environmentId: target.environment.id, workspaceId }];
+    }) ?? [];
+  const moveReady = relocation != null && chosenTargets.length === relocation.targets.length;
+  const confirmMove = () => {
+    if (relocation == null || !moveReady) return;
+    moveMutation.mutate(
+      {
+        conversationId: relocation.conversationId,
+        from: relocation.from,
+        to: [...relocation.retained, ...chosenTargets],
+      },
+      {
+        onSuccess: ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
+          chosenTargets.forEach((selection) => workspace.rememberSelection(selection));
+          setMoveChoices({});
+          setConversation((current) =>
+            current?.conversationId === conversationId
+              ? { ...current, codeEnvironmentMode, codeWorkspaces }
+              : current,
+          );
+        },
+        onError: (error) => {
+          showToast({ message: localize(moveErrorKey(error)), status: 'error' });
+        },
+      },
+    );
+  };
   const buttonDisabled = disabled || moveMutation.isLoading;
   const ButtonIcon = relocationText == null ? Icon : FolderSync;
 
@@ -228,41 +308,34 @@ export default function CodeWorkspaceMenu({
               {localize('com_ui_code_workspace_move')}
             </Ariakit.MenuHeading>
             <p className="px-2.5 pb-2 text-xs text-text-secondary">{relocationText.info}</p>
-            {relocation.targets.map(({ environment, workspaces }) => (
-              <div key={environment.id}>
-                <Ariakit.MenuHeading render={<div />} className={headingClasses}>
-                  {environment.name ?? environment.id}
-                </Ariakit.MenuHeading>
-                {workspaces.map((descriptor) => (
-                  <Ariakit.MenuItem
-                    key={descriptor.id}
-                    hideOnClick={true}
-                    onClick={() =>
-                      moveToWorkspace(relocation, {
-                        environmentId: environment.id,
-                        workspaceId: descriptor.id,
-                      })
-                    }
-                    className={menuItemClasses()}
-                  >
-                    <FolderSync
-                      className="mt-0.5 size-4 shrink-0 text-text-secondary"
-                      aria-hidden="true"
-                    />
-                    <div className="min-w-0 flex-1 text-left">
-                      <div className="truncate text-sm font-medium text-text-primary">
-                        {localize('com_ui_code_workspace_move_item', {
-                          0: descriptor.name ?? descriptor.id,
-                        })}
-                      </div>
-                      {descriptor.name && (
-                        <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
-                      )}
-                    </div>
-                  </Ariakit.MenuItem>
-                ))}
-              </div>
+            {relocation.targets.map((target) => (
+              <EnvironmentWorkspaces
+                key={target.environment.id}
+                environment={target.environment}
+                workspaces={target.workspaces}
+                emptyLabel={localize('com_ui_code_workspace_unavailable')}
+                hideOnClick={false}
+                isSelected={(workspaceId) => chosenWorkspaceId(target, moveChoices) === workspaceId}
+                onSelect={({ environmentId, workspaceId }) =>
+                  setMoveChoices((current) => ({ ...current, [environmentId]: workspaceId }))
+                }
+              />
             ))}
+            <Ariakit.MenuSeparator className="my-1 h-0 w-full border-t border-border-light" />
+            <Ariakit.MenuItem
+              disabled={!moveReady || moveMutation.isLoading}
+              hideOnClick={true}
+              onClick={confirmMove}
+              className={cn(
+                menuItemClasses(),
+                'items-center aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+              )}
+            >
+              <FolderSync className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-left text-sm font-medium text-text-primary">
+                {relocationText.label}
+              </span>
+            </Ariakit.MenuItem>
           </>
         ) : (
           <>
@@ -296,55 +369,17 @@ export default function CodeWorkspaceMenu({
               </Ariakit.MenuItemRadio>
             )}
             {workspace.environments.map(({ environment, state, workspaces, selected }) => (
-              <div key={environment.id}>
-                <Ariakit.MenuHeading render={<div />} className={headingClasses}>
-                  {environment.name ?? environment.id}
-                </Ariakit.MenuHeading>
-                {workspaces.length === 0 && (
-                  <div className="px-2.5 py-2 text-sm text-text-secondary">
-                    {localize(stateLabels[state] ?? 'com_ui_code_workspace_unavailable')}
-                  </div>
-                )}
-                {workspaces.map((descriptor) => {
-                  const isSelected =
-                    workspace.mode === 'attached' && descriptor.id === selected?.workspaceId;
-                  return (
-                    <Ariakit.MenuItemRadio
-                      key={descriptor.id}
-                      name={`codeWorkspace:${environment.id}`}
-                      value={descriptor.id}
-                      checked={isSelected}
-                      hideOnClick={true}
-                      onChange={() =>
-                        selectWorkspace({
-                          environmentId: environment.id,
-                          workspaceId: descriptor.id,
-                        })
-                      }
-                      className={menuItemClasses(isSelected)}
-                    >
-                      <Folder
-                        className="mt-0.5 size-4 shrink-0 text-text-secondary"
-                        aria-hidden="true"
-                      />
-                      <div className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-sm font-medium text-text-primary">
-                          {descriptor.name ?? descriptor.id}
-                        </div>
-                        {descriptor.name && (
-                          <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <Check
-                          className="mt-0.5 size-4 shrink-0 text-text-primary"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </Ariakit.MenuItemRadio>
-                  );
-                })}
-              </div>
+              <EnvironmentWorkspaces
+                key={environment.id}
+                environment={environment}
+                workspaces={workspaces}
+                emptyLabel={localize(stateLabels[state] ?? 'com_ui_code_workspace_unavailable')}
+                hideOnClick={true}
+                isSelected={(workspaceId) =>
+                  workspace.mode === 'attached' && workspaceId === selected?.workspaceId
+                }
+                onSelect={selectWorkspace}
+              />
             ))}
           </>
         )}

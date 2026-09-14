@@ -12,6 +12,7 @@ export { default as useAgentToolPermissions } from './useAgentToolPermissions';
 export { default as useCodeApprovalMode } from './useCodeApprovalMode';
 export { default as useCodeWorkspace } from './useCodeWorkspace';
 export type {
+  CodeWorkspaceEnvironmentResult,
   CodeWorkspaceRelocation,
   CodeWorkspaceResult,
   CodeWorkspaceState,

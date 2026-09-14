@@ -90,8 +90,14 @@ export interface CodeEnvironmentConversationDeps {
     expected: Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
     codeWorkspaces: CodeWorkspaceSelection[];
   }) => Promise<StoredConversationDecision | null>;
-  getGenerationJob: (streamId: string) => Promise<{ status: JobStatus } | null | undefined>;
+  getGenerationJob: (streamId: string) => Promise<CodeEnvironmentGenerationJob | null | undefined>;
 }
+
+/** The generation state a move reads to tell whether a run can still save its own decision. */
+export type CodeEnvironmentGenerationJob = {
+  status: JobStatus;
+  metadata?: { terminalPersistencePending?: boolean };
+};
 
 export interface CodeEnvironmentHttpDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
@@ -209,8 +215,14 @@ function selectWorkerTarget(policy: WorkerPolicy, environmentId: string): Worker
   return controlPlane == null ? undefined : { controlPlane, workerId };
 }
 
-function isGenerationActive(job: { status: JobStatus } | null | undefined): boolean {
-  return job?.status === 'running' || job?.status === 'requires_action';
+/** A terminal claim marks the job settled before its response save lands, so that save still
+ *  writes the decision the run started with until `terminalPersistencePending` clears. */
+function isGenerationActive(job: CodeEnvironmentGenerationJob | null | undefined): boolean {
+  return (
+    job?.status === 'running' ||
+    job?.status === 'requires_action' ||
+    job?.metadata?.terminalPersistencePending === true
+  );
 }
 
 function selectionErrorResponse(error: CodeWorkspaceSelectionError, res: Response): Response {

@@ -229,37 +229,42 @@ describe('CodeWorkspaceMenu', () => {
     const mac = { environmentId: 'mac', workspaceId: 'primary' };
     const moved = { environmentId: environment.id, workspaceId: 'project-a' };
     const sealed = { ...conversation, conversationId: 'existing' } as TConversation;
+    const teamVm = {
+      id: 'team-vm',
+      name: 'Team VM',
+      type: 'attached' as const,
+      baseURL: 'https://team.example.com',
+    };
 
-    const relocatable = (rememberSelection = jest.fn()) =>
+    type Target = NonNullable<CodeWorkspaceResult['relocation']>['targets'][number];
+    const target = (
+      targetEnvironment: Target['environment'],
+      workspaces: Target['workspaces'],
+    ): Target => ({
+      environment: targetEnvironment,
+      state: 'choose',
+      workspaces,
+      selected: undefined,
+    });
+
+    const relocatable = (targets: Target[], rememberSelection = jest.fn()) =>
       workspace({
         locked: true,
         canSubmit: false,
         state: 'relocatable',
         selections: undefined,
         rememberSelection,
-        environments: [
-          {
-            environment,
-            state: 'choose',
-            workspaces: [{ id: 'project-a', name: 'Project A' }],
-            selected: undefined,
-          },
-        ],
+        environments: targets,
         relocation: {
           conversationId: 'existing',
           from: [mac],
           previous: [{ id: 'mac', name: 'Danny Mac' }],
           retained: [],
-          targets: [
-            {
-              environment,
-              state: 'choose',
-              workspaces: [{ id: 'project-a', name: 'Project A' }],
-              selected: undefined,
-            },
-          ],
+          targets,
         },
       });
+
+    const confirmItem = () => screen.findByRole('menuitem', { name: /com_ui_code_workspace_move/ });
 
     beforeEach(() => {
       mockShowToast.mockReset();
@@ -269,7 +274,7 @@ describe('CodeWorkspaceMenu', () => {
       jest.restoreAllMocks();
     });
 
-    test('moves the chat onto the workspace its agent now uses', async () => {
+    test('moves the chat onto the sole workspace its agent now uses', async () => {
       const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
         conversationId: 'existing',
         codeEnvironmentMode: 'attached',
@@ -280,18 +285,24 @@ describe('CodeWorkspaceMenu', () => {
       renderMenu(
         <CodeWorkspaceMenu
           setConversation={setConversation}
-          workspace={relocatable(rememberSelection)}
+          workspace={relocatable(
+            [target(environment, [{ id: 'project-a', name: 'Project A' }])],
+            rememberSelection,
+          )}
           disabled={false}
         />,
       );
 
       expect(screen.queryByTestId('code-workspace-locked-status')).not.toBeInTheDocument();
       await userEvent.click(screen.getByTestId('code-workspace-move'));
-      await userEvent.click(
-        await screen.findByRole('menuitem', { name: /com_ui_code_workspace_move_item/ }),
+      expect(screen.getByRole('menuitemradio', { name: /Project A/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
       );
+      await userEvent.click(await confirmItem());
 
       await waitFor(() => expect(setConversation).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledTimes(1);
       expect(moveSpy).toHaveBeenCalledWith({
         conversationId: 'existing',
         from: [mac],
@@ -306,6 +317,58 @@ describe('CodeWorkspaceMenu', () => {
       });
       expect(update(conversation)).toBe(conversation);
       expect(mockShowToast).not.toHaveBeenCalled();
+    });
+
+    test('moves every new environment in one request once each has a workspace', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
+        conversationId: 'existing',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [],
+      });
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={jest.fn()}
+          workspace={relocatable([
+            target(environment, [{ id: 'project-a', name: 'Project A' }]),
+            target(teamVm, [
+              { id: 'shared', name: 'Shared' },
+              { id: 'scratch', name: 'Scratch' },
+            ]),
+          ])}
+          disabled={false}
+        />,
+      );
+
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      expect(await confirmItem()).toHaveAttribute('aria-disabled', 'true');
+      await userEvent.click(screen.getByRole('menuitemradio', { name: /Scratch/ }));
+      await userEvent.click(await confirmItem());
+
+      await waitFor(() => expect(moveSpy).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledWith({
+        conversationId: 'existing',
+        from: [mac],
+        to: [moved, { environmentId: 'team-vm', workspaceId: 'scratch' }],
+      });
+    });
+
+    test('explains a new machine that advertises no workspace and cannot be moved to', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment');
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={jest.fn()}
+          workspace={relocatable([target(environment, [])])}
+          disabled={false}
+        />,
+      );
+
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+
+      expect(screen.getByText('com_ui_code_workspace_unavailable')).toBeInTheDocument();
+      const confirm = await confirmItem();
+      expect(confirm).toHaveAttribute('aria-disabled', 'true');
+      await userEvent.setup({ pointerEventsCheck: 0 }).click(confirm);
+      expect(moveSpy).not.toHaveBeenCalled();
     });
 
     test.each([
@@ -335,15 +398,13 @@ describe('CodeWorkspaceMenu', () => {
       renderMenu(
         <CodeWorkspaceMenu
           setConversation={setConversation}
-          workspace={relocatable()}
+          workspace={relocatable([target(environment, [{ id: 'project-a', name: 'Project A' }])])}
           disabled={false}
         />,
       );
 
       await userEvent.click(screen.getByTestId('code-workspace-move'));
-      await userEvent.click(
-        await screen.findByRole('menuitem', { name: /com_ui_code_workspace_move_item/ }),
-      );
+      await userEvent.click(await confirmItem());
 
       await waitFor(() =>
         expect(mockShowToast).toHaveBeenCalledWith({ message: key, status: 'error' }),

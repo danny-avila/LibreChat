@@ -3,6 +3,8 @@ export const CODE_WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const CODE_WORKSPACE_MAX_COUNT = 32;
 /** API/client protocol for immutable conversation-owned environment decisions. */
 export const CODE_ENVIRONMENT_DECISION_VERSION = 1 as const;
+/** API/client protocol for an owner's explicit move of a sealed environment decision. */
+export const CODE_ENVIRONMENT_MOVE_VERSION = 1 as const;
 export const CODE_WORKSPACE_OPERATIONS = [
   'read_file',
   'search_text',
