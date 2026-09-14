@@ -1,8 +1,10 @@
 import React, { memo, useCallback, useId, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { FileCode2, FileImage, ImageDown, LoaderCircle } from 'lucide-react';
 import { DropdownPopup, TooltipAnchor, useToastContext } from '@librechat/client';
+import { FileCode2, FileImage, ImageDown, LoaderCircle, Workflow } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { MermaidDimensions } from '~/utils/diagram/export';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { MenuItemProps } from '~/common';
 import { downloadMermaidPng, downloadMermaidSvg } from '~/utils/diagram/export';
 import { useLocalize } from '~/hooks';
@@ -16,6 +18,15 @@ interface MermaidExportProps {
   /** Fullscreen re-roots the panel, so a menu portalled to the body would be
    *  rendered outside the visible fullscreen element. */
   portalElement?: HTMLElement | null;
+  /**
+   * Saves the diagram's own source. Supplied only by the artifacts panel,
+   * where this menu replaces the generic download button rather than sitting
+   * next to it — one control that offers every form the diagram comes in,
+   * instead of two buttons whose difference is invisible until you press one.
+   * Unlike the rendered formats it does not need a preview, so it stays
+   * available while the panel is on the code tab.
+   */
+  onDownloadSource?: (event: React.MouseEvent<HTMLElement>) => void | Promise<void>;
 }
 
 function surfaceBackground(): string | undefined {
@@ -31,25 +42,41 @@ function surfaceBackground(): string | undefined {
   return value.startsWith('var(') ? undefined : value;
 }
 
+type ExportFormat = 'svg' | 'png' | 'source';
+
+/** Rendered formats, in menu order. Each needs the preview's SVG. */
+const EXPORT_FORMATS = [
+  { format: 'svg', labelKey: 'com_ui_export_svg', Icon: FileCode2 },
+  { format: 'png', labelKey: 'com_ui_export_png', Icon: FileImage },
+] as const satisfies ReadonlyArray<{
+  format: Exclude<ExportFormat, 'source'>;
+  labelKey: TranslationKeys;
+  Icon: LucideIcon;
+}>;
+
+const EXPORTING_KEYS: Record<ExportFormat, TranslationKeys> = {
+  svg: 'com_ui_mermaid_exporting_svg',
+  png: 'com_ui_mermaid_exporting_png',
+  source: 'com_ui_mermaid_exporting_source',
+};
+
 const MermaidExport = memo(function MermaidExport({
   filename,
   svg,
   dimensions,
   buttonClassName,
   portalElement,
+  onDownloadSource,
 }: MermaidExportProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [isExportingPng, setIsExportingPng] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [exportStatus, setExportStatus] = useState('');
-  const isBusy = isExportingPng;
-  let liveMessage = exportStatus;
-  if (isExportingPng) {
-    liveMessage = localize('com_ui_mermaid_exporting_png');
-  }
+  const isBusy = exporting != null;
+  const liveMessage = exporting == null ? exportStatus : localize(EXPORTING_KEYS[exporting]);
 
   const showExportError = useCallback(() => {
     setExportStatus(localize('com_ui_mermaid_export_failed'));
@@ -60,62 +87,103 @@ const MermaidExport = memo(function MermaidExport({
     requestAnimationFrame(() => triggerRef.current?.focus());
   }, []);
 
+  /**
+   * Every menu action runs through here so the menu can show the in-flight
+   * one as its own loading row rather than growing an extra status row
+   * beside options that still look idle.
+   *
+   * The work starts a macrotask later, after the browser has painted the
+   * loading state. That matters most for SVG, whose export is synchronous:
+   * calling it inline blocks the frame that would have shown its spinner, so
+   * a large diagram froze the open menu with both options looking idle. A
+   * timer rather than `requestAnimationFrame` because a background tab stops
+   * serving animation frames, and an export must not stall until refocus.
+   */
+  const runExport = useCallback(
+    (format: ExportFormat, task: () => void | Promise<void>) => {
+      if (exporting != null) {
+        return;
+      }
+      setExporting(format);
+      setExportStatus('');
+      setTimeout(() => {
+        void Promise.resolve()
+          .then(task)
+          .then(() => setExportStatus(localize('com_ui_mermaid_export_complete')))
+          .catch(showExportError)
+          .finally(() => setExporting(null));
+      }, 0);
+      restoreTriggerFocus();
+    },
+    [exporting, localize, restoreTriggerFocus, showExportError],
+  );
+
   const handleSvgExport = useCallback(() => {
     if (svg == null) {
       return;
     }
-
-    try {
-      downloadMermaidSvg(svg, filename, surfaceBackground());
-      setExportStatus(localize('com_ui_mermaid_export_complete'));
-    } catch {
-      showExportError();
-    } finally {
-      restoreTriggerFocus();
-    }
-  }, [filename, localize, restoreTriggerFocus, showExportError, svg]);
+    runExport('svg', () => downloadMermaidSvg(svg, filename, surfaceBackground()));
+  }, [filename, runExport, svg]);
 
   const handlePngExport = useCallback(() => {
-    if (svg == null || isExportingPng) {
+    if (svg == null) {
       return;
     }
+    runExport('png', () => downloadMermaidPng(svg, filename, dimensions, surfaceBackground()));
+  }, [dimensions, filename, runExport, svg]);
 
-    setIsExportingPng(true);
-    setExportStatus('');
-    void downloadMermaidPng(svg, filename, dimensions, surfaceBackground())
-      .then(() => setExportStatus(localize('com_ui_mermaid_export_complete')))
-      .catch(showExportError)
-      .finally(() => setIsExportingPng(false));
-    restoreTriggerFocus();
-  }, [dimensions, filename, isExportingPng, localize, restoreTriggerFocus, showExportError, svg]);
+  const handleSourceExport = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => {
+      if (onDownloadSource == null) {
+        return;
+      }
+      runExport('source', () => onDownloadSource(event));
+    },
+    [onDownloadSource, runExport],
+  );
 
+  /**
+   * The visible label collapses to a generic "Loading…" so the row reads as
+   * the control the user just pressed; the format-specific phrase stays on
+   * `ariaLabel`, which is what a screen reader announces, so "which export"
+   * is not lost to the swap.
+   */
   const dropdownItems = useMemo<MenuItemProps[]>(() => {
-    const statusItems: MenuItemProps[] = [];
-    if (isBusy) {
-      statusItems.push({
-        label: liveMessage,
-        disabled: true,
-        icon: <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />,
-        className: 'text-text-secondary',
+    const loadingRow = (format: ExportFormat) => ({
+      label: localize('com_ui_loading'),
+      ariaLabel: localize(EXPORTING_KEYS[format]),
+      icon: <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />,
+      className: 'text-text-secondary',
+    });
+    const items: MenuItemProps[] = EXPORT_FORMATS.map(({ format, labelKey, Icon }) => ({
+      label: localize(labelKey),
+      icon: <Icon className="size-4 text-text-secondary" />,
+      ...(exporting === format ? loadingRow(format) : {}),
+      disabled: svg == null || isBusy,
+      onClick: format === 'svg' ? handleSvgExport : handlePngExport,
+    }));
+    if (onDownloadSource != null) {
+      items.push({
+        label: localize('com_ui_export_mermaid_source'),
+        icon: <Workflow className="size-4 text-text-secondary" />,
+        ...(exporting === 'source' ? loadingRow('source') : {}),
+        /* The source is the artifact's own content, so unlike SVG and PNG it
+         * does not wait on a rendered preview. */
+        disabled: isBusy,
+        onClick: handleSourceExport,
       });
     }
-
-    return [
-      ...statusItems,
-      {
-        label: localize('com_ui_export_svg'),
-        icon: <FileCode2 className="size-4 text-text-secondary" />,
-        disabled: svg == null || isExportingPng,
-        onClick: handleSvgExport,
-      },
-      {
-        label: localize('com_ui_export_png'),
-        icon: <FileImage className="size-4 text-text-secondary" />,
-        disabled: svg == null || isExportingPng,
-        onClick: handlePngExport,
-      },
-    ];
-  }, [handlePngExport, handleSvgExport, isBusy, isExportingPng, liveMessage, localize, svg]);
+    return items;
+  }, [
+    exporting,
+    handlePngExport,
+    handleSourceExport,
+    handleSvgExport,
+    isBusy,
+    localize,
+    onDownloadSource,
+    svg,
+  ]);
 
   return (
     <>

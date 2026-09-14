@@ -160,12 +160,16 @@ describe('Mermaid Artifact expansion', () => {
     const artifactButton = await screen.findByRole('button', { expanded: true });
     expect(screen.queryByTestId('mermaid-dialog')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_mermaid_diagram')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_close_artifact')).toBeInTheDocument();
+    expect(artifactButton).toHaveAccessibleName(
+      expect.stringContaining('com_ui_click_to_close') as unknown as string,
+    );
     expect(artifactButton).toHaveAttribute('aria-controls', 'artifact-viewer');
-    expect(artifactButton).toHaveClass('w-fit', 'max-w-full', 'bg-surface-hover');
+    /* The mermaid trigger is an `ArtifactRow` like every other artifact in
+     * the stream: the diagram glyph sits in the row's glyph slot, tinted
+     * with the `status-info` accent that marks a rendered preview. */
+    expect(artifactButton).toHaveClass('text-text-primary');
     expect(container.querySelector('.lucide-workflow')).not.toBeNull();
     expect(container.querySelector('.lucide-workflow')?.parentElement).toHaveClass(
-      'bg-status-info-subtle',
       'text-status-info',
     );
     await waitFor(() => expect(artifactButton).toHaveFocus());
@@ -183,8 +187,10 @@ describe('Mermaid Artifact expansion', () => {
     fireEvent.click(artifactButton);
     expect(state.currentArtifactId).toBeNull();
     expect(state.visible).toBe(false);
-    expect(artifactButton).toHaveClass('bg-surface-tertiary');
-    expect(screen.getByText('com_ui_open_artifact')).toBeInTheDocument();
+    expect(artifactButton).not.toHaveClass('text-text-primary');
+    expect(artifactButton).toHaveAccessibleName(
+      expect.stringContaining('com_ui_artifact_click') as unknown as string,
+    );
 
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(state.currentArtifactId).toBe(artifact?.id);

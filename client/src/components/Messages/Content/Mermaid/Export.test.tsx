@@ -1,6 +1,6 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { downloadMermaidPng, downloadMermaidSvg } from '~/utils/diagram/export';
 import MermaidExport from './Export';
 
@@ -70,20 +70,24 @@ describe('MermaidExport', () => {
     await user.click(trigger);
     expect(await screen.findByRole('menu')).toHaveClass('popover-ui');
     await user.click(await screen.findByRole('menuitem', { name: 'com_ui_export_svg' }));
-    expect(mockDownloadMermaidSvg).toHaveBeenCalledWith(
-      '<svg viewBox="0 0 400 200" />',
-      'flow.mmd',
-      'rgb(23 23 23)',
+    await waitFor(() =>
+      expect(mockDownloadMermaidSvg).toHaveBeenCalledWith(
+        '<svg viewBox="0 0 400 200" />',
+        'flow.mmd',
+        'rgb(23 23 23)',
+      ),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
 
     await user.click(trigger);
     await user.click(await screen.findByRole('menuitem', { name: 'com_ui_export_png' }));
-    expect(mockDownloadMermaidPng).toHaveBeenCalledWith(
-      '<svg viewBox="0 0 400 200" />',
-      'flow.mmd',
-      { width: 400, height: 200 },
-      'rgb(23 23 23)',
+    await waitFor(() =>
+      expect(mockDownloadMermaidPng).toHaveBeenCalledWith(
+        '<svg viewBox="0 0 400 200" />',
+        'flow.mmd',
+        { width: 400, height: 200 },
+        'rgb(23 23 23)',
+      ),
     );
   });
 
@@ -115,18 +119,24 @@ describe('MermaidExport', () => {
 
     await user.keyboard('{Enter}');
     const svgItem = await screen.findByRole('menuitem', { name: 'com_ui_export_svg' });
-    expect(svgItem).toHaveFocus();
+    /* Opening from the keyboard focuses the menu itself; the items are reached
+     * by the arrow keys, so drive the export the way a keyboard user does
+     * rather than asserting the first item is focused on open. */
+    await user.keyboard('{ArrowDown}');
+    await waitFor(() => expect(svgItem).toHaveFocus());
     await user.keyboard('{Enter}');
 
-    expect(mockDownloadMermaidSvg).toHaveBeenCalledWith(
-      '<svg viewBox="0 0 400 200" />',
-      'flow.mmd',
-      'rgb(23 23 23)',
+    await waitFor(() =>
+      expect(mockDownloadMermaidSvg).toHaveBeenCalledWith(
+        '<svg viewBox="0 0 400 200" />',
+        'flow.mmd',
+        'rgb(23 23 23)',
+      ),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it('announces PNG generation and prevents duplicate export actions', async () => {
+  it('turns the pressed format into its own loading row and blocks the other', async () => {
     const user = userEvent.setup();
     let finishExport: (() => void) | undefined;
     mockDownloadMermaidPng.mockImplementationOnce(
@@ -144,17 +154,49 @@ describe('MermaidExport', () => {
     expect(trigger).toHaveAttribute('aria-busy', 'true');
     expect(trigger.querySelector('.lucide-loader-circle')).not.toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_exporting_png');
+    await waitFor(() => expect(mockDownloadMermaidPng).toHaveBeenCalled());
 
     await user.click(trigger);
-    expect(
-      within(screen.getByRole('menu')).getByText('com_ui_mermaid_exporting_png'),
-    ).toBeVisible();
-    expect(screen.getByRole('menuitem', { name: 'com_ui_export_png' })).toHaveAttribute(
+    const menu = within(screen.getByRole('menu'));
+    /* The menu keeps exactly its two format rows: the pressed one becomes the
+     * loading row in place, rather than a third status row appearing beside
+     * two options that still look idle. */
+    expect(menu.getAllByRole('menuitem')).toHaveLength(2);
+    const running = menu.getByRole('menuitem', { name: 'com_ui_mermaid_exporting_png' });
+    expect(running).toHaveTextContent('com_ui_loading');
+    expect(running.querySelector('.lucide-loader-circle')).not.toBeNull();
+    expect(running).toHaveAttribute('aria-disabled', 'true');
+    expect(menu.queryByText('com_ui_export_png')).not.toBeInTheDocument();
+    /* The other format cannot be started on top of the running one. */
+    expect(menu.getByRole('menuitem', { name: 'com_ui_export_svg' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
 
     await act(async () => finishExport?.());
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_mermaid_export_complete');
+    /* The menu is still open from the click above — the rows recover in place. */
+    expect(menu.getByRole('menuitem', { name: 'com_ui_export_png' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('defers the synchronous SVG export until its loading row can paint', async () => {
+    /* `downloadMermaidSvg` blocks the frame it runs in, so calling it straight
+     * out of the click handler would freeze the open menu before the spinner
+     * it is meant to show ever reached the screen. `fireEvent` is synchronous,
+     * so nothing has had a chance to flush the deferral yet. */
+    const user = userEvent.setup();
+    render(<MermaidExport svg={'<svg viewBox="0 0 400 200" />'} filename="flow.mmd" />);
+
+    const trigger = screen.getByRole('button', { name: 'com_ui_export_mermaid' });
+    await user.click(trigger);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_export_svg' }));
+
+    expect(mockDownloadMermaidSvg).not.toHaveBeenCalled();
+    expect(trigger).toHaveAttribute('aria-busy', 'true');
+    await waitFor(() => expect(mockDownloadMermaidSvg).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(trigger).not.toHaveAttribute('aria-busy'));
   });
 });

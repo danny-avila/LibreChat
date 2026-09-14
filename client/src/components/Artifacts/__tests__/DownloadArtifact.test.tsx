@@ -1,4 +1,5 @@
 import React from 'react';
+import { FileSources } from 'librechat-data-provider';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { Artifact } from '~/common';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
@@ -25,6 +26,8 @@ jest.mock('~/Providers/EditorContext', () => ({
   useCodeState: () => ({ currentCode: mockCurrentCode }),
 }));
 
+const mockShowToast = jest.fn();
+
 /* MorphIcon renders a single morphing <svg> with no per-icon class, so map
  * the lucide icon data it was handed back to a stable name instead. */
 jest.mock('@librechat/client', () => {
@@ -32,6 +35,7 @@ jest.mock('@librechat/client', () => {
   const { Download, CircleCheckBig } = jest.requireActual('lucide');
   return {
     ...jest.requireActual('@librechat/client'),
+    useToastContext: () => ({ showToast: mockShowToast }),
     MorphIcon: createMorphIconMock([
       [Download, 'download'],
       [CircleCheckBig, 'circle-check-big'],
@@ -110,6 +114,7 @@ describe('DownloadArtifact', () => {
     mockFileKey = 'index.html';
     mockCurrentCode = undefined;
     mockFileDownload.mockReset();
+    mockShowToast.mockReset();
     // The attachment helper resolves to `true` when a file was delivered.
     mockFileDownload.mockResolvedValue(true);
     createObjectURL = jest.fn(() => 'blob:mock');
@@ -195,7 +200,6 @@ describe('DownloadArtifact', () => {
     ['page.htm', 'index.html'],
     ['README.markdown', 'content.md'],
     ['README.mdx', 'content.md'],
-    ['diagram.mermaid', 'diagram.mmd'],
   ])('downloads file-backed raw content as %s', async (filename, fileKey) => {
     mockFileKey = fileKey;
     const artifact = fileToArtifact({ file_id: 'file', filename, text: 'Raw content' });
@@ -402,6 +406,33 @@ describe('DownloadArtifact', () => {
     expect(mockFileDownload).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-icon="circle-check-big"]')).toBeNull();
     expect(container.querySelector('[data-icon="download"]')).not.toBeNull();
+  });
+
+  it('serializes a mermaid diagram from its own content, never the stored file', async () => {
+    /* The panel renders the diagram straight from `content`, so the stored
+     * `.mmd` holds the identical bytes. Fetching it can only add a way to
+     * fail — a dead code-output URL used to surface "Error downloading file"
+     * with the same source visible on screen. Unlike the office previews,
+     * this content is not a lossy derivative of the original. */
+    mockFileKey = 'diagram.mmd';
+    const artifact = fileToArtifact({
+      file_id: 'file',
+      filename: 'flow.mmd',
+      text: 'graph TD\nA-->B',
+      filepath: '/api/files/code/output/expired/flow.mmd',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
+    expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.MERMAID);
+    const { container } = render(<DownloadArtifact artifact={artifact!} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(mockFileDownload).not.toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    /* Identical bytes to the stored file, so no `.preview` marker. */
+    expect(anchorClick.mock.instances[0].download).toBe('flow.mmd');
+    expect(container.querySelector('[data-icon="circle-check-big"]')).not.toBeNull();
   });
 
   it('serializes content as a blob for a non-file-backed (LLM-authored) artifact', async () => {

@@ -4,8 +4,9 @@ import { useLocation } from 'react-router-dom';
 import { Button, Spinner } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { ProcessedMermaidSvg } from '~/utils/diagram/export';
+import ArtifactRow from '~/components/Chat/Messages/Content/Parts/ArtifactRow';
 import { MERMAID_ARTIFACT_TYPE, type Artifact } from '~/common/artifacts';
-import MermaidArtifactCard from './MermaidArtifactCard';
+import { artifactRowKind } from '~/utils/artifacts';
 import useSvgProcessing from './useSvgProcessing';
 import { useMessageContext } from '~/Providers';
 import useMermaidZoom from './useMermaidZoom';
@@ -138,12 +139,13 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
 
   if (canOpenArtifact && isArtifactCard) {
     return (
-      <MermaidArtifactCard
+      <ArtifactRow
         ref={artifactButtonRef}
         artifactId={artifact.id}
         title={artifact.title ?? defaultTitle}
+        kind={artifactRowKind(artifact)}
         isSelected={isSelected}
-        onClick={handleArtifactClick}
+        onOpen={handleArtifactClick}
       />
     );
   }

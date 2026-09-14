@@ -1,6 +1,7 @@
 import { FileSources } from 'librechat-data-provider';
 import type { ToolArtifactType } from '../artifacts';
 import {
+  artifactRowKind,
   buildSandpackOptions,
   getArtifactDownloadFilename,
   detectArtifactTypeFromFile,
@@ -1009,8 +1010,6 @@ describe('getArtifactDownloadFilename', () => {
     ['README.markdown', 'content.md'],
     ['README.mdx', 'content.md'],
     ['README.md', 'content.md'],
-    ['flow.mermaid', 'diagram.mmd'],
-    ['flow.mmd', 'diagram.mmd'],
     ['script.pyi', 'content.md'],
     ['Dockerfile', 'content.md'],
     ['Makefile', 'content.md'],
@@ -1023,6 +1022,17 @@ describe('getArtifactDownloadFilename', () => {
       dot > 0 ? `${filename.slice(0, dot)}.preview${filename.slice(dot)}` : `${filename}.preview`;
     expect(getArtifactDownloadFilename(artifact!, fileKey)).toBe(expected);
   });
+
+  it.each(['flow.mermaid', 'flow.mmd'])(
+    'keeps a mermaid diagram under its own name rather than marking it a preview: %s',
+    (filename) => {
+      /* The panel renders, edits and downloads exactly the bytes the stored
+       * `.mmd` holds, so there is no cached derivative to warn about. */
+      const artifact = fileToArtifact({ file_id: 'file', filename, text: 'graph TD\nA-->B' });
+      expect(artifact?.type).toBe(TOOL_ARTIFACT_TYPES.MERMAID);
+      expect(getArtifactDownloadFilename(artifact!, 'diagram.mmd')).toBe(filename);
+    },
+  );
 
   it.each(['untitled', 'Generated artifact'])(
     'preserves the real attachment filename %s',
@@ -1121,5 +1131,68 @@ describe('getArtifactDownloadFilename', () => {
         'content.md',
       ),
     ).toBe(`${'a'.repeat(97)}.preview.py`);
+  });
+});
+
+describe('artifactRowKind', () => {
+  it('marks the rendered buckets as previews and code as source', () => {
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.HTML }).rendersPreview).toBe(true);
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.REACT }).rendersPreview).toBe(true);
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.MARKDOWN }).rendersPreview).toBe(true);
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.SPREADSHEET }).rendersPreview).toBe(true);
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.CODE, title: 'a.py' }).rendersPreview).toBe(
+      false,
+    );
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.PLAIN_TEXT }).rendersPreview).toBe(false);
+  });
+
+  it('names each rendered format with its own label', () => {
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.HTML }).label).toEqual({
+      key: 'com_ui_artifact_format_html',
+    });
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.PRESENTATION }).label).toEqual({
+      key: 'com_ui_artifact_format_presentation',
+    });
+  });
+
+  it('resolves the model-authored type spellings to the same buckets', () => {
+    /* The markdown `:::artifact` path passes the authored attribute
+     * through verbatim, so these aliases reach the row alongside the
+     * canonical MIMEs. */
+    expect(artifactRowKind({ type: 'application/vnd.ant.react' })).toEqual(
+      artifactRowKind({ type: TOOL_ARTIFACT_TYPES.REACT }),
+    );
+    expect(artifactRowKind({ type: 'application/vnd.code-html' })).toEqual(
+      artifactRowKind({ type: TOOL_ARTIFACT_TYPES.HTML }),
+    );
+    expect(artifactRowKind({ type: 'text/md' })).toEqual(
+      artifactRowKind({ type: TOOL_ARTIFACT_TYPES.MARKDOWN }),
+    );
+  });
+
+  it('labels a code artifact with its language, preferring the stored hint', () => {
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.CODE, language: 'python' })).toMatchObject({
+      lang: 'python',
+      label: { text: 'python' },
+    });
+    /* No stored hint (older records, markdown path) — derive it from the
+     * title the way the panel derives its fence hint. */
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.CODE, title: 'main.rs' })).toMatchObject({
+      lang: 'rust',
+      label: { text: 'rust' },
+    });
+    /* Neither: an extensionless, unrecognized name still needs a label. */
+    expect(artifactRowKind({ type: TOOL_ARTIFACT_TYPES.CODE, title: 'script' })).toMatchObject({
+      lang: '',
+      label: { key: 'com_ui_code' },
+    });
+  });
+
+  it('treats an unknown type as a rendered artifact, matching the static template fallback', () => {
+    expect(artifactRowKind({ type: 'application/x-unheard-of' })).toMatchObject({
+      rendersPreview: true,
+      fallbackGlyph: 'preview',
+    });
+    expect(artifactRowKind({})).toMatchObject({ rendersPreview: true });
   });
 });

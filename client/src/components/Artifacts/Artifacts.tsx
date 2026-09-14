@@ -481,14 +481,18 @@ export default function Artifacts() {
                 portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 onClick={handleCopyArtifact}
               />
-              {isMermaidArtifact && displayedTab === 'preview' && (
+              {/* Mermaid diagrams route every download through the export
+                  menu — SVG, PNG and the source — so the generic button does
+                  not sit beside it offering a fourth, unlabelled option. */}
+              {isMermaidArtifact ? (
                 <MermaidExport
                   artifact={currentArtifact}
                   exportData={mermaidExportData}
                   portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 />
+              ) : (
+                <DownloadArtifact artifact={currentArtifact} />
               )}
-              <DownloadArtifact artifact={currentArtifact} />
               <Button
                 size="icon"
                 variant="ghost"
