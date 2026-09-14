@@ -5894,6 +5894,51 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(cursor.updatedAt).toBeUndefined();
     });
 
+    test('resumes from the comparison key the database computed for a non-ASCII name', async () => {
+      /* `$toLower` is only defined over ASCII: it leaves `É` (U+00C9) and `Ü` (U+00DC)
+         as they are, so those stay uppercase in the key `$sort` compares. Lowercasing
+         the boundary again in JavaScript moved it from `Émile` to `émile` (U+00E9),
+         past every key in between, and the next page's `$match` skipped `Üwe`. */
+      const emile = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent Emile',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        support_contact: { name: 'Émile', email: '' },
+      });
+      const uwe = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent Uwe',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        support_contact: { name: 'Üwe', email: '' },
+      });
+      const accessibleIds = [emile._id, uwe._id] as mongoose.Types.ObjectId[];
+
+      const page1 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+      });
+      expect(page1.data.map((a) => a.id)).toEqual([emile.id]);
+      expect(page1.has_more).toBe(true);
+
+      const page2 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+        after: page1.after,
+      });
+      expect(page2.data.map((a) => a.id)).toEqual([uwe.id]);
+
+      const cursor = JSON.parse(Buffer.from(page1.after as string, 'base64').toString('utf8'));
+      expect(cursor.boundary.primary).toBe('Émile');
+    });
+
     test('paginates across multiple pages without duplicates or gaps', async () => {
       const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
       const agents = [];
