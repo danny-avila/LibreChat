@@ -14,6 +14,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type {
+  TPreset,
   TMessage,
   TConversation,
   EventSubmission,
@@ -298,6 +299,38 @@ const createErrorMessage = ({
   return tMessageSchema.parse(errorMessage) as TMessage;
 };
 
+/**
+ * A code approval mode picked locally is newer than any server copy of the
+ * conversation: the final and abort events return the mode the run STARTED
+ * with, and error recovery rebuilds from the pre-run capture. The local mode
+ * therefore survives every merge and the next send carries it. Identity is
+ * checked because the conversation atom is index-global: after navigating
+ * elsewhere mid-run, that conversation's mode must not land in this one.
+ */
+export const keepLocalCodeApprovalMode = <T extends Partial<TConversation>>(
+  merged: T,
+  local: Partial<TConversation> | null | undefined,
+  conversationId: string | null | undefined,
+): T => {
+  const localMode = local?.codeApprovalMode;
+  if (localMode == null || local?.conversationId !== conversationId) {
+    return merged;
+  }
+  return merged.codeApprovalMode === localMode
+    ? merged
+    : { ...merged, codeApprovalMode: localMode };
+};
+
+/** Preset for a conversation rebuilt after a failed or aborted run. The detail
+ *  cache holds a mode picked while that run streamed; the capture only the
+ *  pre-run one. */
+export const buildRecoveryPreset = (
+  submissionConvo: Partial<TConversation>,
+  cachedConvo: TConversation | null | undefined,
+  conversationId: string,
+): TPreset =>
+  tPresetSchema.parse(keepLocalCodeApprovalMode(submissionConvo, cachedConvo, conversationId));
+
 export const getConvoTitle = ({
   parentId,
   queryClient,
@@ -349,6 +382,22 @@ export default function useEventHandlers({
    *  would inherit a stale baseline. Navigation teardown deliberately does not
    *  clear it — a reattach to a still-live run keeps its original start. */
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
+  const recoverConversation = useCallback(
+    (conversationId: string, submission: EventSubmission) => {
+      if (!newConversation) {
+        return;
+      }
+      const cachedConvo = queryClient.getQueryData<TConversation>([
+        QueryKeys.conversation,
+        conversationId,
+      ]);
+      newConversation({
+        template: { conversationId },
+        preset: buildRecoveryPreset(submission.conversation, cachedConvo, conversationId),
+      });
+    },
+    [newConversation, queryClient],
+  );
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -510,10 +559,13 @@ export default function useEventHandlers({
       }
 
       if (setConversation && !isAddedRequest) {
-        setConversation((prevState) => {
-          const update = { ...prevState, ...convoUpdate };
-          return update;
-        });
+        setConversation((prevState) =>
+          keepLocalCodeApprovalMode(
+            { ...prevState, ...convoUpdate },
+            prevState,
+            convoUpdate.conversationId,
+          ),
+        );
       }
 
       setIsSubmitting(false);
@@ -923,10 +975,11 @@ export default function useEventHandlers({
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
           setConversation((prevState) => {
-            const update = {
-              ...prevState,
-              ...(conversation as TConversation),
-            };
+            const update = keepLocalCodeApprovalMode(
+              { ...prevState, ...(conversation as TConversation) },
+              prevState,
+              conversation.conversationId,
+            );
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
             }
@@ -938,10 +991,13 @@ export default function useEventHandlers({
               queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
                 (cachedConvo) => {
-                  const merged = {
-                    ...cachedConvo,
-                    ...serverConversation,
-                  } as TConversation;
+                  const merged = keepLocalCodeApprovalMode(
+                    { ...cachedConvo, ...serverConversation } as TConversation,
+                    prevState?.conversationId === conversation.conversationId
+                      ? prevState
+                      : cachedConvo,
+                    conversation.conversationId,
+                  );
                   const cachedTitle = cachedConvo?.title;
                   if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
                     merged.title = cachedTitle;
@@ -1042,12 +1098,7 @@ export default function useEventHandlers({
           submission,
         });
         setErrorMessages(convoId, errorResponse);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission.conversation),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       }
@@ -1057,12 +1108,7 @@ export default function useEventHandlers({
         const convoId = `_${v4()}`;
         const errorResponse = parseErrorResponse(data);
         setErrorMessages(convoId, errorResponse);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission.conversation),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       } else if (!receivedConvoId) {
@@ -1079,11 +1125,8 @@ export default function useEventHandlers({
       }) as TMessage;
 
       setErrorMessages(receivedConvoId, errorResponse);
-      if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
-        newConversation({
-          template: { conversationId: receivedConvoId },
-          preset: tPresetSchema.parse(submission.conversation),
-        });
+      if (receivedConvoId && paramId === Constants.NEW_CONVO) {
+        recoverConversation(receivedConvoId, submission);
       }
 
       setIsSubmitting(false);
@@ -1093,11 +1136,11 @@ export default function useEventHandlers({
       setCompleted,
       setMessages,
       paramId,
-      newConversation,
       setIsSubmitting,
       setSubmissionStart,
       getMessages,
       queryClient,
+      recoverConversation,
     ],
   );
 
@@ -1149,12 +1192,7 @@ export default function useEventHandlers({
       } else if (!isAssistantsEndpoint(endpoint)) {
         const convoId = conversationId || `_${v4()}`;
         logger.log('conversation', 'Aborted conversation with minimal messages, ID: ' + convoId);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission.conversation),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       }
@@ -1202,12 +1240,7 @@ export default function useEventHandlers({
           error,
         });
         setMessages([...submission.messages, submission.userMessage, errorResponse]);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: conversationId || errorResponse.conversationId || v4() },
-            preset: tPresetSchema.parse(submission.conversation),
-          });
-        }
+        recoverConversation(conversationId || errorResponse.conversationId || v4(), submission);
         setIsSubmitting(false);
       }
     },
@@ -1217,10 +1250,10 @@ export default function useEventHandlers({
       setMessages,
       finalHandler,
       cancelHandler,
-      newConversation,
       setIsSubmitting,
       setShowStopButton,
       setSubmissionStart,
+      recoverConversation,
     ],
   );
 
