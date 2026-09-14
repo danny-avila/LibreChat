@@ -141,6 +141,56 @@ describe('Artifacts panel accessibility', () => {
     expect(screen.queryByTestId('download-artifact')).not.toBeInTheDocument();
   });
 
+  it('opens a preview-capable artifact on its preview tab after a code-only one', async () => {
+    /* A code-only artifact forces the Code tab. That constraint used to be
+     * written back into the panel's shared `activeTab`, so the next HTML or
+     * diagram row opened on Code while announcing a rendered preview. */
+    const setActiveTab = jest.fn();
+    const codeOnly = {
+      activeTab: 'code',
+      setActiveTab,
+      currentIndex: 0,
+      currentArtifact: {
+        id: 'code-artifact-1',
+        type: 'application/vnd.code',
+        title: 'ingest.py',
+        content: 'print(1)',
+        lastUpdateTime: 1,
+      },
+      orderedArtifactIds: ['code-artifact-1', 'html-artifact-1'],
+      setCurrentArtifactId: jest.fn(),
+    };
+    mockUseArtifacts.mockReturnValue(codeOnly);
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+    await screen.findByRole('region', { name: 'ingest.py' });
+    /* Nothing to reset while the constrained artifact is the open one. */
+    expect(setActiveTab).not.toHaveBeenCalledWith('preview');
+
+    mockUseArtifacts.mockReturnValue({
+      ...codeOnly,
+      currentIndex: 1,
+      currentArtifact: {
+        id: 'html-artifact-1',
+        type: 'text/html',
+        title: 'dashboard.html',
+        content: '<h1>hi</h1>',
+        lastUpdateTime: 2,
+      },
+    });
+    rerender(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    await waitFor(() => expect(setActiveTab).toHaveBeenCalledWith('preview'));
+  });
+
   it('keeps the Mermaid export action on the code tab', async () => {
     render(
       <RecoilRoot>
