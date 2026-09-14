@@ -99,6 +99,54 @@ describe('AgentClient code approval persistence', () => {
     });
   });
 
+  it('never writes its run-start decision over a stored one a move replaced', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [{ environmentId: 'mac', workspaceId: 'primary' }],
+        },
+        resolvedConversation: {
+          conversationId: 'convo-1',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'projects' }],
+        },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions).not.toHaveProperty('codeEnvironmentMode');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
+  });
+
+  it('records only the mode a legacy conversation inferred', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    const codeWorkspaces = [{ environmentId: 'mac', workspaceId: 'primary' }];
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: { mode: 'attached', codeWorkspaces },
+        resolvedConversation: { conversationId: 'convo-1', codeWorkspaces },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions.codeEnvironmentMode).toBe('attached');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
+  });
+
   it('does not combine a normalized no-attached mode with stale request selections', () => {
     const client = Object.create(AgentClient.prototype);
     client.agentConfigs = new Map();
