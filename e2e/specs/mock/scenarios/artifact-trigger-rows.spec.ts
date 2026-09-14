@@ -66,7 +66,7 @@ test.describe('artifact trigger rows', () => {
 
         const messages = messagesView(page);
         const rows = messages.locator('[data-artifact-trigger]');
-        await expect(rows).toHaveCount(5);
+        await expect(rows).toHaveCount(4);
 
         for (let index = 0; index < (await rows.count()); index++) {
           const row = rows.nth(index);
@@ -80,7 +80,7 @@ test.describe('artifact trigger rows', () => {
             return { x: box.x, y: box.y + window.scrollY };
           }),
         );
-        expect(boxes).toHaveLength(5);
+        expect(boxes).toHaveLength(4);
         for (let index = 1; index < boxes.length; index++) {
           expect(boxes[index].y).toBeGreaterThan(boxes[index - 1].y);
           expect(Math.abs(boxes[index].x - boxes[0].x)).toBeLessThanOrEqual(1);
@@ -98,8 +98,27 @@ test.describe('artifact trigger rows', () => {
           await expect(row.getByText(format, { exact: true })).toBeVisible();
         }
 
-        const mermaidRow = rows.filter({ hasText: 'Mermaid diagram' });
+        const openMermaidButton = messages.getByRole('button', {
+          name: 'Open as artifact',
+          exact: true,
+        });
+        await openMermaidButton.click();
+
+        const mermaidRow = messages.locator('[data-artifact-trigger^="mermaid-artifact-"]');
         await expect(mermaidRow).toHaveCount(1);
+        await expect(mermaidRow).toBeVisible();
+        await expect(rows).toHaveCount(5);
+        await expect(rows.nth(4)).toHaveAttribute('data-artifact-trigger', /^mermaid-artifact-/);
+
+        const finalBoxes = await rows.evaluateAll((elements) =>
+          elements.map((element) => {
+            const box = element.getBoundingClientRect();
+            return { x: box.x, y: box.y + window.scrollY };
+          }),
+        );
+        expect(finalBoxes).toHaveLength(5);
+        expect(finalBoxes[4].y).toBeGreaterThan(finalBoxes[3].y);
+        expect(Math.abs(finalBoxes[4].x - boxes[0].x)).toBeLessThanOrEqual(1);
         await expect(mermaidRow.getByText('Diagram', { exact: true })).toBeVisible();
       } finally {
         await deleteMessagesByConversation([conversationId]);
@@ -133,7 +152,7 @@ test.describe('artifact trigger rows', () => {
 
         const messages = messagesView(page);
         const rows = messages.locator('[data-artifact-trigger]');
-        await expect(rows).toHaveCount(5);
+        await expect(rows).toHaveCount(4);
 
         const dashboard = rows.filter({ hasText: 'dashboard.html' });
         await expect(dashboard).toHaveAccessibleName(
@@ -152,7 +171,7 @@ test.describe('artifact trigger rows', () => {
         await expect(ingest).toHaveAttribute('aria-expanded', 'true');
         await expect(ingest).toHaveAccessibleName(/Click to close/);
 
-        const panel = page.locator('#artifact-viewer');
+        const panel = messages.locator('#artifact-viewer');
         await expect(panel).toBeVisible();
         await expect(panel).toHaveAttribute('aria-label', 'ingest.py');
         await expect(panel.getByRole('radio', { name: 'Preview', exact: true })).toHaveCount(0);
