@@ -718,6 +718,12 @@ endpoints:
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)
   #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
+  #   # (optional) Keep the user's answers to Ask User questions in the model context verbatim,
+  #   # even after the messages that carried them were summarized or pruned. On by default.
+  #   askUserQuestion:
+  #     retainedAnswers:
+  #       enabled: true
+  #       maxTokens: 4096 # Older answers drop first past this budget; the newest is always kept
   #   # (optional) Authenticate machine clients for the Agent Management API.
   #   # Each verified OAuth client is bound server-side to one existing LibreChat
   #   # user and tenant; that user's normal role and Agent ACLs still apply.

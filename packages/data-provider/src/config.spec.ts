@@ -2,6 +2,7 @@ import type { TEndpointsConfig } from './types';
 import {
   allowedAddressesSchema,
   agentsEndpointSchema,
+  DEFAULT_RETAINED_ANSWER_TOKENS,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
@@ -22,6 +23,27 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('ask user retained answers', () => {
+  it('leaves the block unconfigured by default and accepts an operator budget', () => {
+    expect(agentsEndpointSchema.parse({}).askUserQuestion).toBeUndefined();
+    expect(
+      agentsEndpointSchema.parse({
+        askUserQuestion: { retainedAnswers: { enabled: false, maxTokens: 2048 } },
+      }).askUserQuestion,
+    ).toEqual({ retainedAnswers: { enabled: false, maxTokens: 2048 } });
+    expect(DEFAULT_RETAINED_ANSWER_TOKENS).toBe(4096);
+  });
+
+  it('rejects a budget that is not a positive integer', () => {
+    for (const maxTokens of [0, -1, 1.5, '2048']) {
+      expect(
+        agentsEndpointSchema.safeParse({ askUserQuestion: { retainedAnswers: { maxTokens } } })
+          .success,
+      ).toBe(false);
+    }
+  });
+});
 
 describe('retained tool-count ceiling', () => {
   it('ships the exact-count budget a deployment can raise or lower', () => {

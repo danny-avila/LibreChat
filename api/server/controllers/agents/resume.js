@@ -983,6 +983,19 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             checkpointIds: [],
           };
         });
+  /** The branch's stored rows, so the resumed run keeps carrying the answers the
+   *  paused turn's instructions held. Narrow projection, started alongside the
+   *  other reads; a failed read degrades to no carried answers, not a failed resume. */
+  const conversationMessagesPromise = getMessages(
+    { conversationId, user: userId },
+    'messageId parentMessageId content',
+  ).catch((err) => {
+    logger.warn(
+      '[ResumeAgentController] Failed to load conversation messages for retained answers',
+      getSafeErrorMetadata(err),
+    );
+    return [];
+  });
 
   // Reconstruct and inspect the exact paused input before acquiring a slot,
   // consuming the pending action, seeding MCP state, or acknowledging success.
@@ -1847,12 +1860,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
 
+    const conversationMessages = await conversationMessagesPromise;
     const resumeClient = () =>
       client.resumeCompletion({
         resumeValue: mapped.resumeValue,
         seedContent,
         runSteps: resumeState?.runSteps ?? [],
         storedMessages,
+        conversationMessages,
         abortController: job.abortController,
         // Carry the user's MCP auth so approved MCP tools run with their credentials.
         userMCPAuthMap: result.userMCPAuthMap,

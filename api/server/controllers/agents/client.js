@@ -74,6 +74,7 @@ const {
   checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
+  buildRetainedAnswersContext,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -2276,6 +2277,23 @@ class AgentClient extends BaseClient {
       mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
       mapCondition: (message) => message.addedConvo === true,
     });
+    /** The user's answers to earlier `ask_user_question` calls, carried verbatim in
+     *  the dynamic tail so they outlive the summary boundary, the pruner and the
+     *  context window. Read from the stored rows of the whole branch before
+     *  `messages` is narrowed to `orderedMessages`, which stops at a checkpoint
+     *  summary and would hide exactly the answers that need carrying. */
+    const retainedAnswersPromise = buildRetainedAnswersContext({
+      messages,
+      parentMessageId,
+      config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
+      countTokens: (text) => countTokens(text),
+    }).catch((error) => {
+      logger.warn(
+        '[AgentClient] Retained answers unavailable for this turn',
+        getSafeErrorMetadata(error),
+      );
+      return undefined;
+    });
 
     let payload;
     /** @type {number | undefined} */
@@ -2866,6 +2884,7 @@ class AgentClient extends BaseClient {
     };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
+    const retainedAnswersContext = await retainedAnswersPromise;
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
     const configuredContextAttachments = this.options.agentContextAttachmentsByAgentId;
@@ -2969,6 +2988,9 @@ class AgentClient extends BaseClient {
       if (scopedContext) {
         modelBoundFileContexts.add(scopedContext);
         agentRunContextParts.push(scopedContext);
+      }
+      if (retainedAnswersContext) {
+        agentRunContextParts.push(retainedAnswersContext);
       }
 
       await applyContextToAgent({
@@ -5213,6 +5235,7 @@ class AgentClient extends BaseClient {
     seedContent = [],
     runSteps = [],
     storedMessages = [],
+    conversationMessages = [],
     abortController = null,
     commandOptions,
     userMCPAuthMap,
@@ -5300,6 +5323,24 @@ class AgentClient extends BaseClient {
       if (Array.isArray(seedContent) && seedContent.length > 0) {
         this.contentParts.push(...seedContent);
       }
+      /** The rebuilt run gets fresh agents, so the answers the paused turn's
+       *  instructions carried are read again from the stored branch, plus the
+       *  answer just given, which only the seeded content holds so far. */
+      const retainedAnswersContext = await buildRetainedAnswersContext({
+        messages: conversationMessages,
+        parentMessageId: this.parentMessageId,
+        seedContent,
+        config: appConfig?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
+        countTokens: (text) => countTokens(text),
+      }).catch((error) => {
+        logger.warn(
+          '[AgentClient] Retained answers unavailable for this resume',
+          getSafeErrorMetadata(error),
+        );
+        return undefined;
+      });
+      const resumeRunContext = (scopedContext) =>
+        [scopedContext, retainedAnswersContext].filter(Boolean).join('\n\n');
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
       this.compactionSemanticIndexSnapshot =
@@ -5438,7 +5479,7 @@ class AgentClient extends BaseClient {
               logger,
               mcpManager: resumeMcpManager,
               configServers: resumeConfigServers,
-              sharedRunContext: scopedContext ?? '',
+              sharedRunContext: resumeRunContext(scopedContext),
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
             });
@@ -5539,7 +5580,7 @@ class AgentClient extends BaseClient {
                   logger,
                   mcpManager: resumeMcpManager,
                   configServers: resumeConfigServers,
-                  sharedRunContext: scopedContext ?? '',
+                  sharedRunContext: resumeRunContext(scopedContext),
                 });
                 assertModelBoundContent({
                   onTraversalFailure: reportLocatorTraversalFailure,
