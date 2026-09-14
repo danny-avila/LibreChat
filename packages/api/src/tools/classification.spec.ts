@@ -621,6 +621,12 @@ describe('classification.ts', () => {
           expect(result.additionalTools.some((tool) => tool.name === 'run_tools_with_bash')).toBe(
             supported && !definitionsOnly,
           );
+          if (supported && !definitionsOnly) {
+            expect(
+              result.additionalTools.find((tool) => tool.name === 'run_tools_with_bash')
+                ?.description,
+            ).toContain('selected persistent workspace');
+          }
           expect(result.hasDeferredTools).toBe(true);
           expect(result.toolRegistry?.get('tool1')?.allowed_callers).toEqual([
             'direct',

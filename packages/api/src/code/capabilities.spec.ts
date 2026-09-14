@@ -373,9 +373,9 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
   });
 
   it('carries selected-workspace programmatic support into the trusted context', async () => {
-    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      workspaceStatus([{ id: 'project-a' }], false, ['bash']),
-    );
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(workspaceStatus([{ id: 'project-a' }], false, ['bash']));
     const resolved = await resolveCodeExecutionWorkspaceContext({
       context,
       requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],

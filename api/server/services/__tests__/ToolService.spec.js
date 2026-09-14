@@ -3147,7 +3147,9 @@ describe('ToolService - Action Capability Gating', () => {
       { operations: attachedWorkspaceOperations, languages: [], supported: false },
       { operations: attachedWorkspaceOperations, languages: ['py'], supported: false },
       {
-        operations: attachedWorkspaceOperations.filter((operation) => operation !== 'execute_command'),
+        operations: attachedWorkspaceOperations.filter(
+          (operation) => operation !== 'execute_command',
+        ),
         languages: ['bash'],
         supported: false,
       },

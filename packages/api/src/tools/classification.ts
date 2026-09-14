@@ -481,6 +481,7 @@ export async function buildToolClassification(
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
+          workspaceId: codeExecutionContext.codeWorkspace?.workspaceId,
         }
       : {};
     const ptcTool = createBashProgrammaticToolCallingTool({

@@ -223,11 +223,9 @@ describe('createAttachedWorkspaceBashTool', () => {
     });
 
     await expect(
-      bashTool.func(
-        { command: 'pwd', cwd: '../../sibling-project' },
-        undefined,
-        { toolCall: { _injected_files: [{ name: 'main.sh', content: 'pwd' }] } },
-      ),
+      bashTool.func({ command: 'pwd', cwd: '../../sibling-project' }, undefined, {
+        toolCall: { _injected_files: [{ name: 'main.sh', content: 'pwd' }] },
+      }),
     ).rejects.toThrow('inside the selected workspace');
   });
 
