@@ -1077,6 +1077,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           archiveTotalSizeLimit: fileConfig.documentParser?.archiveTotalSizeLimit,
           maxRecoveredPageCount: fileConfig.documentParser?.maxRecoveredPageCount,
           archiveEntryCountLimit: fileConfig.documentParser?.archiveEntryCountLimit,
+          maxConcurrentParsers: fileConfig.documentParser?.maxConcurrentParsers,
+          maxQueuedParsers: fileConfig.documentParser?.maxQueuedParsers,
+          classifierTimeoutMs: fileConfig.documentParser?.classifierTimeoutMs,
+          /* The engines log their own successful-path diagnostics, and only this route
+           * knows whether the filename may appear in them. */
+          fileLabel: extractionFileLabel,
           /* Recovery hides the failure from the code below, and the engine has no way
            * to know whether this deployment redacts filenames and parser errors. */
           onEngineFallback: (err) => {

@@ -119,6 +119,12 @@ export type FileConfig = {
     archiveTotalSizeLimit?: number;
     /** Maximum entries one ZIP archive may hold. */
     archiveEntryCountLimit?: number;
+    /** Maximum whole-document parses allowed to run concurrently. */
+    maxConcurrentParsers?: number;
+    /** Maximum whole-document parses allowed to wait for a slot. */
+    maxQueuedParsers?: number;
+    /** Deadline for the optional PDF scan classifier, in milliseconds. */
+    classifierTimeoutMs?: number;
     /** Maximum PDF pages the in-process recovery walk reads. */
     maxRecoveredPageCount?: number;
   };
@@ -160,7 +166,14 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
     /** Megabytes, converted on merge like every other size limit here. */
     fileSizeLimit?: number;
+    /** Milliseconds, passed through unchanged by mergeFileConfig. */
     timeoutMs?: number;
+    /** Maximum whole-document parses allowed to run concurrently. */
+    maxConcurrentParsers?: number;
+    /** Maximum whole-document parses allowed to wait for a slot. */
+    maxQueuedParsers?: number;
+    /** Milliseconds, passed through unchanged by mergeFileConfig. */
+    classifierTimeoutMs?: number;
     /** Operators enter a page count here; mergeFileConfig preserves it without conversion. */
     maxPageCount?: number;
     /** Megabytes, converted to bytes in the merged configuration. */

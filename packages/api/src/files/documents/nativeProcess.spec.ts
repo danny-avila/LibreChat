@@ -1,4 +1,4 @@
-import { CHILD_PRELUDE } from './nativeProcess';
+import { CHILD_PRELUDE, withParserAdmission } from './nativeProcess';
 
 /**
  * The counter runs inside the child, where the payload is measured before it crosses
@@ -27,5 +27,87 @@ describe('child payload measurement', () => {
     ['a high surrogate at the end', 'ab\ud800'],
   ])('matches JSON serialization for %s', (_label, text) => {
     expect(measure(text)).toBe(serialized(text));
+  });
+});
+
+describe('parser admission configuration', () => {
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+
+  test('uses a configured concurrency of one to serialize parses', async () => {
+    const first = deferred();
+    const started: string[] = [];
+    const firstParse = withParserAdmission(
+      async () => {
+        started.push('first');
+        await first.promise;
+        return 'first';
+      },
+      undefined,
+      1,
+      1,
+    );
+    const secondParse = withParserAdmission(
+      async () => {
+        started.push('second');
+        return 'second';
+      },
+      undefined,
+      1,
+      1,
+    );
+
+    await Promise.resolve();
+    expect(started).toEqual(['first']);
+    first.resolve();
+    await expect(Promise.all([firstParse, secondParse])).resolves.toEqual(['first', 'second']);
+    expect(started).toEqual(['first', 'second']);
+  });
+
+  test('rejects the waiter beyond configured queue depth', async () => {
+    const first = deferred();
+    const running = withParserAdmission(
+      async () => {
+        await first.promise;
+        return 'running';
+      },
+      undefined,
+      1,
+      1,
+    );
+    const queued = withParserAdmission(async () => 'queued', undefined, 1, 1);
+    const refused = withParserAdmission(async () => 'refused', undefined, 1, 1);
+
+    await expect(refused).rejects.toMatchObject({
+      name: 'ConcurrencyLimitError',
+      code: 'CONCURRENCY_LIMIT',
+      userErrorStatusCode: 503,
+    });
+    first.resolve();
+    await expect(Promise.all([running, queued])).resolves.toEqual(['running', 'queued']);
+  });
+
+  test('shares the compatibility-default limiter across calls without options', async () => {
+    const first = deferred();
+    const started: string[] = [];
+    const parses = ['first', 'second', 'third'].map((name, index) =>
+      withParserAdmission(async () => {
+        started.push(name);
+        if (index === 0) {
+          await first.promise;
+        }
+        return name;
+      }),
+    );
+
+    await Promise.resolve();
+    expect(started).toEqual(['first', 'second']);
+    first.resolve();
+    await expect(Promise.all(parses)).resolves.toEqual(['first', 'second', 'third']);
   });
 });

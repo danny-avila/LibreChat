@@ -76,6 +76,55 @@ describe('pdfInspector child isolation', () => {
     });
     expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
   });
+
+  test('uses the configured classifier allowance instead of the 15-second default', async () => {
+    jest.useFakeTimers();
+    const extractionChild = new TestChild();
+    const classifierChild = new TestChild();
+    mockSpawn.mockReturnValueOnce(extractionChild).mockReturnValueOnce(classifierChild);
+
+    const extraction = extractPagesMarkdownIsolated(
+      '/tmp/configured-classifier.pdf',
+      undefined,
+      60_000,
+      undefined,
+      45_000,
+    );
+    extractionChild.emit('message', {
+      ok: true,
+      result: { pages: [{ markdown: '# Kept extraction' }] },
+    });
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(15_000);
+    expect(classifierChild.kill).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(30_000);
+    await expect(extraction).resolves.toMatchObject({ classificationDidNotRun: true });
+    expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  test('bounds the classifier allowance by the remaining parse budget', async () => {
+    jest.useFakeTimers();
+    const extractionChild = new TestChild();
+    const classifierChild = new TestChild();
+    mockSpawn.mockReturnValueOnce(extractionChild).mockReturnValueOnce(classifierChild);
+
+    const extraction = extractPagesMarkdownIsolated(
+      '/tmp/remaining-budget.pdf',
+      undefined,
+      20_000,
+      undefined,
+      45_000,
+    );
+    extractionChild.emit('message', {
+      ok: true,
+      result: { pages: [{ markdown: '# Kept extraction' }] },
+    });
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(20_000);
+
+    await expect(extraction).resolves.toMatchObject({ classificationDidNotRun: true });
+    expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
+  });
   test('keeps pages and marks classification unavailable when the classifier rejects', async () => {
     const extractionChild = new TestChild();
     const classifierChild = new TestChild();

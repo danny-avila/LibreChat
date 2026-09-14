@@ -68,6 +68,7 @@ export async function parseWithPdfInspector(
         options?.timeoutMs,
         options?.maxPageCount,
         options?.maxRecoveredPageCount,
+        options?.classifierTimeoutMs,
       ),
     );
   } catch (error) {
@@ -154,8 +155,15 @@ export async function extractPdf(
   timeoutMs?: number,
   maxPageCount: number = MAX_PDF_PAGES,
   maxRecoveredPageCount: number = MAX_RECOVERED_PAGES,
+  classifierTimeoutMs?: DocumentExtractionOptions['classifierTimeoutMs'],
 ): Promise<ParsedDocument> {
-  const extraction = await extractPagesMarkdownIsolated(filePath, signal, timeoutMs, maxPageCount);
+  const extraction = await extractPagesMarkdownIsolated(
+    filePath,
+    signal,
+    timeoutMs,
+    maxPageCount,
+    classifierTimeoutMs,
+  );
   const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');

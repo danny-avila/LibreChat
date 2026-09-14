@@ -509,6 +509,25 @@ describe('documentParser file config', () => {
     expect(merged?.archiveEntryCountLimit).toBe(12_000);
     expect(merged?.maxRecoveredPageCount).toBe(800);
   });
+  it('exposes parser admission counts and classifier timeout as raw overrides', () => {
+    const defaults = mergeFileConfig(undefined).documentParser;
+    expect(defaults?.maxConcurrentParsers).toBe(2);
+    expect(defaults?.maxQueuedParsers).toBe(6);
+    expect(defaults?.classifierTimeoutMs).toBe(15_000);
+
+    const parsed = fileConfigSchema.parse({
+      documentParser: {
+        maxConcurrentParsers: 1,
+        maxQueuedParsers: 3,
+        classifierTimeoutMs: 45_000,
+      },
+    });
+    const merged = mergeFileConfig(parsed).documentParser;
+
+    expect(merged?.maxConcurrentParsers).toBe(1);
+    expect(merged?.maxQueuedParsers).toBe(3);
+    expect(merged?.classifierTimeoutMs).toBe(45_000);
+  });
 });
 
 describe('stt file config', () => {

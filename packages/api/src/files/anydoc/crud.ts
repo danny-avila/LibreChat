@@ -191,7 +191,12 @@ function resolveFormat(name: string, type: string): string | null {
  *
  * @throws {Error} when neither the MIME type nor the extension names a supported format.
  */
-function assertSupportedType(name: string, type: string, extensionFormat: string | null): void {
+function assertSupportedType(
+  name: string,
+  type: string,
+  extensionFormat: string | null,
+  warningLabel: string,
+): void {
   /* A supported type outranks the name here too: only a file nothing else identifies as
    * an anydoc format is refused for looking like a PDF. */
   if (
@@ -203,14 +208,14 @@ function assertSupportedType(name: string, type: string, extensionFormat: string
   if (foldedMimeTypes.has(type)) {
     if (extensionFormat == null) {
       logger.warn(
-        `[parseWithAnydoc] "${name}" has no extension anydoc recognizes; falling back to content detection.`,
+        `[parseWithAnydoc] "${warningLabel}" has no extension anydoc recognizes; falling back to content detection.`,
       );
     }
     return;
   }
   if (extensionFormat != null) {
     logger.warn(
-      `[parseWithAnydoc] "${name}" arrived as "${type || 'no MIME type'}", which anydoc does not declare support for; its extension names "${extensionFormat}", so extraction is attempted anyway.`,
+      `[parseWithAnydoc] "${warningLabel}" arrived as "${type || 'no MIME type'}", which anydoc does not declare support for; its extension names "${extensionFormat}", so extraction is attempted anyway.`,
     );
     return;
   }
@@ -240,10 +245,11 @@ export async function parseWithAnydoc(
   options?: DocumentExtractionOptions,
 ): Promise<ParsedDocumentUploadResult> {
   const name = file.originalname ?? file.path;
+  const warningLabel = options?.fileLabel || 'uploaded document';
   const type = normalizeType(file.mimetype);
 
   const format = resolveFormat(name, type);
-  assertSupportedType(name, type, formatFromPath(name));
+  assertSupportedType(name, type, formatFromPath(name), warningLabel);
 
   const buffer = await fs.promises.readFile(file.path, { signal });
   let knownOuterContainer: 'cfb' | 'rtf' | undefined;

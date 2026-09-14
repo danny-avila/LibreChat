@@ -624,6 +624,12 @@ const defaultSkillImportSizeLimit = mbToBytes(50);
 const defaultDocumentParserSizeLimit = mbToBytes(15);
 /** Deadline one extraction child gets; the value both parser engines were built with. */
 const defaultDocumentParserTimeoutMs = 30_000;
+/** Maximum whole-document parses admitted concurrently by the local parser. */
+const defaultDocumentParserMaxConcurrentParsers = 2;
+/** Maximum whole-document parses held in the local parser queue. */
+const defaultDocumentParserMaxQueuedParsers = 6;
+/** Deadline for PDF scan classification, bounded by the overall parse deadline. */
+const defaultDocumentParserClassifierTimeoutMs = 15_000;
 /** Page counts are compared directly by the PDF engines, unlike byte-based limits. */
 const defaultDocumentParserMaxPageCount = 1000;
 /** The single-entry decompression ceiling matches the archive guard's direct-call default. */
@@ -693,6 +699,9 @@ export const fileConfig = {
     supportedMimeTypes: documentParserMimeTypes,
     fileSizeLimit: defaultDocumentParserSizeLimit,
     timeoutMs: defaultDocumentParserTimeoutMs,
+    maxConcurrentParsers: defaultDocumentParserMaxConcurrentParsers,
+    maxQueuedParsers: defaultDocumentParserMaxQueuedParsers,
+    classifierTimeoutMs: defaultDocumentParserClassifierTimeoutMs,
     maxPageCount: defaultDocumentParserMaxPageCount,
     archiveEntryCountLimit: defaultDocumentParserArchiveEntryCountLimit,
     maxRecoveredPageCount: defaultDocumentParserMaxRecoveredPageCount,
@@ -774,6 +783,12 @@ export const fileConfigSchema = z.object({
        * A document large enough to need a raised `fileSizeLimit` usually needs longer
        * than the default to convert. */
       timeoutMs: z.number().min(0).optional(),
+      /** Maximum whole-document parses allowed to run concurrently. */
+      maxConcurrentParsers: z.number().int().min(1).optional(),
+      /** Maximum whole-document parses allowed to wait for a slot. */
+      maxQueuedParsers: z.number().int().min(0).optional(),
+      /** Deadline for the optional PDF scan classifier, in milliseconds. */
+      classifierTimeoutMs: z.number().min(0).optional(),
       /** Maximum PDF pages accepted before extraction work can grow without bound. The
        * 10,000-page maximum protects the API process from oversized page arrays crossing IPC. */
       maxPageCount: z
@@ -1428,6 +1443,9 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       archiveEntrySizeLimit: documentParserArchiveEntrySizeLimit,
       archiveTotalSizeLimit: documentParserArchiveTotalSizeLimit,
       maxPageCount: documentParserMaxPageCount,
+      maxConcurrentParsers: documentParserMaxConcurrentParsers,
+      maxQueuedParsers: documentParserMaxQueuedParsers,
+      classifierTimeoutMs: documentParserClassifierTimeoutMs,
       ...documentParserRest
     } = dynamic.documentParser;
     mergedConfig.documentParser = {
@@ -1456,6 +1474,17 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     /* Page counts are not sizes, so the configured value stays a direct count. */
     if (documentParserMaxPageCount !== undefined) {
       mergedConfig.documentParser.maxPageCount = documentParserMaxPageCount;
+    }
+    /* Admission counts and classifier duration are raw units, so they pass through
+     * unchanged rather than taking the megabyte conversion used by byte ceilings. */
+    if (documentParserMaxConcurrentParsers !== undefined) {
+      mergedConfig.documentParser.maxConcurrentParsers = documentParserMaxConcurrentParsers;
+    }
+    if (documentParserMaxQueuedParsers !== undefined) {
+      mergedConfig.documentParser.maxQueuedParsers = documentParserMaxQueuedParsers;
+    }
+    if (documentParserClassifierTimeoutMs !== undefined) {
+      mergedConfig.documentParser.classifierTimeoutMs = documentParserClassifierTimeoutMs;
     }
   }
 

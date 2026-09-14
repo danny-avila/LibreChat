@@ -3,15 +3,23 @@ import * as fs from 'fs';
 import JSZip from 'jszip';
 import { logger } from '@librechat/data-schemas';
 import { megabyte } from 'librechat-data-provider';
+import type { DocumentExtractionOptions } from '../documents/nativeProcess';
+import type { ParsedDocumentUploadResult } from '~/types';
 import { parseWithAnydoc } from './crud';
 
-type ParseResult = ReturnType<typeof parseWithAnydoc>;
-type ParseFile = (file: Partial<Express.Multer.File>, signal?: AbortSignal) => ParseResult;
+type ParseResult = Promise<ParsedDocumentUploadResult>;
+type TestExtractionOptions = DocumentExtractionOptions & { fileLabel?: string };
+type ParseFile = (
+  file: Partial<Express.Multer.File>,
+  signal?: AbortSignal,
+  options?: TestExtractionOptions,
+) => ParseResult;
 
 /** Fixtures are shared with the built-in parser suite and live alongside it. */
 const fixtures = path.join(__dirname, '..', 'documents');
 
-const parse: ParseFile = (file, signal) => parseWithAnydoc(file as Express.Multer.File, signal);
+const parse: ParseFile = (file, signal, options) =>
+  parseWithAnydoc(file as Express.Multer.File, signal, options);
 
 const docxFile = (name: string): Partial<Express.Multer.File> => ({
   originalname: name,
@@ -39,7 +47,9 @@ const withAnydocSpy = async (
     await jest.isolateModulesAsync(async () => {
       jest.doMock('./native', () => ({ extractMarkdownIsolated: extractMarkdown }));
       const { parseWithAnydoc: parseWithSpy } = await import('./crud');
-      await body((file, signal) => parseWithSpy(file as Express.Multer.File, signal));
+      await body((file, signal, options) =>
+        parseWithSpy(file as Express.Multer.File, signal, options),
+      );
     });
   } finally {
     jest.dontMock('./native');
@@ -174,6 +184,39 @@ describe('parseWithAnydoc', () => {
 
         expect(toMarkdownBytes.mock.calls[0]?.[1]).toBe('docx');
       });
+    });
+
+    test('redacts the filename from fallback warnings while preserving the caller label', async () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const originalname = 'secret-payroll.docx';
+      const file = {
+        ...docxFile('structured.docx'),
+        mimetype: 'application/octet-stream',
+      };
+
+      try {
+        const labeledResult = await parse(file, undefined, { fileLabel: 'file_id=opaque-123' });
+        const labeledWarnings = warn.mock.calls.map(([message]) => String(message));
+
+        expect(labeledResult.text).toContain('# Quarterly Report');
+        expect(labeledWarnings).toEqual(
+          expect.arrayContaining([expect.stringContaining('file_id=opaque-123')]),
+        );
+        expect(labeledWarnings.join('\n')).not.toContain(originalname);
+
+        warn.mockClear();
+        const unlabeledResult = await parse(file);
+        const unlabeledWarnings = warn.mock.calls.map(([message]) => String(message));
+
+        expect(unlabeledResult.text).toContain('# Quarterly Report');
+        expect(unlabeledWarnings).toEqual(
+          expect.arrayContaining([expect.stringContaining('uploaded document')]),
+        );
+        expect(unlabeledWarnings.join('\n')).not.toContain(originalname);
+        expect(unlabeledWarnings.join('\n')).not.toContain('file_id=opaque-123');
+      } finally {
+        warn.mockRestore();
+      }
     });
   });
 

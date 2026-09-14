@@ -9,6 +9,9 @@ import { createConcurrencyLimiter } from '~/utils/promise';
 /** Native document parsers are CPU and memory intensive even for small uploads. */
 const NATIVE_PARSER_CONCURRENCY = 2;
 
+/** Maximum queued uploads in the compatibility-default admission limiter. */
+const NATIVE_PARSER_MAX_QUEUED = 6;
+
 /**
  * Largest extraction a child may hand back, matching the limit the upload path applies
  * to the stored text.
@@ -90,6 +93,12 @@ export interface DocumentExtractionOptions {
    */
   readonly onEngineFallback?: (error: unknown) => void;
   /**
+   * How this upload may be named in a log line the engine writes on a path that
+   * succeeded. Under content protection the caller's label is an opaque file id, and
+   * only the caller knows that; without one an engine names no file at all.
+   */
+  readonly fileLabel?: string;
+  /**
    * Maximum PDF pages accepted by the local parser. Non-PDF engines ignore this option,
    * and the PDF engine supplies its own default when a direct caller omits it.
    */
@@ -107,6 +116,12 @@ export interface DocumentExtractionOptions {
   /** Maximum number of entries one ZIP archive may hold: every entry costs a stream and
    * an inflate teardown however little it decompresses to. */
   readonly archiveEntryCountLimit?: number;
+  /** Maximum whole-document parses allowed to run concurrently. */
+  readonly maxConcurrentParsers?: number;
+  /** Maximum whole-document parses allowed to wait for a slot. */
+  readonly maxQueuedParsers?: number;
+  /** Deadline for the optional PDF scan classifier, in milliseconds. */
+  readonly classifierTimeoutMs?: number;
 }
 
 /**
@@ -150,13 +165,23 @@ export function isParserOutputLimit(error: unknown): boolean {
  * with a named error is the honest answer: the caller can retry, where an accepted
  * request would have sat behind a queue with no deadline.
  */
-const NATIVE_PARSER_MAX_QUEUED = 6;
+type ParserLimiter = <T>(task: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
+const parserLimiters = new Map<string, ParserLimiter>();
 
-/** Shared across AnyDoc and pdf-inspector so their child counts cannot add together. */
-const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
-  maxQueued: NATIVE_PARSER_MAX_QUEUED,
-  label: 'document parsing',
-});
+function getParserLimiter(maxConcurrentParsers?: number, maxQueuedParsers?: number) {
+  const resolvedConcurrency = maxConcurrentParsers ?? NATIVE_PARSER_CONCURRENCY;
+  const resolvedMaxQueued = maxQueuedParsers ?? NATIVE_PARSER_MAX_QUEUED;
+  const key = `${resolvedConcurrency}:${resolvedMaxQueued}`;
+  let limiter = parserLimiters.get(key);
+  if (!limiter) {
+    limiter = createConcurrencyLimiter(resolvedConcurrency, {
+      maxQueued: resolvedMaxQueued,
+      label: 'document parsing',
+    });
+    parserLimiters.set(key, limiter);
+  }
+  return limiter;
+}
 
 /**
  * Admits one whole document parse, not one child spawn.
@@ -167,11 +192,16 @@ const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
  * recoveries up: the expensive half of the pipeline would run unbounded behind a cap
  * that only ever counted the cheap half.
  */
-export function withParserAdmission<T>(parse: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withParserAdmission<T>(
+  parse: () => Promise<T>,
+  signal?: AbortSignal,
+  maxConcurrentParsers?: number,
+  maxQueuedParsers?: number,
+): Promise<T> {
   /* The signal goes to the limiter, not just around the task: a caller that gives up
    * while queued has to leave the queue, or it holds a share of the bound against
    * callers who are still waiting. */
-  return nativeParserLimit(parse, signal);
+  return getParserLimiter(maxConcurrentParsers, maxQueuedParsers)(parse, signal);
 }
 
 function abortError(signal: AbortSignal): Error {

@@ -137,6 +137,10 @@ export async function parseDocument({
   archiveEntrySizeLimit,
   archiveTotalSizeLimit,
   archiveEntryCountLimit,
+  maxConcurrentParsers,
+  maxQueuedParsers,
+  classifierTimeoutMs,
+  fileLabel,
   onEngineFallback,
 }: {
   file: Express.Multer.File;
@@ -159,6 +163,14 @@ export async function parseDocument({
   archiveTotalSizeLimit?: number;
   /** Maximum entries one ZIP archive may hold. */
   archiveEntryCountLimit?: number;
+  /** Maximum whole-document parses allowed to run concurrently. */
+  maxConcurrentParsers?: number;
+  /** Maximum whole-document parses allowed to wait for a slot. */
+  maxQueuedParsers?: number;
+  /** Deadline for the optional PDF scan classifier, in milliseconds. */
+  classifierTimeoutMs?: number;
+  /** How an engine may name this upload in a log line on a path that succeeded. */
+  fileLabel?: string;
   /** Told when an engine recovered from a failure on its own, so the caller can log it
    * under whatever redaction its deployment applies. */
   onEngineFallback?: DocumentExtractionOptions['onEngineFallback'];
@@ -187,9 +199,15 @@ export async function parseDocument({
         archiveEntrySizeLimit,
         archiveTotalSizeLimit,
         archiveEntryCountLimit,
+        maxConcurrentParsers,
+        maxQueuedParsers,
+        classifierTimeoutMs,
+        fileLabel,
         onEngineFallback,
       }),
     signal,
+    maxConcurrentParsers,
+    maxQueuedParsers,
   );
   if (!result.text?.trim()) {
     throw new NoDocumentTextError();

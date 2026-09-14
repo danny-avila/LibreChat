@@ -192,6 +192,7 @@ export async function extractPagesMarkdownIsolated(
   signal?: AbortSignal,
   timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
   maxPageCount: DocumentExtractionOptions['maxPageCount'] = MAX_PDF_PAGES,
+  classifierTimeoutMs: DocumentExtractionOptions['classifierTimeoutMs'] = PDF_CLASSIFIER_TIMEOUT_MS,
 ): Promise<PdfPageExtraction> {
   const startedAt = Date.now();
   const { pages } = await runPdfChild('pages', filePath, signal, timeoutMs, maxPageCount);
@@ -211,9 +212,11 @@ export async function extractPagesMarkdownIsolated(
     classificationDidNotRun = true;
   } else {
     try {
+      /* The classifier shares the parse deadline, so a slow classifier cannot outlive
+       * the overall budget and delay the upload beyond its configured timeout. */
       const classification = await runPdfClassifierChild(
         filePath,
-        Math.min(PDF_CLASSIFIER_TIMEOUT_MS, remainingMs),
+        Math.min(classifierTimeoutMs, remainingMs),
         signal,
       );
       scannedPages = classification.scannedPages ?? [];
