@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface OuterScrollWindow {
   /** Attach to the element the windowed content starts at. */
@@ -8,10 +8,13 @@ interface OuterScrollWindow {
   height: number;
   /** Viewport scroll offset expressed in the attached element's own coordinates. */
   scrollTop: number;
-  /** Whether any of the attached element is on screen. The height alone cannot
-   *  say: it keeps a pixel for an element nobody can see, so that the element
-   *  still has a size to be scrolled to. */
-  visible: boolean;
+  /** Whether any of the attached element is on screen, read from the layout at
+   *  the moment it is asked. The height cannot answer this — it keeps a pixel
+   *  for an element nobody can see, so that the element still has a size to be
+   *  scrolled to — and a stored answer cannot either: a commit that swaps what
+   *  the viewport holds moves the element before any observer has run, and a
+   *  caller acting during that commit would act on the previous layout. */
+  isOnScreen: () => boolean;
 }
 
 /**
@@ -28,9 +31,29 @@ export default function useOuterScrollWindow(
   content: HTMLElement | null,
 ): OuterScrollWindow {
   const [node, setNode] = useState<HTMLElement | null>(null);
-  const [metrics, setMetrics] = useState({ height: 0, scrollTop: 0, visible: false });
+  const [metrics, setMetrics] = useState({ height: 0, scrollTop: 0 });
 
   const ref = useCallback((element: HTMLElement | null) => setNode(element), []);
+
+  /** The probe reads whatever is current rather than what the last frame saw,
+   *  so it is held through refs instead of closing over a render's values. */
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
+  const nodeRef = useRef(node);
+  nodeRef.current = node;
+
+  const isOnScreen = useCallback(() => {
+    const currentViewport = viewportRef.current;
+    const currentNode = nodeRef.current;
+    if (!currentViewport || !currentNode) {
+      return false;
+    }
+    const nodeRect = currentNode.getBoundingClientRect();
+    const viewportRect = currentViewport.getBoundingClientRect();
+    return (
+      Math.min(nodeRect.bottom, viewportRect.bottom) > Math.max(nodeRect.top, viewportRect.top)
+    );
+  }, []);
 
   useEffect(() => {
     if (!viewport || !node) {
@@ -59,14 +82,9 @@ export default function useOuterScrollWindow(
       const next = {
         height: Math.max(1, Math.round(onScreen)),
         scrollTop: Math.max(0, viewport.scrollTop - offsetTop),
-        visible: onScreen > 0,
       };
       setMetrics((prev) =>
-        prev.height === next.height &&
-        prev.scrollTop === next.scrollTop &&
-        prev.visible === next.visible
-          ? prev
-          : next,
+        prev.height === next.height && prev.scrollTop === next.scrollTop ? prev : next,
       );
     };
 
@@ -130,6 +148,6 @@ export default function useOuterScrollWindow(
     ref,
     height: metrics.height,
     scrollTop: metrics.scrollTop,
-    visible: metrics.visible,
+    isOnScreen,
   };
 }

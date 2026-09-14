@@ -62,7 +62,12 @@ jest.mock('~/store', () => {
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useElementSize: () => ({ ref: jest.fn(), width: 300, height: 600 }),
-  useOuterScrollWindow: () => ({ ref: jest.fn(), height: 600, scrollTop: 0, visible: true }),
+  useOuterScrollWindow: () => ({
+    ref: jest.fn(),
+    height: 600,
+    scrollTop: 0,
+    isOnScreen: () => true,
+  }),
   TranslationKeys: {},
 }));
 

@@ -156,16 +156,17 @@ describe('useOuterScrollWindow', () => {
     /** Not a screenful — nothing of it is on display — but not nothing either:
      *  a list told it has no window renders no rows, and a list that renders
      *  no rows has no height to be scrolled into view with. Anything that must
-     *  know whether the reader can see it reads `visible`, not the height. */
+     *  know whether the reader can see it asks, rather than reading a height
+     *  that is deliberately never zero. */
     expect(result.current.height).toBe(1);
-    expect(result.current.visible).toBe(false);
+    expect(result.current.isOnScreen()).toBe(false);
   });
 
-  it('reports the list as visible as soon as it reaches the fold', () => {
+  it('reports the list as on screen as soon as it reaches the fold', () => {
     const { viewport, content, node, scrollTo } = layout({ offset: 700 });
     const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
     act(() => result.current.ref(node));
-    expect(result.current.visible).toBe(false);
+    expect(result.current.isOnScreen()).toBe(false);
 
     act(() => {
       scrollTo(260);
@@ -173,8 +174,24 @@ describe('useOuterScrollWindow', () => {
       frames.flush();
     });
 
-    expect(result.current.visible).toBe(true);
+    expect(result.current.isOnScreen()).toBe(true);
     expect(result.current.height).toBe(60);
+  });
+
+  it('answers from the layout as it stands, not from the last frame', () => {
+    const { viewport, content, node } = layout({ offset: 700 });
+    const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
+    act(() => result.current.ref(node));
+    expect(result.current.isOnScreen()).toBe(false);
+
+    /** A commit that swaps what the viewport holds moves the list before any
+     *  observer or frame has run: a caller acting inside that commit must not
+     *  be told where the list used to be. No scroll event, no frame flushed. */
+    setRect(node, 100, 2000);
+    expect(result.current.isOnScreen()).toBe(true);
+
+    setRect(node, 900, 2000);
+    expect(result.current.isOnScreen()).toBe(false);
   });
 
   it('translates the viewport scroll into the list own coordinates', () => {
