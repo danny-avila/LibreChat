@@ -1,5 +1,5 @@
 import userEvent from '@testing-library/user-event';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys, Constants } from 'librechat-data-provider';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
@@ -66,15 +66,33 @@ describe('CodeApprovalMenu', () => {
     expect(queryClient.getQueryData<TConversation>(key)?.codeApprovalMode).toBe('acceptEdits');
   });
 
-  test('leaves the detail cache alone for a chat without a record', async () => {
+  test('seeds a detail record from the live conversation when none exists yet', async () => {
     renderMenu();
 
     await userEvent.click(screen.getByTestId('code-approval-mode'));
     await userEvent.click(await screen.findByText('com_ui_code_approval_accept_edits'));
 
-    expect(
-      queryClient.getQueryData([QueryKeys.conversation, conversation.conversationId]),
-    ).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.conversation, conversation.conversationId])).toEqual(
+      { ...conversation, codeApprovalMode: 'acceptEdits' },
+    );
+  });
+
+  test('leaves the detail cache alone for a chat that has no id yet', async () => {
+    queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CodeApprovalMenu
+          conversation={{ ...conversation, conversationId: Constants.NEW_CONVO as string }}
+          setConversation={mockSetConversation}
+          disabled={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId('code-approval-mode'));
+    await userEvent.click(await screen.findByText('com_ui_code_approval_accept_edits'));
+
+    expect(queryClient.getQueryData([QueryKeys.conversation, Constants.NEW_CONVO])).toBeUndefined();
   });
 
   test('offers every mode as a radio and marks the selected one', async () => {

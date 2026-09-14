@@ -1,6 +1,6 @@
 import * as Ariakit from '@ariakit/react';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants } from 'librechat-data-provider';
 import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import { Check, ChevronDown, FilePen, FileQuestionMark, FileTerminal } from 'lucide-react';
 import type { CodeApprovalMode, TConversation } from 'librechat-data-provider';
@@ -58,9 +58,11 @@ export default function CodeApprovalMenu({
     return null;
   }
 
-  /** Navigation rebuilds the conversation from its detail cache, so the pick
-   *  lands there too. A chat without a record yet keeps it in conversation
-   *  state alone until a run saves it. */
+  /** Navigation and run recovery rebuild the conversation from its detail
+   *  cache, so the pick lands there too, seeding the record from the live
+   *  conversation when none exists yet (the resumable transport seeds the same
+   *  key optimistically). A chat that has no id yet keeps the pick in
+   *  conversation state alone until the run assigns one. */
   const selectMode = (mode: CodeApprovalMode) => {
     if (!modes.includes(mode)) {
       return;
@@ -68,13 +70,15 @@ export default function CodeApprovalMenu({
     setConversation((current) =>
       current == null ? current : { ...current, codeApprovalMode: mode },
     );
-    const conversationId = conversation?.conversationId;
-    if (conversationId == null) {
+    const record = conversation;
+    const conversationId = record?.conversationId;
+    if (record == null || conversationId == null || conversationId === Constants.NEW_CONVO) {
       return;
     }
-    queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) =>
-      cached ? { ...cached, codeApprovalMode: mode } : cached,
-    );
+    queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) => ({
+      ...(cached ?? record),
+      codeApprovalMode: mode,
+    }));
   };
 
   const SelectedIcon = modeOptions[selected].icon;
