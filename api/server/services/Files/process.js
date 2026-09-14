@@ -25,6 +25,7 @@ const {
   isMessageFileUpload,
   isResponsesApiUpload,
   isSpeechProviderConfigured,
+  getCustomEndpointProvider,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -494,6 +495,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpointConfig,
     fileConfig,
     endpoint: configEndpoint,
+    endpointProvider: getCustomEndpointProvider(appConfig?.endpoints?.custom, configEndpoint),
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
     sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
   });
@@ -810,6 +812,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     endpointConfig,
     fileConfig,
     endpoint,
+    endpointProvider: getCustomEndpointProvider(appConfig?.endpoints?.custom, endpoint),
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
     sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
   });

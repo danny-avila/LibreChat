@@ -103,6 +103,7 @@ export function createRunFileMessageEncoder(
           endpointConfig,
           fileConfig,
           endpoint,
+          endpointProvider: agent.provider,
           useResponsesApi,
           sttConfigured: isSpeechProviderConfigured(deps.req.config?.speech?.stt),
         }),
