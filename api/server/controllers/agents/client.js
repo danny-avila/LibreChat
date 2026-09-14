@@ -1,9 +1,5 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const {
-  logger,
-  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
-  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
-} = require('@librechat/data-schemas');
+const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -109,6 +105,11 @@ const {
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
+  stripUnusableSummaryParts,
+  dropUnusableSummaryParts,
+  getLatestEventActorSummary,
+  createAgentEventActorSummary,
+  normalizeAgentEventActorSummary,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -174,7 +175,6 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
-  getSummaryPartText,
   markCompactionOutcome,
   resolvePersistableCodeEnvironmentDecision,
 } = require('@librechat/api');
@@ -226,22 +226,6 @@ const loadAgent = (params) =>
   });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
-
-function normalizeEventActorSummary(summary) {
-  if (summary == null) {
-    return undefined;
-  }
-  if (
-    typeof summary.text !== 'string' ||
-    summary.text.length === 0 ||
-    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
-    !Number.isFinite(summary.tokenCount) ||
-    summary.tokenCount < 0
-  ) {
-    throw new RangeError('Event actor summary state is invalid');
-  }
-  return { text: summary.text, tokenCount: summary.tokenCount };
-}
 
 function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
@@ -335,24 +319,6 @@ function captureRunContextMeta(client) {
     fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
   });
-}
-
-function getLatestEventActorSummary(contentParts) {
-  if (!Array.isArray(contentParts)) {
-    return undefined;
-  }
-  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
-    const part = contentParts[index];
-    const text = getSummaryPartText(part);
-    if (text.length === 0) {
-      continue;
-    }
-    return normalizeEventActorSummary({
-      text,
-      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
-    });
-  }
-  return undefined;
 }
 
 /**
@@ -2117,7 +2083,7 @@ class AgentClient extends BaseClient {
     let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
-      summary = normalizeEventActorSummary(state.summary);
+      summary = normalizeAgentEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
       compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
         state.compactionSemanticIndex,
@@ -2206,7 +2172,13 @@ class AgentClient extends BaseClient {
         (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
       ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
     ]);
-    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    /** Stamped where state is assembled, not where each source is read: a
+     *  summary inherited from the formatter arrives in the SDK's
+     *  `{ text, tokenCount }` shape, and persisting it unstamped would have the
+     *  next event refuse its own state and reload the whole history. */
+    const summary = createAgentEventActorSummary(
+      getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary,
+    );
     this.eventActorSummary = summary;
     const compactionSemanticIndex = createCompactionSemanticIndexProjection(
       this.compactionSemanticIndexSnapshot,
@@ -2590,6 +2562,17 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      /**
+       * A summarize round that errored or was cut off never reaches the model:
+       * the formatter would take its partial text as the history boundary and
+       * drop everything older. Dropped from the prompt copy here, ahead of the
+       * counts, so the per-index count, the prompt total admission checks, and
+       * the steer-media adjustments below all describe what is actually sent.
+       * The stored message keeps the part — the renderer labels it — so a
+       * canonical recount reads an unstripped surface instead.
+       */
+      const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
       /**
@@ -2607,19 +2590,21 @@ class AgentClient extends BaseClient {
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
-         *  prompt copy, so the prompt copy is the counting surface; with it,
-         *  the canonical count must exclude the prepended context. */
+         *  prompt copy, so the prompt copy is the counting surface; with it (or
+         *  with a dropped summary), the canonical count must be taken from the
+         *  message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext) {
+        if (message.fileContext || droppedPromptSummary) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount = message.fileContext
-        ? countFormattedMessageTokens(formattedMessage, encoding)
-        : canonicalTokenCount;
+      const promptMessageTokenCount =
+        message.fileContext || droppedPromptSummary
+          ? countFormattedMessageTokens(formattedMessage, encoding)
+          : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -4620,6 +4605,10 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
+      /** The payload reached here already free of unusable summary parts:
+       *  `buildMessages` drops them from each prompt copy before counting it,
+       *  so the formatter's summary scan cannot take a failed round's prefix as
+       *  the history boundary and every count describes what is sent. */
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -4719,7 +4708,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripActivityLabelParts(this.memoryPayload),
+              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
