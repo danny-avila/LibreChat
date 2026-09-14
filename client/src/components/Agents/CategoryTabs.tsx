@@ -58,7 +58,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-[36px] min-w-[80px] animate-pulse rounded-lg bg-surface-tertiary"
+            className="h-[2.25rem] min-w-[5rem] animate-pulse rounded-lg bg-surface-tertiary"
           />
         ))}
       </div>

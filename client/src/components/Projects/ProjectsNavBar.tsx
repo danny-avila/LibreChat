@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
-import { Button, useMediaQuery } from '@librechat/client';
+import { Button } from '@librechat/client';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import { useLocalize } from '~/hooks';
 
 type ProjectsNavBarProps = {
@@ -9,7 +10,7 @@ type ProjectsNavBarProps = {
 
 export default function ProjectsNavBar({ onCreate }: ProjectsNavBarProps) {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
 
   return (
     <header className="sticky top-0 z-10 border-b border-border-light bg-presentation">

@@ -137,7 +137,7 @@ export default function VersionItem({
                 {versionTitle}
               </span>
               {isActive && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-status-success-subtle px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-success">
+                <span className="inline-flex items-center gap-1 rounded-full bg-status-success-subtle px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-status-success">
                   <span
                     className="size-1.5 rounded-full bg-status-success-strong"
                     aria-hidden="true"
@@ -146,7 +146,7 @@ export default function VersionItem({
                 </span>
               )}
               {!isActive && isLatest && (
-                <span className="rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+                <span className="rounded-full bg-surface-tertiary px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_latest')}
                 </span>
               )}
@@ -177,7 +177,7 @@ export default function VersionItem({
               </OGDialogTrigger>
               <OGDialogTemplate
                 title={localize('com_ui_agent_version_restore_confirm')}
-                className="max-w-[450px]"
+                className="max-w-[28.125rem]"
                 main={
                   <div className="flex w-full flex-col gap-3 text-sm">
                     <Label className="text-left font-medium text-text-primary">

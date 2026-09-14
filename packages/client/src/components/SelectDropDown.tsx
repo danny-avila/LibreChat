@@ -201,7 +201,7 @@ function SelectDropDown({
                       key={'listbox-render-option'}
                       value={null}
                       className={cn(
-                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
+                        'group relative flex h-[2.625rem] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
                         optionsClass ?? '',
                       )}
                     >
@@ -230,7 +230,7 @@ function SelectDropDown({
                         value={option}
                         className={({ active }) =>
                           cn(
-                            'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
+                            'group relative flex h-[2.625rem] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
                             active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { List } from 'react-virtualized';
 import * as Ariakit from '@ariakit/react';
+import { useRemScale } from '@librechat/client';
 import type { ListRowProps } from 'react-virtualized';
 import type { Endpoint } from '~/common';
 import { EndpointModelItem } from './EndpointModelItem';
+import { useElementSize } from '~/hooks';
 
 /** Matches the rendered height of a `CustomMenuItem` row (px-2 py-1 around a py-1 body). */
 const ROW_HEIGHT = 36;
+/** Only the width used before the container has been measured. */
+const LIST_WIDTH = 360;
 const MAX_LIST_HEIGHT = 320;
 const OVERSCAN = 8;
 
@@ -46,8 +50,20 @@ export default function VirtualizedModelList({
   precedingOptionCount,
 }: VirtualizedModelListProps) {
   const listRef = useRef<List>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const combobox = Ariakit.useComboboxContext();
+  const remScale = useRemScale();
+  /** Rows are sized from the width react-virtualized is given, so it has to be the
+   *  width the menu actually offers: the surrounding popover is capped at the
+   *  viewport, which a scaled-up fixed width would overflow. */
+  const { ref: measureRef, width: measuredWidth } = useElementSize<HTMLDivElement>();
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      measureRef(node);
+    },
+    [measureRef],
+  );
   const indexSuffix = endpointIndex != null ? `-${endpointIndex}` : '';
   const rowCount = modelIds.length;
 
@@ -101,9 +117,10 @@ export default function VirtualizedModelList({
     return () => document.removeEventListener('keydown', handleBoundaryNavigation, true);
   }, [combobox, rowCount, rowAt]);
 
+  const rowHeight = ROW_HEIGHT * remScale;
   const height = useMemo(
-    () => Math.min(MAX_LIST_HEIGHT, Math.max(ROW_HEIGHT, rowCount * ROW_HEIGHT)),
-    [rowCount],
+    () => Math.min(MAX_LIST_HEIGHT * remScale, Math.max(rowHeight, rowCount * rowHeight)),
+    [rowCount, rowHeight, remScale],
   );
 
   const rowRenderer = useCallback(
@@ -135,13 +152,13 @@ export default function VirtualizedModelList({
   );
 
   return (
-    <div ref={containerRef} data-endpoint-models={`${endpoint.value}${indexSuffix}`}>
+    <div ref={setContainerRef} data-endpoint-models={`${endpoint.value}${indexSuffix}`}>
       <List
         ref={listRef}
-        width={360}
+        width={measuredWidth > 0 ? measuredWidth : LIST_WIDTH * remScale}
         height={height}
         rowCount={rowCount}
-        rowHeight={ROW_HEIGHT}
+        rowHeight={rowHeight}
         overscanRowCount={OVERSCAN}
         rowRenderer={rowRenderer}
         className="outline-none!"

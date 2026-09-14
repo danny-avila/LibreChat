@@ -46,7 +46,7 @@ function SidebarItem({ icon, label, active, onClick, count }: SidebarItemProps) 
       <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && count > 0 && (
-        <span className="text-[11px] tabular-nums text-text-secondary">{count}</span>
+        <span className="text-[0.6875rem] tabular-nums text-text-secondary">{count}</span>
       )}
     </button>
   );
@@ -93,7 +93,7 @@ export default function MarketplaceSidebar({
   }, [localize, onCreateNew, hasMcpCreateAccess, actionsEnabled]);
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-border-light bg-surface-primary-alt p-3">
+    <aside className="flex w-[min(14rem,35%)] shrink-0 flex-col gap-0.5 border-r border-border-light bg-surface-primary-alt p-3">
       <h2 className="px-2.5 pb-1 pt-1 text-base font-bold text-text-primary">
         {localize('com_ui_tools_marketplace')}
       </h2>

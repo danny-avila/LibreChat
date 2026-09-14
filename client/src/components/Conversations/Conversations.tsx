@@ -5,7 +5,7 @@ import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { Spinner, useMediaQuery, buttonVariants } from '@librechat/client';
+import { Spinner, useMediaQuery, useRemScale, buttonVariants } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
@@ -232,6 +232,7 @@ const Conversations: FC<ConversationsProps> = ({
   });
   dropRef(chatsRegionRef);
   const convoHeight = isSmallScreen ? 44 : 34;
+  const remScale = useRemScale();
   const {
     ref: listContainerRef,
     width: listWidth,
@@ -323,7 +324,7 @@ const Conversations: FC<ConversationsProps> = ({
     () =>
       new CellMeasurerCache({
         fixedWidth: true,
-        defaultHeight: convoHeight,
+        defaultHeight: Math.round(convoHeight * remScale),
         keyMapper: (index) => {
           const item = flattenedItemsRef.current[index];
           if (!item) {
@@ -341,9 +342,12 @@ const Conversations: FC<ConversationsProps> = ({
           return `unknown-${index}`;
         },
       }),
-    [convoHeight],
+    [convoHeight, remScale],
   );
 
+  /** Rows are sized in rem, so a UI scale change resizes them without changing the
+   *  sidebar's physical width: pinned at its cap, the width effect below never fires
+   *  and every cached height stays stale. */
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       cache.clearAll();
@@ -352,7 +356,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [search.query, cache, containerRef]);
+  }, [search.query, remScale, cache, containerRef]);
 
   /** Grid only re-derives row offsets when the row count changes; reorders that
    *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */

@@ -181,7 +181,7 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
           onClick={() => handleChange(option.value)}
           onKeyDown={(event) => handleKeyDown(event, index)}
           disabled={disabled}
-          className={`relative z-10 flex h-[34px] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary ${
+          className={`relative z-10 flex h-[2.125rem] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary ${
             currentValue === option.value ? 'text-text-primary' : 'text-text-secondary'
           } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${fullWidth ? 'flex-1' : ''} ${buttonClassName}`}
         >

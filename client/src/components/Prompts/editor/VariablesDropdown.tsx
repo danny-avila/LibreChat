@@ -127,7 +127,7 @@ export default function VariablesDropdown({
               {localize('com_ui_special_variables')}
             </span>
             {usedCount > 0 && (
-              <span className="flex size-4 items-center justify-center rounded-full bg-surface-tertiary text-[10px] font-medium text-text-secondary">
+              <span className="flex size-4 items-center justify-center rounded-full bg-surface-tertiary text-[0.625rem] font-medium text-text-secondary">
                 {usedCount}
               </span>
             )}
@@ -139,7 +139,7 @@ export default function VariablesDropdown({
         }
         items={items}
         menuId={menuId}
-        className="z-50 w-64"
+        className="z-50 w-[min(16rem,90vw)]"
         itemClassName="px-2 py-1"
       />
     </div>

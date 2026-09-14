@@ -92,7 +92,7 @@ function SourceItem({ source, expanded = false }: SourceItemProps) {
           <Ariakit.Hovercard
             gutter={16}
             className={cn(
-              'z-[999] w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg',
+              'z-[999] w-[20rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border-medium bg-surface-secondary p-3 text-text-primary shadow-lg',
               'origin-top-left scale-95 opacity-0 transition-[opacity,transform] duration-150 ease-out',
               'data-[enter]:scale-100 data-[enter]:opacity-100',
               'data-[leave]:scale-95 data-[leave]:opacity-0',
@@ -380,7 +380,7 @@ export function StackedFavicons({
         <FaviconImage
           key={`icon-${i}`}
           domain={getCleanDomain(source.link)}
-          className={i > 0 ? 'ml-[-6px]' : ''}
+          className={i > 0 ? 'ml-[-0.375rem]' : ''}
         />
       ))}
     </div>
@@ -411,7 +411,7 @@ const SourcesGroup = React.memo(function SourcesGroup({
     <div className="scrollbar-none grid w-full grid-cols-4 gap-2 overflow-x-auto">
       <OGDialog>
         {visibleSources.map((source, i) => (
-          <div key={`source-${i}`} className="w-full min-w-[120px]">
+          <div key={`source-${i}`} className="w-full min-w-[7.5rem]">
             <SourceItem source={source} />
           </div>
         ))}
@@ -425,7 +425,7 @@ const SourcesGroup = React.memo(function SourcesGroup({
             </div>
           </OGDialogTrigger>
         )}
-        <OGDialogContent className="flex max-h-[80vh] max-w-full flex-col overflow-hidden rounded-lg bg-surface-dialog p-0 md:max-w-[600px]">
+        <OGDialogContent className="flex max-h-[80vh] max-w-full flex-col overflow-hidden rounded-lg bg-surface-dialog p-0 md:max-w-[37.5rem]">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-dialog px-3 py-2">
             <OGDialogTitle className="text-base font-medium">
               {localize('com_sources_title')}
@@ -503,7 +503,7 @@ function FilesGroup({ files, messageId, conversationId, limit = 3 }: FilesGroupP
     <div className="scrollbar-none grid w-full grid-cols-4 gap-2 overflow-x-auto">
       <OGDialog>
         {visibleFiles.map((file, i) => (
-          <div key={`file-${i}`} className="w-full min-w-[120px]">
+          <div key={`file-${i}`} className="w-full min-w-[7.5rem]">
             <FileItem file={file} messageId={messageId} conversationId={conversationId} />
           </div>
         ))}
@@ -512,7 +512,10 @@ function FilesGroup({ files, messageId, conversationId, limit = 3 }: FilesGroupP
             <div className="flex items-center gap-2">
               <div className="relative flex">
                 {remainingFiles.slice(0, 3).map((_, i) => (
-                  <File key={`file-icon-${i}`} className={`size-4 ${i > 0 ? 'ml-[-6px]' : ''}`} />
+                  <File
+                    key={`file-icon-${i}`}
+                    className={`size-4 ${i > 0 ? 'ml-[-0.375rem]' : ''}`}
+                  />
                 ))}
               </div>
               <span className="truncate text-xs font-medium text-text-secondary">
@@ -521,7 +524,7 @@ function FilesGroup({ files, messageId, conversationId, limit = 3 }: FilesGroupP
             </div>
           </OGDialogTrigger>
         )}
-        <OGDialogContent className="flex max-h-[80vh] max-w-full flex-col overflow-hidden rounded-lg bg-surface-dialog p-0 md:max-w-[600px]">
+        <OGDialogContent className="flex max-h-[80vh] max-w-full flex-col overflow-hidden rounded-lg bg-surface-dialog p-0 md:max-w-[37.5rem]">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-dialog px-3 py-2">
             <OGDialogTitle className="text-base font-medium">
               {localize('com_sources_agent_files')}
