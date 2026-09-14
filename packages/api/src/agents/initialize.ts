@@ -2038,6 +2038,7 @@ export async function initializeAgent(
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
       workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
+      workspaceEnvironment: trustedCodeExecutionContext.codeWorkspace?.environment,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -2255,6 +2256,8 @@ export async function initializeAgent(
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
       userId: user?.id,
+      workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
+      workspaceEnvironment: trustedCodeExecutionContext.codeWorkspace?.environment,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
       maxCatalogSkills: getMaxCatalogSkills(runtime),
