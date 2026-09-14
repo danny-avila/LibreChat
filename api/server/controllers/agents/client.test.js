@@ -1512,6 +1512,56 @@ describe('AgentClient - interrupt discovery persistence', () => {
     expect(metaWhenResumed).toEqual(seed);
   });
 
+  it('records collected usage as an abort when a resumed run is stopped', async () => {
+    jest.clearAllMocks();
+    const streamId = 'conversation-resume-stopped';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const abortController = new AbortController();
+    mockCreateRun.mockImplementationOnce(async () => ({
+      Graph: null,
+      resume: jest.fn(async () => {
+        abortController.abort();
+      }),
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    }));
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-resume-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.resumeCompletion({
+      resumeValue: { decisions: [] },
+      streamId,
+      checkpointNamespace: 'resume-stopped',
+      abortController,
+    });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
+  });
+
   it('publishes the inherited context meta before a fresh run streams', async () => {
     const streamId = 'conversation-context-meta-stream-seed';
     const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
@@ -2883,6 +2933,93 @@ describe('AgentClient - startup telemetry', () => {
     expect(client.stepLimitReached).toBe(false);
     expect(client.contentParts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+  });
+
+  it('records collected usage as an abort when the run is stopped', async () => {
+    jest.clearAllMocks();
+    const abortController = new AbortController();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        abortController.abort();
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-stopped',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-stopped';
+    client.responseMessageId = 'response-conversation-stopped';
+    client.parentMessageId = 'parent-conversation-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
+  });
+
+  it('records collected usage as a message when the run completes', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-completed',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-completed';
+    client.responseMessageId = 'response-conversation-completed';
+    client.parentMessageId = 'parent-conversation-completed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController: new AbortController() });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'message' }),
     );
   });
 

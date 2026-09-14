@@ -26,6 +26,8 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  resolveRunUsageContext,
+  recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
@@ -5170,20 +5172,14 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
-        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        } else {
-          logger.debug(
-            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
-          );
-        }
+        /** The run owns its usage even when stopped: `/api/agents/chat/abort`
+         *  only signals the abort, so nothing else records what was consumed.
+         *  A stopped turn is labelled as such on its transactions. */
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -5840,14 +5836,11 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        }
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
@@ -6155,13 +6148,19 @@ class AgentClient extends BaseClient {
     transactions,
     promptTokens,
     completionTokens,
-    context = 'message',
+    context,
   }) {
-    try {
-      await db.spendTokens(
-        {
+    await recordFallbackTokenUsage(
+      { spendTokens: db.spendTokens },
+      {
+        usage,
+        context,
+        collectedUsage: this.collectedUsage,
+        aborted: this.abortController?.signal?.aborted === true,
+        promptTokens,
+        completionTokens,
+        txMetadata: {
           model,
-          context,
           balance,
           transactions,
           messageId: this.responseMessageId,
@@ -6169,35 +6168,8 @@ class AgentClient extends BaseClient {
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            transactions,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
-    } catch (error) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        getSafeErrorMetadata(error),
-      );
-    }
+      },
+    );
   }
 
   /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */

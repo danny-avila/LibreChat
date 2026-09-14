@@ -24,6 +24,7 @@ import {
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -602,6 +603,109 @@ export function resolveAgentTokenConfig({
     return byAgentId.get(agentId);
   }
   return fallback;
+}
+
+/**
+ * The `context` a run stamps on the usage transactions it records on exit. A stopped run
+ * still owns what it consumed — the abort route only signals — so it records under
+ * `'abort'` rather than skipping, and a completed run under `'message'`.
+ */
+export function resolveRunUsageContext(aborted: boolean): 'abort' | 'message' {
+  return aborted ? 'abort' : 'message';
+}
+
+/**
+ * Whether a run already recorded provider-reported consumption for this response.
+ * `BaseClient` falls back to text-count billing whenever the recorded usage has no
+ * positive output count, which would charge the prompt a second time after
+ * {@link recordCollectedUsage} debited it — a stopped call may report input tokens
+ * and no output. An all-zero report is treated as unreported so the estimate still applies.
+ */
+export function hasRecordedProviderUsage(
+  usage: Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> | null | undefined,
+): boolean {
+  return usage != null && ((usage.input_tokens ?? 0) > 0 || (usage.output_tokens ?? 0) > 0);
+}
+
+const NON_PRIMARY_USAGE_TYPES: ReadonlySet<string> = new Set([
+  'summarization',
+  'subagent',
+  'sequential',
+]);
+
+/**
+ * Whether any primary (response) call in the collected usage reported consumption. The stream
+ * aggregate {@link recordCollectedUsage} returns takes its input from the first primary entry
+ * only, so a later cancelled call that reported input alone is billed yet invisible there.
+ */
+export function hasRecordedPrimaryUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined> | null | undefined,
+): boolean {
+  return (
+    collectedUsage?.some(
+      (usage) =>
+        usage != null &&
+        !NON_PRIMARY_USAGE_TYPES.has(usage.usage_type ?? '') &&
+        hasRecordedProviderUsage(usage),
+    ) === true
+  );
+}
+
+export interface FallbackTokenUsageParams {
+  /** Usage the run already recorded for this response, when it recorded any. */
+  usage?:
+    | (Pick<UsageMetadata, 'input_tokens' | 'output_tokens'> & { reasoning_tokens?: number })
+    | null;
+  /** Every entry the run collected; a billed call the aggregate hides still suppresses the estimate. */
+  collectedUsage?: ReadonlyArray<UsageMetadata | null | undefined> | null;
+  promptTokens?: number;
+  completionTokens?: number;
+  /** Whether the run was stopped; labels the row when no explicit `context` is given. */
+  aborted?: boolean;
+  /** Explicit transaction label; otherwise derived from `aborted`. */
+  context?: string;
+  /** Transaction fields the caller owns: user, conversation, message, model, config. */
+  txMetadata: Omit<TxMetadata, 'context'>;
+}
+
+/**
+ * Text-count billing for a response whose provider usage was never recorded — the
+ * fallback `BaseClient` takes when the recorded usage has no positive output count.
+ * Once provider usage was recorded it is already billed, so this records nothing
+ * (see {@link hasRecordedProviderUsage}). A reasoning count the estimate cannot see is
+ * billed as its own `'reasoning'` row. Failures are logged, never thrown, so a billing
+ * error cannot fail the response that was already produced.
+ */
+export async function recordFallbackTokenUsage(
+  deps: Pick<RecordUsageDeps, 'spendTokens'>,
+  {
+    usage,
+    collectedUsage,
+    promptTokens,
+    completionTokens,
+    aborted = false,
+    context = resolveRunUsageContext(aborted),
+    txMetadata,
+  }: FallbackTokenUsageParams,
+): Promise<void> {
+  if (hasRecordedPrimaryUsage(collectedUsage) || hasRecordedProviderUsage(usage)) {
+    return;
+  }
+  try {
+    await deps.spendTokens({ ...txMetadata, context }, { promptTokens, completionTokens });
+    const reasoningTokens = usage?.reasoning_tokens;
+    if (typeof reasoningTokens === 'number') {
+      await deps.spendTokens(
+        { ...txMetadata, context: 'reasoning' },
+        { completionTokens: reasoningTokens },
+      );
+    }
+  } catch (error) {
+    logger.error(
+      '[recordFallbackTokenUsage] Error recording token usage',
+      getSafeErrorMetadata(error),
+    );
+  }
 }
 
 export interface RecordUsageParams {
