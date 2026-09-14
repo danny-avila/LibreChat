@@ -308,6 +308,7 @@ describe('expired file sweep helpers', () => {
       {
         sweepExpiredFiles: jest.fn(),
         runAsSystem: jest.fn((fn) => fn()),
+        isLeader: jest.fn().mockResolvedValue(true),
         logger,
       },
     );
@@ -316,5 +317,30 @@ describe('expired file sweep helpers', () => {
     expect(logger.info).toHaveBeenCalledWith(
       '[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0',
     );
+  });
+
+  it('runs the sweep only on the elected leader and permits follower takeover', async () => {
+    jest.useFakeTimers();
+    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '1000';
+    const sweep = jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 });
+    const runAsSystem = jest.fn((fn) => fn());
+    const isLeader = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const interval = startExpiredFileSweep(
+      { appConfig: {} as AppConfig },
+      { sweepExpiredFiles: sweep, runAsSystem, isLeader, logger },
+    );
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(isLeader).toHaveBeenCalledTimes(1);
+    expect(runAsSystem).not.toHaveBeenCalled();
+    expect(sweep).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(isLeader).toHaveBeenCalledTimes(2);
+    expect(runAsSystem).toHaveBeenCalledTimes(1);
+    expect(sweep).toHaveBeenCalledTimes(1);
+    clearInterval(interval ?? undefined);
   });
 });

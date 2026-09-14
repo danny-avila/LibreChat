@@ -63,6 +63,7 @@ type SweepDependencies = {
 type StartSweepDependencies = {
   sweepExpiredFiles: (options?: ExpiredFileSweepOptions) => Promise<ExpiredFileSweepResult>;
   runAsSystem: <T>(fn: () => Promise<T>) => Promise<T>;
+  isLeader: () => Promise<boolean>;
   logger: SweepLogger;
 };
 
@@ -370,7 +371,7 @@ export async function sweepExpiredFiles(
 
 export function startExpiredFileSweep(
   options: ExpiredFileSweepOptions | undefined = {},
-  { sweepExpiredFiles, runAsSystem, logger }: StartSweepDependencies,
+  { sweepExpiredFiles, runAsSystem, isLeader, logger }: StartSweepDependencies,
 ): NodeJS.Timeout | null {
   const intervalMs = getFileRetentionSweepInterval();
   if (intervalMs === 0) {
@@ -386,6 +387,9 @@ export function startExpiredFileSweep(
 
     isSweeping = true;
     try {
+      if (!(await isLeader())) {
+        return;
+      }
       await runAsSystem(() => sweepExpiredFiles(options));
     } catch (error) {
       logger.error('[sweepExpiredFiles] Background sweep failed:', error);
