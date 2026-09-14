@@ -174,42 +174,51 @@ function isSummaryPartWithText(part: unknown): boolean {
   return getSummaryPartText(summary).length > 0;
 }
 
+/** The content of one message with every unusable summary part removed, or the
+ *  same array when there was nothing to remove. */
+function withoutUnusableSummaryParts(content: unknown[]): unknown[] {
+  const filtered = content.filter(
+    (part) => isUsableSummaryPart(part) || !isSummaryPartWithText(part),
+  );
+  return filtered.length === content.length ? content : filtered;
+}
+
 /**
- * Drops the summary parts that cannot bound history from one model-facing
- * message, in place, and reports whether anything went. The SDK's summary scan
- * takes the last summary part carrying text as the conversation's history
+ * Points one model-facing message at content free of the summary parts that
+ * cannot bound history, and reports whether anything went. The SDK's summary
+ * scan takes the last summary part carrying text as the conversation's history
  * boundary and drops every message before it, reading neither `failed` nor
  * `summarizing`: a round that errored or was cut off keeps the deltas it
  * streamed, so leaving that part in would replace the history it never
  * finished summarizing with the prefix it produced. An empty summary is left
  * alone — it bounds nothing, and the renderer owns how it appears.
  *
- * Callers own the copy they pass: this belongs on the prompt copy of a turn,
- * before its token count is taken, so the count, the prompt total an admission
- * check reads, and any later per-index adjustment all describe what the model
- * actually receives. The stored message keeps its parts.
+ * The message gets a NEW content array rather than a spliced one, because a
+ * formatted prompt copy shares its content array with the stored message it
+ * came from: splicing would reindex the persisted row's parts under every
+ * reader that holds it. This belongs on a prompt copy before its token count
+ * is taken, so the count, the prompt total an admission check reads, and any
+ * later per-index adjustment all describe what the model actually receives.
  */
 export function dropUnusableSummaryParts(message: { content?: unknown }): boolean {
   const content = message?.content;
   if (!Array.isArray(content)) {
     return false;
   }
-  let dropped = false;
-  for (let index = content.length - 1; index >= 0; index -= 1) {
-    const part = content[index];
-    if (isSummaryPartWithText(part) && !isUsableSummaryPart(part)) {
-      content.splice(index, 1);
-      dropped = true;
-    }
+  const filtered = withoutUnusableSummaryParts(content);
+  if (filtered === content) {
+    return false;
   }
-  return dropped;
+  message.content = filtered;
+  return true;
 }
 
 /**
- * The same rule for a payload the caller does not own: returns a payload whose
- * messages carry no unusable summary part, leaving the input untouched and
- * returning the same reference when nothing needed dropping. Message positions
- * are preserved, so an index-keyed token map stays aligned.
+ * The same rule for a payload whose messages the caller may not touch:
+ * returns a payload of messages carrying no unusable summary part, leaving the
+ * input and its messages untouched and returning the same reference when
+ * nothing needed dropping. Message positions are preserved, so an index-keyed
+ * token map stays aligned.
  */
 export function stripUnusableSummaryParts<T extends { content?: unknown }>(payload: T[]): T[] {
   if (!Array.isArray(payload)) {
@@ -221,10 +230,8 @@ export function stripUnusableSummaryParts<T extends { content?: unknown }>(paylo
     if (!Array.isArray(content)) {
       return message;
     }
-    const filtered = content.filter(
-      (part) => isUsableSummaryPart(part) || !isSummaryPartWithText(part),
-    );
-    if (filtered.length === content.length) {
+    const filtered = withoutUnusableSummaryParts(content);
+    if (filtered === content) {
       return message;
     }
     changed = true;

@@ -333,6 +333,19 @@ describe('unusable summary parts', () => {
     expect(message.content).toEqual([completeSummary]);
   });
 
+  /** A formatted prompt copy shares its content array with the stored message
+   *  it came from, so the drop must repoint the copy rather than splice: a
+   *  splice would reindex the persisted row's parts under every reader that
+   *  holds it, including the edit path's `/content/N` provenance. */
+  it('leaves the stored content array it was handed untouched', () => {
+    const stored = [text, failedSummary];
+    const promptCopy = { role: 'assistant', content: stored };
+
+    expect(dropUnusableSummaryParts(promptCopy)).toBe(true);
+    expect(promptCopy.content).not.toBe(stored);
+    expect(stored).toEqual([text, failedSummary]);
+  });
+
   it.each<[string, { role: string; content?: unknown }]>([
     ['no unusable summary', { role: 'assistant', content: [completeSummary] }],
     ['an empty summary, which bounds nothing', { role: 'assistant', content: [emptySummary] }],
