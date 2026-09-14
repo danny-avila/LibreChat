@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page, Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 import translations from '../../../../client/src/locales/en/translation.json';
 
 type MockAgent = {
@@ -301,5 +301,91 @@ test.describe('marketplace recovery', () => {
     await expect(page.getByRole('status', { name: translations.com_agents_loading })).toHaveCount(
       0,
     );
+  });
+
+  test('@scenario:focused-card-stays-visible-under-the-retry a focused card is never left under the retry card', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const loaded = makeAgents(36, 0);
+    let cursorRequests = 0;
+
+    await routeMarketplace(page, async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get('cursor');
+      if (cursor == null) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(pageFor(loaded, 'cursor-page-two')),
+        });
+        return;
+      }
+      cursorRequests += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'cursor page unavailable' }),
+      });
+    });
+
+    await page.goto('/agents/all');
+    await expect(page.getByRole('button', { name: loaded[0].name })).toBeVisible();
+
+    const frame = page.getByRole('tabpanel').locator('xpath=..');
+    /* Reaching the end asks for the next page, which fails, so the recovery card takes
+       over while every loaded row is still mounted. */
+    await frame.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(page.getByRole('alert')).toContainText(
+      translations.com_agents_error_server_title,
+      { timeout: 30_000 },
+    );
+    expect(cursorRequests).toBeGreaterThan(0);
+
+    /* A focused control with no visible focus indication is the failure this guards: the
+       card is painted over the rows, so whichever row the reader is on has to end up
+       clear of it - at the top of the list, where there is nothing to scroll away, and
+       deep in it, where there is. */
+    const focusState = async (card: Locator) => {
+      await card.focus();
+      return card.evaluate((element) => {
+        const alert = document.querySelector('[role="alert"]');
+        const alertRect = alert?.getBoundingClientRect();
+        const rect = element.getBoundingClientRect();
+        return {
+          focused: element === document.activeElement,
+          covered:
+            alertRect != null &&
+            rect.top < alertRect.bottom &&
+            rect.bottom > alertRect.top &&
+            rect.left < alertRect.right &&
+            rect.right > alertRect.left,
+        };
+      });
+    };
+
+    await frame.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    const atTop = await focusState(page.getByRole('button', { name: loaded[0].name }));
+    expect(atTop.focused).toBe(true);
+    expect(atTop.covered).toBe(false);
+
+    await frame.evaluate((element) => {
+      element.scrollTop = Math.round(element.scrollHeight / 2);
+    });
+    /* The windowed set is mounted around the scroll position, so the first mounted row is
+       the one the card would cover where the reader now is. */
+    const deepRow = page
+      .getByRole('tabpanel')
+      .getByRole('listitem')
+      .first()
+      .getByRole('button')
+      .first();
+    await expect(deepRow).toBeVisible();
+    const deep = await focusState(deepRow);
+    expect(deep.focused).toBe(true);
+    expect(deep.covered).toBe(false);
   });
 });
