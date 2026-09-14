@@ -2910,6 +2910,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
           environmentId: 'personal-vm',
           workspaceId: 'project-a',
           operations: ['read_file', 'list_files', 'execute_command'],
+          environment: { fingerprint: 'a'.repeat(64), repo: 'owner/project', actions: ['check'] },
         },
       };
       if (protectedEdit) codeExecutionContext.codeWorkspace!.operations.push('edit_file');
@@ -2944,6 +2945,11 @@ describe('initializeAgent — execute_code capability expansion', () => {
         'read_file',
       ]);
       const bashTool = result.toolDefinitions?.find(({ name }) => name === 'bash_tool');
+      expect(bashTool?.parameters).toMatchObject({
+        properties: { environmentAction: { enum: ['check'] } },
+        required: [],
+      });
+      expect(bashTool?.description).toContain('owner/project');
       expect(
         (bashTool?.parameters as { properties?: { timeoutMs?: { maximum?: number } } })?.properties
           ?.timeoutMs?.maximum,

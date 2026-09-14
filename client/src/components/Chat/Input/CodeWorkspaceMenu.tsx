@@ -123,10 +123,11 @@ function EnvironmentWorkspaces({
               {descriptor.name && (
                 <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
               )}
-              {descriptor.environment?.repo && (
+              {(descriptor.environment?.repo || descriptor.environment?.ref) && (
                 <p className="truncate text-xs text-text-secondary">
-                  {descriptor.environment.repo}
-                  {descriptor.environment.ref ? ` · ${descriptor.environment.ref}` : ''}
+                  {[descriptor.environment.repo, descriptor.environment.ref]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
               )}
             </div>

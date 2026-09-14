@@ -88,11 +88,14 @@ function renderMenu(ui: React.ReactElement) {
 }
 
 describe('CodeWorkspaceMenu', () => {
-  test('shows repository and ref for a named project without changing selection', async () => {
+  test.each([
+    ['example/app', 'example/app · dev'],
+    [undefined, 'dev'],
+  ])('shows project metadata without changing selection (%s)', async (repo, label) => {
     const state = workspace();
     state.environments[0].workspaces[0].environment = {
       fingerprint: 'a'.repeat(64),
-      repo: 'example/app',
+      repo,
       ref: 'dev',
       actions: ['typecheck'],
     };
@@ -101,7 +104,7 @@ describe('CodeWorkspaceMenu', () => {
       <CodeWorkspaceMenu setConversation={setConversation} workspace={state} disabled={false} />,
     );
     await userEvent.click(screen.getByTestId('code-workspace'));
-    expect(await screen.findByText('example/app · dev')).toBeInTheDocument();
+    expect(await screen.findByText(label!)).toBeInTheDocument();
     expect(setConversation).not.toHaveBeenCalled();
   });
   test('shows a suggested workspace without committing the conversation decision', () => {

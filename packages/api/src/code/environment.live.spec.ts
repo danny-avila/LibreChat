@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import type { CodeWorkspaceDescriptor } from 'librechat-data-provider';
 import { createAttachedWorkspaceBashTool } from './command';
+import { registerCodeExecutionTools } from '~/agents/tools';
 
 const live = process.env.LIBRECHAT_CODE_TEST_PACKAGE ? describe : describe.skip;
 
@@ -55,6 +56,21 @@ live('native environment integration', () => {
         authHeaders: () => ({}),
         workspaceId: 'project',
         environment: ready.environment,
+      });
+      const definitions = registerCodeExecutionTools({
+        toolRegistry: undefined,
+        toolDefinitions: [],
+        includeBash: true,
+        workspaceTools: true,
+        workspaceOperations: new Set(['execute_command']),
+        workspaceEnvironment: ready.environment,
+      });
+      const modelSchema = definitions.toolDefinitions.find(
+        (definition) => definition.name === 'bash_tool',
+      )?.parameters;
+      expect(modelSchema).toMatchObject({
+        properties: { environmentAction: { enum: ['verify'] } },
+        required: [],
       });
       await tool.invoke({ environmentAction: 'verify' });
       expect(await readFile(join(root, 'result.txt'), 'utf8')).toBe('verified');

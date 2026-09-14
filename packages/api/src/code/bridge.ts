@@ -8,7 +8,8 @@ import {
 import type { CodeWorkspaceDescriptor, CodeWorkspaceOperation } from 'librechat-data-provider';
 
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
-const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 64 * 1024;
+// Covers 32 roots with 32 bounded action names and escaped metadata per root.
+const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 256 * 1024;
 
 export type CodeBridgePrincipalType = 'deployment' | 'tenant' | 'user' | 'role' | 'group';
 

@@ -93,6 +93,7 @@ export function resolveAttachedWorkspaceCommandTimeoutMax(
 
 export function buildAttachedWorkspaceBashSchema(
   maxTimeoutMs: number = WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS,
+  environment?: CodeWorkspaceDescriptor['environment'],
 ): NonNullable<LCTool['parameters']> {
   const effectiveMaxTimeoutMs = normalizeAttachedWorkspaceCommandTimeoutMax(maxTimeoutMs);
   return {
@@ -102,8 +103,18 @@ export function buildAttachedWorkspaceBashSchema(
       command: attachedCommandSchema,
       cwd: attachedWorkingDirectorySchema,
       timeoutMs: buildAttachedTimeoutSchema(effectiveMaxTimeoutMs),
+      ...(environment?.actions.length
+        ? {
+            environmentAction: {
+              type: 'string',
+              enum: [...environment.actions],
+              description:
+                'Run a fixed action defined by the machine owner. Supply this instead of command, args or cwd. Normal command approval rules still apply.',
+            },
+          }
+        : {}),
     },
-    required: ['command'],
+    required: environment?.actions.length ? [] : ['command'],
   };
 }
 
@@ -116,10 +127,19 @@ export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> =
   buildAttachedWorkspaceBashSchema(),
 );
 
-export function buildAttachedWorkspaceBashDescription(enableToolOutputReferences: boolean): string {
-  return enableToolOutputReferences
+export function buildAttachedWorkspaceBashDescription(
+  enableToolOutputReferences: boolean,
+  environment?: CodeWorkspaceDescriptor['environment'],
+): string {
+  const description = enableToolOutputReferences
     ? `${ATTACHED_WORKSPACE_BASH_DESCRIPTION}\n\n${BashToolOutputReferencesGuide}`
     : ATTACHED_WORKSPACE_BASH_DESCRIPTION;
+  return (
+    description +
+    (environment
+      ? `\n\nSelected project metadata (declared by the machine owner): ${JSON.stringify({ repo: environment.repo, ref: environment.ref })}. Named actions use the environmentAction parameter and the same approval rules as commands.`
+      : '')
+  );
 }
 
 function quoteShellArgument(value: string): string {
@@ -197,17 +217,10 @@ export function createAttachedWorkspaceBashTool({
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   const effectiveMaxTimeoutMs = normalizeAttachedWorkspaceCommandTimeoutMax(maxTimeoutMs);
-  const schema = structuredClone(buildAttachedWorkspaceBashSchema(effectiveMaxTimeoutMs));
+  const schema = structuredClone(
+    buildAttachedWorkspaceBashSchema(effectiveMaxTimeoutMs, environment),
+  );
   const actions = environment?.actions ?? [];
-  if (actions.length && schema.properties) {
-    schema.properties.environmentAction = {
-      type: 'string',
-      enum: [...actions],
-      description:
-        'Run a fixed action defined by the machine owner. Supply this instead of command, args or cwd. Normal command approval rules still apply.',
-    };
-    schema.required = [];
-  }
   return tool(
     async (
       rawInput: {
@@ -289,11 +302,7 @@ export function createAttachedWorkspaceBashTool({
     },
     {
       name: BashExecutionToolDefinition.name,
-      description:
-        ATTACHED_WORKSPACE_BASH_DESCRIPTION +
-        (environment
-          ? `\n\nSelected project metadata (declared by the machine owner): ${JSON.stringify({ repo: environment.repo, ref: environment.ref })}. Named actions use the environmentAction parameter and the same approval rules as commands.`
-          : ''),
+      description: buildAttachedWorkspaceBashDescription(false, environment),
       schema,
       responseFormat: 'content_and_artifact',
     },
