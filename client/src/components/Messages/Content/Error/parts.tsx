@@ -2,6 +2,7 @@ import { useContext, useId, useMemo, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ChevronRight } from 'lucide-react';
 import {
+  Constants,
   alternateName,
   getEndpointField,
   isAgentsEndpoint,
@@ -122,11 +123,11 @@ function resolveAgentId(agentsMap: TAgentsMap | undefined, agentId: string): Age
 
 /**
  * Who ran the failing part of an agents row. The part's own agent (its parallel lane's, or the one
- * a handoff made active) comes first; a saved agent's row stores the agent id as its model;
- * failing both, the conversation's agent answers.
- * An id that resolves to nothing names nothing, so neither an agent id nor the agent that handed
- * off is ever shown in its place, but a row whose model is a model name (an ephemeral agent's,
- * or a live row's) keeps it when no agent resolves.
+ * a handoff made active) comes first. Otherwise the row's `model` says: a saved agent's rows,
+ * including the live placeholder the client builds, store the agent id there, and an ephemeral
+ * agent's store its encoded id or the model itself. The conversation's agent is read only for an
+ * error with no row at all. An id that resolves to nothing names nothing, so neither an agent id
+ * nor a placeholder is ever shown as a model, while a plain model name is kept.
  */
 function resolveAgentRow(
   agentsMap: TAgentsMap | undefined,
@@ -136,15 +137,18 @@ function resolveAgentRow(
     conversationAgentId,
   }: { partAgentId?: string; rowModel?: string; conversationAgentId?: string },
 ): AgentIdentity {
-  if (partAgentId != null) {
-    return resolveAgentId(agentsMap, partAgentId);
+  const agentId = partAgentId ?? conversationAgentId;
+  if (agentId != null) {
+    return resolveAgentId(agentsMap, agentId);
   }
-  if (rowModel != null && !isEphemeralAgentId(rowModel)) {
-    return resolveAgentId(agentsMap, rowModel);
+  if (rowModel == null || rowModel === Constants.EPHEMERAL_AGENT_ID) {
+    return {};
   }
-  const conversationAgent =
-    conversationAgentId != null ? resolveAgentId(agentsMap, conversationAgentId) : {};
-  return conversationAgent.endpoint != null ? conversationAgent : { model: rowModel };
+  const resolved = resolveAgentId(agentsMap, rowModel);
+  if (resolved.endpoint != null || !isEphemeralAgentId(rowModel)) {
+    return resolved;
+  }
+  return { model: rowModel };
 }
 
 /**
@@ -190,17 +194,17 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
   const { data: startupConfig } = useGetStartupConfig({ enabled: inChat });
 
   /**
-   * A row's own endpoint and model are authoritative even where it lacks them: borrowing the
-   * conversation's current selection would attribute an old failure to whatever the reader picked
-   * since, so only an error rendered with no row at all reads the conversation. The conversation's
-   * agent is still consulted for an agents row that stores no agent id; persisted agent rows always
-   * store one (`saveErrorTurn`, `getResponseModel`), which leaves the live row of a turn that just
-   * failed.
+   * A row's own identity is authoritative even where it lacks a field: borrowing the conversation's
+   * current selection, or its current agent, would attribute an old failure to whatever the reader
+   * picked since. Only an error rendered with no row at all reads the conversation.
    */
   const identity = source ?? chat?.conversation ?? undefined;
   const rowEndpoint = identity?.endpoint ?? undefined;
   const rowModel = identity?.model ?? undefined;
-  const conversationAgentId = chat?.conversation?.agent_id ?? undefined;
+  const conversationAgentId =
+    source == null && chat?.conversation?.agent_id !== Constants.EPHEMERAL_AGENT_ID
+      ? (chat?.conversation?.agent_id ?? undefined)
+      : undefined;
   const partAgentId = source?.partAgentId;
 
   return useMemo(() => {

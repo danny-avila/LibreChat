@@ -935,18 +935,42 @@ describe('Error — saved agents', () => {
     expect(screen.getByText(localized('com_error_refusal', 'gpt-4o'))).toBeInTheDocument();
   });
 
+  /** The client's live placeholder for an agents turn stores the conversation's agent id as `model`. */
   it('resolves an ephemeral agent id to the endpoint and model it encodes', () => {
     mockEndpointsData = { agents: {}, openAI: { userProvide: true } };
-    renderError(
-      { type: ErrorTypes.NO_USER_KEY },
-      { endpoint: EModelEndpoint.agents, model: 'gpt-4o' } as TMessage,
-      { conversation: { endpoint: EModelEndpoint.agents, agent_id: 'openAI__gpt-4o___GPT-4o' } },
-    );
+    renderError({ type: ErrorTypes.NO_USER_KEY }, {
+      endpoint: EModelEndpoint.agents,
+      model: 'openAI__gpt-4o___GPT-4o',
+    } as TMessage);
 
     expect(screen.getByText(localized('com_error_no_user_key', 'OpenAI'))).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: catalog.com_error_user_key_add }),
     ).toBeInTheDocument();
+  });
+
+  /** Switching the conversation to a saved agent later must not rewrite who produced an old failure. */
+  it("keeps an ephemeral row's own model when the conversation now runs a saved agent", () => {
+    renderError(
+      { type: ErrorTypes.REFUSAL },
+      { endpoint: EModelEndpoint.agents, model: 'gpt-4o' } as TMessage,
+      {
+        agents,
+        conversation: { endpoint: EModelEndpoint.agents, agent_id: researchAgent.id },
+      },
+    );
+
+    expect(screen.getByText(localized('com_error_refusal', 'gpt-4o'))).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('gemini-2.5-pro');
+  });
+
+  it('never names the ephemeral placeholder as a model', () => {
+    renderError({ type: ErrorTypes.REFUSAL }, {
+      endpoint: EModelEndpoint.agents,
+      model: 'ephemeral',
+    } as TMessage);
+
+    expect(screen.getByText(catalog.com_error_refusal_unknown)).toBeInTheDocument();
   });
 
   it('lets an expired key name the endpoint its payload reports over the row', () => {
