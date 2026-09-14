@@ -1206,7 +1206,7 @@ describe('discoverConnectedAgents', () => {
   );
 
   it.each([
-    ['handoff', [{ from: 'A', to: 'B', edgeType: 'handoff' }], undefined],
+    ['handoff', [{ from: 'A', to: 'B', edgeType: 'handoff' as const }], undefined],
     ['legacy chain', undefined, ['B']],
   ])('propagates owning-run cancellation during %s discovery', async (_case, edges, agentIds) => {
     const controller = new AbortController();
