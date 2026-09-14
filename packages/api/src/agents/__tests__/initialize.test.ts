@@ -2236,6 +2236,49 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
+  it.each([
+    ['Error', new Error('run cancelled')],
+    ['string', 'run cancelled'],
+  ])(
+    'does not retry skill-added tools when the owning signal aborts with an %s reason',
+    async (_, reason) => {
+      const { agent, req, res, loadTools, db } = createMocks();
+      agent.tools = ['web_search'];
+      const { Types } = await import('mongoose');
+      const skillId = new Types.ObjectId();
+      const controller = new AbortController();
+      controller.abort(reason);
+      loadTools.mockRejectedValue(reason);
+
+      const getSkillByName = buildGetSkillByName(
+        'cancelled-tool-skill',
+        ['mcp__warehouse__query'],
+        skillId,
+        req.user!.id,
+      );
+
+      await expect(
+        initializeAgent(
+          {
+            req,
+            res,
+            agent,
+            loadTools,
+            signal: controller.signal,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+            accessibleSkillIds: [skillId],
+            manualSkills: ['cancelled-tool-skill'],
+          },
+          { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+        ),
+      ).rejects.toBe(reason);
+
+      expect(loadTools).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];

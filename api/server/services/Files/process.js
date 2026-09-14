@@ -48,6 +48,7 @@ const {
   createCodeApiRateLimitBudget,
   getCodeApiUploadOptions,
   withCodeApiUploadRecovery,
+  isLeader,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -371,6 +372,7 @@ function startExpiredFileSweep(options = {}) {
   return startExpiredFileSweepWithDeps(options, {
     sweepExpiredFiles,
     runAsSystem,
+    isLeader,
     logger,
   });
 }

@@ -21,7 +21,7 @@ const mockStripActivityLabelParts = jest.fn((payload) =>
 );
 
 const { Providers } = require('@librechat/agents');
-const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
   GenerationJobManager,
   createStreamServices,
@@ -97,6 +97,54 @@ describe('AgentClient code approval persistence', () => {
         { environmentId: 'team-vm', workspaceId: 'project-b' },
       ],
     });
+  });
+
+  it('never writes its run-start decision over a stored one a move replaced', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [{ environmentId: 'mac', workspaceId: 'primary' }],
+        },
+        resolvedConversation: {
+          conversationId: 'convo-1',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'projects' }],
+        },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions).not.toHaveProperty('codeEnvironmentMode');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
+  });
+
+  it('records only the mode a legacy conversation inferred', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    const codeWorkspaces = [{ environmentId: 'mac', workspaceId: 'primary' }];
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: { mode: 'attached', codeWorkspaces },
+        resolvedConversation: { conversationId: 'convo-1', codeWorkspaces },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions.codeEnvironmentMode).toBe('attached');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
   });
 
   it('does not combine a normalized no-attached mode with stale request selections', () => {
@@ -241,7 +289,7 @@ describe('AgentClient - event actor history adapter', () => {
         contextFingerprint: fingerprint,
         skillManifest,
         discoveredToolNames: ['deferred_tool'],
-        summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+        summary: { text: 'Earlier compacted context.', tokenCount: 12, version: 1 },
         contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
         compactionSemanticIndex,
       }),
@@ -272,6 +320,7 @@ describe('AgentClient - event actor history adapter', () => {
     expect(client.eventActorSummary).toEqual({
       text: 'Earlier compacted context.',
       tokenCount: 12,
+      version: 1,
     });
     expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
     expect(client.compactionSemanticIndexSnapshot).toEqual({
@@ -388,6 +437,7 @@ describe('AgentClient - event actor history adapter', () => {
         type: ContentTypes.SUMMARY,
         content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
         tokenCount: 18,
+        boundary: { messageId: 'step_summary', contentIndex: 0 },
       },
     ];
     client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
@@ -1510,6 +1560,56 @@ describe('AgentClient - interrupt discovery persistence', () => {
     expect(resume).toHaveBeenCalledTimes(1);
     expect(metaWhenCreated).toEqual(seed);
     expect(metaWhenResumed).toEqual(seed);
+  });
+
+  it('records collected usage as an abort when a resumed run is stopped', async () => {
+    jest.clearAllMocks();
+    const streamId = 'conversation-resume-stopped';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const abortController = new AbortController();
+    mockCreateRun.mockImplementationOnce(async () => ({
+      Graph: null,
+      resume: jest.fn(async () => {
+        abortController.abort();
+      }),
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    }));
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-resume-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.resumeCompletion({
+      resumeValue: { decisions: [] },
+      streamId,
+      checkpointNamespace: 'resume-stopped',
+      abortController,
+    });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
   });
 
   it('publishes the inherited context meta before a fresh run streams', async () => {
@@ -2886,6 +2986,93 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
+  it('records collected usage as an abort when the run is stopped', async () => {
+    jest.clearAllMocks();
+    const abortController = new AbortController();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        abortController.abort();
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-stopped',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-stopped';
+    client.responseMessageId = 'response-conversation-stopped';
+    client.parentMessageId = 'parent-conversation-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
+  });
+
+  it('records collected usage as a message when the run completes', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-completed',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-completed';
+    client.responseMessageId = 'response-conversation-completed';
+    client.parentMessageId = 'parent-conversation-completed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController: new AbortController() });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'message' }),
+    );
+  });
+
   it('classifies a terminal chat-model failure without logging provider content', async () => {
     jest.clearAllMocks();
     const { logger } = require('@librechat/data-schemas');
@@ -2983,6 +3170,102 @@ describe('AgentClient - startup telemetry', () => {
         JSON.stringify({ type: 'upstream_model_error', status: 500 }),
     });
     errorSpy.mockRestore();
+  });
+
+  /** A compaction's only record of having been one is the marker on the part it
+   *  produced, and Compact runs on whatever leaf the branch ends with. Without
+   *  the marker on the failure, a compaction that failed on a user leaf keeps a
+   *  Regenerate that answers that user message instead of redoing the run. */
+  it('marks the failure a compaction turn persists instead of a summary', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        throw new Error('summarizer unavailable');
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-failure',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-failure';
+    client.responseMessageId = 'response-compaction-failure';
+    client.parentMessageId = 'parent-compaction-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      expect.objectContaining({ type: ContentTypes.ERROR, initiatedBy: 'user' }),
+    ]);
+  });
+
+  /** A summarizer that returns nothing emits no content at all, so the run has
+   *  neither a summary nor an explanation. The turn records the typed failure
+   *  itself instead of being saved as a bare error row the client cannot tell
+   *  apart from an answer to the message it hangs off. */
+  it('records a marked typed failure when a compaction run produces nothing', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {}),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-empty',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-empty';
+    client.responseMessageId = 'response-compaction-empty';
+    client.parentMessageId = 'parent-compaction-empty';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      {
+        type: ContentTypes.ERROR,
+        error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+        initiatedBy: 'user',
+      },
+    ]);
   });
 
   it('keeps a later non-provider run failure on the generic error path', async () => {
@@ -3221,6 +3504,7 @@ describe('AgentClient - startup telemetry', () => {
           type: ContentTypes.SUMMARY,
           content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
           tokenCount: 18,
+          boundary: { messageId: 'step_summary', contentIndex: 0 },
         },
         { type: ContentTypes.TEXT, text: 'Done.' },
       );
@@ -3326,6 +3610,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(client.eventActorSummary).toEqual({
       text: 'Fresh compacted context.',
       tokenCount: 18,
+      version: 1,
     });
     expect(client.contentParts).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ type: ContentTypes.SUMMARY })]),

@@ -590,47 +590,29 @@ describe('BaseClient', () => {
       expect(result[0].content).toEqual([{ type: 'text', text: 'Legacy summary only' }]);
       expect(result[0].tokenCount).toBe(15);
     });
-  });
 
-  describe('findSummaryContentBlock', () => {
-    it('should find a summary block in the content array', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'summary', text: 'Summary of conversation', tokenCount: 50 },
-        ],
-      };
-      const result = TestClient.constructor.findSummaryContentBlock(message);
-      expect(result).toBeTruthy();
-      expect(result.text).toBe('Summary of conversation');
-      expect(result.tokenCount).toBe(50);
-    });
-
-    it('should return null when no summary block exists', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'tool_call', tool_call: {} },
-        ],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for string content', () => {
-      const message = { content: 'just a string' };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for missing content', () => {
-      expect(TestClient.constructor.findSummaryContentBlock({})).toBeNull();
-      expect(TestClient.constructor.findSummaryContentBlock(null)).toBeNull();
-    });
-
-    it('should skip summary blocks with no text', () => {
-      const message = {
-        content: [{ type: 'summary', tokenCount: 10 }],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    it('should not stop traversal at a failed summary, keeping the prior history', () => {
+      /** A summarize round that errored keeps the deltas it streamed, so its
+       *  text is a truncated prefix; treating it as the checkpoint would send
+       *  it in place of the history it never finished summarizing. */
+      const messagesWithFailedSummary = [
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '3',
+          parentMessageId: '2',
+          text: '',
+          content: [{ type: 'summary', text: 'Partial sum', tokenCount: 5, failed: true }],
+        },
+        { id: '4', parentMessageId: '3', text: 'Message 4' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithFailedSummary,
+        parentMessageId: '4',
+        summary: true,
+      });
+      expect(result.map((message) => message.id)).toEqual(['1', '2', '3', '4']);
+      expect(result.every((message) => message.role !== 'system')).toBe(true);
     });
   });
 
@@ -3664,6 +3646,7 @@ describe('BaseClient compaction turns', () => {
           {
             type: ContentTypes.SUMMARY,
             content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+            boundary: { messageId: 'step_summary', contentIndex: 0 },
           },
         ],
       },

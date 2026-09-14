@@ -425,12 +425,20 @@ export default function useUsageHandler(): UsageHandlers {
        *  when a response is regenerated — to the branch-unique response message,
        *  so switching to a sibling branch falls back to that branch's own
        *  totals instead of showing this generation's snapshot. Also carry the
-       *  output streamed since the pre-invoke snapshot, kept after live resets. */
+       *  output streamed since the pre-invoke snapshot, kept after live resets.
+       *  The finalized response metadata is the authoritative source for retained
+       *  tool results, which the live snapshot must keep after its re-anchor. */
       if (snapshot != null && snapshot.anchorMessageId === userMsgId) {
+        const retainedToolTokens = (
+          data.responseMessage?.metadata?.contextUsage as TContextUsageEvent | undefined
+        )?.retainedToolTokens;
         const finalized: ContextSnapshot = {
           ...snapshot,
           anchorMessageId: responseId ?? snapshot.anchorMessageId,
           ...(liveAtFinalize > 0 && { completedOutputTokens: liveAtFinalize }),
+          ...(retainedToolTokens != null &&
+            Number.isFinite(retainedToolTokens) &&
+            retainedToolTokens > 0 && { retainedToolTokens }),
         };
         jotai.set(snapshotAtom, finalized);
         /** Retain this generation's breakdown keyed by the branch-unique

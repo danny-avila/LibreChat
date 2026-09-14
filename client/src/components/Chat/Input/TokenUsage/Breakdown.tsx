@@ -162,17 +162,22 @@ export default function Breakdown({
    *  `toolMessageTokens` is absent on older SDK snapshots, keeping the row
    *  unsplit. */
   const summaryTokens = normalizeTokenCount(breakdown?.summaryTokens);
+  const retainedToolTokens = normalizeTokenCount(snapshot?.retainedToolTokens);
   const messageBudget = Math.max(0, usedTokens - instructionTokens - summaryTokens);
-  /** `toolMessageTokens` is a subset of messages. Bound it by both the
-   * persisted message total and the current used-token remainder so malformed
-   * or stale snapshots cannot make the rows exceed the meter. */
+  /** `toolMessageTokens` is a subset of pre-invoke messages, while retained
+   *  tool results sit outside that total. Widen both sides of the split by the
+   *  retained count, then bound the share by the current used-token remainder. */
   const rawToolCallTokens =
     breakdown?.toolMessageTokens != null
       ? normalizeTokenCount(breakdown.toolMessageTokens)
       : undefined;
   const toolCallTokens =
     rawToolCallTokens != null
-      ? Math.min(rawToolCallTokens, normalizeTokenCount(breakdown?.messageTokens), messageBudget)
+      ? Math.min(
+          rawToolCallTokens + retainedToolTokens,
+          normalizeTokenCount(breakdown?.messageTokens) + retainedToolTokens,
+          messageBudget,
+        )
       : undefined;
   const messageTokens = Math.max(0, messageBudget - (toolCallTokens ?? 0));
   const freeTokens = maxTokens != null ? Math.max(0, maxTokens - usedTokens) : null;

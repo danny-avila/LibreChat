@@ -1,9 +1,5 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const {
-  logger,
-  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
-  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
-} = require('@librechat/data-schemas');
+const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -26,12 +22,15 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  resolveRunUsageContext,
+  recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  resolveRetainedToolTokens,
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
@@ -106,6 +105,11 @@ const {
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
+  stripUnusableSummaryParts,
+  dropUnusableSummaryParts,
+  getLatestEventActorSummary,
+  createAgentEventActorSummary,
+  normalizeAgentEventActorSummary,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -171,6 +175,8 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
+  markCompactionOutcome,
+  resolvePersistableCodeEnvironmentDecision,
 } = require('@librechat/api');
 const {
   Run,
@@ -220,22 +226,6 @@ const loadAgent = (params) =>
   });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
-
-function normalizeEventActorSummary(summary) {
-  if (summary == null) {
-    return undefined;
-  }
-  if (
-    typeof summary.text !== 'string' ||
-    summary.text.length === 0 ||
-    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
-    !Number.isFinite(summary.tokenCount) ||
-    summary.tokenCount < 0
-  ) {
-    throw new RangeError('Event actor summary state is invalid');
-  }
-  return { text: summary.text, tokenCount: summary.tokenCount };
-}
 
 function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
@@ -329,59 +319,6 @@ function captureRunContextMeta(client) {
     fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
   });
-}
-
-/** Text of a summary content part; empty for anything else. */
-function getSummaryPartText(part) {
-  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-    return '';
-  }
-  return part.content
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .join('')
-    .trim();
-}
-
-/**
- * A compaction turn's response is its summary. The run emits no text, so a
- * completion without a usable summary part means the summarizer produced
- * nothing. A run that already recorded why (an error part, e.g. a skipped
- * compaction) persists with that explanation; one that ended with neither
- * fails as a typed error instead of persisting an empty assistant message.
- * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
- */
-function markCompactionSummary(contentParts) {
-  const summary = contentParts.find(
-    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
-  );
-  if (summary != null) {
-    summary.initiatedBy = 'user';
-    return;
-  }
-  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
-    return;
-  }
-  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
-    code: 'COMPACTION_FAILED',
-  });
-}
-
-function getLatestEventActorSummary(contentParts) {
-  if (!Array.isArray(contentParts)) {
-    return undefined;
-  }
-  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
-    const part = contentParts[index];
-    const text = getSummaryPartText(part);
-    if (text.length === 0) {
-      continue;
-    }
-    return normalizeEventActorSummary({
-      text,
-      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
-    });
-  }
-  return undefined;
 }
 
 /**
@@ -1999,7 +1936,12 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
-    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
+    const persistedCodeEnvironmentDecision = resolvePersistableCodeEnvironmentDecision({
+      conversationId: this.conversationId,
+      decision: this.options.req._codeEnvironmentDecision,
+      conversation: this.options.req.resolvedConversation,
+      requested: this.options.req.body,
+    });
 
     return removeNullishValues(
       Object.assign(
@@ -2014,12 +1956,7 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeEnvironmentMode:
-            codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
-          codeWorkspaces:
-            codeEnvironmentDecision != null
-              ? codeEnvironmentDecision.codeWorkspaces
-              : this.options.req.body.codeWorkspaces,
+          ...persistedCodeEnvironmentDecision,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -2146,7 +2083,7 @@ class AgentClient extends BaseClient {
     let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
-      summary = normalizeEventActorSummary(state.summary);
+      summary = normalizeAgentEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
       compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
         state.compactionSemanticIndex,
@@ -2235,7 +2172,13 @@ class AgentClient extends BaseClient {
         (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
       ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
     ]);
-    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    /** Stamped where state is assembled, not where each source is read: a
+     *  summary inherited from the formatter arrives in the SDK's
+     *  `{ text, tokenCount }` shape, and persisting it unstamped would have the
+     *  next event refuse its own state and reload the whole history. */
+    const summary = createAgentEventActorSummary(
+      getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary,
+    );
     this.eventActorSummary = summary;
     const compactionSemanticIndex = createCompactionSemanticIndexProjection(
       this.compactionSemanticIndexSnapshot,
@@ -2619,6 +2562,17 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      /**
+       * A summarize round that errored or was cut off never reaches the model:
+       * the formatter would take its partial text as the history boundary and
+       * drop everything older. Dropped from the prompt copy here, ahead of the
+       * counts, so the per-index count, the prompt total admission checks, and
+       * the steer-media adjustments below all describe what is actually sent.
+       * The stored message keeps the part — the renderer labels it — so a
+       * canonical recount reads an unstripped surface instead.
+       */
+      const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
       /**
@@ -2636,19 +2590,21 @@ class AgentClient extends BaseClient {
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
-         *  prompt copy, so the prompt copy is the counting surface; with it,
-         *  the canonical count must exclude the prepended context. */
+         *  prompt copy, so the prompt copy is the counting surface; with it (or
+         *  with a dropped summary), the canonical count must be taken from the
+         *  message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext) {
+        if (message.fileContext || droppedPromptSummary) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount = message.fileContext
-        ? countFormattedMessageTokens(formattedMessage, encoding)
-        : canonicalTokenCount;
+      const promptMessageTokenCount =
+        message.fileContext || droppedPromptSummary
+          ? countFormattedMessageTokens(formattedMessage, encoding)
+          : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -3568,7 +3524,9 @@ class AgentClient extends BaseClient {
 
     const completion = filterMalformedContentParts(this.contentParts);
     if (this.isCompactionTurn()) {
-      markCompactionSummary(completion);
+      markCompactionOutcome(completion, {
+        aborted: this.abortController?.signal?.aborted === true,
+      });
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
@@ -3625,7 +3583,19 @@ class AgentClient extends BaseClient {
             event.runId === latestSnapshotRunId),
       );
     if (latestSnapshot && hasPrimaryAfterSnapshot) {
-      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+      /** The counted tool results this turn keeps past that snapshot — only a
+       *  tool-call-limit stop has any; see `resolveRetainedToolTokens`. */
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents, {
+        retainedToolTokens: resolveRetainedToolTokens({
+          stoppedAtToolLimit: this.stepLimitReached === true,
+          contentParts: this.contentParts,
+          priorToolCallIds: this.contextUsageSink?.latestToolCallIds,
+          encoding: this.getEncoding(),
+          maxCountChars:
+            this.options?.req?.config?.endpoints?.[EModelEndpoint.agents]
+              ?.maxRetainedToolCountChars,
+        }),
+      });
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
      *  the context, INDEPENDENT of the snapshot guard above. When the client has
@@ -4635,6 +4605,10 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
+      /** The payload reached here already free of unusable summary parts:
+       *  `buildMessages` drops them from each prompt copy before counting it,
+       *  so the formatter's summary scan cannot take a failed round's prefix as
+       *  the history boundary and every count describes what is sent. */
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -4734,7 +4708,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripActivityLabelParts(this.memoryPayload),
+              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
@@ -5170,20 +5144,14 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
-        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        } else {
-          logger.debug(
-            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
-          );
-        }
+        /** The run owns its usage even when stopped: `/api/agents/chat/abort`
+         *  only signals the abort, so nothing else records what was consumed.
+         *  A stopped turn is labelled as such on its transactions. */
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -5840,14 +5808,11 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        }
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
@@ -6155,13 +6120,19 @@ class AgentClient extends BaseClient {
     transactions,
     promptTokens,
     completionTokens,
-    context = 'message',
+    context,
   }) {
-    try {
-      await db.spendTokens(
-        {
+    await recordFallbackTokenUsage(
+      { spendTokens: db.spendTokens },
+      {
+        usage,
+        context,
+        collectedUsage: this.collectedUsage,
+        aborted: this.abortController?.signal?.aborted === true,
+        promptTokens,
+        completionTokens,
+        txMetadata: {
           model,
-          context,
           balance,
           transactions,
           messageId: this.responseMessageId,
@@ -6169,35 +6140,8 @@ class AgentClient extends BaseClient {
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            transactions,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
-    } catch (error) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        getSafeErrorMetadata(error),
-      );
-    }
+      },
+    );
   }
 
   /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */

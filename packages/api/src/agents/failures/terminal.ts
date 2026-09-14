@@ -1,7 +1,7 @@
 import { ErrorTypes } from 'librechat-data-provider';
 import type { SafeErrorMetadata } from '../../utils/errors';
 import type { ModelErrorTrackerCallback } from './tracker';
-import { getSafeErrorMetadata, isAbortError } from '../../utils/errors';
+import { getSafeErrorMetadata, isOwnedAbortError } from '../../utils/errors';
 import { traceIdForMessage } from '../../langfuse/trace';
 import { createModelErrorTracker } from './tracker';
 import { resolveLangChainError } from '../errors';
@@ -36,9 +36,9 @@ export interface TerminalRunErrorObserver {
   readonly getUserFacingError: (error: unknown, fallback: () => string) => string;
 }
 
-/** A run cancellation requires both host-owned abort state and an abort-shaped rejection. */
+/** A run cancellation requires host-owned abort state plus its own reason or an abort shape. */
 export function isAgentRunCancellation(error: unknown, signal?: AbortSignal): boolean {
-  return signal?.aborted === true && isAbortError(error);
+  return isOwnedAbortError(error, signal);
 }
 
 export function getUpstreamModelErrorMetadata(

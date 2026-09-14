@@ -4,6 +4,7 @@ import {
   isImplicitStatefulCodeRouteAvailable,
   mergeAccessibleCodeEnvironments,
   resolveCodeEnvironmentDecisionVersion,
+  resolveCodeEnvironmentMoveVersion,
 } from './config';
 
 describe('resolveCodeEnvironmentDecisionVersion', () => {
@@ -17,6 +18,33 @@ describe('resolveCodeEnvironmentDecisionVersion', () => {
       expect(resolveCodeEnvironmentDecisionVersion(version)).toBeUndefined();
     },
   );
+});
+
+describe('resolveCodeEnvironmentMoveVersion', () => {
+  const withMoves = (conversationMoves?: { enabled?: boolean }) =>
+    ({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'], conversationMoves },
+        },
+      },
+    }) as unknown as AppConfig;
+
+  it('advertises moves only where the effective policy enables them', () => {
+    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
+  });
+
+  it.each([undefined, {}, { enabled: false }])(
+    'keeps sealed decisions immovable by default: %j',
+    (conversationMoves) => {
+      expect(resolveCodeEnvironmentMoveVersion(withMoves(conversationMoves))).toBeUndefined();
+    },
+  );
+
+  it('keeps moves off without any stateful code configuration', () => {
+    expect(resolveCodeEnvironmentMoveVersion({} as AppConfig)).toBeUndefined();
+    expect(resolveCodeEnvironmentMoveVersion(undefined)).toBeUndefined();
+  });
 });
 
 describe('isImplicitStatefulCodeRouteAvailable', () => {

@@ -23,13 +23,17 @@ import {
   DEFAULT_BALANCE_RESERVATION_TTL_MS,
 } from './balance';
 import {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+} from './limits';
+import {
   DEFAULT_MCP_APP_CSP_LIMITS,
   resolveMCPAppCspLimits,
   type MCPAppCspLimits,
 } from './mcp/csp';
+import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
-import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
-import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';
@@ -45,6 +49,7 @@ export {
   MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
@@ -1201,6 +1206,18 @@ export const agentsEndpointSchema = baseEndpointSchema
        * disables the guard for that tool only. Merged over LibreChat's shipped default of
        * `{ create_file: 131072 }`. */
       maxToolCallArgBytesByTool: z.record(z.number()).optional(),
+      /** Characters of retained tool output the save path may tokenize exactly for the
+       * context gauge when a turn stops at the tool-call limit (see
+       * `retainedToolTokens`). Tokenizing costs ~60 ms/MB and runs once per stopped
+       * turn; past this ceiling the figure is withdrawn rather than estimated, so the
+       * gauge under-reports that turn instead of blocking the save. Raise it for
+       * deployments whose tools legitimately return more, lower it on slow hardware. */
+      maxRetainedToolCountChars: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .default(DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
@@ -1252,6 +1269,13 @@ export const agentsEndpointSchema = baseEndpointSchema
               enabled: z.boolean().optional(),
               /** Defaults to five. Zero disables enrollment; existing machines remain usable. */
               maxPerUser: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+            })
+            .optional(),
+          /** Server-only policy letting a conversation's owner move its sealed attached decision
+           * onto the environments its agents now use. Omit to keep sealed decisions immovable. */
+          conversationMoves: z
+            .object({
+              enabled: z.boolean().optional(),
             })
             .optional(),
           /** Operator-managed execution environments. Attached entries route to a
@@ -2264,6 +2288,9 @@ export type TStartupConfig = {
   /** Conversation-owned code-environment decision protocol supported by the API.
    * Clients must not emit selection-less decisions unless this is advertised. */
   codeEnvironmentDecisionVersion?: typeof CODE_ENVIRONMENT_DECISION_VERSION;
+  /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
+   * offer to move a conversation unless this is advertised. */
+  codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -2844,6 +2871,15 @@ export const langfuseConfigSchema = z.object({
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
 
+export const openIdDiscoverySchema = z.object({
+  /** Discovery attempts made before startup continues; `0` retries only in the background. */
+  startupAttempts: z.number().int().min(0).max(100).default(1),
+  /** Milliseconds between startup and background discovery attempts. */
+  retryDelayMs: z.number().int().min(100).max(3_600_000).default(5000),
+});
+
+export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -2980,6 +3016,8 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
       /** Milliseconds a started social login may take to reach its callback; defaults to `DEFAULT_OAUTH_STATE_TTL_MS`. */
       oauthStateTtlMs: z.number().int().min(60_000).max(3_600_000).optional(),
+      /** OpenID discovery retries; an unset field falls back to its `OPENID_DISCOVERY_RETRY_*` env var, then the schema default. */
+      openidDiscovery: openIdDiscoverySchema.partial().optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),

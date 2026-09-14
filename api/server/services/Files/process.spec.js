@@ -168,6 +168,7 @@ jest.mock('@librechat/api', () => {
     }),
     sweepExpiredFiles: jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 }),
     startExpiredFileSweep: jest.fn().mockReturnValue('sweep-interval'),
+    isLeader: jest.fn().mockResolvedValue(true),
   };
 });
 
@@ -2750,6 +2751,7 @@ describe('startExpiredFileSweep', () => {
       expect.objectContaining({
         sweepExpiredFiles: expect.any(Function),
         runAsSystem: expect.any(Function),
+        isLeader: expect.any(Function),
         logger: expect.objectContaining({
           error: expect.any(Function),
           info: expect.any(Function),

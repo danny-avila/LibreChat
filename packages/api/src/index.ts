@@ -111,6 +111,8 @@ export * from './traces';
 export * from './insights';
 /* Cache */
 export * from './cache';
+/* Cluster */
+export * from './cluster';
 /* Shared Links */
 export * from './shared-links/access';
 export * from './shared-links/service';

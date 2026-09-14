@@ -259,7 +259,7 @@ export default function OpenAIImageGen({
           return intent ?? localize('com_ui_image_created');
         })()}
       </span>
-      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2">
+      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2 text-text-secondary">
         <span className={ROW_GLYPH_SLOT} aria-hidden="true">
           <ToolIcon type="image_gen" isAnimating={isInProgress} />
         </span>

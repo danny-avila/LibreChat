@@ -322,6 +322,32 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 
+  /** The failure branch of the same shape: a compaction that produced no summary
+   *  marks its error part, which is the only thing distinguishing it from a
+   *  response to the user message it hangs off. */
+  it('withholds rerun controls on a marked compaction failure hanging off a user message', () => {
+    const failedCompaction = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' }],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: failedCompaction,
+      isLast: true,
+      latestMessageId: failedCompaction.messageId,
+      thread: [userMessage, failedCompaction],
+    });
+
+    expect(container.querySelector(`#edit-${failedCompaction.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
   /** An ordinary turn that auto-summarized and was cancelled before its first
    *  answer token persists the same summary-only content, but it hangs off the
    *  user's message and is exactly the turn a user needs to rerun. */

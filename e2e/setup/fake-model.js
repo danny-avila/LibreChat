@@ -32,6 +32,7 @@ const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
 const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
+const ASSERT_HISTORY_MARKER = 'E2E_ASSERT_HISTORY:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
@@ -39,6 +40,9 @@ const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
+/** A run that completes having produced no content at all: the shape a
+ *  summarizer takes when it returns nothing for a manual compaction. */
+const EMPTY_REPLY_MARKER = 'E2E_EMPTY_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const MCP_APP_MARKER = 'E2E_MCP_APP:';
@@ -89,6 +93,8 @@ const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
 const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
+const HISTORY_ASSERTION_PRESENT_TEXT = 'E2E history assertion present';
+const HISTORY_ASSERTION_ABSENT_TEXT = 'E2E history assertion absent';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
 const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
@@ -411,6 +417,32 @@ function agentContextAssertionResponses({ messages, text }) {
 }
 
 /**
+ * Answers whether a token from an EARLIER turn still reaches the model. Scans
+ * every prompt message except the current user turn: the marker line carries
+ * the token itself, so counting that turn would make every history pass.
+ * Presence and absence each get their own sentinel, so a spec asserts what the
+ * model saw rather than matching a failure string — a conversation whose
+ * history was replaced by a checkpoint is a correct absence.
+ */
+function historyAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_HISTORY_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const latestUserMessage = getLatestUserMessage(messages);
+  const priorMessages = (messages ?? []).filter((message) => message !== latestUserMessage);
+  const priorText = collectPromptText(priorMessages).join('\n');
+  return {
+    responses: [
+      priorText.includes(expected)
+        ? `${HISTORY_ASSERTION_PRESENT_TEXT}: ${expected}`
+        : `${HISTORY_ASSERTION_ABSENT_TEXT}: ${expected}`,
+    ],
+  };
+}
+
+/**
  * Verifies the quote feature end to end: scans every user message in the prompt
  * the model actually received for a Markdown blockquote line containing the
  * expected token. Passing proves the excerpt was merged into the model-facing
@@ -589,6 +621,11 @@ function replyResponses(text) {
       responses: [' '.repeat(EMPTY_SLOW_REPLY_CHUNKS)],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
+  }
+
+  const emptyName = getMarkerValue(text, EMPTY_REPLY_MARKER);
+  if (emptyName) {
+    return { responses: [''] };
   }
 
   const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
@@ -2996,6 +3033,14 @@ function resolveResponses({ graph, messages, text, toolNames }) {
       responses: [MOCK_REPLY],
       resolveOnStream: (streamMessages) =>
         agentContextAssertionResponses({ messages: streamMessages, text }),
+    };
+  }
+
+  if (text.includes(ASSERT_HISTORY_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) =>
+        historyAssertionResponses({ messages: streamMessages, text }),
     };
   }
 

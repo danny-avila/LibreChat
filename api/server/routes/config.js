@@ -13,6 +13,7 @@ const {
   isFileSnapshotEnabled,
   getEndpointsDropParamsMap,
   resolveCodeEnvironmentDecisionVersion,
+  resolveCodeEnvironmentMoveVersion,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -261,6 +262,7 @@ router.get('/', async function (req, res) {
     const codeEnvironmentDecisionVersion = resolveCodeEnvironmentDecisionVersion(
       process.env.CODE_ENVIRONMENT_DECISION_VERSION,
     );
+    const codeEnvironmentMoveVersion = resolveCodeEnvironmentMoveVersion(appConfig);
 
     const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints);
 
@@ -329,6 +331,7 @@ router.get('/', async function (req, res) {
         appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
         appConfig?.mcpAppSandbox?.url,
       ),
+      ...(codeEnvironmentMoveVersion != null ? { codeEnvironmentMoveVersion } : {}),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
