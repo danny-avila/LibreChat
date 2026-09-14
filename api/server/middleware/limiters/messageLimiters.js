@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
-const { limiterCache, removePorts } = require('@librechat/api');
+const { limiterCache, removePorts, getRateLimitReset } = require('@librechat/api');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation } = require('~/cache');
 
@@ -19,16 +19,6 @@ const ipWindowInMinutes = ipWindowMs / 60000;
 const userWindowMs = MESSAGE_USER_WINDOW * 60 * 1000;
 const userMax = MESSAGE_USER_MAX;
 const userWindowInMinutes = userWindowMs / 60000;
-/**
- * Reads the rate-limit reset timestamp without assuming express-rate-limit populated it.
- *
- * @param {object} req
- * @returns {number|undefined} Epoch milliseconds when the current window resets.
- */
-const getResetAt = (req) => {
-  const resetAt = req.rateLimit?.resetTime?.getTime?.();
-  return Number.isFinite(resetAt) ? resetAt : undefined;
-};
 
 /**
  * Creates either an IP/User message request rate limiter for excessive requests
@@ -41,16 +31,12 @@ const getResetAt = (req) => {
 const createHandler = (ip = true) => {
   return async (req, res) => {
     const type = ViolationTypes.MESSAGE_LIMIT;
-    const windowMs = ip ? ipWindowMs : userWindowMs;
-    const resetAt = getResetAt(req) ?? Date.now() + windowMs;
-    const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
     const errorMessage = {
       type,
       max: ip ? ipMax : userMax,
       limiter: ip ? 'ip' : 'user',
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
-      resetAt,
-      retryAfterSeconds,
+      ...getRateLimitReset(req.rateLimit, ip ? ipWindowMs : userWindowMs),
     };
 
     await logViolation(req, res, type, errorMessage, score);
@@ -103,10 +89,10 @@ const agentEventUserLimiter = (req, res, next) => {
       windowMs: windowInMinutes * 60 * 1000,
       max,
       handler: (limitedReq, limitedRes) => {
-        const resetAt = getResetAt(limitedReq);
-        const retryAfterSeconds = Number.isFinite(resetAt)
-          ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
-          : Math.max(1, Math.ceil(windowInMinutes * 60));
+        const { retryAfterSeconds } = getRateLimitReset(
+          limitedReq.rateLimit,
+          windowInMinutes * 60 * 1000,
+        );
         limitedRes.set('Retry-After', String(retryAfterSeconds));
         return limitedRes
           .status(429)
