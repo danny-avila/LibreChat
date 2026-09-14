@@ -17,6 +17,8 @@ import type {
   TCompactionSemanticIndexEntry,
 } from '@librechat/data-schemas';
 import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
+import type { IAgentEventActorSummary } from '@librechat/data-schemas';
+import { createAgentEventActorSummary } from './compatibility';
 
 /** Text of a summary content part, in any persisted shape — `content` blocks
  *  today, a string `content` or a bare `text` on rows written before them.
@@ -92,6 +94,36 @@ export function findCheckpointSummaryPart(content: unknown): SummaryContentPart 
     }
   }
   return checkpoint;
+}
+
+/**
+ * The summary a warm event-actor continuation carries forward: the last usable
+ * one in the run's content parts, stamped as actor state. A failed or
+ * unfinished round's partial deltas would otherwise be persisted as actor state
+ * and handed to the next run as its `initialSummary`, which skips durable
+ * history entirely. A missing or invalid token count is recorded as zero.
+ */
+export function getLatestEventActorSummary(
+  contentParts: unknown,
+): IAgentEventActorSummary | undefined {
+  if (!Array.isArray(contentParts)) {
+    return undefined;
+  }
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    const part: unknown = contentParts[index];
+    if (!isUsableSummaryPart(part)) {
+      continue;
+    }
+    const tokenCount = part.tokenCount;
+    return createAgentEventActorSummary({
+      text: getSummaryPartText(part),
+      tokenCount:
+        typeof tokenCount === 'number' && Number.isFinite(tokenCount) && tokenCount >= 0
+          ? tokenCount
+          : 0,
+    });
+  }
+  return undefined;
 }
 
 /** The typed failure a manual compaction reports when it produced no summary. */

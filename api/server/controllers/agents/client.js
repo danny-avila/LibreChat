@@ -107,7 +107,7 @@ const {
   stripActivityLabelParts,
   stripUnusableSummaryParts,
   dropUnusableSummaryParts,
-  isUsableSummaryPart,
+  getLatestEventActorSummary,
   createAgentEventActorSummary,
   normalizeAgentEventActorSummary,
   getRequestMemories,
@@ -175,7 +175,6 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
-  getSummaryPartText,
   markCompactionOutcome,
   resolvePersistableCodeEnvironmentDecision,
 } = require('@librechat/api');
@@ -320,30 +319,6 @@ function captureRunContextMeta(client) {
     fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
   });
-}
-
-/**
- * The summary a warm event-actor continuation carries forward. A failed or
- * unfinished round's partial deltas would otherwise be persisted as actor
- * state and handed to the next run as its `initialSummary`, which skips
- * durable history entirely — the same defect the payload strip closes, on the
- * path that does not read the payload.
- */
-function getLatestEventActorSummary(contentParts) {
-  if (!Array.isArray(contentParts)) {
-    return undefined;
-  }
-  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
-    const part = contentParts[index];
-    if (!isUsableSummaryPart(part)) {
-      continue;
-    }
-    return createAgentEventActorSummary({
-      text: getSummaryPartText(part),
-      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
-    });
-  }
-  return undefined;
 }
 
 /**

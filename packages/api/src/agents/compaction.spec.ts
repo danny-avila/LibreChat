@@ -5,6 +5,7 @@ import {
   MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
   MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
   MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
+  AGENT_EVENT_ACTOR_SUMMARY_VERSION,
 } from '@librechat/data-schemas';
 import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
 import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
@@ -19,6 +20,7 @@ import {
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
   stripUnusableSummaryParts,
+  getLatestEventActorSummary,
 } from './compaction';
 
 const index = [
@@ -333,6 +335,62 @@ describe('findCheckpointSummaryPart', () => {
     ['missing content', undefined],
   ])('returns null for %s', (_label, content) => {
     expect(findCheckpointSummaryPart(content)).toBeNull();
+  });
+});
+
+describe('getLatestEventActorSummary', () => {
+  const part = (text: string, extra: Record<string, unknown> = {}) => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text }],
+    boundary: completedBoundary,
+    ...extra,
+  });
+
+  it('stamps the last usable summary as actor state', () => {
+    expect(
+      getLatestEventActorSummary([
+        part('Earlier checkpoint', { tokenCount: 4 }),
+        { type: ContentTypes.TEXT, text: 'An answer' },
+        part('Latest checkpoint', { tokenCount: 9 }),
+      ]),
+    ).toEqual({
+      text: 'Latest checkpoint',
+      tokenCount: 9,
+      version: AGENT_EVENT_ACTOR_SUMMARY_VERSION,
+    });
+  });
+
+  /** A later round that failed, is still running, or never recorded a boundary
+   *  holds a truncated prefix; the continuation must keep the real checkpoint. */
+  it.each([
+    ['failed', { failed: true }],
+    ['still summarizing', { summarizing: true }],
+    ['stored without a boundary', { boundary: undefined }],
+  ])('skips a later summary that is %s', (_label, state) => {
+    expect(
+      getLatestEventActorSummary([
+        part('Real checkpoint', { tokenCount: 5 }),
+        part('Parti', state),
+      ]),
+    ).toMatchObject({ text: 'Real checkpoint', tokenCount: 5 });
+  });
+
+  it.each([
+    ['a missing count', {}],
+    ['a negative count', { tokenCount: -3 }],
+    ['a non-finite count', { tokenCount: Number.NaN }],
+  ])('records zero tokens for %s', (_label, extra) => {
+    expect(getLatestEventActorSummary([part('Checkpoint', extra)])).toMatchObject({
+      tokenCount: 0,
+    });
+  });
+
+  it.each([
+    ['content without a usable summary', [part('Parti', { failed: true })]],
+    ['non-array content', 'just a string'],
+    ['missing content', undefined],
+  ])('returns undefined for %s', (_label, content) => {
+    expect(getLatestEventActorSummary(content)).toBeUndefined();
   });
 });
 
