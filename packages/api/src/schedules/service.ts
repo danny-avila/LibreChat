@@ -6,6 +6,7 @@ import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
   ScheduleDeleteResult,
+  ScheduleMCPPreflight,
   ScheduleLimits,
   ScheduleUserContext,
   FireableSchedule,
@@ -114,6 +115,7 @@ export type ScheduleResumeClaimResult =
  * directly.
  */
 export interface SchedulesServiceDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods & {
     getRoleByName: (
       role?: string,
@@ -142,6 +144,7 @@ export interface SchedulesServiceDeps {
   findUserById: (
     userId: string | Types.ObjectId,
   ) => Promise<{ _id: Types.ObjectId; tenantId?: string; role?: string } | null>;
+  /** Reads the balance record together with the credits unexpired in-flight reservations hold. */
   findBalance: (userId: string) => Promise<IBalance | null>;
   /**
    * Upserts a balance record. `setOnInsert` carries fields that must ONLY apply to a
@@ -187,6 +190,7 @@ export interface SchedulesService {
   fireScheduleNow: (
     schedule: FireableSchedule,
     limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
@@ -377,7 +381,13 @@ export function createSchedulesService(
       minIntervalMinutes: config.minIntervalMinutes ?? DEFAULT_SCHEDULE_LIMITS.minIntervalMinutes,
       autoDisableAfterFailures:
         config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
+      admissionConcurrency:
+        config.admissionConcurrency ?? DEFAULT_SCHEDULE_LIMITS.admissionConcurrency,
       fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+      mcpPreflightConcurrency:
+        config.mcpPreflightConcurrency ?? DEFAULT_SCHEDULE_LIMITS.mcpPreflightConcurrency,
+      mcpPreflightTimeoutMs:
+        config.mcpPreflightTimeoutMs ?? DEFAULT_SCHEDULE_LIMITS.mcpPreflightTimeoutMs,
       requireProject: config.requireProject === true || projectId != null,
       ...(projectId != null && { projectId }),
     };
@@ -427,6 +437,7 @@ export function createSchedulesService(
   }
 
   const engineDeps: ScheduleEngineDeps = {
+    preflightMCP: deps.preflightMCP,
     methods,
     getLimits,
     // On the BASE deps, not only the engine's per-pass wrapper: fireScheduleNow
@@ -451,6 +462,10 @@ export function createSchedulesService(
         return false;
       }
       let record = await deps.findBalance(user.id);
+      // Credits in-flight requests hold are unavailable to this fire as well: the chat
+      // balance check admits against the unreserved amount. Taken from this read because
+      // the initialization/sync writes below return the record without the total.
+      const reservedCredits = record?.reservedCredits ?? 0;
       // Initialize/sync the record exactly as the chat's balance middleware would,
       // so a new user's startBalance is applied before we read it (avoids skipping
       // a schedule that an interactive chat would have allowed).
@@ -491,7 +506,7 @@ export function createSchedulesService(
           }
         }
       }
-      const credits = record?.tokenCredits ?? 0;
+      const credits = (record?.tokenCredits ?? 0) - reservedCredits;
       if (credits > 0) {
         return false;
       }
@@ -757,6 +772,7 @@ export function createSchedulesService(
   async function fireScheduleNow(
     schedule: FireableSchedule,
     limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
   ): Promise<FireResult | null> {
     // The global stop means STOP: a manual run dispatches the same billed generation as
     // an automatic one, so gating only the engine tick would leave Run Now wide open.
@@ -776,7 +792,10 @@ export function createSchedulesService(
       // Fire the FRESH leased row (post-image with the new claim token), not the
       // snapshot the route read before the lease — an edit that committed in the
       // window in between is reflected, so a stale prompt/agent is never dispatched.
-      return await fireSchedule(engineDeps, leased, limits, new Date(), { manual: true });
+      return await fireSchedule(engineDeps, leased, limits, new Date(), {
+        manual: true,
+        signal: options?.signal,
+      });
     } catch (err) {
       const released =
         claimToken != null

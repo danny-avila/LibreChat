@@ -1,9 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorTypes, isCodeWorkspaceSelections } from 'librechat-data-provider';
-import type { CodeWorkspaceSelection } from 'librechat-data-provider';
+import type {
+  CodeWorkspaceSelection,
+  CodeWorkspaceSelectionErrorReason,
+} from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
 import type { createAppConfigService } from '~/app/service';
 import type { CodeBridgeWorkerStatus } from './bridge';
+export type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import {
   CodeBridgeStatusError,
   createCodeBridgeStatusPoller,
@@ -13,13 +17,6 @@ import {
 export type CodeCapabilityConfigLoader = ReturnType<typeof createAppConfigService>['getAppConfig'];
 
 const pollWorkerStatus = createCodeBridgeStatusPoller();
-
-export type CodeWorkspaceSelectionErrorReason =
-  | 'required'
-  | 'invalid'
-  | 'worker_unavailable'
-  | 'unsupported'
-  | 'missing';
 
 function codeWorkspaceSelectionErrorMessage(reason: CodeWorkspaceSelectionErrorReason): string {
   switch (reason) {
@@ -32,7 +29,9 @@ function codeWorkspaceSelectionErrorMessage(reason: CodeWorkspaceSelectionErrorR
     case 'unsupported':
       return 'The attached code environment does not advertise selectable workspaces. Update the LibreChat Code worker and try again.';
     case 'missing':
-      return 'The selected workspace is no longer registered on this machine. Choose another workspace explicitly or restore the previous registration.';
+      return 'The selected workspace is no longer registered on this machine. Restore the previous registration or start a new conversation.';
+    case 'locked':
+      return 'This conversation already has a different code environment decision.';
   }
 }
 
@@ -45,6 +44,28 @@ export class CodeWorkspaceSelectionError extends Error {
     super(codeWorkspaceSelectionErrorMessage(reason));
     this.name = 'CodeWorkspaceSelectionError';
   }
+}
+
+function canonicalWorkspaceSelections(
+  selections: CodeWorkspaceSelection[],
+): CodeWorkspaceSelection[] {
+  return [...selections].sort((left, right) => {
+    if (left.environmentId < right.environmentId) return -1;
+    if (left.environmentId > right.environmentId) return 1;
+    if (left.workspaceId < right.workspaceId) return -1;
+    if (left.workspaceId > right.workspaceId) return 1;
+    return 0;
+  });
+}
+
+function sameWorkspaceSelections(
+  left: CodeWorkspaceSelection[],
+  right: CodeWorkspaceSelection[],
+): boolean {
+  return (
+    JSON.stringify(canonicalWorkspaceSelections(left)) ===
+    JSON.stringify(canonicalWorkspaceSelections(right))
+  );
 }
 
 async function readAuthorizedAttachedWorkerStatus(
@@ -94,12 +115,7 @@ async function readAuthorizedAttachedWorkerStatus(
   });
 }
 
-/**
- * Resolves a conversation preference into a live worker capability. Request
- * state wins so a user can deliberately change directories on this turn;
- * persisted state supplies reconnect and non-browser clients. Neither path is
- * trusted until the worker confirms the exact environment/workspace pair.
- */
+/** Resolves an immutable conversation selection into a live worker capability. */
 export async function resolveCodeExecutionWorkspaceContext({
   context,
   requestedSelections,
@@ -114,8 +130,16 @@ export async function resolveCodeExecutionWorkspaceContext({
   getAppConfig?: CodeCapabilityConfigLoader;
 }): Promise<CodeExecutionContext> {
   if (context.environmentType !== 'attached') return context;
-  const rawSelections =
-    requestedSelections === undefined ? persistedSelections : requestedSelections;
+  if (
+    persistedSelections !== undefined &&
+    requestedSelections !== undefined &&
+    (!isCodeWorkspaceSelections(persistedSelections) ||
+      !isCodeWorkspaceSelections(requestedSelections) ||
+      !sameWorkspaceSelections(persistedSelections, requestedSelections))
+  ) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
+  const rawSelections = persistedSelections ?? requestedSelections;
   if (rawSelections == null) {
     throw new CodeWorkspaceSelectionError('required');
   }

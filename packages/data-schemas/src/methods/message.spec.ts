@@ -158,6 +158,85 @@ describe('Message Operations', () => {
       expect(savedMessage?.isUserSubmitted).toBeUndefined();
     });
 
+    it('round-trips context usage metadata without narrowing tool fields or unknown data', async () => {
+      const contextUsage = {
+        runId: 'run-context-rich',
+        breakdown: {
+          messageTokens: 120,
+          toolMessageTokens: 18,
+          toolMessageTokenCounts: { search: 11, read_file: 4 },
+          sdkExtension: {
+            providerOnly: true,
+            nested: { invocationOverhead: 3, labels: ['retained'] },
+          },
+        },
+        sdkExtension: {
+          source: 'retained-snapshot-field',
+          nested: { calibration: { mode: 'provider' } },
+        },
+      };
+      const knownZero = {
+        ...contextUsage,
+        breakdown: {
+          ...contextUsage.breakdown,
+          toolMessageTokens: 0,
+          toolMessageTokenCounts: { search: 0 },
+        },
+      };
+      const {
+        toolMessageTokens: _missingToolMessageTokens,
+        toolMessageTokenCounts: _missingToolMessageTokenCounts,
+        ...missingBreakdown
+      } = contextUsage.breakdown;
+      const missing = { ...contextUsage, breakdown: missingBreakdown };
+
+      await Promise.all([
+        saveMessage(mockCtx, {
+          ...mockMessageData,
+          messageId: 'msg-context-rich',
+          metadata: { contextUsage },
+        }),
+        saveMessage(mockCtx, {
+          ...mockMessageData,
+          messageId: 'msg-context-zero',
+          metadata: { contextUsage: knownZero },
+        }),
+        saveMessage(mockCtx, {
+          ...mockMessageData,
+          messageId: 'msg-context-missing',
+          metadata: { contextUsage: missing },
+        }),
+      ]);
+
+      const persisted = await Message.find({
+        user: 'user123',
+        messageId: { $in: ['msg-context-rich', 'msg-context-zero', 'msg-context-missing'] },
+      }).lean();
+      const byId = new Map(persisted.map((message) => [message.messageId, message]));
+
+      expect(byId.get('msg-context-rich')?.metadata?.contextUsage).toEqual(contextUsage);
+      expect(byId.get('msg-context-zero')?.metadata?.contextUsage).toEqual(knownZero);
+      expect(byId.get('msg-context-missing')?.metadata?.contextUsage).toEqual(missing);
+
+      const zeroBreakdown = (
+        byId.get('msg-context-zero')?.metadata?.contextUsage as typeof knownZero
+      ).breakdown;
+      expect(zeroBreakdown.toolMessageTokens).toBe(0);
+      expect(Object.prototype.hasOwnProperty.call(zeroBreakdown, 'toolMessageTokens')).toBe(true);
+
+      const missingBreakdownRecord = (
+        byId.get('msg-context-missing')?.metadata?.contextUsage as typeof missing
+      ).breakdown;
+      expect(
+        Object.prototype.hasOwnProperty.call(missingBreakdownRecord, 'toolMessageTokens'),
+      ).toBe(false);
+      expect(missingBreakdownRecord.sdkExtension).toEqual(contextUsage.breakdown.sdkExtension);
+      expect(
+        (byId.get('msg-context-rich')?.metadata?.contextUsage as typeof contextUsage).sdkExtension
+          .nested,
+      ).toEqual({ calibration: { mode: 'provider' } });
+    });
+
     it('unsets a previously stored context meta in the same update as the terminal save', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,
@@ -721,6 +800,7 @@ describe('Message Operations', () => {
         ...mockMessageData,
         langfuseSampled: true,
         langfuseDestinationIds: ['destination-1'],
+        langfuseRunId: 'run-1',
       });
 
       const result = await updateMessage(mockCtx.userId, {
@@ -730,6 +810,7 @@ describe('Message Operations', () => {
 
       expect(result?.langfuseSampled).toBe(true);
       expect(result?.langfuseDestinationIds).toEqual(['destination-1']);
+      expect(result?.langfuseRunId).toBe('run-1');
     });
 
     it('should throw an error if message is not found', async () => {
@@ -1474,6 +1555,53 @@ describe('Message Operations', () => {
       expect(claim.status).toBe('acquired');
     });
 
+    it('claims a cancelled ordinary background-tool result as terminal evidence', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-cancelled-tool',
+              name: 'bash_tool',
+              output: 'Background task cancellation requested',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-cancelled-tool',
+                toolName: 'bash_tool',
+                status: 'error',
+                cancelled: true,
+                settledAt: new Date(),
+                completionWakeup: true,
+              },
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-cancelled-tool',
+          kind: 'wakeup',
+          claimId: 'delivery-cancelled-tool',
+        }),
+      ).resolves.toEqual({
+        status: 'acquired',
+        results: [
+          {
+            taskId: 'task-cancelled-tool',
+            toolCallId: 'call-cancelled-tool',
+            toolName: 'bash_tool',
+            status: 'cancelled',
+            output: 'Background task cancellation requested',
+          },
+        ],
+      });
+    });
+
     it('elects one result consumer and batches terminal siblings for a wakeup', async () => {
       const terminal = (id: string, taskId: string, output: string) => ({
         type: 'tool_call',
@@ -1989,6 +2117,7 @@ describe('Message Operations', () => {
         contextMeta: { anything: true },
         langfuseSampled: true,
         langfuseDestinationIds: ['lf-1'],
+        langfuseRunId: 'run-1',
         metadata: {
           usage: { input: 10, output: 20 },
           thoughtSignatures: { tool_1: 'opaque' },
@@ -2058,6 +2187,7 @@ describe('Message Operations', () => {
         'contextMeta',
         'langfuseSampled',
         'langfuseDestinationIds',
+        'langfuseRunId',
         'subagentTask',
       ]) {
         expect(hidden[field]).toBeUndefined();

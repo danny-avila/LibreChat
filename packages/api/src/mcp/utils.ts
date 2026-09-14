@@ -761,6 +761,49 @@ export function createDeadlineAbortSignal(
   return budget ?? callerSignal;
 }
 
+export type DeadlineWaitResult<T> = { settled: true; value: T } | { settled: false };
+
+/**
+ * Waits for `promise` only until `deadlineMs` passes or `signal` aborts, and never cancels it:
+ * shared work such as an OAuth token refresh keeps running for whoever depends on its outcome. A
+ * rejection that lands first is rethrown; one that lands after the wait ended stays observed, so
+ * abandoned work never surfaces as an unhandled rejection.
+ */
+export async function waitUntilDeadline<T>(
+  promise: Promise<T>,
+  deadlineMs?: number,
+  signal?: AbortSignal,
+): Promise<DeadlineWaitResult<T>> {
+  if (deadlineMs == null && signal == null) {
+    return { settled: true, value: await promise };
+  }
+  const settlement = promise.then((value): DeadlineWaitResult<T> => ({ settled: true, value }));
+  if (signal?.aborted === true) {
+    settlement.catch(() => undefined);
+    return { settled: false };
+  }
+  let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<DeadlineWaitResult<T>>((resolve) => {
+    if (deadlineMs != null) {
+      timer = setTimeout(() => resolve({ settled: false }), Math.max(0, deadlineMs - Date.now()));
+      timer.unref?.();
+    }
+    if (signal != null) {
+      onAbort = () => resolve({ settled: false });
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  try {
+    return await Promise.race([settlement, interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort != null) {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
 export function generateServerNameFromTitle(title: string): string {
   const slug = title
     .toLowerCase()

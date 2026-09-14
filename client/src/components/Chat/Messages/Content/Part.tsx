@@ -209,6 +209,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               attachments={attachments}
               commandField="code"
               hideAttachments={hideAttachments}
@@ -228,6 +229,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               args={toolCall.args}
@@ -304,6 +306,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               persistedContent={persistedContent}
+              subagentIdentity={toolCall.subagentIdentity}
               hideAttachments={hideAttachments}
             />
           );
@@ -361,6 +364,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -410,7 +414,9 @@ const Part = memo(function Part({
             isLast={isLast}
             hideAttachments={hideAttachments}
             onExpand={onToolExpand}
-            runStepStatus={toolCall.runStepStatus}
+            runStepStatus={
+              toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus
+            }
             runStepDurationMs={toolCall.runStepDurationMs}
           />
         );

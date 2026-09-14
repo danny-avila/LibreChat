@@ -126,6 +126,9 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: [String],
       default: undefined,
     },
+    langfuseRunId: {
+      type: String,
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,

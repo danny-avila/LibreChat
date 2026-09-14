@@ -332,11 +332,17 @@ export default function useChatFunctions({
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
     const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
-    const codeWorkspaces = codeWorkspaceState.resolveSelections(latestCodeWorkspaces);
-    if (codeWorkspaceState.required && codeWorkspaces == null) {
+    const latestCodeEnvironmentMode =
+      getConversation()?.codeEnvironmentMode ?? conversation?.codeEnvironmentMode;
+    const workspaceSubmission = codeWorkspaceState.resolveSubmission(
+      latestCodeWorkspaces,
+      latestCodeEnvironmentMode,
+    );
+    if (workspaceSubmission == null) {
       logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
       return false;
     }
+    const { codeEnvironmentMode, codeWorkspaces } = workspaceSubmission;
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
@@ -526,7 +532,11 @@ export default function useChatFunctions({
         endpoint,
         endpointType,
         overrideConvoId,
-        overrideUserMessageId,
+        overrideUserMessageId:
+          overrideUserMessageId ??
+          (endpoint === EModelEndpoint.agents && !regenerateShaped && !isContinued
+            ? `${intermediateId}${Constants.COMMON_DIVIDER}0`
+            : undefined),
       },
       convo,
       chatProjectId ? { chatProjectId } : {},
@@ -642,6 +652,7 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      clientQueueParentMessageId: regenerateShaped ? (messageId ?? undefined) : intermediateId,
       /**
        * Seed the assistant placeholder with the turn's manually-invoked
        * skill names so `ContentParts` can render interim `SkillCall` cards
@@ -751,6 +762,7 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       codeApprovalMode,
+      codeEnvironmentMode,
       codeWorkspaces,
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,

@@ -49,8 +49,10 @@ describe('createPayload server URL', () => {
 
   it('forwards the conversation-selected code workspace to agents', () => {
     const submission = makeSubmission('agents');
+    submission.codeEnvironmentMode = 'attached';
     submission.codeWorkspaces = [{ environmentId: 'personal-vm', workspaceId: 'project-a' }];
 
+    expect(createPayload(submission).payload.codeEnvironmentMode).toBe('attached');
     expect(createPayload(submission).payload.codeWorkspaces).toEqual([
       { environmentId: 'personal-vm', workspaceId: 'project-a' },
     ]);

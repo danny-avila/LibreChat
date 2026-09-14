@@ -2,8 +2,12 @@ const multer = require('multer');
 const express = require('express');
 const { sleep } = require('@librechat/agents');
 const {
+  reportLocatorTraversalFailure,
   isEnabled,
   normalizeLimit,
+  normalizeSortDirection,
+  normalizeSortField,
+  CONVERSATION_SORT_FIELDS,
   openCheckpointDeletion,
   waitForGenerationPersistence,
   createArchiveAllHandler,
@@ -64,10 +68,12 @@ const parentSubagentIndexHandler = createParentSubagentIndexHandler({
   listSubagentTasksForThreads: db.listSubagentTasksForThreads,
 });
 const filterConversationTitle = createContentFilter({
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   extract: (req) => extractConversationTitleContent(req.body),
 });
 const filterSubagentControlMessage = createContentFilter({
+  onTraversalFailure: reportLocatorTraversalFailure,
   getFilters: (req) => req.config?.filters,
   getLegacyPii: (req) => req.config?.messageFilter?.pii,
   extract: (req) =>
@@ -150,8 +156,11 @@ router.get('/', async (req, res) => {
   const pinned = isEnabled(req.query.pinned);
   const search =
     typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
-  const sortBy = req.query.sortBy || 'updatedAt';
-  const sortDirection = req.query.sortDirection || 'desc';
+  const sortBy = normalizeSortField(req.query.sortBy, {
+    fields: CONVERSATION_SORT_FIELDS,
+    fallback: 'updatedAt',
+  });
+  const sortDirection = normalizeSortDirection(req.query.sortDirection);
   const projectId = Array.isArray(req.query.projectId)
     ? req.query.projectId[0]
     : req.query.projectId;

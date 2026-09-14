@@ -961,6 +961,39 @@ describe('ToolCallGroup image hoisting', () => {
     ).toBeInTheDocument();
   });
 
+  it('counts a persisted ordinary background cancellation as cancelled', () => {
+    const cancelled = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'bash_tool',
+        args: '{"command":"sleep 600"}',
+        output: 'Error: [bash_tool] tool call failed: Background task cancellation requested',
+        runStepStatus: 'completed',
+        backgrounded: true,
+        backgroundTask: {
+          version: 1,
+          taskId: 'background-task-1',
+          toolName: 'bash_tool',
+          status: 'error',
+          cancelled: true,
+          settledAt: new Date(),
+        },
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: cancelled, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    expect(screen.getByRole('button', { name: /· 1 cancelled$/ })).toBeInTheDocument();
+  });
+
   it('labels a homogeneous ask_user_question group as its own category', () => {
     renderGroup({
       ...baseProps,

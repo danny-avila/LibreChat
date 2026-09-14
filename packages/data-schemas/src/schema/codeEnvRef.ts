@@ -17,6 +17,7 @@ export const codeEnvRefSchema: Schema = new Schema(
     },
     executionRouteKey: { type: String },
     provisionedAt: { type: Number },
+    sandboxFilename: { type: String },
   },
   { _id: false },
 );

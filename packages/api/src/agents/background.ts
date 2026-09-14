@@ -53,6 +53,7 @@ import type {
   BackgroundToolResultRecord,
 } from '@librechat/data-schemas';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { BackgroundToolResultState } from './harvest';
 import type { CapabilityToolNames } from './selection';
 import {
   BACKGROUND_TASK_TIMEOUT_MS,
@@ -353,7 +354,7 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. The cancel action applies to subagents and to ordinary tools when enabled by the deployment; steer, queue, interrupt, and cancel_message apply only to subagents. Live controls route to process-local executors and do not survive an owning-process restart. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
@@ -399,7 +400,8 @@ const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParame
     action: {
       type: 'string',
       enum: ['poll', 'steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
-      description: 'Defaults to poll. Control actions apply only to a running subagent task.',
+      description:
+        'Defaults to poll. Cancel applies to subagents and may apply to ordinary tools when enabled by the deployment; other controls apply only to subagents.',
     },
     message: {
       type: 'string',
@@ -600,7 +602,7 @@ export function synthesizeBackgroundToolOptions(sources: {
   );
 }
 
-export type BackgroundTaskStatus = 'running' | 'completed' | 'error';
+export type BackgroundTaskStatus = 'running' | 'completed' | 'error' | 'cancelled';
 
 export interface BackgroundTask {
   id: string;
@@ -614,6 +616,10 @@ export interface BackgroundTask {
    *  (e.g. `call_0`) across agents when patching the dispatch turn. */
   agentId?: string;
   status: BackgroundTaskStatus;
+  /** Set when an owner asked the live invocation to abort. The task remains
+   * running until the invocation actually settles, so capacity and status do
+   * not imply that external effects have stopped prematurely. */
+  cancellationRequestedAt?: number;
   /** Tool result content once completed. */
   result?: string;
   /**
@@ -817,6 +823,9 @@ function toStoredArtifact(
 export class BackgroundTaskRegistryClass {
   private readonly buckets = new Map<string, TaskBucket>();
   private readonly retainedUsage = new WeakMap<BackgroundTask, RetainedPayloadUsage>();
+  /** Live invocation controls are intentionally process-local and are never
+   * exposed through task snapshots or durable receipts. */
+  private readonly cancellationRequests = new WeakMap<BackgroundTask, () => boolean | void>();
   private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
@@ -1213,6 +1222,10 @@ export class BackgroundTaskRegistryClass {
     harvestStarted?: boolean;
     liveArtifactPollRequired?: boolean;
     capacityPermit?: BackgroundTaskCapacityPermit;
+    /** Abort the already-created invocation signal. Ownership is enforced by
+     * requestCancellation before this closure can be reached. */
+    /** Returns false when another abort source already won the race. */
+    requestCancellation?: () => boolean | void;
   }): { task: BackgroundTask; isNew: boolean } | BackgroundTaskCapacityRejection {
     const now = Date.now();
     this.sweep(now);
@@ -1286,7 +1299,40 @@ export class BackgroundTaskRegistryClass {
     };
     bucket.tasks.set(task.id, task);
     bucket.byToolCall.set(dedupeKey, task.id);
+    if (params.requestCancellation != null) {
+      this.cancellationRequests.set(task, params.requestCancellation);
+    }
     return { task, isNew: true };
+  }
+
+  requestCancellation(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+  ):
+    | { status: 'not_found' }
+    | { status: 'unavailable'; task: BackgroundTask }
+    | { status: 'requested' | 'already_requested' | 'settled'; task: BackgroundTask } {
+    const task = this.get(userId, conversationId, taskId);
+    if (task == null) {
+      return { status: 'not_found' };
+    }
+    if (task.status !== 'running') {
+      return { status: 'settled', task };
+    }
+    if (task.cancellationRequestedAt != null) {
+      return { status: 'already_requested', task };
+    }
+    const request = this.cancellationRequests.get(task);
+    if (request == null) {
+      return { status: 'unavailable', task };
+    }
+    if (request() === false) {
+      return { status: 'unavailable', task };
+    }
+    task.cancellationRequestedAt = Date.now();
+    task.updatedAt = task.cancellationRequestedAt;
+    return { status: 'requested', task };
   }
 
   private update(
@@ -1338,6 +1384,7 @@ export class BackgroundTaskRegistryClass {
       artifactDelivered: false,
     });
     if (updated) {
+      this.cancellationRequests.delete(task);
       this.updatePayloadUsage(task, {
         result: retainedContent?.length ?? 0,
         artifact: artifactChars,
@@ -1508,6 +1555,40 @@ export class BackgroundTaskRegistryClass {
       ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
     });
     if (updated) {
+      this.cancellationRequests.delete(task);
+      this.retainedUsage.set(task, {
+        result: 0,
+        artifact: 0,
+        attachments: 0,
+        error: retainedError?.length ?? 0,
+      });
+    }
+  }
+
+  cancel(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    error: string,
+    options?: { harvestStarted?: boolean },
+  ): void {
+    const storedError = truncateMiddle(error, MAX_RESULT_CHARS);
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    if (task == null || task.status !== 'running' || task.artifactBlocked === true) {
+      return;
+    }
+    const hasRetainedCapacity = this.makeRetainedRoom(userId, task, storedError.length);
+    const retainedError = hasRetainedCapacity ? storedError : undefined;
+    const updated = this.update(userId, conversationId, taskId, {
+      status: 'cancelled',
+      error: retainedError,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
+      ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+    });
+    if (updated) {
+      this.cancellationRequests.delete(task);
       this.retainedUsage.set(task, {
         result: 0,
         artifact: 0,
@@ -1749,6 +1830,7 @@ interface SerializedBackgroundTask {
   status: BackgroundTaskStatus;
   /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
   progress: number;
+  cancellation_requested?: boolean;
   result?: string;
   result_available?: boolean;
   result_chars?: number;
@@ -1795,6 +1877,9 @@ function serializeTask(
     tool: task.toolName,
     status: task.status,
     progress: task.status === 'running' ? 0 : 1,
+    ...(task.status === 'running' && task.cancellationRequestedAt != null
+      ? { cancellation_requested: true }
+      : {}),
     ...resultFields(task, includeResult),
     ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
@@ -1982,6 +2067,8 @@ export async function runCheckBackgroundTask(params: {
     allowUnfinished?: boolean;
   }) => Promise<BackgroundToolResultClaim>;
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
+  /** Trusted deployment policy. Defaults false for backward compatibility. */
+  ordinaryToolCancellation?: boolean;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -2000,11 +2087,48 @@ export async function runCheckBackgroundTask(params: {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);
     if (task != null) {
       if (action !== 'poll') {
-        return JSON.stringify({
-          status: 'invalid',
-          background_task_id: taskId,
-          message: 'Control actions are supported only for subagent tasks.',
-        });
+        if (action === 'cancel') {
+          if (params.ordinaryToolCancellation !== true) {
+            return JSON.stringify({
+              status: 'invalid',
+              background_task_id: taskId,
+              message: 'Cancellation is not enabled for ordinary background tools.',
+            });
+          }
+          const cancellation = backgroundTaskRegistry.requestCancellation(
+            userId,
+            conversationId,
+            taskId,
+          );
+          if (cancellation.status === 'settled') {
+            /** Settlement won the race. Fall through to the ordinary poll path
+             * so durable result-claim arbitration still elects one consumer. */
+          } else if (
+            cancellation.status === 'requested' ||
+            cancellation.status === 'already_requested'
+          ) {
+            return JSON.stringify({
+              ...serializeTask(cancellation.task, { includeResult: false }),
+              status: 'cancellation_requested',
+              cancellation_requested: true,
+              message:
+                'Cancellation was requested. The task remains active until its executor settles; poll again for a terminal result.',
+            });
+          } else {
+            return JSON.stringify({
+              status: 'unavailable',
+              background_task_id: taskId,
+              message:
+                'This server no longer owns a live cancellation handle for the task. Poll for its outcome; do not assume execution stopped.',
+            });
+          }
+        } else {
+          return JSON.stringify({
+            status: 'invalid',
+            background_task_id: taskId,
+            message: 'This control action is supported only for subagent tasks.',
+          });
+        }
       }
       if (task.status !== 'running') {
         if (
@@ -2545,6 +2669,7 @@ export function getBackgroundCodeDelivery(params: {
       result?: string;
       error?: string;
       attachments?: unknown[];
+      backgroundTask?: BackgroundToolResultState;
     }
   | undefined {
   const rawId = coerceArgsObject(params.args)?.background_task_id;
@@ -2572,6 +2697,30 @@ export function getBackgroundCodeDelivery(params: {
     result: task.result,
     error: task.error,
     attachments: task.attachments,
+    ...(task.status === 'running'
+      ? {}
+      : {
+          backgroundTask: {
+            taskId: task.id,
+            toolName: task.toolName,
+            status: task.status === 'cancelled' ? 'error' : task.status,
+            ...(task.status === 'cancelled' ? { cancelled: true } : {}),
+            settledAt: new Date(task.updatedAt),
+            ...(task.completionWakeup === true ? { completionWakeup: true } : {}),
+            ...(task.resultClaim == null
+              ? {}
+              : {
+                  resultClaim: {
+                    kind: task.resultClaim.kind,
+                    claimId: task.resultClaim.claimId,
+                    claimedAt: new Date(task.resultClaim.claimedAt),
+                    ...(task.resultClaim.generationId == null
+                      ? {}
+                      : { generationId: task.resultClaim.generationId }),
+                  },
+                }),
+          },
+        }),
   };
 }
 

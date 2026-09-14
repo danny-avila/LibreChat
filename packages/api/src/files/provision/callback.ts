@@ -1,12 +1,23 @@
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { EToolResources, resolveSandboxFilename } from 'librechat-data-provider';
+import {
+  EToolResources,
+  getCodeEnvRefForProfile,
+  resolveSandboxFilename,
+} from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
 import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
-import { claimCodeDestination, createCodeDestinationSet } from '~/files/code/destinations';
+import {
+  claimCodeDestination,
+  createCodeDestinationSet,
+  reserveCodeDestination,
+  sortCodeFilesByDestinationPriority,
+} from '~/files/code/destinations';
+import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
+import { getCodeEnvUploadFilename } from '../code/form';
 import { isCodeFileToolName } from '~/agents/tools';
 
 /** Deferred database write produced by a successful provisioning call. */
@@ -238,6 +249,7 @@ export function createProvisionFilesCallback({
     /** Files whose provisioning rejected this turn; kept queued so a transient
      *  outage can retry next turn instead of being silently dropped. */
     const failedCodeFiles: TFile[] = [];
+    const codeFailureReasons: unknown[] = [];
     const failedVectorFiles: TFile[] = [];
     /* The graph seeded each tool call's code-session context from the sessions that
      * existed at run start, which predate this upload. Returning the refs lets the
@@ -247,21 +259,75 @@ export function createProvisionFilesCallback({
       ? [...(ctx.pendingProvisionedCodeFiles ?? [])]
       : [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
-      const queuedCodeFiles = provisionState.codeEnvFiles;
+      const queuedFileIds = new Set(provisionState.codeEnvFiles.map((file) => file.file_id));
+      const liveFiles =
+        (ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>)[
+          EToolResources.execute_code
+        ]?.files ?? [];
+      const routePrivateFileIds = new Set<string>();
+      for (const candidate of agentToolContexts.values()) {
+        const route =
+          candidate.codeExecutionContext?.executionRouteKey ??
+          candidate.codeExecutionContext?.executionProfile ??
+          'default';
+        if (route !== codeRouteKey) continue;
+        for (const id of candidate.provisionState?.agentScopedFileIds ?? [])
+          routePrivateFileIds.add(id);
+      }
+      const confirmedDestinations = new Set<string>();
+      const queuedCodeFiles = sortCodeFilesByDestinationPriority(
+        [
+          ...provisionState.codeEnvFiles,
+          ...liveFiles.filter((file) => !queuedFileIds.has(file.file_id)),
+        ],
+        routePrivateFileIds,
+      )
+        .filter((file): file is TFile => {
+          if (!file) return false;
+          const ref = getCodeEnvRefForProfile(file.metadata, codeRouteKey);
+          const recovery = provisionState.codeEnvRecoveryNames?.get(file.file_id);
+          const entityId = entityIdForFile(file);
+          const isTargetScope =
+            ref != null &&
+            ref.kind === (entityId ? 'agent' : 'user') &&
+            ref.id === (entityId ?? req.user?.id);
+          let storedName = recovery?.isTargetScope ? recovery.name : undefined;
+          if (isTargetScope) storedName = ref?.sandboxFilename;
+          // Prefix conflicts are independent recoverable inputs; only equal stored paths
+          // identify superseded content. Foreign-scope refs are claimable hints too.
+          if (storedName == null) return true;
+          if (confirmedDestinations.has(storedName)) return false;
+          confirmedDestinations.add(storedName);
+          return true;
+        })
+        .filter((file) => queuedFileIds.has(file.file_id));
+      /** Every file in this tool-load batch shares one wait allowance. This
+       *  prevents a large recovery set from multiplying the live-turn delay. */
+      const codeApiRateLimitBudget = createCodeApiRateLimitBudget(
+        req.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+      );
       const destinations = createCodeDestinationSet();
-      const existingCodeFiles = (
-        ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>
-      )[EToolResources.execute_code]?.files;
-      const queuedFileIds = new Set(queuedCodeFiles.map((file) => file.file_id));
-      for (const existing of existingCodeFiles ?? []) {
-        if (queuedFileIds.has(existing.file_id)) {
-          continue;
+      // Live storage paths are immutable. Reserve the same route-wide set for every
+      // agent so private live resources cannot give a shared recovery divergent names.
+      for (const candidateContext of agentToolContexts.values()) {
+        const candidateRoute =
+          candidateContext.codeExecutionContext?.executionRouteKey ??
+          candidateContext.codeExecutionContext?.executionProfile ??
+          'default';
+        if (candidateRoute !== codeRouteKey) continue;
+        const existingCodeFiles = (
+          candidateContext.tool_resources as
+            | Record<string, { files?: TFile[] } | undefined>
+            | undefined
+        )?.[EToolResources.execute_code]?.files;
+        for (const existing of existingCodeFiles ?? []) {
+          if (queuedFileIds.has(existing.file_id)) continue;
+          reserveCodeDestination(
+            destinations,
+            getCodeEnvRefForProfile(existing.metadata, codeRouteKey)?.sandboxFilename ??
+              resolveSandboxFilename(existing.filename, existing.type),
+          );
         }
-        claimCodeDestination(
-          destinations,
-          resolveSandboxFilename(existing.filename, existing.type),
-          existing.file_id,
-        );
       }
       for (const existing of provisionedCodeFiles) {
         claimCodeDestination(destinations, existing.name, existing.id);
@@ -270,7 +336,14 @@ export function createProvisionFilesCallback({
         queuedCodeFiles.map(async (file) => {
           const sandboxFilename = claimCodeDestination(
             destinations,
-            resolveSandboxFilename(file.filename, file.type),
+            getCodeEnvUploadFilename(
+              resolveSandboxFilename(
+                getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
+                  provisionState.codeEnvRecoveryNames?.get(file.file_id)?.name ??
+                  file.filename,
+                file.type,
+              ),
+            ),
             file.file_id,
           );
           const provisioned = await shareProvisioning(
@@ -287,6 +360,7 @@ export function createProvisionFilesCallback({
                 route: ctx.codeExecutionContext,
                 sandboxFilename,
                 signal,
+                rateLimitBudget: codeApiRateLimitBudget,
               });
               signal?.throwIfAborted();
               /* primeCodeFiles re-reads the database and skips files without a stored
@@ -334,10 +408,15 @@ export function createProvisionFilesCallback({
           }
         }),
       );
+      /* allSettled keeps independent file failures retryable, but cancellation belongs
+       * to the whole tool run. Preserve it before translating rejections into queued
+       * files or starting search provisioning. */
+      signal?.throwIfAborted();
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Code env provisioning failed', result.reason);
           failedCodeFiles.push(queuedCodeFiles[index]);
+          codeFailureReasons.push(result.reason);
         }
       });
       provisionState.codeEnvFiles = failedCodeFiles;
@@ -403,6 +482,7 @@ export function createProvisionFilesCallback({
           throw new Error(`Vector store did not embed "${file.filename}" (${file.file_id})`);
         }),
       );
+      signal?.throwIfAborted();
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);
@@ -419,8 +499,15 @@ export function createProvisionFilesCallback({
     /* Provisioning failed outright, so the sandbox or vector store does not have the
      * attachment; running the tool anyway would answer from missing input. */
     if (failedCodeFiles.length > 0) {
-      throw new Error(
-        `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+      if (codeFailureReasons.length > 0 && codeFailureReasons.every(isCodeApiRateLimitError)) {
+        throw codeFailureReasons[0];
+      }
+      throw Object.assign(
+        new Error(
+          `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+          codeFailureReasons[0] !== undefined ? { cause: codeFailureReasons[0] } : undefined,
+        ),
+        { errors: codeFailureReasons },
       );
     }
     if (failedVectorFiles.length > 0) {

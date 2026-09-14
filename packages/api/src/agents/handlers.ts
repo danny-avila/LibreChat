@@ -2,7 +2,11 @@ import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
-import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
+import {
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+  hasToolCallErrorPrefix,
+} from 'librechat-data-provider';
 import type {
   LCTool,
   FileRefs,
@@ -13,6 +17,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  SubagentExecutionContext,
   CallerCapabilityProjectionSnapshot,
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
@@ -39,6 +44,7 @@ import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
+import type { RunFileSession } from './files/session';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -76,8 +82,18 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
+  isCodeFileToolName,
   isCodeSessionToolName,
+  isFileResourceToolName,
 } from './tools';
+import {
+  createCodeApiRateLimitBudget,
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
 import {
   ContentFilterError,
   contentFilterModelBoundBlockResponse,
@@ -87,13 +103,6 @@ import {
   BACKGROUND_TASK_ABORT_GRACE_MS,
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
-import {
-  isAbortError,
-  logAxiosError,
-  truncateMiddle,
-  runOutsideTracing,
-  getSafeErrorMetadata,
-} from '~/utils';
 import {
   WorkspaceToolHttpError,
   WORKSPACE_EDIT_MAX_COUNT,
@@ -181,6 +190,8 @@ export interface EventActorDetachedActionLifecycle {
 }
 
 export interface ToolEndCallbackMetadata {
+  /** SDK-authored lineage for artifacts generated inside a child execution. */
+  executionContext?: SubagentExecutionContext;
   run_id?: string;
   thread_id?: string;
   [key: string]: unknown;
@@ -237,6 +248,10 @@ export interface ToolExecuteOptions {
     configurable?: Record<string, unknown>,
     /** SDK-owned live caller capability projection for this agent context. */
     callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
+    /** Effective cancellation signal for this tool-execute batch. */
+    signal?: AbortSignal,
+    /** SDK-authored lineage; never derive child identity from saved agent IDs. */
+    executionContext?: SubagentExecutionContext,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -244,6 +259,10 @@ export interface ToolExecuteOptions {
   }>;
   /** Trusted detached-subagent task scope for polling and parent controls. */
   subagentTasks?: SubagentTaskConfig;
+  /** Shared-file grants and tool contexts scoped to the executing run instance. */
+  runFiles?: Pick<RunFileSession, 'isActive' | 'prepareTools' | 'withCodeExecution'>;
+  /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
+  ordinaryToolCancellation?: boolean;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
@@ -255,6 +274,7 @@ export interface ToolExecuteOptions {
     toolNames: string[],
     agentId?: string,
     signal?: AbortSignal,
+    executionContext?: SubagentExecutionContext,
   ) => Promise<CodeEnvFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
@@ -464,6 +484,7 @@ export interface ToolExecuteOptions {
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
+    signal?: AbortSignal;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -624,6 +645,7 @@ export interface ToolExecuteOptions {
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<
     | { base64: string; bytes: number }
     /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
@@ -2117,6 +2139,7 @@ async function handleSandboxImageRead(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const filtered = filteredBinaryFileResult(tc, req, filePath);
   if (filtered != null) {
@@ -2151,6 +2174,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...(signal ? { signal } : {}),
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
@@ -2233,10 +2257,20 @@ async function handleSandboxFileFallback(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
+    return handleSandboxImageRead(
+      tc,
+      filePath,
+      ext,
+      options,
+      req,
+      codeExecutionContext,
+      onSuccess,
+      signal,
+    );
   }
   const filteredName = filteredFileNameResult(tc, req, filePath);
   if (filteredName != null) {
@@ -4364,6 +4398,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4400,6 +4435,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4427,6 +4463,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4496,6 +4533,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4542,6 +4580,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4867,6 +4906,8 @@ async function handleSkillToolCall(
   options: ToolExecuteOptions,
   agentId?: string,
   req?: ServerRequest,
+  signal?: AbortSignal,
+  rateLimitBudget?: import('~/utils').CodeApiRateLimitBudget,
 ): Promise<ToolExecuteResult> {
   const {
     getSkillByName,
@@ -4982,7 +5023,9 @@ async function handleSkillToolCall(
   ) {
     let primeResult: PrimeSkillFilesResult | null = null;
     try {
+      signal?.throwIfAborted();
       const skillFiles = await listSkillFiles(skill._id);
+      signal?.throwIfAborted();
       primeResult = await primeSkillFiles({
         skill,
         skillFiles,
@@ -4993,6 +5036,8 @@ async function handleSkillToolCall(
         checkIfActive,
         updateSkillFileCodeEnvIds,
         codeExecutionContext,
+        signal,
+        rateLimitBudget,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -5017,6 +5062,9 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isContentFilterError(error)) {
         return error instanceof ContentFilterError
           ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))
@@ -5091,7 +5139,7 @@ function getFileAuthoringQueueKey(
  * failed background run renders as clean stdout.
  */
 function toBackgroundToolFailure(toolName: string, message: string): string {
-  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
+  if (hasToolCallErrorPrefix(message)) {
     return message;
   }
   return `Error: [${toolName}] tool call failed: ${message}`;
@@ -5209,6 +5257,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    runFiles,
+    ordinaryToolCancellation = false,
     provisionFiles,
   } = options;
 
@@ -5217,12 +5267,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       const {
         toolCalls,
         agentId,
-        configurable,
-        metadata,
+        configurable: incomingConfigurable,
+        metadata: incomingMetadata,
         signal: eventRunSignal,
         resolve,
         reject,
       } = data;
+      const executionContext = (
+        data as ToolExecuteBatchRequest & { executionContext?: SubagentExecutionContext }
+      ).executionContext;
+      // Only the SDK-owned batch field may establish a child execution. Runtime
+      // configurable and callback metadata can otherwise carry inherited values.
+      const configurable: Record<string, unknown> | undefined =
+        incomingConfigurable == null ? undefined : { ...incomingConfigurable, executionContext };
+      const metadata: Record<string, unknown> | undefined =
+        incomingMetadata == null && executionContext == null
+          ? undefined
+          : { ...incomingMetadata, executionContext };
       let eventRunId: string | undefined;
       if (typeof metadata?.run_id === 'string') {
         eventRunId = metadata.run_id;
@@ -5230,9 +5291,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         eventRunId = configurable.run_id;
       }
       const foregroundHostSignal =
-        foregroundRunId == null || eventRunId == null || eventRunId === foregroundRunId
-          ? hostRunSignal
-          : undefined;
+        eventRunId == null || eventRunId === foregroundRunId ? hostRunSignal : undefined;
       const runSignal =
         foregroundHostSignal != null &&
         eventRunSignal != null &&
@@ -5293,8 +5352,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
 
+            const runFileSharingActive = runFiles?.isActive() === true;
+            if (runFileSharingActive) {
+              if (!agentId) throw new Error('Shared-file tools require an executing agent.');
+              await runFiles!.prepareTools(
+                agentId,
+                executionContext,
+                runSignal ?? new AbortController().signal,
+                toolNames.some(isFileResourceToolName) ? 'refresh' : 'snapshot',
+              );
+            }
             const provisionedCodeFiles = provisionFiles
-              ? await provisionFiles(toolNames, agentId, runSignal)
+              ? await provisionFiles(toolNames, agentId, runSignal, executionContext)
               : undefined;
 
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
@@ -5302,6 +5371,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               agentId,
               sourceConfigurable,
               callerCapabilityProjection,
+              runSignal,
+              executionContext,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -5309,6 +5380,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            if (mergedConfigurable != null) mergedConfigurable.executionContext = executionContext;
             /* The graph populated each call's code-session context from the sessions that
              * existed at run start, before this batch provisioned anything, and nothing
              * downstream refreshes it. buildToolCallConfig reads `_injected_files` from
@@ -5316,7 +5388,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
              * a sandbox that cannot see the file. */
             if (provisionedCodeFiles && provisionedCodeFiles.length > 0) {
               for (const tc of allowedToolCalls) {
-                if (!isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !(runFileSharingActive && isCodeFileToolName(tc.name))
+                ) {
                   continue;
                 }
                 const merged = mergeCodeFilesIntoContext(
@@ -5331,6 +5406,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            if (runFileSharingActive && executionContext != null) {
+              for (const tc of allowedToolCalls) {
+                if (
+                  !isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                  !isCodeFileToolName(tc.name)
+                )
+                  continue;
+                if (!runtimeSessionHint || codeExecutionContext?.environmentType === 'attached') {
+                  throw new Error('This child execution has no isolated file workspace.');
+                }
+                // SDK tool configs may still carry a parent's runtime hint. The
+                // host prepared this partition using the authorized child identity.
+                tc.runtimeSessionHint = runtimeSessionHint;
+              }
+            }
             const executionRouteKey =
               codeExecutionContext?.executionRouteKey ?? codeExecutionContext?.executionProfile;
             const sandboxConversationId =
@@ -5516,12 +5606,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }),
                 };
               }
+              const backgroundAbortController = new AbortController();
+              let backgroundAbortSource: 'manual' | 'timeout' | undefined;
               const created = backgroundTaskRegistry.create({
                 ...(detachedReservation?.status === 'reserved'
                   ? { taskId: detachedReservation.taskId }
                   : {}),
                 ...registration,
                 ...(capacityPermit == null ? {} : { capacityPermit }),
+                requestCancellation: () => {
+                  if (backgroundAbortSource != null || backgroundAbortController.signal.aborted) {
+                    return false;
+                  }
+                  backgroundAbortSource = 'manual';
+                  backgroundAbortController.abort(
+                    new DOMException('Background task cancellation requested', 'AbortError'),
+                  );
+                  return true;
+                },
               });
               if ('atCapacity' in created) {
                 if (detachedReservation?.status === 'reserved') {
@@ -5587,7 +5689,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   /** A provider id alone is not a durable part identity: it may
                    * repeat in later turns of the same response. New automatic
@@ -5610,7 +5712,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return {
                       taskId: task.id,
                       toolName: tc.name,
-                      status: params.status,
+                      status: params.status === 'cancelled' ? 'error' : params.status,
+                      ...(params.status === 'cancelled' ? { cancelled: true } : {}),
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
                       ...(completionPreregistered ? { completionWakeup: true } : {}),
                       ...(current?.resultClaim != null
@@ -5743,7 +5846,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  overwrite it. */
                       dispatchedAt: task.createdAt,
                       codeExecutionContext,
-                      ...(detachedReservation?.status === 'reserved' || !completionPreregistered
+                      ...(detachedReservation?.status === 'reserved' ||
+                      (!completionPreregistered && params.status !== 'cancelled')
                         ? {}
                         : { backgroundTask, resolveBackgroundTask }),
                       output: params.output ?? localTask?.result,
@@ -5816,7 +5920,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistSettledBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   if (harvestEnabled) {
                     await persistBackgroundResult(params);
@@ -5838,7 +5942,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
-                const backgroundAbortController = new AbortController();
                 try {
                   invokePromise = Promise.resolve(
                     tool.invoke(normalizedArgs, {
@@ -5966,6 +6069,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 let producerRetirementTimeout: ReturnType<typeof setTimeout> | undefined;
                 const requestBackgroundAbort = (): void => {
+                  backgroundAbortSource ??= 'timeout';
                   backgroundAbortController.abort(
                     new DOMException('Background task timed out', 'AbortError'),
                   );
@@ -6103,12 +6207,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
+                    /** Only an owner-authorized request is cancellation evidence.
+                     * Providers and timeout controllers also use AbortError, so
+                     * classifying by error shape would turn failures into a false
+                     * claim that the owner cancelled the task. */
                     const detachedTerminalStatus =
-                      toolError instanceof Error &&
-                      (toolError.name === 'AbortError' ||
-                        (toolError as Error & { code?: string }).code === 'ABORT_ERR')
-                        ? 'cancelled'
-                        : 'failed';
+                      backgroundAbortSource === 'manual' ? 'cancelled' : 'failed';
                     if (
                       !(await persistDetachedTerminal({
                         status: detachedTerminalStatus,
@@ -6117,19 +6221,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
-                    backgroundTaskRegistry.fail(
-                      backgroundUserId,
-                      backgroundConversationId,
-                      task.id,
-                      registryError,
-                      /** Failed code tasks join the heal path too: without this,
-                       *  a full-row save reverting the error patch would leave
-                       *  the dispatch card on the handle JSON forever. */
-                      { harvestStarted: harvestEnabled },
-                    );
+                    const settleOptions = { harvestStarted: harvestEnabled };
+                    if (detachedTerminalStatus === 'cancelled') {
+                      backgroundTaskRegistry.cancel(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        settleOptions,
+                      );
+                    } else {
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        /** Failed code tasks join the heal path too: without this,
+                         *  a full-row save reverting the error patch would leave
+                         *  the dispatch card on the handle JSON forever. */
+                        settleOptions,
+                      );
+                    }
                     await persistSettledBackgroundResult({
                       output: deliveredError,
-                      status: 'error',
+                      status: detachedTerminalStatus === 'cancelled' ? 'cancelled' : 'error',
                     });
                     await wakeDetachedActor();
                   } finally {
@@ -6160,6 +6275,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               };
             };
 
+            const batchReq = mergedConfigurable?.req as ServerRequest | undefined;
+            const batchCodeApiRateLimitBudget = createCodeApiRateLimitBudget(
+              batchReq?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+            );
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 const preloadedNameBlock = preloadedNameBlocks.get(tc);
@@ -6195,6 +6314,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
+                    ordinaryToolCancellation,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({
                     userId: backgroundUserId,
@@ -6362,12 +6482,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
                     if (persistBackgroundCodeResult && delivery.messageId) {
-                      /** Error tasks carry their message in `error`, not
+                      /** Error/cancelled tasks carry their message in `error`, not
                        *  `result`; abort-confirmed timeouts store it raw, so
                        *  wrap here — `toBackgroundToolFailure` is a no-op for
                        *  already-wrapped detached failures. */
                       const reapplyOutput =
-                        delivery.status === 'error'
+                        delivery.status === 'error' || delivery.status === 'cancelled'
                           ? toBackgroundToolFailure(
                               delivery.toolName,
                               delivery.error ?? delivery.result ?? 'Background task failed',
@@ -6382,6 +6502,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         agentId: delivery.agentId,
                         output: reapplyOutput,
                         attachments: delivery.attachments,
+                        ...(delivery.backgroundTask == null
+                          ? {}
+                          : { backgroundTask: delivery.backgroundTask }),
                         reapply: true,
                       }).catch((reapplyError) => {
                         logger.warn(
@@ -6397,6 +6520,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     content: pollContent,
                     ...(codeSessionArtifact != null ? { artifact: codeSessionArtifact } : {}),
                   });
+                }
+
+                const usesCodeFiles =
+                  isCodeFileToolName(tc.name) ||
+                  isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+                if (runFileSharingActive && usesCodeFiles && isBackgroundRequested(tc.args)) {
+                  return reportResult(
+                    errorResult(tc, 'Shared-file code tools require foreground execution.'),
+                  );
                 }
 
                 if (
@@ -6448,6 +6580,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           agentId,
                           req,
+                          runSignal,
+                          batchCodeApiRateLimitBudget,
                         );
                       } else if (tc.name === Constants.READ_FILE) {
                         handlerResult = await handleReadFileCall(
@@ -6947,9 +7081,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
 
+                const executeWithFileScope = (sandboxContext?: SandboxSessionContext) =>
+                  runFileSharingActive && usesCodeFiles && runFiles != null && agentId != null
+                    ? runFiles.withCodeExecution(
+                        agentId,
+                        executionContext,
+                        runSignal ?? new AbortController().signal,
+                        () => execute(sandboxContext),
+                      )
+                    : execute(sandboxContext);
                 const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
-                  return reportResult(await execute());
+                  return reportResult(await executeWithFileScope());
                 }
                 let sandboxContext: SandboxSessionContext | undefined;
                 if (queueKey.startsWith('sandbox:')) {
@@ -6960,8 +7103,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 }
                 const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
                 const resultPromise = previous.then(
-                  () => execute(sandboxContext),
-                  () => execute(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
+                  () => executeWithFileScope(sandboxContext),
                 );
                 authoringQueues.set(
                   queueKey,

@@ -1158,7 +1158,10 @@ export class MCPOAuthHandler {
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
-    persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
+    persistBeforeComplete?: (
+      tokens: MCPOAuthTokens,
+      completePersistedFlow: (tokens: MCPOAuthTokens) => Promise<void>,
+    ) => Promise<MCPOAuthTokens>,
     rollbackPersistedTokens?: (tokens: MCPOAuthTokens) => Promise<void>,
     expectedAttempt?: { createdAt: number; state: string },
   ): Promise<MCPOAuthTokens> {
@@ -1241,22 +1244,39 @@ export class MCPOAuthHandler {
        * Persist before completing the flow so waiting connection factories cannot race the
        * callback route to write the same credential generation.
        */
+      const observedState = typeof metadata.state === 'string' ? metadata.state : '';
+      let flowCompleted = false;
+      let completionPromise: Promise<void> | undefined;
+      const completePersistedFlow = async (persistedTokens: MCPOAuthTokens): Promise<void> => {
+        completionPromise ??= (async () => {
+          const completionResult = await flowManager.completeFlowIfCurrent(
+            flowId,
+            this.FLOW_TYPE,
+            flowState.createdAt,
+            observedState,
+            persistedTokens,
+          );
+          if (completionResult !== 'updated') {
+            throw new Error('OAuth flow was cancelled before completion');
+          }
+          flowCompleted = true;
+        })();
+        await completionPromise;
+      };
+
       if (persistBeforeComplete) {
-        mcpTokens = await persistBeforeComplete(mcpTokens);
+        mcpTokens = await persistBeforeComplete(mcpTokens, completePersistedFlow);
       }
 
-      /** Now wake flow waiters with the persisted token snapshot. */
-      const observedState = typeof metadata.state === 'string' ? metadata.state : '';
-      const completionResult = await flowManager.completeFlowIfCurrent(
-        flowId,
-        this.FLOW_TYPE,
-        flowState.createdAt,
-        observedState,
-        mcpTokens,
-      );
-      if (completionResult !== 'updated') {
-        await rollbackPersistedTokens?.(mcpTokens);
-        throw new Error('OAuth flow was cancelled before completion');
+      /** Legacy persistence callbacks complete here. Transaction-aware callbacks can settle
+       *  inside their own rollback boundary by invoking `completePersistedFlow` themselves. */
+      if (!flowCompleted) {
+        try {
+          await completePersistedFlow(mcpTokens);
+        } catch (error) {
+          await rollbackPersistedTokens?.(mcpTokens);
+          throw error;
+        }
       }
 
       return mcpTokens;

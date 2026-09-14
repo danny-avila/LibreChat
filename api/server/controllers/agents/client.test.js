@@ -21,7 +21,7 @@ const mockStripActivityLabelParts = jest.fn((payload) =>
 );
 
 const { Providers } = require('@librechat/agents');
-const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
   GenerationJobManager,
   createStreamServices,
@@ -78,17 +78,93 @@ describe('AgentClient code approval persistence', () => {
       },
       req: {
         body: { codeApprovalMode: 'acceptEdits' },
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [
+            { environmentId: 'attached-vm', workspaceId: 'project-a' },
+            { environmentId: 'team-vm', workspaceId: 'project-b' },
+          ],
+        },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
       },
     };
 
     expect(client.getSaveOptions()).toMatchObject({
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [
         { environmentId: 'attached-vm', workspaceId: 'project-a' },
         { environmentId: 'team-vm', workspaceId: 'project-b' },
       ],
     });
+  });
+
+  it('never writes its run-start decision over a stored one a move replaced', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: {
+          mode: 'attached',
+          codeWorkspaces: [{ environmentId: 'mac', workspaceId: 'primary' }],
+        },
+        resolvedConversation: {
+          conversationId: 'convo-1',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'projects' }],
+        },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions).not.toHaveProperty('codeEnvironmentMode');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
+  });
+
+  it('records only the mode a legacy conversation inferred', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.conversationId = 'convo-1';
+    const codeWorkspaces = [{ environmentId: 'mac', workspaceId: 'primary' }];
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {},
+        _codeEnvironmentDecision: { mode: 'attached', codeWorkspaces },
+        resolvedConversation: { conversationId: 'convo-1', codeWorkspaces },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions.codeEnvironmentMode).toBe('attached');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
+  });
+
+  it('does not combine a normalized no-attached mode with stale request selections', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: { id: 'attached-agent' },
+      req: {
+        body: {
+          codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'stale-project' }],
+        },
+        _codeEnvironmentDecision: { mode: 'without_attached' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    const saveOptions = client.getSaveOptions();
+    expect(saveOptions.codeEnvironmentMode).toBe('without_attached');
+    expect(saveOptions).not.toHaveProperty('codeWorkspaces');
   });
 });
 
@@ -1484,6 +1560,56 @@ describe('AgentClient - interrupt discovery persistence', () => {
     expect(metaWhenResumed).toEqual(seed);
   });
 
+  it('records collected usage as an abort when a resumed run is stopped', async () => {
+    jest.clearAllMocks();
+    const streamId = 'conversation-resume-stopped';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const abortController = new AbortController();
+    mockCreateRun.mockImplementationOnce(async () => ({
+      Graph: null,
+      resume: jest.fn(async () => {
+        abortController.abort();
+      }),
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    }));
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-resume-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.resumeCompletion({
+      resumeValue: { decisions: [] },
+      streamId,
+      checkpointNamespace: 'resume-stopped',
+      abortController,
+    });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
+  });
+
   it('publishes the inherited context meta before a fresh run streams', async () => {
     const streamId = 'conversation-context-meta-stream-seed';
     const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
@@ -2856,6 +2982,347 @@ describe('AgentClient - startup telemetry', () => {
     expect(client.contentParts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
     );
+  });
+
+  it('records collected usage as an abort when the run is stopped', async () => {
+    jest.clearAllMocks();
+    const abortController = new AbortController();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        abortController.abort();
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-stopped',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-stopped';
+    client.responseMessageId = 'response-conversation-stopped';
+    client.parentMessageId = 'parent-conversation-stopped';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'abort' }),
+    );
+  });
+
+  it('records collected usage as a message when the run completes', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-completed',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5 }],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-completed';
+    client.responseMessageId = 'response-conversation-completed';
+    client.parentMessageId = 'parent-conversation-completed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController: new AbortController() });
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'message' }),
+    );
+  });
+
+  it('classifies a terminal chat-model failure without logging provider content', async () => {
+    jest.clearAllMocks();
+    const { logger } = require('@librechat/data-schemas');
+    const { traceIdForMessage } = require('@librechat/api');
+    const privateValue = 'PRIVATE-UPSTREAM-PROVIDER-CONTENT';
+    const providerError = Object.assign(new Error(), {
+      code: 'InternalServerException',
+      response: {
+        status: 500,
+        headers: { authorization: privateValue },
+        data: { prompt: privateValue },
+      },
+    });
+    Object.defineProperties(providerError, {
+      name: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+      message: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+    });
+    const abortController = new AbortController();
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        Graph: null,
+        processStream: jest.fn(async () => {
+          tracker.handleLLMError(providerError, 'model-run');
+          abortController.abort();
+          throw providerError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: { [EModelEndpoint.agents]: {} },
+          filters: { messages: { pii: {} } },
+        },
+        _resumableStreamId: 'conversation-upstream-error',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-upstream-error';
+    client.responseMessageId = 'response-upstream-error';
+    client.parentMessageId = 'parent-upstream-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [], abortController });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Upstream model error',
+      {
+        type: 'Error',
+        status: 500,
+        errorCode: 'UPSTREAM_MODEL_ERROR',
+        errorOrigin: 'model_provider',
+        errorType: '500',
+        traceId: traceIdForMessage('response-upstream-error'),
+      },
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('InternalServerException');
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+      expect.anything(),
+    );
+    expect(client.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]:
+        'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 500 }),
+    });
+    errorSpy.mockRestore();
+  });
+
+  /** A compaction's only record of having been one is the marker on the part it
+   *  produced, and Compact runs on whatever leaf the branch ends with. Without
+   *  the marker on the failure, a compaction that failed on a user leaf keeps a
+   *  Regenerate that answers that user message instead of redoing the run. */
+  it('marks the failure a compaction turn persists instead of a summary', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        throw new Error('summarizer unavailable');
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-failure',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-failure';
+    client.responseMessageId = 'response-compaction-failure';
+    client.parentMessageId = 'parent-compaction-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      expect.objectContaining({ type: ContentTypes.ERROR, initiatedBy: 'user' }),
+    ]);
+  });
+
+  /** A summarizer that returns nothing emits no content at all, so the run has
+   *  neither a summary nor an explanation. The turn records the typed failure
+   *  itself instead of being saved as a bare error row the client cannot tell
+   *  apart from an answer to the message it hangs off. */
+  it('records a marked typed failure when a compaction run produces nothing', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {}),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-empty',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-empty';
+    client.responseMessageId = 'response-compaction-empty';
+    client.parentMessageId = 'parent-compaction-empty';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      {
+        type: ContentTypes.ERROR,
+        error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+        initiatedBy: 'user',
+      },
+    ]);
+  });
+
+  it('keeps a later non-provider run failure on the generic error path', async () => {
+    jest.clearAllMocks();
+    const { logger } = require('@librechat/data-schemas');
+    const recoveredProviderError = new Error('recovered provider failure');
+    const checkpointError = new Error('checkpoint failed');
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        Graph: null,
+        processStream: jest.fn(async () => {
+          tracker.handleLLMError(recoveredProviderError, 'recovered-model-run');
+          throw checkpointError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-non-provider-error',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-non-provider-error';
+    client.responseMessageId = 'response-non-provider-error';
+    client.parentMessageId = 'parent-non-provider-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+      { type: 'Error' },
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #sendCompletion] Upstream model error',
+      expect.anything(),
+    );
+    errorSpy.mockRestore();
   });
 
   it('cancels current attachment persistence after combined admission rejects the run', async () => {
@@ -8016,6 +8483,29 @@ describe('AgentClient - finalizeSubagentContent', () => {
     return map;
   };
 
+  it.each(['agent', 'graph'])(
+    'persists %s identity even when the child has no content',
+    async (subagentKind) => {
+      const identity = {
+        subagentKind,
+        subagentAgentId: subagentKind === 'graph' ? 'graph:agent-1' : 'agent-1',
+      };
+      const buffer = await runSubagentEvents([
+        { ...event('start', undefined), ...identity, subagentType: 'agent-1' },
+        { ...event('error', undefined), ...identity, subagentType: 'agent-1' },
+      ]);
+      const client = makeClient(buffer);
+      client.contentParts = [
+        { type: 'tool_call', tool_call: { id: 'unrelated', name: Constants.SUBAGENT } },
+        { type: 'tool_call', tool_call: { id: 'call_sub', name: Constants.SUBAGENT } },
+      ];
+      client.finalizeSubagentContent();
+      expect(client.contentParts[0].tool_call.subagentIdentity).toBeUndefined();
+      expect(client.contentParts[1].tool_call.subagentIdentity).toEqual(identity);
+      expect(buffer.size).toBe(0);
+    },
+  );
+
   it('attaches aggregated subagent_content to the matching subagent tool_call part', async () => {
     const buffer = await runSubagentEvents([
       event('run_step', {
@@ -9443,6 +9933,70 @@ describe('AgentClient - resumeCompletion content protection', () => {
       '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
       expect.objectContaining({ type: 'Error' }),
     );
+    errorSpy.mockRestore();
+  });
+
+  it('classifies a terminal resumed model failure and preserves redaction', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    const { traceIdForMessage } = require('@librechat/api');
+    const privateValue = 'PRIVATE-RESUMED-UPSTREAM-CONTENT';
+    const providerError = Object.assign(new Error(), {
+      code: 'PROVIDER_INTERNAL',
+      status: 503,
+    });
+    Object.defineProperties(providerError, {
+      name: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+      message: {
+        get() {
+          throw new Error(`Provider echoed ${privateValue}`);
+        },
+      },
+    });
+    const abortController = new AbortController();
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockImplementation(async (options) => {
+      const tracker = options.modelCallbacks.find(
+        (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+      );
+      return {
+        resume: jest.fn(async () => {
+          tracker.handleLLMError(providerError, 'resumed-model-run');
+          abortController.abort();
+          throw providerError;
+        }),
+        getCalibrationRatio: jest.fn(() => 0),
+      };
+    });
+    const context = makeContext(undefined);
+
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      abortController,
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #resumeCompletion] Upstream model error',
+      {
+        type: 'Error',
+        status: 503,
+        errorCode: 'UPSTREAM_MODEL_ERROR',
+        errorOrigin: 'model_provider',
+        errorType: '503',
+        traceId: traceIdForMessage('response-123'),
+      },
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('PROVIDER_INTERNAL');
+    expect(context.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]:
+        'The model provider could not complete this request.\n' +
+        JSON.stringify({ type: 'upstream_model_error', status: 503 }),
+    });
     errorSpy.mockRestore();
   });
 

@@ -520,6 +520,7 @@ describe('registerCodeExecutionTools', () => {
           command: { type: 'string' },
           args: { type: 'array' },
           cwd: { type: 'string', maxLength: 4096 },
+          timeoutMs: { type: 'integer', minimum: 1, maximum: 30000 },
         },
         required: ['command'],
       });
@@ -548,6 +549,25 @@ describe('registerCodeExecutionTools', () => {
       expect(listWorkspaceFiles?.description).toContain('empty directory');
       expect(listWorkspaceFiles?.description).toContain('after_path');
       expect(filePathDescription(listWorkspaceFiles)).toContain('canonical relative');
+    });
+
+    it('advertises the configured attached-command timeout ceiling', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        workspaceTools: true,
+        workspaceOperations: new Set(['execute_command'] as const),
+        workspaceCommandTimeoutMaxMs: 120_000,
+      });
+
+      expect(
+        result.toolDefinitions.find((definition) => definition.name === 'bash_tool'),
+      ).toMatchObject({
+        parameters: {
+          properties: { timeoutMs: { minimum: 1, maximum: 120_000 } },
+        },
+      });
     });
 
     it('registers only operations advertised by the selected workspace', () => {

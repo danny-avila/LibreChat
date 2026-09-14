@@ -12,6 +12,7 @@ import type {
 } from '../protection/files';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { FileContentInput } from '../protection/adapters/submissions';
+import type { LocatorTraversalReporter } from '../protection/diagnostics';
 import type { ConversationImportMessage } from '../imports';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
@@ -101,6 +102,7 @@ export interface ShareContentPreflightInput {
 }
 
 export interface ShareContentPreflightOptions {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   readonly legacyPii?: MessageFilterPiiConfig | null;
   readonly snapshotFiles?: boolean;
   readonly user?: CanonicalFileInspectionUser;
@@ -162,6 +164,7 @@ export function createShareContentPreflight(
         legacyPii,
         user: options.user,
         getFiles: options.getFiles,
+        onTraversalFailure: options.onTraversalFailure,
       },
     );
     if (!inspectSharedFileMetadata) {

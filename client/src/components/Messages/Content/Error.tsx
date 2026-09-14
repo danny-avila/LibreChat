@@ -3,12 +3,14 @@ import {
   ErrorTypes,
   alternateName,
   ViolationTypes,
+  isCodeWorkspaceSelectionErrorReason,
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
+import { codeWorkspaceErrorKeys } from '~/utils/errors';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
@@ -69,6 +71,14 @@ type TCompactionSkipped = {
   reason?: string;
 };
 
+type TCodeWorkspaceError = {
+  reason?: string;
+};
+
+type TUpstreamModelError = {
+  status?: number;
+};
+
 /** Why a manual compaction could not run, keyed by the SDK's skip reason. */
 const compactionSkippedKeys: Record<string, TranslationKeys> = {
   disabled: 'com_error_compaction_disabled',
@@ -126,10 +136,22 @@ const errorMessages = {
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
   [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
-  [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE]: 'com_error_code_workspace_unavailable',
+  [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE]: (
+    json: TCodeWorkspaceError,
+    localize: LocalizeFunction,
+  ) => {
+    if (!isCodeWorkspaceSelectionErrorReason(json.reason)) {
+      return localize('com_error_code_workspace_unavailable');
+    }
+    return localize(codeWorkspaceErrorKeys[json.reason]);
+  },
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
   [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
+  [ErrorTypes.UPSTREAM_MODEL_ERROR]: (json: TUpstreamModelError, localize: LocalizeFunction) =>
+    typeof json.status === 'number'
+      ? localize('com_error_upstream_model_status', { 0: json.status })
+      : localize('com_error_upstream_model'),
   [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
   [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
     localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),
@@ -237,14 +259,14 @@ const Error = ({ text }: { text: string }) => {
 
   const json = JSON.parse(jsonString);
   const errorKey = json.code || json.type;
-  const keyExists = errorKey && errorMessages[errorKey];
+  const mappedError = errorKey && errorMessages[errorKey];
 
-  if (keyExists && typeof errorMessages[errorKey] === 'function') {
-    return errorMessages[errorKey](json, localize);
-  } else if (keyExists && keyExists.startsWith(localizedErrorPrefix)) {
-    return localize(errorMessages[errorKey]);
-  } else if (keyExists) {
-    return errorMessages[errorKey];
+  if (typeof mappedError === 'function') {
+    return mappedError(json, localize);
+  } else if (mappedError && mappedError.startsWith(localizedErrorPrefix)) {
+    return localize(mappedError);
+  } else if (mappedError) {
+    return mappedError;
   } else {
     return defaultResponse;
   }

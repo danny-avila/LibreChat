@@ -1,4 +1,5 @@
 import {
+  Tools,
   Constants,
   normalizeActionToolName,
   normalizeServerName,
@@ -15,7 +16,7 @@ import type { AgentToolOptions, CodeWorkspaceOperation, GraphEdge } from 'librec
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
 import {
-  ATTACHED_WORKSPACE_BASH_SCHEMA,
+  buildAttachedWorkspaceBashSchema,
   buildAttachedWorkspaceBashDescription,
 } from '~/code/command';
 import { toolkitExpansion } from '~/tools/toolkits/mapping';
@@ -58,6 +59,30 @@ export function isCodeSessionToolName(
     name === SEARCH_WORKSPACE_TOOL_NAME ||
     name === LIST_WORKSPACE_FILES_TOOL_NAME ||
     hostFileAuthoringToolNames?.has(name) === true
+  );
+}
+
+/** Tools that consume shared code, search, or image resources need current file records. */
+export function isFileResourceToolName(name: string): boolean {
+  return (
+    isCodeFileToolName(name) ||
+    isCodeSessionToolName(name) ||
+    name === Tools.file_search ||
+    name === 'image_gen_oai' ||
+    name === 'image_edit_oai' ||
+    name === 'gemini_image_gen'
+  );
+}
+
+/** File-authoring artifacts opt in explicitly; other tool artifacts keep their normal delivery. */
+export function isCodeArtifactToolOutput(output: { name: string; artifact?: unknown }): boolean {
+  const artifact = output.artifact;
+  return (
+    isCodeSessionToolName(output.name) ||
+    (artifact != null &&
+      typeof artifact === 'object' &&
+      HOST_FILE_AUTHORING_ARTIFACT_KEY in artifact &&
+      artifact[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true)
   );
 }
 
@@ -379,6 +404,8 @@ export interface RegisterCodeExecutionToolsParams {
   workspaceTools?: boolean;
   /** Live operation ceiling for the selected workspace. Omitted for managed runtimes. */
   workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
+  /** Deployment ceiling advertised on attached Bash tool definitions. */
+  workspaceCommandTimeoutMaxMs?: number;
   /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
@@ -888,6 +915,7 @@ function createBashToolDef(
   enableToolOutputReferences: boolean,
   statefulSessions = false,
   workspaceTools = false,
+  workspaceCommandTimeoutMaxMs?: number,
 ): LCTool {
   /* Passed as a variable (not an inline literal) so the extra
    * `statefulSessions` key stays assignable against pinned SDK versions
@@ -900,7 +928,7 @@ function createBashToolDef(
       ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
       : buildBashExecutionToolDescription(descriptionOpts),
     parameters: (workspaceTools
-      ? ATTACHED_WORKSPACE_BASH_SCHEMA
+      ? buildAttachedWorkspaceBashSchema(workspaceCommandTimeoutMaxMs)
       : BashExecutionToolDefinition.schema) as unknown as LCTool['parameters'],
   }) as LCTool;
 }
@@ -912,6 +940,7 @@ function buildBashToolDef(opts: {
   enableToolOutputReferences: boolean;
   statefulSessions?: boolean;
   workspaceTools?: boolean;
+  workspaceCommandTimeoutMaxMs?: number;
 }): LCTool {
   /* Stateful defs are built on demand: the stateless pair covers the
    * default path, and per-run construction is negligible next to init. */
@@ -920,6 +949,7 @@ function buildBashToolDef(opts: {
       opts.enableToolOutputReferences,
       opts.statefulSessions === true,
       opts.workspaceTools === true,
+      opts.workspaceCommandTimeoutMaxMs,
     );
   }
   return opts.enableToolOutputReferences
@@ -951,6 +981,7 @@ export function registerCodeExecutionTools(
     includeSkillFileInstructions = true,
     workspaceTools = false,
     workspaceOperations,
+    workspaceCommandTimeoutMaxMs,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
@@ -965,7 +996,12 @@ export function registerCodeExecutionTools(
   }
   if (includeBash && supportsWorkspaceOperation('execute_command')) {
     candidates.push(
-      buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
+      buildBashToolDef({
+        enableToolOutputReferences,
+        statefulSessions,
+        workspaceTools,
+        workspaceCommandTimeoutMaxMs,
+      }),
     );
   }
   if (workspaceTools && supportsWorkspaceOperation('search_text')) {

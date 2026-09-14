@@ -374,11 +374,13 @@ describe('Tool Handlers', () => {
 
     it('routes code file priming to the selected bridge worker', async () => {
       const bridgeWorkerId = 'principal-worker';
+      const controller = new AbortController();
       const toolMap = await loadTools({
         user: fakeUser._id.toString(),
         tools: [Tools.execute_code],
         returnMap: true,
         agent: { id: 'agent-1' },
+        signal: controller.signal,
         options: {
           codeExecutionContext: {
             baseUrl: 'https://code.example.com/v1',
@@ -394,6 +396,7 @@ describe('Tool Handlers', () => {
           agentId: 'agent-1',
           codeApiBaseUrl: 'https://code.example.com/v1',
           bridgeWorkerId,
+          signal: controller.signal,
         }),
       );
     });
