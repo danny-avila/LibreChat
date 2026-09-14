@@ -175,12 +175,24 @@ describe('applyTurnDelivery', () => {
     ]);
   });
 
-  it('takes a record this turn leaves to its tools off the model path', () => {
-    const extracted = { ...csv, llmDeliveryPath: 'text' };
+  it('keeps admitting a record this turn would leave out of the prompt', () => {
+    /* Over-admitting cannot pass a limit; dropping a record the client still sends would. */
+    const files = [{ ...csv, llmDeliveryPath: 'text' }];
 
-    expect(applyTurnDelivery([extracted], { agent, config, consumers: runsCode })).toEqual([
-      { ...extracted, llmDeliveryPath: 'none' },
-    ]);
+    expect(applyTurnDelivery(files, { agent, config, consumers: runsCode })).toBe(files);
+  });
+
+  it('keeps a provider record admitted when this turn would route it to text it never stored', () => {
+    const files = [{ ...pdf, metadata: { destinationChosen: false } }];
+    const pdfToText = {
+      fileConfig: {
+        endpoints: {
+          openAI: { defaultLLMDeliveryPath: { overrides: { 'application/pdf': 'text' as const } } },
+        },
+      },
+    };
+
+    expect(applyTurnDelivery(files, { agent, config: pdfToText, consumers: noReader })).toBe(files);
   });
 
   it('does not mark a destination the user chose', () => {
