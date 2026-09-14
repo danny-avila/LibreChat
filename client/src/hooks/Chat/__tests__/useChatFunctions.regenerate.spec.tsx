@@ -1,5 +1,15 @@
+import { createElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { renderHook, act } from '@testing-library/react';
-import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  Constants,
+  QueryKeys,
+  ContentTypes,
+  EModelEndpoint,
+  createPayload,
+  dataService,
+} from 'librechat-data-provider';
 import type {
   CodeEnvironmentMode,
   CodeWorkspaceSelection,
@@ -7,6 +17,7 @@ import type {
   TMessage,
   TSubmission,
 } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from '~/data-provider/Messages/queries';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -18,6 +29,8 @@ const mockSetFilesToDelete = jest.fn();
 const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
+const mockCancelQueries = jest.fn(() => Promise.resolve());
+let mockQueryClient: QueryClient | undefined;
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
 const mockResolveCodeWorkspaceSubmission = jest.fn<
@@ -31,15 +44,30 @@ const mockCodeWorkspace = {
 };
 
 jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
   useNavigate: () => mockNavigate,
 }));
 
 jest.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({
-    getQueryData: mockGetQueryData,
-    getQueryState: jest.fn(() => undefined),
-  }),
+  ...jest.requireActual('@tanstack/react-query'),
+  useQueryClient: () =>
+    mockQueryClient ?? {
+      getQueryData: mockGetQueryData,
+      getQueryState: jest.fn(() => undefined),
+      cancelQueries: mockCancelQueries,
+    },
 }));
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getMessagesByConvoId: jest.fn(),
+    },
+  };
+});
 
 jest.mock('recoil', () => ({
   useRecoilValue: () => false,
@@ -248,6 +276,7 @@ describe('useChatFunctions ask', () => {
     expect(setMessages).not.toHaveBeenCalled();
     expect(setSubmission).not.toHaveBeenCalled();
     expect(mockSetShowStopButton).not.toHaveBeenCalled();
+    expect(mockCancelQueries).not.toHaveBeenCalled();
   });
 
   it('reports a refusal when no endpoint is available', () => {
@@ -304,6 +333,7 @@ describe('useChatFunctions ask', () => {
 
     expect(setMessages).toHaveBeenCalled();
     expect(setSubmission).toHaveBeenCalled();
+    expect(mockCancelQueries).not.toHaveBeenCalled();
   });
 
   it('allows explicit override messages before the cache exists', () => {
@@ -319,6 +349,146 @@ describe('useChatFunctions ask', () => {
     expect(setMessages).toHaveBeenCalled();
     expect(setSubmission).toHaveBeenCalled();
   });
+});
+
+describe('useChatFunctions history cancellation', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: 1, retryDelay: 100, cacheTime: Infinity } },
+    });
+    mockQueryClient = queryClient;
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+    mockQueryClient = undefined;
+    jest.useRealTimers();
+  });
+
+  it.each(['scheduled', 'in-flight'])(
+    'keeps an equal-length regenerate during the %s retry of an idle history refetch',
+    async (retryPhase) => {
+      const conversationId = 'conversation-1';
+      const queryKey = [QueryKeys.messages, conversationId];
+      const persistedMessages = [
+        userMessage('user-1'),
+        assistantMessage('assistant-1', 'user-1'),
+      ].map((message) => ({
+        ...message,
+        createdAt: '2026-05-21T12:00:00.000Z',
+        updatedAt: '2026-05-21T12:00:00.000Z',
+      }));
+      queryClient.setQueryData(queryKey, persistedMessages);
+      let resolveHistory!: (messages: TMessage[]) => void;
+      const historyResponse = new Promise<TMessage[]>((resolve) => {
+        resolveHistory = resolve;
+      });
+      const getHistory = jest
+        .mocked(dataService.getMessagesByConvoId)
+        .mockRejectedValueOnce(new Error('Foreground history request failed'))
+        .mockReturnValue(historyResponse);
+      const cancelQueries = jest.spyOn(queryClient, 'cancelQueries');
+      const liveMessages = [
+        persistedMessages[0],
+        { ...persistedMessages[1], text: 'Newer locally cached answer' },
+      ];
+      const setMessages = jest.fn((messages: TMessage[]) => {
+        expect(queryClient.getQueryData(queryKey)).toEqual(liveMessages);
+        queryClient.setQueryData(queryKey, messages);
+      });
+      const setSubmission = jest.fn();
+      const { result, rerender } = renderHook(
+        ({ isSubmitting }) => ({
+          history: useGetMessagesByConvoId(
+            conversationId,
+            { enabled: !isSubmitting },
+            { isStreaming: isSubmitting },
+          ),
+          ...useChatFunctions({
+            isSubmitting,
+            latestMessage: persistedMessages[1],
+            conversation: conversation(conversationId),
+            getMessages: () => queryClient.getQueryData<TMessage[]>(queryKey),
+            setMessages,
+            setSubmission,
+          }),
+        }),
+        {
+          initialProps: { isSubmitting: false },
+          wrapper: ({ children }) =>
+            createElement(
+              QueryClientProvider,
+              { client: queryClient },
+              createElement(MemoryRouter, { initialEntries: [`/c/${conversationId}`] }, children),
+            ),
+        },
+      );
+
+      const refetch = result.current.history.refetch();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(getHistory).toHaveBeenCalledTimes(1);
+      expect(queryClient.getQueryState(queryKey)).toMatchObject({
+        fetchStatus: 'fetching',
+        fetchFailureCount: 1,
+      });
+      if (retryPhase === 'in-flight') {
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(100);
+        });
+        expect(getHistory).toHaveBeenCalledTimes(2);
+      }
+
+      const unrelatedKeys = [
+        [QueryKeys.messages, 'conversation-2'],
+        [...queryKey, 'other-query'],
+      ];
+      const unrelatedRequests = unrelatedKeys.map((key) =>
+        queryClient.fetchQuery({ queryKey: key, queryFn: () => historyResponse }),
+      );
+      act(() => {
+        queryClient.setQueryData(queryKey, liveMessages);
+        expect(
+          result.current.ask(persistedMessages[0], {
+            isRegenerate: true,
+            targetResponseMessageId: 'assistant-1',
+          }),
+        ).toBeUndefined();
+        expect(setMessages).toHaveBeenCalledTimes(1);
+        expect(setSubmission).toHaveBeenCalledTimes(1);
+      });
+      rerender({ isSubmitting: true });
+      const optimisticMessages = queryClient.getQueryData<TMessage[]>(queryKey);
+      expect(optimisticMessages).toHaveLength(persistedMessages.length);
+      expect(optimisticMessages?.at(-1)?.messageId).toBe('assistant-1_');
+      for (const key of unrelatedKeys) {
+        expect(queryClient.getQueryState(key)?.fetchStatus).toBe('fetching');
+      }
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(100);
+        resolveHistory(persistedMessages);
+        await Promise.all([refetch, ...unrelatedRequests]);
+        await jest.advanceTimersByTimeAsync(0);
+      });
+
+      expect(queryClient.getQueryData(queryKey)).toBe(optimisticMessages);
+      expect(result.current.history.data).toBe(optimisticMessages);
+      expect(getHistory).toHaveBeenCalledTimes(retryPhase === 'scheduled' ? 1 : 2);
+      expect(cancelQueries).toHaveBeenCalledTimes(1);
+      expect(cancelQueries).toHaveBeenCalledWith({ queryKey, exact: true }, { revert: false });
+      expect(cancelQueries.mock.invocationCallOrder[0]).toBeLessThan(
+        setMessages.mock.invocationCallOrder[0],
+      );
+      expect(cancelQueries.mock.invocationCallOrder[0]).toBeLessThan(
+        setSubmission.mock.invocationCallOrder[0],
+      );
+    },
+  );
 });
 
 describe('useChatFunctions regenerate', () => {
