@@ -7,10 +7,10 @@ import {
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
-import type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
+import { codeWorkspaceErrorKeys } from '~/utils/errors';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
@@ -77,15 +77,6 @@ type TCodeWorkspaceError = {
 
 type TUpstreamModelError = {
   status?: number;
-};
-
-const codeWorkspaceErrorKeys: Record<CodeWorkspaceSelectionErrorReason, TranslationKeys> = {
-  required: 'com_error_code_workspace_required',
-  invalid: 'com_error_code_workspace_invalid',
-  worker_unavailable: 'com_error_code_workspace_worker_unavailable',
-  unsupported: 'com_error_code_workspace_unsupported',
-  missing: 'com_error_code_workspace_missing',
-  locked: 'com_error_code_workspace_locked',
 };
 
 /** Why a manual compaction could not run, keyed by the SDK's skip reason. */

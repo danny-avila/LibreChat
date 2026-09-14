@@ -176,6 +176,7 @@ const {
   isAgentRunCancellation,
   getSummaryPartText,
   markCompactionOutcome,
+  resolvePersistableCodeEnvironmentDecision,
 } = require('@librechat/api');
 const {
   Run,
@@ -1969,7 +1970,12 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
-    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
+    const persistedCodeEnvironmentDecision = resolvePersistableCodeEnvironmentDecision({
+      conversationId: this.conversationId,
+      decision: this.options.req._codeEnvironmentDecision,
+      conversation: this.options.req.resolvedConversation,
+      requested: this.options.req.body,
+    });
 
     return removeNullishValues(
       Object.assign(
@@ -1984,12 +1990,7 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeEnvironmentMode:
-            codeEnvironmentDecision?.mode ?? this.options.req.body.codeEnvironmentMode,
-          codeWorkspaces:
-            codeEnvironmentDecision != null
-              ? codeEnvironmentDecision.codeWorkspaces
-              : this.options.req.body.codeWorkspaces,
+          ...persistedCodeEnvironmentDecision,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,

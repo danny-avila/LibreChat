@@ -111,6 +111,17 @@ export function getCodeEnvironmentStatus(id: string): Promise<t.TCodeEnvironment
   return request.get(endpoints.codeEnvironmentStatus(id));
 }
 
+export function moveConversationCodeEnvironment({
+  conversationId,
+  from,
+  to,
+}: t.TCodeEnvironmentMoveRequest): Promise<t.TCodeEnvironmentMoveResponse> {
+  return request.patch(endpoints.codeEnvironmentConversationDecision(conversationId), {
+    from,
+    to,
+  });
+}
+
 export function pairCodeEnvironment(payload: {
   name: string;
   controlPlaneId: string;
