@@ -38,6 +38,11 @@ const {
   assertExtractedTextInspectable,
   getFileExtractionLogDetails,
   planDocumentExtraction,
+  resolveDocumentExtraction,
+  isDocumentParserRefusal,
+  isNoDocumentTextError,
+  isPartialDocumentText,
+  isDelimitedTextType,
   inspectContent,
   extractFileContent,
   hasActiveFileFieldPolicy,
@@ -100,56 +105,6 @@ const hasCodeEnvRef = (file) =>
 /** Same resolution the client validates and offers upload options with. */
 const resolveUploadMimeType = (file) =>
   resolveEffectiveMimeType(file?.originalname ?? '', file?.mimetype ?? '');
-
-/**
- * Document types the parser only reformats, whose raw bytes are already the content.
- * Converting a dense CSV to a Markdown table adds pipes and padding to every cell, so a
- * source file inside the storage limit can convert to one that is not.
- */
-const delimitedTextTypes = /^(?:text|application)\/csv$/i;
-const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
-
-/**
- * A parser result that names unread pages, or reports embedded artwork it converted to
- * nothing, is text with holes in it. Enough to hand a model, not enough to call the
- * document inspected, so every route that persists one has to fail closed while the
- * uninspectable-content policy is active.
- */
-const isPartialDocumentText = (result) =>
-  !!result?.pagesNeedingOcr?.length || result?.mayOmitContent === true;
-
-const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
-/* An archive the guard identified and then could not walk. Past detection there is no
- * third answer, so forwarding it to a configured OCR provider would hand the same bytes
- * the guard refused to someone else's parser. */
-const isArchiveRefusal = (err) =>
-  err?.code === 'ARCHIVE_INVALID' || err?.name === 'ArchiveValidationError';
-const isPdfPageLimitError = (err) =>
-  err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
-/* Shed load, not an unreadable document. Surfaced to the caller so a retry is the
- * obvious next step, rather than swallowed into a fallback that would bill a
- * configured OCR service, or into "no text found" for a perfectly readable file. */
-const isParserBusyError = (err) =>
-  err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
-const isParserInputLimitError = (err) =>
-  err?.code === 'PARSER_INPUT_LIMIT' || err?.name === 'ParserInputLimitError';
-/* The parser declined to hand back an extraction that would not fit. Surfaced rather
- * than swallowed so the file is not reported as unreadable, and so no fallback rebuilds
- * in this process the string a child process just declined to send. */
-const isParserOutputLimitError = (err) =>
-  err?.code === 'PARSER_OUTPUT_LIMIT' || err?.name === 'ParserOutputLimitError';
-
-/* Not a refusal: the parser ran and the document simply holds no extractable text. */
-const isNoDocumentTextError = (err) =>
-  err?.code === 'NO_DOCUMENT_TEXT' || err?.name === 'NoDocumentTextError';
-
-const isDocumentParserRefusal = (err) =>
-  isZipBombError(err) ||
-  isArchiveRefusal(err) ||
-  isPdfPageLimitError(err) ||
-  isParserBusyError(err) ||
-  isParserInputLimitError(err) ||
-  isParserOutputLimitError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -1101,14 +1056,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       if (!isDocumentParserEligible) {
         return;
       }
+      /* A user who removes the file from the composer closes this request, and every
+       * stage of the parse takes a signal: without one the archive walk and the native
+       * child hold an admission slot for their whole deadline and go on to produce text
+       * for a document nobody is waiting for. */
+      const cancellation = new AbortController();
+      const abortOnDisconnect = () => cancellation.abort();
+      res.once('close', abortOnDisconnect);
       try {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({
           req,
           file,
           loadAuthValues,
+          signal: cancellation.signal,
           maxFileSize: fileConfig.documentParser?.fileSizeLimit,
           timeoutMs: fileConfig.documentParser?.timeoutMs,
+          maxPageCount: fileConfig.documentParser?.maxPageCount,
           /* Recovery hides the failure from the code below, and the engine has no way
            * to know whether this deployment redacts filenames and parser errors. */
           onEngineFallback: (err) => {
@@ -1120,7 +1084,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           },
         });
       } catch (err) {
-        if (isDocumentParserRefusal(err)) {
+        if (isDocumentParserRefusal(err) || cancellation.signal.aborted) {
           throw err;
         }
         /* The parser read the document and found no text in it. That is the case a
@@ -1135,6 +1099,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           errorMetadata,
         );
         throw err;
+      } finally {
+        res.off('close', abortOnDisconnect);
       }
     };
 
@@ -1182,7 +1148,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       if (pagesNeedingOcr?.length) {
         const pageSummary = summarizeMissingPages(pagesNeedingOcr);
         logger.warn(
-          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
+          `[processAgentFileUpload] ${extractionFileLabel} has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
         );
       }
       /* Logged rather than written into the text: unlike an omitted page, embedded
@@ -1191,7 +1157,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
        * usually did not happen, on the majority of office uploads. */
       if (mayOmitContent === true) {
         logger.warn(
-          `[processAgentFileUpload] "${file.originalname}" embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
+          `[processAgentFileUpload] ${extractionFileLabel} embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
         );
       }
       const annotated = annotateMissingPages(text, pagesNeedingOcr);
@@ -1218,48 +1184,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseDocumentParser) {
       const documentResult = await extractInspectableFileText({
         filters: appConfig?.filters,
-        extract: async () => {
-          let localResult;
-          try {
-            localResult = await resolveDocumentText();
-          } catch (err) {
-            if (isParserOutputLimitError(err) && isDelimitedTextType(parserResolvedMimeType)) {
-              const rawResult = await resolveDelimitedTextAsIs();
-              if (rawResult) {
-                return rawResult;
-              }
-            }
-            throw err;
-          }
-          const hasLocalText = !!localResult?.text?.trim();
-          /* pdf-inspector names unreadable pages. AnyDoc cannot, so it reports whether
-           * the document embeds artwork that may carry content it converted to nothing. */
-          const localNeedsOCR = !hasLocalText || isPartialDocumentText(localResult);
-
-          if (hasLocalText && !localNeedsOCR) {
-            return localResult;
-          }
-
-          if (localNeedsOCR && shouldUseConfiguredOCR) {
-            const ocrResult = await resolveConfiguredOCR({
-              throwOnMissingCapability: !hasLocalText,
-            });
-            if (ocrResult?.text?.trim()) {
-              return ocrResult;
-            }
-          }
-
-          if (hasLocalText) {
-            assertExtractedTextInspectable({
-              filters: appConfig?.filters,
-              text: undefined,
-            });
-            return localResult;
-          }
-          return isDelimitedTextType(parserResolvedMimeType)
-            ? await resolveDelimitedTextAsIs()
-            : undefined;
-        },
+        extract: () =>
+          resolveDocumentExtraction({
+            delimitedText: isDelimitedTextType(parserResolvedMimeType),
+            parse: resolveDocumentText,
+            runConfiguredOCR: shouldUseConfiguredOCR ? resolveConfiguredOCR : undefined,
+            readRawText: resolveDelimitedTextAsIs,
+            assertPartialTextAllowed: () =>
+              assertExtractedTextInspectable({ filters: appConfig?.filters, text: undefined }),
+          }),
       });
 
       if (documentResult?.text?.trim()) {

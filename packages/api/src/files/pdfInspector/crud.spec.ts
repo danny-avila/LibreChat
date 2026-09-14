@@ -238,6 +238,52 @@ describe('pdf-inspector local parser', () => {
       jest.dontMock('./native');
     }
   });
+  test('accepts a PDF above the default ceiling when maxPageCount is configured', async () => {
+    const flooded = Array.from({ length: 1001 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = { 1: 'Recovered page text' };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')), undefined, {
+          maxPageCount: 1500,
+        });
+
+        expect(result.text).toContain('Recovered page text');
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  test('applies maxPageCount to the whole-document pdfjs fallback', async () => {
+    mockPdfjs.numPages = 1001;
+    mockPdfjs.pageText = { 1: 'Recovered fallback text' };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw new Error('native parser rejected the document');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')), undefined, {
+          maxPageCount: 1500,
+        });
+
+        expect(result.text).toContain('Recovered fallback text');
+        expect(mockPdfjs.requestedPages).toHaveLength(1001);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
 
   /**
    * The case the whole signal exists for, against the real binding: one page holding
@@ -295,6 +341,28 @@ describe('pdf-inspector local parser', () => {
         expect(result.mayOmitContent).toBe(true);
         expect(result.pagesNeedingOcr).toBeUndefined();
         expect(result.text).toContain('# Invoice header');
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+  test('marks content uncertain when page classification fails', async () => {
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [{ page: 0, markdown: '# Kept extraction' }],
+            scannedPages: [],
+            classificationDidNotRun: true,
+          }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toContain('# Kept extraction');
+        expect(result.mayOmitContent).toBe(true);
       });
     } finally {
       jest.dontMock('./native');

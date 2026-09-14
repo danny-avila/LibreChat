@@ -61,7 +61,7 @@ export async function parseWithPdfInspector(
      * concurrent upload of the same filename writes is the same one, so the bytes read
      * here are the only ones this request can be sure it parsed. */
     parsed = await withStableParserInput(data, file.originalname, (path) =>
-      extractPdf(path, data, signal, options?.timeoutMs),
+      extractPdf(path, data, signal, options?.timeoutMs, options?.maxPageCount),
     );
   } catch (error) {
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
@@ -90,7 +90,12 @@ export async function parseWithPdfInspector(
      * walk's: they bound different work, and reusing the smaller one meant a PDF this
      * parser accepts with a good xref was refused with a damaged one, or on a platform
      * with no native binding at all. */
-    parsed = await extractDocumentTextWithPages(data, MAX_PDF_PAGES, undefined, signal);
+    parsed = await extractDocumentTextWithPages(
+      data,
+      options?.maxPageCount ?? MAX_PDF_PAGES,
+      undefined,
+      signal,
+    );
   }
   const { text, pagesNeedingOcr, mayOmitContent } = parsed;
 
@@ -140,14 +145,15 @@ export async function extractPdf(
   data: Buffer,
   signal?: AbortSignal,
   timeoutMs?: number,
+  maxPageCount: number = MAX_PDF_PAGES,
 ): Promise<ParsedDocument> {
-  const extraction = await extractPagesMarkdownIsolated(filePath, signal, timeoutMs);
+  const extraction = await extractPagesMarkdownIsolated(filePath, signal, timeoutMs, maxPageCount);
   const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');
   }
-  if (pages.length > MAX_PDF_PAGES) {
-    throw new PdfPageLimitError(pages.length, MAX_PDF_PAGES);
+  if (pages.length > maxPageCount) {
+    throw new PdfPageLimitError(pages.length, maxPageCount);
   }
 
   /* A page the classifier attributes to a scan that still ends up with text is the one
@@ -170,7 +176,9 @@ export async function extractPdf(
     parsed: ParsedDocument,
     recoveredText: Map<number, string>,
   ): ParsedDocument =>
-    hasScanUnderText(recoveredText) ? { ...parsed, mayOmitContent: true } : parsed;
+    extraction.classificationDidNotRun || hasScanUnderText(recoveredText)
+      ? { ...parsed, mayOmitContent: true }
+      : parsed;
 
   const droppedPages = pages.filter((page) => !page.markdown?.trim());
   if (!droppedPages.length) {

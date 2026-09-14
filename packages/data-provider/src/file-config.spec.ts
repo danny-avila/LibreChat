@@ -466,6 +466,13 @@ describe('documentParser file config', () => {
 
     expect(mergeFileConfig(parsed).documentParser?.timeoutMs).toBe(90_000);
   });
+  it('keeps the PDF page ceiling as a raw count through schema parsing and merge', () => {
+    expect(mergeFileConfig(undefined).documentParser?.maxPageCount).toBe(1000);
+
+    const parsed = fileConfigSchema.parse({ documentParser: { maxPageCount: 1500 } });
+    expect(parsed.documentParser?.maxPageCount).toBe(1500);
+    expect(mergeFileConfig(parsed).documentParser?.maxPageCount).toBe(1500);
+  });
 });
 
 describe('stt file config', () => {

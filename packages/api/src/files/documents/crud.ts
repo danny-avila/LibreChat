@@ -132,6 +132,7 @@ export async function parseDocument({
   signal,
   maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
   timeoutMs,
+  maxPageCount,
   onEngineFallback,
 }: {
   file: Express.Multer.File;
@@ -144,6 +145,8 @@ export async function parseDocument({
   /** Deadline for the extraction child, in milliseconds. Each engine keeps its own
    * default; `fileConfig.documentParser.timeoutMs` reproduces it. */
   timeoutMs?: number;
+  /** Maximum PDF pages to parse. Each engine keeps its own default when omitted. */
+  maxPageCount?: number;
   /** Told when an engine recovered from a failure on its own, so the caller can log it
    * under whatever redaction its deployment applies. */
   onEngineFallback?: DocumentExtractionOptions['onEngineFallback'];
@@ -164,7 +167,7 @@ export async function parseDocument({
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
   const result = await withParserAdmission(
-    () => extractor.extract(parserFile, signal, { timeoutMs, onEngineFallback }),
+    () => extractor.extract(parserFile, signal, { timeoutMs, maxPageCount, onEngineFallback }),
     signal,
   );
 

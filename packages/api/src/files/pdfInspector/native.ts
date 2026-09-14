@@ -1,4 +1,5 @@
 import type { PageMarkdownResult } from '@firecrawl/pdf-inspector';
+import type { DocumentExtractionOptions } from '../documents/nativeProcess';
 import {
   MAX_PARSER_OUTPUT_BYTES,
   MAX_PARSER_PAGES,
@@ -124,6 +125,8 @@ interface PdfChildResult {
 export interface PdfPageExtraction {
   pages: PageMarkdownResult[];
   scannedPages: number[];
+  /** True when no classifier result exists, so selectable text cannot prove completeness. */
+  classificationDidNotRun?: boolean;
 }
 
 /**
@@ -153,6 +156,8 @@ function runPdfChild(
       path: filePath,
       modulePath,
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
+      /* MAX_PARSER_PAGES wins over a configured maxPageCount above it because the child
+       * must protect IPC before the parent can inspect the returned page array. */
       maxPages: MAX_PARSER_PAGES,
       pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
     },
@@ -185,32 +190,47 @@ export async function extractPagesMarkdownIsolated(
   filePath: string,
   signal?: AbortSignal,
   timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
+  maxPageCount: DocumentExtractionOptions['maxPageCount'] = MAX_PDF_PAGES,
 ): Promise<PdfPageExtraction> {
   const startedAt = Date.now();
   const { pages } = await runPdfChild('pages', filePath, signal, timeoutMs);
   const extractedPages = pages ?? [];
-  if (extractedPages.length > MAX_PDF_PAGES) {
-    throw new PdfPageLimitError(extractedPages.length, MAX_PDF_PAGES);
+  if (extractedPages.length > maxPageCount) {
+    throw new PdfPageLimitError(extractedPages.length, maxPageCount);
   }
   let scannedPages: number[] = [];
+  let classificationDidNotRun = false;
   const remainingMs = timeoutMs - (Date.now() - startedAt);
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error('Document parsing was cancelled');
+  }
   if (remainingMs <= 0) {
-    return { pages: extractedPages, scannedPages };
-  }
-  try {
-    const classification = await runPdfClassifierChild(
-      filePath,
-      Math.min(PDF_CLASSIFIER_TIMEOUT_MS, remainingMs),
-      signal,
-    );
-    scannedPages = classification.scannedPages ?? [];
-  } catch (error) {
-    if (signal?.aborted) {
-      throw error;
+    classificationDidNotRun = true;
+  } else {
+    try {
+      const classification = await runPdfClassifierChild(
+        filePath,
+        Math.min(PDF_CLASSIFIER_TIMEOUT_MS, remainingMs),
+        signal,
+      );
+      scannedPages = classification.scannedPages ?? [];
+    } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
+      /* The extraction stands; what is lost is the only signal that selectable text may
+       * sit beside a scan, so the caller is told the document was never classified
+       * rather than being handed an empty scan list that reads as "nothing missing". */
+      classificationDidNotRun = true;
     }
-    /* Classification only decides whether OCR may improve a successful extraction. */
   }
-  return { pages: extractedPages, scannedPages };
+  return {
+    pages: extractedPages,
+    scannedPages,
+    ...(classificationDidNotRun && { classificationDidNotRun }),
+  };
 }
 
 /**

@@ -111,6 +111,8 @@ export type FileConfig = {
     fileSizeLimit?: number;
     /** Deadline for one extraction child, in milliseconds. */
     timeoutMs?: number;
+    /** Compared directly with a PDF's page count, so it is not converted to bytes. */
+    maxPageCount?: number;
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
@@ -151,6 +153,8 @@ export type FileConfigInput = {
     /** Megabytes, converted on merge like every other size limit here. */
     fileSizeLimit?: number;
     timeoutMs?: number;
+    /** Operators enter a page count here; mergeFileConfig preserves it without conversion. */
+    maxPageCount?: number;
   };
   text?: {
     supportedMimeTypes?: string[];

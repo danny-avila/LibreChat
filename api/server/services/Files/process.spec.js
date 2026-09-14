@@ -149,6 +149,56 @@ jest.mock('@librechat/api', () => {
       };
     },
   );
+  /**
+   * The same arrangement for the extraction chain: `packages/api` owns the order the
+   * engines run in and its own suite proves it, and this reproduces the outcomes so
+   * these specs stay about what the route hands in and does with the answer.
+   */
+  const isPartialDocumentText = (result) =>
+    !!result?.pagesNeedingOcr?.length || result?.mayOmitContent === true;
+  const isDelimitedTextType = (mimeType) => /^(?:text|application)\/csv$/i.test(mimeType ?? '');
+  const errorMatches = (error, code, name) => error?.code === code || error?.name === name;
+  const isNoDocumentTextError = (error) =>
+    errorMatches(error, 'NO_DOCUMENT_TEXT', 'NoDocumentTextError');
+  const isDocumentParserRefusal = (error) =>
+    errorMatches(error, 'ZIP_BOMB', 'ZipBombError') ||
+    errorMatches(error, 'ARCHIVE_INVALID', 'ArchiveValidationError') ||
+    errorMatches(error, 'PDF_PAGE_LIMIT', 'PdfPageLimitError') ||
+    errorMatches(error, 'CONCURRENCY_LIMIT', 'ConcurrencyLimitError') ||
+    errorMatches(error, 'PARSER_INPUT_LIMIT', 'ParserInputLimitError') ||
+    errorMatches(error, 'PARSER_OUTPUT_LIMIT', 'ParserOutputLimitError');
+  const resolveDocumentExtraction = jest.fn(
+    async ({ delimitedText, parse, runConfiguredOCR, readRawText, assertPartialTextAllowed }) => {
+      let parsed;
+      try {
+        parsed = await parse();
+      } catch (error) {
+        if (errorMatches(error, 'PARSER_OUTPUT_LIMIT', 'ParserOutputLimitError') && delimitedText) {
+          const raw = await readRawText?.();
+          if (raw) {
+            return raw;
+          }
+        }
+        throw error;
+      }
+      const hasText = !!parsed?.text?.trim();
+      const needsOCR = !hasText || isPartialDocumentText(parsed);
+      if (hasText && !needsOCR) {
+        return parsed;
+      }
+      if (needsOCR && runConfiguredOCR) {
+        const ocr = await runConfiguredOCR({ throwOnMissingCapability: !hasText });
+        if (ocr?.text?.trim()) {
+          return ocr;
+        }
+      }
+      if (hasText) {
+        assertPartialTextAllowed();
+        return parsed;
+      }
+      return delimitedText ? await readRawText?.() : undefined;
+    },
+  );
   return {
     sanitizeFilename: jest.fn((n) => n),
     /** Grants both; these specs vary the capability set, not the role. */
@@ -159,6 +209,11 @@ jest.mock('@librechat/api', () => {
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
     assertExtractedTextInspectable: jest.fn(),
     planDocumentExtraction,
+    resolveDocumentExtraction,
+    isDocumentParserRefusal,
+    isNoDocumentTextError,
+    isPartialDocumentText,
+    isDelimitedTextType,
     UPLOAD_EXTRACTED_TEXT_PLANS,
     getFileExtractionLogDetails,
     getSafeErrorMetadata,
@@ -390,6 +445,10 @@ const makeMetadata = () => ({
 const mockRes = {
   status: jest.fn().mockReturnThis(),
   json: jest.fn().mockReturnValue({}),
+  /* The upload route cancels a parse when the connection closes, so the response has to
+   * behave like one: an emitter it can subscribe to and unsubscribe from. */
+  once: jest.fn().mockReturnThis(),
+  off: jest.fn().mockReturnThis(),
 };
 
 const makeFileConfig = ({
@@ -796,6 +855,37 @@ describe('processAgentFileUpload', () => {
 
       expect(remoteOCR).not.toHaveBeenCalled();
       expect(db.createFile.mock.calls[0][0].text).toBe('the whole document');
+    });
+
+    /* A user who removes the file from the composer closes the request while the parser
+     * is still working: the archive walk and the native child both take this signal, and
+     * without it they keep an admission slot until their deadline. */
+    test('cancels the parse when the upload connection closes', async () => {
+      let parsedSignal;
+      const localUpload = jest.fn(async ({ signal }) => {
+        parsedSignal = signal;
+        return { text: 'the whole document', bytes: 18, filepath: DocumentParser.anydoc };
+      });
+      setupDocumentStrategies({ documentParser: localUpload });
+      const closeHandlers = [];
+      mockRes.once.mockImplementation((event, handler) => {
+        if (event === 'close') {
+          closeHandlers.push(handler);
+        }
+        return mockRes;
+      });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(parsedSignal).toBeInstanceOf(AbortSignal);
+      expect(parsedSignal.aborted).toBe(false);
+      expect(closeHandlers).toHaveLength(1);
+      closeHandlers[0]();
+      expect(parsedSignal.aborted).toBe(true);
+      /* Removed once the parse is over, so a long-lived response does not accumulate one
+       * listener per upload. */
+      expect(mockRes.off).toHaveBeenCalledWith('close', closeHandlers[0]);
     });
 
     test.each([

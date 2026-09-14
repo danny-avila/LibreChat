@@ -89,6 +89,11 @@ export interface DocumentExtractionOptions {
    * redacted. Without this the engine logs only that it recovered.
    */
   readonly onEngineFallback?: (error: unknown) => void;
+  /**
+   * Maximum PDF pages accepted by the local parser. Non-PDF engines ignore this option,
+   * and the PDF engine supplies its own default when a direct caller omits it.
+   */
+  readonly maxPageCount?: number;
 }
 
 /**

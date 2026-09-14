@@ -624,6 +624,8 @@ const defaultSkillImportSizeLimit = mbToBytes(50);
 const defaultDocumentParserSizeLimit = mbToBytes(15);
 /** Deadline one extraction child gets; the value both parser engines were built with. */
 const defaultDocumentParserTimeoutMs = 30_000;
+/** Page counts are compared directly by the PDF engines, unlike byte-based limits. */
+const defaultDocumentParserMaxPageCount = 1000;
 const defaultTokenLimit = 100000;
 const defaultContextSizeLimit = mbToBytes(128);
 const defaultContextCharLimit = 1_000_000;
@@ -677,6 +679,7 @@ export const fileConfig = {
     supportedMimeTypes: documentParserMimeTypes,
     fileSizeLimit: defaultDocumentParserSizeLimit,
     timeoutMs: defaultDocumentParserTimeoutMs,
+    maxPageCount: defaultDocumentParserMaxPageCount,
   },
   text: {
     supportedMimeTypes: defaultTextMimeTypes,
@@ -755,6 +758,8 @@ export const fileConfigSchema = z.object({
        * A document large enough to need a raised `fileSizeLimit` usually needs longer
        * than the default to convert. */
       timeoutMs: z.number().min(0).optional(),
+      /** Maximum PDF pages accepted before extraction work can grow without bound. */
+      maxPageCount: z.number().int().min(0).optional(),
     })
     .optional(),
   text: z
@@ -1385,6 +1390,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     const {
       supportedMimeTypes: documentParserTypes,
       fileSizeLimit: documentParserSizeLimit,
+      maxPageCount: documentParserMaxPageCount,
       ...documentParserRest
     } = dynamic.documentParser;
     mergedConfig.documentParser = {
@@ -1398,6 +1404,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
      * limit here is written and consumed. */
     if (documentParserSizeLimit !== undefined) {
       mergedConfig.documentParser.fileSizeLimit = mbToBytes(documentParserSizeLimit);
+    }
+    /* Page counts are not sizes, so the configured value stays a direct count. */
+    if (documentParserMaxPageCount !== undefined) {
+      mergedConfig.documentParser.maxPageCount = documentParserMaxPageCount;
     }
   }
 

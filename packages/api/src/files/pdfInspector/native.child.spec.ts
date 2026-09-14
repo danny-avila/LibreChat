@@ -72,8 +72,28 @@ describe('pdfInspector child isolation', () => {
     await expect(extraction).resolves.toEqual({
       pages: [{ markdown: '# Kept extraction' }],
       scannedPages: [],
+      classificationDidNotRun: true,
     });
     expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+  test('keeps pages and marks classification unavailable when the classifier rejects', async () => {
+    const extractionChild = new TestChild();
+    const classifierChild = new TestChild();
+    mockSpawn.mockReturnValueOnce(extractionChild).mockReturnValueOnce(classifierChild);
+
+    const extraction = extractPagesMarkdownIsolated('/tmp/rejected-classifier.pdf');
+    extractionChild.emit('message', {
+      ok: true,
+      result: { pages: [{ markdown: '# Kept extraction' }] },
+    });
+    await Promise.resolve();
+    classifierChild.emit('message', { ok: false, message: 'classifier failed' });
+
+    await expect(extraction).resolves.toEqual({
+      pages: [{ markdown: '# Kept extraction' }],
+      scannedPages: [],
+      classificationDidNotRun: true,
+    });
   });
 
   test('refuses an over-limit PDF before spawning the optional classifier', async () => {
@@ -95,6 +115,31 @@ describe('pdfInspector child isolation', () => {
       maxPages: 1000,
     });
     expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+  test('accepts pages above the default when a higher ceiling is configured', async () => {
+    const extractionChild = new TestChild();
+    const classifierChild = new TestChild();
+    mockSpawn.mockReturnValueOnce(extractionChild).mockReturnValueOnce(classifierChild);
+
+    const extraction = extractPagesMarkdownIsolated(
+      '/tmp/page-flood.pdf',
+      undefined,
+      undefined,
+      1500,
+    );
+    extractionChild.emit('message', {
+      ok: true,
+      result: {
+        pages: Array.from({ length: 1001 }, (_, page) => ({ page, markdown: '' })),
+      },
+    });
+    await Promise.resolve();
+    classifierChild.emit('message', { ok: true, result: { scannedPages: [] } });
+    await expect(extraction).resolves.toMatchObject({
+      pages: expect.any(Array),
+      scannedPages: [],
+    });
+    expect((await extraction).pages).toHaveLength(1001);
   });
 
   /**
