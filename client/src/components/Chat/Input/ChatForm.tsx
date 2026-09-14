@@ -57,6 +57,7 @@ import FileFormChat from './Files/FileFormChat';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
+import { submitFromComposer } from './submit';
 import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
 import AutoPlayAudio from './AutoPlayAudio';
@@ -602,25 +603,27 @@ const ChatForm = memo(function ChatForm({
     bottomClearance = 'sm:mb-10';
   }
 
+  /** Answer mode, then during-run steering or queueing (a run in flight, or a
+   *  queued follow-up about to start), then an ordinary send: the same route
+   *  for typed, dictated, and shortcut-bound submissions. */
+  const submitComposerText = useCallback(
+    (data: { text: string }): false | void =>
+      submitFromComposer(
+        {
+          answerMode,
+          steering,
+          submitMessage,
+          reset: () => methods.reset(),
+        },
+        data,
+      ),
+    [answerMode, steering, submitMessage, methods],
+  );
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
-        // Answer mode: composer text answers the paused run instead of
-        // starting a new turn (submitText resets the composer itself).
-        // Dismissing the popover — or collapsing a batch, which answers in its
-        // own card — restores normal sends.
-        if (answerMode.active && answerMode.submitText(data.text)) {
-          return;
-        }
-        // During a run, a submit steers or queues per the effective action
-        // instead of starting a new turn (which would be dropped anyway).
-        if (steering.duringRunActive) {
-          if (steering.submitDuringRun(data.text)) {
-            methods.reset();
-          }
-          return;
-        }
-        return submitMessage(data);
+        submitComposerText(data);
       })}
       className={cn(
         /* `margin-bottom` is animated as well as `max-width`: it is what carries
@@ -865,7 +868,7 @@ const ChatForm = memo(function ChatForm({
                 {SpeechToText && (
                   <AudioRecorder
                     methods={methods}
-                    ask={submitMessage}
+                    ask={submitComposerText}
                     disabled={disableInputs || isNotAppendable}
                     isSubmitting={isSubmitting}
                   />
