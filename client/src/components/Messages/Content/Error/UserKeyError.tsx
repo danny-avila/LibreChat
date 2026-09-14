@@ -18,7 +18,16 @@ type UserKeyErrorCode =
   | ErrorTypes.NO_USER_KEY
   | ErrorTypes.EXPIRED_USER_KEY
   | ErrorTypes.INVALID_USER_KEY
+  | ErrorTypes.NO_BASE_URL
+  | ErrorTypes.INVALID_BASE_URL
   | (typeof ProviderErrorCodes)[keyof typeof ProviderErrorCodes];
+
+/** What the dialog is opened to do; every other code updates a key that is already saved. */
+const actionLabels: Partial<Record<UserKeyErrorCode, TranslationKeys>> = {
+  [ErrorTypes.NO_USER_KEY]: 'com_error_user_key_add',
+  [ErrorTypes.NO_BASE_URL]: 'com_error_user_url_add',
+  [ErrorTypes.INVALID_BASE_URL]: 'com_error_user_url_update',
+};
 
 export default function UserKeyError({ json, message }: ErrorRendererProps) {
   const localize = useLocalize();
@@ -29,10 +38,8 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
   /** An expired key's payload names the endpoint whose key expired, which outranks the row's. */
   const payloadEndpoint =
     code === ErrorTypes.EXPIRED_USER_KEY ? readString(json, 'endpoint') : undefined;
-  const { endpoint, endpointType, provider, userProvidesKey, endpointsConfig } = useErrorEndpoint(
-    message,
-    payloadEndpoint,
-  );
+  const { endpoint, endpointType, provider, userProvidesCredentials, endpointsConfig } =
+    useErrorEndpoint(message, payloadEndpoint);
   const expiredAt = readString(json, 'expiredAt');
 
   /**
@@ -47,8 +54,18 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
     if (provider == null) {
       return localize(generic);
     }
-    return localize(userProvidesKey ? userProvided : admin, { 0: provider });
+    return localize(userProvidesCredentials ? userProvided : admin, { 0: provider });
   };
+
+  /**
+   * These codes can only come from the reader's own saved record (an unparseable key, a missing or
+   * rejected user-provided URL), so there is no administrator variant: named copy when that record
+   * is still the reader's to edit, the generic sentence otherwise.
+   */
+  const ownRecord = (generic: TranslationKeys, owned: TranslationKeys): string =>
+    userProvidesCredentials && provider != null
+      ? localize(owned, { 0: provider })
+      : localize(generic);
 
   let errorMessage: string;
   switch (code) {
@@ -74,11 +91,13 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
       }
       break;
     case ErrorTypes.INVALID_USER_KEY:
-      /** Only a key the user stored can fail to parse, so there is no administrator variant. */
-      errorMessage =
-        userProvidesKey && provider != null
-          ? localize('com_error_invalid_user_key_provider', { 0: provider })
-          : localize('com_error_invalid_user_key');
+      errorMessage = ownRecord('com_error_invalid_user_key', 'com_error_invalid_user_key_provider');
+      break;
+    case ErrorTypes.NO_BASE_URL:
+      errorMessage = ownRecord('com_error_no_base_url', 'com_error_no_base_url_provider');
+      break;
+    case ErrorTypes.INVALID_BASE_URL:
+      errorMessage = ownRecord('com_error_invalid_base_url', 'com_error_invalid_base_url_provider');
       break;
     case ProviderErrorCodes.INVALID_API_KEY:
       errorMessage = byOwnership(
@@ -98,9 +117,9 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
       errorMessage = localize('com_error_invalid_user_key');
   }
 
-  const canEditKey = userProvidesKey && endpoint != null;
+  const canEditKey = userProvidesCredentials && endpoint != null;
   const updateLabel =
-    code === ErrorTypes.NO_USER_KEY ? 'com_error_user_key_add' : 'com_error_user_key_update';
+    (code != null ? actionLabels[code] : undefined) ?? 'com_error_user_key_update';
 
   return (
     <ErrorBody>

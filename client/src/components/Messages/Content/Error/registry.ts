@@ -19,8 +19,6 @@ import AgentError from './AgentError';
  */
 export const errorCopy: Record<string, TranslationKeys> = {
   [ErrorTypes.MODERATION]: 'com_error_moderation',
-  [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
-  [ErrorTypes.INVALID_BASE_URL]: 'com_error_invalid_base_url',
   [ErrorTypes.INVALID_ACTION]: 'com_error_invalid_action_error',
   [ErrorTypes.MODELS_NOT_LOADED]: 'com_error_models_not_loaded',
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
@@ -52,6 +50,8 @@ export const errorRenderers: Record<string, ComponentType<ErrorRendererProps>> =
   [ErrorTypes.NO_USER_KEY]: UserKeyError,
   [ErrorTypes.EXPIRED_USER_KEY]: UserKeyError,
   [ErrorTypes.INVALID_USER_KEY]: UserKeyError,
+  [ErrorTypes.NO_BASE_URL]: UserKeyError,
+  [ErrorTypes.INVALID_BASE_URL]: UserKeyError,
   [ProviderErrorCodes.INVALID_API_KEY]: UserKeyError,
   [ProviderErrorCodes.INSUFFICIENT_QUOTA]: UserKeyError,
   [ErrorTypes.INVALID_AGENT_PROVIDER]: AgentError,

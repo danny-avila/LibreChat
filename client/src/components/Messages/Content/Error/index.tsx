@@ -6,6 +6,7 @@ import type { ErrorPayload } from './parts';
 import { errorCopy, errorRenderers } from './registry';
 import { UnclassifiedError } from './ProviderError';
 import { extractJson, isJson } from '~/utils/json';
+import { readObject, readString } from './parts';
 import { useErrorSource } from './source';
 import { useLocalize } from '~/hooks';
 
@@ -51,14 +52,24 @@ const Error = ({ text, message: rowMessage }: { text: string; message?: ErrorSou
   }
 
   const json = JSON.parse(jsonString) as ErrorPayload;
-  const code = typeof json.code === 'string' ? json.code : undefined;
-  const type = typeof json.type === 'string' ? json.type : undefined;
-  const errorKey = code ?? type;
+  /**
+   * OpenAI-compatible bodies nest their `code` and `type` under `error`. When the top level names
+   * neither, that envelope is the payload a renderer reads; a top-level `type`, even a generic one
+   * like Anthropic's `"error"`, keeps the body as it is.
+   */
+  const envelope = readObject(json, 'error');
+  const topLevelKey = readString(json, 'code') ?? readString(json, 'type');
+  const nestedKey =
+    topLevelKey == null
+      ? (readString(envelope, 'code') ?? readString(envelope, 'type'))
+      : undefined;
+  const payload = nestedKey != null && envelope != null ? envelope : json;
+  const errorKey = topLevelKey ?? nestedKey;
 
   if (errorKey != null) {
     const Renderer = errorRenderers[errorKey];
     if (Renderer != null) {
-      return <Renderer json={json} text={text} message={message} />;
+      return <Renderer json={payload} text={text} message={message} />;
     }
     const copyKey = errorCopy[errorKey];
     if (copyKey != null) {

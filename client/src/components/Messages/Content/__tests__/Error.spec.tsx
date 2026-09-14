@@ -1,9 +1,16 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { ErrorTypes, SystemRoles, ViolationTypes, EModelEndpoint } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  SystemRoles,
+  ContentTypes,
+  ViolationTypes,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { Agent, TConversation, TMessage } from 'librechat-data-provider';
 import type { ReactElement } from 'react';
 import { AgentsMapContext } from '~/Providers/AgentsMapContext';
+import { MessageContext } from '~/Providers/MessageContext';
 import translation from '~/locales/en/translation.json';
 import { ErrorSourceProvider } from '../Error/source';
 import { ChatContext } from '~/Providers/ChatContext';
@@ -62,6 +69,8 @@ const providerMessage = {
 type RenderSurface = {
   /** The row identity an error content part inherits from `ErrorSourceProvider`. */
   source?: TMessage;
+  /** The absolute content index `MessageContext` gives an error part rendered inside a row. */
+  partIndex?: number;
   /** Mounts `ChatContext`, as the chat surface does, with this conversation. */
   conversation?: Partial<TConversation>;
   agents?: Record<string, Agent>;
@@ -75,6 +84,15 @@ function renderError(
 ) {
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
   let tree: ReactElement = <Error text={text} message={message} />;
+  if (surface.partIndex != null) {
+    tree = (
+      <MessageContext.Provider
+        value={{ messageId: 'response-1', isExpanded: true, partIndex: surface.partIndex }}
+      >
+        {tree}
+      </MessageContext.Provider>
+    );
+  }
   if (surface.source != null) {
     tree = <ErrorSourceProvider message={surface.source}>{tree}</ErrorSourceProvider>;
   }
@@ -183,6 +201,52 @@ describe('Error — reader-facing provider and fallback copy', () => {
     expect(screen.queryByText(catalog.com_error_unknown)).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain('{');
     expectReadable();
+  });
+
+  it('dispatches a provider code nested under `error` to its renderer', () => {
+    renderError(
+      {
+        error: {
+          code: 'invalid_api_key',
+          type: 'invalid_request_error',
+          message: 'Incorrect API key provided: sk-****.',
+        },
+      },
+      providerMessage,
+    );
+
+    expect(screen.getByText(localized('com_error_invalid_api_key', 'OpenAI'))).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: catalog.com_error_user_key_update }),
+    ).toBeInTheDocument();
+    expectReadable();
+  });
+
+  it('dispatches a nested invalid-request type and keeps its message as the detail', () => {
+    const detail = "Invalid value for 'temperature': must be between 0 and 2.";
+    renderError({ error: { type: 'invalid_request_error', message: detail } }, providerMessage);
+
+    expect(
+      screen.getByText(localized('com_error_invalid_request_error', 'OpenAI')),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: catalog.com_error_details_provider }));
+    expect(screen.getByText(detail)).toBeInTheDocument();
+  });
+
+  /** A top-level `type` names the body, even Anthropic's generic `"error"`, so it is not unwrapped. */
+  it('does not unwrap a body whose top level already names a type', () => {
+    renderError(
+      { type: 'error', error: { type: 'invalid_request_error', message: 'prompt is too long' } },
+      { endpoint: EModelEndpoint.anthropic, model: 'claude-sonnet-4-5' } as TMessage,
+    );
+
+    expect(
+      screen.getByText(localized('com_error_provider_failed', 'Anthropic')),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(localized('com_error_invalid_request_error', 'Anthropic')),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('prompt is too long')).toBeInTheDocument();
   });
 
   /** `getUserFacingRequestError` prefixes the SDK's message, which for Anthropic embeds the body. */
@@ -358,6 +422,62 @@ describe('Error — user key and limits', () => {
     expect(
       screen.getByRole('button', { name: catalog.com_error_user_key_update }),
     ).toBeInTheDocument();
+  });
+
+  describe('an endpoint whose base URL the reader provides', () => {
+    const customRow = { endpoint: 'OpenRouter', model: 'openrouter/auto' } as TMessage;
+
+    beforeEach(() => {
+      mockEndpointsData = { OpenRouter: { type: 'custom', userProvideURL: true } };
+    });
+
+    /** The server reads the key from the reader's own record whenever the URL is theirs. */
+    it('offers the key dialog for a missing key even with a deployment key configured', () => {
+      renderError({ type: ErrorTypes.NO_USER_KEY }, customRow);
+
+      expect(
+        screen.getByText(localized('com_error_no_user_key', 'OpenRouter')),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: catalog.com_error_user_key_add }),
+      ).toBeInTheDocument();
+    });
+
+    it('names a missing URL and offers to add it', () => {
+      renderError({ type: ErrorTypes.NO_BASE_URL }, customRow);
+
+      expect(
+        screen.getByText(localized('com_error_no_base_url_provider', 'OpenRouter')),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: catalog.com_error_user_url_add }),
+      ).toBeInTheDocument();
+    });
+
+    it('offers to update a URL the server refused', () => {
+      renderError(
+        {
+          type: ErrorTypes.INVALID_BASE_URL,
+          message: 'Base URL for OpenRouter targets a restricted address.',
+        },
+        customRow,
+      );
+
+      expect(
+        screen.getByText(localized('com_error_invalid_base_url_provider', 'OpenRouter')),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: catalog.com_error_user_url_update }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the generic URL copy and no action where the record is not the reader's", () => {
+      mockEndpointsData = { OpenRouter: { type: 'custom' } };
+      renderError({ type: ErrorTypes.NO_BASE_URL }, customRow);
+
+      expect(screen.getByText(catalog.com_error_no_base_url)).toBeInTheDocument();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
   });
 
   it('formats an expired user-key date for readers', () => {
@@ -751,5 +871,70 @@ describe('Error — agent provider guidance', () => {
     expect(
       screen.getByText(localized('com_error_invalid_agent_provider_owner', 'Dana')),
     ).toBeInTheDocument();
+  });
+});
+
+describe('Error — agent handoffs within a row', () => {
+  const rootAgent = {
+    id: 'agent_root',
+    name: 'Planner',
+    provider: EModelEndpoint.google,
+    model: 'gemini-2.5-pro',
+  } satisfies Partial<Agent> as Agent;
+  const writerAgent = {
+    id: 'agent_writer',
+    name: 'Writer',
+    provider: EModelEndpoint.anthropic,
+    model: 'claude-sonnet-4-5',
+  } satisfies Partial<Agent> as Agent;
+  /** Index 1 hands the run to the writer, and the run fails at index 2. */
+  const handoffRow = {
+    endpoint: EModelEndpoint.agents,
+    model: rootAgent.id,
+    content: [
+      { type: ContentTypes.TEXT, text: 'Drafting the outline.' },
+      { type: ContentTypes.AGENT_UPDATE, agent_update: { agentId: writerAgent.id, index: 1 } },
+      { type: ContentTypes.ERROR, error: JSON.stringify({ type: ErrorTypes.NO_USER_KEY }) },
+    ],
+  } as unknown as TMessage;
+
+  beforeEach(() => {
+    mockEndpointsData = {
+      agents: {},
+      google: { userProvide: true },
+      anthropic: { userProvide: true },
+    };
+  });
+
+  it('resolves an error part after a handoff against the agent the run was handed to', () => {
+    renderError({ type: ErrorTypes.NO_USER_KEY }, undefined, {
+      source: handoffRow,
+      partIndex: 2,
+      agents: { [rootAgent.id]: rootAgent, [writerAgent.id]: writerAgent },
+    });
+
+    expect(screen.getByText(localized('com_error_no_user_key', 'Anthropic'))).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Google');
+  });
+
+  it('keeps the agent that handed off for a part before the handoff', () => {
+    renderError({ type: ErrorTypes.NO_USER_KEY }, undefined, {
+      source: handoffRow,
+      partIndex: 0,
+      agents: { [rootAgent.id]: rootAgent, [writerAgent.id]: writerAgent },
+    });
+
+    expect(screen.getByText(localized('com_error_no_user_key', 'Google'))).toBeInTheDocument();
+  });
+
+  it('names no provider when the agent handed to cannot be resolved', () => {
+    renderError({ type: ErrorTypes.NO_USER_KEY }, undefined, {
+      source: handoffRow,
+      partIndex: 2,
+      agents: { [rootAgent.id]: rootAgent },
+    });
+
+    expect(screen.getByText(catalog.com_error_no_user_key_generic)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Google');
   });
 });

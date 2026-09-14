@@ -32,6 +32,7 @@ jest.mock('~/components/Messages/Content/Error', () => {
           data-testid="error-dispatcher"
           data-endpoint={message?.endpoint}
           data-source-endpoint={source?.endpoint}
+          data-source-handoff={source?.handoffAgentId}
         >
           {text}
         </span>
@@ -111,5 +112,32 @@ describe('SearchContent', () => {
     expect(dispatcher).toHaveTextContent(text);
     expect(dispatcher).not.toHaveAttribute('data-endpoint');
     expect(dispatcher).toHaveAttribute('data-source-endpoint', 'anthropic');
+  });
+
+  it('resolves an error part after a handoff to the agent the run was handed to', () => {
+    const text = JSON.stringify({ type: ViolationTypes.MESSAGE_LIMIT });
+    render(
+      <RecoilRoot>
+        <SearchContent
+          message={message({
+            endpoint: 'agents',
+            model: 'agent_root',
+            content: [
+              { type: ContentTypes.TEXT, text: 'Drafting the outline.' },
+              {
+                type: ContentTypes.AGENT_UPDATE,
+                agent_update: { agentId: 'agent_writer', index: 1 },
+              } as TMessageContentParts,
+              { type: ContentTypes.ERROR, error: text } as TMessageContentParts,
+            ] as TMessageContentParts[],
+          })}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('error-dispatcher')).toHaveAttribute(
+      'data-source-handoff',
+      'agent_writer',
+    );
   });
 });

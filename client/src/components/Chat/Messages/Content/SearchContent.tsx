@@ -11,9 +11,9 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
+import { MessageContext, SearchContext, useMessageContext } from '~/Providers';
 import { ErrorMessage, UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
-import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import { AgentUpdate } from './Parts';
 import store from '~/store';
@@ -40,6 +40,7 @@ const SearchContent = ({
   authorHeader?: ReactNode;
 }) => {
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const messageContext = useMessageContext();
   const { messageId } = message;
 
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
@@ -67,7 +68,7 @@ const SearchContent = ({
             if (part.type === ContentTypes.AGENT_UPDATE) {
               activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
             }
-            const rendered: ReactElement = (
+            const partElement: ReactElement = (
               <Part
                 key={`display-${messageId}-${idx}`}
                 showCursor={false}
@@ -77,6 +78,20 @@ const SearchContent = ({
                 part={part}
               />
             );
+            /** An error part resolves the agent a handoff made active from its own position,
+             *  which it reads from `MessageContext`; persisted content is compacted, so `idx` is
+             *  that position in `message.content`. */
+            const rendered: ReactElement =
+              part.type === ContentTypes.ERROR ? (
+                <MessageContext.Provider
+                  key={`display-${messageId}-${idx}`}
+                  value={{ ...messageContext, partIndex: idx }}
+                >
+                  {partElement}
+                </MessageContext.Provider>
+              ) : (
+                partElement
+              );
             if (!resumesAfterSteer) {
               return rendered;
             }

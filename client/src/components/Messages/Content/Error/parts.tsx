@@ -7,7 +7,13 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
 } from 'librechat-data-provider';
-import type { Agent, EModelEndpoint, TAgentsMap, TEndpointsConfig } from 'librechat-data-provider';
+import type {
+  Agent,
+  TConfig,
+  TAgentsMap,
+  EModelEndpoint,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
 import type { ErrorSource } from './source';
 import { isUserProvidedEndpointConfig } from '~/components/Nav/SettingsTabs/ProviderKeys/utils';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -79,25 +85,44 @@ export type ErrorEndpoint = {
   provider?: string;
   /** The model that produced the failure. */
   model?: string;
-  /** The saved agent the row belongs to, when the agents map can resolve it. */
+  /** The saved agent that produced the failure, when the agents map can resolve it. */
   agent?: Agent;
-  /** The endpoint takes its key from the user rather than from the deployment. */
-  userProvidesKey: boolean;
+  /** The reader, not the deployment, maintains the endpoint's credentials (key, URL or both). */
+  userProvidesCredentials: boolean;
   /** Manual context compaction can be triggered for this conversation. */
   compactionAvailable: boolean;
   endpointsConfig?: TEndpointsConfig;
 };
 
-/** A saved agent's row stores the agent id as its model; the conversation's agent is the fallback. */
-function findRowAgent(
+/**
+ * The saved agent behind a failure: the agent a handoff made active for the failing part,
+ * otherwise the agent id a saved agent's row stores as its model, otherwise the conversation's.
+ * A handoff the map cannot resolve resolves nothing, rather than falling back to the agent that
+ * handed off.
+ */
+function findFailingAgent(
   agentsMap: TAgentsMap | undefined,
-  rowModel: string | undefined,
-  conversationAgentId: string | undefined,
+  {
+    handoffAgentId,
+    rowModel,
+    conversationAgentId,
+  }: { handoffAgentId?: string; rowModel?: string; conversationAgentId?: string },
 ): Agent | undefined {
+  if (handoffAgentId != null) {
+    return agentsMap?.[handoffAgentId];
+  }
   const agentId =
     rowModel != null && !isEphemeralAgentId(rowModel) ? rowModel : conversationAgentId;
   return agentId != null ? agentsMap?.[agentId] : undefined;
 }
+
+/**
+ * Whether the reader maintains an endpoint's credentials. A user-provided base URL counts even with
+ * a deployment key: the server then reads both the key and the URL from the reader's own record,
+ * so the key dialog, which edits both, is the fix for its failures too.
+ */
+const readerOwnsCredentials = (config?: TConfig | null): boolean =>
+  isUserProvidedEndpointConfig(config) || config?.userProvideURL === true;
 
 /**
  * Resolves who produced the failure.
@@ -110,8 +135,9 @@ function findRowAgent(
  *
  * A saved agent's row names the `agents` endpoint and carries the agent id as its model, while the
  * request ran against the agent's own provider and model, so those are what identity, key
- * ownership and the key dialog resolve against. An endpoint named by the payload itself outranks
- * both. Compaction is a conversation action, so it stays keyed to the row's endpoint.
+ * ownership and the key dialog resolve against; after a handoff, that is the agent the handoff
+ * made active. An endpoint named by the payload itself outranks all of them. Compaction is a
+ * conversation action, so it stays keyed to the row's endpoint.
  */
 export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string): ErrorEndpoint {
   const chat = useContext(ChatContext);
@@ -123,10 +149,13 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
   const rowEndpoint = source?.endpoint ?? chat?.conversation?.endpoint ?? undefined;
   const rowModel = source?.model ?? chat?.conversation?.model ?? undefined;
   const conversationAgentId = chat?.conversation?.agent_id ?? undefined;
+  const handoffAgentId = source?.handoffAgentId;
 
   return useMemo(() => {
-    const agentRow = isAgentsEndpoint(rowEndpoint);
-    const agent = agentRow ? findRowAgent(agentsMap, rowModel, conversationAgentId) : undefined;
+    const agentRow = handoffAgentId != null || isAgentsEndpoint(rowEndpoint);
+    const agent = agentRow
+      ? findFailingAgent(agentsMap, { handoffAgentId, rowModel, conversationAgentId })
+      : undefined;
     const rowProvider = agentRow ? (agent?.provider ?? undefined) : rowEndpoint;
     const endpoint = payloadEndpoint ?? rowProvider;
     const endpointType = endpoint
@@ -138,7 +167,9 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
       provider: endpoint ? getProviderName(endpoint) : undefined,
       model: agentRow ? (agent?.model ?? undefined) : rowModel,
       agent,
-      userProvidesKey: endpoint ? isUserProvidedEndpointConfig(endpointsConfig?.[endpoint]) : false,
+      userProvidesCredentials: endpoint
+        ? readerOwnsCredentials(endpointsConfig?.[endpoint])
+        : false,
       compactionAvailable:
         startupConfig?.compactionEnabled === true && supportsCompaction(rowEndpoint),
       endpointsConfig,
@@ -147,6 +178,7 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
     rowEndpoint,
     rowModel,
     conversationAgentId,
+    handoffAgentId,
     payloadEndpoint,
     agentsMap,
     endpointsConfig,
