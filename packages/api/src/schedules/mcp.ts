@@ -22,6 +22,7 @@ import type {
   AgentGraphAccessContext,
 } from '@librechat/data-schemas';
 import type { TModelsConfig, ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
+import type { UpstreamTokenProvider, UpstreamTokenProviderResolver } from '../mcp/oauth/obo';
 import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
@@ -42,12 +43,56 @@ import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServers
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
+import { OboTokenResolutionError } from '../mcp/oauth/obo';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { resolveReachableGraph } from '../agents/edges';
 import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
 import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
+import { isScheduleFireRequest } from './trigger';
+
+type HostUpstreamTokenProviderResolver = (
+  user: IUser,
+  options: { signal?: AbortSignal },
+) => ReturnType<UpstreamTokenProviderResolver>;
+
+/** Bind a credential lookup to the trusted principal and owning run's cancellation. */
+export function bindUpstreamTokenProviderResolver(
+  user: IUser,
+  resolve: HostUpstreamTokenProviderResolver | undefined,
+  signal?: AbortSignal,
+): UpstreamTokenProviderResolver | undefined {
+  if (!resolve) return undefined;
+  let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
+  return () => {
+    signal?.throwIfAborted();
+    pending ??= Promise.resolve()
+      .then(() => {
+        signal?.throwIfAborted();
+        return resolve(user, { signal });
+      })
+      .then((provider) => {
+        if (!provider) pending = undefined;
+        return provider;
+      })
+      .catch((error) => {
+        pending = undefined;
+        throw error;
+      });
+    return pending;
+  };
+}
+
+export function createScheduleUpstreamTokenProviderResolver(
+  req: Parameters<typeof isScheduleFireRequest>[0] & { user: IUser },
+  resolve: HostUpstreamTokenProviderResolver | undefined,
+  signal?: AbortSignal,
+): UpstreamTokenProviderResolver | undefined {
+  return isScheduleFireRequest(req)
+    ? bindUpstreamTokenProviderResolver(req.user, resolve, signal)
+    : undefined;
+}
 
 // The public schedule schema caps mcpPreflightConcurrency at 10. Keep the same
 // ceiling across every preflight owned by this process so concurrent schedules
@@ -100,12 +145,16 @@ interface ScheduleMCPDeps {
     role?: string,
   ) => Promise<Record<string, ParsedServerConfig>>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
+  resolveUpstreamTokenProvider?: (
+    user: IUser,
+    options: { signal?: AbortSignal },
+  ) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
   connect: (options: UserMCPConnectionOptions) => Promise<{
     fetchToolsSnapshot: (deadlineMs?: number, signal?: AbortSignal) => Promise<MCPToolsSnapshot>;
   }>;
 }
 
-/** Probes only persisted identity and credentials, with isolated user connections and no OAuth wait. */
+/** Probes MCP readiness with isolated user connections and no interactive OAuth wait. */
 export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPreflight {
   const sharedProbeLimit = createConcurrencyLimiter(MAX_SHARED_MCP_PREFLIGHT_CONCURRENCY);
   const runPreflight: ScheduleMCPPreflight = async (agentId, principal, options) => {
@@ -571,6 +620,12 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       throwError: true,
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
+    const upstreamTokenProviderResolver = bindUpstreamTokenProviderResolver(
+      user,
+      deps.resolveUpstreamTokenProvider,
+      options.signal,
+    );
+    throwIfAborted();
     const requestBody = {
       messageId: randomUUID(),
       conversationId: randomUUID(),
@@ -602,6 +657,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                     customUserVars,
                     requestBody,
                     requestScopedConnections: context,
+                    upstreamTokenProviderResolver,
                     ephemeralConnection: true,
                     returnOnOAuth: true,
                     oauthStart: async () => {
@@ -651,6 +707,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                     reauth ||
                       error instanceof MCPAuthenticationRejectedError ||
                       error instanceof OpenIDReauthRequiredError ||
+                      (error instanceof OboTokenResolutionError && !error.retryable) ||
                       error instanceof MCPOAuthSecretReentryRequiredError ||
                       isOAuthAuthenticationError(error)
                       ? 'mcp_reauth_required'

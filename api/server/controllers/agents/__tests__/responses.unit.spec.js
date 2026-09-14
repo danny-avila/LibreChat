@@ -462,8 +462,9 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isFatalAgentInitializationError: (error) =>
+  isFatalAgentInitializationError: jest.fn((error) =>
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+  ),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -840,6 +841,7 @@ describe('createResponse controller', () => {
       expect.objectContaining({
         primaryConfig,
         rootConfigs: [primaryConfig],
+        signal: mockExecution.signal,
         resourceType: ResourceType.REMOTE_AGENT,
         memoryAvailable: true,
       }),
@@ -920,6 +922,9 @@ describe('createResponse controller', () => {
       'server_error',
       'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
     );
+    expect(
+      require('~/server/services/ToolService').isFatalAgentInitializationError,
+    ).toHaveBeenCalledWith(toolError, { signal: loadAgentTools.mock.calls.at(-1)[0].signal });
   });
 
   it('returns the resource recovery status and code before model invocation', async () => {
