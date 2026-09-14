@@ -362,7 +362,19 @@ export async function buildToolClassification(
   const additionalTools: GenericTool[] = [];
 
   const mcpTools = loadedTools.filter(isMCPTool);
-  if (mcpTools.length === 0) {
+  /**
+   * A selected attached workspace is useful as a Bash runner even when the
+   * agent has no MCP tools to call from inside it. Keep the legacy fast exit
+   * for every other tool set, but let an explicitly enabled BYOM runner build
+   * an empty registry and publish the PTC tool. The selected capability was
+   * already resolved once for this request, so this adds no worker-status IO.
+   */
+  const hasAttachedProgrammaticWorkspace =
+    codeExecutionContext?.environmentType === 'attached' &&
+    codeExecutionContext.codeWorkspace != null;
+  const mayUseWorkspaceProgrammaticRunner =
+    programmaticToolsEnabled && codeExecutionEnabled && hasAttachedProgrammaticWorkspace;
+  if (mcpTools.length === 0 && !mayUseWorkspaceProgrammaticRunner) {
     return {
       additionalTools,
       toolDefinitions: [],
@@ -388,7 +400,7 @@ export async function buildToolClassification(
   const hasProgrammaticTools =
     programmaticToolsEnabled &&
     codeExecutionEnabled &&
-    agentHasProgrammaticTools(toolRegistry) &&
+    (agentHasProgrammaticTools(toolRegistry) || hasAttachedProgrammaticWorkspace) &&
     (await supportsProgrammaticCodeExecution(codeExecutionContext, codeEnvironments, getAppConfig));
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 

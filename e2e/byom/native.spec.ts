@@ -21,6 +21,11 @@ interface Worker {
   root: string;
   environmentId: string;
 }
+interface Skill {
+  _id: string;
+}
+const SKILL_NAME = 'byom-acceptance';
+const SKILL_INPUT = 'skill-input-stayed-private';
 
 async function stop(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -55,6 +60,33 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   await expect(page).toHaveURL(/\/c\/new/, { timeout: 30_000 });
   const token = await getAccessToken(page);
 
+  const skill = await requestJson<Skill>(page, {
+    path: '/api/skills',
+    token,
+    method: 'POST',
+    body: {
+      name: SKILL_NAME,
+      description: 'Always-applied acceptance skill for native BYOM programmatic execution.',
+      body: '# Native BYOM acceptance\n\nRead the bundled input with Bash when requested.',
+      alwaysApply: true,
+    },
+  });
+  const uploadedSkillFile = await page.request.post(
+    `/api/skills/${encodeURIComponent(skill._id)}/files`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        relativePath: 'references/input.txt',
+        file: {
+          name: 'input.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(SKILL_INPUT),
+        },
+      },
+    },
+  );
+  expect(uploadedSkillFile.ok(), await uploadedSkillFile.text()).toBe(true);
+
   async function startWorker(label: string): Promise<Worker> {
     const paired = await requestJson<Pairing>(page, {
       path: '/api/code-environments/pairings',
@@ -67,8 +99,8 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     await mkdir(workspace, { recursive: true, mode: 0o700 });
     const identity = path.join(directory, 'identity.json');
     const env = Object.fromEntries(
-      ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP'].flatMap((key) =>
-        process.env[key] ? [[key, process.env[key]!]] : [],
+      ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LIBRECHAT_CODE_FILE_RELAY_UPSTREAM'].flatMap(
+        (key) => (process.env[key] ? [[key, process.env[key]!]] : []),
       ),
     );
     const log = await open(path.join(directory, 'worker.log'), 'a', 0o600);
@@ -151,6 +183,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         model: 'acceptance',
         instructions: 'Run exactly the requested tool.',
         tools: ['execute_code'],
+        skills: [skill._id],
+        skills_enabled: true,
+        skills_scope: 'selected',
         stateful_code_sessions: true,
         stateful_code_environment: 'conversation',
         code_environment_id: worker.environmentId,
@@ -180,7 +215,13 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     const admitted = await sendMessage(page, `BYOM_ACCEPTANCE:${operation}`);
     const request = await requestPromise;
     expect(admitted.ok()).toBe(true);
-    expect(request.postDataJSON()).toMatchObject({ codeApprovalMode: selectedApprovalMode });
+    const expectedWorkspaces = [
+      { environmentId: selectedWorker.environmentId, workspaceId: 'primary' },
+    ];
+    expect(request.postDataJSON()).toMatchObject({
+      codeApprovalMode: selectedApprovalMode,
+      codeWorkspaces: expectedWorkspaces,
+    });
     const { conversationId } = (await admitted.json()) as { conversationId: string };
     if (decision) {
       const reviewPanel = page.locator('#pending-tool-approval-panel');
@@ -251,6 +292,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     expect(await turn('command')).toContain('native-command-ok');
     await turn('fullCreate');
     expect(await readFile(path.join(a.root, 'unattended.txt'), 'utf8')).toBe('native-unattended');
+    expect(await turn('skillPtc')).toContain(`native-skill-ptc:${SKILL_INPUT}`);
+    expect(await readFile(path.join(a.root, 'skill-ptc-proof.txt'), 'utf8')).toBe(SKILL_INPUT);
+    expect(await readdir(a.root)).not.toContain('skills');
     await page.reload();
     await expect(page.getByTestId('code-approval-mode')).toContainText('Full access');
     expect(await turn('command')).toContain('native-command-ok');
@@ -260,7 +304,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
 
     const b = await startWorker('b');
     await select(b);
-    expect(await turn('read')).toMatch(/could not be read|not found/i);
+    expect(await turn('read')).toMatch(/could not be read|not found|invalid workspace path/i);
     expect(await readdir(b.root)).not.toContain('proof.txt');
     expect(await turn('create', 'Approve')).toContain('Created workspace/proof.txt');
     expect(await readFile(path.join(b.root, 'proof.txt'), 'utf8')).toBe('native-original');
@@ -268,7 +312,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
 
     await stop(b.child);
     const offline = await turn('offline', 'Approve');
-    expect(offline).toMatch(/failed|offline|unavailable|could not|not ready/i);
+    expect(offline).toMatch(
+      /failed|offline|unavailable|could not|not ready|assignment (expired|exceeded)/i,
+    );
     expect(offline).not.toMatch(/Created workspace\/offline/);
     expect(await readdir(a.root)).not.toContain('offline.txt');
     expect(await readdir(b.root)).not.toContain('offline.txt');
@@ -280,6 +326,8 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         commandsStillRequireApproval: true,
         fullAccessCommandsWithoutPrompt: true,
         fullAccessWritesWithoutPrompt: true,
+        workspaceBoundPtc: true,
+        skillInputsRemainExecutionPrivate: true,
         fullAccessSurvivesReload: true,
         crossTurnEdit: true,
         rejectedWriteAbsent: true,

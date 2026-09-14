@@ -27,6 +27,18 @@ module.exports = (run, context) => {
       { path: 'workspace/offline.txt', content: 'must-not-fallback', overwrite: false },
     ],
     command: ['bash_tool', { command: 'printf native-command-ok' }],
+    skillPtc: [
+      'run_tools_with_bash',
+      {
+        code: [
+          'data_dir="${LIBRECHAT_CODE_DATA_DIR:-/mnt/data}"',
+          'value=$(cat "$data_dir/skills/byom-acceptance/references/input.txt")',
+          'printf %s "$value" > skill-ptc-proof.txt',
+          'printf "native-skill-ptc:%s\\n" "$value"',
+        ].join('\n'),
+        tool_manifest: [],
+      },
+    ],
   };
   const call = calls[operation];
   if (!call) {

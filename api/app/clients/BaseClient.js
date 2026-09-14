@@ -1387,6 +1387,13 @@ class BaseClient {
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
+    /**
+     * A run intentionally omits a stored code-environment decision once the
+     * conversation is sealed. Only the explicit move route may replace it, so
+     * omission here means "preserve", not "unset". This also prevents a late
+     * run from erasing a newer workspace move during final persistence.
+     */
+    const preservedExistingFields = new Set(['codeEnvironmentMode', 'codeWorkspaces']);
     const hasNonEphemeralAgent =
       isAgentsEndpoint(options.endpoint) &&
       endpointOptions?.agent_id &&
@@ -1398,6 +1405,9 @@ class BaseClient {
       this.fetchedConvo = true;
       for (const key in existingConvo) {
         if (!key) {
+          continue;
+        }
+        if (preservedExistingFields.has(key)) {
           continue;
         }
         if (excludedKeys.has(key) && !exceptions.has(key)) {

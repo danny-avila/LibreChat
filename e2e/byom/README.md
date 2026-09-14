@@ -12,7 +12,7 @@ Only the model is a fixture. No paid model credentials are needed.
   `packages/code` dependencies installed. Build both the service and code package.
   The standalone service build currently also needs its async Python template:
   `cp service/src/matplotlib-async.py service/.build-service/src/matplotlib-async.py`.
-- Node 24, `redis-server`, and the native SRT prerequisites for your platform.
+- Node 24, Bun, `redis-server`, and the native SRT prerequisites for your platform.
   macOS uses Seatbelt; Linux requires Bubblewrap and Socat. `rg` must be on PATH.
   The code package's existing native-runtime documentation is authoritative.
 - MongoDB Memory Server can use its cached binary or download one on the first run.
@@ -42,6 +42,9 @@ do not relax that policy to make the test pass.
 8. Stopping B produces a persisted tool failure, not success or fallback to A.
 9. Selecting **Full access** runs commands and physically creates a file without
    approval prompts, survives reload, and can switch back to **Ask before changes**.
+10. An always-applied bundled skill file is staged into execution-private storage,
+    consumed by workspace-bound PTC, and can produce a durable project file without
+    copying the skill namespace into the selected workspace.
 
 Assertions inspect **tool outputs**, not echoed arguments or the model's final prose.
 The default hosted Code API URL is deliberately pointed at an invalid local route,
@@ -50,7 +53,13 @@ so an accidental routing regression can never send fixtures to a production endp
 ## Isolation and evidence
 
 Every run creates its own MongoDB, Redis, Code API, LibreChat, two worker identities,
-and workspaces. Ports are dynamically assigned, not the usual development ports.
+workspaces, authenticated file-storage fixture, real Code API tool-call server, and
+real Code API egress gateway. The file fixture implements only the production wire
+contract needed by the acceptance path; it keeps encrypted test artifacts in memory
+and registers upload authorization in the isolated Redis instead of requiring MinIO.
+These services are shared by the run rather than created per request, matching the
+production fan-in shape without adding network or process churn to each tool call.
+Ports are dynamically assigned, not the usual development ports.
 Listeners are loopback-only. No existing database, launchd worker, pairing, or project
 directory is reused. Children receive an allowlisted environment; checkout `.env`
 keys are neutralized. Mutations default to real UI approval; the test explicitly selects

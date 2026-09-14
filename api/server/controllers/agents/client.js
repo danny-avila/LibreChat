@@ -4532,6 +4532,24 @@ class AgentClient extends BaseClient {
         payload,
       );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const reachableAgents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.values() ?? []),
+      ]);
+      /** Fresh manual and always-apply skills are already model-bound this
+       * turn, so their bundled files must enter the same execution-private
+       * session as historically invoked skills. Resolve every reachable
+       * agent as one deduplicated batch; the profile primer then fans that
+       * batch only to the distinct selected Code API routes. */
+      const freshExecutionSkillNames = new Set();
+      for (const agent of reachableAgents) {
+        for (const name of collectFreshSkillPrimeNames({
+          manualSkillPrimes: agent.manualSkillPrimes,
+          alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+        })) {
+          freshExecutionSkillNames.add(name);
+        }
+      }
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       if (this.eventActorContinuation === 'cold') {
@@ -4541,7 +4559,7 @@ class AgentClient extends BaseClient {
       let skillPrimeResult = this.eventActorSkillPrimeResult;
       if (skillPrimeResult == null) {
         skillPrimeResult = this.options.primeInvokedSkills
-          ? await this.options.primeInvokedSkills(payload)
+          ? await this.options.primeInvokedSkills(payload, [...freshExecutionSkillNames])
           : undefined;
       }
       this.eventActorSkillPrimeResult = skillPrimeResult;
@@ -4587,10 +4605,6 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const useLegacyContent = this.options.agent?.useLegacyContent === true;
-      const reachableAgents = collectReachableAgents([
-        this.options.agent,
-        ...(this.agentConfigs?.values() ?? []),
-      ]);
       const messageFormatOptions = {
         ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
         ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),

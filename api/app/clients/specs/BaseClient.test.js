@@ -1737,6 +1737,8 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         endpointType: 'openai',
         model: 'gpt-3.5-turbo',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'primary' }],
         messages: [
           { role: 'user', content: 'Existing message 1' },
           { role: 'assistant', content: 'Existing response 1' },
@@ -1812,6 +1814,8 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         endpointType: 'openai',
         model: 'gpt-3.5-turbo',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'primary' }],
         messages: [
           { role: 'user', content: 'Existing message 1' },
           { role: 'assistant', content: 'Existing response 1' },
@@ -1866,6 +1870,8 @@ describe('BaseClient', () => {
       // Only check that someExistingField is in unsetFields
       expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
       expect(saveOptions.unsetFields).not.toHaveProperty('subagentThread');
+      expect(saveOptions.unsetFields).not.toHaveProperty('codeEnvironmentMode');
+      expect(saveOptions.unsetFields).not.toHaveProperty('codeWorkspaces');
       // Sidebar metadata is never part of endpointOptions, so sweeping it would
       // unpin a chat every time it received a message.
       expect(saveOptions.unsetFields).not.toHaveProperty('pinned');

@@ -18,6 +18,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   throw new Error('Native acceptance requires macOS or Linux (run inside WSL2 on Windows).');
 }
 const service = path.resolve(codeRoot, 'service/.build-service/src/service-api.js');
+const codeRequire = createRequire(path.join(codeRoot, 'service/package.json'));
 const cli = path.resolve(
   process.env.BYOM_CODE_CLI ?? path.join(codeRoot, 'packages/code/dist/cli.js'),
 );
@@ -109,14 +110,22 @@ try {
     (instance) => instance.stop(),
   );
   const redisPort = await port();
+  const filePort = await port();
+  const toolCallPort = await port();
+  const egressPort = await port();
   const codePort = await port();
   const appPort = await port();
   const codeURL = `http://127.0.0.1:${codePort}/v1`;
+  const fileURL = `http://127.0.0.1:${filePort}`;
+  const toolCallURL = `http://127.0.0.1:${toolCallPort}`;
+  const egressURL = `http://127.0.0.1:${egressPort}`;
   const appURL = `http://127.0.0.1:${appPort}`;
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const privatePem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
   const publicPem = publicKey.export({ format: 'pem', type: 'spki' }).toString();
   const adminToken = secret();
+  const internalToken = secret();
+  const egressSecret = secret();
   await start('redis', process.env.BYOM_REDIS_BIN ?? 'redis-server', [
     '--bind',
     '127.0.0.1',
@@ -127,6 +136,46 @@ try {
     '--appendonly',
     'no',
   ]);
+  const fileServer = await start(
+    'file-server',
+    process.execPath,
+    [path.join(root, 'e2e/byom/file-server.cjs')],
+    {
+      BYOM_FILE_SERVER_PORT: String(filePort),
+      BYOM_IOREDIS_PATH: codeRequire.resolve('ioredis'),
+      CODEAPI_INTERNAL_SERVICE_TOKEN: internalToken,
+      REDIS_PORT: String(redisPort),
+    },
+  );
+  await ready(`${fileURL}/health`, fileServer);
+  const bun = process.env.BYOM_BUN_BIN ?? 'bun';
+  const serviceEnv = {
+    REDIS_HOST: '127.0.0.1',
+    REDIS_PORT: String(redisPort),
+    CODEAPI_INTERNAL_SERVICE_TOKEN: internalToken,
+    CODEAPI_EGRESS_GRANT_SECRET: egressSecret,
+  };
+  const toolCallServer = await start(
+    'tool-call-server',
+    bun,
+    ['run', path.join(codeRoot, 'service/src/tool-call-server.ts')],
+    { ...serviceEnv, TOOL_CALL_SERVER_PORT: String(toolCallPort) },
+    path.join(codeRoot, 'service'),
+  );
+  await ready(`${toolCallURL}/health`, toolCallServer);
+  const egressGateway = await start(
+    'egress-gateway',
+    bun,
+    ['run', path.join(codeRoot, 'service/src/egress-gateway.ts')],
+    {
+      ...serviceEnv,
+      EGRESS_GATEWAY_PORT: String(egressPort),
+      EGRESS_GATEWAY_FILE_SERVER_URL: fileURL,
+      EGRESS_GATEWAY_TOOL_CALL_SERVER_URL: toolCallURL,
+    },
+    path.join(codeRoot, 'service'),
+  );
+  await ready(`${egressURL}/health`, egressGateway);
   const code = await start(
     'codeapi',
     process.execPath,
@@ -147,6 +196,11 @@ try {
       CODEAPI_EXECUTION_MANIFEST_PUBLIC_KEY: publicPem,
       CODEAPI_EXECUTION_PROFILE: 'stateful',
       CODEAPI_RUNTIME_SESSION_MODE: 'affinity',
+      CODEAPI_INTERNAL_SERVICE_TOKEN: internalToken,
+      CODEAPI_EGRESS_GRANT_SECRET: egressSecret,
+      EGRESS_GATEWAY_URL: egressURL,
+      TOOL_CALL_SERVER_URL: toolCallURL,
+      FILE_SERVER_URL: fileURL,
       JOB_TIMEOUT: '10000',
       MAX_REQUESTS: '200',
     },
@@ -157,7 +211,13 @@ try {
     cache: true,
     endpoints: {
       agents: {
-        capabilities: ['tools', 'execute_code', 'stateful_code_sessions'],
+        capabilities: [
+          'tools',
+          'execute_code',
+          'programmatic_tools',
+          'skills',
+          'stateful_code_sessions',
+        ],
         /** BYOM supplies the safe Ask baseline. The endpoint bypass permits a
          * per-turn Accept edits selection without weakening command approvals. */
         toolApproval: { enabled: true, mode: 'bypass' },
@@ -267,6 +327,7 @@ try {
             E2E_BASE_URL: appURL,
             BYOM_ACCEPTANCE_DIR: runDir,
             BYOM_CODE_CLI: cli,
+            LIBRECHAT_CODE_FILE_RELAY_UPSTREAM: egressURL,
             E2E_CHROMIUM_CHANNEL: process.env.E2E_CHROMIUM_CHANNEL ?? '',
           },
         },

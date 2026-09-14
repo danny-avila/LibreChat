@@ -661,6 +661,66 @@ describe('classification.ts', () => {
       expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(true);
     });
 
+    it('creates a Bash runner for an attached workspace without requiring MCP tools', async () => {
+      const result = await buildToolClassification({
+        loadedTools: [],
+        userId: 'user1',
+        agentId: 'agent1',
+        programmaticToolsEnabled: true,
+        codeExecutionEnabled: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example',
+          codeSessionKey: 'session',
+          executionProfile: 'stateful',
+          statefulSessions: true,
+          environmentType: 'attached',
+          environmentId: 'attached',
+          bridgeWorkerId: 'worker-a',
+          codeWorkspace: {
+            environmentId: 'attached',
+            workspaceId: 'project-a',
+            operations: ['execute_command'],
+            programmaticLanguages: ['bash'],
+          },
+        },
+      });
+
+      expect(result.additionalTools.map((tool) => tool.name)).toEqual(['run_tools_with_bash']);
+      expect(result.toolDefinitions.map((definition) => definition.name)).toEqual([
+        'run_tools_with_bash',
+      ]);
+      expect(result.toolRegistry?.get('run_tools_with_bash')?.allowed_callers).toEqual(['direct']);
+    });
+
+    it('keeps the no-MCP fast path when an attached workspace cannot execute Bash', async () => {
+      const result = await buildToolClassification({
+        loadedTools: [],
+        userId: 'user1',
+        agentId: 'agent1',
+        programmaticToolsEnabled: true,
+        codeExecutionEnabled: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example',
+          codeSessionKey: 'session',
+          executionProfile: 'stateful',
+          statefulSessions: true,
+          environmentType: 'attached',
+          environmentId: 'attached',
+          bridgeWorkerId: 'worker-a',
+          codeWorkspace: {
+            environmentId: 'attached',
+            workspaceId: 'project-a',
+            operations: ['read_file'],
+            programmaticLanguages: ['bash'],
+          },
+        },
+      });
+
+      expect(result.additionalTools).toEqual([]);
+      expect(result.toolDefinitions).toEqual([]);
+      expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(false);
+    });
+
     it('should not add PTC when programmatic tools capability is disabled', async () => {
       const loadedTools: GenericTool[] = [createMCPTool('tool1')];
 
