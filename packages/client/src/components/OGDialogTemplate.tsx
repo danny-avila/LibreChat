@@ -67,6 +67,9 @@ type DialogTemplateProps = {
   showCloseButton?: boolean;
   showCancelButton?: boolean;
   onClose?: () => void;
+  /** Forwarded to the underlying dialog content; call `preventDefault()` to skip auto-focusing
+   * the first focusable child when the dialog opens. */
+  onOpenAutoFocus?: (event: Event) => void;
 };
 
 const OGDialogTemplate: ForwardRefExoticComponent<
@@ -87,6 +90,7 @@ const OGDialogTemplate: ForwardRefExoticComponent<
     showCloseButton = false,
     overlayClassName,
     showCancelButton = true,
+    onOpenAutoFocus,
   } = props;
   const isLegacySelection = isSelectionProps(selection);
   const legacySelection = isLegacySelection ? selection : null;
@@ -128,6 +132,7 @@ const OGDialogTemplate: ForwardRefExoticComponent<
         className ?? '',
       )}
       onClick={(e) => e.stopPropagation()}
+      onOpenAutoFocus={onOpenAutoFocus}
     >
       <OGDialogHeader className={cn(headerClassName ?? '')}>
         <OGDialogTitle>{title}</OGDialogTitle>
