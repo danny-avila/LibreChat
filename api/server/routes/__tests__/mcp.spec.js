@@ -38,6 +38,12 @@ const mockLoadMCPServerCatalogs = jest.fn().mockResolvedValue({
   serverTools: new Map(),
   serversWithoutTools: [],
 });
+const defaultMCPAppsPolicy = {
+  enabled: false,
+  legacyHtmlEnabled: true,
+  maxAdmissionRequestsPerMinute: 240,
+  maxPersistedAppBytes: 1048576,
+};
 
 jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
@@ -3609,6 +3615,7 @@ describe('MCP Routes', () => {
         oboIdentityContext: expect.any(Object),
         signal: expect.any(AbortSignal),
         recoveryPolicy,
+        mcpApps: defaultMCPAppsPolicy,
       });
     });
 
@@ -3662,6 +3669,8 @@ describe('MCP Routes', () => {
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
         signal: expect.any(AbortSignal),
+        recoveryPolicy: undefined,
+        mcpApps: defaultMCPAppsPolicy,
       });
     });
 
@@ -3779,6 +3788,8 @@ describe('MCP Routes', () => {
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
         signal: expect.any(AbortSignal),
+        recoveryPolicy: undefined,
+        mcpApps: defaultMCPAppsPolicy,
       });
     });
 

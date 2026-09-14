@@ -1904,6 +1904,7 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ requiresOAuth: true }),
+        'standard',
       );
       expect(reinitMCPServer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1978,6 +1979,7 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ requiresOAuth: true }),
+        'standard',
       );
       expect(reinitMCPServer).toHaveBeenCalledTimes(1);
       expect(reinitMCPServer).toHaveBeenCalledWith(
@@ -2250,6 +2252,7 @@ describe('ToolService - Action Capability Gating', () => {
         expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
+        'standard',
       );
     });
 
@@ -2441,6 +2444,7 @@ describe('ToolService - Action Capability Gating', () => {
         expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
+        'standard',
       );
     });
 
@@ -2541,6 +2545,7 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ url: 'https://config.example.com/mcp' }),
+        'standard',
       );
     });
   });
