@@ -61,7 +61,14 @@ export async function parseWithPdfInspector(
      * concurrent upload of the same filename writes is the same one, so the bytes read
      * here are the only ones this request can be sure it parsed. */
     parsed = await withStableParserInput(data, file.originalname, (path) =>
-      extractPdf(path, data, signal, options?.timeoutMs, options?.maxPageCount),
+      extractPdf(
+        path,
+        data,
+        signal,
+        options?.timeoutMs,
+        options?.maxPageCount,
+        options?.maxRecoveredPageCount,
+      ),
     );
   } catch (error) {
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
@@ -146,6 +153,7 @@ export async function extractPdf(
   signal?: AbortSignal,
   timeoutMs?: number,
   maxPageCount: number = MAX_PDF_PAGES,
+  maxRecoveredPageCount: number = MAX_RECOVERED_PAGES,
 ): Promise<ParsedDocument> {
   const extraction = await extractPagesMarkdownIsolated(filePath, signal, timeoutMs, maxPageCount);
   const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
@@ -192,10 +200,10 @@ export async function extractPdf(
    * probed: the same conservative degradation this function already applies when
    * pdfjs is unavailable. The cap sits above the 157-page document that motivated
    * per-page recovery, so real scanned files are unaffected. */
-  const recoverablePages = droppedPages.slice(0, MAX_RECOVERED_PAGES);
+  const recoverablePages = droppedPages.slice(0, maxRecoveredPageCount);
   if (droppedPages.length > recoverablePages.length) {
     logger.warn(
-      `[pdfInspector] ${droppedPages.length} pages lack extractable markdown; recovering the first ${MAX_RECOVERED_PAGES} and reporting the rest as needing OCR.`,
+      `[pdfInspector] ${droppedPages.length} pages lack extractable markdown; recovering the first ${maxRecoveredPageCount} and reporting the rest as needing OCR.`,
     );
   }
 

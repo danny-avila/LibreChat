@@ -133,8 +133,10 @@ export async function parseDocument({
   maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
   timeoutMs,
   maxPageCount,
+  maxRecoveredPageCount,
   archiveEntrySizeLimit,
   archiveTotalSizeLimit,
+  archiveEntryCountLimit,
   onEngineFallback,
 }: {
   file: Express.Multer.File;
@@ -149,10 +151,14 @@ export async function parseDocument({
   timeoutMs?: number;
   /** Maximum PDF pages to parse. Each engine keeps its own default when omitted. */
   maxPageCount?: number;
+  /** Maximum PDF pages the in-process recovery walk reads. Default in the PDF engine. */
+  maxRecoveredPageCount?: number;
   /** Maximum decompressed bytes allowed for one ZIP entry, in bytes. */
   archiveEntrySizeLimit?: number;
   /** Maximum decompressed bytes allowed across one ZIP archive, in bytes. */
   archiveTotalSizeLimit?: number;
+  /** Maximum entries one ZIP archive may hold. */
+  archiveEntryCountLimit?: number;
   /** Told when an engine recovered from a failure on its own, so the caller can log it
    * under whatever redaction its deployment applies. */
   onEngineFallback?: DocumentExtractionOptions['onEngineFallback'];
@@ -177,8 +183,10 @@ export async function parseDocument({
       extractor.extract(parserFile, signal, {
         timeoutMs,
         maxPageCount,
+        maxRecoveredPageCount,
         archiveEntrySizeLimit,
         archiveTotalSizeLimit,
+        archiveEntryCountLimit,
         onEngineFallback,
       }),
     signal,

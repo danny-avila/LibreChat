@@ -94,10 +94,19 @@ export interface DocumentExtractionOptions {
    * and the PDF engine supplies its own default when a direct caller omits it.
    */
   readonly maxPageCount?: number;
+  /**
+   * Maximum PDF pages whose text layer the in-process recovery walk reads when the
+   * native engine dropped them. Pages past it are reported as needing OCR, so the cap
+   * bounds work rather than deciding what the document is.
+   */
+  readonly maxRecoveredPageCount?: number;
   /** Maximum decompressed bytes allowed for one ZIP entry, in bytes. */
   readonly archiveEntrySizeLimit?: number;
   /** Maximum decompressed bytes allowed across one ZIP archive, in bytes. */
   readonly archiveTotalSizeLimit?: number;
+  /** Maximum number of entries one ZIP archive may hold: every entry costs a stream and
+   * an inflate teardown however little it decompresses to. */
+  readonly archiveEntryCountLimit?: number;
 }
 
 /**

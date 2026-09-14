@@ -492,6 +492,23 @@ describe('documentParser file config', () => {
       /maximum of 10000 pages/,
     );
   });
+
+  /* Counts, not sizes: an archive's entry count and the recovery walk's page count are
+   * compared directly, so the merge must not run them through the megabyte conversion
+   * every limit beside them uses. */
+  it('keeps the archive entry count and the recovery page count as raw counts', () => {
+    const defaults = mergeFileConfig(undefined).documentParser;
+    expect(defaults?.archiveEntryCountLimit).toBe(4096);
+    expect(defaults?.maxRecoveredPageCount).toBe(250);
+
+    const parsed = fileConfigSchema.parse({
+      documentParser: { archiveEntryCountLimit: 12_000, maxRecoveredPageCount: 800 },
+    });
+    const merged = mergeFileConfig(parsed).documentParser;
+
+    expect(merged?.archiveEntryCountLimit).toBe(12_000);
+    expect(merged?.maxRecoveredPageCount).toBe(800);
+  });
 });
 
 describe('stt file config', () => {

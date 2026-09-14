@@ -247,6 +247,35 @@ describe('parseWithAnydoc', () => {
       }
     });
 
+    /* An archive can be refused for how many entries it holds rather than how much they
+     * inflate to, and a deck with per-slide notes, rels and media climbs that count. */
+    test('accepts an entry-heavy archive when the configured count ceiling is raised', async () => {
+      const zip = await JSZip.loadAsync(
+        await fs.promises.readFile(path.join(fixtures, 'structured.docx')),
+      );
+      for (let index = 0; index < 64; index += 1) {
+        zip.file(`word/media/part${index}.bin`, 'x');
+      }
+      const entryHeavyPath = path.join(fixtures, 'anydoc-entry-heavy.docx');
+      await fs.promises.writeFile(entryHeavyPath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+      try {
+        const file = {
+          originalname: 'anydoc-entry-heavy.docx',
+          path: entryHeavyPath,
+          mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        } as Express.Multer.File;
+        await expect(
+          parseWithAnydoc(file, undefined, { archiveEntryCountLimit: 16 }),
+        ).rejects.toThrow(/entry count \(\d+\) exceeds the 16-entry cap/);
+        await expect(
+          parseWithAnydoc(file, undefined, { archiveEntryCountLimit: 256 }),
+        ).resolves.toEqual(expect.objectContaining({ filepath: 'anydoc' }));
+      } finally {
+        await fs.promises.unlink(entryHeavyPath);
+      }
+    });
+
     test('hands a safe document to anydoc', async () => {
       /* The counterpart to the bomb cases: proves the spy above would have fired, so
        * "not called" there is a real guarantee and not a broken mock. */

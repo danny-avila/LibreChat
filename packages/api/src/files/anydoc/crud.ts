@@ -257,6 +257,7 @@ export async function parseWithAnydoc(
     ...(knownOuterContainer && { knownOuterContainer }),
     maxEntryBytes: options?.archiveEntrySizeLimit,
     maxTotalBytes: options?.archiveTotalSizeLimit,
+    maxEntries: options?.archiveEntryCountLimit,
     signal,
   });
   /* Read from the buffer already in hand, before extraction: anydoc converts artwork

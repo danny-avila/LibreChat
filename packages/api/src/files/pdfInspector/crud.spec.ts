@@ -739,6 +739,34 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  /* The cap bounds request time, not what the document is, so a deployment willing to
+   * spend longer on a mostly-scanned PDF can probe further instead of reporting those
+   * pages as needing OCR — which a strict inspection policy would refuse outright. */
+  test('probes further when the configured recovery ceiling is raised', async () => {
+    const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 900 }, (_, i) => [i + 1, 'recovered line']),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')), undefined, {
+          maxRecoveredPageCount: 400,
+        });
+
+        expect(mockPdfjs.requestedPages).toHaveLength(400);
+        expect(result.pagesNeedingOcr).toHaveLength(500);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   /**
    * Whole-document text proves some text exists somewhere, not that each page past the
    * recovery cap had a layer. Taking it there would either claim included pages were

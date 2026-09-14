@@ -630,6 +630,12 @@ const defaultDocumentParserMaxPageCount = 1000;
 const defaultDocumentParserArchiveEntrySizeLimit = mbToBytes(25);
 /** The aggregate decompression ceiling matches the archive guard's direct-call default. */
 const defaultDocumentParserArchiveTotalSizeLimit = mbToBytes(100);
+/** The entry-count ceiling matches the archive guard's direct-call default: every entry
+ * costs a stream and an inflate teardown however little it decompresses to. */
+const defaultDocumentParserArchiveEntryCountLimit = 4096;
+/** Pages the in-process PDF recovery walk reads, matching the engine's own default. A
+ * page costs ~20ms to recover and cannot be batched, which is what this bounds. */
+const defaultDocumentParserMaxRecoveredPageCount = 250;
 const defaultTokenLimit = 100000;
 const defaultContextSizeLimit = mbToBytes(128);
 const defaultContextCharLimit = 1_000_000;
@@ -688,6 +694,8 @@ export const fileConfig = {
     fileSizeLimit: defaultDocumentParserSizeLimit,
     timeoutMs: defaultDocumentParserTimeoutMs,
     maxPageCount: defaultDocumentParserMaxPageCount,
+    archiveEntryCountLimit: defaultDocumentParserArchiveEntryCountLimit,
+    maxRecoveredPageCount: defaultDocumentParserMaxRecoveredPageCount,
   },
   text: {
     supportedMimeTypes: defaultTextMimeTypes,
@@ -780,6 +788,13 @@ export const fileConfigSchema = z.object({
       archiveEntrySizeLimit: z.number().min(0).optional(),
       /** Maximum decompressed bytes allowed across one ZIP archive, in megabytes. */
       archiveTotalSizeLimit: z.number().min(0).optional(),
+      /** Maximum entries one ZIP archive may hold. Every entry costs a stream and an
+       * inflate teardown, so this bounds walk time rather than decompressed size. */
+      archiveEntryCountLimit: z.number().int().min(0).optional(),
+      /** Maximum PDF pages the in-process recovery walk reads when the native engine
+       * dropped them. Pages past it are reported as needing OCR rather than probed, so
+       * raising it trades request time for completeness on a mostly-scanned document. */
+      maxRecoveredPageCount: z.number().int().min(0).optional(),
     })
     .optional(),
   text: z
