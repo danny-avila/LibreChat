@@ -1,6 +1,7 @@
 import { Constants } from '@librechat/agents';
 import {
   CODE_APPROVAL_MODES,
+  CodeApprovalModeError,
   getAllowedCodeApprovalModes,
   resolveCodeApprovalMode,
   resolveCodePermissionDecision,
@@ -14,6 +15,7 @@ import type {
 } from 'librechat-data-provider';
 import type { HookCallback } from '@librechat/agents';
 import type { ResolvedToolApprovalHook } from './hooks';
+import type { AutoReviewer } from './reviewer';
 import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
@@ -216,7 +218,9 @@ export function resolveAttachedCodeApprovalMode(
   requested: unknown,
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings>,
   approvalsEnabled = true,
+  reviewerConfigured = false,
 ): CodeApprovalMode | undefined {
+  if (requested === 'auto' && !reviewerConfigured) throw new CodeApprovalModeError();
   if (!approvalsEnabled) {
     if (requested === 'ask') {
       return undefined;
@@ -239,7 +243,7 @@ export function resolveAttachedCodeApprovalMode(
       });
     } catch (error) {
       /** Unattended execution requires every known target to permit the mode. */
-      if (requested === 'fullAccess') throw error;
+      if (requested === 'fullAccess' || requested === 'auto') throw error;
       rejection = error as Error;
     }
   }
@@ -304,8 +308,9 @@ export function createAttachedCodeEnvironmentPolicyHook(
   attachedAgentIds: ReadonlySet<string>,
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
   mode?: CodeApprovalMode,
+  reviewer?: AutoReviewer,
 ): HookCallback<'PreToolUse'> {
-  return async (input) => {
+  return async (input, signal) => {
     let category: PermissionCategory | undefined;
     if (BYOM_FILE_WRITE_TOOLS.has(input.toolName)) {
       category = 'fileWrite';
@@ -341,6 +346,18 @@ export function createAttachedCodeEnvironmentPolicyHook(
       category,
       mode,
     );
+    if (
+      decision === 'ask' &&
+      mode === 'auto' &&
+      reviewer != null &&
+      getAllowedCodeApprovalModes({
+        environment: 'attached',
+        allowedModes: ['auto'],
+        configSchema: settingsByAgentId.get(input.executingAgentId)?.configSchema,
+        settings: settingsByAgentId.get(input.executingAgentId)?.settings,
+      }).includes('auto')
+    )
+      return reviewer.review(input, signal);
     if (decision === 'allow') {
       return { decision };
     }

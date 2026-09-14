@@ -710,6 +710,14 @@ endpoints:
   #     deny: ["mcp:*:delete_*"] # Deny rules always take precedence
   #     ask: ["mcp:*:*"]
   #     reason: "Review {tool} before it runs."
+  #     # Offer Auto review for attached machines that permit unattended execution.
+  #     # Use mode: bypass for the endpoint fallback; explicit ask/deny rules still win.
+  #     # Review failures prompt the user. Custom policy hooks keep machine actions manual.
+  #     reviewer:
+  #       endpoint: openAI # Built-in or configured custom endpoint; uses its credentials
+  #       model: gpt-5.6-luna
+  #       timeoutMs: 30000
+  #       maxInputChars: 60000
   #   # (optional) Persist Agent runs paused for approval or Ask User. MongoDB is the durable default.
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)

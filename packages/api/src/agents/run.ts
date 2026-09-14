@@ -60,6 +60,7 @@ import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type { RunFileSession } from './files/session';
+import type { AutoReviewer } from './hitl/reviewer';
 import type { RunFadingTiers } from './fading';
 import type * as t from '~/types';
 import {
@@ -111,6 +112,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { resolveConfigHeaders, resolveModelHeaders } from '~/utils/headers';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
+import { getRegisteredToolApprovalHookCount } from './hitl/hooks';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -1592,6 +1594,7 @@ export async function createRun({
   eventActorCheckpointing = false,
   hitlCapable = false,
   resolvedToolApprovalHooks,
+  autoReviewer,
   toolInputValidationErrors,
   sessionStartSource,
   streaming = true,
@@ -1607,6 +1610,7 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   codeApprovalMode?: CodeApprovalMode;
+  autoReviewer?: AutoReviewer;
   user?: IUser;
   tenantId?: string;
   /**
@@ -2055,6 +2059,7 @@ export async function createRun({
     requestedCodeApprovalMode,
     attachedCodeEnvironmentSettings,
     agentsEndpointConfig?.toolApproval?.enabled !== false,
+    agentsEndpointConfig?.toolApproval?.reviewer != null,
   );
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
@@ -2217,10 +2222,18 @@ export async function createRun({
           ...(attachedCodeEnvironmentAgentIds.size > 0
             ? [
                 {
+                  // Let the reviewer return ask before the SDK can discard a timed-out hook.
+                  timeout:
+                    (appConfig?.endpoints?.agents?.toolApproval?.reviewer?.timeoutMs ?? 30000) +
+                    5000,
                   hook: createAttachedCodeEnvironmentPolicyHook(
                     attachedCodeEnvironmentAgentIds,
                     attachedCodeEnvironmentSettings,
                     codeApprovalMode,
+                    (resolvedToolApprovalHooks?.length ?? getRegisteredToolApprovalHookCount()) ===
+                      0 && getPluginHookSource()?.hasHooks() !== true
+                      ? autoReviewer
+                      : undefined,
                   ),
                 },
               ]
@@ -2310,15 +2323,41 @@ export async function createRun({
   }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
-    hooks.register('PostToolBatch', { hooks: [steering.hook] });
+    hooks.register('PostToolBatch', {
+      hooks: [
+        async (input, hookSignal) => {
+          const result = await steering.hook(input, hookSignal);
+          if (result.injectedMessages?.length) autoReviewer?.invalidate();
+          return result;
+        },
+      ],
+    });
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
-      hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+      const preemptHook = steering.preemptHook;
+      hooks.register('PreemptBoundary', {
+        hooks: [
+          async (input, signal) => {
+            const result = await preemptHook(input, signal);
+            if (result.injectedMessages?.length) autoReviewer?.invalidate();
+            return result;
+          },
+        ],
+      });
     }
     if (steering.terminalHook != null && isSteerTerminalContinuationSupported()) {
       const stopFinalizeRegistry = hooks as unknown as {
         register: (event: 'StopFinalize', matcher: { hooks: TerminalSteerHook[] }) => () => void;
       };
-      stopFinalizeRegistry.register('StopFinalize', { hooks: [steering.terminalHook] });
+      const terminalHook = steering.terminalHook;
+      stopFinalizeRegistry.register('StopFinalize', {
+        hooks: [
+          async (...args) => {
+            const result = await terminalHook(...args);
+            if (result.injectedMessages?.length) autoReviewer?.invalidate();
+            return result;
+          },
+        ],
+      });
     }
   }
   /**

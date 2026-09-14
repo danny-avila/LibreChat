@@ -45,6 +45,8 @@ export type ToolApprovalHookFactory = (
 ) => ToolApprovalHook | undefined;
 
 export interface ResolvedToolApprovalHook {
+  /** SDK deadline must exceed any internal review timeout. */
+  timeout?: number;
   hook: ToolApprovalHook;
   matcher?: string;
   /** Optional admission-only scope for hooks that inspect the executing agent at runtime. */

@@ -1006,10 +1006,20 @@ export const toolApprovalHookConfigSchema = z.object({
 
 export type TToolApprovalHookConfig = z.infer<typeof toolApprovalHookConfigSchema>;
 
+/** Separate model used to review attached-machine actions before execution. */
+export const toolReviewerConfigSchema = z.object({
+  endpoint: z.string().min(1),
+  model: z.string().min(1),
+  timeoutMs: z.number().int().min(1000).max(120000).default(30000),
+  maxInputChars: z.number().int().min(1000).max(200000).default(60000),
+});
+export type TToolReviewerConfig = z.infer<typeof toolReviewerConfigSchema>;
+
 export const toolApprovalPolicySchema = z
   .object({
     enabled: z.boolean().optional(),
     mode: toolApprovalModeSchema.optional(),
+    reviewer: toolReviewerConfigSchema.optional(),
     allow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     ask: z.array(z.string()).optional(),

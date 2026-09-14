@@ -79,6 +79,20 @@ export default function useCodeApprovalMode(
       fullAccessAllowed &&= environmentModes.includes('fullAccess');
     }
     if (fullAccessAllowed) allowed.add('fullAccess');
+    if (
+      endpointModes?.includes('auto') &&
+      reachable.complete &&
+      codeEnvironments.every((environment) => environment != null) &&
+      attachedEnvironments.every((environment) =>
+        getAllowedCodeApprovalModes({
+          environment: 'attached',
+          allowedModes: CODE_APPROVAL_MODES,
+          configSchema: environment.configSchema,
+          settings: environment.settings,
+        }).includes('auto'),
+      )
+    )
+      allowed.add('auto');
     return CODE_APPROVAL_MODES.filter((mode) => allowed.has(mode));
   }, [attachedEnvironments, available, codeEnvironments, endpointModes, reachable.complete]);
   const requested = conversation?.codeApprovalMode ?? 'ask';

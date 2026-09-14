@@ -83,7 +83,9 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
       /** Only advertise Accept edits when the endpoint fallback cannot force every
        * unmatched tool back to Ask/Deny. Explicit rules and hooks remain free to
        * tighten individual actions after the user selects the broader mode. */
-      let approvalModes = [...CODE_APPROVAL_MODES];
+      let approvalModes = CODE_APPROVAL_MODES.filter(
+        (mode) => mode !== 'auto' || toolApproval?.reviewer != null,
+      );
       if (toolApproval?.enabled === false) {
         approvalModes = [];
       } else if (toolApproval?.enabled === true && toolApproval.mode !== 'bypass') {

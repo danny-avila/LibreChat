@@ -54,6 +54,8 @@ const {
   isHITLEnabled,
   resolveToolApprovalPolicy,
   buildToolApprovalHooks,
+  createConfiguredAutoReviewer,
+  reviewerRunMessages,
   buildToolApprovalExecutionConfig,
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
@@ -1998,6 +2000,7 @@ class AgentClient extends BaseClient {
       this.options.req.body.codeApprovalMode,
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
+      agentsEConfig?.toolApproval?.reviewer != null,
     );
     const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
 
@@ -4417,6 +4420,7 @@ class AgentClient extends BaseClient {
         this.options.req.body.codeApprovalMode,
         attachedCodeEnvironmentSettings,
         agentsEConfig?.toolApproval?.enabled !== false,
+        agentsEConfig?.toolApproval?.reviewer != null,
       );
       const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
         endpoint: agentsEConfig?.toolApproval,
@@ -4882,6 +4886,22 @@ class AgentClient extends BaseClient {
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
           resolvedToolApprovalHooks,
+          autoReviewer: createConfiguredAutoReviewer({
+            req: this.options.req,
+            db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+            messages: () => reviewerRunMessages(messages, run?.Graph?.messages),
+            onUsage: (response, model, provider, endpointTokenConfig) =>
+              this.recordActivityLabelUsage(
+                [response],
+                model,
+                endpointTokenConfig,
+                false,
+                undefined,
+                provider,
+                undefined,
+                'auto-review',
+              ),
+          }),
           toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
@@ -5643,6 +5663,23 @@ class AgentClient extends BaseClient {
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
+        autoReviewer: createConfiguredAutoReviewer({
+          req: this.options.req,
+          db,
+          // run.resume restores checkpoint messages before it admits a new tool call.
+          messages: () => run?.Graph?.messages ?? [],
+          onUsage: (response, model, provider, endpointTokenConfig) =>
+            this.recordActivityLabelUsage(
+              [response],
+              model,
+              endpointTokenConfig,
+              false,
+              undefined,
+              provider,
+              undefined,
+              'auto-review',
+            ),
+        }),
         conversationId: this.conversationId,
         modelCallbacks: [
           modelBoundCallback,

@@ -79,12 +79,13 @@ export function buildHITLRunWiring(
 
   // Host-registered programmatic hooks — context-aware, layered after the static-policy hook.
   const programmaticHooks = resolvedProgrammaticHooks ?? buildToolApprovalHooks(context);
-  for (const { hook, matcher } of programmaticHooks) {
+  for (const { hook, matcher, timeout } of programmaticHooks) {
     if (matcher == null) {
-      registry.register('PreToolUse', { hooks: [hook] });
+      registry.register('PreToolUse', { hooks: [hook], ...(timeout != null && { timeout }) });
       continue;
     }
     registry.register('PreToolUse', {
+      ...(timeout != null && { timeout }),
       hooks: [
         async (input, signal) => {
           let regex: RegExp;

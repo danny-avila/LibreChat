@@ -23,6 +23,11 @@ const modeOptions: Record<
     label: 'com_ui_code_approval_ask',
     description: 'com_ui_code_approval_ask_description',
   },
+  auto: {
+    icon: FileQuestionMark,
+    label: 'com_ui_code_approval_auto',
+    description: 'com_ui_code_approval_auto_description',
+  },
   acceptEdits: {
     icon: FilePen,
     label: 'com_ui_code_approval_accept_edits',

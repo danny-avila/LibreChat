@@ -47,6 +47,21 @@ describe('CodeApprovalMenu', () => {
     expect(update(conversation)).toEqual({ ...conversation, codeApprovalMode: 'acceptEdits' });
   });
 
+  test('selects auto review and stores it on the conversation', async () => {
+    mockUseCodeApprovalMode.mockReturnValue({
+      available: true,
+      modes: ['ask', 'auto'],
+      selected: 'ask',
+    });
+    renderMenu();
+    await userEvent.click(screen.getByTestId('code-approval-mode'));
+    await userEvent.click(await screen.findByText('com_ui_code_approval_auto'));
+    expect(mockSetConversation.mock.calls[0][0](conversation)).toEqual({
+      ...conversation,
+      codeApprovalMode: 'auto',
+    });
+  });
+
   test('offers every mode as a radio and marks the selected one', async () => {
     renderMenu();
 

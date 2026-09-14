@@ -58,6 +58,31 @@ describe('useCodeApprovalMode', () => {
     });
   });
 
+  test('offers auto review only with both machine grants and server capability', () => {
+    const stateful = mockUseGetAgentsConfig().agentsConfig.statefulCodeSessions;
+    stateful.approvalModes = ['ask', 'auto'];
+    const { result, rerender } = renderHook(() =>
+      useCodeApprovalMode({ ...conversation, codeApprovalMode: 'auto' }),
+    );
+    expect(result.current.modes).not.toContain('auto');
+    stateful.environments = [
+      {
+        ...stateful.environments[0],
+        configSchema: {
+          permissions: {
+            fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
+            commandExecution: { allowed: ['ask', 'allow'], default: 'ask' },
+          },
+        },
+      },
+    ];
+    rerender();
+    expect(result.current.selected).toBe('auto');
+    stateful.approvalModes = ['ask'];
+    rerender();
+    expect(result.current.selected).toBe('ask');
+  });
+
   test('returns the selected mode when the attached environment permits it', () => {
     const { result } = renderHook(() => useCodeApprovalMode(conversation));
 
