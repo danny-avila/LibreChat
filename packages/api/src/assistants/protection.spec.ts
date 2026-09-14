@@ -223,6 +223,36 @@ describe('Assistants model-bound content preflight', () => {
     expect(getFiles).not.toHaveBeenCalled();
   });
 
+  /** Run authorization may already have read the assistant; inspecting that
+   *  snapshot avoids a second provider read and checks exactly what was authorized. */
+  it('inspects the assistant it is handed instead of reading it again', async () => {
+    const { openai } = createOpenAI({ assistant: { instructions: 'Safe', tools: [] } });
+
+    await expect(
+      preflightAssistantRunContent({
+        config: {
+          filters: {
+            agentInstructions: {
+              pii: {
+                fields: ['instructions'],
+                starterPatterns: [],
+                customPatterns: [
+                  { id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' },
+                ],
+              },
+            },
+          },
+        },
+        openai,
+        user: { id: 'user-1' },
+        assistantId: 'asst-1',
+        assistant: { instructions: 'Authorized PRIVATE-INSTRUCTION', tools: [] },
+        getFiles,
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_block' });
+    expect(openai.beta.assistants.retrieve).not.toHaveBeenCalled();
+  });
+
   it('blocks persisted assistant instructions under a newly enabled policy', async () => {
     const { openai } = createOpenAI({
       assistant: {

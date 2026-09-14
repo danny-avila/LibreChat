@@ -75,6 +75,8 @@ interface PreflightAssistantRunContentInput {
   readonly openai: AssistantOpenAIClient;
   readonly user?: CanonicalFileInspectionUser;
   readonly assistantId: string;
+  /** The assistant already read for this run (by run authorization); saves a second provider read. */
+  readonly assistant?: AssistantContentInput;
   readonly threadId?: string;
   readonly getFiles: GetCanonicalFilesForInspection;
 }
@@ -298,6 +300,7 @@ export async function preflightAssistantRunContent({
   openai,
   user,
   assistantId,
+  assistant: authorizedAssistant,
   threadId,
   getFiles,
   onTraversalFailure,
@@ -312,7 +315,9 @@ export async function preflightAssistantRunContent({
   }
 
   const [assistant, storedMessages] = await Promise.all([
-    inspectAssistant ? openai.beta.assistants.retrieve(assistantId) : Promise.resolve(undefined),
+    inspectAssistant
+      ? (authorizedAssistant ?? openai.beta.assistants.retrieve(assistantId))
+      : Promise.resolve(undefined),
     inspectThread ? loadThreadUserMessages(openai, threadId) : Promise.resolve([]),
   ]);
 

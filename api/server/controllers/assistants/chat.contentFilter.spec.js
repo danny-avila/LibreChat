@@ -456,6 +456,32 @@ describe.each([
     expect(mockInitThread).toHaveBeenCalledTimes(1);
   });
 
+  it('reads the assistant once when authorization and content preflight both need it', async () => {
+    req.config.filters = {
+      agentInstructions: {
+        pii: {
+          fields: ['instructions'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      },
+    };
+    mockGetRoleByName.mockResolvedValue(
+      roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
+    );
+    mockRetrieveAssistant.mockResolvedValue({
+      id: 'asst-1',
+      instructions: 'Safe assistant',
+      tools: [{ type: 'file_search' }],
+    });
+    mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+
+    await chatController(req, res);
+
+    expect(mockRetrieveAssistant).toHaveBeenCalledTimes(1);
+    expect(mockInitThread).toHaveBeenCalledTimes(1);
+  });
+
   it('does not read remote policy state for explicitly inactive selections', async () => {
     mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
 

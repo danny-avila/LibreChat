@@ -227,6 +227,7 @@ const chatV2 = async (req, res) => {
         openai,
         user: req.user,
         assistantId: assistant_id,
+        assistant: runAuthorization.assistant,
         threadId: _thread_id,
         getFiles,
       });

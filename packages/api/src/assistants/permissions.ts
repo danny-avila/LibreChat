@@ -27,7 +27,12 @@ export function createAssistantToolPermissionErrorBody(
   };
 }
 
-export interface AuthorizeAssistantRunParams {
+/** The part of a retrieved assistant this check reads. */
+export interface AssistantToolsSnapshot {
+  tools?: AssistantRunTools | null;
+}
+
+export interface AuthorizeAssistantRunParams<TAssistant extends AssistantToolsSnapshot> {
   req?: FindDeniedAssistantRunToolsParams['req'];
   res: Pick<Response, 'status' | 'json'>;
   getRoleByName: FindDeniedAssistantRunToolsParams['getRoleByName'];
@@ -35,18 +40,18 @@ export interface AuthorizeAssistantRunParams {
   openai: {
     beta: {
       assistants: {
-        retrieve: (
-          assistantId: string,
-        ) => Promise<{ tools?: AssistantRunTools | null } | null | undefined>;
+        retrieve: (assistantId: string) => Promise<TAssistant | null | undefined>;
       };
     };
   };
   assistantId: string;
 }
 
-export interface AssistantRunAuthorization {
+export interface AssistantRunAuthorization<TAssistant extends AssistantToolsSnapshot> {
   /** A 403 was written; the controller must not continue. */
   refused: boolean;
+  /** The assistant read for the check, when a missing grant required one; later reads for the same run reuse it. */
+  assistant?: TAssistant;
   /**
    * Applies the authorized snapshot to the run request. When the role lacked a
    * grant, the run is pinned to the tools checked here, so a tool added to the
@@ -61,23 +66,23 @@ export interface AssistantRunAuthorization {
  * already built: the assistant is retrieved only when the role lacks a grant,
  * and a denial is answered here with a 403 before any run side effect.
  */
-export async function authorizeAssistantRun({
+export async function authorizeAssistantRun<TAssistant extends AssistantToolsSnapshot>({
   req,
   res,
   getRoleByName,
   openai,
   assistantId,
-}: AuthorizeAssistantRunParams): Promise<AssistantRunAuthorization> {
-  let checkedTools: AssistantRunTools | undefined;
+}: AuthorizeAssistantRunParams<TAssistant>): Promise<AssistantRunAuthorization<TAssistant>> {
+  let assistant: TAssistant | undefined;
   const deniedTools = await findDeniedAssistantRunTools({
     req,
     getRoleByName,
     getTools: async () => {
-      const tools = (await openai.beta.assistants.retrieve(assistantId))?.tools ?? undefined;
-      checkedTools = tools ?? undefined;
-      return tools;
+      assistant = (await openai.beta.assistants.retrieve(assistantId)) ?? undefined;
+      return assistant?.tools ?? undefined;
     },
   });
+  const checkedTools = assistant?.tools ?? undefined;
 
   if (deniedTools.length > 0) {
     logger.warn('[assistantsRun] Refused a run whose assistant stores tools the role denies', {
@@ -91,6 +96,7 @@ export async function authorizeAssistantRun({
 
   return {
     refused: false,
+    assistant,
     applyToRunBody: (body) => (checkedTools ? { ...body, tools: checkedTools } : body),
   };
 }

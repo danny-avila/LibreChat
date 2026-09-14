@@ -49,6 +49,7 @@ describe('authorizeAssistantRun', () => {
 
     expect(authorization.refused).toBe(false);
     expect(authorization.applyToRunBody(body)).toBe(body);
+    expect(authorization.assistant).toBeUndefined();
     expect(retrieve).not.toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
   });
@@ -86,6 +87,7 @@ describe('authorizeAssistantRun', () => {
     const authorization = await run();
 
     expect(authorization.refused).toBe(false);
+    expect(authorization.assistant).toEqual({ id: 'asst_1', tools });
     expect(authorization.applyToRunBody({ assistant_id: 'asst_1', model: 'gpt-4o' })).toEqual({
       assistant_id: 'asst_1',
       model: 'gpt-4o',
