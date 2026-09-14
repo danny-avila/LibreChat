@@ -269,6 +269,27 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
   return refs.length > 0 ? refs : undefined;
 }
 
+export function mergeQueuedTurnFileMetadata(
+  receiptFiles: TMessage['files'],
+  optimisticFiles: TMessage['files'],
+): TMessage['files'] {
+  if (receiptFiles == null || receiptFiles.length === 0) {
+    return receiptFiles;
+  }
+  const optimisticById = new Map(
+    (optimisticFiles ?? []).flatMap((file) =>
+      file.file_id != null ? [[file.file_id, file] as const] : [],
+    ),
+  );
+  return receiptFiles.map((file) => {
+    const optimistic = file.file_id == null ? undefined : optimisticById.get(file.file_id);
+    if (file.llmDeliveryPath != null || optimistic?.llmDeliveryPath == null) {
+      return file;
+    }
+    return { ...file, llmDeliveryPath: optimistic.llmDeliveryPath };
+  });
+}
+
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
@@ -306,6 +327,7 @@ function reconcileServerQueuedTurns(
     } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
       status = receipt.status;
     }
+    const files = mergeQueuedTurnFileMetadata(receipt.files, optimistic?.files);
     return [
       {
         id: optimistic?.id ?? receipt.clientRequestId,
@@ -316,7 +338,7 @@ function reconcileServerQueuedTurns(
         ...(receipt.expectedPredecessorCreatedAt != null && {
           expectedPredecessorCreatedAt: receipt.expectedPredecessorCreatedAt,
         }),
-        ...(receipt.files != null && receipt.files.length > 0 && { files: receipt.files }),
+        ...(files != null && files.length > 0 && { files }),
         ...(receipt.quotes != null && receipt.quotes.length > 0 && { quotes: receipt.quotes }),
         ...(receipt.manualSkills != null &&
           receipt.manualSkills.length > 0 && {

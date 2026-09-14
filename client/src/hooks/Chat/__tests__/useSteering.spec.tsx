@@ -4,8 +4,8 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } f
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import useSteering, { mergeQueuedTurnFileMetadata } from '../useSteering';
 import useQueueDrain from '../useQueueDrain';
-import useSteering from '../useSteering';
 import store from '~/store';
 
 const CONVO_ID = 'convo-steer-ui';
@@ -133,6 +133,29 @@ describe('useSteering', () => {
     mockMessages = undefined;
     mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
+  });
+
+  it('keeps optimistic delivery metadata when a legacy receipt omits it', () => {
+    expect(
+      mergeQueuedTurnFileMetadata(
+        [{ file_id: 'stored-doc', filename: 'report.pdf', type: 'application/pdf' }],
+        [
+          {
+            file_id: 'stored-doc',
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            llmDeliveryPath: 'text',
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        file_id: 'stored-doc',
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        llmDeliveryPath: 'text',
+      },
+    ]);
   });
 
   describe('effectiveAction', () => {
