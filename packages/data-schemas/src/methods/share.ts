@@ -489,17 +489,24 @@ function applyShareFileRoute(
   const fileId = file.file_id;
   if (typeof fileId === 'string') {
     const snapshot = snapshots.get(fileId);
-    if (snapshot?.hasTextPreview === true) {
-      const next: t.SharedFile = { ...file, hasTextPreview: true };
-      for (const key of ['filepath', 'preview', 'uri', 'url'] as const) {
-        delete next[key];
-      }
-      return next;
-    }
+    /* A snapshot can be both: its text lives in MongoDB and its original document in
+     * storage. The share-scoped route is offered whenever the snapshot kept a stored
+     * object, so a record stored as its text alone still exposes nothing to load. */
     if (snapshot) {
+      const next: t.SharedFile = { ...file };
+      if (snapshot.hasTextPreview === true) {
+        next.hasTextPreview = true;
+      } else {
+        delete next.hasTextPreview;
+      }
+      if (snapshot.filepath == null) {
+        for (const key of ['filepath', 'preview', 'uri', 'url'] as const) {
+          delete next[key];
+        }
+        return next;
+      }
       const route = shareFileRoute(shareId, fileId);
-      const next: t.SharedFile = { ...file, filepath: route };
-      delete next.hasTextPreview;
+      next.filepath = route;
       for (const key of ['preview', 'uri', 'url'] as const) {
         if (file[key] !== undefined) {
           next[key] = route;

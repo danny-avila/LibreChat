@@ -18,6 +18,7 @@ import {
   documentParserMimeTypes,
   isBedrockDocumentType,
   isExplicitMimeConfig,
+  isPermissiveMimeConfig,
   codeInterpreterMimeTypes,
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,

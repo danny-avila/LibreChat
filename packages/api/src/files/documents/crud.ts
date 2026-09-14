@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import { megabyte, DocumentParser } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { pdfInspectorSupportedMimeTypes, parseWithPdfInspector } from '~/files/pdfInspector';
+import { NoDocumentTextError, withParserAdmission } from './nativeProcess';
 import { anydocFormatFromType, parseWithAnydoc } from '~/files/anydoc';
-import { withParserAdmission } from './nativeProcess';
 
 /**
  * One local extraction engine, as the dispatcher sees it.
@@ -78,21 +78,6 @@ export class ParserInputLimitError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ParserInputLimitError';
-  }
-}
-
-/**
- * The parsers' way of reporting that a document held no text at all: both engines
- * return a result, and this refuses it rather than storing an empty extraction. Coded
- * because the upload router treats it as an outcome — the case a configured OCR service
- * exists for — while a genuine parser failure has to keep surfacing as itself.
- */
-export class NoDocumentTextError extends Error {
-  readonly code = 'NO_DOCUMENT_TEXT';
-
-  constructor() {
-    super('No text found in document');
-    this.name = 'NoDocumentTextError';
   }
 }
 

@@ -85,6 +85,7 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
+  filePath,
   relevance,
   pages,
   pageRelevance,
@@ -106,6 +107,15 @@ export default function FilePreviewDialog({
   const showParsedText =
     (deliveryPath === 'text' || source === FileSources.text || hasTextPreview === true) &&
     isParsedDocument(fileType, fileName);
+  /**
+   * Whether the record is its text and nothing else. The parser used to be the whole
+   * record, so those carry `FileSources.text` and have no object to download; a shared
+   * snapshot of one carries no `filepath` either. A record written since storage keeps
+   * the original document is both, and hiding its download control would strip the only
+   * way to get the document back.
+   */
+  const isTextOnlyRecord =
+    source === FileSources.text || (hasTextPreview === true && filePath == null);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -264,7 +274,7 @@ export default function FilePreviewDialog({
             <OGDialogDescription className="min-w-0 truncate">
               {metaParts.join(' · ')}
             </OGDialogDescription>
-            {fileId && !showParsedText && (
+            {fileId && !isTextOnlyRecord && (
               <button
                 type="button"
                 onClick={handleDownload}

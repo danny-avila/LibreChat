@@ -54,6 +54,23 @@ export class ParserOutputLimitError extends Error {
 }
 
 /**
+ * A parser read the document and it held no extractable text: every engine reports this
+ * by returning nothing, and every caller refuses the empty extraction rather than
+ * storing it. Coded because the upload router treats it as an outcome — the case a
+ * configured OCR service exists for — while a genuine parser failure keeps surfacing as
+ * itself. Defined here, beside the other parse-boundary refusal, so both engines and
+ * the dispatcher can throw it without importing each other.
+ */
+export class NoDocumentTextError extends Error {
+  readonly code = 'NO_DOCUMENT_TEXT';
+
+  constructor(message = 'No text found in document') {
+    super(message);
+    this.name = 'NoDocumentTextError';
+  }
+}
+
+/**
  * Matched on the code rather than the class: it arrives from a child process as a wire
  * field, and the same string is what the upload path reads to decide the response.
  */

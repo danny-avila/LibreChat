@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, DocumentParser } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { isParserOutputLimit, NoDocumentTextError } from '../documents/nativeProcess';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
-import { isParserOutputLimit } from '../documents/nativeProcess';
 import { ConcurrencyLimitError } from '~/utils/promise';
 import { mayEmbedMedia } from '../documents/media';
 import { extractMarkdownIsolated } from './native';
@@ -270,8 +270,11 @@ export async function parseWithAnydoc(
     throw new Error(`anydoc failed to extract text from "${name}": ${message}`);
   }
 
+  /* Coded, not generic: a document whose only content is an embedded scan converts to
+   * nothing, and that is the case configured OCR exists for. A plain error here would
+   * reach the upload router as a parse failure and refuse the document instead. */
   if (!markdown.trim()) {
-    throw new Error(`anydoc extracted no text from "${name}".`);
+    throw new NoDocumentTextError(`anydoc extracted no text from "${name}".`);
   }
 
   return {
