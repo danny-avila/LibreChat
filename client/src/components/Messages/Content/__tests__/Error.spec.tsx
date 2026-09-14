@@ -185,6 +185,29 @@ describe('Error — reader-facing provider and fallback copy', () => {
     expectReadable();
   });
 
+  /** `getUserFacingRequestError` prefixes the SDK's message, which for Anthropic embeds the body. */
+  it('keeps the reason from a provider body embedded in the persisted text', () => {
+    const reason = 'prompt is too long: 250000 tokens > 200000 maximum';
+    const body = JSON.stringify({
+      type: 'error',
+      error: { type: 'invalid_request_error', message: reason },
+      request_id: 'req_011',
+    });
+    renderError(`An error occurred while processing the request: 400 ${body}`, {
+      endpoint: EModelEndpoint.anthropic,
+      model: 'claude-sonnet-4-5',
+    } as TMessage);
+
+    expect(
+      screen.getByText(localized('com_error_provider_failed', 'Anthropic')),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`An error occurred while processing the request: 400 ${reason}`),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('{');
+    expectReadable();
+  });
+
   it('shows the complete long provider message after its disclosure is opened', () => {
     const providerText =
       `The upstream gateway rejected the request. ${'Retry advice and a stack frame repeated to exceed the client truncation cap. '.repeat(8)}`.trim();

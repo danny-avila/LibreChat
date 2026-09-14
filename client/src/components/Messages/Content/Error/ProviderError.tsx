@@ -99,12 +99,15 @@ export function UnclassifiedError({ json, text, message }: UnclassifiedErrorProp
   const localize = useLocalize();
   const { provider } = useErrorEndpoint(message);
   const jsonString = extractJson(text);
-  const remainder = jsonString !== '' ? text.replace(jsonString, '') : text;
-  const prose =
-    stripLangChainTroubleshootingUrl(remainder).trim() ||
-    readProviderError(json) ||
-    readString(json, 'message') ||
-    readString(json, 'info');
+  const payloadProse =
+    readProviderError(json) ?? readString(json, 'message') ?? readString(json, 'info');
+  /**
+   * The payload is swapped for its own message rather than dropped: a failed run persists a
+   * provider error as `<base message>: <status> <body>`, and the body is where the reason is.
+   */
+  const withoutPayload =
+    jsonString !== '' ? text.replace(jsonString, () => payloadProse ?? '') : text;
+  const prose = stripLangChainTroubleshootingUrl(withoutPayload).trim() || payloadProse;
   /** A payload that told us nothing usable is its own statement; otherwise name who failed. */
   const providerHeadline =
     provider != null

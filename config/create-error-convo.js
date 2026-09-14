@@ -398,6 +398,18 @@ const ERROR_CASES = [
     'LangChain code without copy (URL stripped, provider text kept)',
     `Failed to parse the model output${troubleshooting('OUTPUT_PARSING_FAILURE')}`,
   ),
+  /** A failed run persists `<base message>: <SDK message>`, and Anthropic's SDK message embeds the body. */
+  textCase(
+    'Provider body embedded after the failed-run prefix',
+    `An error occurred while processing the request: 400 ${JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'invalid_request_error',
+        message: 'prompt is too long: 250000 tokens > 200000 maximum',
+      },
+      request_id: 'req_011',
+    })}`,
+  ),
   textCase('Plain provider text (default fallback)', 'Error: connect ETIMEDOUT 104.18.7.192:443'),
   textCase(
     'Provider text long enough to be collapsed into a detail',
