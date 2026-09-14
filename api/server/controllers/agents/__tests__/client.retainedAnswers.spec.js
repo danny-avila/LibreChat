@@ -171,18 +171,32 @@ function makeClient(agentsConfig = {}) {
 }
 
 describe('AgentClient retained answers', () => {
+  const ROW_QUERY = [
+    { conversationId: 'convo-123', user: 'user-123' },
+    'messageId parentMessageId content',
+  ];
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockFormatInstructions.mockResolvedValue('');
     getMessages.mockResolvedValue([]);
   });
 
-  it('quotes an answer the summary boundary removed from the prompt inside the current user turn', async () => {
+  it('completes the branch the history read cut at the summary and quotes the answer in the user turn', async () => {
     const client = makeClient();
     const rows = compactedBranch();
+    /** Exactly what `loadHistory` hands to `buildMessages` once a checkpoint summary exists. */
+    const cut = AgentClient.getMessagesForConversation({
+      messages: rows,
+      parentMessageId: 'u3',
+      summary: true,
+    });
+    expect(cut.map((message) => message.messageId)).toEqual(['a2', 'u3']);
+    getMessages.mockResolvedValue(rows);
 
-    const { prompt, tokenCountMap } = await client.buildMessages(rows, 'u3', {});
+    const { prompt, tokenCountMap } = await client.buildMessages(cut, 'u3', {});
 
+    expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
     expect(prompt.map((message) => message.messageId)).not.toContain('a1');
     const latest = prompt[prompt.length - 1];
     const text = contentText(latest);
@@ -190,12 +204,24 @@ describe('AgentClient retained answers', () => {
     expect(text.indexOf(ANSWER_LINE)).toBeLessThan(text.indexOf(LATEST_TEXT));
     expect(text.endsWith(LATEST_TEXT)).toBe(true);
     expect(client.options.agent.additional_instructions ?? '').not.toContain(ANSWER_LINE);
-    expect(rows[4].text).toBe(LATEST_TEXT);
-    expect(rows[4].content).toBeUndefined();
+    expect(cut[1].text).toBe(LATEST_TEXT);
+    expect(cut[1].content).toBeUndefined();
     expect(client.indexTokenCountMap[prompt.length - 1]).toBeGreaterThan(tokenCountMap.u3);
     expect(contentText(client.memoryPayload[client.memoryPayload.length - 1])).not.toContain(
       ANSWER_LINE,
     );
+  });
+
+  it('reads nothing when the rows in memory already reach the branch root', async () => {
+    const client = makeClient();
+    client.shouldSummarize = false;
+    const rows = compactedBranch();
+    rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
+
+    const { prompt } = await client.buildMessages(rows, 'u3', {});
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
   });
 
   it('leaves the turn alone when the operator turned retained answers off', async () => {
@@ -203,6 +229,7 @@ describe('AgentClient retained answers', () => {
 
     const { prompt } = await client.buildMessages(compactedBranch(), 'u3', {});
 
+    expect(getMessages).not.toHaveBeenCalled();
     expect(contentText(prompt[prompt.length - 1])).toBe(LATEST_TEXT);
     expect(client.memoryPayload).toBeNull();
   });
@@ -214,19 +241,29 @@ describe('AgentClient retained answers', () => {
 
     const { prompt } = await client.buildMessages([latestUserMessage()], 'u3', {});
 
-    expect(getMessages).toHaveBeenCalledWith(
-      { conversationId: 'convo-123', user: 'user-123' },
-      'messageId parentMessageId content',
-    );
+    expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
   });
 
-  it('does not read the stored branch for a warm turn when retention is off', async () => {
-    const client = makeClient({ askUserQuestion: { retainedAnswers: { enabled: false } } });
-    client.eventActorContinuation = 'warm';
+  it('quotes into the turn being continued when the leaf is the unfinished response', async () => {
+    const client = makeClient();
+    client.shouldSummarize = false;
+    const rows = compactedBranch();
+    rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
+    rows.push({
+      messageId: 'a3',
+      parentMessageId: 'u3',
+      sender: 'Agent',
+      isCreatedByUser: false,
+      content: [{ type: ContentTypes.TEXT, text: 'Next I will' }],
+      unfinished: true,
+    });
 
-    await client.buildMessages([latestUserMessage()], 'u3', {});
+    const { prompt } = await client.buildMessages(rows, 'a3', {});
 
-    expect(getMessages).not.toHaveBeenCalled();
+    const ids = prompt.map((message) => message.messageId);
+    expect(ids[ids.length - 1]).toBe('a3');
+    expect(contentText(prompt[ids.indexOf('u3')])).toContain(ANSWER_LINE);
+    expect(contentText(prompt[ids.length - 1])).not.toContain(ANSWER_LINE);
   });
 });

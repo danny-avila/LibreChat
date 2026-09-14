@@ -3,6 +3,7 @@ import {
   buildRetainedAnswersContext,
   collectRetainedAnswers,
   orderConversationBranch,
+  reachesBranchRoot,
   renderRetainedAnswers,
   resolveRetainedAnswersConfig,
   RETAINED_ANSWER_ROW_FIELDS,
@@ -163,7 +164,7 @@ describe('orderConversationBranch', () => {
     expect(orderConversationBranch(cyclic, 'x').map((row) => row.messageId)).toEqual(['y', 'x']);
   });
 
-  test('keeps the first row seen for an id, so in-memory rows outrank loaded ones', () => {
+  test('keeps the first row seen for an id, so the caller decides which rows win', () => {
     const memory = { messageId: 'u2', parentMessageId: 'a1', content: 'memory' };
     const loaded = { messageId: 'u2', parentMessageId: 'a1', content: 'loaded' };
     const branch: Array<{ messageId: string; parentMessageId: string; content?: string }> = [
@@ -176,6 +177,14 @@ describe('orderConversationBranch', () => {
       undefined,
       'memory',
     ]);
+  });
+
+  test('reachesBranchRoot tells a whole branch from one cut short of its root', () => {
+    expect(reachesBranchRoot([])).toBe(false);
+    expect(reachesBranchRoot([{ messageId: 'r', parentMessageId: NO_PARENT }])).toBe(true);
+    expect(reachesBranchRoot([{ messageId: 'r', parentMessageId: null }])).toBe(true);
+    expect(reachesBranchRoot([{ messageId: 'r', parentMessageId: '' }])).toBe(true);
+    expect(reachesBranchRoot([{ messageId: 'a2', parentMessageId: 'u2' }])).toBe(false);
   });
 });
 
@@ -222,6 +231,16 @@ describe('renderRetainedAnswers', () => {
     expect(text.length).toBeLessThanOrEqual(maxTokens);
     expect(text).toContain('earlier answers omitted');
     expect(text.endsWith('Q: Q?\nA: y')).toBe(true);
+  });
+
+  test('does not reserve the omission note when every set fits without it', async () => {
+    const full = (await renderRetainedAnswers(sets, 10_000, countChars)) as string;
+    expect(full).not.toContain('omitted');
+    const exact = (await renderRetainedAnswers(sets, full.length, countChars)) as string;
+    expect(exact).toBe(full);
+    const short = (await renderRetainedAnswers(sets, full.length - 1, countChars)) as string;
+    expect(short).toContain('omitted');
+    expect(short).not.toContain('First?');
   });
 
   test('always keeps the newest set even when it alone exceeds the budget', async () => {
@@ -325,15 +344,18 @@ describe('buildRetainedAnswersContext', () => {
     ).toBeUndefined();
   });
 
-  test('reads the rest of the branch through the injected query, only when retention is on', async () => {
-    const getMessages = jest.fn(async () => rows.slice(0, 4));
+  test('completes a branch cut short of its root through the injected query', async () => {
+    const getMessages = jest.fn(async () => rows);
+    const cut = [
+      { ...rows[3], content: [{ type: 'text', text: 'Earlier context, compacted.' }] },
+      rows[4],
+    ];
     const text = await buildRetainedAnswersContext({
-      messages: [rows[4]],
+      messages: cut,
       parentMessageId: 'u3',
-      historyLoaded: false,
+      getMessages,
       conversationId: 'convo-1',
       userId: 'user-1',
-      getMessages,
       config: undefined,
       countTokens: countChars,
     });
@@ -342,47 +364,81 @@ describe('buildRetainedAnswersContext', () => {
       { conversationId: 'convo-1', user: 'user-1' },
       RETAINED_ANSWER_ROW_FIELDS,
     );
+    expect(RETAINED_ANSWER_ROW_FIELDS).toBe('messageId parentMessageId content');
+  });
 
-    const untouched = jest.fn(async () => rows);
-    await buildRetainedAnswersContext({
+  test('completes a lone event message the same way', async () => {
+    const getMessages = jest.fn(async () => rows);
+    const text = await buildRetainedAnswersContext({
       messages: [rows[4]],
       parentMessageId: 'u3',
-      historyLoaded: false,
+      getMessages,
       conversationId: 'convo-1',
       userId: 'user-1',
-      getMessages: untouched,
-      config: { retainedAnswers: { enabled: false } },
-      countTokens: countChars,
-    });
-    await buildRetainedAnswersContext({
-      messages: rows,
-      parentMessageId: 'u3',
-      historyLoaded: true,
-      conversationId: 'convo-1',
-      userId: 'user-1',
-      getMessages: untouched,
       config: undefined,
       countTokens: countChars,
     });
-    expect(untouched).not.toHaveBeenCalled();
-    expect(RETAINED_ANSWER_ROW_FIELDS).toBe('messageId parentMessageId content');
+    expect(text).toContain(ANSWER_LINE);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+  });
+
+  test('never queries when the rows in memory reach the root or retention is off', async () => {
+    const getMessages = jest.fn(async () => rows);
+    const whole = await buildRetainedAnswersContext({
+      messages: rows,
+      parentMessageId: 'u3',
+      getMessages,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(whole).toContain(ANSWER_LINE);
+    await buildRetainedAnswersContext({
+      messages: [rows[4]],
+      parentMessageId: 'u3',
+      getMessages,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      config: { retainedAnswers: { enabled: false } },
+      countTokens: countChars,
+    });
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  test('lets a stored row outrank the prompt-shaped copy in memory', async () => {
+    const withAsk = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      content: [summary, askPart({ question: 'Ship it?' }, 'yes', 'tc-a2')],
+    };
+    const shaped = { ...withAsk, content: [{ type: 'text', text: 'Earlier context, compacted.' }] };
+    const text = await buildRetainedAnswersContext({
+      messages: [shaped, rows[4]],
+      parentMessageId: 'u3',
+      getMessages: async () => [rows[0], rows[1], rows[2], withAsk],
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(text).toContain(ANSWER_LINE);
+    expect(text).toContain('Q: Ship it?\nA: yes');
   });
 
   test('carries what is in memory and warns when the stored rows cannot be read', async () => {
     const inMemory = [
-      { messageId: 'u9', parentMessageId: NO_PARENT, content: [] },
       { messageId: 'a9', parentMessageId: 'u9', content: [askPart({ question: 'Ok?' }, 'yes')] },
       { messageId: 'u10', parentMessageId: 'a9', content: [] },
     ];
     const text = await buildRetainedAnswersContext({
       messages: inMemory,
       parentMessageId: 'u10',
-      historyLoaded: false,
-      conversationId: 'convo-1',
-      userId: 'user-1',
       getMessages: async () => {
         throw new Error('rows unavailable');
       },
+      conversationId: 'convo-1',
+      userId: 'user-1',
       config: undefined,
       countTokens: countChars,
     });

@@ -2279,19 +2279,19 @@ class AgentClient extends BaseClient {
       mapCondition: (message) => message.addedConvo === true,
     });
     /**
-     * Answers the user gave to earlier `ask_user_question` calls, read from the
-     * stored rows of the whole branch before `messages` is narrowed to
-     * `orderedMessages` (which stops at a checkpoint summary and would hide the
-     * very answers that need carrying). Rendered here, quoted into the current
-     * user turn after the context kickoff below.
+     * Answers the user gave to earlier `ask_user_question` calls. Read from the
+     * rows before `messages` is narrowed to `orderedMessages`; when those rows
+     * stop short of the branch root (the history read stopped at a checkpoint
+     * summary, or a warm event-actor turn holds only its new event message) the
+     * module completes the branch through the stored-row query. Rendered here,
+     * quoted into the current user turn after the context kickoff below.
      */
     const retainedAnswersPromise = buildRetainedAnswersContext({
       messages,
       parentMessageId,
-      historyLoaded: this.eventActorContinuation !== 'warm',
+      getMessages: db.getMessages,
       conversationId: this.conversationId,
       userId: this.user ?? this.options.req.user?.id,
-      getMessages: db.getMessages,
       config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
       countTokens: (text) =>
         countFormattedMessageTokens(
@@ -2835,20 +2835,33 @@ class AgentClient extends BaseClient {
     ]);
 
     /**
-     * The answers block rides the current user turn as quoted context: user
+     * The answers block rides the latest user turn as quoted context: user
      * role, rebuilt from the stored rows every turn (which keep the answers past
-     * the summary boundary and the pruner), prompt copy only. Prepended like
-     * file context, after the counts and after the context kickoff above so a
-     * steer-free history keeps its zero-await path; the persisted row and the
-     * memory copy stay untouched and the prompt count is adjusted here.
+     * the summary boundary and the pruner), prompt copy only. The latest
+     * user-authored row is the leaf on an ordinary turn and the turn being
+     * continued when the leaf is the assistant's own unfinished response.
+     * Prepended like file context, after the counts and after the context
+     * kickoff above so a steer-free history keeps its zero-await path; the
+     * persisted row and the memory copy stay untouched and the prompt count is
+     * adjusted here.
      */
     const retainedAnswersContext = await retainedAnswersPromise;
-    if (retainedAnswersContext && latestOrdered?.isCreatedByUser === true) {
-      const latestIndex = formattedMessages.length - 1;
-      prependContextText(formattedMessages[latestIndex], retainedAnswersContext, '\n\n');
-      const withAnswers = countFormattedMessageTokens(formattedMessages[latestIndex], encoding);
-      const answerTokens = Math.max(0, (withAnswers ?? 0) - (indexTokenCountMap[latestIndex] ?? 0));
-      indexTokenCountMap[latestIndex] = (indexTokenCountMap[latestIndex] ?? 0) + answerTokens;
+    const retainedAnswersIndex =
+      retainedAnswersContext == null
+        ? -1
+        : orderedMessages.findLastIndex((message) => message?.isCreatedByUser === true);
+    if (retainedAnswersIndex >= 0) {
+      prependContextText(formattedMessages[retainedAnswersIndex], retainedAnswersContext, '\n\n');
+      const withAnswers = countFormattedMessageTokens(
+        formattedMessages[retainedAnswersIndex],
+        encoding,
+      );
+      const answerTokens = Math.max(
+        0,
+        (withAnswers ?? 0) - (indexTokenCountMap[retainedAnswersIndex] ?? 0),
+      );
+      indexTokenCountMap[retainedAnswersIndex] =
+        (indexTokenCountMap[retainedAnswersIndex] ?? 0) + answerTokens;
       promptTokens += answerTokens;
       if (this.memoryPayload == null) {
         await buildMemoryPayload();

@@ -185,7 +185,7 @@ export function collectRetainedAnswers(
  * The branch that ends at `parentMessageId`, oldest first: the walk the prompt
  * builder makes, without its stop at a checkpoint summary. Answers given before
  * a compaction are exactly the ones the model no longer sees. The first row
- * seen for an id wins, so in-memory rows take precedence over loaded ones.
+ * seen for an id wins, so a caller puts the rows it trusts most first.
  */
 export function orderConversationBranch<T extends RetainedAnswerSource>(
   messages: readonly T[],
@@ -216,6 +216,21 @@ export function orderConversationBranch<T extends RetainedAnswerSource>(
   return branch.reverse();
 }
 
+/**
+ * Whether an ordered branch reaches its root. The rows a turn holds in memory
+ * stop early when a checkpoint summary bounded the history read, or when a
+ * warm event-actor turn holds only its new event message; both leave the oldest
+ * row pointing at a parent that is not in memory.
+ */
+export function reachesBranchRoot(branch: readonly RetainedAnswerSource[]): boolean {
+  const root = branch[0];
+  if (root == null) {
+    return false;
+  }
+  const parent = root.parentMessageId;
+  return parent == null || parent === '' || parent === Constants.NO_PARENT;
+}
+
 function renderSet(set: RetainedAnswerSet): string {
   return set.answers.map(({ question, answer }) => `Q: ${question}\nA: ${answer}`).join(SEPARATOR);
 }
@@ -225,11 +240,11 @@ function omittedNote(count: number): string {
 }
 
 /**
- * The block quoted into the current user turn. Sets are kept newest first while
- * the whole block, separators and omission note included, fits `maxTokens`; the
- * newest set is always kept, the way the summarizer's recency window always
- * keeps the latest turn. What was dropped is counted in a note so the model
- * knows earlier answers exist in the history.
+ * The block quoted into the current user turn. When every set fits `maxTokens`
+ * with the header and separators, all of them are rendered oldest first.
+ * Otherwise sets are kept newest first while the block, omission note
+ * included, still fits; the newest set is always kept, the way the
+ * summarizer's recency window always keeps the latest turn.
  */
 export async function renderRetainedAnswers(
   sets: readonly RetainedAnswerSet[],
@@ -240,6 +255,16 @@ export async function renderRetainedAnswers(
     return undefined;
   }
   const rendered = sets.map(renderSet);
+  const costs: number[] = [];
+  let total = await countTokens(RETAINED_ANSWERS_HEADER);
+  for (const text of rendered) {
+    const cost = await countTokens(SEPARATOR + text);
+    costs.push(cost);
+    total += cost;
+  }
+  if (total <= maxTokens) {
+    return [RETAINED_ANSWERS_HEADER, ...rendered].join(SEPARATOR);
+  }
   let totalAnswers = 0;
   for (const set of sets) {
     totalAnswers += set.answers.length;
@@ -251,22 +276,17 @@ export async function renderRetainedAnswers(
   let used = 0;
   let start = sets.length;
   for (let index = sets.length - 1; index >= 0; index--) {
-    const cost = await countTokens(SEPARATOR + rendered[index]);
-    if (index < sets.length - 1 && used + cost > budget) {
+    if (index < sets.length - 1 && used + costs[index] > budget) {
       break;
     }
-    used += cost;
+    used += costs[index];
     start = index;
   }
   let omitted = 0;
   for (let index = 0; index < start; index++) {
     omitted += sets[index].answers.length;
   }
-  return [
-    RETAINED_ANSWERS_HEADER,
-    ...(omitted > 0 ? [omittedNote(omitted)] : []),
-    ...rendered.slice(start),
-  ].join(SEPARATOR);
+  return [RETAINED_ANSWERS_HEADER, omittedNote(omitted), ...rendered.slice(start)].join(SEPARATOR);
 }
 
 /** Config as the run reads it: on unless disabled, and a positive integer budget. */
@@ -301,18 +321,19 @@ async function loadBranchRows(
 }
 
 export interface RetainedAnswersContextInput {
-  /** The rows in memory; the whole branch unless `historyLoaded` says otherwise. */
+  /** The rows in memory, which may stop short of the branch root. */
   messages: readonly RetainedAnswerSource[];
   parentMessageId: string | null | undefined;
   /**
-   * Whether `messages` holds the stored branch. A warm event-actor turn skips the
-   * history read and holds only the new event message, so the rest of the branch
-   * is read through `getMessages` — only when retention is on.
+   * The stored-row query used to complete the branch when the rows in memory do
+   * not reach its root (a checkpoint summary bounded the history read, or a warm
+   * event-actor turn holds only its new event message). Called only when
+   * retention is on and the branch is incomplete; stored rows outrank the copies
+   * in memory, which may already be prompt-shaped.
    */
-  historyLoaded?: boolean;
+  getMessages?: RetainedAnswerRowQuery;
   conversationId?: string | null;
   userId?: string | null;
-  getMessages?: RetainedAnswerRowQuery;
   config: TAskUserQuestionConfig | null | undefined;
   countTokens: RetainedAnswerTokenCounter;
 }
@@ -320,10 +341,9 @@ export interface RetainedAnswersContextInput {
 async function buildContext({
   messages,
   parentMessageId,
-  historyLoaded = true,
+  getMessages,
   conversationId,
   userId,
-  getMessages,
   config,
   countTokens,
 }: RetainedAnswersContextInput): Promise<string | undefined> {
@@ -331,17 +351,21 @@ async function buildContext({
   if (!resolved.enabled) {
     return undefined;
   }
+  if (parentMessageId == null || parentMessageId === Constants.NO_PARENT) {
+    return undefined;
+  }
+  let branch = orderConversationBranch(messages, parentMessageId);
   const canLoad =
-    !historyLoaded &&
     getMessages != null &&
     typeof conversationId === 'string' &&
     conversationId.length > 0 &&
     typeof userId === 'string' &&
     userId.length > 0;
-  const rows = canLoad
-    ? [...messages, ...(await loadBranchRows(getMessages, conversationId, userId))]
-    : messages;
-  const sets = collectRetainedAnswers(orderConversationBranch(rows, parentMessageId));
+  if (!reachesBranchRoot(branch) && canLoad) {
+    const stored = await loadBranchRows(getMessages, conversationId, userId);
+    branch = orderConversationBranch([...stored, ...messages], parentMessageId);
+  }
+  const sets = collectRetainedAnswers(branch);
   return renderRetainedAnswers(sets, resolved.maxTokens, countTokens);
 }
 
