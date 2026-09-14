@@ -31,10 +31,23 @@ export const localeAliases: Record<string, string> = {
 const supportedByLowercase = new Set(supportedLocales.map((l) => l.toLowerCase()));
 
 /**
+ * A well-formed BCP-47 tag: a 2-3 letter language subtag followed by any number
+ * of 2-8 alphanumeric subtags. The base-tag fallback in `isSupportedLocale` keys
+ * only on the language subtag, so without this guard a malformed suffix such as
+ * `de-@` or `de--DE` would pass validation on the strength of its supported base
+ * and later crash `toLocaleDateString` with a `RangeError` on the share view.
+ * Applied to the normalized (underscore- and case-folded) form, so `de_AT` is
+ * still accepted while `de-@`, `de--DE` and `de-` are not.
+ */
+const wellFormedTag = /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/;
+
+/**
  * Whether `value` is a locale the UI can resolve: `'auto'`, a supported locale,
- * a known alias, or a tag whose base (`de-DE` -> `de`) is supported. Matches the
- * client's `normalizeLocale`, which never rejects but falls back to `en`; here
- * we use it to reject clearly-invalid configuration up front.
+ * a known alias, or a well-formed tag whose base (`de-DE` -> `de`) is supported.
+ * Matches the client's `normalizeLocale`, which never rejects but falls back to
+ * `en`; here we use it to reject clearly-invalid configuration up front. The
+ * base-tag fallback additionally requires a well-formed tag so a malformed
+ * suffix cannot reach `Intl` downstream.
  */
 export function isSupportedLocale(value: string): boolean {
   if (value === 'auto') {
@@ -45,5 +58,8 @@ export function isSupportedLocale(value: string): boolean {
     return true;
   }
   const base = normalized.split('-')[0];
-  return supportedByLowercase.has(base) || base in localeAliases;
+  if (!(supportedByLowercase.has(base) || base in localeAliases)) {
+    return false;
+  }
+  return wellFormedTag.test(normalized);
 }

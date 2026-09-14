@@ -572,6 +572,18 @@ describe('interface.defaultLanguage schema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it.each(['de-@', 'de--DE'])(
+    'rejects the malformed locale "%s" whose base tag is supported',
+    (defaultLanguage) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        interface: { defaultLanguage },
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
 });
 
 describe('speechTab schema', () => {

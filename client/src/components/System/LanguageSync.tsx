@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Cookies from 'js-cookie';
 import { useAtomValue, useSetAtom } from 'jotai';
-import i18n, { changeLanguageSafely, normalizeLocale } from '~/locales/i18n';
+import i18n, { changeLanguageSafely, normalizeLocale, toSelectorLocale } from '~/locales/i18n';
 import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
 
@@ -31,11 +31,11 @@ function useDefaultLanguage() {
     if (userChoseLanguage) {
       return;
     }
-    // Store the selector-conform value as-is (e.g. 'de-DE'), like the language
-    // selector does. Normalization stays at the i18n boundary (the effect below,
-    // via normalizeLocale/changeLanguageSafely) — persisting a normalized 'de'
-    // would diverge from what the selector writes for the same language.
-    setLang(serverDefault);
+    // Store the selector-conform value (e.g. 'de-DE'), like the language selector
+    // does, mapping a canonical default such as 'de' to the selector's 'de-DE' so
+    // the settings control shows it as selected. Normalization stays at the i18n
+    // boundary (the effect below, via normalizeLocale/changeLanguageSafely).
+    setLang(toSelectorLocale(serverDefault));
   }, [startupConfig, setLang]);
 }
 

@@ -1,5 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { Dropdown, Spinner } from '@librechat/client';
+import { languageOptions } from '~/locales/i18n';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -65,50 +66,10 @@ export const LangSelector = ({
   const localize = useLocalize();
   const isLanguageLoading = useAtomValue(store.languageLoading);
 
-  const languageOptions = [
-    { value: 'auto', label: localize('com_nav_lang_auto') },
-    { value: 'en-US', label: localize('com_nav_lang_english') },
-    { value: 'zh-Hans', label: localize('com_nav_lang_chinese') },
-    { value: 'zh-Hant', label: localize('com_nav_lang_traditional_chinese') },
-    { value: 'ar-EG', label: localize('com_nav_lang_arabic') },
-    { value: 'bs', label: localize('com_nav_lang_bosnian') },
-    { value: 'da-DK', label: localize('com_nav_lang_danish') },
-    { value: 'de-DE', label: localize('com_nav_lang_german') },
-    { value: 'es-ES', label: localize('com_nav_lang_spanish') },
-    { value: 'ca-ES', label: localize('com_nav_lang_catalan') },
-    { value: 'et-EE', label: localize('com_nav_lang_estonian') },
-    { value: 'fa-IR', label: localize('com_nav_lang_persian') },
-    { value: 'fr-FR', label: localize('com_nav_lang_french') },
-    { value: 'he-HE', label: localize('com_nav_lang_hebrew') },
-    { value: 'hu-HU', label: localize('com_nav_lang_hungarian') },
-    { value: 'hy-AM', label: localize('com_nav_lang_armenian') },
-    { value: 'is', label: localize('com_nav_lang_icelandic') },
-    { value: 'it-IT', label: localize('com_nav_lang_italian') },
-    { value: 'nb', label: localize('com_nav_lang_norwegian_bokmal') },
-    { value: 'nn', label: localize('com_nav_lang_norwegian_nynorsk') },
-    { value: 'pl-PL', label: localize('com_nav_lang_polish') },
-    { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
-    { value: 'pt-PT', label: localize('com_nav_lang_portuguese') },
-    { value: 'ru-RU', label: localize('com_nav_lang_russian') },
-    { value: 'sk', label: localize('com_nav_lang_slovak') },
-    { value: 'ja-JP', label: localize('com_nav_lang_japanese') },
-    { value: 'ka-GE', label: localize('com_nav_lang_georgian') },
-    { value: 'cs-CZ', label: localize('com_nav_lang_czech') },
-    { value: 'sv-SE', label: localize('com_nav_lang_swedish') },
-    { value: 'ko-KR', label: localize('com_nav_lang_korean') },
-    { value: 'lt-LT', label: localize('com_nav_lang_lithuanian') },
-    { value: 'lv-LV', label: localize('com_nav_lang_latvian') },
-    { value: 'vi-VN', label: localize('com_nav_lang_vietnamese') },
-    { value: 'th-TH', label: localize('com_nav_lang_thai') },
-    { value: 'tr-TR', label: localize('com_nav_lang_turkish') },
-    { value: 'ug', label: localize('com_nav_lang_uyghur') },
-    { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
-    { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
-    { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
-    { value: 'sl', label: localize('com_nav_lang_slovenian') },
-    { value: 'bo', label: localize('com_nav_lang_tibetan') },
-    { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
-  ];
+  const languageSelectOptions = languageOptions.map(({ value, labelKey }) => ({
+    value,
+    label: localize(labelKey),
+  }));
 
   const labelId = 'language-selector-label';
 
@@ -130,7 +91,7 @@ export const LangSelector = ({
           value={langcode}
           onChange={onChange}
           sizeClasses={cn('z-50 w-[220px]', popoverClassName)}
-          options={languageOptions}
+          options={languageSelectOptions}
           aria-labelledby={labelId}
           portal={portal}
           portalElement={portalElement}

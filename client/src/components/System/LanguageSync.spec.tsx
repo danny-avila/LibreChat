@@ -12,12 +12,14 @@ jest.mock('~/data-provider', () => ({
 
 // i18n is fully mocked so the component's language-change effect is inert and
 // normalization is the identity — the point under test is what LanguageSync
-// *stores*, not what i18n resolves it to.
+// *stores*, not what i18n resolves it to. `toSelectorLocale` is stubbed to the
+// one mapping under test (canonical 'de' -> selector 'de-DE'), identity else.
 jest.mock('~/locales/i18n', () => ({
   __esModule: true,
   default: { language: 'en' },
   changeLanguageSafely: jest.fn().mockResolvedValue(undefined),
   normalizeLocale: (locale: string) => locale,
+  toSelectorLocale: (locale: string) => (locale === 'de' ? 'de-DE' : locale),
 }));
 
 const renderWithDefault = (defaultLanguage?: string) => {
@@ -39,6 +41,11 @@ describe('LanguageSync — interface.defaultLanguage', () => {
 
   it('stores the server default selector-conform (de-DE, not normalized to de)', () => {
     const jotaiStore = renderWithDefault('de-DE');
+    expect(jotaiStore.get(store.lang)).toBe('de-DE');
+  });
+
+  it('maps a canonical default to the selector value (de -> de-DE)', () => {
+    const jotaiStore = renderWithDefault('de');
     expect(jotaiStore.get(store.lang)).toBe('de-DE');
   });
 

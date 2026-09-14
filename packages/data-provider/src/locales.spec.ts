@@ -26,4 +26,11 @@ describe('isSupportedLocale', () => {
     expect(isSupportedLocale('klingon')).toBe(false);
     expect(isSupportedLocale('')).toBe(false);
   });
+
+  it('rejects a malformed suffix even when the base tag is supported', () => {
+    expect(isSupportedLocale('de-@')).toBe(false);
+    expect(isSupportedLocale('de--DE')).toBe(false);
+    expect(isSupportedLocale('de-')).toBe(false);
+    expect(isSupportedLocale('de-DE-')).toBe(false);
+  });
 });
