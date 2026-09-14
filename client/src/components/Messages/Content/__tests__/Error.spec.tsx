@@ -129,6 +129,12 @@ function localized(key: string, ...values: string[]) {
 
 const numberFormat = new Intl.NumberFormat();
 
+/** Mounts the chat surface, the only one whose composer can compact a conversation. */
+const chatConversation: Partial<TConversation> = {
+  endpoint: EModelEndpoint.openAI,
+  model: 'gpt-4o',
+};
+
 /** A violation row, stamped by the server when it saved the failure (just now by default). */
 const limitRow = (createdAt = Date.now()) =>
   ({
@@ -612,6 +618,23 @@ describe('Error — user key and limits', () => {
     ).toHaveClass('sr-only');
   });
 
+  /** The row a live violation renders is stamped by this device as it arrives. */
+  it('counts a live countdown from the relative retry, not a server reset this device misreads', () => {
+    renderError(
+      {
+        type: ViolationTypes.MESSAGE_LIMIT,
+        max: 1,
+        windowInMinutes: 1,
+        retryAfterSeconds: 60,
+        resetAt: Date.now() - 4 * 60 * 1000,
+      },
+      limitRow(),
+    );
+
+    expect(screen.getByText(/You can send another message in (0:59|1:00)\./)).toBeInTheDocument();
+    expect(screen.queryByText(catalog.com_error_retry_available)).not.toBeInTheDocument();
+  });
+
   it('renders retry-available copy when a message limit has expired', () => {
     renderError(
       {
@@ -723,6 +746,7 @@ describe('Error — token balance and context budget', () => {
         availableMessageTokens: 128000,
       },
       providerMessage,
+      { conversation: chatConversation },
     );
 
     expect(
@@ -738,6 +762,24 @@ describe('Error — token balance and context budget', () => {
   });
 
   /** The compact action lives in the context usage popover, which that setting removes. */
+  /** Search results read a cached startup config, but only the chat composer can compact. */
+  it('does not suggest compaction outside a chat', () => {
+    mockStartupData = { compactionEnabled: true };
+    renderError(
+      {
+        type: ErrorTypes.FINAL_CONTEXT_OVERFLOW,
+        projectedMessageTokens: 214500,
+        availableMessageTokens: 128000,
+      },
+      providerMessage,
+    );
+
+    expect(screen.getByText(catalog.com_error_context_next_steps)).toBeInTheDocument();
+    expect(
+      screen.queryByText(catalog.com_error_context_next_steps_compact),
+    ).not.toBeInTheDocument();
+  });
+
   it('does not suggest compaction where the context usage indicator is hidden', () => {
     mockStartupData = { compactionEnabled: true, interface: { contextUsage: false } };
     renderError(
@@ -747,6 +789,7 @@ describe('Error — token balance and context budget', () => {
         availableMessageTokens: 128000,
       },
       providerMessage,
+      { conversation: chatConversation },
     );
 
     expect(screen.getByText(catalog.com_error_context_next_steps)).toBeInTheDocument();
@@ -1063,6 +1106,31 @@ describe('Error — agent handoffs within a row', () => {
     });
 
     expect(screen.getByText(localized('com_error_no_user_key', 'Anthropic'))).toBeInTheDocument();
+  });
+
+  /** A parallel run stamps each part with its lane's agent, whatever handoff preceded it. */
+  it("resolves a parallel lane's error part against the agent of its own lane", () => {
+    const laneRow = {
+      ...handoffRow,
+      content: [
+        { type: ContentTypes.AGENT_UPDATE, agent_update: { agentId: writerAgent.id, index: 0 } },
+        { type: ContentTypes.TEXT, text: 'Drafting.', agentId: writerAgent.id, groupId: 1 },
+        {
+          type: ContentTypes.ERROR,
+          error: JSON.stringify({ type: ErrorTypes.NO_USER_KEY }),
+          agentId: rootAgent.id,
+          groupId: 1,
+        },
+      ],
+    } as unknown as TMessage;
+    renderError({ type: ErrorTypes.NO_USER_KEY }, undefined, {
+      source: laneRow,
+      partIndex: 2,
+      agents: { [rootAgent.id]: rootAgent, [writerAgent.id]: writerAgent },
+    });
+
+    expect(screen.getByText(localized('com_error_no_user_key', 'Google'))).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Anthropic');
   });
 
   it('names no provider when the agent handed to cannot be resolved', () => {

@@ -6,34 +6,53 @@ import { useMessageContext } from '~/Providers/MessageContext';
 
 /** The fields of a message that say who produced a failure and when. */
 export type ErrorSource = Pick<TMessage, 'endpoint' | 'model' | 'createdAt'> & {
-  /** The agent a handoff earlier in the row made active for the failing part. */
-  handoffAgentId?: string;
+  /**
+   * The agent that ran the failing part: the agent of its own lane in a parallel run, otherwise
+   * the agent a handoff earlier in the row made active.
+   */
+  partAgentId?: string;
 };
 
-/** A position in a row's content where an `AGENT_UPDATE` handed the run to another agent. */
-type Handoff = { index: number; agentId: string };
+/** Where a row's content changes agents, and which error parts name their own. */
+type AgentPositions = {
+  /** Positions of `AGENT_UPDATE` parts, in content order. */
+  handoffs: Array<{ index: number; agentId: string }>;
+  /** Error parts a parallel run stamped with the agent of their lane, by position. */
+  owners: Record<number, string>;
+};
 
-type RowSource = { source: ErrorSource; handoffs: Handoff[] };
+type RowSource = { source: ErrorSource; positions: AgentPositions };
 
 const ErrorSourceContext = createContext<RowSource | undefined>(undefined);
 
-function findHandoffs(content: TMessage['content']): Handoff[] {
-  const handoffs: Handoff[] = [];
+function findAgentPositions(content: TMessage['content']): AgentPositions {
+  const positions: AgentPositions = { handoffs: [], owners: {} };
   for (let index = 0; index < (content?.length ?? 0); index++) {
     const part = content?.[index];
+    if (part?.type === ContentTypes.ERROR && part.agentId) {
+      positions.owners[index] = part.agentId;
+      continue;
+    }
     if (part?.type !== ContentTypes.AGENT_UPDATE) {
       continue;
     }
     const agentId = part[ContentTypes.AGENT_UPDATE]?.agentId;
     if (agentId) {
-      handoffs.push({ index, agentId });
+      positions.handoffs.push({ index, agentId });
     }
   }
-  return handoffs;
+  return positions;
 }
 
-/** The agent active at `partIndex`: whichever handoff last precedes it. */
-function findActiveAgent(handoffs: Handoff[], partIndex: number): string | undefined {
+/** The agent that ran the part at `partIndex`: its own lane's, else the last handoff before it. */
+function findPartAgent(
+  { handoffs, owners }: AgentPositions,
+  partIndex: number,
+): string | undefined {
+  const owner = owners[partIndex];
+  if (owner != null) {
+    return owner;
+  }
   let agentId: string | undefined;
   for (const handoff of handoffs) {
     if (handoff.index >= partIndex) {
@@ -51,11 +70,12 @@ function findActiveAgent(handoffs: Handoff[], partIndex: number): string | undef
  * message it belongs to. Without this, its copy could only name the conversation's current
  * endpoint and model, which stop being the ones that failed as soon as the reader switches models.
  *
- * A sequential agent run hands off mid-row through `AGENT_UPDATE` parts, so the row also records
- * where each handoff sits, and an error part resolves the agent active at its own position (the
- * absolute `partIndex` its `MessageContext` carries). The handoffs are keyed by value: a streaming
- * row, whose content changes on every token, keeps one context value until a handoff is actually
- * added, so its error parts do not re-render in between.
+ * One row can hold several agents' work: a sequential run hands off through `AGENT_UPDATE` parts,
+ * and a parallel run stamps each part with the agent of its lane. The row therefore also records
+ * where those agents sit, and an error part resolves its own agent from its position (the
+ * absolute `partIndex` its `MessageContext` carries). The positions are keyed by value: a
+ * streaming row, whose content changes on every token, keeps one context value until an agent
+ * position actually changes, so its error parts do not re-render in between.
  */
 export function ErrorSourceProvider({
   message,
@@ -65,18 +85,18 @@ export function ErrorSourceProvider({
   children: ReactNode;
 }) {
   const { endpoint, model, createdAt, content } = message;
-  const handoffKey = useMemo(() => JSON.stringify(findHandoffs(content)), [content]);
+  const positionsKey = useMemo(() => JSON.stringify(findAgentPositions(content)), [content]);
   const row = useMemo<RowSource>(
     () => ({
       source: { endpoint, model, createdAt },
-      handoffs: JSON.parse(handoffKey) as Handoff[],
+      positions: JSON.parse(positionsKey) as AgentPositions,
     }),
-    [endpoint, model, createdAt, handoffKey],
+    [endpoint, model, createdAt, positionsKey],
   );
   return <ErrorSourceContext.Provider value={row}>{children}</ErrorSourceContext.Provider>;
 }
 
-/** The identity of the row rendering this error, resolved to the agent active at its position. */
+/** The identity of the row rendering this error, resolved to the agent that ran its part. */
 export function useErrorSource(): ErrorSource | undefined {
   const row = useContext(ErrorSourceContext);
   const { partIndex } = useMessageContext();
@@ -84,7 +104,7 @@ export function useErrorSource(): ErrorSource | undefined {
     if (row == null) {
       return undefined;
     }
-    const handoffAgentId = partIndex == null ? undefined : findActiveAgent(row.handoffs, partIndex);
-    return handoffAgentId == null ? row.source : { ...row.source, handoffAgentId };
+    const partAgentId = partIndex == null ? undefined : findPartAgent(row.positions, partIndex);
+    return partAgentId == null ? row.source : { ...row.source, partAgentId };
   }, [row, partIndex]);
 }

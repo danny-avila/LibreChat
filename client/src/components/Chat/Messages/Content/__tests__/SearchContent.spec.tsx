@@ -32,7 +32,7 @@ jest.mock('~/components/Messages/Content/Error', () => {
           data-testid="error-dispatcher"
           data-endpoint={message?.endpoint}
           data-source-endpoint={source?.endpoint}
-          data-source-handoff={source?.handoffAgentId}
+          data-source-agent={source?.partAgentId}
         >
           {text}
         </span>
@@ -136,7 +136,7 @@ describe('SearchContent', () => {
     );
 
     expect(screen.getByTestId('error-dispatcher')).toHaveAttribute(
-      'data-source-handoff',
+      'data-source-agent',
       'agent_writer',
     );
   });

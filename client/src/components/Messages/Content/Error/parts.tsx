@@ -96,7 +96,8 @@ export type ErrorEndpoint = {
   userProvidesCredentials?: boolean;
   /**
    * Manual context compaction can be triggered for this conversation. It is only offered from the
-   * context usage popover, so a deployment that hides that indicator has no compaction to suggest.
+   * chat composer's context usage popover, so neither a surface outside the chat (search, a shared
+   * link) nor a deployment that hides that indicator has compaction to suggest.
    */
   compactionAvailable: boolean;
   endpointsConfig?: TEndpointsConfig;
@@ -120,8 +121,9 @@ function resolveAgentId(agentsMap: TAgentsMap | undefined, agentId: string): Age
 }
 
 /**
- * Who ran the failing part of an agents row. A handoff names the agent it made active; a saved
- * agent's row stores the agent id as its model; failing both, the conversation's agent answers.
+ * Who ran the failing part of an agents row. The part's own agent (its parallel lane's, or the one
+ * a handoff made active) comes first; a saved agent's row stores the agent id as its model;
+ * failing both, the conversation's agent answers.
  * An id that resolves to nothing names nothing, so neither an agent id nor the agent that handed
  * off is ever shown in its place, but a row whose model is a model name (an ephemeral agent's,
  * or a live row's) keeps it when no agent resolves.
@@ -129,13 +131,13 @@ function resolveAgentId(agentsMap: TAgentsMap | undefined, agentId: string): Age
 function resolveAgentRow(
   agentsMap: TAgentsMap | undefined,
   {
-    handoffAgentId,
+    partAgentId,
     rowModel,
     conversationAgentId,
-  }: { handoffAgentId?: string; rowModel?: string; conversationAgentId?: string },
+  }: { partAgentId?: string; rowModel?: string; conversationAgentId?: string },
 ): AgentIdentity {
-  if (handoffAgentId != null) {
-    return resolveAgentId(agentsMap, handoffAgentId);
+  if (partAgentId != null) {
+    return resolveAgentId(agentsMap, partAgentId);
   }
   if (rowModel != null && !isEphemeralAgentId(rowModel)) {
     return resolveAgentId(agentsMap, rowModel);
@@ -176,7 +178,8 @@ function resolveCredentialOwnership(
  * A saved agent's row names the `agents` endpoint and carries the agent id as its model, while the
  * request ran against the agent's own provider and model, so those are what identity, key
  * ownership and the key dialog resolve against; after a handoff, that is the agent the handoff
- * made active. An endpoint named by the payload itself outranks all of them. Compaction is a
+ * made active, and in a parallel run, the agent of the error's own lane. An endpoint named by the
+ * payload itself outranks all of them. Compaction is a
  * conversation action, so it stays keyed to the row's endpoint.
  */
 export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string): ErrorEndpoint {
@@ -198,12 +201,12 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
   const rowEndpoint = identity?.endpoint ?? undefined;
   const rowModel = identity?.model ?? undefined;
   const conversationAgentId = chat?.conversation?.agent_id ?? undefined;
-  const handoffAgentId = source?.handoffAgentId;
+  const partAgentId = source?.partAgentId;
 
   return useMemo(() => {
-    const agentRow = handoffAgentId != null || isAgentsEndpoint(rowEndpoint);
+    const agentRow = partAgentId != null || isAgentsEndpoint(rowEndpoint);
     const agentIdentity = agentRow
-      ? resolveAgentRow(agentsMap, { handoffAgentId, rowModel, conversationAgentId })
+      ? resolveAgentRow(agentsMap, { partAgentId, rowModel, conversationAgentId })
       : undefined;
     const rowProvider = agentRow ? agentIdentity?.endpoint : rowEndpoint;
     const endpoint = payloadEndpoint ?? rowProvider;
@@ -218,16 +221,18 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
       agent: agentIdentity?.agent,
       userProvidesCredentials: resolveCredentialOwnership(endpointsConfig, endpoint),
       compactionAvailable:
+        inChat &&
         startupConfig?.compactionEnabled === true &&
         startupConfig.interface?.contextUsage !== false &&
         supportsCompaction(rowEndpoint),
       endpointsConfig,
     };
   }, [
+    inChat,
     rowEndpoint,
     rowModel,
     conversationAgentId,
-    handoffAgentId,
+    partAgentId,
     payloadEndpoint,
     agentsMap,
     endpointsConfig,
