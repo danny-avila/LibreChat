@@ -183,22 +183,42 @@ describe('MermaidExport', () => {
     );
   });
 
-  it('defers the synchronous SVG export until its loading row can paint', async () => {
-    /* `downloadMermaidSvg` blocks the frame it runs in, so calling it straight
-     * out of the click handler would freeze the open menu before the spinner
-     * it is meant to show ever reached the screen. `fireEvent` is synchronous,
-     * so nothing has had a chance to flush the deferral yet. */
+  it('waits for a paint, not just a later task, before a synchronous export', async () => {
+    /* `downloadMermaidSvg` blocks the frame it runs in, so it must not start
+     * until the browser has had a rendering opportunity to show the loading
+     * row: a bare `setTimeout` can fire before that paint. `fireEvent` is
+     * synchronous, so nothing has flushed the deferral yet. */
     const user = userEvent.setup();
-    render(<MermaidExport svg={'<svg viewBox="0 0 400 200" />'} filename="flow.mmd" />);
+    const frames: Array<FrameRequestCallback> = [];
+    const rafSpy = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    try {
+      render(<MermaidExport svg={'<svg viewBox="0 0 400 200" />'} filename="flow.mmd" />);
 
-    const trigger = screen.getByRole('button', { name: 'com_ui_export_mermaid' });
-    await user.click(trigger);
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_export_svg' }));
+      const trigger = screen.getByRole('button', { name: 'com_ui_export_mermaid' });
+      await user.click(trigger);
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_export_svg' }));
 
-    expect(mockDownloadMermaidSvg).not.toHaveBeenCalled();
-    expect(trigger).toHaveAttribute('aria-busy', 'true');
-    await waitFor(() => expect(mockDownloadMermaidSvg).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(trigger).not.toHaveAttribute('aria-busy'));
+      expect(mockDownloadMermaidSvg).not.toHaveBeenCalled();
+      expect(trigger).toHaveAttribute('aria-busy', 'true');
+      /* Still nothing on timers alone: the export is behind a frame. */
+      await act(async () => {
+        jest.advanceTimersByTime?.(0);
+      });
+      expect(mockDownloadMermaidSvg).not.toHaveBeenCalled();
+
+      await act(async () => {
+        frames.splice(0).forEach((frame) => frame(0));
+      });
+      await waitFor(() => expect(mockDownloadMermaidSvg).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(trigger).not.toHaveAttribute('aria-busy'));
+    } finally {
+      rafSpy.mockRestore();
+    }
   });
 
   it('saves the diagram source from the menu before any preview SVG exists', async () => {

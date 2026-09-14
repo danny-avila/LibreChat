@@ -556,17 +556,11 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   // engines (V8 ≥ 7.0) so equal-weight entries keep their input order.
   fileAttachments.sort(bySalience);
   textAttachments.sort(bySalience);
-  /* Salience-sort the resolved entries among themselves, then put them
-   * back into the slots they arrived in. A pending placeholder keeps its
-   * row, so the deferred office render upgrades in place instead of
-   * sitting at the end of the row and jumping up once it resolves. */
-  const sortedResolved = panelRow
-    .filter((e): e is { attachment: TAttachment; type: ToolArtifactType } => e.type != null)
-    .sort(byEntrySalience);
-  let nextResolved = 0;
-  const orderedPanel = panelRow.map((entry) =>
-    entry.type == null ? entry : sortedResolved[nextResolved++],
-  );
+  /* Pending placeholders sort by the same salience as their resolved
+   * selves — `attachmentSalience` reads only `bytes`, which resolution
+   * does not change — so a row keeps its slot across the loading-to-ready
+   * transition instead of jumping once the preview lands. */
+  const orderedPanel = [...panelRow].sort(byEntrySalience);
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 

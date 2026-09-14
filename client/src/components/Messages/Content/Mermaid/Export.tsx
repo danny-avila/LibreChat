@@ -99,16 +99,30 @@ const MermaidExport = memo(function MermaidExport({
   }, []);
 
   /**
+   * Runs `task` after the browser has had a rendering opportunity, not
+   * merely in a later task: a bare `setTimeout` can fire before the paint
+   * that would have shown the loading row, which is the whole point of
+   * deferring a synchronous export. A hidden tab serves no animation
+   * frames, and an export must not stall until refocus, so fall back to a
+   * timer there.
+   */
+  const deferPastPaint = useCallback((task: () => void) => {
+    if (typeof requestAnimationFrame !== 'function' || document.hidden) {
+      setTimeout(task, 0);
+      return;
+    }
+    requestAnimationFrame(() => setTimeout(task, 0));
+  }, []);
+
+  /**
    * Every menu action runs through here so the menu can show the in-flight
    * one as its own loading row rather than growing an extra status row
    * beside options that still look idle.
    *
-   * The work starts a macrotask later, after the browser has painted the
-   * loading state. That matters most for SVG, whose export is synchronous:
-   * calling it inline blocks the frame that would have shown its spinner, so
-   * a large diagram froze the open menu with both options looking idle. A
-   * timer rather than `requestAnimationFrame` because a background tab stops
-   * serving animation frames, and an export must not stall until refocus.
+   * The work waits for a paint (see `deferPastPaint`). That matters most for
+   * SVG, whose export is synchronous: calling it inline blocks the frame
+   * that would have shown its spinner, so a large diagram froze the open
+   * menu with both options looking idle.
    */
   const runExport = useCallback(
     (format: ExportFormat, task: () => boolean | void | Promise<boolean | void>) => {
@@ -117,7 +131,7 @@ const MermaidExport = memo(function MermaidExport({
       }
       setExporting(format);
       setExportStatus('');
-      setTimeout(() => {
+      deferPastPaint(() => {
         void Promise.resolve()
           .then(task)
           .then((delivered) => {
@@ -132,10 +146,17 @@ const MermaidExport = memo(function MermaidExport({
           })
           .catch(showExportError)
           .finally(() => setExporting(null));
-      }, 0);
+      });
       restoreTriggerFocus();
     },
-    [announceExportError, exporting, localize, restoreTriggerFocus, showExportError],
+    [
+      announceExportError,
+      deferPastPaint,
+      exporting,
+      localize,
+      restoreTriggerFocus,
+      showExportError,
+    ],
   );
 
   const handleSvgExport = useCallback(() => {

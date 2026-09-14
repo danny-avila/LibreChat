@@ -875,6 +875,43 @@ describe('AttachmentGroup routing', () => {
     expect(rows.findIndex((row) => row.textContent?.includes('index.html'))).toBe(1);
   });
 
+  it('keeps a pending row above an empty artifact through its transition', () => {
+    /* The empty artifact sinks by salience, and a pending file carries the
+     * same `bytes` before and after its preview resolves, so both renders
+     * must order the pair identically — otherwise the row jumps exactly
+     * when the preview lands. */
+    const empty = baseAttachment({
+      file_id: 'empty',
+      filename: 'notes.md',
+      text: '',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const loading = baseAttachment({
+      file_id: 'pending-2',
+      filename: 'report.xlsx',
+      bytes: 4096,
+      status: 'pending',
+    } as Partial<TAttachment>);
+    const resolved = baseAttachment({
+      file_id: 'pending-2',
+      filename: 'report.xlsx',
+      bytes: 4096,
+      text: '<table></table>',
+      textFormat: 'html',
+    } as Partial<TAttachment>);
+
+    const order = (attachments: TAttachment[]) => {
+      const { unmount } = renderWith(<AttachmentGroup attachments={attachments} />);
+      const rows = Array.from(screen.getByTestId('artifact-row-group').children);
+      const positions = rows.map((row) => (row.textContent?.includes('report.xlsx') ? 'x' : 'e'));
+      unmount();
+      return positions.join('');
+    };
+
+    expect(order([empty, loading] as TAttachment[])).toBe('xe');
+    expect(order([empty, resolved] as TAttachment[])).toBe('xe');
+  });
+
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({
