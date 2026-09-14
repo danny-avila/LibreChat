@@ -17,13 +17,21 @@ import {
   eReasoningParameterFormatSchema,
   eReasoningResponseKeySchema,
 } from './schemas';
+import {
+  REFILL_INTERVAL_UNITS,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from './balance';
+import {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+} from './limits';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
-import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';
-import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -36,9 +44,13 @@ export {
   MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+
+/** How long a started social login may take to return to its callback before its `state` expires. */
+export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
@@ -1189,6 +1201,18 @@ export const agentsEndpointSchema = baseEndpointSchema
        * disables the guard for that tool only. Merged over LibreChat's shipped default of
        * `{ create_file: 131072 }`. */
       maxToolCallArgBytesByTool: z.record(z.number()).optional(),
+      /** Characters of retained tool output the save path may tokenize exactly for the
+       * context gauge when a turn stops at the tool-call limit (see
+       * `retainedToolTokens`). Tokenizing costs ~60 ms/MB and runs once per stopped
+       * turn; past this ceiling the figure is withdrawn rather than estimated, so the
+       * gauge under-reports that turn instead of blocking the save. Raise it for
+       * deployments whose tools legitimately return more, lower it on slow hardware. */
+      maxRetainedToolCountChars: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .default(DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
@@ -2491,6 +2515,12 @@ export const balanceSchema = z.object({
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
+  reservationTtlMs: z
+    .number()
+    .int()
+    .min(MIN_BALANCE_RESERVATION_TTL_MS)
+    .optional()
+    .default(DEFAULT_BALANCE_RESERVATION_TTL_MS),
 });
 
 export const transactionsSchema = z.object({
@@ -2859,6 +2889,8 @@ export const configSchema = z.object({
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
+      /** Milliseconds a started social login may take to reach its callback; defaults to `DEFAULT_OAUTH_STATE_TTL_MS`. */
+      oauthStateTtlMs: z.number().int().min(60_000).max(3_600_000).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
@@ -3596,6 +3628,10 @@ export enum ErrorTypes {
    * Authentication rejected because the account or IP is banned
    */
   AUTH_BANNED = 'auth_banned',
+  /**
+   * Authentication request was not sent from this application's origin
+   */
+  AUTH_CROSS_ORIGIN = 'auth_cross_origin',
   /**
    * Model refused to respond (content policy violation)
    */

@@ -766,6 +766,10 @@ export type TMessageContentParts =
       type: ContentTypes.ERROR;
       text?: string | TextData;
       error?: string;
+      /** Set when this failure is what a manual compaction produced instead of a
+       *  summary. The turn has no other record of having been one, so the rerun
+       *  controls read it the same way they read a summary's marker. */
+      initiatedBy?: 'user';
     } & ContentMetadata)
   | ({
       type: ContentTypes.THINK;

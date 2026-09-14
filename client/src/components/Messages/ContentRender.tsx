@@ -11,12 +11,12 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
-import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import { useLocalize, useAttachments, useMessageActions, useContentMetadata } from '~/hooks';
 import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
-import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
+import { getHeaderHoverLabel } from '~/components/Chat/Messages/ui/HeaderLabel';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -101,6 +101,7 @@ const ContentRender = memo(function ContentRender({
     getCanCopy,
     regenerateMessage,
     latestMessageDepth,
+    hasConfiguredSender,
   } = useMessageActions({
     message: msg,
     searchResults,
@@ -159,7 +160,8 @@ const ContentRender = memo(function ContentRender({
       id={msg.messageId}
       icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
       label={messageLabel ?? ''}
-      hoverLabel={getHeaderModelName(
+      hoverLabel={getHeaderHoverLabel(
+        hasConfiguredSender,
         agent?.model,
         assistant?.model,
         msg.model,

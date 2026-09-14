@@ -26,12 +26,15 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  resolveRunUsageContext,
+  recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  resolveRetainedToolTokens,
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
@@ -171,6 +174,8 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
+  getSummaryPartText,
+  markCompactionOutcome,
 } = require('@librechat/api');
 const {
   Run,
@@ -328,41 +333,6 @@ function captureRunContextMeta(client) {
     fadingTier: source?.getFadingTier?.(),
     fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
-  });
-}
-
-/** Text of a summary content part; empty for anything else. */
-function getSummaryPartText(part) {
-  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-    return '';
-  }
-  return part.content
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .join('')
-    .trim();
-}
-
-/**
- * A compaction turn's response is its summary. The run emits no text, so a
- * completion without a usable summary part means the summarizer produced
- * nothing. A run that already recorded why (an error part, e.g. a skipped
- * compaction) persists with that explanation; one that ended with neither
- * fails as a typed error instead of persisting an empty assistant message.
- * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
- */
-function markCompactionSummary(contentParts) {
-  const summary = contentParts.find(
-    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
-  );
-  if (summary != null) {
-    summary.initiatedBy = 'user';
-    return;
-  }
-  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
-    return;
-  }
-  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
-    code: 'COMPACTION_FAILED',
   });
 }
 
@@ -3568,7 +3538,9 @@ class AgentClient extends BaseClient {
 
     const completion = filterMalformedContentParts(this.contentParts);
     if (this.isCompactionTurn()) {
-      markCompactionSummary(completion);
+      markCompactionOutcome(completion, {
+        aborted: this.abortController?.signal?.aborted === true,
+      });
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
@@ -3625,7 +3597,19 @@ class AgentClient extends BaseClient {
             event.runId === latestSnapshotRunId),
       );
     if (latestSnapshot && hasPrimaryAfterSnapshot) {
-      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+      /** The counted tool results this turn keeps past that snapshot — only a
+       *  tool-call-limit stop has any; see `resolveRetainedToolTokens`. */
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents, {
+        retainedToolTokens: resolveRetainedToolTokens({
+          stoppedAtToolLimit: this.stepLimitReached === true,
+          contentParts: this.contentParts,
+          priorToolCallIds: this.contextUsageSink?.latestToolCallIds,
+          encoding: this.getEncoding(),
+          maxCountChars:
+            this.options?.req?.config?.endpoints?.[EModelEndpoint.agents]
+              ?.maxRetainedToolCountChars,
+        }),
+      });
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
      *  the context, INDEPENDENT of the snapshot guard above. When the client has
@@ -5170,20 +5154,14 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
-        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        } else {
-          logger.debug(
-            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
-          );
-        }
+        /** The run owns its usage even when stopped: `/api/agents/chat/abort`
+         *  only signals the abort, so nothing else records what was consumed.
+         *  A stopped turn is labelled as such on its transactions. */
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -5840,14 +5818,11 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const wasAborted = abortController?.signal?.aborted;
-        if (!wasAborted) {
-          await this.recordCollectedUsage({
-            context: 'message',
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-          });
-        }
+        await this.recordCollectedUsage({
+          context: resolveRunUsageContext(abortController?.signal?.aborted === true),
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
@@ -6155,13 +6130,19 @@ class AgentClient extends BaseClient {
     transactions,
     promptTokens,
     completionTokens,
-    context = 'message',
+    context,
   }) {
-    try {
-      await db.spendTokens(
-        {
+    await recordFallbackTokenUsage(
+      { spendTokens: db.spendTokens },
+      {
+        usage,
+        context,
+        collectedUsage: this.collectedUsage,
+        aborted: this.abortController?.signal?.aborted === true,
+        promptTokens,
+        completionTokens,
+        txMetadata: {
           model,
-          context,
           balance,
           transactions,
           messageId: this.responseMessageId,
@@ -6169,35 +6150,8 @@ class AgentClient extends BaseClient {
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            transactions,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
-    } catch (error) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        getSafeErrorMetadata(error),
-      );
-    }
+      },
+    );
   }
 
   /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */

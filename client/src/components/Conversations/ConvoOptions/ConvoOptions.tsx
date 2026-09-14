@@ -416,7 +416,7 @@ function ConvoOptions({
       <div className="flex items-center gap-0.5">
         <button
           aria-label={localize(isArchived ? 'com_ui_unarchive' : 'com_ui_archive')}
-          className={cn(buttonClassName, 'hover:bg-surface-hover')}
+          className={buttonClassName}
           onClick={handleArchiveClick}
           disabled={isArchiveLoading}
         >
@@ -424,7 +424,7 @@ function ConvoOptions({
         </button>
         <button
           aria-label={localize('com_ui_delete')}
-          className={cn(buttonClassName, 'hover:bg-surface-hover')}
+          className={buttonClassName}
           onClick={handleInstantDelete}
           disabled={isDeleteLoading}
         >

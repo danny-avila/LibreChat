@@ -1,3 +1,4 @@
+import type { SummaryContentPart } from './types/assistants';
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
@@ -251,7 +252,7 @@ describe('findMessageById', () => {
 });
 
 describe('isUserInitiatedCompaction', () => {
-  const summary = (overrides: Record<string, unknown> = {}) => ({
+  const summary = (overrides: Partial<SummaryContentPart> = {}): SummaryContentPart => ({
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
     ...overrides,
@@ -263,10 +264,21 @@ describe('isUserInitiatedCompaction', () => {
     ).toBe(true);
   });
 
+  /** A compaction that produced no summary marks its error part instead: that
+   *  turn is still a compaction, whatever it hangs off. */
+  it('is true for the failure a compaction recorded instead of a summary', () => {
+    expect(
+      isUserInitiatedCompaction({
+        content: [{ type: ContentTypes.ERROR, error: 'failed', initiatedBy: 'user' }],
+      } as TMessage),
+    ).toBe(true);
+  });
+
   /** An automatic summary detour carries no marker: that turn answers a user
    *  message and stays rerunnable. */
   it.each([
     ['an unmarked summary', [summary()]],
+    ['an unmarked error part', [{ type: ContentTypes.ERROR, error: 'failed' }]],
     ['a plain answer', [{ type: ContentTypes.TEXT, text: 'reply' }]],
     ['no content', undefined],
   ])('is false for %s', (_label, content) => {

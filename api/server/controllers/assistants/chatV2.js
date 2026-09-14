@@ -5,6 +5,7 @@ const {
   sendEvent,
   countTokens,
   checkBalance,
+  createBalanceReservations,
   getBalanceConfig,
   getTransactionsConfig,
   getModelMaxTokens,
@@ -44,9 +45,9 @@ const {
   getConvo,
   getMultiplier,
   getTransactions,
-  findBalanceByUser,
-  upsertBalanceFields,
-  createAutoRefillTransaction,
+  reserveBalance,
+  renewBalanceReservation,
+  releaseBalanceReservation,
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
@@ -118,6 +119,7 @@ const chatV2 = async (req, res) => {
   /** @type {Run | undefined} - The completed run, undefined if incomplete */
   let completedRun;
   let contentRejected = false;
+  const balanceReservations = createBalanceReservations();
 
   const getContext = () => ({
     openai,
@@ -175,7 +177,7 @@ const chatV2 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
-      await checkBalance(
+      return await checkBalance(
         {
           req,
           res,
@@ -187,12 +189,12 @@ const chatV2 = async (req, res) => {
           },
         },
         {
-          findBalanceByUser,
           getMultiplier,
-          createAutoRefillTransaction,
+          reserveBalance,
+          renewBalanceReservation,
+          releaseBalanceReservation,
           logViolation,
           balanceConfig,
-          upsertBalanceFields,
         },
       );
     };
@@ -395,7 +397,7 @@ const chatV2 = async (req, res) => {
       }
     }
 
-    const promises = [initializeThread(), checkBalanceBeforeRun()];
+    const promises = [initializeThread(), balanceReservations.track(checkBalanceBeforeRun())];
     await Promise.all(promises);
 
     const sendInitialResponse = () => {
@@ -520,7 +522,7 @@ const chatV2 = async (req, res) => {
     }
 
     if (response.run.status === RunStatus.IN_PROGRESS) {
-      processRun(true);
+      balanceReservations.holdUntil(processRun(true));
     }
 
     completedRun = response.run;
@@ -593,6 +595,8 @@ const chatV2 = async (req, res) => {
     }
   } catch (error) {
     await handleError(error);
+  } finally {
+    await balanceReservations.release();
   }
 };
 

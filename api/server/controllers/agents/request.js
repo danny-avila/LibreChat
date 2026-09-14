@@ -46,6 +46,7 @@ const {
   getCodeWorkspaceSelectionErrorDetails,
   shouldPersistCodeWorkspaceInitializationError,
   getFailedTurnTraceFields,
+  resolveFailedTurnContent,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -490,6 +491,7 @@ async function saveErrorTurn(
         error: true,
         unfinished: false,
         isCreatedByUser: false,
+        ...resolveFailedTurnContent(req.body, errorText),
       },
       { context },
     );

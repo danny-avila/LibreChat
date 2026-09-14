@@ -3,6 +3,7 @@ export * from './acl/accessControlService';
 export * from './acl/insightsPermissions';
 export * from './acl/middleware';
 export * from './acl/principals';
+export * from './acl/search';
 export * from './credentials';
 /* Artifacts */
 export * from './artifacts';

@@ -20,6 +20,7 @@ const {
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
+  withBalanceReservations,
 } = require('@librechat/api');
 const {
   Constants,
@@ -732,6 +733,18 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    return withBalanceReservations((balanceReservations) =>
+      this.sendReservedMessage(message, opts, balanceReservations),
+    );
+  }
+
+  /**
+   * @param {string} message
+   * @param {Record<string, unknown>} opts
+   * @param {BalanceReservations} balanceReservations - Holds the balance reservation admitting
+   * this message; released once its usage is recorded, and by `sendMessage` on any other exit.
+   */
+  async sendReservedMessage(message, opts, balanceReservations) {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
@@ -974,7 +987,7 @@ class BaseClient {
         balanceConfig?.enabled &&
         supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
       ) {
-        await checkBalance(
+        const balanceAdmission = checkBalance(
           {
             req: this.options.req,
             res: this.options.res,
@@ -990,12 +1003,13 @@ class BaseClient {
           {
             logViolation,
             getMultiplier: db.getMultiplier,
-            findBalanceByUser: db.findBalanceByUser,
-            createAutoRefillTransaction: db.createAutoRefillTransaction,
+            reserveBalance: db.reserveBalance,
+            renewBalanceReservation: db.renewBalanceReservation,
+            releaseBalanceReservation: db.releaseBalanceReservation,
             balanceConfig,
-            upsertBalanceFields: db.upsertBalanceFields,
           },
         );
+        await balanceReservations.track(balanceAdmission);
       }
 
       completionResult = await this.sendCompletion(payload, opts);
@@ -1155,6 +1169,7 @@ class BaseClient {
         completionTokens,
       });
     }
+    await balanceReservations.release();
 
     if (userMessagePromise) {
       await userMessagePromise;

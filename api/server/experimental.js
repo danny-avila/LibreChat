@@ -37,6 +37,7 @@ const {
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
+  injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -551,6 +552,15 @@ if (cluster.isMaster) {
       }
     }
 
+    /* The composer lays out against whether a footer bar sits beneath it, and
+       `/api/config` answers that only after it has painted. One shell serves
+       every request, before there is a caller whose overrides could be resolved,
+       so the answer is the deployment's base configuration, like index.js. */
+    indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
+      customFooter: process.env.CUSTOM_FOOTER,
+      interfaceConfig: baseAppConfig?.interfaceConfig,
+    });
+
     const cspPolicy = createCspPolicy();
     const shellCache = shellCacheHeaders(cspPolicy != null);
 
@@ -628,7 +638,7 @@ if (cluster.isMaster) {
     }
 
     if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-      await configureSocialLogins(app);
+      await configureSocialLogins(app, appConfig);
     }
 
     app.use(capabilityContextMiddleware);

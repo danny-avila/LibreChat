@@ -344,6 +344,8 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
+  # How long a started social login may take to return from the provider (ms, default 600000)
+  # oauthStateTtlMs: 600000
 
 # Example Balance settings
 # balance:
@@ -353,6 +355,7 @@ registration:
 #   refillIntervalValue: 30
 #   refillIntervalUnit: 'days'
 #   refillAmount: 10000
+#   reservationTtlMs: 1800000  # How long an in-flight request's reserved credits count if never released
 
 # Example Transactions settings
 # Controls whether to save transaction records to the database
