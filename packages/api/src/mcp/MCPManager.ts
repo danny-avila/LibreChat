@@ -55,12 +55,12 @@ import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
 import { getToolUiResourceUri, isToolHiddenFromApp } from './apps';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
-import { isAbortError, isOwnedAbortError } from '~/utils/errors';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
+import { isOwnedAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
