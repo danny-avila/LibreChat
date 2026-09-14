@@ -5,6 +5,7 @@ import {
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
   retainMidRunCodeApprovalMode,
+  buildRecoveryPreset,
   mergeErrorMessages,
   mergeRegenerateFinalMessages,
   startedAsNewConversation,
@@ -314,5 +315,25 @@ describe('retainMidRunCodeApprovalMode', () => {
   it('defers to the server when the conversation never held a mode', () => {
     expect(retainMidRunCodeApprovalMode(sentWith(), sentWith('ask'))).toBe(undefined);
     expect(retainMidRunCodeApprovalMode(null, sentWith('ask'))).toBe(undefined);
+  });
+});
+
+describe('buildRecoveryPreset', () => {
+  const sent = {
+    conversationId: 'conversation-1',
+    endpoint: 'agents',
+    agent_id: 'agent-1',
+    codeApprovalMode: 'ask',
+  } as TConversation;
+
+  it('carries a mode picked while the failed run streamed', () => {
+    const preset = buildRecoveryPreset(sent, { ...sent, codeApprovalMode: 'acceptEdits' });
+    expect(preset.codeApprovalMode).toBe('acceptEdits');
+    expect(preset.agent_id).toBe('agent-1');
+  });
+
+  it('keeps the sent mode when the selection did not move', () => {
+    expect(buildRecoveryPreset(sent, sent).codeApprovalMode).toBe('ask');
+    expect(buildRecoveryPreset(sent, null).codeApprovalMode).toBe('ask');
   });
 });
