@@ -151,4 +151,41 @@ test.describe('Mermaid source downloads', () => {
       await expect(page.getByText(FAILURE_MESSAGE, { exact: true }).last()).toBeVisible();
     },
   );
+
+  test(
+    'the opened diagram row carries its filename and download once ' +
+      '@scenario:file-backed-mermaid-row-owns-its-filename-and-download',
+    async ({ page }) => {
+      const conversationId = await installFixture(page, false);
+      await page.goto(`/c/${conversationId}`, { timeout: 30000 });
+
+      const messages = page.getByTestId('messages-view');
+      const openButton = messages.getByRole('button', { name: 'Open as artifact', exact: true });
+      await expect(openButton).toBeVisible({ timeout: 30000 });
+      /* Before opening, the wrapper header is the only place the filename
+       * and its download live. */
+      await expect(messages.getByRole('button', { name: 'Download flow.mmd' })).toHaveCount(1);
+      await openButton.click();
+
+      const row = messages.locator('[data-artifact-trigger^="mermaid-artifact-"]');
+      await expect(row).toHaveCount(1);
+      await expect(row).toHaveAccessibleName(/flow\.mmd Diagram/);
+      /* The row replaced the wrapper header rather than stacking on top of
+       * it: one filename, one download, both inside the row. */
+      await expect(messages.getByText('flow.mmd', { exact: true })).toHaveCount(1);
+      const download = messages.getByRole('button', { name: 'Download flow.mmd' });
+      await expect(download).toHaveCount(1);
+      const rowBox = await row.boundingBox();
+      const downloadBox = await download.boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(downloadBox).not.toBeNull();
+      expect(downloadBox!.y).toBeGreaterThanOrEqual(rowBox!.y - 1);
+      expect(downloadBox!.y + downloadBox!.height).toBeLessThanOrEqual(
+        rowBox!.y + rowBox!.height + 1,
+      );
+
+      const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
+      expect(file.suggestedFilename()).toBe('flow.mmd');
+    },
+  );
 });

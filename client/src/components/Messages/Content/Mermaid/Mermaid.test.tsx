@@ -193,6 +193,49 @@ describe('Mermaid Artifact expansion', () => {
     expect(state.visible).toBe(true);
   });
 
+  it('hands a file-backed diagram its download and reports the row mode', async () => {
+    /* A code-execution `.mmd` arrives wrapped in a header that shows the
+     * filename and its own download button. Once the diagram becomes its
+     * trigger row, the row takes both over, and the wrapper needs to know
+     * so it stops repeating them beside it. */
+    const onDownload = jest.fn();
+    const rowModes: boolean[] = [];
+    render(
+      <RecoilRoot>
+        <MemoryRouter initialEntries={['/c/conversation-1']}>
+          <MessageContext.Provider
+            value={{ messageId: 'message-1', conversationId: 'conversation-1', isExpanded: true }}
+          >
+            <Mermaid
+              id="flow-file"
+              artifact={
+                {
+                  id: 'tool-artifact-flow',
+                  type: 'application/vnd.mermaid',
+                  title: 'flow.mmd',
+                  content: 'graph TD\nA-->B',
+                  lastUpdateTime: 1,
+                } as Artifact
+              }
+              onDownload={onDownload}
+              onRowModeChange={(isRow) => rowModes.push(isRow)}
+            >
+              {'graph TD\nA-->B'}
+            </Mermaid>
+          </MessageContext.Provider>
+        </MemoryRouter>
+      </RecoilRoot>,
+    );
+
+    expect(rowModes).toEqual([false]);
+    fireEvent.click(screen.getByRole('button', { name: mockOpenAsArtifactLabel }));
+
+    const downloadButton = await screen.findByRole('button', { name: 'com_ui_download flow.mmd' });
+    fireEvent.click(downloadButton);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(rowModes[rowModes.length - 1]).toBe(true));
+  });
+
   it('separates diagrams that sit in different content parts of one message', async () => {
     let state: ArtifactStateSnapshot = {
       artifacts: null,

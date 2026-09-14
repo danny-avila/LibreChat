@@ -23,9 +23,19 @@ interface MermaidProps {
   id?: string;
   theme?: string;
   artifact?: Artifact;
+  /**
+   * Saves the file a code-execution diagram came from. Once the diagram
+   * collapses into its trigger row, the row owns this action the way every
+   * other file-backed artifact row does, so the caller's own header can
+   * step aside instead of repeating the filename beside it.
+   */
+  onDownload?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Reports whether the diagram is currently rendered as its trigger row. */
+  onRowModeChange?: (isRow: boolean) => void;
 }
 
-interface MermaidRendererProps extends Omit<MermaidProps, 'artifact'> {
+interface MermaidRendererProps
+  extends Omit<MermaidProps, 'artifact' | 'onDownload' | 'onRowModeChange'> {
   fillContainer?: boolean;
   onExpand?: () => void;
   onExportReady?: (data: ProcessedMermaidSvg | null) => void;
@@ -34,7 +44,8 @@ interface MermaidRendererProps extends Omit<MermaidProps, 'artifact'> {
   showHeader?: boolean;
 }
 
-const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: artifactProp }) => {
+const Mermaid: React.FC<MermaidProps> = memo((props) => {
+  const { children, id, theme, artifact: artifactProp, onDownload, onRowModeChange } = props;
   const localize = useLocalize();
   const location = useLocation();
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -137,7 +148,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
     shouldFocusArtifactCardRef.current = false;
   }, [isArtifactCard]);
 
-  if (canOpenArtifact && isArtifactCard) {
+  const isRowMode = canOpenArtifact && isArtifactCard;
+  useEffect(() => {
+    onRowModeChange?.(isRowMode);
+  }, [isRowMode, onRowModeChange]);
+
+  if (isRowMode) {
     return (
       <ArtifactRow
         ref={artifactButtonRef}
@@ -146,6 +162,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
         kind={artifactRowKind(artifact)}
         isSelected={isSelected}
         onOpen={handleArtifactClick}
+        onDownload={onDownload}
       />
     );
   }
