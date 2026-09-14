@@ -13,6 +13,7 @@ import {
   getCustomEndpointConfig,
   getTransactionsConfig,
   getEndpointsDropParamsMap,
+  getResumableStreamsConfig,
 } from './config';
 
 // Helper function to create a minimal AppConfig for testing
@@ -85,6 +86,32 @@ jest.mock('@librechat/data-schemas', () => {
 jest.mock('~/utils', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
 }));
+
+describe('getResumableStreamsConfig', () => {
+  it('defaults terminal recovery retries when app config is absent', () => {
+    expect(getResumableStreamsConfig()).toEqual({ terminalRecoveryMaxRetries: 5 });
+  });
+
+  it.each([{}, { resumableStreams: {} }])('resolves defaults from raw config %j', (config) => {
+    const appConfig = createTestAppConfig({ config });
+    expect(getResumableStreamsConfig(appConfig)).toEqual({ terminalRecoveryMaxRetries: 5 });
+    expect(appConfig.config).not.toHaveProperty('resumableStreams.terminalRecoveryMaxRetries');
+  });
+
+  it.each([0, 2, 8])('uses the supplied effective retry limit %s', (terminalRecoveryMaxRetries) => {
+    const appConfig = createTestAppConfig({
+      config: { resumableStreams: { terminalRecoveryMaxRetries } },
+    });
+    expect(getResumableStreamsConfig(appConfig)).toEqual({ terminalRecoveryMaxRetries });
+  });
+
+  it('rejects an invalid raw retry limit', () => {
+    const appConfig = createTestAppConfig({
+      config: { resumableStreams: { terminalRecoveryMaxRetries: -1 } },
+    });
+    expect(() => getResumableStreamsConfig(appConfig)).toThrow();
+  });
+});
 
 describe('getTransactionsConfig', () => {
   beforeEach(() => {

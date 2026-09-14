@@ -3,16 +3,24 @@ import {
   EModelEndpoint,
   removeNullishValues,
   normalizeEndpointName,
+  resumableStreamsSchema,
 } from 'librechat-data-provider';
 import type {
   TEndpoint,
   TCustomConfig,
+  TStartupConfig,
   EndpointsDropParamsMap,
   TTransactionsConfig,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { resolveCustomEndpointSecrets } from '~/admin/secrets';
 import { isEnabled } from '~/utils';
+
+export function getResumableStreamsConfig(
+  appConfig?: AppConfig,
+): NonNullable<TStartupConfig['resumableStreams']> {
+  return resumableStreamsSchema.parse(appConfig?.config?.resumableStreams);
+}
 
 /**
  * Retrieves the balance configuration object

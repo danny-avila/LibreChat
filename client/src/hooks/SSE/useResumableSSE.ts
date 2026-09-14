@@ -23,6 +23,7 @@ import {
   ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
+  DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -1259,6 +1260,9 @@ export default function useResumableSSE(
   );
 
   const { data: startupConfig } = useGetStartupConfig();
+  const terminalRecoveryMaxRetries =
+    startupConfig?.resumableStreams?.terminalRecoveryMaxRetries ??
+    DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES;
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
@@ -1855,8 +1859,9 @@ export default function useResumableSSE(
       const handleForegroundReattach = (event: Event) => {
         if (
           document.visibilityState !== 'visible' ||
-          (event.type === 'online' && terminalRecoveryAttemptRef.current <= MAX_RETRIES) ||
-          (finalReceived && terminalRecoveryAttemptRef.current <= MAX_RETRIES) ||
+          (event.type === 'online' &&
+            terminalRecoveryAttemptRef.current <= terminalRecoveryMaxRetries) ||
+          (finalReceived && terminalRecoveryAttemptRef.current <= terminalRecoveryMaxRetries) ||
           subscriptionRetired ||
           replacementHandoffRef.current ||
           !isCurrentSubscription() ||
@@ -2605,7 +2610,7 @@ export default function useResumableSSE(
           reconnectTimeoutRef.current = null;
         }
         const attempt = ++terminalRecoveryAttemptRef.current;
-        if (attempt > MAX_RETRIES) {
+        if (attempt > terminalRecoveryMaxRetries) {
           /** Preserve the unresolved run and accepted steers. Foreground or
            * restored connectivity can retry without inventing a terminal outcome or polling. */
           logger.warn('ResumableSSE', 'Terminal recovery paused until foreground or online', {
@@ -2711,35 +2716,31 @@ export default function useResumableSSE(
           return;
         }
 
-        if (event.reconcileReason === 'generation_replaced') {
-          try {
-            const replacementStatus = await fetchStreamStatus(reconciliationConvoId);
-            if (!isCurrentSubscription()) {
-              return;
-            }
-            if (await handoffToReplacement(reconciliationConvoId, replacementStatus)) {
-              return;
-            }
-            if (
-              !supportsGenerationProtocolV2(replacementStatus) ||
-              replacementStatus.active !== false
-            ) {
-              retryFencedTerminalAttachment('replacement status is not terminal');
-              return;
-            }
-            /** A replacement can finish before we attach. Reconcile history below
-             * instead of repeatedly requesting the superseded epoch. */
-          } catch {
-            retryFencedTerminalAttachment('replacement status unavailable');
-            return;
-          }
+        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+        closeStream();
+        /** A synthesized frame belongs to its attachment, not necessarily the
+         * current epoch. Confirm terminal persistence before even reading history. */
+        let status: Awaited<ReturnType<typeof fetchStreamStatus>>;
+        try {
+          status = await fetchStreamStatus(reconciliationConvoId);
           if (!isCurrentSubscription()) {
             return;
           }
+          if (await handoffToReplacement(reconciliationConvoId, status)) {
+            return;
+          }
+          if (!supportsGenerationProtocolV2(status) || status.active !== false) {
+            retryFencedTerminalAttachment('synthesized status is not terminal');
+            return;
+          }
+        } catch {
+          retryFencedTerminalAttachment('synthesized terminal status unavailable');
+          return;
+        }
+        if (!isCurrentSubscription()) {
+          return;
         }
 
-        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        closeStream();
         clearStepMaps();
         let persistedMessages: TMessage[] | undefined;
         const messageQueryKey = [QueryKeys.messages, reconciliationConvoId] as const;
@@ -2798,73 +2799,6 @@ export default function useResumableSSE(
             conversationId: reconciliationConvoId,
             error,
           });
-        }
-
-        let status: Awaited<ReturnType<typeof fetchStreamStatus>> | undefined;
-        try {
-          status = await fetchStreamStatus(reconciliationConvoId);
-          if (!isCurrentSubscription()) {
-            return;
-          }
-        } catch (error) {
-          if (!isCurrentSubscription()) {
-            return;
-          }
-          logger.warn('ResumableSSE', 'Could not inspect synthesized terminal status', {
-            conversationId: reconciliationConvoId,
-            error,
-          });
-        }
-        if (status != null && !supportsGenerationProtocolV2(status)) {
-          /** A v2 control frame cannot be reconciled with a legacy status
-           * snapshot (for example during a rolling deploy). Preserve the
-           * attachment and retry the exact fenced generation. */
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, 250);
-          return;
-        }
-        if (
-          status?.active === true &&
-          status.createdAt != null &&
-          (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-        ) {
-          const handedOff = await handoffToReplacement(reconciliationConvoId, status);
-          if (!isCurrentSubscription()) {
-            return;
-          }
-          if (handedOff) {
-            return;
-          }
-        }
-        if (
-          status?.active === true &&
-          (generationCreatedAt == null || status.createdAt === generationCreatedAt)
-        ) {
-          // Durable state still calls this exact epoch active. Prefer another
-          // fenced resume over terminalizing on a racing synthesized frame.
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, 250);
-          return;
         }
 
         const authoritativeValues = [
@@ -3753,6 +3687,7 @@ export default function useResumableSSE(
       getMessages,
       setMessages,
       startupConfig?.balance?.enabled,
+      terminalRecoveryMaxRetries,
       balanceQuery,
       removeActiveJob,
       queryClient,

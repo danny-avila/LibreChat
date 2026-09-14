@@ -23,13 +23,25 @@ test.describe('stream transport fidelity', () => {
     /** Service workers can bypass Playwright's network fault injection. */
     test.use({ serviceWorkers: 'block' });
     for (const existingConversation of [false, true]) {
+      const maxRetries = 2;
+      const failureCount = maxRetries + 1;
       const scenario = existingConversation
         ? 'on reconnect after exhausting history retries'
         : 'on the first turn';
       test(`recovers a lost terminal event ${scenario}`, async ({ page, context }) => {
         test.setTimeout(90_000);
         if (existingConversation) {
-          await page.addInitScript(() => {
+          await page.route('**/api/config', async (route) => {
+            const response = await route.fetch();
+            await route.fulfill({
+              response,
+              json: {
+                ...(await response.json()),
+                resumableStreams: { terminalRecoveryMaxRetries: maxRetries },
+              },
+            });
+          });
+          await page.addInitScript((failureCount) => {
             let failedReads = 0;
             const send = XMLHttpRequest.prototype.send;
             XMLHttpRequest.prototype.send = function (body) {
@@ -37,7 +49,7 @@ test.describe('stream transport fidelity', () => {
                 'loadend',
                 () => {
                   if (this.status !== 503 || !this.responseURL.includes('/api/messages/')) return;
-                  if (++failedReads !== 6) return;
+                  if (++failedReads !== failureCount) return;
                   /** Yield past the XHR task's promise rejection chain, so the
                    * hook has consumed its last failure before we go online. */
                   setTimeout(() => console.debug('E2E terminal history failures consumed'), 0);
@@ -46,7 +58,7 @@ test.describe('stream transport fidelity', () => {
               );
               send.call(this, body);
             };
-          });
+          }, failureCount);
         }
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
@@ -57,8 +69,24 @@ test.describe('stream transport fidelity', () => {
           await expect(messagesView(page)).toContainText('E2E reply seed-history');
         }
         await page.route('**/api/agents/chat/stream/**', async (route) => {
-          if (new URL(route.request().url()).searchParams.get('resume') === 'true') {
-            await route.fulfill({ status: 404, json: { error: 'Stream expired' } });
+          const url = new URL(route.request().url());
+          if (url.searchParams.get('resume') === 'true') {
+            if (existingConversation) {
+              await route.fulfill({ status: 404, json: { error: 'Stream expired' } });
+            } else {
+              await route.fulfill({
+                status: 200,
+                contentType: 'text/event-stream',
+                body: `data: ${JSON.stringify({
+                  final: true,
+                  reconcile: true,
+                  reconcileReason: 'terminal_payload_missing',
+                  terminalStatus: 'complete',
+                  generationCreatedAt: Number(url.searchParams.get('generationCreatedAt')),
+                  generationProtocolVersion: 2,
+                })}\n\n`,
+              });
+            }
             return;
           }
           /** Let the real generation persist, but deliver only its created frame.
@@ -91,7 +119,7 @@ test.describe('stream transport fidelity', () => {
               failedHistoryReads++;
               await route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
             },
-            { times: 6 },
+            { times: failureCount },
           );
         }
         const failedHistory = existingConversation
@@ -113,7 +141,7 @@ test.describe('stream transport fidelity', () => {
         await failedHistory;
         if (existingConversation) {
           await failuresConsumed;
-          expect(failedHistoryReads).toBe(6);
+          expect(failedHistoryReads).toBe(failureCount);
           await expect(messagesView(page)).not.toContainText(expected);
           /** Keep the page visible: only the browser's online event can rearm
            * the exhausted terminal recovery, not another foreground event. */

@@ -9,7 +9,7 @@ import {
   StepTypes,
   request,
 } from 'librechat-data-provider';
-import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission, TStartupConfig } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
@@ -189,9 +189,10 @@ const mockFetchStreamStatus = jest.fn();
 const mockGetConversationById = jest.fn();
 const mockConvertSteersToQueued = jest.fn();
 const mockPostGenerationRequest = jest.fn();
+let mockStartupConfig: Partial<TStartupConfig>;
 
 jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: () => ({ data: { balance: { enabled: false } } }),
+  useGetStartupConfig: () => ({ data: mockStartupConfig }),
   useGetUserBalance: () => ({ refetch: jest.fn() }),
   queueTitleGeneration: jest.fn(),
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
@@ -359,6 +360,7 @@ const advanceRetryTimer = async (ms: number) => {
 
 describe('useResumableSSE', () => {
   beforeEach(() => {
+    mockStartupConfig = {};
     mockSSEInstances.length = 0;
     localStorage.clear();
     mockErrorHandler.mockClear();
@@ -1831,6 +1833,7 @@ describe('useResumableSSE', () => {
 
   it('drops an awaited synthesized reconciliation after conversation B starts', async () => {
     const conversationB = 'conv-b-789';
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
     (request.post as jest.Mock)
       .mockResolvedValueOnce({
         streamId: CONV_ID,
@@ -3942,6 +3945,7 @@ describe('useResumableSSE', () => {
 
   it('keeps an active job locked and resubscribes after the reconnect retry ceiling', async () => {
     jest.useFakeTimers();
+    mockStartupConfig.resumableStreams = { terminalRecoveryMaxRetries: 0 };
     const pendingSteers = [
       { steerId: 'still-running-steer', text: 'wait for boundary', createdAt: 1 },
     ];
@@ -4153,15 +4157,19 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it.each([
-    ['http', 'visibilitychange'],
-    ['frame', 'visibilitychange'],
-    ['http', 'online'],
-    ['frame', 'online'],
-  ])(
-    'bounds terminal history retries across %s attachments and rearms on %s',
-    async (kind, event) => {
+  it.each(
+    [undefined, 0, 2, 8].flatMap((maxRetries) =>
+      ['http', 'frame'].flatMap((kind) =>
+        ['visibilitychange', 'online'].map((event) => ({ maxRetries, kind, event })),
+      ),
+    ),
+  )(
+    'bounds terminal history retries ($maxRetries) across $kind attachments and rearms on $event',
+    async ({ maxRetries, kind, event }) => {
       jest.useFakeTimers();
+      if (maxRetries != null) {
+        mockStartupConfig.resumableStreams = { terminalRecoveryMaxRetries: maxRetries };
+      }
       (request.post as jest.Mock).mockResolvedValue({
         streamId: CONV_ID,
         generationCreatedAt: 1000,
@@ -4200,7 +4208,8 @@ describe('useResumableSSE', () => {
         await flushMicrotasks();
       };
 
-      for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      const delays = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000];
+      for (const delay of delays.slice(0, maxRetries ?? 5)) {
         await receiveTerminal();
         const failedSSE = getLastSSE();
         await advanceRetryTimer(delay - 1);
@@ -4212,7 +4221,7 @@ describe('useResumableSSE', () => {
       const pausedSSE = getLastSSE();
       await advanceRetryTimer(60_000);
       expect(getLastSSE()).toBe(pausedSSE);
-      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(6);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes((maxRetries ?? 5) + 1);
       expect(mockSetRunEnd).not.toHaveBeenCalled();
       expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
       expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
@@ -4248,9 +4257,15 @@ describe('useResumableSSE', () => {
     },
   );
 
-  it.each(['active', 'terminal', 'completed', 'unavailable'])(
-    'preserves live content during 404 status lookup (%s)',
-    async (outcome) => {
+  it.each(
+    ['http', 'frame'].flatMap((kind) =>
+      ['active', 'replaced', 'terminal', 'completed', 'unavailable', 'unnegotiated'].map(
+        (outcome) => ({ kind, outcome }),
+      ),
+    ),
+  )(
+    'preserves live content during $kind terminal status lookup ($outcome)',
+    async ({ kind, outcome }) => {
       jest.useFakeTimers();
       (request.post as jest.Mock).mockResolvedValue({
         streamId: CONV_ID,
@@ -4283,7 +4298,21 @@ describe('useResumableSSE', () => {
       await flushMicrotasks();
       chatHelpers.setMessages.mockClear();
       await act(async () => {
-        getLastSSE()._emit('error', { responseCode: 404 });
+        if (kind === 'http') {
+          getLastSSE()._emit('error', { responseCode: 404 });
+        } else {
+          getLastSSE()._emit('message', {
+            data: JSON.stringify({
+              final: true,
+              reconcile: true,
+              reconcileReason: 'terminal_payload_missing',
+              terminalStatus: 'complete',
+              generationCreatedAt: 1000,
+              generationProtocolVersion: 2,
+              conversation: { conversationId: CONV_ID },
+            }),
+          });
+        }
       });
       await flushMicrotasks();
       expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
@@ -4300,11 +4329,11 @@ describe('useResumableSSE', () => {
           }
           const terminalStatus = outcome === 'completed' ? 'complete' : 'aborted';
           resolveStatus({
-            active: outcome === 'active',
-            status: outcome === 'active' ? 'running' : terminalStatus,
+            active: outcome === 'active' || outcome === 'replaced',
+            status: outcome === 'active' || outcome === 'replaced' ? 'running' : terminalStatus,
             streamId: CONV_ID,
-            createdAt: 1000,
-            generationProtocolVersion: 2,
+            createdAt: outcome === 'replaced' ? 2000 : 1000,
+            generationProtocolVersion: outcome === 'unnegotiated' ? 1 : 2,
           });
         }
       });
@@ -4320,10 +4349,18 @@ describe('useResumableSSE', () => {
         expect(mockSetRunEnd).not.toHaveBeenCalled();
         expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
         expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
-        const failedSSE = getLastSSE();
-        await advanceRetryTimer(1_000);
-        expect(getLastSSE()).not.toBe(failedSSE);
-        expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+        if (outcome === 'replaced') {
+          expect(mockSetQueryData).toHaveBeenCalledWith(
+            ['streamStatus', CONV_ID],
+            expect.objectContaining({ createdAt: 2000, generationHandoff: true }),
+          );
+          expect(mockSetSubmission).toHaveBeenCalledWith(null);
+        } else {
+          const failedSSE = getLastSSE();
+          await advanceRetryTimer(1_000);
+          expect(getLastSSE()).not.toBe(failedSSE);
+          expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+        }
         expect(chatHelpers.setMessages).not.toHaveBeenCalled();
       }
       unmount();

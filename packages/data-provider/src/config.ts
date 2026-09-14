@@ -2231,6 +2231,7 @@ export type TStartupConfig = {
    * offer to move a conversation unless this is advertised. */
   codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
   interface?: TInterfaceConfig;
+  resumableStreams?: z.infer<typeof resumableStreamsSchema>;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
   transactions?: TTransactionsConfig;
@@ -2818,9 +2819,24 @@ export const openIdDiscoverySchema = z.object({
 
 export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 
+export const DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES = 5;
+
+export const resumableStreamsSchema = z
+  .object({
+    /** Automatic terminal history recovery retries, independent of transport reconnects. */
+    terminalRecoveryMaxRetries: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES),
+  })
+  .default({});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  resumableStreams: resumableStreamsSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
