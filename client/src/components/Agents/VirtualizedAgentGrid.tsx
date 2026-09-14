@@ -47,6 +47,12 @@ interface VirtualizedAgentGridProps {
    * placeholder follows them instead of replacing them.
    */
   placeholder?: React.ReactNode;
+  /**
+   * Height the placeholder reserves at the top of the scroll frame while it is pinned
+   * there. A focused row that the reserve does not already clear is scrolled out from
+   * under it, which is the case for a row the reader had already scrolled past.
+   */
+  placeholderInset?: number;
 }
 
 const OVERSCAN_ROWS = 2;
@@ -67,6 +73,7 @@ export default function VirtualizedAgentGrid({
   onLoadMore,
   onSelectAgent,
   placeholder,
+  placeholderInset = 0,
 }: VirtualizedAgentGridProps) {
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
@@ -408,6 +415,32 @@ export default function VirtualizedAgentGrid({
       target.focus();
     }
   }, [focusedAgentId, indexById, listElement, virtualRows]);
+
+  /**
+   * The pinned placeholder reserves its height at the top of the content, so the rows
+   * start below it — but a row the reader has already scrolled past still travels under
+   * it. A focused card there would carry a focus ring nobody can see, so the frame
+   * scrolls back by the overlap, which the reserve has made room for. Only the focused
+   * card is moved into view: the reader's own scroll position is otherwise left alone.
+   */
+  useLayoutEffect(() => {
+    const frame = scrollElementRef.current;
+    const focusedElement = focusedElementRef.current;
+    if (
+      placeholderInset <= 0 ||
+      frame == null ||
+      focusedElement == null ||
+      !focusedElement.isConnected ||
+      document.activeElement !== focusedElement
+    ) {
+      return;
+    }
+    const obstructedUntil = frame.getBoundingClientRect().top + frame.clientTop + placeholderInset;
+    const overlap = obstructedUntil - focusedElement.getBoundingClientRect().top;
+    if (overlap > 0) {
+      frame.scrollTop = Math.max(0, frame.scrollTop - overlap);
+    }
+  }, [focusedAgentId, placeholderInset, scrollElementRef, virtualRows]);
 
   /* Runs after every commit so the ref is current when `OGDialog` reads it on close: the
      card's own trigger while it is mounted, the grid once it is not. */

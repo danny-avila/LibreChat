@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
@@ -179,6 +179,52 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     }
   }, [failure, fetchNextPage, hasNextPage, isFetching]);
 
+  /**
+   * The recovery card is painted over the rows, so whatever it covers is still focusable
+   * with nothing to show for it — a focus ring under an opaque card is no focus ring. It
+   * therefore reserves its own measured height at the top of the scrolled content: the
+   * rows begin below the band instead of under it, which is the only position no scroll
+   * can take away. The reserve is the card's real height rather than a constant, because
+   * the card grows with its status, its countdown and its eventual reload link.
+   */
+  const recoveryCardRef = useRef<HTMLDivElement | null>(null);
+  const [recoveryInset, setRecoveryInset] = useState(0);
+  const hasRecoveryCard = failure != null && hasData;
+  useLayoutEffect(() => {
+    const card = recoveryCardRef.current;
+    if (!hasRecoveryCard || !card) {
+      setRecoveryInset(0);
+      return;
+    }
+    const measure = () => setRecoveryInset(card.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [hasRecoveryCard]);
+
+  /**
+   * Reserving space moves the rows down by that much, which is exactly what must not
+   * happen to someone reading deep in the list, so the scroll position absorbs the
+   * change and the row they were on stays where it was. At the top there is nothing to
+   * absorb it with, and that is the case where the rows have to move: the alternative is
+   * the first row sitting under the card. `scroll-padding-top` covers the rest — a Tab
+   * into a row the card would cover scrolls it clear instead of landing beneath it.
+   */
+  const appliedInsetRef = useRef(0);
+  useLayoutEffect(() => {
+    const frame = scrollElementRef.current;
+    if (!frame) {
+      return;
+    }
+    const delta = recoveryInset - appliedInsetRef.current;
+    appliedInsetRef.current = recoveryInset;
+    frame.style.scrollPaddingTop = recoveryInset > 0 ? `${recoveryInset}px` : '';
+    if (delta !== 0 && frame.scrollTop > 0) {
+      frame.scrollTop = Math.max(0, frame.scrollTop + delta);
+    }
+  }, [recoveryInset, scrollElementRef]);
+
   // An empty cursor page can occur when its selected agents change during the request.
   useEffect(() => {
     if (data && !hasData && hasNextPage && !isFetching && !error) {
@@ -274,20 +320,24 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       />
     );
     listPlaceholder = hasData ? (
-      /* This wrapper has three jobs that pull in different layout directions: it must come
+      /* This wrapper has four jobs that pull in different layout directions: it must come
          first in keyboard order so Retry is one Tab away, stay sticky so recovery remains
-         visible while rows scroll under it, and take no layout space so a late page failure
-         cannot move the rows under the user's scroll position. A zero-height sticky host
-         with an overflowing card satisfies all three; putting the card itself in flow would
-         preserve the first two but make every loaded row jump by the card height.
+         visible while rows scroll under it, leave the rows the reader is on where they
+         are, and never be the reason a focused card cannot be seen. The first two are the
+         sticky host; the last two are why the host takes exactly the card's measured
+         height and the scroll position absorbs that reserve — the rows then start below
+         the band rather than under it, and nobody deep in the list moves.
 
-         `items-start` is load-bearing: a flex child stretches to its container's cross size,
-         so inside an `h-0` host the card's box would collapse to zero height and paint no
-         background — its text would read on top of the rows it is supposed to cover. The
-         stacking level has to clear the cards' own click overlay and the lifted row a morph
-         promotes, while staying under the detail dialog and its scrim. */
-      <div className="pointer-events-none sticky top-0 z-30 flex h-0 items-start justify-center">
-        <div className="pointer-events-auto w-full max-w-xl pb-5">
+         `items-start` is load-bearing: a flex child stretches to its container's cross
+         size, so the card's box would otherwise be stretched to the host and repaint its
+         background over the rows it reserves space beside. The stacking level has to clear
+         the cards' own click overlay and the lifted row a morph promotes, while staying
+         under the detail dialog and its scrim. */
+      <div
+        className="pointer-events-none sticky top-0 z-30 flex items-start justify-center"
+        style={{ height: recoveryInset }}
+      >
+        <div ref={recoveryCardRef} className="pointer-events-auto w-full max-w-xl pb-5">
           <div className="rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
             {errorCard}
           </div>
@@ -349,6 +399,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             onLoadMore={loadMore}
             onSelectAgent={onSelectAgent}
             placeholder={listPlaceholder}
+            placeholderInset={recoveryInset}
           />
 
           {isFetchingNextPage && (
