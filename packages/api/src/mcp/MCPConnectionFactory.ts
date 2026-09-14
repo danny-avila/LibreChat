@@ -50,6 +50,7 @@ import {
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
 import { createLazyOboUpstreamTokenProvider } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
@@ -1456,7 +1457,11 @@ export class MCPConnectionFactory {
         logger.info(`${this.logPrefix} OBO token re-exchanged; retrying connection`);
         connection.emit('oauthHandled');
       } catch (error) {
-        logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        if (isAbortError(error)) {
+          logger.debug(`${this.logPrefix} OBO token re-exchange cancelled`);
+        } else {
+          logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        }
         /**
          * `connectClient` rejects its handling promise with this error and then
          * rethrows the server's original 401, so a diagnosis like an unrefreshable
@@ -1482,6 +1487,11 @@ export class MCPConnectionFactory {
     }
     if (error instanceof Error) {
       return error;
+    }
+    if (isAbortError(error)) {
+      return Object.assign(new Error('The operation was aborted.', { cause: error }), {
+        name: 'AbortError',
+      });
     }
     return new Error(`OBO token re-exchange failed for "${this.serverName}".`);
   }

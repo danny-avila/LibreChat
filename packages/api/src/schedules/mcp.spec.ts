@@ -7,10 +7,29 @@ import {
   createScheduleMCPPreflight,
   ScheduleMCPError,
 } from './mcp';
-import { OboTokenResolutionError } from '../mcp/oauth/obo';
+import { OboTokenResolutionError, createLazyOboUpstreamTokenProvider } from '../mcp/oauth/obo';
 
 const principal = { id: 'owner', role: 'USER' };
 const server: ParsedServerConfig = { type: 'streamable-http', url: 'https://mcp.example.test/mcp' };
+
+it('retries through both run-bound and consumer lookup caches after failure', async () => {
+  const tokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh' });
+  const lookup = jest
+    .fn()
+    .mockRejectedValueOnce(new Error('temporary unavailable'))
+    .mockResolvedValue(tokenProvider);
+  const bound = bindUpstreamTokenProviderResolver(principal as IUser, lookup)!;
+  const first = createLazyOboUpstreamTokenProvider(bound);
+  const second = createLazyOboUpstreamTokenProvider(bound);
+  const results = await Promise.allSettled([first(), second()]);
+  expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+  expect(lookup).toHaveBeenCalledTimes(1);
+  await expect(Promise.all([first(), second()])).resolves.toEqual([
+    { access_token: 'fresh' },
+    { access_token: 'fresh' },
+  ]);
+  expect(lookup).toHaveBeenCalledTimes(2);
+});
 
 it('shares credential lookup across sibling consumers without adopting child cancellation', async () => {
   const owner = new AbortController();

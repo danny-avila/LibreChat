@@ -12,6 +12,10 @@ import {
 } from './errors';
 
 describe('isFatalAgentInitializationError', () => {
+  it('propagates cancellation even when optional MCP fallback is allowed', () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    expect(isFatalAgentInitializationError(abort, { allowExpectedMCPFallback: true })).toBe(true);
+  });
   it.each([
     ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
     ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,

@@ -3,6 +3,7 @@ import {
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
+import { isAbortError } from '~/utils/errors';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
@@ -46,6 +47,7 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
+    isAbortError(error) ||
     code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
     code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
     code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||

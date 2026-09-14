@@ -5811,6 +5811,18 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.stopReconnecting).not.toHaveBeenCalled();
     });
 
+    it('preserves a cancelled re-exchange without logging a sign-in failure', async () => {
+      const abort = new DOMException('Stopped', 'AbortError');
+      resolveOboToken.mockResolvedValueOnce(connectionTokens).mockRejectedValueOnce(abort);
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+        throw new Error('HTTP 401 Unauthorized');
+      });
+      await expect(createOboConnection()).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockLogger.error).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.stopReconnecting).toHaveBeenCalled();
+    });
+
     it('retires the connection when the re-exchange fails', async () => {
       resolveOboToken
         .mockResolvedValueOnce(connectionTokens)

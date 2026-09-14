@@ -67,10 +67,19 @@ export function bindUpstreamTokenProviderResolver(
   let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
   return () => {
     signal?.throwIfAborted();
-    pending ??= Promise.resolve().then(() => {
-      signal?.throwIfAborted();
-      return resolve(user, { signal });
-    });
+    pending ??= Promise.resolve()
+      .then(() => {
+        signal?.throwIfAborted();
+        return resolve(user, { signal });
+      })
+      .then((provider) => {
+        if (!provider) pending = undefined;
+        return provider;
+      })
+      .catch((error) => {
+        pending = undefined;
+        throw error;
+      });
     return pending;
   };
 }

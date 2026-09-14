@@ -12,6 +12,7 @@ const {
   getToolkitKey,
   getUserMCPAuthMap,
   createAuthIdentityContext,
+  selectMCPUpstreamTokenProvider,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -996,16 +997,18 @@ async function loadToolDefinitionsWrapper({
     user: req.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider = upstreamTokenProviderResolver
-    ? suppliedUpstreamTokenProvider
-    : (suppliedUpstreamTokenProvider ??
+  const upstreamTokenProvider = selectMCPUpstreamTokenProvider({
+    upstreamTokenProvider: suppliedUpstreamTokenProvider,
+    upstreamTokenProviderResolver,
+    createSessionProvider: () =>
       createOpenIDSessionTokenProvider({
         req,
         res,
         user: req.user,
         identityContext: oboIdentityContext,
         tokenPreference: 'access_token',
-      }));
+      }),
+  });
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;

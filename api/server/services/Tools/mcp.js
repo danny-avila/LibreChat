@@ -7,10 +7,7 @@ const {
   resolveMCPReinitializeConfig,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
-  MCPAuthenticationRejectedError,
-  MCPAuthenticationRefreshError,
-  OboTokenResolutionError,
-  OpenIDReauthRequiredError,
+  isMCPInitializationError,
   prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
@@ -43,12 +40,6 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   OAUTH_REQUIRED: 'oauth_required',
   INITIALIZATION_FAILED: 'initialization_failed',
 };
-
-const isMCPReauthenticationError = (error) =>
-  error instanceof MCPAuthenticationRejectedError ||
-  error instanceof MCPAuthenticationRefreshError ||
-  error instanceof OboTokenResolutionError ||
-  error instanceof OpenIDReauthRequiredError;
 
 /** Wires application dependencies into the passive, request-local catalog recovery service.
  * @param {Object} params
@@ -294,7 +285,7 @@ async function reinitMCPServer({
 
       logger.info('[MCP Reinitialize] Successfully established connection');
     } catch (err) {
-      if (isMCPReauthenticationError(err)) {
+      if (isMCPInitializationError(err)) {
         throw err;
       }
       logger.info('[MCP Reinitialize] Connection attempt failed');
@@ -341,7 +332,7 @@ async function reinitMCPServer({
             );
           }
         } catch (error) {
-          if (isMCPReauthenticationError(error)) {
+          if (isMCPInitializationError(error)) {
             throw error;
           }
           logger.debug('[MCP Reinitialize] Tool discovery failed');
@@ -460,7 +451,7 @@ async function reinitMCPServer({
 
     return result;
   } catch (error) {
-    if (isMCPReauthenticationError(error)) {
+    if (isMCPInitializationError(error)) {
       throw error;
     }
     logger.error('[MCP Reinitialize] Error loading MCP tools; servers may still be initializing');

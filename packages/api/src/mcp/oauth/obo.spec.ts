@@ -5,6 +5,7 @@ import {
   createLazyOboUpstreamTokenProvider,
   isOboConfigStillTrusted,
   resolveOboToken,
+  selectMCPUpstreamTokenProvider,
 } from './obo';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -37,6 +38,36 @@ const liveTokens = {
 const liveProvider: UpstreamTokenProvider = jest.fn().mockResolvedValue(liveTokens);
 const nullProvider: UpstreamTokenProvider = jest.fn().mockResolvedValue(null);
 
+describe('selectMCPUpstreamTokenProvider', () => {
+  it.each([false, true])(
+    'keeps explicit credentials regardless of deferred OBO lookup (%s)',
+    (deferred) => {
+      const createSessionProvider = jest.fn();
+      expect(
+        selectMCPUpstreamTokenProvider({
+          upstreamTokenProvider: liveProvider,
+          upstreamTokenProviderResolver: deferred ? jest.fn() : undefined,
+          createSessionProvider,
+        }),
+      ).toBe(liveProvider);
+      expect(createSessionProvider).not.toHaveBeenCalled();
+    },
+  );
+
+  it('creates browser credentials only when no deferred OBO source is present', () => {
+    const createSessionProvider = jest.fn().mockReturnValue(liveProvider);
+    expect(
+      selectMCPUpstreamTokenProvider({
+        upstreamTokenProviderResolver: jest.fn(),
+        createSessionProvider,
+      }),
+    ).toBeUndefined();
+    expect(createSessionProvider).not.toHaveBeenCalled();
+    expect(selectMCPUpstreamTokenProvider({ createSessionProvider })).toBe(liveProvider);
+    expect(createSessionProvider).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('resolveOboToken', () => {
   const mockUser: Partial<IUser> = {
     id: 'user-123',
@@ -63,6 +94,75 @@ describe('resolveOboToken', () => {
       access_token: 'exchanged-mcp-token',
       expires_in: 3600,
     });
+  });
+
+  it.each([undefined, new Error('stopped by owner')])(
+    'preserves pending lookup cancellation (%s)',
+    async (reason) => {
+      const controller = new AbortController();
+      const lookup = jest.fn(() => new Promise<UpstreamTokenProvider>(() => {}));
+      const result = resolveOboToken(
+        mockUser as IUser,
+        oboConfig,
+        mockResolver,
+        createLazyOboUpstreamTokenProvider(lookup, controller.signal),
+      );
+      await Promise.resolve();
+      controller.abort(reason);
+      await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockResolver).not.toHaveBeenCalled();
+      expect(jest.requireMock('@librechat/data-schemas').logger.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stops waiting for token retrieval that ignores cancellation', async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const retrieving = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const provider = jest.fn(() => {
+      started();
+      return new Promise<null>(() => {});
+    });
+    const result = resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      mockResolver,
+      createLazyOboUpstreamTokenProvider(async () => provider, controller.signal),
+    );
+    await retrieving;
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
+  it('preserves cancellation during token retrieval and exchange', async () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    const provider = jest.fn().mockRejectedValue(abort);
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, provider),
+    ).rejects.toBe(abort);
+    (mockResolver as jest.Mock).mockRejectedValueOnce(abort);
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, liveProvider),
+    ).rejects.toBe(abort);
+    expect(jest.requireMock('@librechat/data-schemas').logger.error).not.toHaveBeenCalled();
+  });
+
+  it('retries failed lookups but shares each in-flight attempt', async () => {
+    const lookup = jest
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('unavailable'), { status: 503 }))
+      .mockResolvedValue(liveProvider);
+    const provider = createLazyOboUpstreamTokenProvider(lookup);
+    const failed = await Promise.allSettled([provider(), provider()]);
+    expect(failed.map((result) => result.status)).toEqual(['rejected', 'rejected']);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, provider),
+    ).resolves.toMatchObject({ access_token: 'exchanged-mcp-token' });
+    expect(lookup).toHaveBeenCalledTimes(2);
   });
 
   it.each([false, true])('preserves lookup failure retryability (%s)', async (retryable) => {

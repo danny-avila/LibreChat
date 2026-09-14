@@ -553,6 +553,18 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
     ).rejects.toBe(rejection);
   });
 
+  it('propagates cancellation instead of hiding the server tool', async () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    mockGetConnection.mockRejectedValue(abort);
+    await expect(
+      reinitMCPServer({
+        user: { id: 'user-123' },
+        serverName: 'example-mcp',
+        serverConfig: { type: 'streamable-http', url: 'https://mcp.example.com', source: 'yaml' },
+      }),
+    ).rejects.toBe(abort);
+  });
+
   it.each([false, true])(
     'preserves a typed OBO resolution failure (retryable=%s)',
     async (retryable) => {

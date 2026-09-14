@@ -7,6 +7,7 @@ const {
   checkToolRolePermission,
   createSafeUser,
   createAuthIdentityContext,
+  selectMCPUpstreamTokenProvider,
   mcpToolPattern,
   loadWebSearchAuth,
   splitMCPToolKey,
@@ -639,16 +640,18 @@ const loadTools = async ({
     tenantId: getTenantId(),
   });
   const upstreamTokenProviderResolver = options.upstreamTokenProviderResolver;
-  const upstreamTokenProvider = upstreamTokenProviderResolver
-    ? options.upstreamTokenProvider
-    : (options.upstreamTokenProvider ??
+  const upstreamTokenProvider = selectMCPUpstreamTokenProvider({
+    upstreamTokenProvider: options.upstreamTokenProvider,
+    upstreamTokenProviderResolver,
+    createSessionProvider: () =>
       createOpenIDSessionTokenProvider({
         req: options.req,
         res: options.res,
         user: options.req?.user,
         identityContext: oboIdentityContext,
         tokenPreference: 'access_token',
-      }));
+      }),
+  });
 
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
