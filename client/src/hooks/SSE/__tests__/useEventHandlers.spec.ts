@@ -316,6 +316,25 @@ describe('retainMidRunCodeApprovalMode', () => {
     expect(retainMidRunCodeApprovalMode(sentWith(), sentWith('ask'))).toBe(undefined);
     expect(retainMidRunCodeApprovalMode(null, sentWith('ask'))).toBe(undefined);
   });
+
+  it('ignores the mode of a conversation the user navigated to mid-run', () => {
+    const elsewhere = { conversationId: 'conversation-2', codeApprovalMode: 'fullAccess' };
+    expect(retainMidRunCodeApprovalMode(elsewhere as TConversation, sentWith('ask'))).toBe(
+      undefined,
+    );
+    expect(
+      retainMidRunCodeApprovalMode(elsewhere as TConversation, sentWith('ask'), 'conversation-1'),
+    ).toBe(undefined);
+  });
+
+  it('follows a new chat to the id the server assigned', () => {
+    const sentAsNew = { conversationId: Constants.NEW_CONVO, codeApprovalMode: 'ask' };
+    const live = { conversationId: 'server-id', codeApprovalMode: 'acceptEdits' } as TConversation;
+    expect(retainMidRunCodeApprovalMode(live, sentAsNew as TConversation, 'server-id')).toBe(
+      'acceptEdits',
+    );
+    expect(retainMidRunCodeApprovalMode(live, sentAsNew as TConversation)).toBe(undefined);
+  });
 });
 
 describe('buildRecoveryPreset', () => {
@@ -326,14 +345,13 @@ describe('buildRecoveryPreset', () => {
     codeApprovalMode: 'ask',
   } as TConversation;
 
-  it('carries a mode picked while the failed run streamed', () => {
-    const preset = buildRecoveryPreset(sent, { ...sent, codeApprovalMode: 'acceptEdits' });
+  it('carries a mode retained from the failed run', () => {
+    const preset = buildRecoveryPreset(sent, 'acceptEdits');
     expect(preset.codeApprovalMode).toBe('acceptEdits');
     expect(preset.agent_id).toBe('agent-1');
   });
 
-  it('keeps the sent mode when the selection did not move', () => {
-    expect(buildRecoveryPreset(sent, sent).codeApprovalMode).toBe('ask');
-    expect(buildRecoveryPreset(sent, null).codeApprovalMode).toBe('ask');
+  it('keeps the sent mode when nothing was retained', () => {
+    expect(buildRecoveryPreset(sent, undefined).codeApprovalMode).toBe('ask');
   });
 });

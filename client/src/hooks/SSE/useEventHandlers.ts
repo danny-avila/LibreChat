@@ -21,7 +21,7 @@ import type {
   TStartupConfig,
   CodeApprovalMode,
 } from 'librechat-data-provider';
-import type { InfiniteData } from '@tanstack/react-query';
+import type { QueryClient, InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConversationCursorData } from '~/utils';
@@ -306,13 +306,23 @@ const createErrorMessage = ({
  * started with, so merging it verbatim would silently revert the pick. Returns
  * the mode to keep when the local selection moved during the run, `undefined`
  * when the server value should win.
+ *
+ * The conversation atom is index-global, so the pick counts only while the live
+ * conversation is the one the run submitted: after navigating elsewhere mid-run,
+ * that conversation's mode must not be written back into this one. `resolvedId`
+ * is the id the server assigned when the submission started as a new chat.
  */
 export const retainMidRunCodeApprovalMode = (
   liveConversation: TConversation | null | undefined,
-  submissionConvo: Pick<TConversation, 'codeApprovalMode'> | undefined,
+  submissionConvo: Partial<TConversation> | undefined,
+  resolvedId?: string | null,
 ): CodeApprovalMode | undefined => {
   const localMode = liveConversation?.codeApprovalMode;
   if (localMode == null || localMode === submissionConvo?.codeApprovalMode) {
+    return undefined;
+  }
+  const liveId = liveConversation?.conversationId;
+  if (liveId !== submissionConvo?.conversationId && liveId !== resolvedId) {
     return undefined;
   }
   return localMode;
@@ -322,11 +332,24 @@ export const retainMidRunCodeApprovalMode = (
  *  mode picked while that run streamed instead of the pre-run capture. */
 export const buildRecoveryPreset = (
   submissionConvo: Partial<TConversation>,
-  liveConversation: TConversation | null | undefined,
-): TPreset => {
-  const retainedMode = retainMidRunCodeApprovalMode(liveConversation, submissionConvo);
-  return tPresetSchema.parse(
+  retainedMode: CodeApprovalMode | undefined,
+): TPreset =>
+  tPresetSchema.parse(
     retainedMode == null ? submissionConvo : { ...submissionConvo, codeApprovalMode: retainedMode },
+  );
+
+/** The detail cache rebuilds the conversation on navigation, so a retained pick
+ *  has to land there too or leaving and returning restores the run's old mode. */
+const retainCodeApprovalModeInCache = (
+  queryClient: QueryClient,
+  conversationId: string | null | undefined,
+  mode: CodeApprovalMode | undefined,
+): void => {
+  if (mode == null || !conversationId) {
+    return;
+  }
+  queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) =>
+    cached ? { ...cached, codeApprovalMode: mode } : cached,
   );
 };
 
@@ -386,6 +409,25 @@ export default function useEventHandlers({
       () =>
         snapshot.getLoadable(store.conversationByIndex(runIndex)).getValue(),
     [runIndex],
+  );
+  const retainSubmittedCodeApprovalMode = useCallback(
+    (submissionConvo: Partial<TConversation>, resolvedId?: string | null) =>
+      retainMidRunCodeApprovalMode(getLiveConversation(), submissionConvo, resolvedId),
+    [getLiveConversation],
+  );
+  const recoverConversation = useCallback(
+    (conversationId: string, submission: EventSubmission) => {
+      if (!newConversation) {
+        return;
+      }
+      const retainedMode = retainSubmittedCodeApprovalMode(submission.conversation, conversationId);
+      newConversation({
+        template: { conversationId },
+        preset: buildRecoveryPreset(submission.conversation, retainedMode),
+      });
+      retainCodeApprovalModeInCache(queryClient, conversationId, retainedMode);
+    },
+    [newConversation, retainSubmittedCodeApprovalMode, queryClient],
   );
   const navigate = useNavigate();
   const location = useLocation();
@@ -548,9 +590,9 @@ export default function useEventHandlers({
       }
 
       if (setConversation && !isAddedRequest) {
-        const retainedMode = retainMidRunCodeApprovalMode(
-          getLiveConversation(),
+        const retainedMode = retainSubmittedCodeApprovalMode(
           submission.conversation,
+          convoUpdate.conversationId,
         );
         setConversation((prevState) => {
           const update = { ...prevState, ...convoUpdate };
@@ -559,13 +601,7 @@ export default function useEventHandlers({
           }
           return update;
         });
-        if (retainedMode != null && convoUpdate.conversationId) {
-          queryClient.setQueryData<TConversation>(
-            [QueryKeys.conversation, convoUpdate.conversationId],
-            (cachedConvo) =>
-              cachedConvo ? { ...cachedConvo, codeApprovalMode: retainedMode } : cachedConvo,
-          );
-        }
+        retainCodeApprovalModeInCache(queryClient, convoUpdate.conversationId, retainedMode);
       }
 
       setIsSubmitting(false);
@@ -576,7 +612,7 @@ export default function useEventHandlers({
       isAddedRequest,
       queryClient,
       setIsSubmitting,
-      getLiveConversation,
+      retainSubmittedCodeApprovalMode,
     ],
   );
 
@@ -981,7 +1017,10 @@ export default function useEventHandlers({
          *  holds for a stopped turn too: the server persists a title that finished
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
-          const retainedMode = retainMidRunCodeApprovalMode(getLiveConversation(), submissionConvo);
+          const retainedMode = retainSubmittedCodeApprovalMode(
+            submissionConvo,
+            conversation.conversationId,
+          );
           setConversation((prevState) => {
             const update = {
               ...prevState,
@@ -1061,7 +1100,7 @@ export default function useEventHandlers({
       attachmentHandler,
       setSubmissionStart,
       restorePendingQuotes,
-      getLiveConversation,
+      retainSubmittedCodeApprovalMode,
     ],
   );
 
@@ -1109,12 +1148,7 @@ export default function useEventHandlers({
           submission,
         });
         setErrorMessages(convoId, errorResponse);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: buildRecoveryPreset(submission.conversation, getLiveConversation()),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       }
@@ -1124,12 +1158,7 @@ export default function useEventHandlers({
         const convoId = `_${v4()}`;
         const errorResponse = parseErrorResponse(data);
         setErrorMessages(convoId, errorResponse);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: buildRecoveryPreset(submission.conversation, getLiveConversation()),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       } else if (!receivedConvoId) {
@@ -1146,11 +1175,8 @@ export default function useEventHandlers({
       }) as TMessage;
 
       setErrorMessages(receivedConvoId, errorResponse);
-      if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
-        newConversation({
-          template: { conversationId: receivedConvoId },
-          preset: buildRecoveryPreset(submission.conversation, getLiveConversation()),
-        });
+      if (receivedConvoId && paramId === Constants.NEW_CONVO) {
+        recoverConversation(receivedConvoId, submission);
       }
 
       setIsSubmitting(false);
@@ -1160,12 +1186,11 @@ export default function useEventHandlers({
       setCompleted,
       setMessages,
       paramId,
-      newConversation,
       setIsSubmitting,
       setSubmissionStart,
       getMessages,
       queryClient,
-      getLiveConversation,
+      recoverConversation,
     ],
   );
 
@@ -1217,12 +1242,7 @@ export default function useEventHandlers({
       } else if (!isAssistantsEndpoint(endpoint)) {
         const convoId = conversationId || `_${v4()}`;
         logger.log('conversation', 'Aborted conversation with minimal messages, ID: ' + convoId);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: convoId },
-            preset: buildRecoveryPreset(submission.conversation, getLiveConversation()),
-          });
-        }
+        recoverConversation(convoId, submission);
         setIsSubmitting(false);
         return;
       }
@@ -1270,12 +1290,7 @@ export default function useEventHandlers({
           error,
         });
         setMessages([...submission.messages, submission.userMessage, errorResponse]);
-        if (newConversation) {
-          newConversation({
-            template: { conversationId: conversationId || errorResponse.conversationId || v4() },
-            preset: buildRecoveryPreset(submission.conversation, getLiveConversation()),
-          });
-        }
+        recoverConversation(conversationId || errorResponse.conversationId || v4(), submission);
         setIsSubmitting(false);
       }
     },
@@ -1285,11 +1300,10 @@ export default function useEventHandlers({
       setMessages,
       finalHandler,
       cancelHandler,
-      newConversation,
       setIsSubmitting,
       setShowStopButton,
       setSubmissionStart,
-      getLiveConversation,
+      recoverConversation,
     ],
   );
 
