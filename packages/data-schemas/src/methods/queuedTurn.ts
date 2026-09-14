@@ -541,7 +541,13 @@ function normalizeEnqueue(input: EnqueueAgentQueuedTurnInput) {
 }
 
 function fingerprint(payload: ReturnType<typeof normalizeEnqueue>): string {
-  return createHash('sha256').update(JSON.stringify(payload)).digest('base64url');
+  /** Delivery routing is display metadata, not user intent. Excluding it keeps
+   * retries compatible with replicas deployed before the field was persisted. */
+  const stableIntent = {
+    ...payload,
+    files: payload.files?.map(({ llmDeliveryPath: _displayMetadata, ...file }) => file),
+  };
+  return createHash('sha256').update(JSON.stringify(stableIntent)).digest('base64url');
 }
 
 function laneKey(input: AgentQueuedTurnConversationScope): string {

@@ -102,7 +102,9 @@ describe('agent queued turn methods', () => {
     const replay = await methods.enqueueAgentQueuedTurn({
       ...input,
       text: 'follow up',
-      files: [{ file_id: 'file-1', filename: 'report.pdf', llmDeliveryPath: 'text' }],
+      /** Older replicas do not know the display-only delivery marker; their retry
+       * must still replay the same accepted intent during a rolling deployment. */
+      files: [{ file_id: 'file-1', filename: 'report.pdf' }],
       quotes: ['quote', 'second'],
       manualSkills: ['skill-a'],
     });

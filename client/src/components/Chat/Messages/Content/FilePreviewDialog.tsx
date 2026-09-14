@@ -2,7 +2,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import {
+  Button,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  OGDialogDescription,
+} from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
 import {
   getFileExtension,
@@ -100,7 +106,9 @@ export default function FilePreviewDialog({
   const {
     data: extractedPreview,
     isInitialLoading: extractedTextLoading,
+    isFetching: extractedTextFetching,
     isError: extractedTextError,
+    refetch: refetchExtractedPreview,
   } = useFilePreview(
     fileId,
     {
@@ -304,10 +312,21 @@ export default function FilePreviewDialog({
             </div>
           )}
           {hasPreviewError && !isLoading && (
-            <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
+            <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
+              {showExtractedText && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={extractedTextFetching}
+                  onClick={() => void refetchExtractedPreview()}
+                >
+                  {localize('com_ui_retry')}
+                </Button>
+              )}
             </div>
           )}
           {fileBlobUrl && (
