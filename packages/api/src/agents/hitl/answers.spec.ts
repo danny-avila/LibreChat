@@ -5,7 +5,18 @@ import {
   orderConversationBranch,
   renderRetainedAnswers,
   resolveRetainedAnswersConfig,
+  RETAINED_ANSWER_ROW_FIELDS,
 } from './answers';
+
+const mockWarn = jest.fn();
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    warn: (...args: unknown[]) => mockWarn(...args),
+    debug: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+  },
+}));
 
 const ASK = 'ask_user_question';
 const NO_PARENT: string = Constants.NO_PARENT;
@@ -64,17 +75,17 @@ describe('collectRetainedAnswers', () => {
     expect(sets[0].answers).toEqual([{ question: 'Which time window?', answer: 'last 7 days' }]);
   });
 
-  test('reads the legacy single question with a bare answer, a wrapped answer, and JSON-looking text verbatim', () => {
+  test('quotes a legacy single-question answer exactly as typed, JSON-looking or not', () => {
     const legacy = { question: 'What should I name the file?' };
     const sets = collectRetainedAnswers([
       { content: [askPart(legacy, 'notes.md', 'tc-a')] },
-      { content: [askPart(legacy, JSON.stringify({ answer: 'report.md' }), 'tc-b')] },
-      { content: [askPart(legacy, '{"name":"config.json"}', 'tc-c')] },
+      { content: [askPart(legacy, '{"answer":"yes","reason":"it is late"}', 'tc-b')] },
+      { content: [askPart(legacy, '{"answers":{"x":"y"}}', 'tc-c')] },
     ]);
     expect(sets.map((set) => set.answers[0].answer)).toEqual([
       'notes.md',
-      'report.md',
-      '{"name":"config.json"}',
+      '{"answer":"yes","reason":"it is late"}',
+      '{"answers":{"x":"y"}}',
     ]);
   });
 
@@ -151,6 +162,21 @@ describe('orderConversationBranch', () => {
     ];
     expect(orderConversationBranch(cyclic, 'x').map((row) => row.messageId)).toEqual(['y', 'x']);
   });
+
+  test('keeps the first row seen for an id, so in-memory rows outrank loaded ones', () => {
+    const memory = { messageId: 'u2', parentMessageId: 'a1', content: 'memory' };
+    const loaded = { messageId: 'u2', parentMessageId: 'a1', content: 'loaded' };
+    const branch: Array<{ messageId: string; parentMessageId: string; content?: string }> = [
+      memory,
+      ...rows,
+      loaded,
+    ];
+    expect(orderConversationBranch(branch, 'u2').map((row) => row.content)).toEqual([
+      undefined,
+      undefined,
+      'memory',
+    ]);
+  });
 });
 
 describe('renderRetainedAnswers', () => {
@@ -168,7 +194,9 @@ describe('renderRetainedAnswers', () => {
 
   test('renders every answer oldest first under the header when the budget allows', async () => {
     const text = await renderRetainedAnswers(sets, 10_000, countChars);
-    expect(text).toContain('# Answers the user gave to your questions');
+    expect(text).toContain(
+      '# Answers the user gave to questions asked earlier in this conversation',
+    );
     expect(text).toContain('Q: First?\nA: one');
     expect(text).toContain('Q: Second?\nA: two\n\nQ: Third?\nA: three');
     expect(text?.indexOf('First?')).toBeLessThan(text?.indexOf('Fourth?') ?? -1);
@@ -176,11 +204,24 @@ describe('renderRetainedAnswers', () => {
   });
 
   test('drops the oldest sets first once the budget is exceeded and says how many answers went', async () => {
-    const header = (await renderRetainedAnswers([sets[2]], 10_000, countChars)) as string;
-    const text = (await renderRetainedAnswers(sets, header.length + 5, countChars)) as string;
+    const newest = (await renderRetainedAnswers([sets[2]], 10_000, countChars)) as string;
+    const text = (await renderRetainedAnswers(sets, newest.length + 5, countChars)) as string;
     expect(text).toContain('Q: Fourth?\nA: four');
     expect(text).not.toContain('Second?');
     expect(text).toContain('(3 earlier answers omitted');
+  });
+
+  test('budgets the separators and the note, so many tiny sets still fit the ceiling', async () => {
+    const tiny = Array.from({ length: 60 }, (_, index) => ({
+      toolCallId: `tc-${index}`,
+      answers: [{ question: 'Q?', answer: 'y' }],
+    }));
+    const newest = (await renderRetainedAnswers([tiny[59]], 10_000, countChars)) as string;
+    const maxTokens = newest.length + 120;
+    const text = (await renderRetainedAnswers(tiny, maxTokens, countChars)) as string;
+    expect(text.length).toBeLessThanOrEqual(maxTokens);
+    expect(text).toContain('earlier answers omitted');
+    expect(text.endsWith('Q: Q?\nA: y')).toBe(true);
   });
 
   test('always keeps the newest set even when it alone exceeds the budget', async () => {
@@ -233,16 +274,17 @@ describe('buildRetainedAnswersContext', () => {
     tokenCount: 5,
   };
   const rows = [
-    {
-      messageId: 'u1',
-      parentMessageId: NO_PARENT,
-      content: [{ type: 'text', text: 'deploy' }],
-    },
+    { messageId: 'u1', parentMessageId: NO_PARENT, content: [{ type: 'text', text: 'deploy' }] },
     { messageId: 'a1', parentMessageId: 'u1', content: [answered] },
     { messageId: 'u2', parentMessageId: 'a1', content: [{ type: 'text', text: 'go on' }] },
     { messageId: 'a2', parentMessageId: 'u2', content: [summary, { type: 'text', text: 'done' }] },
     { messageId: 'u3', parentMessageId: 'a2', content: [{ type: 'text', text: 'next' }] },
   ];
+  const ANSWER_LINE = 'Q: Which environment should I deploy to?\nA: staging';
+
+  beforeEach(() => {
+    mockWarn.mockClear();
+  });
 
   test('carries an answer given before a checkpoint summary', async () => {
     const text = await buildRetainedAnswersContext({
@@ -251,7 +293,7 @@ describe('buildRetainedAnswersContext', () => {
       config: undefined,
       countTokens: countChars,
     });
-    expect(text).toContain('Q: Which environment should I deploy to?\nA: staging');
+    expect(text).toContain(ANSWER_LINE);
   });
 
   test('reads only the branch that ends at the parent', async () => {
@@ -262,20 +304,6 @@ describe('buildRetainedAnswersContext', () => {
       countTokens: countChars,
     });
     expect(text).toBeUndefined();
-  });
-
-  test('appends the answers seeded on a resumed turn after the persisted ones', async () => {
-    const seeded = askPart({ question: 'Which window?' }, 'last 7 days', 'tc-seed');
-    const text = (await buildRetainedAnswersContext({
-      messages: rows,
-      parentMessageId: 'u3',
-      seedContent: [{ type: 'text', text: 'Checking.' }, seeded],
-      config: undefined,
-      countTokens: countChars,
-    })) as string;
-    expect(text.indexOf('A: staging')).toBeLessThan(
-      text.indexOf('Q: Which window?\nA: last 7 days'),
-    );
   });
 
   test('yields nothing when disabled or when no answer exists', async () => {
@@ -295,5 +323,48 @@ describe('buildRetainedAnswersContext', () => {
         countTokens: countChars,
       }),
     ).toBeUndefined();
+  });
+
+  test('loads the rest of the branch on demand, only when retention is on', async () => {
+    const loadMessages = jest.fn(async () => rows.slice(0, 4));
+    const text = await buildRetainedAnswersContext({
+      messages: [rows[4]],
+      parentMessageId: 'u3',
+      loadMessages,
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(text).toContain(ANSWER_LINE);
+    expect(loadMessages).toHaveBeenCalledTimes(1);
+
+    const untouched = jest.fn(async () => rows);
+    await buildRetainedAnswersContext({
+      messages: [rows[4]],
+      parentMessageId: 'u3',
+      loadMessages: untouched,
+      config: { retainedAnswers: { enabled: false } },
+      countTokens: countChars,
+    });
+    expect(untouched).not.toHaveBeenCalled();
+    expect(RETAINED_ANSWER_ROW_FIELDS).toBe('messageId parentMessageId content');
+  });
+
+  test('carries what is in memory and warns when the stored rows cannot be read', async () => {
+    const inMemory = [
+      { messageId: 'u9', parentMessageId: NO_PARENT, content: [] },
+      { messageId: 'a9', parentMessageId: 'u9', content: [askPart({ question: 'Ok?' }, 'yes')] },
+      { messageId: 'u10', parentMessageId: 'a9', content: [] },
+    ];
+    const text = await buildRetainedAnswersContext({
+      messages: inMemory,
+      parentMessageId: 'u10',
+      loadMessages: async () => {
+        throw new Error('rows unavailable');
+      },
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(text).toContain('Q: Ok?\nA: yes');
+    expect(mockWarn).toHaveBeenCalledTimes(1);
   });
 });

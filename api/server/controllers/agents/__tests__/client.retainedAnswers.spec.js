@@ -1,4 +1,7 @@
 const mockCreateRun = jest.fn();
+const mockCountFormattedMessageTokens = jest.fn(
+  (message) => JSON.stringify(message?.content ?? '').length,
+);
 const mockFormatAgentMessages = jest.fn(() => ({
   messages: [],
   indexTokenCountMap: {},
@@ -17,7 +20,7 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
   createRun: (...args) => mockCreateRun(...args),
-  countFormattedMessageTokens: jest.fn(() => 42),
+  countFormattedMessageTokens: (...args) => mockCountFormattedMessageTokens(...args),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
   getAgentCheckpointer: jest.fn(),
@@ -52,10 +55,11 @@ jest.mock('~/config', () => ({
 }));
 
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
-const { GenerationJobManager } = require('@librechat/api');
+const { getMessages } = require('~/models');
 const AgentClient = require('../client');
 
 const ANSWER_LINE = 'Q: Which environment should I deploy to?\nA: staging';
+const LATEST_TEXT = 'what is next?';
 
 function askPart(request, output, id) {
   return {
@@ -67,6 +71,28 @@ function askPart(request, output, id) {
       output,
       progress: 1,
     },
+  };
+}
+
+/** The text a formatted message carries, whether its content is a string or parts. */
+function contentText(message) {
+  const content = message?.content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  return (content ?? [])
+    .filter((part) => part?.type === ContentTypes.TEXT)
+    .map((part) => part.text)
+    .join('\n');
+}
+
+function latestUserMessage() {
+  return {
+    messageId: 'u3',
+    parentMessageId: 'a2',
+    sender: 'User',
+    text: LATEST_TEXT,
+    isCreatedByUser: true,
   };
 }
 
@@ -115,121 +141,92 @@ function compactedBranch() {
         { type: ContentTypes.TEXT, text: 'Deployed.' },
       ],
     },
-    {
-      messageId: 'u3',
-      parentMessageId: 'a2',
-      sender: 'User',
-      text: 'what is next?',
-      isCreatedByUser: true,
-    },
+    latestUserMessage(),
   ];
 }
 
-function makeAgent() {
-  return {
-    id: 'agent-123',
-    endpoint: EModelEndpoint.openAI,
-    provider: EModelEndpoint.openAI,
-    instructions: 'Base agent instructions',
-    model_parameters: { model: 'gpt-4' },
-    tools: [],
-  };
+function makeClient(agentsConfig = {}) {
+  const client = new AgentClient({
+    req: {
+      user: { id: 'user-123' },
+      body: { endpoint: EModelEndpoint.agents },
+      config: { endpoints: { [EModelEndpoint.agents]: agentsConfig } },
+    },
+    res: {},
+    agent: {
+      id: 'agent-123',
+      endpoint: EModelEndpoint.openAI,
+      provider: EModelEndpoint.openAI,
+      instructions: 'Base agent instructions',
+      model_parameters: { model: 'gpt-4' },
+      tools: [],
+    },
+    endpoint: EModelEndpoint.agents,
+  });
+  client.conversationId = 'convo-123';
+  client.responseMessageId = 'response-123';
+  client.shouldSummarize = true;
+  client.maxContextTokens = 4096;
+  return client;
 }
 
 describe('AgentClient retained answers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFormatInstructions.mockResolvedValue('');
+    getMessages.mockResolvedValue([]);
   });
 
-  describe('buildMessages', () => {
-    function makeClient(agentsConfig = {}) {
-      const client = new AgentClient({
-        req: {
-          user: { id: 'user-123' },
-          body: { endpoint: EModelEndpoint.agents },
-          config: { endpoints: { [EModelEndpoint.agents]: agentsConfig } },
-        },
-        res: {},
-        agent: makeAgent(),
-        endpoint: EModelEndpoint.agents,
-      });
-      client.conversationId = 'convo-123';
-      client.responseMessageId = 'response-123';
-      client.shouldSummarize = true;
-      client.maxContextTokens = 4096;
-      return client;
-    }
+  it('quotes an answer the summary boundary removed from the prompt inside the current user turn', async () => {
+    const client = makeClient();
+    const rows = compactedBranch();
 
-    it('carries an answer the summary boundary removed from the prompt into the dynamic tail', async () => {
-      const client = makeClient();
+    const { prompt, tokenCountMap } = await client.buildMessages(rows, 'u3', {});
 
-      const { prompt } = await client.buildMessages(compactedBranch(), 'u3', {});
-
-      expect(prompt.map((message) => message.messageId)).not.toContain('a1');
-      expect(client.options.agent.additional_instructions).toContain(ANSWER_LINE);
-    });
-
-    it('leaves the tail alone when the operator turned retained answers off', async () => {
-      const client = makeClient({ askUserQuestion: { retainedAnswers: { enabled: false } } });
-
-      await client.buildMessages(compactedBranch(), 'u3', {});
-
-      expect(client.options.agent.additional_instructions ?? '').not.toContain(ANSWER_LINE);
-    });
+    expect(prompt.map((message) => message.messageId)).not.toContain('a1');
+    const latest = prompt[prompt.length - 1];
+    const text = contentText(latest);
+    expect(text).toContain(ANSWER_LINE);
+    expect(text.indexOf(ANSWER_LINE)).toBeLessThan(text.indexOf(LATEST_TEXT));
+    expect(text.endsWith(LATEST_TEXT)).toBe(true);
+    expect(client.options.agent.additional_instructions ?? '').not.toContain(ANSWER_LINE);
+    expect(rows[4].text).toBe(LATEST_TEXT);
+    expect(rows[4].content).toBeUndefined();
+    expect(client.indexTokenCountMap[prompt.length - 1]).toBeGreaterThan(tokenCountMap.u3);
+    expect(contentText(client.memoryPayload[client.memoryPayload.length - 1])).not.toContain(
+      ANSWER_LINE,
+    );
   });
 
-  describe('resumeCompletion', () => {
-    it('rebuilds the tail from the stored branch and the answer just given', async () => {
-      const streamId = 'conversation-retained-answers-resume';
-      const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
-      const client = new AgentClient({
-        req: {
-          user: { id: 'user-123' },
-          body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
-          config: { endpoints: { [EModelEndpoint.agents]: {} } },
-          _resumableStreamId: streamId,
-        },
-        res: {},
-        agent: makeAgent(),
-        contentParts: [],
-        collectedUsage: [],
-        artifactPromises: [],
-        jobCreatedAt: job.createdAt,
-      });
-      const resume = jest.fn();
-      mockCreateRun.mockImplementationOnce(async () => ({
-        Graph: null,
-        resume,
-        processStream: jest.fn().mockResolvedValue(),
-        getCalibrationRatio: jest.fn(() => 0),
-        getInterrupt: jest.fn(() => undefined),
-      }));
-      client.conversationId = streamId;
-      client.responseMessageId = 'response-retained-answers';
-      client.parentMessageId = 'u3';
-      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+  it('leaves the turn alone when the operator turned retained answers off', async () => {
+    const client = makeClient({ askUserQuestion: { retainedAnswers: { enabled: false } } });
 
-      await client.resumeCompletion({
-        resumeValue: { answers: { window: 'last 7 days' } },
-        streamId,
-        checkpointNamespace: 'retained-answers',
-        conversationMessages: compactedBranch(),
-        seedContent: [
-          { type: ContentTypes.TEXT, text: 'One more thing.' },
-          askPart(
-            { questions: [{ id: 'window', question: 'Which time window?' }] },
-            JSON.stringify({ answers: { window: 'last 7 days' } }),
-            'tc-2',
-          ),
-        ],
-      });
+    const { prompt } = await client.buildMessages(compactedBranch(), 'u3', {});
 
-      expect(resume).toHaveBeenCalledTimes(1);
-      const tail = client.options.agent.additional_instructions;
-      expect(tail).toContain(ANSWER_LINE);
-      expect(tail).toContain('Q: Which time window?\nA: last 7 days');
-      expect(tail.indexOf(ANSWER_LINE)).toBeLessThan(tail.indexOf('Which time window?'));
-    });
+    expect(contentText(prompt[prompt.length - 1])).toBe(LATEST_TEXT);
+    expect(client.memoryPayload).toBeNull();
+  });
+
+  it('reads the stored branch for a warm event-actor turn that skipped history', async () => {
+    const client = makeClient();
+    client.eventActorContinuation = 'warm';
+    getMessages.mockResolvedValue(compactedBranch());
+
+    const { prompt } = await client.buildMessages([latestUserMessage()], 'u3', {});
+
+    expect(getMessages).toHaveBeenCalledWith(
+      { conversationId: 'convo-123', user: 'user-123' },
+      'messageId parentMessageId content',
+    );
+    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+  });
+
+  it('does not read the stored branch for a warm turn when retention is off', async () => {
+    const client = makeClient({ askUserQuestion: { retainedAnswers: { enabled: false } } });
+    client.eventActorContinuation = 'warm';
+
+    await client.buildMessages([latestUserMessage()], 'u3', {});
+
+    expect(getMessages).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,13 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { getSafeErrorMetadata } from '~/utils';
 
-/** The fields the scan reads from a persisted row or a seeded content array. */
+/** The projection a stored-row loader needs; nothing else is read. */
+export const RETAINED_ANSWER_ROW_FIELDS = 'messageId parentMessageId content';
+
+/** The fields the scan reads from a stored row or an in-memory message. */
 export interface RetainedAnswerSource {
   messageId?: string | null;
   parentMessageId?: string | null;
@@ -27,10 +32,17 @@ export interface RetainedAnswersConfig {
 
 export type RetainedAnswerTokenCounter = (text: string) => number | Promise<number>;
 
+/** Owner-scoped read of the branch rows, for a caller whose in-memory rows do not hold them. */
+export type RetainedAnswerRowLoader = () => Promise<
+  readonly RetainedAnswerSource[] | null | undefined
+>;
+
+const SEPARATOR = '\n\n';
+
 const RETAINED_ANSWERS_HEADER = [
-  '# Answers the user gave to your questions',
+  '# Answers the user gave to questions asked earlier in this conversation',
   'Quoted exactly as given, oldest first. They stay in force even after the messages that carried',
-  'them are summarized or dropped; do not ask again unless the user changes an answer.',
+  'them were summarized or dropped; do not ask these questions again unless the user changes an answer.',
 ].join('\n');
 
 interface AskToolCallPart {
@@ -41,6 +53,11 @@ interface AskToolCallPart {
 interface AskedQuestion {
   id?: string;
   question: string;
+}
+
+interface AskedRequest {
+  batched: boolean;
+  questions: AskedQuestion[];
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
@@ -60,15 +77,15 @@ function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
   }
 }
 
-/** The questions an ask call put to the user, from its persisted `args`: the batched
+/** The questions an ask call put to the user, from its stored `args`: the batched
  *  `{ questions: [...] }` shape or the legacy single `{ question }`. */
-function readQuestions(args: unknown): AskedQuestion[] {
+function readRequest(args: unknown): AskedRequest | undefined {
   const request = parseJsonObject(args);
   if (request == null) {
-    return [];
+    return undefined;
   }
   if (Array.isArray(request.questions)) {
-    return request.questions.flatMap((item: unknown) => {
+    const questions = request.questions.flatMap((item: unknown) => {
       const candidate = item as { id?: unknown; question?: unknown } | null;
       if (typeof candidate?.question !== 'string' || candidate.question.length === 0) {
         return [];
@@ -80,34 +97,34 @@ function readQuestions(args: unknown): AskedQuestion[] {
         },
       ];
     });
+    return questions.length > 0 ? { batched: true, questions } : undefined;
   }
   return typeof request.question === 'string' && request.question.length > 0
-    ? [{ question: request.question }]
-    : [];
+    ? { batched: false, questions: [{ question: request.question }] }
+    : undefined;
 }
 
 /**
- * The answers stamped on an ask call's `output`: `{ answers: { id: value } }` for a
- * batch, `{ answer }` or the bare answer text for the legacy single question. A
- * bare answer that happens to parse as JSON is still the answer, verbatim.
+ * The answers stamped on an ask call's `output`. A legacy single question is
+ * stamped with the bare text the user typed, so it is quoted as is: decoding it
+ * would turn a literal `{"answer": …}` reply into something the user did not
+ * say. A batch is stamped as `{ answers: { id } }`, read by question id.
  */
-function readAnswers(output: unknown, questions: AskedQuestion[]): RetainedAnswer[] {
-  if (typeof output !== 'string' || output.length === 0 || questions.length === 0) {
+function readAnswers(output: unknown, request: AskedRequest): RetainedAnswer[] {
+  if (typeof output !== 'string' || output.length === 0) {
     return [];
   }
-  const resolution = parseJsonObject(output);
-  const batched = resolution?.answers;
-  if (batched != null && typeof batched === 'object' && !Array.isArray(batched)) {
-    return questions.flatMap(({ id, question }) => {
-      const answer = id == null ? undefined : Object.getOwnPropertyDescriptor(batched, id)?.value;
-      return typeof answer === 'string' && answer.length > 0 ? [{ question, answer }] : [];
-    });
+  if (!request.batched) {
+    return [{ question: request.questions[0].question, answer: output }];
   }
-  if (questions.length !== 1) {
+  const batched = parseJsonObject(output)?.answers;
+  if (batched == null || typeof batched !== 'object' || Array.isArray(batched)) {
     return [];
   }
-  const answer = typeof resolution?.answer === 'string' ? resolution.answer : output;
-  return answer.length > 0 ? [{ question: questions[0].question, answer }] : [];
+  return request.questions.flatMap(({ id, question }) => {
+    const answer = id == null ? undefined : Object.getOwnPropertyDescriptor(batched, id)?.value;
+    return typeof answer === 'string' && answer.length > 0 ? [{ question, answer }] : [];
+  });
 }
 
 function readAskToolCall(part: unknown): RetainedAnswerSet | undefined {
@@ -119,7 +136,8 @@ function readAskToolCall(part: unknown): RetainedAnswerSet | undefined {
   ) {
     return undefined;
   }
-  const answers = readAnswers(toolCall.output, readQuestions(toolCall.args));
+  const request = readRequest(toolCall.args);
+  const answers = request == null ? [] : readAnswers(toolCall.output, request);
   if (answers.length === 0) {
     return undefined;
   }
@@ -132,7 +150,7 @@ function readAskToolCall(part: unknown): RetainedAnswerSet | undefined {
 /**
  * Every answered `ask_user_question` call in `sources`, in the order the sources
  * are given. A later stamp for the same tool call replaces the earlier one in
- * place, so a turn seeded on top of its persisted row does not repeat itself.
+ * place, so a row seen twice does not repeat itself.
  */
 export function collectRetainedAnswers(
   sources: readonly RetainedAnswerSource[],
@@ -165,7 +183,8 @@ export function collectRetainedAnswers(
 /**
  * The branch that ends at `parentMessageId`, oldest first: the walk the prompt
  * builder makes, without its stop at a checkpoint summary. Answers given before
- * a compaction are exactly the ones the model no longer sees.
+ * a compaction are exactly the ones the model no longer sees. The first row
+ * seen for an id wins, so in-memory rows take precedence over loaded ones.
  */
 export function orderConversationBranch<T extends RetainedAnswerSource>(
   messages: readonly T[],
@@ -197,7 +216,7 @@ export function orderConversationBranch<T extends RetainedAnswerSource>(
 }
 
 function renderSet(set: RetainedAnswerSet): string {
-  return set.answers.map(({ question, answer }) => `Q: ${question}\nA: ${answer}`).join('\n\n');
+  return set.answers.map(({ question, answer }) => `Q: ${question}\nA: ${answer}`).join(SEPARATOR);
 }
 
 function omittedNote(count: number): string {
@@ -205,10 +224,11 @@ function omittedNote(count: number): string {
 }
 
 /**
- * The block carried in the dynamic instructions. Sets are kept newest first
- * while they fit `maxTokens`; the newest set is always kept, the way the
- * summarizer's recency window always keeps the latest turn. What was dropped is
- * counted in a note so the model knows earlier answers exist in the history.
+ * The block quoted into the current user turn. Sets are kept newest first while
+ * the whole block, separators and omission note included, fits `maxTokens`; the
+ * newest set is always kept, the way the summarizer's recency window always
+ * keeps the latest turn. What was dropped is counted in a note so the model
+ * knows earlier answers exist in the history.
  */
 export async function renderRetainedAnswers(
   sets: readonly RetainedAnswerSet[],
@@ -219,14 +239,18 @@ export async function renderRetainedAnswers(
     return undefined;
   }
   const rendered = sets.map(renderSet);
+  let totalAnswers = 0;
+  for (const set of sets) {
+    totalAnswers += set.answers.length;
+  }
   const budget =
     maxTokens -
     (await countTokens(RETAINED_ANSWERS_HEADER)) -
-    (await countTokens(omittedNote(sets.length)));
+    (await countTokens(SEPARATOR + omittedNote(totalAnswers)));
   let used = 0;
   let start = sets.length;
   for (let index = sets.length - 1; index >= 0; index--) {
-    const cost = await countTokens(rendered[index]);
+    const cost = await countTokens(SEPARATOR + rendered[index]);
     if (index < sets.length - 1 && used + cost > budget) {
       break;
     }
@@ -241,7 +265,7 @@ export async function renderRetainedAnswers(
     RETAINED_ANSWERS_HEADER,
     ...(omitted > 0 ? [omittedNote(omitted)] : []),
     ...rendered.slice(start),
-  ].join('\n\n');
+  ].join(SEPARATOR);
 }
 
 /** Config as the run reads it: on unless disabled, and a positive integer budget. */
@@ -259,22 +283,36 @@ export function resolveRetainedAnswersConfig(
   };
 }
 
+async function loadBranchRows(
+  loadMessages: RetainedAnswerRowLoader,
+): Promise<readonly RetainedAnswerSource[]> {
+  try {
+    return (await loadMessages()) ?? [];
+  } catch (error) {
+    logger.warn(
+      '[retainedAnswers] Stored rows unavailable; carrying only the answers already in memory',
+      getSafeErrorMetadata(error),
+    );
+    return [];
+  }
+}
+
 /**
- * The retained-answers block for one run, or `undefined` when there is nothing
- * to carry. `messages` is the conversation's stored rows and `parentMessageId`
- * the branch to read; `seedContent` is the paused turn's own content on a
- * resume, which holds the answer just given before any row records it.
+ * The retained-answers block for one turn, or `undefined` when there is nothing
+ * to carry. `messages` are the rows in memory and `parentMessageId` the branch to
+ * read; `loadMessages` fetches the rest of the branch for a caller that did not
+ * load history, and is only called when retention is on.
  */
 export async function buildRetainedAnswersContext({
   messages,
   parentMessageId,
-  seedContent,
+  loadMessages,
   config,
   countTokens,
 }: {
   messages: readonly RetainedAnswerSource[];
   parentMessageId: string | null | undefined;
-  seedContent?: readonly unknown[];
+  loadMessages?: RetainedAnswerRowLoader;
   config: TAskUserQuestionConfig | null | undefined;
   countTokens: RetainedAnswerTokenCounter;
 }): Promise<string | undefined> {
@@ -282,9 +320,8 @@ export async function buildRetainedAnswersContext({
   if (!resolved.enabled) {
     return undefined;
   }
-  const sources: RetainedAnswerSource[] = orderConversationBranch(messages, parentMessageId);
-  if (seedContent != null) {
-    sources.push({ content: seedContent });
-  }
-  return renderRetainedAnswers(collectRetainedAnswers(sources), resolved.maxTokens, countTokens);
+  const rows =
+    loadMessages == null ? messages : [...messages, ...(await loadBranchRows(loadMessages))];
+  const sets = collectRetainedAnswers(orderConversationBranch(rows, parentMessageId));
+  return renderRetainedAnswers(sets, resolved.maxTokens, countTokens);
 }

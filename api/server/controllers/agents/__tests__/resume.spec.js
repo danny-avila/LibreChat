@@ -2718,54 +2718,6 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       },
     });
 
-    it('hands the resumed client the stored branch so earlier answers keep being carried', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
-      const rows = [{ messageId: USER_MSG_ID, parentMessageId: THREAD_PARENT_ID, content: [] }];
-      mockGetMessages.mockImplementation(async (_filter, select) =>
-        select === 'messageId parentMessageId content' ? rows : [],
-      );
-      const resumedClient = makeClient();
-      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
-
-      const res = await post(approveBody());
-      expect(res.status).toBe(200);
-      await settled;
-      await flush();
-
-      expect(mockGetMessages).toHaveBeenCalledWith(
-        { conversationId: CONVO_ID, user: USER_ID },
-        'messageId parentMessageId content',
-      );
-      expect(resumedClient.resumeCompletion).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationMessages: rows }),
-      );
-    });
-
-    it('still resumes, with nothing carried, when the stored branch cannot be read', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
-      mockGetMessages.mockImplementation(async (_filter, select) => {
-        if (select === 'messageId parentMessageId content') {
-          throw new Error('branch read failed');
-        }
-        return [];
-      });
-      const resumedClient = makeClient();
-      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
-
-      const res = await post(approveBody());
-      expect(res.status).toBe(200);
-      await settled;
-      await flush();
-
-      expect(resumedClient.resumeCompletion).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationMessages: [] }),
-      );
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        '[ResumeAgentController] Failed to load conversation messages for retained answers',
-        expect.anything(),
-      );
-    });
-
     it('resumes when the rebuilt stateful code target matches the paused approval', async () => {
       const agent = statefulCodeAgent('worker-a');
       const codeExecutionBinding = captureCodeExecutionApprovalBinding([agent]);

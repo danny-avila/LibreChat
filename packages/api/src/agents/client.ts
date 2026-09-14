@@ -106,16 +106,22 @@ export function applyAttachmentOnlyText(
   formattedMessage.content = ATTACHMENT_ONLY_TEXT;
 }
 
-export function prependFileContext(
+/**
+ * Prepends context text to a formatted message: joined ahead of its string
+ * content or first text part, or added as a leading text part when it has
+ * neither. The prompt copy changes; the stored row does not.
+ */
+export function prependContextText(
   formattedMessage: FormattedMessageWithContent,
-  fileContext?: string | null,
+  text: string | null | undefined,
+  separator = '\n',
 ): void {
-  if (!fileContext) {
+  if (!text) {
     return;
   }
 
   if (typeof formattedMessage.content === 'string') {
-    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
+    formattedMessage.content = `${text}${separator}${formattedMessage.content}`;
     return;
   }
 
@@ -125,11 +131,18 @@ export function prependFileContext(
 
   const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
   if (textPart != null && typeof textPart.text === 'string') {
-    textPart.text = `${fileContext}\n${textPart.text}`;
+    textPart.text = `${text}${separator}${textPart.text}`;
     return;
   }
 
-  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: fileContext });
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text });
+}
+
+export function prependFileContext(
+  formattedMessage: FormattedMessageWithContent,
+  fileContext?: string | null,
+): void {
+  prependContextText(formattedMessage, fileContext);
 }
 
 /**

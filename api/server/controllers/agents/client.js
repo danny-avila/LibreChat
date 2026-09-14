@@ -75,6 +75,8 @@ const {
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   buildRetainedAnswersContext,
+  RETAINED_ANSWER_ROW_FIELDS,
+  prependContextText,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -2277,16 +2279,33 @@ class AgentClient extends BaseClient {
       mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
       mapCondition: (message) => message.addedConvo === true,
     });
-    /** The user's answers to earlier `ask_user_question` calls, carried verbatim in
-     *  the dynamic tail so they outlive the summary boundary, the pruner and the
-     *  context window. Read from the stored rows of the whole branch before
-     *  `messages` is narrowed to `orderedMessages`, which stops at a checkpoint
-     *  summary and would hide exactly the answers that need carrying. */
+    /**
+     * Answers the user gave to earlier `ask_user_question` calls, read from the
+     * stored rows of the whole branch before `messages` is narrowed to
+     * `orderedMessages` (which stops at a checkpoint summary and would hide the
+     * very answers that need carrying). A warm event-actor turn holds only the
+     * new event message in memory, so it reads the rest of the branch on demand.
+     */
     const retainedAnswersPromise = buildRetainedAnswersContext({
       messages,
       parentMessageId,
+      loadMessages:
+        this.eventActorContinuation === 'warm'
+          ? () =>
+              db.getMessages(
+                {
+                  conversationId: this.conversationId,
+                  user: this.user ?? this.options.req.user?.id,
+                },
+                RETAINED_ANSWER_ROW_FIELDS,
+              )
+          : undefined,
       config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
-      countTokens: (text) => countTokens(text),
+      countTokens: (text) =>
+        countFormattedMessageTokens(
+          { role: 'user', content: [{ type: ContentTypes.TEXT, text }] },
+          this.getEncoding(),
+        ),
     }).catch((error) => {
       logger.warn(
         '[AgentClient] Retained answers unavailable for this turn',
@@ -2780,7 +2799,9 @@ class AgentClient extends BaseClient {
         }
       }
     }
-    if (hasFileContext) {
+    /** The memory copy is built once the prompt copy is known to differ from
+     *  the rows: file context here, or the retained-answers block below. */
+    const buildMemoryPayload = async () => {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
           memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
@@ -2805,8 +2826,12 @@ class AgentClient extends BaseClient {
           resendFiles: false,
         });
       }
+      this.memoryPayload = memoryPayload;
+    };
+    this.memoryPayload = null;
+    if (hasFileContext) {
+      await buildMemoryPayload();
     }
-    this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
@@ -2822,6 +2847,27 @@ class AgentClient extends BaseClient {
       earlySharedContextPromise,
       agentScopedContextPromise,
     ]);
+
+    /**
+     * The answers block rides the current user turn as quoted context: user
+     * role, rebuilt from the stored rows every turn (which keep the answers past
+     * the summary boundary and the pruner), prompt copy only. Prepended like
+     * file context, after the counts and after the context kickoff above so a
+     * steer-free history keeps its zero-await path; the persisted row and the
+     * memory copy stay untouched and the prompt count is adjusted here.
+     */
+    const retainedAnswersContext = await retainedAnswersPromise;
+    if (retainedAnswersContext && latestOrdered?.isCreatedByUser === true) {
+      const latestIndex = formattedMessages.length - 1;
+      prependContextText(formattedMessages[latestIndex], retainedAnswersContext, '\n\n');
+      const withAnswers = countFormattedMessageTokens(formattedMessages[latestIndex], encoding);
+      const answerTokens = Math.max(0, (withAnswers ?? 0) - (indexTokenCountMap[latestIndex] ?? 0));
+      indexTokenCountMap[latestIndex] = (indexTokenCountMap[latestIndex] ?? 0) + answerTokens;
+      promptTokens += answerTokens;
+      if (this.memoryPayload == null) {
+        await buildMemoryPayload();
+      }
+    }
 
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;
@@ -2884,7 +2930,6 @@ class AgentClient extends BaseClient {
     };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
-    const retainedAnswersContext = await retainedAnswersPromise;
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
     const configuredContextAttachments = this.options.agentContextAttachmentsByAgentId;
@@ -2988,9 +3033,6 @@ class AgentClient extends BaseClient {
       if (scopedContext) {
         modelBoundFileContexts.add(scopedContext);
         agentRunContextParts.push(scopedContext);
-      }
-      if (retainedAnswersContext) {
-        agentRunContextParts.push(retainedAnswersContext);
       }
 
       await applyContextToAgent({
@@ -5235,7 +5277,6 @@ class AgentClient extends BaseClient {
     seedContent = [],
     runSteps = [],
     storedMessages = [],
-    conversationMessages = [],
     abortController = null,
     commandOptions,
     userMCPAuthMap,
@@ -5323,24 +5364,6 @@ class AgentClient extends BaseClient {
       if (Array.isArray(seedContent) && seedContent.length > 0) {
         this.contentParts.push(...seedContent);
       }
-      /** The rebuilt run gets fresh agents, so the answers the paused turn's
-       *  instructions carried are read again from the stored branch, plus the
-       *  answer just given, which only the seeded content holds so far. */
-      const retainedAnswersContext = await buildRetainedAnswersContext({
-        messages: conversationMessages,
-        parentMessageId: this.parentMessageId,
-        seedContent,
-        config: appConfig?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
-        countTokens: (text) => countTokens(text),
-      }).catch((error) => {
-        logger.warn(
-          '[AgentClient] Retained answers unavailable for this resume',
-          getSafeErrorMetadata(error),
-        );
-        return undefined;
-      });
-      const resumeRunContext = (scopedContext) =>
-        [scopedContext, retainedAnswersContext].filter(Boolean).join('\n\n');
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
       this.compactionSemanticIndexSnapshot =
@@ -5479,7 +5502,7 @@ class AgentClient extends BaseClient {
               logger,
               mcpManager: resumeMcpManager,
               configServers: resumeConfigServers,
-              sharedRunContext: resumeRunContext(scopedContext),
+              sharedRunContext: scopedContext ?? '',
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
             });
@@ -5580,7 +5603,7 @@ class AgentClient extends BaseClient {
                   logger,
                   mcpManager: resumeMcpManager,
                   configServers: resumeConfigServers,
-                  sharedRunContext: resumeRunContext(scopedContext),
+                  sharedRunContext: scopedContext ?? '',
                 });
                 assertModelBoundContent({
                   onTraversalFailure: reportLocatorTraversalFailure,
