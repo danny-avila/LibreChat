@@ -83,6 +83,7 @@ const {
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
   resolveConversationCodeEnvironmentDecision,
+  resolvePersistableCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
 } = require('@librechat/api');
 const {
@@ -446,16 +447,10 @@ async function saveResponseOutput(
  * @param {string} conversationId
  * @param {string} agentId
  * @param {object} agent
+ * @param {import('@librechat/api').ConversationCodeEnvironmentDecision} codeEnvironmentDecision
  * @returns {Promise<void>}
  */
-async function saveConversation(
-  req,
-  conversationId,
-  agentId,
-  agent,
-  codeEnvironmentMode,
-  codeWorkspaces,
-) {
+async function saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
     {
@@ -468,8 +463,11 @@ async function saveConversation(
       conversationId,
       endpoint: EModelEndpoint.agents,
       agent_id: agentId,
-      codeEnvironmentMode,
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
+      ...resolvePersistableCodeEnvironmentDecision({
+        conversationId,
+        decision: codeEnvironmentDecision,
+        conversation: req.resolvedConversation,
+      }),
       ...(title != null && { title }),
       model: agent?.model,
     },
@@ -1360,14 +1358,7 @@ const executeResponse = async (envelope, { req, res }) => {
         if (request.store === true) {
           try {
             // Save conversation
-            await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              codeEnvironmentDecision.mode,
-              codeEnvironmentDecision.codeWorkspaces,
-            );
+            await saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision);
 
             // Save input messages
             await saveInputMessages(req, conversationId, inputMessages, agentId);
@@ -1599,14 +1590,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
         if (request.store === true) {
           try {
-            await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              codeEnvironmentDecision.mode,
-              codeEnvironmentDecision.codeWorkspaces,
-            );
+            await saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision);
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);
 
