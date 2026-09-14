@@ -327,6 +327,53 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
     });
 
+    it('deletes storage and vectors when user owns the attached agent file', async () => {
+      const userFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'user-agent-file.txt',
+        filepath: '/uploads/user-agent-file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        embedded: true,
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [userFileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [
+            {
+              file_id: userFileId,
+              filepath: '/uploads/user-agent-file.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Files deleted successfully');
+      expect(processDeleteRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          files: expect.arrayContaining([expect.objectContaining({ file_id: userFileId })]),
+        }),
+      );
+    });
+
     it('rejects invalid agent tool_resource values before unlinking', async () => {
       const agent = await createAgent({
         id: uuidv4(),
