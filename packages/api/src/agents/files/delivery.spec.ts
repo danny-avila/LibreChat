@@ -1,5 +1,5 @@
 import type { TurnFileConsumers } from 'librechat-data-provider';
-import { applyTurnTextFallback, resolveAgentDeliveryRouting } from './delivery';
+import { applyTurnTextDelivery, resolveAgentDeliveryRouting } from './delivery';
 
 const config = {
   fileConfig: {
@@ -46,7 +46,7 @@ describe('resolveAgentDeliveryRouting', () => {
   });
 });
 
-describe('applyTurnTextFallback', () => {
+describe('applyTurnTextDelivery', () => {
   const agent = { provider: 'openAI' };
   const csv = {
     file_id: 'csv',
@@ -58,7 +58,7 @@ describe('applyTurnTextFallback', () => {
   const pdf = { file_id: 'pdf', type: 'application/pdf', llmDeliveryPath: 'provider' };
 
   it('marks a copy of each file this turn delivers as text, leaving the rest untouched', () => {
-    const result = applyTurnTextFallback([csv, pdf], { agent, config, consumers: noReader });
+    const result = applyTurnTextDelivery([csv, pdf], { agent, config, consumers: noReader });
 
     expect(result[0]).toEqual({ ...csv, llmDeliveryPath: 'text' });
     expect(result[0]).not.toBe(csv);
@@ -69,7 +69,7 @@ describe('applyTurnTextFallback', () => {
   it('returns the same array when a tool this turn runs can read every file', () => {
     const files = [csv, pdf];
 
-    expect(applyTurnTextFallback(files, { agent, config, consumers: runsCode })).toBe(files);
+    expect(applyTurnTextDelivery(files, { agent, config, consumers: runsCode })).toBe(files);
   });
 
   it('marks nothing where the endpoint has not enabled the fallback', () => {
@@ -82,7 +82,7 @@ describe('applyTurnTextFallback', () => {
       },
     };
 
-    expect(applyTurnTextFallback(files, { agent, config: disabled, consumers: noReader })).toBe(
+    expect(applyTurnTextDelivery(files, { agent, config: disabled, consumers: noReader })).toBe(
       files,
     );
   });
@@ -103,7 +103,7 @@ describe('applyTurnTextFallback', () => {
     };
 
     expect(
-      applyTurnTextFallback(files, {
+      applyTurnTextDelivery(files, {
         agent: { provider: 'openAI', endpoint: 'MyGateway' },
         config: customOnly,
         consumers: noReader,
@@ -111,22 +111,46 @@ describe('applyTurnTextFallback', () => {
     ).toEqual([{ ...csv, llmDeliveryPath: 'text' }]);
   });
 
-  it('marks nothing when the agent or the tools it runs are unknown', () => {
+  it('marks a stored tool-routed file the endpoint now routes to text, with the fallback off', () => {
+    /* Only this mark lets the admission checks and `extractFileContext`, which read the stored
+     * route, see the text the resolver now delivers. */
+    const rerouted = {
+      fileConfig: {
+        endpoints: {
+          openAI: { defaultLLMDeliveryPath: { overrides: { 'text/csv': 'text' as const } } },
+        },
+      },
+    };
+
+    expect(applyTurnTextDelivery([csv], { agent, config: rerouted, consumers: runsCode })).toEqual([
+      { ...csv, llmDeliveryPath: 'text' },
+    ]);
+    expect(applyTurnTextDelivery([csv], { agent, config: rerouted })).toEqual([
+      { ...csv, llmDeliveryPath: 'text' },
+    ]);
+  });
+
+  it('falls back only for a turn whose tools are known', () => {
     const files = [csv];
 
-    expect(applyTurnTextFallback(files, { config, consumers: noReader })).toBe(files);
-    expect(applyTurnTextFallback(files, { agent, config })).toBe(files);
+    expect(applyTurnTextDelivery(files, { agent, config })).toBe(files);
+  });
+
+  it('marks nothing without an agent to route by', () => {
+    const files = [csv];
+
+    expect(applyTurnTextDelivery(files, { config, consumers: noReader })).toBe(files);
   });
 
   it('does not mark a tool-routed file that stored no text', () => {
     const files = [{ ...csv, text: undefined }];
 
-    expect(applyTurnTextFallback(files, { agent, config, consumers: noReader })).toBe(files);
+    expect(applyTurnTextDelivery(files, { agent, config, consumers: noReader })).toBe(files);
   });
 
   it('does not mark a destination the user chose', () => {
     const files = [{ ...csv, metadata: { destinationChosen: true } }];
 
-    expect(applyTurnTextFallback(files, { agent, config, consumers: noReader })).toBe(files);
+    expect(applyTurnTextDelivery(files, { agent, config, consumers: noReader })).toBe(files);
   });
 });

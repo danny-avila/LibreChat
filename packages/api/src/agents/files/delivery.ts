@@ -53,16 +53,22 @@ export function resolveAgentDeliveryRouting({
   };
 }
 
+const hasStoredToolRouteText = (file: TurnDeliveryFile): boolean =>
+  file.llmDeliveryPath === 'none' && typeof file.text === 'string' && file.text.length > 0;
+
 /**
- * Marks the attachments this turn delivers as text because no tool it runs can read them.
+ * Marks the records stored for tools (`none`) that this turn delivers as text: because no tool
+ * it runs can read them and the endpoint enables the fallback, or because the endpoint now
+ * routes their type to text.
  *
- * Endpoint filtering, model-bound limits, content inspection and usage accounting read the
- * stored route, so without the mark they would judge a file the turn is about to send as text
- * as one that never reaches the model. Every place a turn loads attachment records applies it
- * before those checks run. Unchanged records are returned as they are, and a marked record is a
- * copy, so the stored route is never rewritten. An unknown agent or tool set marks nothing.
+ * Endpoint filtering, model-bound limits, content inspection, usage accounting and
+ * `extractFileContext` read the stored route, so without the mark they would judge a file the
+ * turn is about to send as text as one that never reaches the model. Every place a turn loads
+ * attachment records applies it before those checks run. Unchanged records are returned as they
+ * are, and a marked record is a copy, so the stored route is never rewritten. A record with no
+ * stored text has nothing to deliver and is left as it is.
  */
-export function applyTurnTextFallback<T extends TurnDeliveryFile>(
+export function applyTurnTextDelivery<T extends TurnDeliveryFile>(
   files: T[],
   {
     agent,
@@ -74,17 +80,14 @@ export function applyTurnTextFallback<T extends TurnDeliveryFile>(
     consumers?: TurnFileConsumers;
   },
 ): T[] {
-  if (files.length === 0 || agent == null || consumers == null) {
+  if (agent == null || !files.some(hasStoredToolRouteText)) {
     return files;
   }
   const routing = resolveAgentDeliveryRouting({ agent, config });
-  if (routing.endpointConfig.textFallbackWithoutTools !== true) {
-    return files;
-  }
   let marked = false;
   const result = files.map((file) => {
     if (
-      file.llmDeliveryPath !== 'none' ||
+      !hasStoredToolRouteText(file) ||
       resolveTurnLLMDeliveryPath({ file, consumers, ...routing }) !== 'text'
     ) {
       return file;

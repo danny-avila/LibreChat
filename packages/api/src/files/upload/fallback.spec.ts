@@ -9,6 +9,7 @@ import { MAX_STORED_EXTRACTED_TEXT_BYTES } from '~/files/extract';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const csvRoute = {
   deliveryPath: 'none' as const,
+  isMessageAttachment: true,
   mimeType: 'text/csv',
   endpointConfig: { textFallbackWithoutTools: true },
 };
@@ -48,10 +49,8 @@ describe('getUploadFallbackTextPlan', () => {
     expect(getUploadFallbackTextPlan({ ...csvRoute, toolResource: 'execute_code' })).toBeNull();
   });
 
-  it('skips extraction for an upload filed under a tool that reads it', () => {
-    expect(
-      getUploadFallbackTextPlan({ ...csvRoute, destinationToolResource: 'execute_code' }),
-    ).toBeNull();
+  it('runs nothing for a file kept on an agent, which no turn delivers as text', () => {
+    expect(getUploadFallbackTextPlan({ ...csvRoute, isMessageAttachment: false })).toBeNull();
   });
 });
 
@@ -103,7 +102,7 @@ describe('resolveUploadFallbackText', () => {
     const { base, extractDocument, readNativeText } = setup();
 
     await expect(
-      resolveUploadFallbackText({ ...base, ...csvRoute, destinationToolResource: 'execute_code' }),
+      resolveUploadFallbackText({ ...base, ...csvRoute, isMessageAttachment: false }),
     ).resolves.toBeUndefined();
     expect(extractDocument).not.toHaveBeenCalled();
     expect(readNativeText).not.toHaveBeenCalled();

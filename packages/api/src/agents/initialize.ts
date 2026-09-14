@@ -115,7 +115,7 @@ import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
-import { applyTurnTextFallback } from './files/delivery';
+import { applyTurnTextDelivery } from './files/delivery';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
@@ -1563,9 +1563,8 @@ export async function initializeAgent(
   }
   if (currentFiles?.length) {
     /* Before any check reads the route: endpoint filtering, model-bound limits and content
-     * inspection below all have to see the text this turn will deliver in place of a file no
-     * tool it runs can read. */
-    currentFiles = applyTurnTextFallback(currentFiles, {
+     * inspection below all have to see the text this turn delivers for a file stored for tools. */
+    currentFiles = applyTurnTextDelivery(currentFiles, {
       agent,
       config: appConfig,
       consumers: fileConsumers,

@@ -3247,7 +3247,7 @@ describe('fallback text for uploads left to tools', () => {
       expect.objectContaining({
         deliveryPath: 'none',
         toolResource: undefined,
-        destinationToolResource: undefined,
+        isMessageAttachment: true,
         mimeType: 'text/csv',
         endpointConfig: expect.objectContaining({ textFallbackWithoutTools: true }),
         fileId: 'file-uuid-csv',
@@ -3260,19 +3260,20 @@ describe('fallback text for uploads left to tools', () => {
     );
   });
 
-  test('tells extraction which tool the upload was filed under', async () => {
+  test('stores fallback text for an attachment filed under a tool a later turn may not run', async () => {
     const { createFile } = require('~/models');
     const { resolveUploadFallbackText } = require('@librechat/api');
     setupStoredFileUpload();
+    resolveUploadFallbackText.mockResolvedValueOnce('region,total');
 
     const { upload } = uploadCsv({ agentTools: [EToolResources.execute_code] });
     await upload;
 
     expect(resolveUploadFallbackText).toHaveBeenCalledWith(
-      expect.objectContaining({ destinationToolResource: EToolResources.execute_code }),
+      expect.objectContaining({ toolResource: undefined, isMessageAttachment: true }),
     );
     expect(createFile).toHaveBeenCalledWith(
-      expect.not.objectContaining({ text: expect.anything() }),
+      expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
       true,
     );
   });

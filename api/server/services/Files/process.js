@@ -1159,7 +1159,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const fallbackText = await resolveUploadFallbackText({
     deliveryPath: llmDeliveryPath,
     toolResource: tool_resource,
-    destinationToolResource: effectiveToolResource,
+    isMessageAttachment: messageAttachment,
     mimeType: file.mimetype,
     endpointConfig,
     filters: appConfig?.filters,

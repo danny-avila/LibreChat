@@ -27,8 +27,8 @@ export interface UploadFallbackTextRoute {
   deliveryPath: TDefaultLLMDeliveryPath;
   /** The tool resource the request named, if any. */
   toolResource?: string | null;
-  /** The tool resource the upload was filed under, if any. */
-  destinationToolResource?: string | null;
+  /** Whether the upload attaches to a message; an agent's own tool files never reach a prompt. */
+  isMessageAttachment: boolean;
   mimeType: string;
   /** The upload endpoint's file config, which opts in through `textFallbackWithoutTools`. */
   endpointConfig?: Pick<EndpointFileConfig, 'textFallbackWithoutTools'>;
@@ -41,10 +41,11 @@ type FallbackTextExtractor = () => Promise<{ readonly text?: string | null } | n
  *
  * Where the endpoint enables `textFallbackWithoutTools`, a turn that runs no tool able to read a
  * `none`-routed file delivers this text instead (`resolveTurnLLMDeliveryPath`). Only an inferred
- * route qualifies: naming a tool resource is the user keeping the file off the model. Only an
- * upload with no known reader pays for extraction, since a file filed under a tool that can read
- * it is read by that tool. Only built-in extractors run, so a file meant for a tool never costs
- * a RAG or OCR call.
+ * route on a message attachment qualifies: naming a tool resource is the user keeping the file
+ * off the model, and files kept on an agent's tool resources never reach a prompt. A file filed
+ * under a tool that reads it still gets text, because a later turn may run without that tool: a
+ * handoff agent, or the same agent after its tools or grants change. Only built-in extractors
+ * run, so a file meant for a tool never costs a RAG or OCR call.
  */
 export function getUploadFallbackTextPlan(
   route: UploadFallbackTextRoute,
@@ -53,7 +54,7 @@ export function getUploadFallbackTextPlan(
     route.endpointConfig?.textFallbackWithoutTools !== true ||
     route.deliveryPath !== 'none' ||
     route.toolResource != null ||
-    route.destinationToolResource != null
+    !route.isMessageAttachment
   ) {
     return null;
   }

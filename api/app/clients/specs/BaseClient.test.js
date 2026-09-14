@@ -2652,17 +2652,16 @@ describe('BaseClient', () => {
         metadata: { destinationChosen: false },
       };
 
-      const replayCsv = async (fileConsumers) => {
+      const replayCsv = async (
+        fileConsumers,
+        endpointConfig = {
+          defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+          textFallbackWithoutTools: true,
+        },
+      ) => {
         getFiles.mockResolvedValueOnce([routedCsv]);
         TestClient.options.req.config = {
-          fileConfig: {
-            endpoints: {
-              [EModelEndpoint.openAI]: {
-                defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
-                textFallbackWithoutTools: true,
-              },
-            },
-          },
+          fileConfig: { endpoints: { [EModelEndpoint.openAI]: endpointConfig } },
         };
         TestClient.options.agent = { provider: EModelEndpoint.openAI, fileConsumers };
         TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
@@ -2681,6 +2680,18 @@ describe('BaseClient', () => {
         expect(TestClient.authorizedHistoricalFiles.get('csv-file')).toEqual(replayed);
         expect(message.fileContext).toBe('region,total');
         expect(routedCsv.llmDeliveryPath).toBe('none');
+      });
+
+      test('replays the stored text once the endpoint routes the type to text', async () => {
+        const message = await replayCsv(
+          { executeCode: true, fileSearch: false },
+          { defaultLLMDeliveryPath: { overrides: { 'text/csv': 'text' } } },
+        );
+        const replayed = { ...routedCsv, llmDeliveryPath: 'text' };
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([replayed]);
+        expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [replayed]);
+        expect(message.fileContext).toBe('region,total');
       });
 
       test('keeps the file off the prompt when this turn can read it with code', async () => {
