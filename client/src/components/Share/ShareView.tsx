@@ -37,6 +37,7 @@ import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import AnalyticsConsent from '../System/AnalyticsConsent';
 import { hasAnalyticsGtmId } from '~/store/analytics';
+import { toSelectorLocale } from '~/locales/i18n';
 import AppChatSurface from '../Chat/Surface';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
@@ -73,8 +74,8 @@ function SharedView() {
   /**
    * Apply `interface.defaultLanguage` from the shared-link startup config for
    * viewers who have not chosen a language themselves. The public share view has
-   * no LanguageSync, so it needs the same effect. 'auto' is skipped and the raw
-   * selector-conform value is stored (see LanguageSync).
+   * no LanguageSync, so it needs the same effect. 'auto' is skipped and the value
+   * is mapped to the selector-conform form (see LanguageSync).
    */
   const sharedDefaultLanguage = config?.interface?.defaultLanguage;
   useEffect(() => {
@@ -85,7 +86,7 @@ function SharedView() {
     if (userChoseLanguage) {
       return;
     }
-    setLangcode(sharedDefaultLanguage);
+    setLangcode(toSelectorLocale(sharedDefaultLanguage));
   }, [sharedDefaultLanguage, setLangcode]);
 
   const forkShare = useForkSharedConvoMutation({
