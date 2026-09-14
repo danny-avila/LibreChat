@@ -1177,41 +1177,196 @@ describe('Azure deployment alias', () => {
     },
   );
 
-  it('does not fall back to Azure credentials when the OpenAI key is missing', async () => {
-    jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: undefined });
-    await expect(
-      callAndCapture({
+  it.each([
+    { setting: 'OPENAI_API_KEY', value: undefined, model: 'gpt-4.1-mini' },
+    { setting: 'OPENAI_API_KEY', value: 'user_provided', model: 'gpt-4.1-nano' },
+    { setting: 'OPENAI_REVERSE_PROXY', value: 'user_provided', model: 'gpt-4o-mini' },
+  ])(
+    'runs the agent without summarization, not through Azure, when $setting is $value',
+    async ({ setting, value, model }) => {
+      jest.replaceProperty(process, 'env', {
+        ...process.env,
+        OPENAI_API_KEY: 'openai-summary-key',
+        [setting]: value,
+      });
+      const agents = await callAndCapture({
         agents: [azureAstraAgent()],
         appConfig: makeAppConfig([]),
         summarizeOnly: true,
         summarizationConfig: {
           provider: EModelEndpoint.openAI,
-          model: 'gpt-4.1-mini',
+          model,
           parameters: { streaming: false },
         },
-      }),
-    ).rejects.toThrow(
-      'OpenAI summarization requires server-configured credentials and a base URL.',
-    );
-    expect(Run.create).not.toHaveBeenCalled();
-  });
+      });
 
-  it.each(['OPENAI_API_KEY', 'OPENAI_REVERSE_PROXY'])(
-    'rejects an unresolved user-provided %s instead of inheriting Azure',
-    async (setting) => {
-      jest.replaceProperty(process, 'env', { ...process.env, [setting]: 'user_provided' });
-      await expect(
-        callAndCapture({
-          agents: [azureAstraAgent()],
-          appConfig: makeAppConfig([]),
-          summarizationConfig: { provider: EModelEndpoint.openAI, model: 'gpt-4.1-mini' },
-        }),
-      ).rejects.toThrow(
-        'OpenAI summarization requires server-configured credentials and a base URL.',
+      expect(agents[0].summarizationEnabled).toBe(false);
+      expect(logger.warn).toHaveBeenCalledWith(
+        `[createRun] Summarization with OpenAI model "${model}" is disabled for Azure OpenAI agents: it needs a server-configured OpenAI API key and base URL.`,
       );
-      expect(Run.create).not.toHaveBeenCalled();
+      await expect(compactSummary(agents)).rejects.toThrow(
+        'Compaction skipped: summarization is not enabled for this agent',
+      );
     },
   );
+
+  it('reports an unreachable OpenAI summarizer once across runs', async () => {
+    jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: undefined });
+    const run = () =>
+      callAndCapture({
+        agents: [azureAstraAgent()],
+        appConfig: makeAppConfig([]),
+        summarizationConfig: { provider: EModelEndpoint.openAI, model: 'o4-mini' },
+      });
+
+    await run();
+    (Run.create as jest.Mock).mockClear();
+    await run();
+
+    const warnings = (logger.warn as jest.Mock).mock.calls.filter(([message]) =>
+      String(message).includes('"o4-mini"'),
+    );
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('compacts through the agent client when the summary model is not deployed on Azure', async () => {
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-6-astra'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'test-instance',
+          version: '2025-04-01-preview',
+          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+        },
+      },
+    };
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig,
+      summarizeOnly: true,
+      summarizationConfig: { model: 'gpt-5.4-nano', parameters: { streaming: false } },
+    });
+
+    expect(agents[0].summarizationEnabled).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[createRun] Summarization model "gpt-5.4-nano" is not resolvable from the Azure OpenAI configuration: Model named "gpt-5.4-nano" not found in configuration.',
+    );
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url, headers, body } = requests[0];
+    expect(url.origin + url.pathname).toBe(
+      'https://test-instance.openai.azure.com/openai/v1/responses',
+    );
+    expect(headers.get('api-key')).toBe('test-azure-key');
+    expect(body.model).toBe('gpt-5.4-nano');
+  });
+
+  it("sends a summary deployment to its own resource when only the agent's group sets a base URL", async () => {
+    const agentBaseURL =
+      'https://agent-instance.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}';
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-4.1', 'gpt-4.1-mini'],
+      modelGroupMap: { 'gpt-4.1': { group: 'main' }, 'gpt-4.1-mini': { group: 'summary' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'agent-instance',
+          baseURL: agentBaseURL,
+          version: '2024-10-21',
+          models: { 'gpt-4.1': { deploymentName: 'agent-deployment' } },
+        },
+        summary: {
+          apiKey: 'summary-key',
+          instanceName: 'summary-instance',
+          version: '2024-10-21',
+          models: { 'gpt-4.1-mini': { deploymentName: 'summary-production' } },
+        },
+      },
+    };
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      'test-azure-key',
+      {
+        reverseProxyUrl: agentBaseURL,
+        azure: {
+          azureOpenAIApiInstanceName: 'agent-instance',
+          azureOpenAIApiDeploymentName: 'agent-deployment',
+          azureOpenAIApiVersion: '2024-10-21',
+          azureOpenAIApiKey: 'test-azure-key',
+        },
+        modelOptions: { model: 'gpt-4.1' },
+      },
+      EModelEndpoint.azureOpenAI,
+    );
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: EModelEndpoint.azureOpenAI,
+          endpoint: EModelEndpoint.azureOpenAI,
+          model: 'gpt-4.1',
+          model_parameters: { ...llmConfig, configuration: configOptions },
+        }),
+      ],
+      appConfig,
+      summarizeOnly: true,
+      summarizationConfig: { model: 'gpt-4.1-mini', parameters: { streaming: false } },
+    });
+
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url, headers, body } = requests[0];
+    expect(url.origin + url.pathname).toBe(
+      'https://summary-instance.openai.azure.com/openai/deployments/summary-production/chat/completions',
+    );
+    expect(headers.get('api-key')).toBe('summary-key');
+    expect(body.model).toBe('summary-production');
+  });
+
+  it('sends no empty api-version to a serverless summary group without a version', async () => {
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-6-astra', 'Phi-4'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'Phi-4': { group: 'serverless' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'test-instance',
+          version: '2025-04-01-preview',
+          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+        },
+        serverless: {
+          apiKey: 'serverless-key',
+          baseURL: 'https://phi-instance.services.ai.azure.com/models',
+          serverless: true,
+          models: { 'Phi-4': true },
+        },
+      },
+    };
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig,
+      summarizeOnly: true,
+      summarizationConfig: { model: 'Phi-4', parameters: { streaming: false } },
+    });
+
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url, headers } = requests[0];
+    expect(url.origin + url.pathname).toBe(
+      'https://phi-instance.services.ai.azure.com/models/chat/completions',
+    );
+    expect(url.search).toBe('');
+    expect(headers.get('api-key')).toBe('serverless-key');
+  });
 
   it.each([
     { summaryModel: 'gpt-4.1-mini', instance: 'test-instance', provider: undefined },
