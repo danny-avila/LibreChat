@@ -6,7 +6,9 @@ import type { ExtendedFile } from '~/common';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
+import UndockedArtifacts from '~/components/Artifacts/UndockedArtifacts';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
+import { artifactsUndocked } from '~/components/Artifacts/state';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanelGroup } from '~/components/SidePanel';
@@ -32,6 +34,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const conversationId = useRecoilValue(store.conversationIdByIndex(0));
   const conversationEndpoint = useRecoilValue(store.effectiveEndpointByIndex(0));
   const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+  const isUndocked = useAtomValue(artifactsUndocked);
   const selectedSubagent = useAtomValue(activeSubagentPanel);
   const setSelectedSubagent = useSetAtom(activeSubagentPanel);
   const resetSelectedSubagent = useCallback(() => setSelectedSubagent(null), [setSelectedSubagent]);
@@ -107,11 +110,9 @@ export default function Presentation({ children }: { children: React.ReactNode }
     ) {
       return (
         <ArtifactsProvider>
-          <EditorProvider>
-            <Suspense fallback={null}>
-              <Artifacts />
-            </Suspense>
-          </EditorProvider>
+          <Suspense fallback={null}>
+            <Artifacts />
+          </Suspense>
         </ArtifactsProvider>
       );
     }
@@ -137,21 +138,30 @@ export default function Presentation({ children }: { children: React.ReactNode }
     );
   }, [conversationId, selectedSubagent]);
 
-  const panelElement = artifactsElement ?? subagentElement;
+  /* Undocked, the pane renders into its own window: the side panel gives its
+   * width back to the conversation instead of holding an empty column. */
+  const panelElement = (isUndocked ? null : artifactsElement) ?? subagentElement;
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       <AppChatSurface>
-        <ParentSubagentsProvider
-          conversationId={conversationId ?? ''}
-          enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
-        >
-          <SidePanelGroup panel={panelElement}>
-            <main className="flex h-full flex-col overflow-y-auto" role="main">
-              {children}
-            </main>
-          </SidePanelGroup>
-        </ParentSubagentsProvider>
+        {/* The editor buffer belongs to the pane's session, not to the window
+            it happens to be in: hoisted, an undock keeps unsaved edits. */}
+        <EditorProvider>
+          <ParentSubagentsProvider
+            conversationId={conversationId ?? ''}
+            enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
+          >
+            <SidePanelGroup panel={panelElement}>
+              <main className="flex h-full flex-col overflow-y-auto" role="main">
+                {children}
+              </main>
+            </SidePanelGroup>
+          </ParentSubagentsProvider>
+          {isUndocked && artifactsElement != null && (
+            <UndockedArtifacts>{artifactsElement}</UndockedArtifacts>
+          )}
+        </EditorProvider>
       </AppChatSurface>
     </DragDropWrapper>
   );
