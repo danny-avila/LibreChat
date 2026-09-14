@@ -351,3 +351,64 @@ export function resolveToolRoleGrants({
 
   return pending;
 }
+
+export interface FindDeniedAssistantRunToolsParams {
+  req?: ServerRequest;
+  getRoleByName: CheckAccessParams['getRoleByName'];
+  /**
+   * Loads the assistant's configured tools. Called only when the role denies
+   * at least one permission `assistantToolRolePermissions` covers, so a role
+   * that grants every native tool costs no tool-list read.
+   */
+  getTools: () => Promise<Array<string | { type?: string } | null | undefined> | null | undefined>;
+}
+
+/**
+ * Resolves which of an assistant's configured native tools the role denies,
+ * for the run path that refuses the run outright rather than stripping a tool
+ * the provider's run API accepts only as a whole array.
+ *
+ * Reads the three-grant bundle rather than repeating a permission check per
+ * native tool type, so it shares its role read with every other gate on the
+ * request.
+ *
+ * Throws when the tool load resolves nullish: every caller reads an empty array
+ * as "run permitted", so "could not load the assistant" must not answer the
+ * same as "the assistant has no tools".
+ */
+export async function findDeniedAssistantRunTools({
+  req,
+  getRoleByName,
+  getTools,
+}: FindDeniedAssistantRunToolsParams): Promise<string[]> {
+  const grants = await resolveToolRoleGrants({ req, getRoleByName, context: 'assistantsRun' });
+  const grantedByPermissionType: Partial<Record<PermissionTypes, boolean>> = {
+    [PermissionTypes.RUN_CODE]: grants.runCode,
+    [PermissionTypes.FILE_SEARCH]: grants.fileSearch,
+    [PermissionTypes.WEB_SEARCH]: grants.webSearch,
+  };
+  const everyPermissionGranted = Object.values(assistantToolRolePermissions).every(
+    (permissionType) => permissionType == null || grantedByPermissionType[permissionType] === true,
+  );
+  if (everyPermissionGranted) {
+    return [];
+  }
+
+  const toolType = (tool: string | { type?: string } | null | undefined) =>
+    typeof tool === 'string' ? tool : tool?.type;
+  const tools = await getTools();
+  if (tools == null) {
+    throw new Error('[assistantsRun] Could not load the assistant tools for the role check');
+  }
+
+  const denied = new Set<string>();
+  for (const tool of tools) {
+    const type = toolType(tool);
+    const permissionType = type != null ? assistantToolRolePermissions[type] : null;
+    if (permissionType != null && grantedByPermissionType[permissionType] !== true) {
+      denied.add(type as string);
+    }
+  }
+
+  return [...denied];
+}

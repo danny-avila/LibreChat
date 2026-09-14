@@ -10,6 +10,7 @@ import {
   resolveToolRoleGrants,
   resolveAssistantToolPermissions,
   checkToolResourceUploadPermission,
+  findDeniedAssistantRunTools,
 } from './rolePermissions';
 
 const buildRole = (overrides: Record<string, unknown> = {}) =>
@@ -356,5 +357,71 @@ describe('resolveToolRoleGrants', () => {
       fileSearch: false,
       webSearch: false,
     });
+  });
+});
+
+describe('findDeniedAssistantRunTools', () => {
+  it('returns no denials without loading tools when every native-tool grant is held', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+    const getTools = jest.fn();
+
+    await expect(
+      findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+    ).resolves.toEqual([]);
+    expect(getTools).not.toHaveBeenCalled();
+  });
+
+  it('loads the tools and returns the denied native tool types', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+    const getTools = jest
+      .fn()
+      .mockResolvedValue([{ type: 'code_interpreter' }, { type: 'file_search' }]);
+
+    await expect(
+      findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+    ).resolves.toEqual(['code_interpreter']);
+  });
+
+  it('denies legacy v1 retrieval when FILE_SEARCH is withheld', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(
+        buildRole({ [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false } }),
+      );
+    const getTools = jest.fn().mockResolvedValue([{ type: 'retrieval' }]);
+
+    await expect(
+      findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+    ).resolves.toEqual(['retrieval']);
+  });
+
+  it('never denies function tools, which carry no native grant', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+    const getTools = jest.fn().mockResolvedValue([{ type: 'function' }]);
+
+    await expect(
+      findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+    ).resolves.toEqual([]);
+  });
+
+  /** "Could not load the assistant" must not answer the same as "the assistant
+   *  has no tools": every caller reads `[]` as run permitted. */
+  it('throws when the tool load resolves nullish', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+
+    for (const resolved of [null, undefined]) {
+      const getTools = jest.fn().mockResolvedValue(resolved);
+
+      await expect(
+        findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+      ).rejects.toThrow('Could not load the assistant tools');
+      expect(getTools).toHaveBeenCalledTimes(1);
+    }
   });
 });
