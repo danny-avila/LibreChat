@@ -11,12 +11,16 @@ const MAX_LIST_RESULTS = 500;
 export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
 export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
+/** Keep aligned with data-provider's deployment schema defaults and hard cap. */
+export const WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS: number = 30_000;
+export const WORKSPACE_COMMAND_MAX_TIMEOUT_MS: number = 5 * 60_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
+/** Matches Code API's bounded admission wait and command settlement allowance. */
+const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
+const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 4096;
 const ERROR_BODY_TIMEOUT_MS = 1000;
@@ -464,7 +468,8 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       request.command.trim().length > 0 &&
       !request.command.includes('\0') &&
       (request.cwd == null || isSafePath(request.cwd)) &&
-      (request.timeoutMs == null || isPositiveInteger(request.timeoutMs, MAX_COMMAND_TIMEOUT_MS)) &&
+      (request.timeoutMs == null ||
+        isPositiveInteger(request.timeoutMs, WORKSPACE_COMMAND_MAX_TIMEOUT_MS)) &&
       (request.maxOutputBytes == null ||
         isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
     );
@@ -653,8 +658,12 @@ function isValidResult(
 }
 
 function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
-  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
-  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
+  const executionBudgetMs =
+    request.operation === 'execute_command'
+      ? (request.timeoutMs ?? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS) +
+        WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
+      : WORKSPACE_TOOL_TIMEOUT_MS;
+  return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
 export async function executeWorkspaceTool({

@@ -271,8 +271,9 @@ export async function deleteFileFromCloudFront(req: ServerRequest, file: TFile):
 export async function getCloudFrontFileStream(
   req: ServerRequest,
   filePath: string,
+  options?: { signal?: AbortSignal },
 ): Promise<Readable> {
-  return getS3FileStream(req, filePath);
+  return getS3FileStream(req, filePath, options);
 }
 
 /** Get a signed CloudFront URL for an authorized file download. */

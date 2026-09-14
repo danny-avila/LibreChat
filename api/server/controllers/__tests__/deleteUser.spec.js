@@ -138,6 +138,11 @@ jest.mock('~/server/services/Config/getCachedTools', () => ({
   invalidateCachedTools: jest.fn(),
 }));
 
+jest.mock('~/server/services/MCPAuthorizationFenceRetry', () => ({
+  clearMCPAuthorizationFenceRetry: jest.fn(),
+  persistMCPAuthorizationFenceRetry: jest.fn(),
+}));
+
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: (...args) => mockProcessDeleteRequest(...args),
 }));

@@ -258,6 +258,16 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(result.oauthServers).toEqual(new Set());
     });
 
+    it('reuses request-loaded app configuration', async () => {
+      const appConfig = { mcpConfig: { server1: { type: 'stdio' } } };
+      mockGetAppConfig.mockClear();
+
+      await getMCPSetupData(mockUserId, { role: 'user', appConfig });
+
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.ensureConfigServers).toHaveBeenCalledWith(appConfig.mcpConfig);
+    });
+
     it('should handle null values from MCP manager gracefully', async () => {
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
@@ -1672,6 +1682,51 @@ describe('User parameter passing tests', () => {
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('Tool call cancelled by user abort'),
       );
+    });
+
+    it('preserves AbortError from the MCP tool implementation', async () => {
+      const mockUser = { id: 'cancel-user', role: 'USER' };
+      const abortController = new AbortController();
+      const abort = Object.assign(new Error('Stopped'), { name: 'AbortError' });
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn(async () => {
+          abortController.abort(abort);
+          throw abort;
+        }),
+      });
+
+      const mcpTool = await createMCPTool({
+        user: mockUser,
+        config: { url: 'https://cancel.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.func({}, undefined, {
+          signal: abortController.signal,
+          configurable: { user: mockUser },
+          metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+          toolCall: {},
+        }),
+      ).rejects.toBe(abort);
     });
 
     it('keeps a real failure racing the Stop at error level', async () => {

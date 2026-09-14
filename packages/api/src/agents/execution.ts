@@ -3,6 +3,8 @@ import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type {
   Agents,
+  CodeWorkspaceOperation,
+  CodeWorkspaceSelection,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
   StatefulCodeEnvironment,
@@ -35,6 +37,36 @@ export interface CodeExecutionContext {
   bridgeWorkerId?: string;
   codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
   codeEnvironmentSettings?: CodeEnvironmentUserSettings;
+  /** Live, server-validated directory selection. Never derive session reuse from this field. */
+  codeWorkspace?: CodeWorkspaceSelection & { operations: CodeWorkspaceOperation[] };
+}
+
+/** Removes live capability data before a workspace binding is persisted. */
+export function getCodeWorkspaceSelections(
+  contexts: Array<
+    | Pick<CodeExecutionContext, 'environmentId' | 'environmentType' | 'codeWorkspace'>
+    | null
+    | undefined
+  >,
+): CodeWorkspaceSelection[] | undefined {
+  const selections = new Map<string, CodeWorkspaceSelection>();
+  for (const context of contexts) {
+    const workspace = context?.codeWorkspace;
+    if (
+      context?.environmentType !== 'attached' ||
+      context.environmentId == null ||
+      workspace == null ||
+      workspace.environmentId !== context.environmentId
+    ) {
+      continue;
+    }
+    selections.set(workspace.environmentId, {
+      environmentId: workspace.environmentId,
+      workspaceId: workspace.workspaceId,
+    });
+  }
+  if (selections.size === 0) return undefined;
+  return [...selections.values()].sort((a, b) => a.environmentId.localeCompare(b.environmentId));
 }
 
 type CodeExecutionApprovalAgent = {
@@ -71,6 +103,13 @@ export function captureCodeExecutionApprovalBinding(
           context.environmentId ?? null,
           context.environmentType ?? null,
           context.bridgeWorkerId ?? null,
+          context.codeWorkspace == null
+            ? null
+            : {
+                environmentId: context.codeWorkspace.environmentId,
+                workspaceId: context.codeWorkspace.workspaceId,
+                operations: [...new Set(context.codeWorkspace.operations)].sort(),
+              },
         ]),
       )
       .digest('hex');

@@ -2,14 +2,14 @@ import { useState, useCallback, useMemo, useRef } from 'react';
 import { BookmarkPlusIcon } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import type { TConversation, TConversationTag } from 'librechat-data-provider';
+import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import type { TConversation, TConversationTagCatalog } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type * as t from '~/common';
-import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
+import { useConversationTagCatalogQuery, useTagConversationMutation } from '~/data-provider';
+import { isTemporaryConversation, isNotFoundError, logger } from '~/utils';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
-import { isTemporaryConversation, logger } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
@@ -17,7 +17,7 @@ export type UseBookmarkItemsResult = {
   /** Bookmarks only apply to a saved, non-temporary conversation. */
   show: boolean;
   items: t.MenuItemProps[];
-  bookmarks: TConversationTag[];
+  bookmarks: TConversationTagCatalog[];
   hasBookmarks: boolean;
   isLoading: boolean;
   triggerAriaLabel: string;
@@ -61,7 +61,8 @@ export default function useBookmarkItems({
   const mutation = useTagConversationMutation(conversationId, {
     onSuccess: (newIds: string[], vars) => {
       const catalog =
-        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+        queryClient.getQueryData<TConversationTagCatalog[]>([QueryKeys.conversationTagCatalog]) ??
+        [];
       const names = newIds.flatMap((id) => {
         const tag = catalog.find((item) => item._id === id);
         return tag ? [tag.tag] : [];
@@ -69,7 +70,28 @@ export default function useBookmarkItems({
       updateConvoTags(names, newIds);
       focusTag(vars.tag);
     },
-    onError: () => {
+    onError: async (error) => {
+      if (isNotFoundError(error)) {
+        try {
+          const [, refreshed] = await Promise.all([
+            queryClient.fetchQuery({
+              queryKey: [QueryKeys.conversationTagCatalog],
+              queryFn: () => dataService.getConversationTagCatalog(),
+              staleTime: 0,
+              retry: false,
+            }),
+            queryClient.fetchQuery({
+              queryKey: [QueryKeys.conversation, conversationId],
+              queryFn: () => dataService.getConversationById(conversationId),
+              staleTime: 0,
+              retry: false,
+            }),
+          ]);
+          updateConvoTags(refreshed.tags ?? [], refreshed.tagIds ?? []);
+        } catch {
+          // Preserve the original mutation error and leave replay to an explicit user action.
+        }
+      }
       showToast({
         message: 'Error adding bookmark',
         severity: NotificationSeverity.ERROR,
@@ -81,7 +103,7 @@ export default function useBookmarkItems({
   });
 
   /** The tags endpoint is behind the bookmark permission, so an ungated query 403s. */
-  const { data } = useConversationTagsQuery({ enabled });
+  const { data } = useConversationTagCatalogQuery({ enabled });
 
   const isActiveConvo = Boolean(
     conversation &&
@@ -103,7 +125,8 @@ export default function useBookmarkItems({
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
 
       const allTags =
-        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+        queryClient.getQueryData<TConversationTagCatalog[]>([QueryKeys.conversationTagCatalog]) ??
+        [];
       const existingTags = allTags.map((t) => t._id);
       const filteredTags = tagIds?.filter((t) => existingTags.includes(t));
 

@@ -226,6 +226,9 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
 - `text-status-error` / `bg-status-error-subtle` / `border-status-error-border`
 - `text-status-neutral` / `bg-status-neutral-subtle` / `border-status-neutral-border`
 - `bg-status-success-strong` / `bg-status-info-strong` / `bg-status-warning-strong` / `bg-status-error-strong`
+- `text-status-verified` — fill of the verified mark `VerifiedIcon` paints,
+  carrying a `stroke-text-on-status` check. See `rgb-status-verified` in
+  `types/index.ts` for why it is its own role and what a pre-token theme gets.
 
 ### Other Colors
 

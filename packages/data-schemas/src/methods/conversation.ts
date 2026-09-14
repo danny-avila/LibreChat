@@ -300,6 +300,12 @@ export interface ConversationMethods {
     conversations: Array<Record<string, unknown>>,
     options?: { tagSource?: 'portable' | 'owned' },
   ): Promise<unknown>;
+  replaceConvoCodeEnvironmentDecision(params: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }): Promise<IConversation | null>;
   getConvosByCursor(
     user: string,
     options?: {
@@ -582,16 +588,43 @@ export function createConversationMethods(
     }
   }
 
-  /** Public labels are projected without adding a serial query to the shared read path. */
-  async function getConvoWithTags(user: string, conversationId: string) {
-    const scope = tagScope(user);
-    const [conversation, catalog] = await Promise.all([
-      (mongoose.models.Conversation as Model<IConversation>)
-        .findOne({ ...scope, conversationId })
-        .lean<IConversation>(),
-      (mongoose.models.ConversationTag as Model<TagRecord>).find(scope).lean(),
+  /** Loads only referenced catalog rows in the same round trip as the conversation. */
+  async function getConvoWithTags(
+    user: string,
+    conversationId: string,
+  ): Promise<IConversation | null> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const excluded: Record<string, 0> = { __tagLookupIds: 0 };
+    Conversation.schema.eachPath((path, schemaType) => {
+      if (schemaType.options.select === false) excluded[path] = 0;
+    });
+    const [result] = await Conversation.aggregate<IConversation & { __tagCatalog: TagRecord[] }>([
+      { $match: { ...tagScope(user), conversationId } },
+      { $limit: 1 },
+      {
+        $addFields: {
+          __tagLookupIds: {
+            $map: {
+              input: { $cond: [{ $isArray: '$tagIds' }, '$tagIds', []] },
+              as: 'tagId',
+              in: { $convert: { input: '$$tagId', to: 'objectId', onError: null, onNull: null } },
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'conversationtags',
+          localField: '__tagLookupIds',
+          foreignField: '_id',
+          as: '__tagCatalog',
+        },
+      },
+      { $project: excluded },
     ]);
-    return conversation ? projectConversationTags([conversation], catalog)[0] : null;
+    if (!result) return null;
+    const { __tagCatalog, ...conversation } = result;
+    return projectConversationTags([conversation as IConversation], __tagCatalog)[0];
   }
 
   /** Resolves a child only through its owning parent and includes its private live lease. */
@@ -2577,6 +2610,41 @@ export function createConversationMethods(
   }
 
   /**
+   * Compare-and-swap for an owner's explicit move of an attached code-environment decision.
+   * The filter repeats the stored decision being replaced, so a writer that changed it first
+   * leaves this update unmatched rather than overwritten. A missing and a null mode both
+   * describe a legacy decision inferred from its selections.
+   */
+  async function replaceConvoCodeEnvironmentDecision({
+    user,
+    conversationId,
+    expected,
+    codeWorkspaces,
+  }: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        {
+          conversationId,
+          user,
+          codeEnvironmentMode: expected.codeEnvironmentMode ?? { $in: [null] },
+          codeWorkspaces: expected.codeWorkspaces ?? { $in: [null] },
+        },
+        { $set: { codeEnvironmentMode: 'attached', codeWorkspaces } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[replaceConvoCodeEnvironmentDecision] Error moving code environment', error);
+      throw new Error('Error moving code environment');
+    }
+  }
+
+  /**
    * Saves multiple conversations in bulk.
    */
   async function bulkSaveConvos(
@@ -3005,8 +3073,11 @@ export function createConversationMethods(
       sortObj._id = sortOrder;
 
       const convos = await Conversation.find(query)
+        /* `isArchived` rides along so a row can offer archive or restore from its own state:
+           the sidebar lists archived and unarchived chats in the same session, and the
+           active list also carries the unarchived pins beside them. */
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned tagIds',
+          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned tagIds',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -3457,6 +3528,7 @@ export function createConversationMethods(
     deleteNullOrEmptyConversations,
     saveConvo,
     setConvoPinned,
+    replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,
     getConvosQueried,

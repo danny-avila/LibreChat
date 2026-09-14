@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
-import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
+import type {
+  TConversationTagCatalog,
+  TConversationTagCatalogResponse,
+} from 'librechat-data-provider';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import BookmarkCardSkeleton from './BookmarkCardSkeleton';
@@ -9,7 +12,7 @@ import { PanelContent } from '~/components/ui';
 import BookmarkList from './BookmarkList';
 import { useLocalize } from '~/hooks';
 
-const removeDuplicates = (bookmarks: TConversationTag[]) => {
+const removeDuplicates = (bookmarks: TConversationTagCatalog[]) => {
   const seen = new Set();
   return bookmarks.filter((bookmark) => {
     const duplicate = seen.has(bookmark._id);
@@ -18,9 +21,17 @@ const removeDuplicates = (bookmarks: TConversationTag[]) => {
   });
 };
 
-const BookmarkTable = ({ isLoading = false }: { isLoading?: boolean }) => {
+const BookmarkTable = ({
+  isLoading = false,
+  countsCurrent = true,
+  counts,
+}: {
+  isLoading?: boolean;
+  countsCurrent?: boolean;
+  counts?: ReadonlyMap<string, number>;
+}) => {
   const localize = useLocalize();
-  const [rows, setRows] = useState<ConversationTagsResponse>([]);
+  const [rows, setRows] = useState<TConversationTagCatalogResponse>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -32,7 +43,7 @@ const BookmarkTable = ({ isLoading = false }: { isLoading?: boolean }) => {
   }, [bookmarks]);
 
   const moveRow = useCallback((dragIndex: number, hoverIndex: number) => {
-    setRows((prevTags: TConversationTag[]) => {
+    setRows((prevTags: TConversationTagCatalog[]) => {
       const updatedRows = [...prevTags];
       const [movedRow] = updatedRows.splice(dragIndex, 1);
       updatedRows.splice(hoverIndex, 0, movedRow);
@@ -91,6 +102,8 @@ const BookmarkTable = ({ isLoading = false }: { isLoading?: boolean }) => {
             bookmarks={filteredRows}
             moveRow={moveRow}
             isFiltered={searchQuery.length > 0}
+            countsCurrent={countsCurrent}
+            counts={counts}
           />
         </PanelContent>
       </div>

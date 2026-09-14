@@ -1612,6 +1612,21 @@ describe('userGroup methods', () => {
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
 
+    it('excludes users from a GROUP and ROLE filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, [
+        PrincipalType.GROUP,
+        PrincipalType.ROLE,
+      ]);
+      expect(new Set(results.map((r) => r.type))).toEqual(
+        new Set([PrincipalType.GROUP, PrincipalType.ROLE]),
+      );
+    });
+
+    it('returns no principals for an empty type filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, []);
+      expect(results).toEqual([]);
+    });
+
     it('respects limitPerType', async () => {
       const results = await methods.searchPrincipals('a', 1);
       const userResults = results.filter((r) => r.type === PrincipalType.USER);

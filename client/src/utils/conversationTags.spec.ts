@@ -184,7 +184,6 @@ describe('ConversationTag Utilities', () => {
         updatedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         user: 'user1',
-        count: 30,
       },
       // no tag tag specified
     );
@@ -218,7 +217,6 @@ describe('ConversationTag Utilities', () => {
         updatedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         user: 'user1',
-        count: 30,
       },
       // no tag tag specified
     );

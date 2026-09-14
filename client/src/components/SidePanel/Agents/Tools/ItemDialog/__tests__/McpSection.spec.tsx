@@ -27,6 +27,12 @@ const mockLocalize = jest.fn((key: string, values?: Record<number, string>) =>
   key === 'com_nav_mcp_status_connecting' ? `${values?.[0]} - Connecting` : key,
 );
 
+const mockMCPRefresh = jest.fn();
+
+jest.mock('~/hooks/MCP/useMCPRefresh', () => ({
+  useMCPRefresh: (options: { enabled: boolean; tools?: boolean }) => mockMCPRefresh(options),
+}));
+
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
   useWatch: ({ name }: { name: string }) => {

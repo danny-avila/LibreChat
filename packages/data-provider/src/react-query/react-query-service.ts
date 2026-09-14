@@ -135,7 +135,10 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
-      queryClient.invalidateQueries([QueryKeys.conversationTags]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.conversationTags],
+        refetchType: 'none',
+      });
     },
   });
 };

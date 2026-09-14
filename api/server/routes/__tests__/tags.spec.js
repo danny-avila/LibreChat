@@ -47,6 +47,29 @@ it('returns the created bookmark on success', async () => {
   expect(response.body._id).toEqual(expect.any(String));
 });
 
+it.each([
+  ['get', '/tags'],
+  ['post', '/tags'],
+  ['put', '/tags/id'],
+])('omits counts from the browser %s projection', async (method, path) => {
+  const tag = await methods.createConversationTag('owner', { tag: 'bookmark' });
+  const count = jest.spyOn(mongoose.models.Conversation, 'countDocuments');
+  const aggregate = jest.spyOn(mongoose.models.Conversation, 'aggregate');
+  const requestPath =
+    method === 'put' ? `${path}/${tag._id}?includeCounts=false` : `${path}?includeCounts=false`;
+  const response =
+    method === 'get'
+      ? await request(app).get(requestPath).expect(200)
+      : await request(app)
+          [method](requestPath)
+          .send({ tag: method === 'post' ? 'created' : 'renamed' })
+          .expect(200);
+  const result = Array.isArray(response.body) ? response.body[0] : response.body;
+  expect(result).not.toHaveProperty('count');
+  expect(count).not.toHaveBeenCalled();
+  expect(aggregate).not.toHaveBeenCalled();
+});
+
 it('returns a failed response when deletion wins a create-and-attach race', async () => {
   const Conversation = mongoose.models.Conversation;
   await Conversation.create({ user: 'owner', conversationId: 'convo', endpoint: 'openAI' });

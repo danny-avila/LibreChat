@@ -1,5 +1,5 @@
 import type { Model } from 'mongoose';
-import type { TagRecord } from '~/tags/membership';
+import type { TagCatalogRecord, TagRecord } from '~/tags/membership';
 import type { IConversation } from '~/types';
 import {
   getOrCreateTag,
@@ -32,48 +32,111 @@ export async function decrementTagCounts(
   _tenantId?: string | null,
 ): Promise<void> {}
 
-export function createConversationTagMethods(mongoose: typeof import('mongoose')): {
-  getConversationTags: (user: string, tenantId?: string | null) => Promise<TagRecord[]>;
-  createConversationTag: (
+interface ConversationTagMethodsContract {
+  getConversationTags(
+    user: string,
+    tenantId?: string | null,
+    includeCounts?: true,
+  ): Promise<TagRecord[]>;
+  getConversationTags(
+    user: string,
+    tenantId: string | null | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord[]>;
+  getConversationTags(
+    user: string,
+    tenantId: string | null | undefined,
+    includeCounts: boolean,
+  ): Promise<Array<TagRecord | TagCatalogRecord>>;
+  createConversationTag(
     user: string,
     data: TagInput,
     tenantId?: string | null,
-  ) => Promise<TagRecord | null>;
-  updateConversationTag: (
+    includeCounts?: true,
+  ): Promise<TagRecord | null>;
+  createConversationTag(
+    user: string,
+    data: TagInput,
+    tenantId: string | null | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord | null>;
+  createConversationTag(
+    user: string,
+    data: TagInput,
+    tenantId: string | null | undefined,
+    includeCounts: boolean,
+  ): Promise<TagRecord | TagCatalogRecord | null>;
+  updateConversationTag(
     user: string,
     name: string,
     data: TagUpdate,
     tenantId?: string | null,
     byId?: boolean,
-  ) => Promise<TagRecord | null>;
-  deleteConversationTag: (
+    includeCounts?: true,
+  ): Promise<TagRecord | null>;
+  updateConversationTag(
+    user: string,
+    name: string,
+    data: TagUpdate,
+    tenantId: string | null | undefined,
+    byId: boolean | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord | null>;
+  updateConversationTag(
+    user: string,
+    name: string,
+    data: TagUpdate,
+    tenantId: string | null | undefined,
+    byId: boolean | undefined,
+    includeCounts: boolean,
+  ): Promise<TagRecord | TagCatalogRecord | null>;
+  deleteConversationTag(
     user: string,
     name: string,
     tenantId?: string | null,
     byId?: boolean,
-  ) => Promise<TagRecord | null>;
-  deleteConversationTags: (filter: Record<string, unknown>) => Promise<number>;
-  updateTagsForConversation: (
+  ): Promise<TagRecord | null>;
+  deleteConversationTags(filter: Record<string, unknown>): Promise<number>;
+  updateTagsForConversation(
     user: string,
     conversationId: string,
     names: string[],
     tenantId?: string | null,
     byId?: boolean,
-  ) => Promise<string[]>;
-  bulkIncrementTagCounts: (
-    user: string,
-    names: string[],
-    tenantId?: string | null,
-  ) => Promise<void>;
-} {
+  ): Promise<string[]>;
+  bulkIncrementTagCounts(user: string, names: string[], tenantId?: string | null): Promise<void>;
+}
+
+export function createConversationTagMethods(
+  mongoose: typeof import('mongoose'),
+): ConversationTagMethodsContract {
   const Tag = () => mongoose.models.ConversationTag as Model<TagRecord>;
   const Conversation = () => mongoose.models.Conversation as Model<IConversation>;
 
+  function getConversationTags(
+    user: string,
+    tenantId?: string | null,
+    includeCounts?: true,
+  ): Promise<TagRecord[]>;
+  function getConversationTags(
+    user: string,
+    tenantId: string | null | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord[]>;
+  function getConversationTags(
+    user: string,
+    tenantId: string | null | undefined,
+    includeCounts: boolean,
+  ): Promise<Array<TagRecord | TagCatalogRecord>>;
   async function getConversationTags(
     user: string,
     tenantId: string | null = getTenantId() ?? null,
-  ): Promise<TagRecord[]> {
+    includeCounts = true,
+  ): Promise<Array<TagRecord | TagCatalogRecord>> {
     const scope = tagScope(user, tenantId);
+    if (!includeCounts) {
+      return Tag().find(scope).select('-count').sort({ position: 1, _id: 1 }).lean();
+    }
     const [catalog, counts] = await Promise.all([
       Tag().find(scope).sort({ position: 1, _id: 1 }).lean(),
       Conversation().aggregate<{ _id: string; count: number }>([
@@ -90,8 +153,13 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   async function withCount(
     tag: TagRecord | null,
     tenantId: string | null,
-  ): Promise<TagRecord | null> {
+    includeCounts: boolean,
+  ): Promise<TagRecord | TagCatalogRecord | null> {
     if (!tag) return null;
+    if (!includeCounts) {
+      const { count: _count, ...catalogTag } = tag;
+      return catalogTag;
+    }
     return {
       ...tag,
       count: await Conversation().countDocuments({
@@ -101,11 +169,30 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     };
   }
 
+  function createConversationTag(
+    user: string,
+    data: TagInput,
+    tenantId?: string | null,
+    includeCounts?: true,
+  ): Promise<TagRecord | null>;
+  function createConversationTag(
+    user: string,
+    data: TagInput,
+    tenantId: string | null | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord | null>;
+  function createConversationTag(
+    user: string,
+    data: TagInput,
+    tenantId: string | null | undefined,
+    includeCounts: boolean,
+  ): Promise<TagRecord | TagCatalogRecord | null>;
   async function createConversationTag(
     user: string,
     data: TagInput,
     tenantId: string | null = getTenantId() ?? null,
-  ): Promise<TagRecord | null> {
+    includeCounts = true,
+  ): Promise<TagRecord | TagCatalogRecord | null> {
     const tag = await getOrCreateTag(
       mongoose,
       user,
@@ -124,7 +211,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const [projected] = await cleanConversationTagMembership(mongoose, [conversation]);
       if (!projected.tagIds?.includes(id)) return null;
     }
-    return withCount(tag, tenantId);
+    return withCount(tag, tenantId, includeCounts);
   }
 
   function identity(value: string, byId: boolean): { _id: string } | { tag: string } {
@@ -133,13 +220,38 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     return { _id: value };
   }
 
+  function updateConversationTag(
+    user: string,
+    value: string,
+    data: TagUpdate,
+    tenantId?: string | null,
+    byId?: boolean,
+    includeCounts?: true,
+  ): Promise<TagRecord | null>;
+  function updateConversationTag(
+    user: string,
+    value: string,
+    data: TagUpdate,
+    tenantId: string | null | undefined,
+    byId: boolean | undefined,
+    includeCounts: false,
+  ): Promise<TagCatalogRecord | null>;
+  function updateConversationTag(
+    user: string,
+    value: string,
+    data: TagUpdate,
+    tenantId: string | null | undefined,
+    byId: boolean | undefined,
+    includeCounts: boolean,
+  ): Promise<TagRecord | TagCatalogRecord | null>;
   async function updateConversationTag(
     user: string,
     value: string,
     data: TagUpdate,
     tenantId: string | null = getTenantId() ?? null,
     byId = false,
-  ): Promise<TagRecord | null> {
+    includeCounts = true,
+  ): Promise<TagRecord | TagCatalogRecord | null> {
     const scope = tagScope(user, tenantId);
     if (data.description !== undefined && typeof data.description !== 'string')
       throw new ConversationTagUpdateError('Invalid description');
@@ -180,7 +292,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         { $inc: { position: movingDown ? -1 : 1 } },
       );
     }
-    return withCount(tag, tenantId);
+    return withCount(tag, tenantId, includeCounts);
   }
 
   async function deleteConversationTag(

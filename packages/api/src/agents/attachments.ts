@@ -22,6 +22,7 @@ type AttachmentTelemetryFile = FileWithId & {
   source?: string | null;
   type?: string | null;
   text?: string | null;
+  llmDeliveryPath?: string | null;
   metadata?: (IMongoFile['metadata'] & { pageCount?: number | null }) | null;
 };
 
@@ -35,6 +36,15 @@ export function isModelBoundAttachmentFile(
   const source = file.source ?? FileSources.local;
   if (source === FileSources.text) {
     return typeof file.text === 'string' && file.text.length > 0;
+  }
+  if (file.llmDeliveryPath === 'text') {
+    return typeof file.text === 'string' && file.text.length > 0;
+  }
+  if (file.llmDeliveryPath === 'none') {
+    return false;
+  }
+  if (file.llmDeliveryPath === 'provider') {
+    return true;
   }
   const metadata = file.metadata as
     | (IMongoFile['metadata'] & { fileIdentifier?: unknown })

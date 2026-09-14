@@ -34,6 +34,7 @@ export type MinimalConversation = Pick<
   | 'createdAt'
   | 'updatedAt'
   | 'archivedAt'
+  | 'isArchived'
   | 'user'
   | 'chatProjectId'
   | 'pinned'
@@ -143,6 +144,10 @@ export type MCPServer = {
   name: string;
   icon: string;
   authenticated: boolean;
+  /** Passive discovery found that stored OAuth authorization must be renewed. */
+  authorizationState?: 'reauth_required';
+  /** Shared credential/catalog generation observed by passive discovery. */
+  authorizationGeneration?: string;
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
 };
@@ -245,6 +250,8 @@ export interface MCPServerStatus {
     | 'authorized'
     | 'needs_authorization'
     | 'error';
+  /** Shared credential/catalog generation observed by the status endpoint. */
+  authorizationGeneration?: string;
 }
 
 export interface MCPConnectionStatusResponse {
@@ -262,6 +269,7 @@ export interface MCPServerConnectionStatusResponse {
   configurationState?: MCPServerStatus['configurationState'];
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   authorizationState?: MCPServerStatus['authorizationState'];
+  authorizationGeneration?: string;
 }
 
 export interface MCPAuthValuesResponse {

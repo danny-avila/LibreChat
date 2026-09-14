@@ -147,10 +147,10 @@ interface LiveMessageState {
 }
 
 function selectLiveMessageState(message: TMessage | null): LiveMessageState {
-  const parentMessageId =
-    message?.isCreatedByUser === false && typeof message.messageId === 'string'
-      ? message.messageId
-      : undefined;
+  let parentMessageId: string | undefined;
+  if (message?.isCreatedByUser === false && typeof message.messageId === 'string') {
+    parentMessageId = message.clientQueueParentMessageId ?? message.messageId;
+  }
   return { approval: hasLiveToolApproval(message), parentMessageId };
 }
 
@@ -695,8 +695,9 @@ export default function useSteering({
     }
   }, [pendingSteers, queueKey]);
 
-  /** The exact visible assistant tail is captured into a server queued turn,
-   * while the approval bit keeps the steering controls honest. */
+  /** Capture a durable branch anchor into a server queued turn. Optimistic
+   * assistant placeholders are siblings of their eventual persisted response,
+   * so they anchor through their stable user parent. */
   const latestMessage = useLatestMessage(index, hasRealConvoId ? conversationId : null);
   const liveMessageState = useMemo(() => selectLiveMessageState(latestMessage), [latestMessage]);
   /** Both approval cards and `ask_user_question` suspend the current

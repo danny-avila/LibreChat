@@ -2,7 +2,7 @@
 
 Conversation membership uses `tagIds`, which reference existing `ConversationTag._id` values. The catalog's `tag` field is a mutable label. Renaming a tag does not rewrite conversations, change their activity timestamps, or reserve old names. A deleted ID is never reused, including when another tag takes its former name.
 
-Browser mutations identify tags explicitly by ID. Existing name-based routes resolve the current name once when handling a request; an old name is not an alias for a renamed tag. Public conversation reads project names from the owned catalog. Counts derive from distinct committed membership. Missing or foreign IDs are omitted from that projection, and deletion and membership writes clean up deleted references.
+Browser mutations identify tags explicitly by ID. Existing name-based routes resolve the current name once when handling a request; an old name is not an alias for a renamed tag. Public conversation reads project names from the owned catalog. Tag endpoints return exact membership counts by default for compatibility; `includeCounts=false` omits the field and avoids membership aggregation. The browser loads this identity-only catalog for normal rendering and fetches exact count snapshots when a count surface opens or reopens. A catalog or membership change invalidates that snapshot and suppresses its badges until a successful refresh. Exact counting still scales with the user's tagged conversation history. Missing or foreign IDs are omitted from projections, and deletion and membership writes clean up deleted references.
 
 Imports carry portable names and resolve them within the importing user's tenant. Source `tagIds` are ignored. JSON exports include names and omit database IDs.
 

@@ -47,6 +47,17 @@ describe('createPayload server URL', () => {
     expect(payload.endpoint).toBe('Company/API');
   });
 
+  it('forwards the conversation-selected code workspace to agents', () => {
+    const submission = makeSubmission('agents');
+    submission.codeEnvironmentMode = 'attached';
+    submission.codeWorkspaces = [{ environmentId: 'personal-vm', workspaceId: 'project-a' }];
+
+    expect(createPayload(submission).payload.codeEnvironmentMode).toBe('attached');
+    expect(createPayload(submission).payload.codeWorkspaces).toEqual([
+      { environmentId: 'personal-vm', workspaceId: 'project-a' },
+    ]);
+  });
+
   it('does not touch the assistants URL, which carries no endpoint segment', () => {
     const { server } = createPayload(makeSubmission(EModelEndpoint.assistants));
 

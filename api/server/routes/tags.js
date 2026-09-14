@@ -44,7 +44,11 @@ router.param('tagId', (req, res, next, tagId) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const tags = await getConversationTags(req.user.id, req.user.tenantId ?? null);
+    const tags = await getConversationTags(
+      req.user.id,
+      req.user.tenantId ?? null,
+      req.query.includeCounts !== 'false',
+    );
     if (tags) {
       res.status(200).json(tags);
     } else {
@@ -64,7 +68,12 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const tag = await createConversationTag(req.user.id, req.body, req.user.tenantId ?? null);
+    const tag = await createConversationTag(
+      req.user.id,
+      req.body,
+      req.user.tenantId ?? null,
+      req.query.includeCounts !== 'false',
+    );
     if (!tag) {
       return res.status(404).json({ error: 'Tag not found' });
     }
@@ -93,6 +102,7 @@ router.put(['/id/:tagId', '/:tag'], async (req, res) => {
       req.body,
       req.user.tenantId ?? null,
       req.params.tagId != null,
+      req.query.includeCounts !== 'false',
     );
     if (tag) {
       res.status(200).json(tag);

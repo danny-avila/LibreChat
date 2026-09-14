@@ -80,7 +80,7 @@ export default function CodeApprovalMenu({
             )}`}
             className={cn(
               composerControlClasses(),
-              'px-2.5 md:px-theme-normal',
+              'min-w-0 max-w-full px-2.5 md:px-theme-normal',
               isOpen && 'bg-surface-hover',
               disabled && 'cursor-not-allowed opacity-50',
             )}
@@ -88,7 +88,9 @@ export default function CodeApprovalMenu({
         }
       >
         <SelectedIcon className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-        <span className="max-w-[12rem] truncate">{localize(modeOptions[selected].label)}</span>
+        <span className="min-w-0 max-w-[12rem] truncate">
+          {localize(modeOptions[selected].label)}
+        </span>
         <ChevronDown
           className={cn(
             'size-3 shrink-0 text-text-secondary transition-transform',
@@ -103,7 +105,7 @@ export default function CodeApprovalMenu({
         unmountOnHide={true}
         className={cn(
           'z-50 flex min-w-[280px] max-w-[min(320px,calc(100vw-2rem))] flex-col rounded-xl',
-          'border border-border-light bg-presentation p-1.5 shadow-lg',
+          'max-h-[var(--popover-available-height)] overflow-y-auto border border-border-light bg-presentation p-1.5 shadow-lg',
           'origin-bottom opacity-0 transition-[opacity,transform] duration-200 ease-out',
           'data-[enter]:scale-100 data-[enter]:opacity-100',
           'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',

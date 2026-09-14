@@ -25,6 +25,7 @@ export default function BashCall({
   runStepStatus,
   runStepDurationMs,
   backgrounded,
+  backgroundCancelled = false,
   initialProgress = 0.1,
   args,
   output = '',
@@ -39,6 +40,7 @@ export default function BashCall({
   runStepStatus?: PartMetadata['runStepStatus'];
   runStepDurationMs?: PartMetadata['runStepDurationMs'];
   backgrounded?: PartMetadata['backgrounded'];
+  backgroundCancelled?: boolean;
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -67,6 +69,8 @@ export default function BashCall({
     [attachments, toolCallId],
   );
   const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
+  const cancelledInBackground =
+    backgroundCancelled || (backgroundHandle != null && backgroundStatus === 'cancelled');
   const backgroundFinishedText = backgroundHandle
     ? localize(
         backgroundStatus != null || (fileAttachments?.length ?? 0) > 0
@@ -83,6 +87,7 @@ export default function BashCall({
     onExpand,
     runStepStatus,
     extraError: backgroundFailed,
+    extraCancelled: cancelledInBackground,
   });
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');

@@ -29,7 +29,7 @@ import logger from '~/config/winston';
 /**
  * A single validation issue emitted by a skill validator. Most issues are
  * errors and block the mutation; some are warnings (e.g. "description is
- * awfully short, Claude may undertrigger the skill") that surface inline
+ * awfully short, the agent may undertrigger the skill") that surface inline
  * coaching without rejecting the request.
  */
 export type ValidationIssue = {
@@ -163,7 +163,7 @@ export function validateSkillDescription(description: unknown): ValidationIssue[
       code: 'TOO_SHORT',
       severity: 'warning',
       message:
-        'Short descriptions may cause Claude to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
+        'Short descriptions may cause the agent to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
     });
   }
   return issues;
@@ -1153,15 +1153,18 @@ export function createSkillMethods(
       normalizedFrontmatter && 'frontmatter' in normalizedFrontmatter
         ? normalizedFrontmatter.frontmatter
         : data.frontmatter;
+    const bodyIssues = validateSkillBody(data.body);
     /* Parse body's always-apply status once — reused for validation
        (below) and derivation in `resolveAlwaysApplyFromInput`. Avoids
        parsing the same YAML frontmatter block twice per create. */
     const bodyAlwaysApply =
-      data.body !== undefined ? extractAlwaysApplyFromBody(data.body) : undefined;
+      bodyIssues.length === 0 && data.body !== undefined
+        ? extractAlwaysApplyFromBody(data.body)
+        : undefined;
     const issues: ValidationIssue[] = [
       ...validateSkillName(data.name),
       ...validateSkillDescription(data.description),
-      ...validateSkillBody(data.body),
+      ...bodyIssues,
       ...validateSkillDisplayTitle(data.displayTitle),
       ...validateSkillFrontmatter(frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
@@ -1484,17 +1487,20 @@ export function createSkillMethods(
         ? normalizedFrontmatter.frontmatter
         : update.frontmatter;
 
+    const bodyIssues = update.body !== undefined ? validateSkillBody(update.body) : [];
     /* Parse body's always-apply status once — reused for validation
        (precedence-aware, below) and the derivation cascade further
        down. Avoids parsing the same YAML frontmatter block twice per
        update. */
     const bodyAlwaysApply =
-      update.body !== undefined ? extractAlwaysApplyFromBody(update.body) : undefined;
+      bodyIssues.length === 0 && update.body !== undefined
+        ? extractAlwaysApplyFromBody(update.body)
+        : undefined;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
       issues.push(...validateSkillDescription(update.description));
-    if (update.body !== undefined) issues.push(...validateSkillBody(update.body));
+    issues.push(...bodyIssues);
     if (update.displayTitle !== undefined)
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
     if (update.frontmatter !== undefined) issues.push(...validateSkillFrontmatter(frontmatter));

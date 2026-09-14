@@ -8,14 +8,14 @@ import {
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTagCatalog } from 'librechat-data-provider';
 import { useDeleteConversationTagMutation } from '~/data-provider';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
 interface BookmarkCardActionsProps {
-  bookmark: TConversationTag;
+  bookmark: TConversationTagCatalog;
 }
 
 export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsProps) {

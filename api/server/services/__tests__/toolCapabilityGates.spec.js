@@ -37,8 +37,10 @@ const CLASSIFIED = {
   'api/server/controllers/agents/responses.js': 2,
   /** `codeEnvAvailable` for the memory-agent initializer. */
   'api/server/controllers/agents/client.js': 1,
-  /** Upload processing: the code-environment and file-search branches. */
-  'api/server/services/Files/process.js': 2,
+  /** Upload processing: two consumer-map entries, the role-gated consumer checks,
+   *  and the code-environment/file-search branches. All consumer selection shares
+   *  the role grant resolved before routing. */
+  'api/server/services/Files/process.js': 5,
   /** Agent-management upload purposes. */
   'api/server/routes/agents/management.js': 2,
   /** Two gates, each paired when the embedder wires `getRoleByName`; one in a

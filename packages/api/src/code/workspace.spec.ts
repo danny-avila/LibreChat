@@ -1,7 +1,55 @@
+import type { WorkspaceToolRequest } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
 import { executeWorkspaceTool } from './workspace';
 
 describe('executeWorkspaceTool', () => {
+  test.each<[WorkspaceToolRequest, number]>([
+    [
+      { protocolVersion: 1, operation: 'read_file', workspaceId: 'primary', path: 'README.md' },
+      65_000,
+    ],
+    [
+      {
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        command: 'echo ready',
+      },
+      70_000,
+    ],
+    [
+      {
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        command: 'echo ready',
+        timeoutMs: 300_000,
+      },
+      340_000,
+    ],
+  ])('allows admission, execution and delivery time for %j', async (request, budget) => {
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: 'Older server deadline exceeded', code: 'ASSIGNMENT_EXPIRED' }),
+          { status: 504 },
+        ),
+      );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ upstreamStatus: 504 });
+    expect(timeout).toHaveBeenCalledWith(budget);
+    expect(fetchImpl.mock.calls[0][1].body).toBe(JSON.stringify(request));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   test('sends an authenticated bounded read to the selected attached worker', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(

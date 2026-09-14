@@ -13,6 +13,8 @@ const mockFormatMCPServerTools = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockCacheMCPServerTools = jest.fn();
 const mockGetServerToolFunctionsSnapshot = jest.fn();
+const mockClearCatalogRecoveryState = jest.fn();
+const mockInvalidateCachedTools = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -27,6 +29,7 @@ jest.mock('~/config', () => ({
     discoverServerTools: mockDiscoverServerTools,
     getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
     getToolPublicationGeneration: mockGetToolPublicationGeneration,
+    clearCatalogRecoveryState: mockClearCatalogRecoveryState,
   })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
   getFlowStateManager: jest.fn(() => ({})),
@@ -43,6 +46,11 @@ jest.mock('~/server/services/Config', () => ({
   getMCPToolsCacheGeneration: mockGetMCPToolsCacheGeneration,
   getMCPServerTools: mockGetMCPServerTools,
   cacheMCPServerTools: mockCacheMCPServerTools,
+  invalidateCachedTools: mockInvalidateCachedTools,
+}));
+jest.mock('~/server/services/MCPAuthorizationFenceRetry', () => ({
+  persistMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue('retry-v1'),
+  clearMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -73,7 +81,10 @@ describe('loadMCPServerCatalogs', () => {
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockDiscoverServerTools.mockResolvedValue({ tools: [] });
     mockFormatMCPServerTools.mockReturnValue({});
+    const observedCredentialFence = jest.fn();
+    let recoveryDeps;
     mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      recoveryDeps = deps;
       await deps.loadUserMCPAuthMap(
         user.id,
         servers.map(({ serverName }) => serverName),
@@ -82,12 +93,14 @@ describe('loadMCPServerCatalogs', () => {
         user,
         serverName: 'config-only',
         configServers: { 'config-only': servers[0].serverConfig },
+        onOAuthCredentialsChanging: observedCredentialFence,
       });
       deps.formatServerTools('config-only', []);
       await deps.getCachedServerTools(user.id, 'config-only', servers[0].serverConfig);
       await deps.getServerToolFunctionsSnapshot(user.id, 'config-only', servers[0].serverConfig, {
         deadlineMs: 123,
       });
+      await deps.getRecoveryGeneration({ userId: user.id, serverName: 'config-only' });
       await deps.cacheServerTools({ serverName: 'config-only' });
       return { serverTools: new Map([['config-only', {}]]), serversWithoutTools: [] };
     });
@@ -102,11 +115,16 @@ describe('loadMCPServerCatalogs', () => {
     });
 
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledTimes(1);
+    expect(mockGetMCPToolsCacheGeneration).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName: 'config-only',
+    });
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledWith({
       userId: user.id,
       servers: ['config-only', 'user-server'],
       findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
     });
+    expect(recoveryDeps.onOAuthCredentialsChanging).toEqual(expect.any(Function));
     expect(mockDiscoverServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         user,
@@ -116,6 +134,7 @@ describe('loadMCPServerCatalogs', () => {
         tokenMethods: expect.any(Object),
         upstreamTokenProvider,
         oboIdentityContext,
+        onOAuthCredentialsChanging: observedCredentialFence,
       }),
     );
     expect(mockGetConnection).not.toHaveBeenCalled();
@@ -135,6 +154,28 @@ describe('loadMCPServerCatalogs', () => {
       serverTools: new Map([['config-only', {}]]),
       serversWithoutTools: [],
     });
+  });
+
+  it('clears catalog recovery with the generation its credential fence published', async () => {
+    let recoveryDeps;
+    mockInvalidateCachedTools.mockResolvedValue('generation-2');
+    mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      recoveryDeps = deps;
+      return { serverTools: new Map(), serversWithoutTools: [] };
+    });
+
+    await loadMCPServerCatalogs({ user: { id: 'user-123' }, servers: [] });
+    const publish = await recoveryDeps.onOAuthCredentialsChanging({
+      userId: 'user-123',
+      serverName: 'oauth-server',
+    });
+
+    await expect(publish()).resolves.toBe('generation-2');
+    expect(mockClearCatalogRecoveryState).toHaveBeenCalledWith(
+      'user-123',
+      'oauth-server',
+      'generation-2',
+    );
   });
 });
 
@@ -273,6 +314,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
+    const signal = new AbortController().signal;
     const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
       tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
       complete: false,
@@ -284,11 +326,13 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     const result = await reinitMCPServer({
       user,
       serverName,
+      signal,
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
     });
 
     expect(result.tools).toBeNull();
     expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
+    expect(fetchOrderedToolsSnapshot).toHaveBeenCalledWith(undefined, signal);
     expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 
@@ -440,6 +484,58 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 });
 
+describe('reinitMCPServer — recovery of a server that failed inspection', () => {
+  const user = { id: 'user-123' };
+  const serverName = 'Recovering';
+  const stub = {
+    type: 'streamable-http',
+    url: 'https://recovering.example.com/mcp',
+    source: 'yaml',
+    inspectionFailed: true,
+  };
+  const { getMCPServersRegistry } = require('~/config');
+
+  beforeEach(() => {
+    mockUpdateMCPServerTools.mockResolvedValue({});
+  });
+
+  it('connects with the recovered config instead of the stub it read', async () => {
+    const recovered = {
+      type: 'streamable-http',
+      url: 'https://recovering.example.com/mcp',
+      source: 'yaml',
+      requiresOAuth: false,
+    };
+    const recoverServerConfig = jest.fn().mockResolvedValue(recovered);
+    getMCPServersRegistry.mockReturnValueOnce({ recoverServerConfig });
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: stub });
+
+    expect(recoverServerConfig).toHaveBeenCalledWith(serverName, stub, user.id);
+    expect(mockGetConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, serverConfig: recovered }),
+    );
+    expect(result).toMatchObject({ success: true, serverName });
+  });
+
+  it('reports the server unreachable without connecting while it cannot be recovered', async () => {
+    const recoverServerConfig = jest.fn().mockResolvedValue(undefined);
+    getMCPServersRegistry.mockReturnValueOnce({ recoverServerConfig });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: stub });
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      availableTools: null,
+      success: false,
+      message: `MCP server '${serverName}' is still unreachable`,
+      failureReason: 'unreachable',
+      tools: null,
+    });
+  });
+});
+
 describe('reinitMCPServer — direct bearer authentication outcomes', () => {
   it('preserves a typed rejection instead of reducing it to a generic result', async () => {
     const { MCPAuthenticationRejectedError } = require('@librechat/api');
@@ -459,6 +555,47 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
       }),
     ).rejects.toBe(rejection);
   });
+
+  it('propagates cancellation instead of hiding the server tool', async () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abort);
+    mockGetConnection.mockRejectedValue(abort);
+    await expect(
+      reinitMCPServer({
+        user: { id: 'user-123' },
+        serverName: 'example-mcp',
+        signal: controller.signal,
+        serverConfig: { type: 'streamable-http', url: 'https://mcp.example.com', source: 'yaml' },
+      }),
+    ).rejects.toBe(abort);
+  });
+
+  it.each([false, true])(
+    'preserves a typed OBO resolution failure (retryable=%s)',
+    async (retryable) => {
+      const { OboTokenResolutionError } = require('@librechat/api');
+      const rejection = new OboTokenResolutionError(
+        'session_refresh_failed',
+        'Sign-in expired.',
+        retryable,
+      );
+      mockGetConnection.mockRejectedValue(rejection);
+
+      await expect(
+        reinitMCPServer({
+          user: { id: 'user-123' },
+          serverName: 'private-mcp',
+          serverConfig: {
+            type: 'streamable-http',
+            url: 'https://mcp.example.com',
+            source: 'yaml',
+            obo: { scopes: 'api://mcp/.default' },
+          },
+        }),
+      ).rejects.toBe(rejection);
+    },
+  );
 });
 
 describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)', () => {

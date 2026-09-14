@@ -1,14 +1,10 @@
-import {
-  TConversationTagRequest,
-  TConversationTagResponse,
-  TConversationTagsResponse,
-} from 'librechat-data-provider';
+import { TConversationTagRequest, TConversationTagCatalog } from 'librechat-data-provider';
 
 export const updateConversationTag = (
-  queryCache: TConversationTagsResponse,
+  queryCache: TConversationTagCatalog[],
   request: TConversationTagRequest,
-  response: TConversationTagResponse,
-): TConversationTagsResponse => {
+  response: TConversationTagCatalog,
+): TConversationTagCatalog[] => {
   if (queryCache.length === 0) {
     return [response];
   }

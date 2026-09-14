@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
+import type { ContentTypes, SubagentIdentity } from './runs';
 import type { Agents, GraphEdge } from './agents';
-import type { ContentTypes } from './runs';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
 export {
@@ -302,6 +302,8 @@ export type AgentSubagentsConfig = {
   enabled?: boolean;
   /** When true (default), the agent may spawn itself in an isolated context. */
   allowSelf?: boolean;
+  /** Share current-turn files with authorized descendants. Off unless explicitly enabled. */
+  shareFiles?: boolean;
   /** Specific agents that may be spawned as subagents. */
   agent_ids?: string[];
   /** Explicit saved-agent teams that may be spawned as bounded child graphs. */
@@ -364,6 +366,8 @@ export type Agent = {
   stateful_code_environment?: StatefulCodeEnvironment;
   /** Operator-configured managed or attached stateful execution environment. */
   code_environment_id?: string | null;
+  /** Default attached workspace for new chats; empty means no agent default. */
+  code_workspace_id?: string;
   /** Non-secret Git authorship injected into this agent's sandboxed commands. */
   git_identity?: AgentGitIdentity | null;
   artifacts?: ArtifactModes;
@@ -427,6 +431,7 @@ export type AgentCreateParams = {
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
   | 'code_environment_id'
+  | 'code_workspace_id'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -461,6 +466,7 @@ export type AgentUpdateParams = {
   | 'stateful_code_environment'
   | 'code_environment_id'
   | 'git_identity'
+  | 'code_workspace_id'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -642,6 +648,8 @@ export enum RunStatus {
 }
 
 export type PartMetadata = {
+  /** Host-resolved execution identity for a saved subagent invocation. */
+  subagentIdentity?: SubagentIdentity;
   progress?: number;
   asset_pointer?: string;
   status?: string;
@@ -758,6 +766,10 @@ export type TMessageContentParts =
       type: ContentTypes.ERROR;
       text?: string | TextData;
       error?: string;
+      /** Set when this failure is what a manual compaction produced instead of a
+       *  summary. The turn has no other record of having been one, so the rerun
+       *  controls read it the same way they read a summary's marker. */
+      initiatedBy?: 'user';
     } & ContentMetadata)
   | ({
       type: ContentTypes.THINK;

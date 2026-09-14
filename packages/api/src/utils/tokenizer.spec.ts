@@ -101,4 +101,43 @@ describe('Tokenizer', () => {
       }
     });
   });
+
+  describe('countExactTokens', () => {
+    beforeAll(async () => {
+      await Tokenizer.initEncoding('o200k_base');
+    });
+
+    it('tokenizes oversized input whole instead of falling back to byte length', () => {
+      /** The fast-path estimate is byte length, several times the real count on
+       *  ordinary text; a figure ADDED to provider accounting cannot carry that.
+       *  Nor can it carry a sum of slices: a BPE merge spanning a seam is charged
+       *  twice, so the whole input is tokenized in one pass. */
+      const text = 'word '.repeat(4096);
+      const exact = Tokenizer.countExactTokens(text, 'o200k_base');
+      expect(exact).toBeGreaterThan(0);
+      expect(exact).toBeLessThan(Tokenizer.getTokenCount(text, 'o200k_base'));
+      const bound = 4 * 1024;
+      let sliced = 0;
+      for (let index = 0; index < text.length; index += bound) {
+        sliced += Tokenizer.countExactTokens(text.slice(index, index + bound), 'o200k_base') ?? 0;
+      }
+      expect(exact).toBeLessThan(sliced);
+    });
+
+    it('matches the tokenizer for input inside the fast-path bound', () => {
+      const text = 'Hello, world!';
+      expect(Tokenizer.countExactTokens(text, 'o200k_base')).toBe(
+        Tokenizer.getTokenCount(text, 'o200k_base'),
+      );
+      expect(Tokenizer.countExactTokens('', 'o200k_base')).toBe(0);
+    });
+
+    it('returns nothing while the encoding is still cold', () => {
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const cold = require('./tokenizer').default as typeof Tokenizer;
+        expect(cold.countExactTokens('Uncounted tool result', 'o200k_base')).toBeUndefined();
+      });
+    });
+  });
 });

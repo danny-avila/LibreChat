@@ -344,25 +344,18 @@ it('keeps tagged shared reads and ordinary message saves free of catalog queries
   });
 });
 
-it('starts public catalog projection while the owned conversation read is pending', async () => {
+it('hydrates the owned conversation and its referenced catalog identities in one aggregate', async () => {
   const { tag } = await seed();
   await methods.updateTagsForConversation('owner', 'convo', [String(tag._id)], null, true);
-  const original = Conversations.collection.findOne.bind(Conversations.collection);
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  jest.spyOn(Conversations.collection, 'findOne').mockImplementationOnce(async (...args) => {
-    await pending;
-    return original(...args);
-  });
+  const aggregate = jest.spyOn(Conversations.collection, 'aggregate');
   const find = jest.spyOn(Catalog.collection, 'find');
   const db = createMethods(mongoose);
-  const read = db.getConvoWithTags('owner', 'convo');
-  await new Promise((resolve) => setImmediate(resolve));
-  expect(find).toHaveBeenCalledTimes(1);
-  release();
-  expect(await read).toMatchObject({ tagIds: [String(tag._id)], tags: ['old'] });
+  expect(await db.getConvoWithTags('owner', 'convo')).toMatchObject({
+    tagIds: [String(tag._id)],
+    tags: ['old'],
+  });
+  expect(aggregate).toHaveBeenCalledTimes(1);
+  expect(find).not.toHaveBeenCalled();
   expect(await db.getConvoWithTags('foreign', 'convo')).toBeNull();
 });
 

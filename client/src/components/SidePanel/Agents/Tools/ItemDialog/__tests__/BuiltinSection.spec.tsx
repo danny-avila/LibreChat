@@ -19,7 +19,10 @@ jest.mock('~/hooks', () => ({
   }),
   useAgentCapabilities: () => ({ backgroundToolsEnabled: false }),
 }));
-jest.mock('~/data-provider', () => ({ useVerifyAgentToolAuth: () => ({ data: undefined }) }));
+jest.mock('~/data-provider', () => ({
+  useVerifyAgentToolAuth: () => ({ data: undefined }),
+  useCodeEnvironmentStatusQueries: () => [],
+}));
 jest.mock('../../../Search/Action', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../../../FileContext', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../../../FileSearch', () => ({ __esModule: true, default: () => <div /> }));

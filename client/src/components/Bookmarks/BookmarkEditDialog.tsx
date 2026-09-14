@@ -1,6 +1,6 @@
 import React, { useRef, Dispatch, SetStateAction } from 'react';
-import { TConversationTag } from 'librechat-data-provider';
 import { OGDialogTemplate, OGDialog, Button, Spinner, useToastContext } from '@librechat/client';
+import type { TConversationTagCatalog } from 'librechat-data-provider';
 import { useConversationTagMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import BookmarkForm from './BookmarkForm';
@@ -14,7 +14,7 @@ type BookmarkEditDialogProps = {
   tagIds?: string[];
   setTags?: (tags: string[], tagIds?: string[]) => void;
   context: string;
-  bookmark?: TConversationTag;
+  bookmark?: TConversationTagCatalog;
   conversationId?: string;
   children?: React.ReactNode;
   triggerRef?: React.RefObject<HTMLButtonElement>;

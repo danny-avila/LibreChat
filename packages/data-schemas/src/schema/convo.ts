@@ -141,6 +141,7 @@ const convoSchema: Schema<IConversation> = new Schema(
               maxlength: MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
             },
             tokenCount: { type: Number, min: 0, required: true },
+            version: { type: Number, min: 1 },
           },
           _id: false,
           default: undefined,
@@ -403,6 +404,12 @@ convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
 /** The archive view pages by `archivedAt`, then `createdAt`, then `_id`; the middle key
  * carries the legacy group, whose rows all share a missing `archivedAt`. */
 convoSchema.index({ user: 1, isArchived: 1, archivedAt: -1, createdAt: -1, _id: -1 });
+
+/** Sidebar list indexes for the active/archive filters: each sort carries its secondary
+ * key and `_id` tie-breaker so MongoDB can serve the cursor order without an in-memory sort. */
+convoSchema.index({ user: 1, isArchived: 1, updatedAt: -1, _id: -1 });
+convoSchema.index({ user: 1, isArchived: 1, createdAt: -1, updatedAt: -1, _id: -1 });
+convoSchema.index({ user: 1, isArchived: 1, title: 1, updatedAt: 1, _id: 1 });
 
 /** The sidebar's pinned section filters on user + pinned and pages by `updatedAt`. */
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });

@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { GripVertical } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { TooltipAnchor, useToastContext } from '@librechat/client';
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTagCatalog } from 'librechat-data-provider';
 import { useConversationTagMutation } from '~/data-provider';
 import BookmarkCardActions from './BookmarkCardActions';
 import { NotificationSeverity } from '~/common';
@@ -10,9 +10,11 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface BookmarkCardProps {
-  bookmark: TConversationTag;
+  bookmark: TConversationTagCatalog;
+  count?: number;
   position: number;
   moveRow: (dragIndex: number, hoverIndex: number) => void;
+  countsCurrent?: boolean;
 }
 
 interface DragItem {
@@ -21,7 +23,13 @@ interface DragItem {
   type: string;
 }
 
-export default function BookmarkCard({ bookmark, position, moveRow }: BookmarkCardProps) {
+export default function BookmarkCard({
+  bookmark,
+  position,
+  moveRow,
+  countsCurrent = true,
+  count,
+}: BookmarkCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -93,15 +101,17 @@ export default function BookmarkCard({ bookmark, position, moveRow }: BookmarkCa
       </span>
 
       {/* Count badge */}
-      <TooltipAnchor
-        description={`${bookmark.count} ${localize(bookmark.count === 1 ? 'com_ui_conversation' : 'com_ui_conversations')}`}
-        side="top"
-        render={
-          <span className="shrink-0 rounded-full bg-surface-tertiary px-2 py-0.5 text-xs text-text-secondary">
-            {bookmark.count}
-          </span>
-        }
-      />
+      {countsCurrent && count !== undefined && (
+        <TooltipAnchor
+          description={`${count} ${localize(count === 1 ? 'com_ui_conversation' : 'com_ui_conversations')}`}
+          side="top"
+          render={
+            <span className="shrink-0 rounded-full bg-surface-tertiary px-2 py-0.5 text-xs text-text-secondary">
+              {count}
+            </span>
+          }
+        />
+      )}
 
       {/* Actions */}
       <div className="shrink-0">

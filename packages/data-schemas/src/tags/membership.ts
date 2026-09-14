@@ -19,6 +19,8 @@ export interface TagRecord {
   updatedAt?: Date;
 }
 
+export type TagCatalogRecord = Omit<TagRecord, 'count'>;
+
 export function tagScope(
   user: string,
   tenantId: string | null = getTenantId() ?? null,

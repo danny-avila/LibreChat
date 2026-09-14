@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useRef, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -6,6 +6,7 @@ import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
+import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -17,6 +18,28 @@ function MCPSelectContent() {
 
   const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isOpen = menuStore.useState('open');
+  const configDialogOpen = manager?.getConfigDialogProps()?.isOpen === true;
+  useMCPRefresh({
+    enabled: (isOpen || configDialogOpen) && (manager?.availableMCPServers.length ?? 0) > 0,
+  });
+
+  /**
+   * The menu closes with the dialog it launched. Ariakit only takes Escape for
+   * a menu when the event target is the menu, its trigger, or `body`, so while
+   * the config dialog holds focus the menu never sees it — the Escape that
+   * closes the dialog leaves the menu open behind it, and `disabled={isOpen}`
+   * then makes its trigger unclickable, stranding the reader
+   * (`mcp-oauth-readiness` e2e). Keyed on the dialog CLOSING, not opening: the
+   * menu stays mounted underneath while the dialog is up, which is where its
+   * server rows are read from.
+   */
+  const configDialogWasOpen = useRef(false);
+  useEffect(() => {
+    if (configDialogWasOpen.current && !configDialogOpen) {
+      menuStore.hide();
+    }
+    configDialogWasOpen.current = configDialogOpen;
+  }, [configDialogOpen, menuStore]);
 
   const selectedServers = useMemo(() => {
     if (!manager?.mcpValues || manager.mcpValues.length === 0) {

@@ -51,6 +51,9 @@ jest.mock('@librechat/api', () => {
   };
 
   return {
+    /** The real helper, without loading the rest of the package this suite mocks around. */
+    withoutTraceRefs: jest.requireActual('../../../../packages/api/src/langfuse/trace.ts')
+      .withoutTraceRefs,
     createContentFilter: jest.fn(() => (req, res, next) => next()),
     inspectContent,
     extractChatContent,
@@ -528,6 +531,9 @@ describe('message route conversation ownership filters', () => {
           encoding: 'claude',
           fading: { v: 1, budgetTokens: 1, masked: true },
         },
+        langfuseSampled: true,
+        langfuseDestinationIds: ['forged-destination'],
+        langfuseRunId: 'someone-elses-run',
       });
 
     expect(response.status).toBe(201);
@@ -546,6 +552,9 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedMessageFieldPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('contextMeta');
+    expect(saveMessage.mock.calls[0][1].langfuseSampled).toBe(false);
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('langfuseDestinationIds');
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('langfuseRunId');
     expect(response.body.messageId).toBe(savedMessage.messageId);
     expect(response.body).not.toHaveProperty('contextMeta');
     expect(saveConvo).toHaveBeenCalledWith(

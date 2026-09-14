@@ -5,6 +5,7 @@ import { logger, setAgentEventActorReceiptMetricObserver } from '@librechat/data
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Mongoose } from 'mongoose';
 import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
+import type { LocatorTraversalFailure } from '../protection/diagnostics';
 import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
@@ -281,7 +282,16 @@ let redisOperationMetrics: RedisOperationMetrics = {
   recordOperation: () => undefined,
 };
 
+let observeLocatorTraversal: (failure: LocatorTraversalFailure) => void = () => undefined;
+
+/** Application sink supplied explicitly to content inspection callers. */
+export function reportLocatorTraversalFailure(failure: LocatorTraversalFailure): void {
+  logger.warn(`[content-filter] Locator traversal incomplete ${JSON.stringify(failure)}`, failure);
+  observeLocatorTraversal(failure);
+}
+
 const resetMetricRecorders = (): void => {
+  observeLocatorTraversal = () => undefined;
   openIDUserLookupMetrics = {
     recordLookup: () => undefined,
   };
@@ -529,6 +539,33 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
 
   const registry = new Registry();
   collectDefaultMetrics({ register: registry });
+
+  observeLocatorTraversal = () => undefined;
+  const locatorTraversalFailuresTotal = new Counter({
+    name: 'content_filter_locator_traversal_failures_total',
+    help: 'Incomplete resolved file locator traversals',
+    labelNames: ['operation', 'reason'] as const,
+    registers: [registry],
+  });
+  const locatorTraversalSize = new Histogram({
+    name: 'content_filter_locator_traversal_size',
+    help: 'Structural counts at an incomplete resolved file locator traversal',
+    labelNames: ['operation', 'reason', 'dimension'] as const,
+    buckets: [0, 1, 8, 24, 64, 256, 1024, 4096, 16384],
+    registers: [registry],
+  });
+  observeLocatorTraversal = (failure: LocatorTraversalFailure): void => {
+    const labels = { operation: failure.operation, reason: failure.reason };
+    locatorTraversalFailuresTotal.inc(labels);
+    for (const dimension of [
+      'visitedNodes',
+      'depth',
+      'messageCount',
+      'resolvedFileCount',
+    ] as const) {
+      locatorTraversalSize.observe({ ...labels, dimension }, failure[dimension]);
+    }
+  };
 
   const httpRequests = new Counter({
     name: 'http_requests_total',
