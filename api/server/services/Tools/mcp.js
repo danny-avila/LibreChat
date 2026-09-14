@@ -9,6 +9,7 @@ const {
   getMissingRuntimeBodyPlaceholderFields,
   MCPAuthenticationRejectedError,
   MCPAuthenticationRefreshError,
+  OboTokenResolutionError,
   OpenIDReauthRequiredError,
   prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
@@ -46,6 +47,7 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
 const isMCPReauthenticationError = (error) =>
   error instanceof MCPAuthenticationRejectedError ||
   error instanceof MCPAuthenticationRefreshError ||
+  error instanceof OboTokenResolutionError ||
   error instanceof OpenIDReauthRequiredError;
 
 /** Wires application dependencies into the passive, request-local catalog recovery service.
@@ -53,6 +55,7 @@ const isMCPReauthenticationError = (error) =>
  * @param {IUser} params.user
  * @param {Array<{ serverName: string, serverConfig: object }>} params.servers
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO discovery, built at the request boundary so this layer never receives the raw Express request.
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {AbortSignal} [params.signal] - Cancels queued and in-flight catalog reads when the request ends.
  * @param {import('@librechat/api').MCPServerCatalogRecoveryPolicy} [params.recoveryPolicy]
@@ -61,6 +64,7 @@ async function loadMCPServerCatalogs({
   user,
   servers,
   upstreamTokenProvider,
+  upstreamTokenProviderResolver,
   oboIdentityContext,
   signal,
   recoveryPolicy,
@@ -96,6 +100,7 @@ async function loadMCPServerCatalogs({
           oboTokenResolver: exchangeOboToken,
           oboTrustChecker: createOboTrustChecker(),
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
         }),
       onOAuthCredentialsChanging,
@@ -117,6 +122,7 @@ async function loadMCPServerCatalogs({
  * @param {Object} params
  * @param {IUser} params.user - The user from the request object.
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO connection establishment, built at the request boundary so this layer never receives the raw Express request.
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
@@ -146,6 +152,7 @@ async function reinitMCPServer({
   requestBody,
   requestScopedConnections,
   upstreamTokenProvider,
+  upstreamTokenProviderResolver,
   oboIdentityContext,
   oauthEnd,
   recoveryPolicy,
@@ -281,6 +288,7 @@ async function reinitMCPServer({
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
         upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         oboIdentityContext,
       });
 
@@ -322,6 +330,7 @@ async function reinitMCPServer({
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
             oboIdentityContext,
           });
 

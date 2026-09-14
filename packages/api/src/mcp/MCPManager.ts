@@ -4,7 +4,12 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -27,6 +32,7 @@ import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } fro
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
+import { createLazyOboUpstreamTokenProvider } from '~/mcp/oauth/obo';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
@@ -500,6 +506,7 @@ export class MCPManager extends UserConnectionManager {
         requestBody: args.requestBody,
         graphTokenResolver: args.graphTokenResolver,
         upstreamTokenProvider: args.upstreamTokenProvider,
+        upstreamTokenProviderResolver: args.upstreamTokenProviderResolver,
         connectionTimeout: args.connectionTimeout,
         deadlineMs: args.deadlineMs,
         signal: args.signal,
@@ -535,6 +542,7 @@ export class MCPManager extends UserConnectionManager {
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,
+      upstreamTokenProviderResolver: args.upstreamTokenProviderResolver,
       oboIdentityContext: args.oboIdentityContext,
     });
 
@@ -841,6 +849,7 @@ Please follow these instructions when using tools from the respective MCP server
     requestScopedConnections,
     graphTokenResolver,
     upstreamTokenProvider,
+    upstreamTokenProviderResolver,
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
@@ -860,6 +869,7 @@ Please follow these instructions when using tools from the respective MCP server
     requestScopedConnections?: t.RequestScopedMCPConnectionStore;
     graphTokenResolver?: GraphTokenResolver;
     upstreamTokenProvider?: UpstreamTokenProvider;
+    upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
@@ -919,6 +929,7 @@ Please follow these instructions when using tools from the respective MCP server
           requestScopedConnections,
           graphTokenResolver,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           onOAuthCredentialsChanged,
           onOAuthCredentialsChanging,
@@ -1093,6 +1104,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver,
     oboTrustChecker,
     upstreamTokenProvider,
+    upstreamTokenProviderResolver,
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
@@ -1116,6 +1128,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
     upstreamTokenProvider?: UpstreamTokenProvider;
+    upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
@@ -1180,6 +1193,7 @@ Please follow these instructions when using tools from the respective MCP server
             oboTokenResolver,
             oboTrustChecker,
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
             oboIdentityContext,
             onOAuthCredentialsChanged,
             onOAuthCredentialsChanging,
@@ -1272,6 +1286,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         const oboConfig = rawConfig.obo;
         const usesObo = Boolean(oboConfig && oboTokenResolver && user);
+        let oboUpstreamTokenProvider = upstreamTokenProvider;
 
         /**
          * Resolves the downstream token for this call and installs it as the request
@@ -1283,7 +1298,13 @@ Please follow these instructions when using tools from the respective MCP server
           if (!oboConfig || !oboTokenResolver || !user) {
             return;
           }
-          if (!upstreamTokenProvider) {
+          if (!oboUpstreamTokenProvider && upstreamTokenProviderResolver) {
+            oboUpstreamTokenProvider = createLazyOboUpstreamTokenProvider(
+              upstreamTokenProviderResolver,
+              options?.signal,
+            );
+          }
+          if (!oboUpstreamTokenProvider) {
             throw new McpError(
               ErrorCode.InternalError,
               `${logPrefix} Internal: upstreamTokenProvider not plumbed for OBO tool call. ` +
@@ -1313,7 +1334,7 @@ Please follow these instructions when using tools from the respective MCP server
               user,
               oboConfig,
               oboTokenResolver,
-              upstreamTokenProvider,
+              oboUpstreamTokenProvider,
               oboIdentityContext,
               forceRefresh,
             );
@@ -1425,6 +1446,7 @@ Please follow these instructions when using tools from the respective MCP server
             requestScopedConnections,
             graphTokenResolver,
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
             oboIdentityContext,
             onOAuthCredentialsChanged,
             onOAuthCredentialsChanging,
@@ -1515,6 +1537,7 @@ Please follow these instructions when using tools from the respective MCP server
               requestScopedConnections,
               graphTokenResolver,
               upstreamTokenProvider,
+              upstreamTokenProviderResolver,
               oboIdentityContext,
               onOAuthCredentialsChanged,
               onOAuthCredentialsChanging,

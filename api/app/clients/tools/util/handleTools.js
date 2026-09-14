@@ -638,13 +638,17 @@ const loadTools = async ({
     user: options.req?.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
-    req: options.req,
-    res: options.res,
-    user: options.req?.user,
-    identityContext: oboIdentityContext,
-    tokenPreference: 'access_token',
-  });
+  const upstreamTokenProviderResolver = options.upstreamTokenProviderResolver;
+  const upstreamTokenProvider = upstreamTokenProviderResolver
+    ? options.upstreamTokenProvider
+    : (options.upstreamTokenProvider ??
+      createOpenIDSessionTokenProvider({
+        req: options.req,
+        res: options.res,
+        user: options.req?.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }));
 
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
@@ -666,6 +670,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           streamId: options.req?._resumableStreamId || null,
           jobCreatedAt: options.jobCreatedAt,

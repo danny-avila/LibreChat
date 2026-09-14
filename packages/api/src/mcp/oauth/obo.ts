@@ -43,6 +43,29 @@ export type UpstreamTokenProvider = (options?: {
   signal?: AbortSignal;
 }) => Promise<OIDCTokens | null>;
 
+/** Lazily supplies a renewable upstream-token provider when an OBO server actually needs one. */
+export type UpstreamTokenProviderResolver = (options?: {
+  signal?: AbortSignal;
+}) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
+
+/** Keep lookup failures inside resolveOboToken's typed failure boundary. */
+export function createLazyOboUpstreamTokenProvider(
+  resolver: UpstreamTokenProviderResolver,
+  signal?: AbortSignal,
+): UpstreamTokenProvider {
+  let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
+  return async (options) => {
+    signal?.throwIfAborted();
+    pending ??= Promise.resolve().then(() => resolver({ signal }));
+    const provider = await pending;
+    signal?.throwIfAborted();
+    if (!provider) {
+      throw new Error('Renewable upstream credentials are unavailable.');
+    }
+    return provider({ ...options, signal: options?.signal ?? signal });
+  };
+}
+
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
   | 'missing_upstream_access_token'

@@ -784,6 +784,7 @@ const isBuiltInTool = (toolName) =>
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @param {AbortSignal} [params.signal] - Effective run cancellation signal
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -805,6 +806,7 @@ async function loadToolDefinitionsWrapper({
   accessibleMcpServerNames,
   signal,
   upstreamTokenProvider: suppliedUpstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -994,15 +996,16 @@ async function loadToolDefinitionsWrapper({
     user: req.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider =
-    suppliedUpstreamTokenProvider ??
-    createOpenIDSessionTokenProvider({
-      req,
-      res,
-      user: req.user,
-      identityContext: oboIdentityContext,
-      tokenPreference: 'access_token',
-    });
+  const upstreamTokenProvider = upstreamTokenProviderResolver
+    ? suppliedUpstreamTokenProvider
+    : (suppliedUpstreamTokenProvider ??
+      createOpenIDSessionTokenProvider({
+        req,
+        res,
+        user: req.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }));
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;
@@ -1189,6 +1192,7 @@ async function loadToolDefinitionsWrapper({
       requestBody: runtimeRequestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
@@ -1219,6 +1223,7 @@ async function loadToolDefinitionsWrapper({
       requestBody: runtimeRequestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
@@ -1370,6 +1375,7 @@ async function loadToolDefinitionsWrapper({
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
@@ -1566,6 +1572,7 @@ async function loadToolDefinitionsWrapper({
  *   tool definitions without creating full tool instances. Use for event-driven mode
  *   where tools are loaded on-demand during execution.
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  */
 async function loadAgentTools({
   req,
@@ -1582,6 +1589,7 @@ async function loadAgentTools({
   codeExecutionContext: providedCodeExecutionContext,
   accessibleMcpServerNames,
   upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) {
   if (definitionsOnly) {
     try {
@@ -1598,6 +1606,7 @@ async function loadAgentTools({
         accessibleMcpServerNames,
         signal,
         upstreamTokenProvider,
+        upstreamTokenProviderResolver,
       });
     } catch (error) {
       if (
@@ -1760,6 +1769,8 @@ async function loadAgentTools({
       returnMetadata: true,
       mcpPermissionContext,
       requestScopedConnections: getMCPRequestContext(req, res),
+      upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       codeExecutionContext,
       [Tools.web_search]: webSearchCallbacks,
     },
@@ -2024,6 +2035,8 @@ async function loadAgentTools({
  * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections] - Run-scoped MCP connections
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
@@ -2047,6 +2060,8 @@ async function loadToolsForExecution({
   mcpAvailableTools,
   requestScopedConnections,
   userMCPAuthMap,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
   tool_resources,
   streamId = null,
   jobCreatedAt,
@@ -2356,6 +2371,8 @@ async function loadToolsForExecution({
          *  turn already advertised. */
         accessibleMcpServerNames,
         requestScopedConnections: mcpRequestScopedConnections,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,

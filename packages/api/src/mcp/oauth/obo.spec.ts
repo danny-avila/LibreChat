@@ -1,7 +1,11 @@
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, UpstreamTokenProvider } from './obo';
-import { isOboConfigStillTrusted, resolveOboToken } from './obo';
+import {
+  createLazyOboUpstreamTokenProvider,
+  isOboConfigStillTrusted,
+  resolveOboToken,
+} from './obo';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -59,6 +63,54 @@ describe('resolveOboToken', () => {
       access_token: 'exchanged-mcp-token',
       expires_in: 3600,
     });
+  });
+
+  it.each([false, true])('preserves lookup failure retryability (%s)', async (retryable) => {
+    const lookup = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('credential lookup failed'), { status: retryable ? 503 : 401 }),
+      );
+    await expect(
+      resolveOboToken(
+        mockUser as IUser,
+        oboConfig,
+        mockResolver,
+        createLazyOboUpstreamTokenProvider(lookup),
+      ),
+    ).rejects.toMatchObject({ reason: 'session_refresh_failed', retryable });
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to a snapshot when durable credential lookup returns no provider', async () => {
+    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'stale-snapshot' });
+    const lookup = jest.fn().mockResolvedValue(undefined);
+    await expect(
+      resolveOboToken(
+        mockUser as IUser,
+        oboConfig,
+        mockResolver,
+        createLazyOboUpstreamTokenProvider(lookup),
+      ),
+    ).rejects.toMatchObject({ reason: 'session_refresh_failed', retryable: false });
+    expect(mockExtractOpenIDTokenInfo).not.toHaveBeenCalled();
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
+  it('does not look up credentials after cancellation', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const lookup = jest.fn();
+    await expect(createLazyOboUpstreamTokenProvider(lookup, controller.signal)()).rejects.toThrow();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('shares lookup while obtaining fresh tokens on every invocation', async () => {
+    const lookup = jest.fn().mockResolvedValue(liveProvider);
+    const provider = createLazyOboUpstreamTokenProvider(lookup);
+    await Promise.all([provider(), provider()]);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(liveProvider).toHaveBeenCalledTimes(2);
   });
 
   it('throws missing_upstream_token when provider returns null and no federated fallback', async () => {

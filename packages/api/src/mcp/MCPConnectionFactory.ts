@@ -11,7 +11,12 @@ import type {
   OAuthStoredClientMetadata,
   OAuthClientSource,
 } from '~/mcp/oauth';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
@@ -43,6 +48,7 @@ import {
   createDeadlineAbortSignal,
 } from './utils';
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
+import { createLazyOboUpstreamTokenProvider } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -103,6 +109,7 @@ export class MCPConnectionFactory {
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
+  protected upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   protected readonly oboIdentityContext?: AuthIdentityContext;
   /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
   private oboRefreshError?: Error;
@@ -612,6 +619,7 @@ export class MCPConnectionFactory {
 
     this.user = options?.user;
     this.upstreamTokenProvider = options?.upstreamTokenProvider;
+    this.upstreamTokenProviderResolver = options?.upstreamTokenProviderResolver;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
@@ -641,6 +649,12 @@ export class MCPConnectionFactory {
       return null;
     }
 
+    if (!this.upstreamTokenProvider && this.upstreamTokenProviderResolver) {
+      this.upstreamTokenProvider = createLazyOboUpstreamTokenProvider(
+        this.upstreamTokenProviderResolver,
+        this.signal,
+      );
+    }
     if (!this.upstreamTokenProvider) {
       throw new Error(
         `${this.logPrefix} Internal: upstreamTokenProvider not plumbed for OBO connection. ` +
@@ -787,6 +801,7 @@ export class MCPConnectionFactory {
     this.oauthEnd = undefined;
     this.returnOnOAuth = false;
     this.upstreamTokenProvider = undefined;
+    this.upstreamTokenProviderResolver = undefined;
   }
 
   private getServerUrl(): string | undefined {

@@ -40,7 +40,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   extractFileContext,
-  isScheduleFireRequest,
+  createScheduleUpstreamTokenProviderResolver,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -125,6 +125,7 @@ function createToolLoader(
   definitionsOnly = false,
   jobCreatedAt,
   upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 ) {
   /**
    * @param {object} params
@@ -167,6 +168,7 @@ function createToolLoader(
         definitionsOnly,
         accessibleMcpServerNames,
         upstreamTokenProvider,
+        upstreamTokenProviderResolver,
       });
     } catch (error) {
       if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
@@ -189,6 +191,7 @@ function createToolLoader(
  * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  */
 const initializeClientWithProvider = async ({
   req,
@@ -200,6 +203,7 @@ const initializeClientWithProvider = async ({
   foregroundRunId,
   requestBody,
   upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -468,6 +472,8 @@ const initializeClientWithProvider = async ({
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
         accessibleMcpServerNames: ctx.accessibleMcpServerNames,
@@ -637,6 +643,7 @@ const initializeClientWithProvider = async ({
     true,
     jobCreatedAt,
     upstreamTokenProvider,
+    upstreamTokenProviderResolver,
   );
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
@@ -1269,6 +1276,7 @@ const initializeClientWithProvider = async ({
             true,
             jobCreatedAt,
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
           ),
           requestFiles,
           authorizedRunFiles: getAuthorizedRunFileSnapshot({
@@ -1865,12 +1873,12 @@ const initializeClientWithProvider = async ({
  */
 function createInitializeClient(dependencies = {}) {
   return async (params) => {
-    const upstreamTokenProvider = isScheduleFireRequest(params.req)
-      ? await dependencies.resolveUpstreamTokenProvider?.(params.req.user, {
-          signal: params.signal,
-        })
-      : undefined;
-    return initializeClientWithProvider({ ...params, upstreamTokenProvider });
+    const upstreamTokenProviderResolver = createScheduleUpstreamTokenProviderResolver(
+      params.req,
+      dependencies.resolveUpstreamTokenProvider,
+      params.signal,
+    );
+    return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
   };
 }
 

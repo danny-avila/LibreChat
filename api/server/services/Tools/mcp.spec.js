@@ -552,6 +552,32 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
       }),
     ).rejects.toBe(rejection);
   });
+
+  it.each([false, true])(
+    'preserves a typed OBO resolution failure (retryable=%s)',
+    async (retryable) => {
+      const { OboTokenResolutionError } = require('@librechat/api');
+      const rejection = new OboTokenResolutionError(
+        'session_refresh_failed',
+        'Sign-in expired.',
+        retryable,
+      );
+      mockGetConnection.mockRejectedValue(rejection);
+
+      await expect(
+        reinitMCPServer({
+          user: { id: 'user-123' },
+          serverName: 'private-mcp',
+          serverConfig: {
+            type: 'streamable-http',
+            url: 'https://mcp.example.com',
+            source: 'yaml',
+            obo: { scopes: 'api://mcp/.default' },
+          },
+        }),
+      ).rejects.toBe(rejection);
+    },
+  );
 });
 
 describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)', () => {
