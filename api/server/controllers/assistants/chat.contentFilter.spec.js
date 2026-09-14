@@ -140,6 +140,7 @@ const chatV1 = require('./chatV1');
 const chatV2 = require('./chatV2');
 const { logger } = require('@librechat/data-schemas');
 const { checkBalance, getBalanceConfig } = require('@librechat/api');
+const { createRunBody } = require('~/server/services/createRunBody');
 const { ImageVisionTool, PermissionTypes, Permissions } = require('librechat-data-provider');
 
 const roleWith = (overrides = {}) => ({
@@ -423,7 +424,7 @@ describe.each([
       expect.objectContaining({
         error: 'assistant_tool_not_permitted',
         deniedTools: ['code_interpreter'],
-        text: expect.stringContaining('Code Interpreter'),
+        text: JSON.stringify({ type: 'assistant_tool_not_permitted', tools: ['code_interpreter'] }),
       }),
     );
     expect(mockRetrieveAssistant).toHaveBeenCalledWith('asst-1');
@@ -653,6 +654,39 @@ describe.each([
   }
 
   if (_version === 'v2') {
+    /** The provider runs the assistant configuration current at run creation, so
+     *  a role missing a grant runs against the tool snapshot that was authorized. */
+    it('pins the streamed run to the tools authorized for a role missing a grant', async () => {
+      req.config.filters = {};
+      getBalanceConfig.mockReturnValue({ enabled: false });
+      mockGetRoleByName.mockResolvedValue(
+        roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
+      );
+      const authorizedTools = [{ type: 'file_search' }];
+      mockRetrieveAssistant.mockResolvedValueOnce({ id: 'asst-1', tools: authorizedTools });
+      createRunBody.mockReturnValueOnce({ assistant_id: 'asst-1', model: 'gpt-4' });
+      mockInitThread.mockResolvedValueOnce({ thread_id: 'thread-existing' });
+      const runAssistant = jest.fn().mockResolvedValue(undefined);
+      mockStreamRunManager.mockImplementationOnce(() => ({
+        runAssistant,
+        run: {
+          id: 'run-1',
+          status: 'completed',
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        },
+        intermediateText: '',
+        messages: [],
+      }));
+
+      await chatController(req, res);
+
+      expect(runAssistant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ assistant_id: 'asst-1', tools: authorizedTools }),
+        }),
+      );
+    });
+
     it('keeps the balance reservation until a run that continued in the background settles', async () => {
       req.config.filters = {};
       const release = jest.fn().mockResolvedValue(undefined);

@@ -71,6 +71,17 @@ type TCompactionSkipped = {
   reason?: string;
 };
 
+type TAssistantToolNotPermitted = {
+  tools?: string[];
+};
+
+/** Labels match the assistant builder, so v1's `retrieval` keeps its own name. */
+const assistantToolLabelKeys: Record<string, TranslationKeys> = {
+  code_interpreter: 'com_assistants_code_interpreter',
+  file_search: 'com_assistants_file_search',
+  retrieval: 'com_assistants_retrieval',
+};
+
 type TCodeWorkspaceError = {
   reason?: string;
 };
@@ -152,6 +163,18 @@ const errorMessages = {
     typeof json.status === 'number'
       ? localize('com_error_upstream_model_status', { 0: json.status })
       : localize('com_error_upstream_model'),
+  [ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED]: (
+    json: TAssistantToolNotPermitted,
+    localize: LocalizeFunction,
+  ) => {
+    const labels = new Set(
+      (json.tools ?? []).map((tool) => {
+        const key = assistantToolLabelKeys[tool];
+        return key ? localize(key) : tool;
+      }),
+    );
+    return localize('com_error_assistant_tool_not_permitted', { 0: [...labels].join(', ') });
+  },
   [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
   [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
     localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),

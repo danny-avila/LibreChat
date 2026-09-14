@@ -15,8 +15,7 @@ const {
   preflightAssistantRunContent,
   reportLocatorTraversalFailure,
   preflightAssistantUserMessageContent,
-  isAssistantToolPermissionError,
-  assertAssistantRunToolsPermitted,
+  authorizeAssistantRun,
 } = require('@librechat/api');
 const {
   Time,
@@ -210,19 +209,16 @@ const chatV2 = async (req, res) => {
 
     openai = _openai;
     await validateAuthor({ req, openai });
-    try {
-      await assertAssistantRunToolsPermitted({
-        req,
-        getRoleByName,
-        openai,
-        assistantId: assistant_id,
-      });
-    } catch (error) {
-      if (!isAssistantToolPermissionError(error)) {
-        throw error;
-      }
+    const runAuthorization = await authorizeAssistantRun({
+      req,
+      res,
+      getRoleByName,
+      openai,
+      assistantId: assistant_id,
+    });
+    if (runAuthorization.refused) {
       contentRejected = true;
-      return res.status(error.statusCode).json(error.body);
+      return;
     }
     try {
       await preflightAssistantRunContent({
@@ -264,14 +260,16 @@ const chatV2 = async (req, res) => {
     };
 
     /** @type {CreateRunBody | undefined} */
-    const body = createRunBody({
-      assistant_id,
-      model,
-      promptPrefix,
-      instructions,
-      endpointOption,
-      clientTimestamp,
-    });
+    const body = runAuthorization.applyToRunBody(
+      createRunBody({
+        assistant_id,
+        model,
+        promptPrefix,
+        instructions,
+        endpointOption,
+        clientTimestamp,
+      }),
+    );
 
     let existingConversationPromise;
     const getExistingConversation = () => {

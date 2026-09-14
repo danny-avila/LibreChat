@@ -218,3 +218,36 @@ describe('Error — manual compaction', () => {
     expect(screen.getByText(catalog.com_error_compaction_failed)).toBeInTheDocument();
   });
 });
+
+describe('Error — assistant tool permission', () => {
+  const render403 = (tools: string[]) =>
+    render(
+      <Error text={JSON.stringify({ type: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED, tools })} />,
+    );
+
+  it('names the denied tool with the label the assistant builder shows', () => {
+    render403(['code_interpreter']);
+
+    expect(
+      screen.getByText(
+        catalog.com_error_assistant_tool_not_permitted.replace(
+          '{{0}}',
+          catalog.com_assistants_code_interpreter,
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('lists each denied tool once', () => {
+    render403(['code_interpreter', 'file_search', 'code_interpreter']);
+
+    expect(
+      screen.getByText(
+        catalog.com_error_assistant_tool_not_permitted.replace(
+          '{{0}}',
+          `${catalog.com_assistants_code_interpreter}, ${catalog.com_assistants_file_search}`,
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+});

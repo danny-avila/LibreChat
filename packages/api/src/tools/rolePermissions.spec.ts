@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Tools, Permissions, EToolResources, PermissionTypes } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import type { IRole } from '@librechat/data-schemas';
@@ -395,6 +396,22 @@ describe('findDeniedAssistantRunTools', () => {
     await expect(
       findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
     ).resolves.toEqual(['retrieval']);
+  });
+
+  /** The grants resolve before the tools are known, so a missing one is only a
+   *  denial once a stored tool actually needs it. */
+  it('resolves grants without logging a denial the run never hit', async () => {
+    const warn = jest.spyOn(logger, 'warn');
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+    const getTools = jest.fn().mockResolvedValue([{ type: 'function' }]);
+
+    await expect(
+      findDeniedAssistantRunTools({ req: buildReq(), getRoleByName, getTools }),
+    ).resolves.toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('never denies function tools, which carry no native grant', async () => {

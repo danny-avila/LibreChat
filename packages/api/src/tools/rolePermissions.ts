@@ -61,6 +61,12 @@ export interface CheckToolRolePermissionParams {
    * the result. Callers that mutate pass this so the write aborts instead.
    */
   throwOnError?: boolean;
+  /**
+   * Log a denial as `Forbidden`. Callers that resolve grants before knowing
+   * whether the request uses the tool pass `false` and log the denials that
+   * actually block something.
+   */
+  logDenied?: boolean;
 }
 
 /**
@@ -76,6 +82,7 @@ export async function checkToolRolePermission({
   getRoleByName,
   context = 'toolRolePermissions',
   throwOnError = false,
+  logDenied = true,
 }: CheckToolRolePermissionParams): Promise<boolean> {
   let allowed = false;
   try {
@@ -93,7 +100,7 @@ export async function checkToolRolePermission({
     }
   }
 
-  if (!allowed) {
+  if (!allowed && logDenied) {
     logger.warn(
       `[${permissionType}] Forbidden: Insufficient permissions for User ${user?.id}: ${Permissions.USE}`,
     );
@@ -269,6 +276,8 @@ export interface ResolveToolRoleGrantsParams {
   user?: CheckAccessParams['user'] | null;
   getRoleByName: CheckAccessParams['getRoleByName'];
   context?: string;
+  /** See {@link CheckToolRolePermissionParams.logDenied}. */
+  logDenials?: boolean;
 }
 
 /**
@@ -291,6 +300,7 @@ export function resolveToolRoleGrants({
   user,
   getRoleByName,
   context = 'toolRoleGrants',
+  logDenials = true,
 }: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
   const subject = (user ?? req?.user) as CheckAccessParams['user'];
   /** The three checks below read the same role. A request-backed call dedupes
@@ -328,6 +338,7 @@ export function resolveToolRoleGrants({
       permissionType: PermissionTypes.RUN_CODE,
       getRoleByName: getRoleOnce,
       context,
+      logDenied: logDenials,
     }),
     checkToolRolePermission({
       req,
@@ -335,6 +346,7 @@ export function resolveToolRoleGrants({
       permissionType: PermissionTypes.FILE_SEARCH,
       getRoleByName: getRoleOnce,
       context,
+      logDenied: logDenials,
     }),
     checkToolRolePermission({
       req,
@@ -342,6 +354,7 @@ export function resolveToolRoleGrants({
       permissionType: PermissionTypes.WEB_SEARCH,
       getRoleByName: getRoleOnce,
       context,
+      logDenied: logDenials,
     }),
   ]).then(([runCode, fileSearch, webSearch]) => ({ runCode, fileSearch, webSearch }));
 
@@ -381,7 +394,14 @@ export async function findDeniedAssistantRunTools({
   getRoleByName,
   getTools,
 }: FindDeniedAssistantRunToolsParams): Promise<string[]> {
-  const grants = await resolveToolRoleGrants({ req, getRoleByName, context: 'assistantsRun' });
+  /** Quiet: an assistant with no native tool never needed these grants, so a
+   *  missing one is not a denial until a stored tool actually requires it. */
+  const grants = await resolveToolRoleGrants({
+    req,
+    getRoleByName,
+    context: 'assistantsRun',
+    logDenials: false,
+  });
   const grantedByPermissionType: Partial<Record<PermissionTypes, boolean>> = {
     [PermissionTypes.RUN_CODE]: grants.runCode,
     [PermissionTypes.FILE_SEARCH]: grants.fileSearch,

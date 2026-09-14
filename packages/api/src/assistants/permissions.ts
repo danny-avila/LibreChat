@@ -1,47 +1,35 @@
-import { ToolCallTypes } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
+import type { Response } from 'express';
 import type { FindDeniedAssistantRunToolsParams } from '~/tools/rolePermissions';
+import type { CheckAccessParams } from '~/middleware/access';
 import { findDeniedAssistantRunTools } from '~/tools/rolePermissions';
 
-export const ASSISTANT_TOOL_NOT_PERMITTED = 'assistant_tool_not_permitted';
-
-const deniedToolLabels: Partial<Record<string, string>> = {
-  [ToolCallTypes.CODE_INTERPRETER]: 'Code Interpreter',
-  [ToolCallTypes.FILE_SEARCH]: 'File Search',
-  [ToolCallTypes.RETRIEVAL]: 'File Search',
-};
+/** An assistant's tool list as the provider stores it. */
+export type AssistantRunTools = Array<string | { type?: string } | null>;
 
 export interface AssistantToolPermissionErrorBody {
-  error: typeof ASSISTANT_TOOL_NOT_PERMITTED;
+  error: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED;
   message: string;
-  /** The chat client builds its error message from the response's `text`. */
+  /** Typed error payload the chat client localizes; it builds the message from `text`. */
   text: string;
   deniedTools: string[];
 }
 
-/** A run refused because the caller's role denies a native tool the assistant stores. */
-export class AssistantToolPermissionError extends Error {
-  public readonly code: typeof ASSISTANT_TOOL_NOT_PERMITTED = ASSISTANT_TOOL_NOT_PERMITTED;
-  public readonly statusCode: number = 403;
-  public readonly body: AssistantToolPermissionErrorBody;
-
-  constructor(deniedTools: string[]) {
-    const labels = [...new Set(deniedTools.map((tool) => deniedToolLabels[tool] ?? tool))];
-    const message = `This assistant uses ${labels.join(' and ')}, which your role is not permitted to use.`;
-    super(message);
-    this.name = 'AssistantToolPermissionError';
-    this.body = { error: ASSISTANT_TOOL_NOT_PERMITTED, message, text: message, deniedTools };
-    Object.setPrototypeOf(this, AssistantToolPermissionError.prototype);
-  }
+export function createAssistantToolPermissionErrorBody(
+  deniedTools: string[],
+): AssistantToolPermissionErrorBody {
+  return {
+    error: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED,
+    message: `Assistant run refused: the role does not permit ${deniedTools.join(', ')}.`,
+    text: JSON.stringify({ type: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED, tools: deniedTools }),
+    deniedTools,
+  };
 }
 
-export function isAssistantToolPermissionError(
-  error: unknown,
-): error is AssistantToolPermissionError {
-  return error instanceof AssistantToolPermissionError;
-}
-
-export interface AssertAssistantRunToolsPermittedParams {
+export interface AuthorizeAssistantRunParams {
   req?: FindDeniedAssistantRunToolsParams['req'];
+  res: Pick<Response, 'status' | 'json'>;
   getRoleByName: FindDeniedAssistantRunToolsParams['getRoleByName'];
   /** The client the chat controller already initialized for this run. */
   openai: {
@@ -49,33 +37,60 @@ export interface AssertAssistantRunToolsPermittedParams {
       assistants: {
         retrieve: (
           assistantId: string,
-        ) => Promise<
-          { tools?: Array<string | { type?: string } | null> | null } | null | undefined
-        >;
+        ) => Promise<{ tools?: AssistantRunTools | null } | null | undefined>;
       };
     };
   };
   assistantId: string;
 }
 
+export interface AssistantRunAuthorization {
+  /** A 403 was written; the controller must not continue. */
+  refused: boolean;
+  /**
+   * Applies the authorized snapshot to the run request. When the role lacked a
+   * grant, the run is pinned to the tools checked here, so a tool added to the
+   * assistant after the check cannot execute for this run.
+   */
+  applyToRunBody: <T extends object>(body: T) => T & { tools?: AssistantRunTools };
+}
+
 /**
- * Refuses a run whose assistant stores a native tool the caller's role denies.
- * Called by the chat controllers after their assistant allowlist and author
- * checks, with the client they already built, so the assistant is retrieved
- * only when the role actually lacks a grant.
+ * Authorizes an assistant run against the caller's role. Called by the chat
+ * controllers after their allowlist and author checks, with the client they
+ * already built: the assistant is retrieved only when the role lacks a grant,
+ * and a denial is answered here with a 403 before any run side effect.
  */
-export async function assertAssistantRunToolsPermitted({
+export async function authorizeAssistantRun({
   req,
+  res,
   getRoleByName,
   openai,
   assistantId,
-}: AssertAssistantRunToolsPermittedParams): Promise<void> {
+}: AuthorizeAssistantRunParams): Promise<AssistantRunAuthorization> {
+  let checkedTools: AssistantRunTools | undefined;
   const deniedTools = await findDeniedAssistantRunTools({
     req,
     getRoleByName,
-    getTools: async () => (await openai.beta.assistants.retrieve(assistantId))?.tools,
+    getTools: async () => {
+      const tools = (await openai.beta.assistants.retrieve(assistantId))?.tools ?? undefined;
+      checkedTools = tools ?? undefined;
+      return tools;
+    },
   });
+
   if (deniedTools.length > 0) {
-    throw new AssistantToolPermissionError(deniedTools);
+    logger.warn('[assistantsRun] Refused a run whose assistant stores tools the role denies', {
+      userId: (req?.user as CheckAccessParams['user'] | undefined)?.id,
+      assistantId,
+      deniedTools,
+    });
+    res.status(403).json(createAssistantToolPermissionErrorBody(deniedTools));
+    return { refused: true, applyToRunBody: (body) => body };
   }
+
+  return {
+    refused: false,
+    applyToRunBody: (body) => (checkedTools ? { ...body, tools: checkedTools } : body),
+  };
 }

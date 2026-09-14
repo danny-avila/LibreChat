@@ -1,16 +1,8 @@
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
+import { ErrorTypes, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import type { IRole } from '@librechat/data-schemas';
-import {
-  AssistantToolPermissionError,
-  isAssistantToolPermissionError,
-  assertAssistantRunToolsPermitted,
-} from './permissions';
-
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
-}));
+import { authorizeAssistantRun } from './permissions';
 
 const roleWith = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -23,83 +15,93 @@ const roleWith = (overrides: Record<string, unknown> = {}) =>
     },
   }) as unknown as IRole;
 
+const deny = (...types: PermissionTypes[]) =>
+  roleWith(Object.fromEntries(types.map((type) => [type, { [Permissions.USE]: false }])));
+
 const buildReq = () => ({ user: { id: 'user_1', role: 'USER' } }) as unknown as ServerRequest;
 
-const clientReturning = (tools: Array<{ type: string }>) => {
+function setup(role: IRole, tools: Array<{ type: string }>) {
   const retrieve = jest.fn().mockResolvedValue({ id: 'asst_1', tools });
-  return { openai: { beta: { assistants: { retrieve } } }, retrieve };
-};
-
-describe('assertAssistantRunToolsPermitted', () => {
-  it('permits the run without retrieving the assistant when the role holds every grant', async () => {
-    const { openai, retrieve } = clientReturning([{ type: 'code_interpreter' }]);
-
-    await expect(
-      assertAssistantRunToolsPermitted({
+  const res = { status: jest.fn(), json: jest.fn() };
+  res.status.mockReturnValue(res);
+  return {
+    retrieve,
+    res,
+    run: () =>
+      authorizeAssistantRun({
         req: buildReq(),
-        getRoleByName: jest.fn().mockResolvedValue(roleWith()),
-        openai,
+        res,
+        getRoleByName: jest.fn().mockResolvedValue(role),
+        openai: { beta: { assistants: { retrieve } } },
         assistantId: 'asst_1',
       }),
-    ).resolves.toBeUndefined();
+  };
+}
+
+describe('authorizeAssistantRun', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('authorizes without reading the assistant or pinning tools when every grant is held', async () => {
+    const { retrieve, res, run } = setup(roleWith(), [{ type: 'code_interpreter' }]);
+    const body = { assistant_id: 'asst_1' };
+
+    const authorization = await run();
+
+    expect(authorization.refused).toBe(false);
+    expect(authorization.applyToRunBody(body)).toBe(body);
     expect(retrieve).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('refuses with a 403 naming the denied tool the assistant stores', async () => {
-    const { openai, retrieve } = clientReturning([
+  it('refuses with a 403 carrying the typed error the chat client localizes', async () => {
+    const warn = jest.spyOn(logger, 'warn');
+    const { retrieve, res, run } = setup(deny(PermissionTypes.RUN_CODE), [
       { type: 'code_interpreter' },
       { type: 'function' },
     ]);
 
-    const error = await assertAssistantRunToolsPermitted({
-      req: buildReq(),
-      getRoleByName: jest
-        .fn()
-        .mockResolvedValue(roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } })),
-      openai,
-      assistantId: 'asst_1',
-    }).catch((caught: unknown) => caught);
+    const authorization = await run();
 
+    expect(authorization.refused).toBe(true);
     expect(retrieve).toHaveBeenCalledWith('asst_1');
-    expect(isAssistantToolPermissionError(error)).toBe(true);
-    expect(error).toMatchObject({
-      statusCode: 403,
-      body: {
-        error: 'assistant_tool_not_permitted',
-        deniedTools: ['code_interpreter'],
-        text: 'This assistant uses Code Interpreter, which your role is not permitted to use.',
-      },
+    expect(res.status).toHaveBeenCalledWith(403);
+    const body = res.json.mock.calls[0][0];
+    expect(body).toMatchObject({
+      error: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED,
+      deniedTools: ['code_interpreter'],
     });
+    expect(JSON.parse(body.text)).toEqual({
+      type: ErrorTypes.ASSISTANT_TOOL_NOT_PERMITTED,
+      tools: ['code_interpreter'],
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it('permits an assistant that stores none of the denied tools', async () => {
-    const { openai } = clientReturning([{ type: 'file_search' }]);
+  /** The provider runs whatever the assistant holds when the run is created, so
+   *  a tool added after this check would otherwise execute for a denied role. */
+  it('pins the run to the checked tools when the missing grant was not needed', async () => {
+    const tools = [{ type: 'file_search' }, { type: 'function' }];
+    const { res, run } = setup(deny(PermissionTypes.RUN_CODE), tools);
 
-    await expect(
-      assertAssistantRunToolsPermitted({
-        req: buildReq(),
-        getRoleByName: jest
-          .fn()
-          .mockResolvedValue(
-            roleWith({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }),
-          ),
-        openai,
-        assistantId: 'asst_1',
-      }),
-    ).resolves.toBeUndefined();
+    const authorization = await run();
+
+    expect(authorization.refused).toBe(false);
+    expect(authorization.applyToRunBody({ assistant_id: 'asst_1', model: 'gpt-4o' })).toEqual({
+      assistant_id: 'asst_1',
+      model: 'gpt-4o',
+      tools,
+    });
+    expect(res.status).not.toHaveBeenCalled();
   });
 
-  /** v1 stores `retrieval` where v2 stores `file_search`; both are one capability. */
-  it('names File Search once when both file tool spellings are denied', () => {
-    const error = new AssistantToolPermissionError(['file_search', 'retrieval']);
-
-    expect(error.body.text).toBe(
-      'This assistant uses File Search, which your role is not permitted to use.',
+  it('logs no denial for grants an assistant without native tools never needed', async () => {
+    const warn = jest.spyOn(logger, 'warn');
+    const { run } = setup(
+      deny(PermissionTypes.RUN_CODE, PermissionTypes.FILE_SEARCH, PermissionTypes.WEB_SEARCH),
+      [{ type: 'function' }],
     );
-    expect(error.body.deniedTools).toEqual(['file_search', 'retrieval']);
-  });
 
-  it('does not treat an unrelated error as a permission refusal', () => {
-    expect(isAssistantToolPermissionError(new Error('provider unavailable'))).toBe(false);
+    await expect(run()).resolves.toMatchObject({ refused: false });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

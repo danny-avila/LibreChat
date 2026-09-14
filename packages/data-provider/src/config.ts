@@ -3618,6 +3618,10 @@ export enum ErrorTypes {
    */
   STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
   /**
+   * An assistant run was refused because the caller's role denies a native tool the assistant stores.
+   */
+  ASSISTANT_TOOL_NOT_PERMITTED = 'assistant_tool_not_permitted',
+  /**
    * A conversation's selected attached workspace cannot be used as requested.
    */
   CODE_WORKSPACE_UNAVAILABLE = 'code_workspace_unavailable',
