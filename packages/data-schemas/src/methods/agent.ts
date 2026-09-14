@@ -336,8 +336,15 @@ function decodeAgentSortCursor(
       return { kind: 'unreadable' };
     }
 
-    const primary = String(decoded.primary);
     const { valueType } = AGENT_SORT_CONFIG[sort];
+    /* Coercion is not validation: `String(undefined)` is `'undefined'`, which compares as a
+       perfectly ordinary author key and would resume the walk partway through the alphabet
+       instead of failing closed. The date and number modes are caught by their own casts;
+       the string mode has no cast to fail, so its boundary has to arrive as a string. */
+    if (valueType === 'string' && typeof decoded.primary !== 'string') {
+      return { kind: 'unreadable' };
+    }
+    const primary = String(decoded.primary);
     if (valueType === 'date') {
       if (primary !== '' && Number.isNaN(new Date(primary).getTime())) {
         return { kind: 'unreadable' };

@@ -30,6 +30,20 @@ jest.mock('../ErrorDisplay', () => ({
     </div>
   ),
 }));
+/* The dialog's own rendering belongs to its spec; what matters here is that the grid that
+   owns it stays mounted, so this stands in for it without a router or a host context. */
+jest.mock('../AgentDetailContent', () => {
+  const { OGDialogContent, OGDialogTitle, OGDialogClose } = jest.requireActual('@librechat/client');
+  return {
+    __esModule: true,
+    default: ({ agent }: { agent: t.Agent }) => (
+      <OGDialogContent aria-describedby={undefined} showCloseButton={false}>
+        <OGDialogTitle>{agent.name}</OGDialogTitle>
+        <OGDialogClose>{'Close preview'}</OGDialogClose>
+      </OGDialogContent>
+    ),
+  };
+});
 
 const page = (agents: t.Agent[], after?: string): t.AgentListResponse => ({
   object: 'list',
@@ -352,5 +366,54 @@ describe('AgentGrid pagination', () => {
 
     expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+
+  it('keeps an open dialog while the results it was opened from are being refreshed', async () => {
+    // The refresh runs with no data of its own, so the grid renders its skeleton - which
+    // used to replace the grid, and with it the dialog the reader had open and the element
+    // focus has to return to.
+    const pending = Promise.withResolvers<t.AgentListResponse>();
+    marketplace.mockResolvedValueOnce(page(makeAgents(2))).mockReturnValueOnce(pending.promise);
+    renderGrid();
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Agent 0' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    await act(async () => {
+      void client.resetQueries({ queryKey: [QueryKeys.marketplaceAgents] });
+    });
+    /* Radix marks everything behind an open modal `aria-hidden`, so the grid behind it is
+       only reachable with `hidden`. */
+    expect(
+      await screen.findByRole('status', { name: 'com_agents_loading', hidden: true }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => pending.resolve(page(makeAgents(2))));
+    expect(
+      await screen.findByRole('button', { name: 'Agent 0', hidden: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('takes focus back when a scope change remounts the rows under an open dialog', async () => {
+    // A debounced search or a restored history entry commits while a card is open. The new
+    // scope's grid is a different list, so the dialog goes with the rows it belonged to -
+    // but the focus it held must not be left on the document, which starts the next Tab at
+    // the top of the page instead of at the marketplace.
+    const pending = Promise.withResolvers<t.AgentListResponse>();
+    marketplace.mockResolvedValueOnce(page(makeAgents(2))).mockReturnValueOnce(pending.promise);
+    const view = renderGrid();
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Agent 0' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Harness mine={1} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole('status', { name: 'com_agents_loading' })).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByRole('tabpanel')).toContainElement(document.activeElement as HTMLElement);
+    await act(async () => pending.resolve(page(makeAgents(1, 8))));
+    expect(await screen.findByRole('button', { name: 'Agent 8' })).toBeInTheDocument();
   });
 });

@@ -183,13 +183,23 @@ export default function VirtualizedAgentGrid({
    * The open dialog reads the row the list holds now, not the one it was opened from: a
    * background refresh can land a newer description, avatar, support contact or
    * conversation starter while the dialog is up, and a starter must not launch a chat
-   * with text its owner has already replaced. The snapshot is the fallback for the one
-   * case the list cannot answer — the agent is no longer in it.
+   * with text its owner has already replaced.
+   *
+   * Out of the window there is no row, and the per-agent endpoint is authoritative only
+   * for what it returns: its VIEW response carries no `category`
+   * (`api/server/controllers/agents/v1.js`), so replacing the captured row outright would
+   * drop the badge off an agent that still has one. The revalidated fields are therefore
+   * laid over the snapshot — fresh where the endpoint speaks, captured where it is silent.
    */
   let selectedAgent: t.Agent | null = null;
   if (selection != null) {
-    selectedAgent =
-      selectedIndex != null ? agents[selectedIndex] : (selectedAgentQuery.data ?? selection.agent);
+    if (selectedIndex != null) {
+      selectedAgent = agents[selectedIndex];
+    } else if (selectedAgentQuery.data != null) {
+      selectedAgent = { ...selection.agent, ...selectedAgentQuery.data };
+    } else {
+      selectedAgent = selection.agent;
+    }
   }
 
   const getScrollElement = useCallback(() => scrollElementRef.current, [scrollElementRef]);
