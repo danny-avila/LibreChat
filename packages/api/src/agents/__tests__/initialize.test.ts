@@ -286,6 +286,46 @@ describe('initializeAgent — execution context', () => {
     jest.clearAllMocks();
   });
 
+  it('carries request-resolved Azure identity to the run without changing persisted agent fields', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: EModelEndpoint.azureOpenAI,
+      model: 'gpt-6-astra',
+    });
+    const azureOptions = {
+      azureOpenAIApiKey: 'request-key',
+      azureOpenAIApiInstanceName: 'request-instance',
+      azureOpenAIApiDeploymentName: 'deployment',
+      azureOpenAIApiVersion: '2024-10-21',
+    };
+    mockGetProviderConfig.mockReturnValue({
+      overrideProvider: Providers.AZURE,
+      getOptions: jest.fn().mockResolvedValue({
+        azureOptions,
+        llmConfig: {
+          model: 'gpt-6-astra',
+          useResponsesApi: true,
+          apiKey: 'request-key',
+          modelKwargs: { model: 'deployment' },
+        },
+      }),
+    });
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([EModelEndpoint.azureOpenAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    expect(result.azureOptions).toEqual(azureOptions);
+    expect(result.model_parameters).not.toHaveProperty('azureOpenAIApiInstanceName');
+    expect(agent).not.toHaveProperty('azureOptions');
+  });
+
   it('initializes without Express request or response objects', async () => {
     const { agent, loadTools, db } = createMocks();
     const previousReqDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'req');
