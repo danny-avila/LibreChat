@@ -9,7 +9,7 @@ import type {
   TCodeEnvironmentStatusResponse,
   TCodeEnvironmentsResponse,
 } from 'librechat-data-provider';
-import { updateConvoInAllQueries } from '~/utils';
+import { CONVERSATION_LIST_KEYS, updateConvoInAllQueries } from '~/utils';
 
 export type CodeEnvironmentPairingResponse = TCodeEnvironmentPairingResponse;
 
@@ -96,7 +96,13 @@ export function useMoveConversationCodeEnvironmentMutation() {
     [MutationKeys.moveConversationCodeEnvironment],
     dataService.moveConversationCodeEnvironment,
     {
-      onSuccess: ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
+      onSuccess: async ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
+        /** A read already in flight could land after this write and restore the replaced decision. */
+        await Promise.all(
+          [[QueryKeys.conversation, conversationId], [QueryKeys.pinnedConversations]]
+            .concat(CONVERSATION_LIST_KEYS.map((listKey) => [listKey]))
+            .map((queryKey) => queryClient.cancelQueries({ queryKey })),
+        );
         const applyDecision = (conversation: TConversation): TConversation => ({
           ...conversation,
           codeEnvironmentMode,

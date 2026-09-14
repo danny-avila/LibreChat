@@ -1970,18 +1970,12 @@ class AgentClient extends BaseClient {
       collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
       agentsEConfig?.toolApproval?.enabled !== false,
     );
-    const codeEnvironmentDecision = this.options.req._codeEnvironmentDecision;
-    const persistedCodeEnvironmentDecision =
-      codeEnvironmentDecision != null
-        ? resolvePersistableCodeEnvironmentDecision({
-            conversationId: this.conversationId,
-            decision: codeEnvironmentDecision,
-            conversation: this.options.req.resolvedConversation,
-          })
-        : {
-            codeEnvironmentMode: this.options.req.body.codeEnvironmentMode,
-            codeWorkspaces: this.options.req.body.codeWorkspaces,
-          };
+    const persistedCodeEnvironmentDecision = resolvePersistableCodeEnvironmentDecision({
+      conversationId: this.conversationId,
+      decision: this.options.req._codeEnvironmentDecision,
+      conversation: this.options.req.resolvedConversation,
+      requested: this.options.req.body,
+    });
 
     return removeNullishValues(
       Object.assign(

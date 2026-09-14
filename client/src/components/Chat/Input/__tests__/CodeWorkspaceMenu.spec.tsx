@@ -77,7 +77,14 @@ function renderMenu(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  const wrap = (element: React.ReactElement) => (
+    <QueryClientProvider client={queryClient}>{element}</QueryClientProvider>
+  );
+  const result = render(wrap(ui));
+  return {
+    ...result,
+    rerenderMenu: (element: React.ReactElement) => result.rerender(wrap(element)),
+  };
 }
 
 describe('CodeWorkspaceMenu', () => {
@@ -350,6 +357,40 @@ describe('CodeWorkspaceMenu', () => {
         from: [mac],
         to: [moved, { environmentId: 'team-vm', workspaceId: 'scratch' }],
       });
+    });
+
+    test('starts another relocatable chat undecided even when it targets the same machine', async () => {
+      const targets = [
+        target(teamVm, [
+          { id: 'shared', name: 'Shared' },
+          { id: 'scratch', name: 'Scratch' },
+        ]),
+      ];
+      const firstChat = relocatable(targets);
+      const { rerenderMenu } = renderMenu(
+        <CodeWorkspaceMenu setConversation={jest.fn()} workspace={firstChat} disabled={false} />,
+      );
+
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      await userEvent.click(screen.getByRole('menuitemradio', { name: /Scratch/ }));
+      expect(await confirmItem()).not.toHaveAttribute('aria-disabled', 'true');
+
+      rerenderMenu(
+        <CodeWorkspaceMenu
+          setConversation={jest.fn()}
+          workspace={{
+            ...firstChat,
+            relocation: { ...firstChat.relocation!, conversationId: 'another-chat' },
+          }}
+          disabled={false}
+        />,
+      );
+
+      expect(screen.getByRole('menuitemradio', { name: /Scratch/ })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+      expect(await confirmItem()).toHaveAttribute('aria-disabled', 'true');
     });
 
     test('drops a machine the agents stopped using with a single confirm', async () => {

@@ -291,6 +291,39 @@ describe('resolvePersistableCodeEnvironmentDecision', () => {
     ).toEqual({ codeEnvironmentMode: 'attached', codeWorkspaces: [mac] });
   });
 
+  it('falls back to request fields for a caller that never resolved a decision', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        requested: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'attached', codeWorkspaces: [mac] });
+  });
+
+  it('never writes a request fallback over a stored decision', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        requested: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        conversation: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [vm],
+        },
+      }),
+    ).toEqual({});
+  });
+
+  it('prefers the validated decision over request fields', () => {
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'without_attached' },
+        requested: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'without_attached' });
+  });
+
   it('persists nothing without a validated decision', () => {
     expect(resolvePersistableCodeEnvironmentDecision({ conversationId: 'conversation-1' })).toEqual(
       {},

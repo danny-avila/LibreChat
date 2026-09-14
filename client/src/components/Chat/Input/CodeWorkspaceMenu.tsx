@@ -148,7 +148,10 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
   const moveMutation = useMoveConversationCodeEnvironmentMutation();
-  const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
+  const [moveDraft, setMoveDraft] = useState<{
+    conversationId: string;
+    workspaces: Record<string, string>;
+  } | null>(null);
 
   if (!workspace.required) return null;
 
@@ -227,6 +230,11 @@ export default function CodeWorkspaceMenu({
   }
 
   const relocationText = relocation == null ? null : describeRelocation(relocation, localize);
+  /** Choices belong to the chat they were made in; another relocatable chat starts undecided. */
+  const moveChoices =
+    relocation != null && moveDraft?.conversationId === relocation.conversationId
+      ? moveDraft.workspaces
+      : {};
   /** Every target needs a workspace, so the whole move lands in one validated write. */
   const chosenTargets =
     relocation?.targets.flatMap((target) => {
@@ -245,7 +253,7 @@ export default function CodeWorkspaceMenu({
       {
         onSuccess: ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
           chosenTargets.forEach((selection) => workspace.rememberSelection(selection));
-          setMoveChoices({});
+          setMoveDraft(null);
           setConversation((current) =>
             current?.conversationId === conversationId
               ? { ...current, codeEnvironmentMode, codeWorkspaces }
@@ -321,7 +329,10 @@ export default function CodeWorkspaceMenu({
                 hideOnClick={false}
                 isSelected={(workspaceId) => chosenWorkspaceId(target, moveChoices) === workspaceId}
                 onSelect={({ environmentId, workspaceId }) =>
-                  setMoveChoices((current) => ({ ...current, [environmentId]: workspaceId }))
+                  setMoveDraft({
+                    conversationId: relocation.conversationId,
+                    workspaces: { ...moveChoices, [environmentId]: workspaceId },
+                  })
                 }
               />
             ))}

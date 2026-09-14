@@ -153,29 +153,46 @@ export function resolveConversationCodeEnvironmentMove({
   return { codeWorkspaces: canonicalSelections(to) };
 }
 
+type PersistableDecisionFields = Pick<
+  StoredConversationDecision,
+  'codeEnvironmentMode' | 'codeWorkspaces'
+>;
+
 /**
  * Returns the decision fields a run may persist. A stored conversation keeps the decision it
  * already holds, because only its owner's explicit move replaces one: a run from any ingress that
  * settles after a move would otherwise write its run-start decision back over it. A legacy row
- * records the mode it inferred without touching the selections it already stores.
+ * records the mode it inferred without touching the selections it already stores. A caller that
+ * never resolved a decision falls back to the fields its request carried, under the same rule.
  */
 export function resolvePersistableCodeEnvironmentDecision({
   conversationId,
   decision,
   conversation,
+  requested,
 }: {
   conversationId: string;
   decision?: ConversationCodeEnvironmentDecision | null;
   conversation?: StoredConversationDecision | null;
-}): Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'> {
-  if (decision == null) {
+  requested?: PersistableDecisionFields | null;
+}): PersistableDecisionFields {
+  const candidate: PersistableDecisionFields =
+    decision != null
+      ? {
+          codeEnvironmentMode: decision.mode,
+          ...(decision.codeWorkspaces != null && { codeWorkspaces: decision.codeWorkspaces }),
+        }
+      : {
+          ...(requested?.codeEnvironmentMode != null && {
+            codeEnvironmentMode: requested.codeEnvironmentMode,
+          }),
+          ...(requested?.codeWorkspaces != null && { codeWorkspaces: requested.codeWorkspaces }),
+        };
+  if (conversation == null || conversation.conversationId !== conversationId) {
+    return candidate;
+  }
+  if (conversation.codeEnvironmentMode != null || candidate.codeEnvironmentMode == null) {
     return {};
   }
-  if (conversation == null || conversation.conversationId !== conversationId) {
-    return {
-      codeEnvironmentMode: decision.mode,
-      ...(decision.codeWorkspaces != null && { codeWorkspaces: decision.codeWorkspaces }),
-    };
-  }
-  return conversation.codeEnvironmentMode == null ? { codeEnvironmentMode: decision.mode } : {};
+  return { codeEnvironmentMode: candidate.codeEnvironmentMode };
 }
