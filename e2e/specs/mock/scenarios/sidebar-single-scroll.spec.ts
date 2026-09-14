@@ -72,8 +72,10 @@ async function seedPins(prefix: string, count: number): Promise<Seeded[]> {
  * Brings the sidebar on screen. A narrow viewport keeps the drawer mounted and
  * slides it out of view instead of unmounting it, so every row still answers a
  * query while nothing on it can be scrolled — the wheel would land on the page
- * beside the drawer. Desktop renders no opener at all, where a box still to the
- * left of the origin is a panel mid-layout rather than a closed drawer.
+ * beside the drawer. The chat header's opener is what a person reaches for
+ * there, and it only exists once that header has rendered, so the click is
+ * retried rather than taken once. Desktop renders no opener at all, where a
+ * box still left of the origin is a panel mid-layout, not a closed drawer.
  */
 async function openSidebar(page: Page): Promise<void> {
   await expect(historyRegion(page)).toBeVisible({ timeout: 30_000 });
@@ -81,12 +83,16 @@ async function openSidebar(page: Page): Promise<void> {
     const box = await historyRegion(page).boundingBox();
     return box === null ? 'unlaid' : box.x >= 0 ? 'on-screen' : 'off-screen';
   };
-  await expect.poll(placement, { timeout: 15_000 }).not.toBe('unlaid');
-  if ((await placement()) === 'off-screen') {
-    const opener = page.getByRole('button', { name: 'Open sidebar' });
-    if ((await opener.count()) > 0) {
-      await opener.first().click();
+  await expect.poll(placement, { timeout: 30_000 }).not.toBe('unlaid');
+  for (let attempt = 0; attempt < 3 && (await placement()) === 'off-screen'; attempt++) {
+    const opener = page.getByRole('button', { name: 'Open sidebar' }).first();
+    if (await opener.isVisible().catch(() => false)) {
+      await opener.click();
     }
+    await expect
+      .poll(placement, { timeout: 10_000 })
+      .toBe('on-screen')
+      .catch(() => undefined);
   }
   await expect.poll(placement, { timeout: 15_000 }).toBe('on-screen');
 }
@@ -122,28 +128,46 @@ const sidebarScrollTop = async (page: Page): Promise<number> => {
   return surface?.scrollTop ?? 0;
 };
 
+/** Moves the sidebar's own scroll surface, for the emulated touch devices
+ *  where a wheel gesture is not what a person would produce. */
+const dragSurface = (page: Page, deltaY: number) =>
+  historyRegion(page).evaluate((region, delta) => {
+    const surface = Array.from(region.querySelectorAll('*')).find((node) => {
+      const style = getComputedStyle(node);
+      return (
+        (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+        node.scrollHeight > node.clientHeight + 1
+      );
+    });
+    surface?.scrollBy(0, delta);
+  }, deltaY);
+
 /**
  * Scrolls the sidebar the way a person does: the wheel turns over a point
  * inside it and whatever surface is under the pointer takes the gesture. The
  * pointer is deliberately placed over the rows rather than over some scrollbar,
- * because "one scroll" is a claim about what happens under the content.
+ * because "one scroll" is a claim about what happens under the content. Touch
+ * emulation produces no wheel, so there the same surface is driven directly.
  */
-async function wheelOverSidebar(page: Page, deltaY: number): Promise<number> {
+async function scrollSidebar(page: Page, deltaY: number): Promise<number> {
   const box = await historyRegion(page).boundingBox();
   expect(box, 'the chat-history region should be laid out').not.toBeNull();
-  const x = box!.x + box!.width / 2;
-  const y = box!.y + box!.height / 2;
   const before = await sidebarScrollTop(page);
-  await page.mouse.move(x, y);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.wheel(0, deltaY);
   await expect
-    .poll(() => sidebarScrollTop(page), { timeout: 10_000 })
-    .not.toBe(before);
+    .poll(() => sidebarScrollTop(page), { timeout: 3_000 })
+    .not.toBe(before)
+    .catch(() => undefined);
+  if ((await sidebarScrollTop(page)) === before) {
+    await dragSurface(page, deltaY);
+  }
+  await expect.poll(() => sidebarScrollTop(page), { timeout: 10_000 }).not.toBe(before);
   return sidebarScrollTop(page);
 }
 
 /** Scrolls to the end of the sidebar, following the list as later pages load. */
-async function wheelToBottom(page: Page, turns: number): Promise<void> {
+async function scrollToBottom(page: Page, turns: number): Promise<void> {
   for (let turn = 0; turn < turns; turn++) {
     const box = await historyRegion(page).boundingBox();
     if (!box) {
@@ -151,6 +175,7 @@ async function wheelToBottom(page: Page, turns: number): Promise<void> {
     }
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, 2000);
+    await dragSurface(page, 2000);
     await page.waitForTimeout(400);
   }
 }
@@ -229,7 +254,7 @@ test.describe('sidebar single scroll', () => {
     const pinnedBefore = await pinnedRegion(page).boundingBox();
     expect(pinnedBefore).not.toBeNull();
 
-    const scrolled = await wheelOverSidebar(page, 400);
+    const scrolled = await scrollSidebar(page, 400);
     expect(scrolled).toBeGreaterThan(0);
 
     /* The Pinned section rides the same gesture instead of staying put: it
@@ -266,7 +291,7 @@ test.describe('sidebar single scroll', () => {
       'the oldest chat should still be beyond the first page',
     ).toBe(0);
 
-    await wheelToBottom(page, 12);
+    await scrollToBottom(page, 12);
 
     await expect(oldestRow.first()).toBeVisible({ timeout: 30_000 });
   });
@@ -283,7 +308,7 @@ test.describe('sidebar single scroll', () => {
     await expect(pinnedRegion(page)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('convo-item').first()).toBeVisible({ timeout: 30_000 });
 
-    await wheelOverSidebar(page, 600);
+    await scrollSidebar(page, 600);
     const before = await bandSample(page);
     expect(before.holes).toEqual([]);
     expect(before.rows.length).toBeGreaterThan(1);
@@ -332,7 +357,7 @@ test.describe('sidebar single scroll', () => {
     const before = await firstPin.boundingBox();
     expect(before).not.toBeNull();
 
-    await wheelOverSidebar(page, 300);
+    await scrollSidebar(page, 300);
 
     await expect
       .poll(

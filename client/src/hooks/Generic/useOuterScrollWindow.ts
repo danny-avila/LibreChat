@@ -62,21 +62,42 @@ export default function useOuterScrollWindow(
     measure();
     viewport.addEventListener('scroll', schedule, { passive: true });
 
-    let observer: ResizeObserver | undefined;
+    /** A section collapsing above the attached node moves it without resizing
+     *  the viewport or the node, and without a scroll event: observing the
+     *  content wrapper is what reports that. Where `ResizeObserver` is missing
+     *  the same layout change still announces itself — the collapse mutates
+     *  the wrapper's DOM and its height tween ends with a bubbling
+     *  `transitionend` — so the fallback keeps the trigger rather than
+     *  dropping the invariant to window resizes alone. */
+    let resizeObserver: ResizeObserver | undefined;
+    let mutationObserver: MutationObserver | undefined;
     if (typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(schedule);
-      observer.observe(viewport);
+      resizeObserver = new ResizeObserver(schedule);
+      resizeObserver.observe(viewport);
       if (content) {
-        observer.observe(content);
+        resizeObserver.observe(content);
       }
     } else {
       window.addEventListener('resize', schedule);
+      if (content) {
+        content.addEventListener('transitionend', schedule);
+        content.addEventListener('animationend', schedule);
+        mutationObserver = new MutationObserver(schedule);
+        mutationObserver.observe(content, {
+          attributes: true,
+          childList: true,
+          subtree: true,
+        });
+      }
     }
 
     return () => {
       viewport.removeEventListener('scroll', schedule);
-      observer?.disconnect();
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
       window.removeEventListener('resize', schedule);
+      content?.removeEventListener('transitionend', schedule);
+      content?.removeEventListener('animationend', schedule);
       if (frame !== 0) {
         cancelAnimationFrame(frame);
       }
