@@ -326,6 +326,57 @@ export function resolveUploadLLMDeliveryPath({
 }
 
 /**
+ * The inputs that route every attachment for the agent running a turn. Initialization
+ * settles them once, after the provider swap and the Responses API decision, and every
+ * reader of a turn route consumes this value rather than deriving one from the agent.
+ */
+export interface TurnDeliveryRouting {
+  fileConfig: FileConfig;
+  endpointConfig: EndpointFileConfig;
+  /** The endpoint the file policy is configured under: a custom endpoint's own name, not
+   *  the client family initialization runs it as. */
+  endpoint: string;
+  /** The dialect a custom endpoint declares, which decides whether it receives OpenAI-format
+   *  media; undefined for a built-in or OpenAI-compatible endpoint. */
+  endpointProvider?: string;
+  useResponsesApi?: boolean;
+  sttConfigured: boolean;
+}
+
+/** The fields of a stored attachment record that decide its route on a turn. */
+export interface TurnDeliveryFile {
+  type?: string;
+  /** Stored as an upload-time inference, so any string may be read back. */
+  llmDeliveryPath?: string | null;
+  metadata?: { routingMimeType?: string; destinationChosen?: boolean } | null;
+}
+
+const isLLMDeliveryPath = (value: unknown): value is TDefaultLLMDeliveryPath =>
+  value === 'provider' || value === 'text' || value === 'none';
+
+/**
+ * The route a stored attachment takes on the turn `routing` describes.
+ *
+ * The stored route records what upload inferred from the endpoint it saw, and this turn may
+ * run somewhere else, so an inferred route is resolved again for the endpoint handling the
+ * turn. A destination the user chose is theirs and stands, a record predating routing keeps
+ * its legacy handling, and without a turn routing the stored route is the route.
+ */
+export function resolveTurnLLMDeliveryPath(
+  routing: TurnDeliveryRouting | undefined,
+  file: TurnDeliveryFile,
+): TDefaultLLMDeliveryPath | undefined {
+  const stored = isLLMDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined;
+  if (routing == null || stored == null || file.metadata?.destinationChosen === true) {
+    return stored;
+  }
+  return resolveUploadLLMDeliveryPath({
+    mimeType: file.metadata?.routingMimeType ?? file.type ?? '',
+    ...routing,
+  });
+}
+
+/**
  * Whether a file tool can do anything with this type. `file_search` indexes extracted
  * text, so it needs a type some step can turn into text and cannot use media, whose
  * extraction paths are OCR and speech rather than the vector store. Code execution is

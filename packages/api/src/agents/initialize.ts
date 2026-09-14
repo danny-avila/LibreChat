@@ -21,6 +21,7 @@ import type {
   TEndpointOption,
   ReasoningResponseKey,
   StatefulCodeEnvironment,
+  TurnDeliveryRouting,
   ImageDetail,
   TFile,
   Agent,
@@ -113,6 +114,7 @@ import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
+import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
@@ -626,6 +628,8 @@ export type InitializedAgent = Agent & {
   /** Detail level LibreChat encodes image content blocks with, from the agent's
    * model parameters. Absent when the agent does not configure one. */
   imageDetail?: ImageDetail;
+  /** How this agent receives its attachments this turn, settled once every routing input is final. */
+  deliveryRouting: TurnDeliveryRouting;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
@@ -1282,6 +1286,88 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /** Settle the provider and its client options before any attachment is judged. The file
+   * policy reads the endpoint's own name, but the route each attachment takes also depends on
+   * the backing client and on the Responses API decision `getOptions` makes, and nothing
+   * between here and tool loading feeds either. */
+  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
+    provider,
+    appConfig,
+  });
+  if (overrideProvider !== agent.provider) {
+    agent.provider = overrideProvider;
+  }
+
+  const finalModelOptions = {
+    ...modelOptions,
+    model: agent.model,
+  };
+
+  const options: InitializeResultBase = await getOptions({
+    runtime: {
+      appConfig,
+      user,
+      requestBody: runtime.requestBody,
+    },
+    endpoint: provider,
+    model_parameters: finalModelOptions,
+    db,
+  });
+
+  const llmConfig = options.llmConfig as Record<string, unknown>;
+  const webSearchDenied =
+    hasProviderWebSearch(options.tools, llmConfig) &&
+    !(await resolveWebSearchGrant({
+      req: params.req as Request | undefined,
+      user,
+      resolve: params.resolveWebSearchGrant,
+      getRoleByName: db.getRoleByName,
+    }));
+  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
+    logger.debug(
+      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
+    );
+  }
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
+  const maxOutputTokens = optionalChainWithEmptyCheck(
+    llmConfig?.maxOutputTokens as number | undefined,
+    llmConfig?.maxTokens as number | undefined,
+    0,
+  );
+  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+    maxContextTokens,
+    getModelMaxTokens(
+      tokensModel ?? '',
+      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
+      options.endpointTokenConfig,
+    ),
+    DEFAULT_MAX_CONTEXT_TOKENS,
+  );
+
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
+  if (options.provider != null) {
+    agent.provider = options.provider;
+  }
+
+  const deliveryRouting = resolveTurnDeliveryRouting({
+    agent: {
+      provider: agent.provider,
+      endpoint: agent.endpoint,
+      model_parameters: {
+        useResponsesApi:
+          typeof llmConfig.useResponsesApi === 'boolean' ? llmConfig.useResponsesApi : undefined,
+      },
+    },
+    config: appConfig,
+  });
+
   /** Resolve the per-agent Code API route before resource/tool priming. A
    * stateful agent must perform freshness checks and recovery uploads against
    * the same isolated deployment its eventual `/exec` request will use. */
@@ -1917,72 +2003,6 @@ export async function initializeAgent(
     }
   }
 
-  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
-    provider,
-    appConfig,
-  });
-  if (overrideProvider !== agent.provider) {
-    agent.provider = overrideProvider;
-  }
-
-  const finalModelOptions = {
-    ...modelOptions,
-    model: agent.model,
-  };
-
-  const options: InitializeResultBase = await getOptions({
-    runtime: {
-      appConfig,
-      user,
-      requestBody: runtime.requestBody,
-    },
-    endpoint: provider,
-    model_parameters: finalModelOptions,
-    db,
-  });
-
-  const llmConfig = options.llmConfig as Record<string, unknown>;
-  const webSearchDenied =
-    hasProviderWebSearch(options.tools, llmConfig) &&
-    !(await resolveWebSearchGrant({
-      req: params.req as Request | undefined,
-      user,
-      resolve: params.resolveWebSearchGrant,
-      getRoleByName: db.getRoleByName,
-    }));
-  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
-    logger.debug(
-      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
-    );
-  }
-  const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
-  const maxOutputTokens = optionalChainWithEmptyCheck(
-    llmConfig?.maxOutputTokens as number | undefined,
-    llmConfig?.maxTokens as number | undefined,
-    0,
-  );
-  const agentMaxContextTokens = optionalChainWithEmptyCheck(
-    maxContextTokens,
-    getModelMaxTokens(
-      tokensModel ?? '',
-      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
-      options.endpointTokenConfig,
-    ),
-    DEFAULT_MAX_CONTEXT_TOKENS,
-  );
-
-  if (
-    agent.endpoint === EModelEndpoint.azureOpenAI &&
-    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
-  ) {
-    agent.provider = Providers.OPENAI;
-  }
-
-  if (options.provider != null) {
-    agent.provider = options.provider;
-  }
-
   /**
    * Unify code-execution tools around `bash_tool` + `read_file` when the
    * agent explicitly lists `execute_code` in its tools and the admin
@@ -2371,6 +2391,7 @@ export async function initializeAgent(
     azureOptions: options.azureOptions,
     resendFiles,
     imageDetail,
+    deliveryRouting,
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,

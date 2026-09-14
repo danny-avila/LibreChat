@@ -3,6 +3,7 @@ import type { TFile } from 'librechat-data-provider';
 import type { RunFileEncodingAgent, RunFileMessageEncoderDeps } from './encode';
 import type { ServerRequest } from '~/types';
 import { AgentAttachmentLimitError, AgentAttachmentPolicyError } from '../attachments';
+import { resolveTurnDeliveryRouting } from './delivery';
 import { createRunFileMessageEncoder } from './encode';
 
 jest.mock('~/utils/tokenizer', () => ({ countTokens: (text: string) => text.length }));
@@ -28,14 +29,32 @@ const nativeDocument = {
 };
 const nativeImage = { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1n' } };
 
+/** A child as the host loads it, before initialization settles its delivery routing. */
+type LoadedAgent = Omit<RunFileEncodingAgent, 'deliveryRouting'> & {
+  endpoint?: string;
+  useResponsesApi?: boolean;
+};
+
 function setup({
   fileConfig = {},
   agents = { child: { provider: 'openAI' } },
 }: {
   fileConfig?: NonNullable<ServerRequest['config']>['fileConfig'];
-  agents?: Record<string, RunFileEncodingAgent>;
+  agents?: Record<string, LoadedAgent>;
 } = {}) {
   const req = { body: {}, config: { fileConfig } } as ServerRequest;
+  const initialized = Object.fromEntries(
+    Object.entries(agents).map(([id, { endpoint, useResponsesApi, ...agent }]) => [
+      id,
+      {
+        ...agent,
+        deliveryRouting: resolveTurnDeliveryRouting({
+          agent: { provider: agent.provider, endpoint, model_parameters: { useResponsesApi } },
+          config: req.config,
+        }),
+      },
+    ]),
+  );
   const encodeImages = jest.fn(async () => ({ image_urls: [nativeImage] }));
   const encodeDocuments = jest.fn(async () => ({ documents: [nativeDocument] }));
   const encodeAudios = jest.fn(async () => ({ audios: [{ type: 'media', data: 'audio' }] }));
@@ -46,7 +65,7 @@ function setup({
   >(extractFileContext);
   const deps: RunFileMessageEncoderDeps = {
     req,
-    getAgent: (id) => agents[id],
+    getAgent: (id) => initialized[id],
     encodeImages,
     encodeDocuments,
     encodeAudios,
@@ -65,7 +84,7 @@ describe('createRunFileMessageEncoder', () => {
           provider: 'openAI',
           endpoint: 'child-provider',
           model: 'child-model',
-          model_parameters: { useResponsesApi: true },
+          useResponsesApi: true,
           imageDetail: ImageDetail.high,
         },
       },

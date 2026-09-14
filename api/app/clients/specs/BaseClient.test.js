@@ -1,6 +1,6 @@
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const BaseClientClass = require('../BaseClient');
-const { ContentFilterError } = require('@librechat/api');
+const { ContentFilterError, resolveTurnDeliveryRouting } = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
@@ -3192,8 +3192,6 @@ describe('BaseClient', () => {
       TestClient.options = {
         endpoint: EModelEndpoint.openAI,
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
       TestClient.addImageURLs = jest.fn(async (message, files) => {
         message.image_urls = ['encoded-image'];
         return files;
@@ -3207,9 +3205,18 @@ describe('BaseClient', () => {
       TestClient.addAudios = jest.fn(async (_message, files) => files);
     });
 
-    /* The stored path is an upload-time inference, so delivery re-resolves it for the
-     * endpoint running the turn. A test asserting a route has to configure that route
-     * rather than rely on the stored value alone. */
+    /** The routing initialization settles for an agent, from the request config it reads. */
+    const routedAgent = (agent) => ({
+      ...agent,
+      deliveryRouting: resolveTurnDeliveryRouting({
+        agent,
+        config: TestClient.options.req?.config,
+      }),
+    });
+
+    /* The stored path is an upload-time inference, so delivery resolves it again by the
+     * routing settled for the agent running the turn. A test asserting a route has to
+     * configure that route rather than rely on the stored value alone. */
     const routeTo = (path, ...mimeTypes) => {
       TestClient.options.req = {
         config: {
@@ -3224,8 +3231,10 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.openAI,
+        endpoint: EModelEndpoint.openAI,
+      });
     };
 
     test('keeps a none image in returned files without adding image URLs', async () => {
@@ -3327,17 +3336,19 @@ describe('BaseClient', () => {
       expect(TestClient.addImageURLs).not.toHaveBeenCalled();
     });
 
-    test('reads the Responses setting from a plain conversation too', async () => {
-      /* A non-agent Azure chat carries it in model options, and reading only the agent
-       * parameters re-resolves a natively supported PDF to text, which the record has
-       * none of, so the model receives nothing. */
+    test('reads the Responses setting the turn runs on from the settled routing', async () => {
+      /* Azure sends a PDF natively only under the Responses API. The routing carries the
+       * decision initialization made, so a record stored as `provider` is not resolved
+       * again to text it has none of, which would leave the model with nothing. */
       TestClient.options = {
-        endpoint: EModelEndpoint.azureOpenAI,
+        endpoint: EModelEndpoint.agents,
         req: { config: { fileConfig: undefined } },
       };
-      TestClient.modelOptions = { useResponsesApi: true };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.azureOpenAI,
+        endpoint: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      });
       const message = {};
       const file = {
         user: 'user1',
@@ -3353,7 +3364,6 @@ describe('BaseClient', () => {
       await TestClient.processAttachments(message, [file]);
 
       expect(TestClient.addDocuments).toHaveBeenCalled();
-      TestClient.modelOptions = undefined;
     });
 
     test('resolves a custom endpoint policy by the name the admin configured', async () => {
@@ -3377,8 +3387,7 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent(TestClient.options.agent);
       const message = {};
       const file = {
         user: 'user1',
@@ -3418,8 +3427,7 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent(TestClient.options.agent);
       const message = {};
       const file = {
         user: 'user1',

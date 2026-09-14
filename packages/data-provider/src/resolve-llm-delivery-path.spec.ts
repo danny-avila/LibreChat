@@ -1,3 +1,4 @@
+import type { TurnDeliveryRouting } from './resolve-llm-delivery-path';
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import type { TEndpoint } from './config';
 import {
@@ -5,6 +6,7 @@ import {
   canToolResourceConsume,
   resolveUploadDestination,
   getCustomEndpointProvider,
+  resolveTurnLLMDeliveryPath,
   resolveDefaultLLMDeliveryPath,
   resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
@@ -637,6 +639,75 @@ describe('resolveUploadDestination', () => {
         isMessageAttachment: true,
       }).rejection,
     ).toBe('no-consumer');
+  });
+});
+
+describe('resolveTurnLLMDeliveryPath', () => {
+  const fileConfig = mergeFileConfig({
+    endpoints: {
+      openAI: { defaultLLMDeliveryPath: { overrides: { 'application/pdf': 'text' } } },
+      MyClaude: { supportedMimeTypes: ['video/mp4'] },
+    },
+  });
+  const routing = (
+    endpoint: string,
+    extra?: Partial<TurnDeliveryRouting>,
+  ): TurnDeliveryRouting => ({
+    fileConfig,
+    endpointConfig: getEndpointFileConfig({ fileConfig, endpoint }),
+    endpoint,
+    sttConfigured: false,
+    ...extra,
+  });
+  const pdf = {
+    type: 'application/pdf',
+    llmDeliveryPath: 'provider',
+    metadata: { destinationChosen: false },
+  };
+
+  it('resolves an inferred route again for the endpoint running the turn', () => {
+    expect(resolveTurnLLMDeliveryPath(routing('openAI'), pdf)).toBe('text');
+  });
+
+  it('keeps a destination the user chose', () => {
+    expect(
+      resolveTurnLLMDeliveryPath(routing('openAI'), {
+        ...pdf,
+        metadata: { destinationChosen: true },
+      }),
+    ).toBe('provider');
+  });
+
+  it('leaves a record predating routing to its legacy handling', () => {
+    expect(resolveTurnLLMDeliveryPath(routing('openAI'), { type: 'application/pdf' })).toBe(
+      undefined,
+    );
+    expect(
+      resolveTurnLLMDeliveryPath(routing('openAI'), { ...pdf, llmDeliveryPath: 'legacy' }),
+    ).toBe(undefined);
+  });
+
+  it('takes the stored route as the route when no turn routing exists', () => {
+    expect(resolveTurnLLMDeliveryPath(undefined, pdf)).toBe('provider');
+  });
+
+  it('routes by the type the upload was resolved against after conversion', () => {
+    const converted = {
+      type: 'image/webp',
+      llmDeliveryPath: 'provider',
+      metadata: { routingMimeType: 'application/pdf', destinationChosen: false },
+    };
+
+    expect(resolveTurnLLMDeliveryPath(routing('openAI'), converted)).toBe('text');
+  });
+
+  it('honors a custom endpoint media opt-in only under an OpenAI-format dialect', () => {
+    const video = { type: 'video/mp4', llmDeliveryPath: 'none', metadata: {} };
+
+    expect(resolveTurnLLMDeliveryPath(routing('MyClaude'), video)).toBe('provider');
+    expect(
+      resolveTurnLLMDeliveryPath(routing('MyClaude', { endpointProvider: 'anthropic' }), video),
+    ).toBe('none');
   });
 });
 

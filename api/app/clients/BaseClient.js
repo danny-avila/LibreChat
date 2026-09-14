@@ -33,19 +33,15 @@ const {
   isCompactedLeaf,
   excludedKeys,
   EModelEndpoint,
-  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
   HITL_MESSAGE_FILTER_FIELDS,
-  getEndpointFileConfig,
   stripReasoningLabelMetadata,
-  resolveUploadLLMDeliveryPath,
-  isSpeechProviderConfigured,
+  resolveTurnLLMDeliveryPath,
   resolveUseResponsesApi,
-  getCustomEndpointProvider,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -242,10 +238,6 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
-    /** @type {import('librechat-data-provider').FileConfig | undefined} */
-    this._mergedFileConfig;
-    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
-    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -1804,38 +1796,9 @@ class BaseClient {
     });
   }
 
-  /** Re-resolves an inferred upload route against the provider handling this turn. */
+  /** The route a stored attachment takes on this turn, from the routing settled for the agent. */
   getAttachmentDeliveryPath(file) {
-    if (!this._mergedFileConfig) {
-      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      /* Agent file policy is configured under the endpoint it names, not the client
-       * family initialization may rewrite it to. */
-      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
-      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
-      this._endpointFileConfig = getEndpointFileConfig({
-        fileConfig: this._mergedFileConfig,
-        endpoint: this._deliveryEndpoint,
-        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
-      });
-    }
-
-    return file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
-      ? file.llmDeliveryPath
-      : resolveUploadLLMDeliveryPath({
-          /* Conversion changes the stored type, so use the type routing originally saw. */
-          mimeType: file.metadata?.routingMimeType ?? file.type,
-          endpointConfig: this._endpointFileConfig,
-          fileConfig: this._mergedFileConfig,
-          endpoint: this._deliveryEndpoint,
-          endpointProvider:
-            this.options.agent?.provider ??
-            getCustomEndpointProvider(
-              this.options.req?.config?.endpoints?.custom,
-              this._deliveryEndpoint,
-            ),
-          useResponsesApi: this.usesResponsesApi(),
-          sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
-        });
+    return resolveTurnLLMDeliveryPath(this.options.agent?.deliveryRouting, file);
   }
 
   async processAttachments(message, attachments) {
@@ -1849,6 +1812,7 @@ class BaseClient {
     const allFiles = [];
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
+    const deliveryRouting = this.options.agent?.deliveryRouting;
 
     /* The stored path records what upload time inferred from the endpoint it saw, and this
      * turn may be running somewhere else: audio stored as `provider` under Google reaches
@@ -1897,9 +1861,11 @@ class BaseClient {
         allFiles.push(file);
       } else if (
         file.type &&
-        this._mergedFileConfig &&
-        this._endpointFileConfig?.supportedMimeTypes &&
-        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
+        deliveryRouting?.endpointConfig.supportedMimeTypes &&
+        deliveryRouting.fileConfig.checkType(
+          file.type,
+          deliveryRouting.endpointConfig.supportedMimeTypes,
+        )
       ) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);

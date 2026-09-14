@@ -3,14 +3,10 @@ import { HumanMessage } from '@librechat/agents/langchain';
 import {
   FileSources,
   EModelEndpoint,
-  mergeFileConfig,
-  getEndpointFileConfig,
   isBedrockDocumentType,
-  resolveUseResponsesApi,
-  isSpeechProviderConfigured,
-  resolveUploadLLMDeliveryPath,
+  resolveTurnLLMDeliveryPath,
 } from 'librechat-data-provider';
-import type { TFile, ImageDetail } from 'librechat-data-provider';
+import type { TFile, ImageDetail, TurnDeliveryRouting } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { TokenCountFn } from '~/utils/text';
@@ -28,11 +24,12 @@ type ContentBlock = Exclude<BaseMessage['content'], string>[number];
 /** The already loaded child configuration; storage documents never cross this boundary. */
 export interface RunFileEncodingAgent {
   provider: string;
-  endpoint?: string | null;
   model?: string | null;
-  model_parameters?: { model?: string; useResponsesApi?: boolean };
+  model_parameters?: { model?: string };
   imageDetail?: ImageDetail;
   agentContextAttachments?: readonly TFile[];
+  /** How the child receives attachments, settled when its configuration was initialized. */
+  deliveryRouting: TurnDeliveryRouting;
 }
 
 export interface RunFileEncodingParams {
@@ -80,34 +77,22 @@ export function createRunFileMessageEncoder(
     if (!agent) {
       throw new Error('The target agent is not available for shared file delivery.');
     }
-    const endpoint = agent.endpoint ?? agent.provider;
-    const fileConfig = mergeFileConfig(deps.req.config?.fileConfig);
-    const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
-    const useResponsesApi = resolveUseResponsesApi(agent.model_parameters?.useResponsesApi);
+    const { deliveryRouting } = agent;
+    const { endpoint, fileConfig, endpointConfig } = deliveryRouting;
     const params: RunFileEncodingParams = {
       provider: agent.provider,
       endpoint,
       model: agent.model_parameters?.model ?? agent.model ?? undefined,
-      useResponsesApi,
+      useResponsesApi: deliveryRouting.useResponsesApi,
       imageDetail: agent.imageDetail,
     };
 
     const resolveDelivery = (file: TFile): TFile => {
-      if (file.llmDeliveryPath == null || file.metadata?.destinationChosen === true) {
+      const llmDeliveryPath = resolveTurnLLMDeliveryPath(deliveryRouting, file);
+      if (llmDeliveryPath == null || llmDeliveryPath === file.llmDeliveryPath) {
         return file;
       }
-      return {
-        ...file,
-        llmDeliveryPath: resolveUploadLLMDeliveryPath({
-          mimeType: file.metadata?.routingMimeType ?? file.type,
-          endpointConfig,
-          fileConfig,
-          endpoint,
-          endpointProvider: agent.provider,
-          useResponsesApi,
-          sttConfigured: isSpeechProviderConfigured(deps.req.config?.speech?.stt),
-        }),
-      };
+      return { ...file, llmDeliveryPath };
     };
     const sharedFiles = files.map(resolveDelivery);
     const compatibleFiles = filterFilesByEndpointRuntimeConfig(deps.req.config, {

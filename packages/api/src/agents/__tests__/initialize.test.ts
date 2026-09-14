@@ -1655,7 +1655,6 @@ describe('initializeAgent — attachment scoping', () => {
     expect(db.updateFilesUsage).not.toHaveBeenCalled();
     expect(primeResources).not.toHaveBeenCalled();
     expect(loadTools).not.toHaveBeenCalled();
-    expect(mockGetProviderConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -4497,5 +4496,88 @@ describe('initializeAgent — provider-native web search role gate', () => {
     const result = await run({});
 
     expect(result.tools).toContainEqual(OPENAI_SEARCH);
+  });
+});
+
+describe('initializeAgent turn delivery routing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('settles the routing once, after the provider swap and the Responses API decision', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({ provider: 'MyClaude' });
+    req.config = {
+      fileConfig: { endpoints: { MyClaude: { supportedMimeTypes: ['video/mp4'] } } },
+      endpoints: { custom: [{ name: 'MyClaude', provider: 'anthropic' }] },
+    } as unknown as ServerRequest['config'];
+    mockGetProviderConfig.mockReturnValue({
+      overrideProvider: Providers.ANTHROPIC,
+      getOptions: jest
+        .fn()
+        .mockResolvedValue({ llmConfig: { model: 'test-model', useResponsesApi: true } }),
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set(['MyClaude']),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.provider).toBe(Providers.ANTHROPIC);
+    expect(result.deliveryRouting).toMatchObject({
+      endpoint: 'MyClaude',
+      endpointProvider: 'anthropic',
+      useResponsesApi: true,
+      sttConfigured: false,
+    });
+    expect(result.deliveryRouting.endpointConfig.supportedMimeTypes).toEqual([/video\/mp4/]);
+  });
+
+  it('resolves the provider and its options before any attachment is loaded', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = createMocks();
+    const getOptions = jest.fn().mockResolvedValue({ llmConfig: { model: 'test-model' } });
+    mockGetProviderConfig.mockReturnValue({ overrideProvider: Providers.OPENAI, getOptions });
+    const file = {
+      file_id: 'file-1',
+      filename: 'notes.txt',
+      type: 'text/plain',
+      bytes: 10,
+      text: 'notes',
+      llmDeliveryPath: 'text',
+    } as IMongoFile;
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([file]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [file],
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    const [optionsOrder] = getOptions.mock.invocationCallOrder;
+    const [filesOrder] = (db.getFiles as jest.Mock).mock.invocationCallOrder;
+    const [toolsOrder] = loadTools.mock.invocationCallOrder;
+    expect(optionsOrder).toBeLessThan(filesOrder);
+    expect(filesOrder).toBeLessThan(toolsOrder);
   });
 });
