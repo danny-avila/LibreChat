@@ -264,6 +264,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
           height: 10,
           width: 20,
           bytes: 999,
+          llmDeliveryPath: 'text',
           user: 'someone-else',
           embedded: true,
         },
@@ -292,6 +293,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
         height: 10,
         width: 20,
         bytes: 999,
+        llmDeliveryPath: 'text',
       },
     ]);
   });
@@ -388,6 +390,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       height: 4,
       width: 6,
       bytes: 111,
+      llmDeliveryPath: 'text',
       user: 'user-1',
     } as unknown as IMongoFile;
 
@@ -450,6 +453,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
           height: 4,
           width: 6,
           bytes: 111,
+          llmDeliveryPath: 'text',
         },
       ]);
     });

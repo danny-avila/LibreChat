@@ -1,6 +1,7 @@
 import { FileSources } from 'librechat-data-provider';
 import {
   getPreviewKind,
+  isExtractedTextPreviewLoading,
   shouldUseExtractedTextPreview,
   shouldUseSharedFileDownload,
 } from '../preview';
@@ -25,6 +26,11 @@ describe('FilePreviewDialog text-source behavior', () => {
     expect(shouldUseExtractedTextPreview('text')).toBe(true);
     expect(shouldUseExtractedTextPreview('provider')).toBe(false);
     expect(shouldUseExtractedTextPreview(undefined)).toBe(false);
+  });
+
+  it('stops showing a pending preview as loading when polling fails', () => {
+    expect(isExtractedTextPreviewLoading('pending', false, true)).toBe(false);
+    expect(isExtractedTextPreviewLoading('pending', false, false)).toBe(true);
   });
 
   it('routes any identified file through the share boundary in a shared view', () => {

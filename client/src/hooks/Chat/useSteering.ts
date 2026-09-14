@@ -259,6 +259,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
         ...(file.type != null && { type: file.type }),
         ...(file.filepath != null && { filepath: file.filepath }),
         ...(file.filename != null && { filename: file.filename }),
+        ...(file.llmDeliveryPath != null && { llmDeliveryPath: file.llmDeliveryPath }),
         ...(file.height != null && { height: file.height }),
         ...(file.width != null && { width: file.width }),
         ...(file.bytes != null && { bytes: file.bytes }),
@@ -1095,6 +1096,7 @@ export default function useSteering({
       // the attachment into the composer with its real name and size.
       filename: file.filename,
       bytes: file.size,
+      llmDeliveryPath: file.llmDeliveryPath,
     }));
     setFiles(new Map());
     setFilesToDelete({});

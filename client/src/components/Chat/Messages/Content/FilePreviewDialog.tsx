@@ -7,6 +7,7 @@ import type { TFile } from 'librechat-data-provider';
 import {
   getFileExtension,
   getPreviewKind,
+  isExtractedTextPreviewLoading,
   shouldUseExtractedTextPreview,
   shouldUseSharedFileDownload,
 } from './preview';
@@ -135,7 +136,12 @@ export default function FilePreviewDialog({
   const displayedText = showExtractedText ? (extractedPreview?.text ?? null) : fileContent;
   const isLoading =
     loading ||
-    (showExtractedText && (extractedTextLoading || extractedPreview?.status === 'pending'));
+    (showExtractedText &&
+      isExtractedTextPreviewLoading(
+        extractedPreview?.status,
+        extractedTextLoading,
+        extractedTextError,
+      ));
   const hasPreviewError =
     previewError ||
     (showExtractedText &&

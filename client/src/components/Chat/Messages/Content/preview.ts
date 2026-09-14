@@ -43,6 +43,14 @@ export function shouldUseExtractedTextPreview(deliveryPath?: TFile['llmDeliveryP
   return deliveryPath === 'text';
 }
 
+export function isExtractedTextPreviewLoading(
+  status: 'pending' | 'ready' | 'failed' | undefined,
+  isInitialLoading: boolean,
+  isError: boolean,
+): boolean {
+  return !isError && (isInitialLoading || status === 'pending');
+}
+
 function getPreviewKindByMime(mime?: string): PreviewKind {
   if (!mime) {
     return false;
