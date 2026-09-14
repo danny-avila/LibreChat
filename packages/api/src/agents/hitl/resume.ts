@@ -275,10 +275,7 @@ export function hasInvalidToolApprovalResolutions(
   const requestedIds = new Set(payload.action_requests.map((request) => request.tool_call_id));
   const resolutionIds = new Set<string>();
   for (const resolution of resolutions) {
-    if (
-      resolutionIds.has(resolution.tool_call_id) ||
-      !requestedIds.has(resolution.tool_call_id)
-    ) {
+    if (resolutionIds.has(resolution.tool_call_id) || !requestedIds.has(resolution.tool_call_id)) {
       return true;
     }
     resolutionIds.add(resolution.tool_call_id);

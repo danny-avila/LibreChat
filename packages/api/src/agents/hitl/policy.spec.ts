@@ -333,7 +333,9 @@ describe('buildPendingAction', () => {
     };
 
     expect(isToolApprovalPayloadValid(duplicatePayload)).toBe(false);
-    expect(() => buildPendingAction(duplicatePayload, ctx)).toThrow('Invalid tool approval payload');
+    expect(() => buildPendingAction(duplicatePayload, ctx)).toThrow(
+      'Invalid tool approval payload',
+    );
   });
 
   test('rejects review policies that do not map one-to-one to the requested calls', () => {
@@ -352,7 +354,9 @@ describe('buildPendingAction', () => {
     };
 
     expect(isToolApprovalPayloadValid(mismatchedPayload)).toBe(false);
-    expect(() => buildPendingAction(mismatchedPayload, ctx)).toThrow('Invalid tool approval payload');
+    expect(() => buildPendingAction(mismatchedPayload, ctx)).toThrow(
+      'Invalid tool approval payload',
+    );
   });
 
   test('wraps an ask_user_question payload with the same envelope', () => {

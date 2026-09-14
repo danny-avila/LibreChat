@@ -316,9 +316,7 @@ export function buildToolApprovalPayload(
 }
 
 /** Require one uniquely identified review policy for every paused tool call. */
-export function isToolApprovalPayloadValid(
-  payload: Agents.ToolApprovalInterruptPayload,
-): boolean {
+export function isToolApprovalPayloadValid(payload: Agents.ToolApprovalInterruptPayload): boolean {
   if (payload.action_requests.length !== payload.review_configs.length) {
     return false;
   }
