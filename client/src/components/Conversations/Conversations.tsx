@@ -247,6 +247,7 @@ const Conversations: FC<ConversationsProps> = ({
     ref: listWindowRef,
     height: windowHeight,
     scrollTop: windowScrollTop,
+    visible: isListOnScreen,
   } = useOuterScrollWindow(scrollViewport, scrollContent);
 
   /** One element is both the width source and the window anchor; a stable
@@ -461,11 +462,21 @@ const Conversations: FC<ConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
+      /** Reaching the end of what is rendered only means the reader is near the
+       *  end of the list when the reader can see it. A list still below the
+       *  fold renders its first row to keep a height, and on a page whose chats
+       *  are nearly all pinned that row is already within the threshold — which
+       *  would spend another request on chats nobody has looked at. The list
+       *  fills the moment it comes into view instead; a page holding no chats
+       *  at all is drained by the separate all-pin effect above. */
+      if (!isListOnScreen) {
+        return;
+      }
       if (stopIndex >= flattenedItems.length - 8) {
         throttledLoadMore();
       }
     },
-    [flattenedItems.length, throttledLoadMore],
+    [flattenedItems.length, throttledLoadMore, isListOnScreen],
   );
   const isListError =
     isChatsExpanded &&

@@ -8,6 +8,10 @@ interface OuterScrollWindow {
   height: number;
   /** Viewport scroll offset expressed in the attached element's own coordinates. */
   scrollTop: number;
+  /** Whether any of the attached element is on screen. The height alone cannot
+   *  say: it keeps a pixel for an element nobody can see, so that the element
+   *  still has a size to be scrolled to. */
+  visible: boolean;
 }
 
 /**
@@ -24,7 +28,7 @@ export default function useOuterScrollWindow(
   content: HTMLElement | null,
 ): OuterScrollWindow {
   const [node, setNode] = useState<HTMLElement | null>(null);
-  const [metrics, setMetrics] = useState({ height: 0, scrollTop: 0 });
+  const [metrics, setMetrics] = useState({ height: 0, scrollTop: 0, visible: false });
 
   const ref = useCallback((element: HTMLElement | null) => setNode(element), []);
 
@@ -55,9 +59,14 @@ export default function useOuterScrollWindow(
       const next = {
         height: Math.max(1, Math.round(onScreen)),
         scrollTop: Math.max(0, viewport.scrollTop - offsetTop),
+        visible: onScreen > 0,
       };
       setMetrics((prev) =>
-        prev.height === next.height && prev.scrollTop === next.scrollTop ? prev : next,
+        prev.height === next.height &&
+        prev.scrollTop === next.scrollTop &&
+        prev.visible === next.visible
+          ? prev
+          : next,
       );
     };
 
@@ -117,5 +126,10 @@ export default function useOuterScrollWindow(
     };
   }, [viewport, content, node]);
 
-  return { ref, height: metrics.height, scrollTop: metrics.scrollTop };
+  return {
+    ref,
+    height: metrics.height,
+    scrollTop: metrics.scrollTop,
+    visible: metrics.visible,
+  };
 }

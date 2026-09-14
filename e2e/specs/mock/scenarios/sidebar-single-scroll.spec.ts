@@ -222,6 +222,39 @@ const bandSample = (page: Page) =>
     return { rows, holes };
   });
 
+/** Every page the chats list asks the server for, as it asks for it. The pinned
+ *  query rides the same route and is left out: it is not the list's paging. */
+function trackChatPages(page: Page): string[] {
+  const pages: string[] = [];
+  page.on('request', (request) => {
+    const { pathname, searchParams } = new URL(request.url());
+    if (request.method() === 'GET' && pathname === '/api/convos' && !searchParams.has('pinned')) {
+      pages.push(request.url());
+    }
+  });
+  return pages;
+}
+
+/** Waits until the chats list starts past the bottom edge of the surface. */
+const waitForChatsBelowTheFold = (page: Page) =>
+  expect
+    .poll(
+      () =>
+        historyRegion(page).evaluate((region) => {
+          const grid = region.querySelector('.ReactVirtualized__Grid');
+          const surface = Array.from(region.querySelectorAll('*')).find((node) => {
+            const style = getComputedStyle(node);
+            return style.overflowY === 'auto' || style.overflowY === 'scroll';
+          });
+          if (!grid || !surface) {
+            return false;
+          }
+          return grid.getBoundingClientRect().top >= surface.getBoundingClientRect().bottom;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+
 const seeded: Seeded[] = [];
 
 const remember = (rows: Seeded[]): Seeded[] => {
@@ -380,13 +413,7 @@ test.describe('sidebar single scroll', () => {
     remember(await seedPins('E2E pin', 24, 400));
     remember(await seedChats('E2E chat', 60));
 
-    const pages: string[] = [];
-    page.on('request', (request) => {
-      const { pathname, searchParams } = new URL(request.url());
-      if (request.method() === 'GET' && pathname === '/api/convos' && !searchParams.has('pinned')) {
-        pages.push(request.url());
-      }
-    });
+    const pages = trackChatPages(page);
 
     await page.goto('/c/new', { timeout: 30_000 });
     await openSidebar(page);
@@ -398,24 +425,7 @@ test.describe('sidebar single scroll', () => {
      *  the sidebar and reading them is exactly what a person does. The claim
      *  is about the settled layout: once the chats sit below a screenful of
      *  pins, nothing keeps asking the server for more of them. */
-    await expect
-      .poll(
-        () =>
-          historyRegion(page).evaluate((region) => {
-            const grid = region.querySelector('.ReactVirtualized__Grid');
-            const surface = Array.from(region.querySelectorAll('*')).find((node) => {
-              const style = getComputedStyle(node);
-              return style.overflowY === 'auto' || style.overflowY === 'scroll';
-            });
-            if (!grid || !surface) {
-              return false;
-            }
-            /** Its first row starts past the bottom edge of the surface. */
-            return grid.getBoundingClientRect().top >= surface.getBoundingClientRect().bottom;
-          }),
-        { timeout: 30_000 },
-      )
-      .toBe(true);
+    await waitForChatsBelowTheFold(page);
 
     const settled = pages.length;
     await page.waitForTimeout(3_000);
@@ -427,6 +437,39 @@ test.describe('sidebar single scroll', () => {
     /* Kept scrolling until the list answers, the way a reader does: one burst
      * lands wherever the rows rendered so far end, and the list grows as they
      * are measured. */
+    for (let turn = 0; turn < 12 && pages.length === settled; turn++) {
+      await scrollToBottom(page, 2);
+    }
+    await expect.poll(() => pages.length, { timeout: 30_000 }).toBeGreaterThan(settled);
+  });
+
+  test('a page whose chats are nearly all pinned waits for the reader too @scenario:mostly-pinned-page-waits-for-the-reader', async ({
+    page,
+  }) => {
+    await clearUserConversations(userEmail);
+    /* The pins are the newest conversations, so they fill most of the first
+     * page of the chats query and the list is left holding a handful of rows —
+     * few enough that its last rendered row is already within the threshold
+     * that asks for another page. It still sits below the fold. */
+    remember(await seedPins('E2E pin', 20));
+    remember(await seedChats('E2E chat', 40));
+
+    const pages = trackChatPages(page);
+
+    await page.goto('/c/new', { timeout: 30_000 });
+    await openSidebar(page);
+    await expect(pinnedRegion(page).getByTestId('convo-item').first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await waitForChatsBelowTheFold(page);
+
+    const settled = pages.length;
+    await page.waitForTimeout(3_000);
+    expect(
+      pages.length,
+      `a short page under the pins should not fetch another, got ${pages.join(', ')}`,
+    ).toBe(settled);
+
     for (let turn = 0; turn < 12 && pages.length === settled; turn++) {
       await scrollToBottom(page, 2);
     }

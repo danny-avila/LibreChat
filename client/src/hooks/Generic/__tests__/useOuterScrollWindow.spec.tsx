@@ -155,8 +155,26 @@ describe('useOuterScrollWindow', () => {
 
     /** Not a screenful — nothing of it is on display — but not nothing either:
      *  a list told it has no window renders no rows, and a list that renders
-     *  no rows has no height to be scrolled into view with. */
+     *  no rows has no height to be scrolled into view with. Anything that must
+     *  know whether the reader can see it reads `visible`, not the height. */
     expect(result.current.height).toBe(1);
+    expect(result.current.visible).toBe(false);
+  });
+
+  it('reports the list as visible as soon as it reaches the fold', () => {
+    const { viewport, content, node, scrollTo } = layout({ offset: 700 });
+    const { result } = renderHook(() => useOuterScrollWindow(viewport, content));
+    act(() => result.current.ref(node));
+    expect(result.current.visible).toBe(false);
+
+    act(() => {
+      scrollTo(260);
+      viewport.dispatchEvent(new Event('scroll'));
+      frames.flush();
+    });
+
+    expect(result.current.visible).toBe(true);
+    expect(result.current.height).toBe(60);
   });
 
   it('translates the viewport scroll into the list own coordinates', () => {
