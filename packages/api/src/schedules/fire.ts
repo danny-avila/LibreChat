@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import type { ScheduleEngineDeps, ScheduleLimits, FireResult, FireableSchedule } from './types';
 import type { AgentTriggerEnvelope } from '../agents/triggers/envelope';
+import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { JsonValue } from '../agents/json';
 import {
   AgentTriggerEnvelopeError,
@@ -128,7 +129,12 @@ export async function fireSchedule(
   schedule: FireableSchedule,
   limits: ScheduleLimits,
   scheduledFor: Date,
-  options?: { manual?: boolean; dbNow?: Date; signal?: AbortSignal },
+  options?: {
+    manual?: boolean;
+    dbNow?: Date;
+    signal?: AbortSignal;
+    upstreamTokenProvider?: UpstreamTokenProvider;
+  },
 ): Promise<FireResult> {
   const { methods } = deps;
   // Compute the NEXT occurrence relative to the CLAIM's clock (the engine passes
@@ -454,6 +460,7 @@ export async function fireSchedule(
           deploymentLimits.mcpPreflightConcurrency,
         ),
         deadlineMs: Math.min(leaseDeadline, preflightDeadline),
+        upstreamTokenProvider: options?.upstreamTokenProvider,
       });
     } catch (error) {
       if (options?.signal?.aborted) {

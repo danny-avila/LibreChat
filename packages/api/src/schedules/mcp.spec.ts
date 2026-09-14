@@ -1,5 +1,6 @@
 import { AgentCapabilities, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser, IRole, AppConfig, AgentGraphNode } from '@librechat/data-schemas';
+import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
 
@@ -51,7 +52,12 @@ function setup(tools = ['search_mcp_docs']) {
     check: (
       agentId: string,
       user: typeof principal,
-      options?: { concurrency?: number; signal?: AbortSignal; deadlineMs?: number },
+      options?: {
+        concurrency?: number;
+        signal?: AbortSignal;
+        deadlineMs?: number;
+        upstreamTokenProvider?: UpstreamTokenProvider;
+      },
     ) => preflight(agentId, user, { concurrency: 3, ...options }),
   };
 }
@@ -76,6 +82,48 @@ it('uses persisted identity with isolated connections and disposes them after di
     }),
   );
   expect(disconnect).toHaveBeenCalledTimes(1);
+});
+
+it('forwards a request-scoped upstream token provider to MCP connections', async () => {
+  const { check, deps } = setup();
+  const upstreamTokenProvider: UpstreamTokenProvider = jest.fn(async () => ({
+    access_token: 'current-token',
+  }));
+
+  await check('agent', principal, { upstreamTokenProvider });
+
+  expect(deps.connect).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
+});
+
+it('resolves an upstream token provider for unattended preflight', async () => {
+  const { check, deps } = setup();
+  const upstreamTokenProvider: UpstreamTokenProvider = jest.fn(async () => ({
+    access_token: 'current-token',
+  }));
+  deps.resolveUpstreamTokenProvider = jest.fn(async () => upstreamTokenProvider);
+
+  await check('agent', principal);
+
+  expect(deps.resolveUpstreamTokenProvider).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'owner' }),
+    { signal: undefined },
+  );
+  expect(deps.connect).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
+});
+
+it('prefers a request-scoped provider over the unattended resolver', async () => {
+  const { check, deps } = setup();
+  const requestProvider: UpstreamTokenProvider = jest.fn(async () => ({
+    access_token: 'request-token',
+  }));
+  deps.resolveUpstreamTokenProvider = jest.fn();
+
+  await check('agent', principal, { upstreamTokenProvider: requestProvider });
+
+  expect(deps.resolveUpstreamTokenProvider).not.toHaveBeenCalled();
+  expect(deps.connect).toHaveBeenCalledWith(
+    expect.objectContaining({ upstreamTokenProvider: requestProvider }),
+  );
 });
 
 it('rejects partial readiness and reports each server without exception details', async () => {

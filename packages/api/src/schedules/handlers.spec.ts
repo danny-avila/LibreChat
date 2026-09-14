@@ -1255,6 +1255,28 @@ describe('late-create compensation with a live manual run', () => {
 });
 
 describe('unattended MCP admission', () => {
+  it('passes the request-scoped upstream token provider to preflight', async () => {
+    const upstreamTokenProvider = jest.fn(async () => ({ access_token: 'current-token' }));
+    const getMCPUpstreamTokenProvider = jest.fn(() => upstreamTokenProvider);
+    const preflightMCP = jest.fn(async () => []);
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      getMCPUpstreamTokenProvider,
+      preflightMCP,
+    });
+    const req = makeCreateReq();
+    const { res } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(req, res);
+
+    expect(getMCPUpstreamTokenProvider).toHaveBeenCalledWith(req, res);
+    expect(preflightMCP).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({ id: 'user-1' }),
+      expect.objectContaining({ upstreamTokenProvider }),
+    );
+  });
+
   it('does not treat a consumed request stream as a client disconnect', async () => {
     const deps = makeCreateDeps({ isUserDeleting: async () => false });
     const req = Object.assign(makeCreateReq(), { destroyed: true });
@@ -1340,6 +1362,28 @@ describe('unattended MCP admission', () => {
 });
 
 describe('Run Now MCP failures', () => {
+  it('passes the request-scoped upstream token provider to the fire path', async () => {
+    const upstreamTokenProvider = jest.fn(async () => ({ access_token: 'current-token' }));
+    const fireNow = jest.fn(async () => ({ fired: true, conversationId: 'conversation-1' }));
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      getMCPUpstreamTokenProvider: () => upstreamTokenProvider,
+      fireNow,
+    });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+    const req = makeCreateReq();
+    req.params = { id: 'sched-1' };
+    const { res } = makeRes();
+
+    await createSchedulesHandlers(deps).runScheduleNow(req, res);
+
+    expect(fireNow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ upstreamTokenProvider }),
+    );
+  });
+
   it.each([
     ['mcp_unavailable', 503],
     ['mcp_reauth_required', 400],

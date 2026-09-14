@@ -16,6 +16,7 @@ import type {
   ScheduleLimits,
   FireResult,
 } from './types';
+import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { ServerRequest } from '~/types';
 import {
   isValidCronExpression,
@@ -28,6 +29,10 @@ import { resolveScheduleProjectId } from './types';
 
 export interface SchedulesHandlersDeps {
   preflightMCP: ScheduleMCPPreflight;
+  getMCPUpstreamTokenProvider?: (
+    req: ServerRequest,
+    res: Response,
+  ) => UpstreamTokenProvider | undefined;
   methods: ScheduleMethods;
   getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Agent existence + VIEW access for the requesting user. */
@@ -45,7 +50,7 @@ export interface SchedulesHandlersDeps {
   fireNow: (
     schedule: FireableSchedule,
     limits: ScheduleLimits,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; upstreamTokenProvider?: UpstreamTokenProvider },
   ) => Promise<FireResult | null>;
   /**
    * Soft-deletes a schedule with quiescing: stops new claims, aborts in-flight
@@ -393,6 +398,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         signal,
         concurrency: limits.mcpPreflightConcurrency,
         deadlineMs: Date.now() + limits.mcpPreflightTimeoutMs,
+        upstreamTokenProvider: deps.getMCPUpstreamTokenProvider?.(req, res),
       });
       return true;
     } catch (error) {
@@ -1152,7 +1158,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     }
     const limits = await deps.getLimits(requestUser(req));
     if (signal.aborted) return;
-    const result = await deps.fireNow(schedule, limits, { signal });
+    const result = await deps.fireNow(schedule, limits, {
+      signal,
+      upstreamTokenProvider: deps.getMCPUpstreamTokenProvider?.(req, res),
+    });
     if (signal.aborted) return;
     if (result == null) {
       res.status(409).json({ error: 'A run for this schedule is already in progress' });

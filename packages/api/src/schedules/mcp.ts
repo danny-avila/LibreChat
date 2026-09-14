@@ -23,6 +23,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { TModelsConfig, ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types';
+import type { UpstreamTokenProvider } from '../mcp/oauth/obo';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
 import type { GetAppConfigOptions } from '../app/service';
@@ -100,12 +101,16 @@ interface ScheduleMCPDeps {
     role?: string,
   ) => Promise<Record<string, ParsedServerConfig>>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
+  resolveUpstreamTokenProvider?: (
+    user: IUser,
+    options: { signal?: AbortSignal },
+  ) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
   connect: (options: UserMCPConnectionOptions) => Promise<{
     fetchToolsSnapshot: (deadlineMs?: number, signal?: AbortSignal) => Promise<MCPToolsSnapshot>;
   }>;
 }
 
-/** Probes only persisted identity and credentials, with isolated user connections and no OAuth wait. */
+/** Probes MCP readiness with isolated user connections and no interactive OAuth wait. */
 export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPreflight {
   const sharedProbeLimit = createConcurrencyLimiter(MAX_SHARED_MCP_PREFLIGHT_CONCURRENCY);
   const runPreflight: ScheduleMCPPreflight = async (agentId, principal, options) => {
@@ -571,6 +576,10 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       throwError: true,
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
+    const upstreamTokenProvider =
+      options.upstreamTokenProvider ??
+      (await deps.resolveUpstreamTokenProvider?.(user, { signal: options.signal }));
+    throwIfAborted();
     const requestBody = {
       messageId: randomUUID(),
       conversationId: randomUUID(),
@@ -602,6 +611,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                     customUserVars,
                     requestBody,
                     requestScopedConnections: context,
+                    upstreamTokenProvider,
                     ephemeralConnection: true,
                     returnOnOAuth: true,
                     oauthStart: async () => {

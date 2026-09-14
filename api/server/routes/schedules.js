@@ -14,6 +14,7 @@ const {
   isUserDeleting,
 } = require('~/server/services/Schedules');
 const { resolveAgentFireAccess } = require('~/server/services/Schedules/access');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const methods = require('~/models');
 
 const { getRoleByName } = methods;
@@ -35,6 +36,13 @@ const checkSchedulesCreate = generateCheckAccess({
 
 const handlers = createSchedulesHandlers({
   preflightMCP: require('~/server/services/Schedules/mcp'),
+  getMCPUpstreamTokenProvider: (req, res) =>
+    createOpenIDSessionTokenProvider({
+      req,
+      res,
+      user: req.user,
+      tokenPreference: 'access_token',
+    }),
   methods,
   getLimits,
   // Full fire-equivalent access check (not mere existence): the body-based agent
