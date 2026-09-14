@@ -583,6 +583,37 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  test('rethrows cancellation from the whole-document text fallback', async () => {
+    const cancellation = new AbortController();
+    const cancellationError = new Error('whole-document extraction cancelled');
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Kept page' },
+              { page: 1, markdown: '' },
+              { page: 2, markdown: '' },
+            ],
+            scannedPages: [],
+          }),
+          extractTextIsolated: async () => {
+            cancellation.abort(cancellationError);
+            throw cancellationError;
+          },
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(
+          uploadIsolated(context(pdfFile('sample.pdf')), cancellation.signal),
+        ).rejects.toBe(cancellationError);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   /**
    * Opening a slow or malformed document is itself long work. Checking only in the page
    * loop meant an abandoned parse held its admission slot for as long as the document

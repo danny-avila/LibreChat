@@ -113,6 +113,10 @@ export type FileConfig = {
     timeoutMs?: number;
     /** Compared directly with a PDF's page count, so it is not converted to bytes. */
     maxPageCount?: number;
+    /** Maximum decompressed bytes allowed for one ZIP entry. */
+    archiveEntrySizeLimit?: number;
+    /** Maximum decompressed bytes allowed across one ZIP archive. */
+    archiveTotalSizeLimit?: number;
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
@@ -144,10 +148,6 @@ export type FileConfigInput = {
     maxHeight?: number;
     quality?: number;
   };
-  ocr?: {
-    supportedMimeTypes?: string[];
-    enabled?: boolean;
-  };
   documentParser?: {
     supportedMimeTypes?: string[];
     /** Megabytes, converted on merge like every other size limit here. */
@@ -155,6 +155,10 @@ export type FileConfigInput = {
     timeoutMs?: number;
     /** Operators enter a page count here; mergeFileConfig preserves it without conversion. */
     maxPageCount?: number;
+    /** Megabytes, converted to bytes in the merged configuration. */
+    archiveEntrySizeLimit?: number;
+    /** Megabytes, converted to bytes in the merged configuration. */
+    archiveTotalSizeLimit?: number;
   };
   text?: {
     supportedMimeTypes?: string[];

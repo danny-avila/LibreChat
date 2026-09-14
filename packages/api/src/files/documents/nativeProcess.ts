@@ -94,6 +94,10 @@ export interface DocumentExtractionOptions {
    * and the PDF engine supplies its own default when a direct caller omits it.
    */
   readonly maxPageCount?: number;
+  /** Maximum decompressed bytes allowed for one ZIP entry, in bytes. */
+  readonly archiveEntrySizeLimit?: number;
+  /** Maximum decompressed bytes allowed across one ZIP archive, in bytes. */
+  readonly archiveTotalSizeLimit?: number;
 }
 
 /**

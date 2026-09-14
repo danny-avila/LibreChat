@@ -2,6 +2,7 @@ import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
 import { logger } from '@librechat/data-schemas';
+import { megabyte } from 'librechat-data-provider';
 import { parseWithAnydoc } from './crud';
 
 type ParseResult = ReturnType<typeof parseWithAnydoc>;
@@ -190,6 +191,31 @@ describe('parseWithAnydoc', () => {
         );
         expect(toMarkdownBytes).not.toHaveBeenCalled();
       });
+    });
+
+    test('accepts an oversized archive entry when the configured ceiling is raised', async () => {
+      const zip = await JSZip.loadAsync(
+        await fs.promises.readFile(path.join(fixtures, 'structured.docx')),
+      );
+      zip.file('word/media/large.png', Buffer.alloc(26 * megabyte));
+      const oversizedPath = path.join(fixtures, 'anydoc-large-entry.docx');
+      await fs.promises.writeFile(oversizedPath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+      try {
+        const file = {
+          originalname: 'anydoc-large-entry.docx',
+          path: oversizedPath,
+          mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        } as Express.Multer.File;
+        await expect(parseWithAnydoc(file)).rejects.toThrow(
+          /exceeds the 25MB per-entry decompressed cap/,
+        );
+        await expect(
+          parseWithAnydoc(file, undefined, { archiveEntrySizeLimit: 30 * megabyte }),
+        ).resolves.toEqual(expect.objectContaining({ filepath: 'anydoc' }));
+      } finally {
+        await fs.promises.unlink(oversizedPath);
+      }
     });
 
     test('rejects a zip bomb padded with junk bytes ahead of the archive', async () => {

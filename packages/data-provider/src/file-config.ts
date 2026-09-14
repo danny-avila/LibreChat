@@ -626,6 +626,10 @@ const defaultDocumentParserSizeLimit = mbToBytes(15);
 const defaultDocumentParserTimeoutMs = 30_000;
 /** Page counts are compared directly by the PDF engines, unlike byte-based limits. */
 const defaultDocumentParserMaxPageCount = 1000;
+/** The single-entry decompression ceiling matches the archive guard's direct-call default. */
+const defaultDocumentParserArchiveEntrySizeLimit = mbToBytes(25);
+/** The aggregate decompression ceiling matches the archive guard's direct-call default. */
+const defaultDocumentParserArchiveTotalSizeLimit = mbToBytes(100);
 const defaultTokenLimit = 100000;
 const defaultContextSizeLimit = mbToBytes(128);
 const defaultContextCharLimit = 1_000_000;
@@ -637,6 +641,8 @@ const assistantsFileConfig = {
   disabled: false,
 };
 
+/** The child-process IPC guard rejects page arrays above this non-configurable maximum. */
+const MAX_DOCUMENT_PARSER_PAGE_COUNT = 10_000;
 export const fileConfig = {
   endpoints: {
     [EModelEndpoint.assistants]: assistantsFileConfig,
@@ -676,6 +682,8 @@ export const fileConfig = {
     supportedMimeTypes: defaultOCRMimeTypes,
   },
   documentParser: {
+    archiveEntrySizeLimit: defaultDocumentParserArchiveEntrySizeLimit,
+    archiveTotalSizeLimit: defaultDocumentParserArchiveTotalSizeLimit,
     supportedMimeTypes: documentParserMimeTypes,
     fileSizeLimit: defaultDocumentParserSizeLimit,
     timeoutMs: defaultDocumentParserTimeoutMs,
@@ -758,8 +766,20 @@ export const fileConfigSchema = z.object({
        * A document large enough to need a raised `fileSizeLimit` usually needs longer
        * than the default to convert. */
       timeoutMs: z.number().min(0).optional(),
-      /** Maximum PDF pages accepted before extraction work can grow without bound. */
-      maxPageCount: z.number().int().min(0).optional(),
+      /** Maximum PDF pages accepted before extraction work can grow without bound. The
+       * 10,000-page maximum protects the API process from oversized page arrays crossing IPC. */
+      maxPageCount: z
+        .number()
+        .int()
+        .min(0)
+        .max(MAX_DOCUMENT_PARSER_PAGE_COUNT, {
+          message: `must not exceed the maximum of ${MAX_DOCUMENT_PARSER_PAGE_COUNT} pages`,
+        })
+        .optional(),
+      /** Maximum decompressed bytes allowed for one ZIP entry, in megabytes. */
+      archiveEntrySizeLimit: z.number().min(0).optional(),
+      /** Maximum decompressed bytes allowed across one ZIP archive, in megabytes. */
+      archiveTotalSizeLimit: z.number().min(0).optional(),
     })
     .optional(),
   text: z
@@ -1390,6 +1410,8 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     const {
       supportedMimeTypes: documentParserTypes,
       fileSizeLimit: documentParserSizeLimit,
+      archiveEntrySizeLimit: documentParserArchiveEntrySizeLimit,
+      archiveTotalSizeLimit: documentParserArchiveTotalSizeLimit,
       maxPageCount: documentParserMaxPageCount,
       ...documentParserRest
     } = dynamic.documentParser;
@@ -1404,6 +1426,17 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
      * limit here is written and consumed. */
     if (documentParserSizeLimit !== undefined) {
       mergedConfig.documentParser.fileSizeLimit = mbToBytes(documentParserSizeLimit);
+    }
+    /* Archive limits use megabytes in the file and bytes in the merged config. */
+    if (documentParserArchiveEntrySizeLimit !== undefined) {
+      mergedConfig.documentParser.archiveEntrySizeLimit = mbToBytes(
+        documentParserArchiveEntrySizeLimit,
+      );
+    }
+    if (documentParserArchiveTotalSizeLimit !== undefined) {
+      mergedConfig.documentParser.archiveTotalSizeLimit = mbToBytes(
+        documentParserArchiveTotalSizeLimit,
+      );
     }
     /* Page counts are not sizes, so the configured value stays a direct count. */
     if (documentParserMaxPageCount !== undefined) {

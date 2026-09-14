@@ -127,6 +127,10 @@ describe('pdfInspector child isolation', () => {
       undefined,
       1500,
     );
+    expect(extractionChild.send).toHaveBeenCalledWith(
+      expect.objectContaining({ maxPages: 1500 }),
+      expect.any(Function),
+    );
     extractionChild.emit('message', {
       ok: true,
       result: {

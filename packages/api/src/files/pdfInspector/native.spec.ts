@@ -52,16 +52,16 @@ describe('pdfInspector native', () => {
   /**
    * A page that converted to nothing weighs nothing, so a size cap alone waves through
    * an arbitrarily long array of them. A page costs about 100 bytes to declare: the
-   * fixture below is 1MB for 10,001 pages, and the 15MB upload limit buys well over a
+   * fixture below is 1MB for 1,001 pages, and the 15MB upload limit buys well over a
    * hundred thousand, every one of which would otherwise be serialized through IPC and
    * rebuilt as an object in the API process.
    */
   test('refuses a page-flooded document before returning its pages', async () => {
     const flooded = path.join(__dirname, 'sample-flooded.pdf');
-    fs.writeFileSync(flooded, buildManyPagePdf(10_001));
+    fs.writeFileSync(flooded, buildManyPagePdf(1_001));
     try {
       await expect(extractPagesMarkdownIsolated(flooded)).rejects.toThrow(
-        /returned 10001 pages, over the 10000-page limit/,
+        /returned 1001 pages, over the 1000-page limit/,
       );
     } finally {
       fs.unlinkSync(flooded);

@@ -133,6 +133,8 @@ export async function parseDocument({
   maxFileSize = DOCUMENT_PARSER_MAX_FILE_SIZE,
   timeoutMs,
   maxPageCount,
+  archiveEntrySizeLimit,
+  archiveTotalSizeLimit,
   onEngineFallback,
 }: {
   file: Express.Multer.File;
@@ -147,6 +149,10 @@ export async function parseDocument({
   timeoutMs?: number;
   /** Maximum PDF pages to parse. Each engine keeps its own default when omitted. */
   maxPageCount?: number;
+  /** Maximum decompressed bytes allowed for one ZIP entry, in bytes. */
+  archiveEntrySizeLimit?: number;
+  /** Maximum decompressed bytes allowed across one ZIP archive, in bytes. */
+  archiveTotalSizeLimit?: number;
   /** Told when an engine recovered from a failure on its own, so the caller can log it
    * under whatever redaction its deployment applies. */
   onEngineFallback?: DocumentExtractionOptions['onEngineFallback'];
@@ -163,14 +169,20 @@ export async function parseDocument({
   const declaredMimeType = (file.mimetype ?? '').split(';')[0].trim().toLowerCase();
   const { extractor, mimeType } = routeDocument(declaredMimeType, file.originalname);
   const parserFile = mimeType === file.mimetype ? file : { ...file, mimetype: mimeType };
-  /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
+  /* Admission covers the whole parse. A PDF is a child, then in-process pdfjs
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
   const result = await withParserAdmission(
-    () => extractor.extract(parserFile, signal, { timeoutMs, maxPageCount, onEngineFallback }),
+    () =>
+      extractor.extract(parserFile, signal, {
+        timeoutMs,
+        maxPageCount,
+        archiveEntrySizeLimit,
+        archiveTotalSizeLimit,
+        onEngineFallback,
+      }),
     signal,
   );
-
   if (!result.text?.trim()) {
     throw new NoDocumentTextError();
   }

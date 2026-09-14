@@ -146,6 +146,7 @@ function runPdfChild(
   filePath: string,
   signal?: AbortSignal,
   timeoutMs: number = PDF_CHILD_TIMEOUT_MS,
+  maxPageCount?: DocumentExtractionOptions['maxPageCount'],
 ): Promise<PdfChildResult> {
   const modulePath = require.resolve('@firecrawl/pdf-inspector');
   return runNativeParserChild<PdfChildResult>({
@@ -156,9 +157,9 @@ function runPdfChild(
       path: filePath,
       modulePath,
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
-      /* MAX_PARSER_PAGES wins over a configured maxPageCount above it because the child
-       * must protect IPC before the parent can inspect the returned page array. */
-      maxPages: MAX_PARSER_PAGES,
+      /* The configured page count wins below MAX_PARSER_PAGES; the safety bound wins
+       * for an unvalidated direct caller that supplies a larger value. */
+      maxPages: Math.min(maxPageCount ?? MAX_PDF_PAGES, MAX_PARSER_PAGES),
       pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
     },
     timeoutMs,
@@ -193,7 +194,7 @@ export async function extractPagesMarkdownIsolated(
   maxPageCount: DocumentExtractionOptions['maxPageCount'] = MAX_PDF_PAGES,
 ): Promise<PdfPageExtraction> {
   const startedAt = Date.now();
-  const { pages } = await runPdfChild('pages', filePath, signal, timeoutMs);
+  const { pages } = await runPdfChild('pages', filePath, signal, timeoutMs, maxPageCount);
   const extractedPages = pages ?? [];
   if (extractedPages.length > maxPageCount) {
     throw new PdfPageLimitError(extractedPages.length, maxPageCount);

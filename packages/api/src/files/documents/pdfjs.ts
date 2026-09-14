@@ -91,14 +91,14 @@ export async function extractPageText(
         }
         texts.set(pageIndex, pageText);
       } catch (error) {
-        if (isParserOutputLimit(error) || isAbort(error)) {
+        if (signal?.aborted || isParserOutputLimit(error) || isAbort(error)) {
           throw error;
         }
         /* An unreadable page is reported in pagesNeedingOcr rather than failing the document. */
       }
     }
   } catch (error) {
-    if (isParserOutputLimit(error) || isAbort(error)) {
+    if (signal?.aborted || isParserOutputLimit(error) || isAbort(error)) {
       throw error;
     }
     logger.warn('[pdfjs] unavailable for page recovery:', error);

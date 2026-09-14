@@ -263,6 +263,40 @@ describe('assertSafeZipSize', () => {
   });
 });
 
+describe('configurable archive byte ceilings', () => {
+  test('refuses an entry above the 25MB default until the configured entry ceiling is raised', async () => {
+    const buffer = await buildBombArchive([
+      { name: 'worksheet.xml', decompressedBytes: 26 * megabyte },
+    ]);
+
+    await expect(assertSafeZipSize(buffer)).rejects.toThrow(
+      /exceeds the 25MB per-entry decompressed cap/,
+    );
+    await expect(
+      assertSafeZipSizeIfArchive(buffer, {
+        maxEntryBytes: 30 * megabyte,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('refuses an archive above the 100MB default until the configured total ceiling is raised', async () => {
+    const buffer = await buildBombArchive(
+      Array.from({ length: 5 }, (_, index) => ({
+        name: `part-${index}.xml`,
+        decompressedBytes: 21 * megabyte,
+      })),
+    );
+
+    await expect(assertSafeZipSize(buffer)).rejects.toThrow(ZipBombError);
+    await expect(
+      assertSafeZipSizeIfArchive(buffer, {
+        maxEntryBytes: 25 * megabyte,
+        maxTotalBytes: 110 * megabyte,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('isZipArchive', () => {
   /**
    * Real zip readers find the central directory by scanning backwards and tolerate data

@@ -255,6 +255,8 @@ export async function parseWithAnydoc(
   await assertSafeZipSizeIfArchive(buffer, {
     name,
     ...(knownOuterContainer && { knownOuterContainer }),
+    maxEntryBytes: options?.archiveEntrySizeLimit,
+    maxTotalBytes: options?.archiveTotalSizeLimit,
     signal,
   });
   /* Read from the buffer already in hand, before extraction: anydoc converts artwork

@@ -1073,6 +1073,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           maxFileSize: fileConfig.documentParser?.fileSizeLimit,
           timeoutMs: fileConfig.documentParser?.timeoutMs,
           maxPageCount: fileConfig.documentParser?.maxPageCount,
+          archiveEntrySizeLimit: fileConfig.documentParser?.archiveEntrySizeLimit,
+          archiveTotalSizeLimit: fileConfig.documentParser?.archiveTotalSizeLimit,
           /* Recovery hides the failure from the code below, and the engine has no way
            * to know whether this deployment redacts filenames and parser errors. */
           onEngineFallback: (err) => {

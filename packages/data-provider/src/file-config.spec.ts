@@ -473,6 +473,25 @@ describe('documentParser file config', () => {
     expect(parsed.documentParser?.maxPageCount).toBe(1500);
     expect(mergeFileConfig(parsed).documentParser?.maxPageCount).toBe(1500);
   });
+  it('exposes archive byte ceilings as megabytes with 25MB and 100MB defaults', () => {
+    const defaults = mergeFileConfig(undefined).documentParser;
+    expect(defaults?.archiveEntrySizeLimit).toBe(25 * 1024 * 1024);
+    expect(defaults?.archiveTotalSizeLimit).toBe(100 * 1024 * 1024);
+
+    const parsed = fileConfigSchema.parse({
+      documentParser: { archiveEntrySizeLimit: 40, archiveTotalSizeLimit: 180 },
+    });
+    const merged = mergeFileConfig(parsed).documentParser;
+
+    expect(merged?.archiveEntrySizeLimit).toBe(40 * 1024 * 1024);
+    expect(merged?.archiveTotalSizeLimit).toBe(180 * 1024 * 1024);
+  });
+
+  it('rejects a page ceiling above the child IPC safety maximum', () => {
+    expect(() => fileConfigSchema.parse({ documentParser: { maxPageCount: 10_001 } })).toThrow(
+      /maximum of 10000 pages/,
+    );
+  });
 });
 
 describe('stt file config', () => {

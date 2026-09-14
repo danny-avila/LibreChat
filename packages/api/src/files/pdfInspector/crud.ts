@@ -241,8 +241,12 @@ export async function extractPdf(
       if (plain.trim()) {
         return withMediaSignal({ text: plain, pagesNeedingOcr: ocrResult }, recovered);
       }
-    } catch {
-      /* fall through to per-page interleaving */
+    } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
+      /* A genuine whole-document extraction failure still permits per-page interleaving,
+       * preserving whatever native recovery found. */
     }
   }
 
