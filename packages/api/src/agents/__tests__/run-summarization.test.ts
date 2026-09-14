@@ -1235,13 +1235,36 @@ describe('Azure deployment alias', () => {
     expect(warnings).toHaveLength(1);
   });
 
-  it('compacts through the agent client when the summary model is not deployed on Azure', async () => {
+  it.each([
+    {
+      name: 'an inherited summary model absent from the Azure map',
+      agent: () => azureAstraAgent(),
+      summarizationConfig: { model: 'gpt-5.4-nano' },
+      env: {},
+      reason: 'Model named "gpt-5.4-nano" not found in configuration.',
+    },
+    {
+      name: 'an explicit Azure summary model absent from the map on a non-Azure agent',
+      agent: () => makeAgent(),
+      summarizationConfig: { provider: EModelEndpoint.azureOpenAI, model: 'gpt-5.4-mini' },
+      env: {},
+      reason: 'Model named "gpt-5.4-mini" not found in configuration.',
+    },
+    {
+      name: 'a mapped summary group whose base URL is user-provided',
+      agent: () => azureAstraAgent(),
+      summarizationConfig: { model: 'gpt-4.1' },
+      env: { AZURE_OPENAI_BASEURL: 'user_provided' },
+      reason: 'it needs a server-configured Azure OpenAI API key and base URL.',
+    },
+  ])('disables summarization for $name', async ({ agent, summarizationConfig, env, reason }) => {
+    jest.replaceProperty(process, 'env', { ...process.env, ...env });
     const appConfig = makeAppConfig([]);
     appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
       isValid: true,
       errors: [],
-      modelNames: ['gpt-6-astra'],
-      modelGroupMap: { 'gpt-6-astra': { group: 'main' } },
+      modelNames: ['gpt-6-astra', 'gpt-4.1'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'gpt-4.1': { group: 'summary' } },
       groupMap: {
         main: {
           apiKey: 'test-azure-key',
@@ -1249,27 +1272,30 @@ describe('Azure deployment alias', () => {
           version: '2025-04-01-preview',
           models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
         },
+        summary: {
+          apiKey: 'summary-key',
+          instanceName: 'summary-instance',
+          version: '2024-10-21',
+          models: { 'gpt-4.1': { deploymentName: 'summary-production' } },
+        },
       },
     };
     const agents = await callAndCapture({
-      agents: [azureAstraAgent()],
+      agents: [agent()],
       appConfig,
       summarizeOnly: true,
-      summarizationConfig: { model: 'gpt-5.4-nano', parameters: { streaming: false } },
+      summarizationConfig: { ...summarizationConfig, parameters: { streaming: false } },
     });
 
-    expect(agents[0].summarizationEnabled).toBe(true);
+    expect(agents[0].summarizationEnabled).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
-      '[createRun] Summarization model "gpt-5.4-nano" is not resolvable from the Azure OpenAI configuration: Model named "gpt-5.4-nano" not found in configuration.',
+      `[createRun] Summarization with Azure OpenAI model "${summarizationConfig.model}" is disabled: ${reason}`,
     );
-    const { requests } = await compactSummary(agents);
-    expect(requests).toHaveLength(1);
-    const { url, headers, body } = requests[0];
-    expect(url.origin + url.pathname).toBe(
-      'https://test-instance.openai.azure.com/openai/v1/responses',
+    const requests: CapturedRequest[] = [];
+    await expect(compactSummary(agents, requests)).rejects.toThrow(
+      'Compaction skipped: summarization is not enabled for this agent',
     );
-    expect(headers.get('api-key')).toBe('test-azure-key');
-    expect(body.model).toBe('gpt-5.4-nano');
+    expect(requests).toHaveLength(0);
   });
 
   it("sends a summary deployment to its own resource when only the agent's group sets a base URL", async () => {

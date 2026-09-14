@@ -821,7 +821,7 @@ function mapSummarizationModelToAzure(
     });
   } catch (error) {
     warnUnresolvedSummarization(
-      `Summarization model "${model}" is not resolvable from the Azure OpenAI configuration: ${(error as Error).message}`,
+      `Summarization with Azure OpenAI model "${model}" is disabled: ${(error as Error).message}`,
     );
     return undefined;
   }
@@ -831,18 +831,15 @@ function mapSummarizationModelToAzure(
  * Resolve the summary model's deployment and transport before the SDK inherits agent options.
  * A same-provider summarizer layers these over the agent's client options, so a summary group
  * without a base path clears the agent's instead of sending its deployment to that resource.
- * Returns `undefined` when the model cannot be resolved here, leaving the agent's client in charge.
+ * Returns `undefined` when the model cannot be resolved without a per-user lookup.
  */
 function resolveAzureSummarization(
   model: string,
+  azureConfig: TAzureConfig,
   appConfig: AppConfig | undefined,
   parameters: SummarizationConfig['parameters'],
   headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
 ): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
-  const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
-  if (!azureConfig) {
-    return undefined;
-  }
   const mapped = mapSummarizationModelToAzure(model, azureConfig);
   if (!mapped) {
     return undefined;
@@ -853,7 +850,7 @@ function resolveAzureSummarization(
   const resolvedBaseURL = baseURL ?? getBuiltInBaseURL(EModelEndpoint.azureOpenAI);
   if (isUserProvided(resolvedBaseURL) || isUserProvided(azureOptions.azureOpenAIApiKey)) {
     warnUnresolvedSummarization(
-      `Summarization model "${model}" needs a server-configured Azure OpenAI API key and base URL.`,
+      `Summarization with Azure OpenAI model "${model}" is disabled: it needs a server-configured Azure OpenAI API key and base URL.`,
     );
     return undefined;
   }
@@ -1103,16 +1100,17 @@ function shapeSummarizationConfig(
 
   const model = config?.model ?? fallbackModel;
 
-  const targetsAzure =
-    rawProvider === EModelEndpoint.azureOpenAI ||
-    (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null);
-  const azureOverrides =
-    targetsAzure &&
+  const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
+  const selectsAzureDeployment =
+    azureConfig != null &&
+    (rawProvider === EModelEndpoint.azureOpenAI ||
+      (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null)) &&
     isNonEmptyString(model) &&
     config?.enabled !== false &&
-    (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel)
-      ? resolveAzureSummarization(model, appConfig, config?.parameters, headerContext)
-      : undefined;
+    (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel);
+  const azureOverrides = selectsAzureDeployment
+    ? resolveAzureSummarization(model, azureConfig, appConfig, config?.parameters, headerContext)
+    : undefined;
   const selectsOpenAIForAzureAgent =
     agentEndpoint === EModelEndpoint.azureOpenAI &&
     config?.provider === EModelEndpoint.openAI &&
@@ -1122,10 +1120,13 @@ function shapeSummarizationConfig(
     ? resolveOpenAISummarization(model, appConfig, config.parameters, headerContext)
     : undefined;
   /**
-   * The agent's own client is no fallback for an unreachable OpenAI target: Azure Responses
-   * shares the `openAI` provider, so the SDK would summarize through the agent's Azure resource.
+   * A target resolved here is not handed to another client when resolution fails. Azure Responses
+   * shares the `openAI` provider, so the SDK would summarize an OpenAI target through the agent's
+   * Azure resource, and would send an unmapped Azure model name where a deployment belongs.
    */
-  const openAIUnavailable = selectsOpenAIForAzureAgent && openAIOverrides == null;
+  const targetUnavailable =
+    (selectsAzureDeployment && azureOverrides == null) ||
+    (selectsOpenAIForAzureAgent && openAIOverrides == null);
   const { provider, clientOverrides } =
     openAIOverrides ??
     azureOverrides ??
@@ -1178,7 +1179,7 @@ function shapeSummarizationConfig(
 
   return {
     enabled:
-      !openAIUnavailable &&
+      !targetUnavailable &&
       config?.enabled !== false &&
       isNonEmptyString(provider) &&
       isNonEmptyString(model),
