@@ -162,6 +162,7 @@ describe('createAttachedWorkspaceBashTool', () => {
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
+          status: 'completed',
           session_id: 'session-1',
           stdout: 'skill output\n',
           stderr: '',
