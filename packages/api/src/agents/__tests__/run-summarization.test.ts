@@ -975,7 +975,16 @@ describe('summarization reasoning effort', () => {
   });
 });
 
-async function compactSummary(agents: Array<Record<string, unknown>>) {
+type CapturedRequest = {
+  url: URL;
+  headers: Headers;
+  body: OpenAI.ChatCompletionCreateParams & OpenAI.Responses.ResponseCreateParams;
+};
+
+async function compactSummary(
+  agents: Array<Record<string, unknown>>,
+  requests: CapturedRequest[] = [],
+) {
   const summaryConfig = agents[0].summarizationConfig as NonNullable<
     AgentInputs['summarizationConfig']
   >;
@@ -985,11 +994,6 @@ async function compactSummary(agents: Array<Record<string, unknown>>) {
       clientOptions.configuration) as OpenAIConfiguration),
   };
   summaryConfig.parameters = { ...summaryConfig.parameters, configuration };
-  const requests: {
-    url: URL;
-    headers: Headers;
-    body: OpenAI.ChatCompletionCreateParams & OpenAI.Responses.ResponseCreateParams;
-  }[] = [];
   configuration.fetch = async (url, init) => {
     requests.push({
       url: new URL(String(url)),
@@ -1204,9 +1208,11 @@ describe('Azure deployment alias', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         `[createRun] Summarization with OpenAI model "${model}" is disabled for Azure OpenAI agents: it needs a server-configured OpenAI API key and base URL.`,
       );
-      await expect(compactSummary(agents)).rejects.toThrow(
+      const requests: CapturedRequest[] = [];
+      await expect(compactSummary(agents, requests)).rejects.toThrow(
         'Compaction skipped: summarization is not enabled for this agent',
       );
+      expect(requests).toHaveLength(0);
     },
   );
 
