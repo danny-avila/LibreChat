@@ -1,17 +1,18 @@
 import { logger } from '@librechat/data-schemas';
-import { megabyte, isNativelyReadableText, documentParserMimeTypes } from 'librechat-data-provider';
+import { isNativelyReadableText, documentParserMimeTypes } from 'librechat-data-provider';
 import type {
   FiltersConfig,
   EndpointFileConfig,
   TDefaultLLMDeliveryPath,
 } from 'librechat-data-provider';
-import { extractInspectableFileText, getFileExtractionLogDetails } from '~/files/extract';
+import {
+  extractInspectableFileText,
+  getFileExtractionLogDetails,
+  MAX_STORED_EXTRACTED_TEXT_BYTES,
+} from '~/files/extract';
 import { extractFileContent } from '~/protection/adapters/submissions';
 import { hasActiveFileFieldPolicy } from '~/protection/files';
 import { inspectContent } from '~/protection/runtime';
-
-/** The same storage cap context uploads apply to extracted text. */
-const MAX_FALLBACK_TEXT_BYTES = 15 * megabyte;
 
 export const UPLOAD_FALLBACK_TEXT_PLANS = {
   documentParser: 'document_parser',
@@ -111,7 +112,7 @@ export async function resolveUploadFallbackText({
     if (typeof text !== 'string' || text.trim().length === 0) {
       return undefined;
     }
-    if (Buffer.byteLength(text, 'utf8') > MAX_FALLBACK_TEXT_BYTES) {
+    if (Buffer.byteLength(text, 'utf8') > MAX_STORED_EXTRACTED_TEXT_BYTES) {
       return skip('extracted text exceeds the storage limit');
     }
     if (

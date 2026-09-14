@@ -4,6 +4,7 @@ import {
   getUploadFallbackTextPlan,
   resolveUploadFallbackText,
 } from './fallback';
+import { MAX_STORED_EXTRACTED_TEXT_BYTES } from '~/files/extract';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const csvRoute = {
@@ -122,7 +123,7 @@ describe('resolveUploadFallbackText', () => {
   });
 
   it('stores nothing past the extracted-text storage cap', async () => {
-    const { base } = setup({ nativeText: 'a'.repeat(15 * 1024 * 1024 + 1) });
+    const { base } = setup({ nativeText: 'a'.repeat(MAX_STORED_EXTRACTED_TEXT_BYTES + 1) });
 
     await expect(resolveUploadFallbackText({ ...base, ...csvRoute })).resolves.toBeUndefined();
   });

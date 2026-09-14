@@ -128,6 +128,7 @@ jest.mock('@librechat/api', () => {
     parseTextNative: jest.fn(),
     /** Stores no fallback text unless a test opts in; its own rules are covered in packages/api. */
     resolveUploadFallbackText: jest.fn(async () => undefined),
+    MAX_STORED_EXTRACTED_TEXT_BYTES: 15 * 1024 * 1024,
     processAudioFile: jest.fn(),
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
     assertExtractedTextInspectable: jest.fn(),
