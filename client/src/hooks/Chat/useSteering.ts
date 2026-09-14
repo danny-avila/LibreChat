@@ -10,6 +10,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   TAgentQueuedTurnFileRef,
+  TFile,
   TMessage,
   TConversation,
   TMessageContentParts,
@@ -45,6 +46,7 @@ import {
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
 import { useSetFilesToDelete } from '~/hooks/Files';
+import { useFileMapContext } from '~/Providers';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
@@ -272,6 +274,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
 export function mergeQueuedTurnFileMetadata(
   receiptFiles: TMessage['files'],
   optimisticFiles: TMessage['files'],
+  storedFiles?: Readonly<Record<string, Pick<TFile, 'llmDeliveryPath'> | undefined>>,
 ): TMessage['files'] {
   if (receiptFiles == null || receiptFiles.length === 0) {
     return receiptFiles;
@@ -283,10 +286,12 @@ export function mergeQueuedTurnFileMetadata(
   );
   return receiptFiles.map((file) => {
     const optimistic = file.file_id == null ? undefined : optimisticById.get(file.file_id);
-    if (file.llmDeliveryPath != null || optimistic?.llmDeliveryPath == null) {
+    const stored = file.file_id == null ? undefined : storedFiles?.[file.file_id];
+    const llmDeliveryPath = optimistic?.llmDeliveryPath ?? stored?.llmDeliveryPath;
+    if (file.llmDeliveryPath != null || llmDeliveryPath == null) {
       return file;
     }
-    return { ...file, llmDeliveryPath: optimistic.llmDeliveryPath };
+    return { ...file, llmDeliveryPath };
   });
 }
 
@@ -295,6 +300,7 @@ function reconcileServerQueuedTurns(
   receipts: AgentQueuedTurnReceipt[],
   settledByRequestId: ReadonlyMap<string, SettledQueuedTurnReceipt>,
   authoritativeSnapshot = true,
+  storedFiles?: Readonly<Record<string, Pick<TFile, 'llmDeliveryPath'> | undefined>>,
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
     previous.flatMap((item) =>
@@ -327,7 +333,7 @@ function reconcileServerQueuedTurns(
     } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
       status = receipt.status;
     }
-    const files = mergeQueuedTurnFileMetadata(receipt.files, optimistic?.files);
+    const files = mergeQueuedTurnFileMetadata(receipt.files, optimistic?.files, storedFiles);
     return [
       {
         id: optimistic?.id ?? receipt.clientRequestId,
@@ -434,6 +440,7 @@ export default function useSteering({
 }: UseSteeringParams) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const fileMap = useFileMapContext();
   const setFilesToDelete = useSetFilesToDelete();
   const convertSteersToQueued = useSteerConvert();
   /** `mutate` is a stable callback; the mutation result objects are fresh
@@ -548,11 +555,12 @@ export default function useSteering({
               receipts,
               terminalForReconciliation,
               source === 'snapshot',
+              fileMap,
             ),
           );
         }
       },
-    [queueKey],
+    [fileMap, queueKey],
   );
 
   const finishQueuedTurnEnqueue = useRecoilCallback(

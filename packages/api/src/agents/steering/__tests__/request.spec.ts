@@ -920,6 +920,45 @@ describe('generation protocol bridge for steering mutations', () => {
     expect(plain?.requestedQuotesFingerprint).toBeUndefined();
   });
 
+  it('keeps receipt fingerprints stable when display delivery metadata is added', async () => {
+    const streamId = 'steer-protocol-v2-delivery-path-fingerprint';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const base = {
+      conversationId: streamId,
+      text: 'same attachment steer',
+      files: [{ file_id: 'f1', type: 'application/pdf', filename: 'report.pdf' }],
+    };
+
+    await handleSteerRequest(
+      user,
+      { ...base, clientSteerId: 'client-legacy-file-ref' },
+      {
+        generationProtocolVersion: 2,
+      },
+    );
+    await handleSteerRequest(
+      user,
+      {
+        ...base,
+        clientSteerId: 'client-current-file-ref',
+        files: [{ ...base.files[0], llmDeliveryPath: 'text' }],
+      },
+      { generationProtocolVersion: 2 },
+    );
+
+    const legacy = await GenerationJobManager.steering.getReceipt(
+      streamId,
+      'client-legacy-file-ref',
+    );
+    const current = await GenerationJobManager.steering.getReceipt(
+      streamId,
+      'client-current-file-ref',
+    );
+    expect(current?.fingerprint).toBe(legacy?.fingerprint);
+  });
+
   it('treats quotes as part of the idempotency identity', async () => {
     const streamId = 'steer-protocol-v2-quote-fingerprint';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {
