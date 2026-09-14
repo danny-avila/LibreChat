@@ -16,7 +16,7 @@ const NATIVE_PARSER_CONCURRENCY = 2;
  * anything rejects it, and two children may be doing that at once. The child measures
  * its own output first, so an oversized parse costs a message instead of a copy.
  */
-export const MAX_PARSER_OUTPUT_BYTES = 15 * megabyte;
+export const MAX_PARSER_OUTPUT_BYTES: number = 15 * megabyte;
 
 /**
  * Per-page envelope charged on top of a page's own text, so a result is measured by
