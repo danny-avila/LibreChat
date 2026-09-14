@@ -68,7 +68,7 @@ const getImageEditPromptDescription = () => {
 };
 
 /** `auto` or `WIDTHxHEIGHT`; the image API enforces which dimensions the configured model supports. */
-export const IMAGE_SIZE_PATTERN = '^(auto|[1-9][0-9]{1,4}x[1-9][0-9]{1,4})$';
+export const IMAGE_SIZE_PATTERN = '^(auto|[1-9][0-9]*x[1-9][0-9]*)$';
 
 const imageGenOaiJsonSchema: ExtendedJsonSchema = {
   type: 'object',
