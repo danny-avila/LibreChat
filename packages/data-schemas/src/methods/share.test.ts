@@ -3325,6 +3325,106 @@ describe('Share Methods', () => {
       expect(result?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
     });
 
+    test('enriches delivery metadata in existing revision-matching snapshots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, { llmDeliveryPath: 'text' });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: '',
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'steer',
+            steerId: 'legacy-steer',
+            steer: 'read this',
+            files: [{ file_id: docId, filename: 'report.pdf', type: 'application/pdf' }],
+          },
+        ],
+      });
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [
+          {
+            file_id: docId,
+            source: 'local',
+            filepath: `/uploads/${userId}/${docId}`,
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            bytes: 1024,
+          },
+        ],
+      });
+      const published = await SharedLink.findOne({ shareId }).lean();
+
+      await expect(
+        shareMethods.getSharedMessages(shareId, undefined, {
+          preflight: async () => {
+            throw new Error('policy rejected');
+          },
+        }),
+      ).rejects.toThrow('policy rejected');
+      const afterRejectedPreflight = await SharedLink.findOne({ shareId }).lean();
+      expect(afterRejectedPreflight?.fileSnapshots?.[0].llmDeliveryPath).toBeUndefined();
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const content = result?.messages[0].content as Array<Record<string, unknown>>;
+      const file = (content[0].files as Array<Record<string, unknown>>)[0];
+      expect(file.llmDeliveryPath).toBe('text');
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots?.[0].llmDeliveryPath).toBe('text');
+      expect(saved?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
+    });
+
+    test('does not enrich an existing snapshot after its file revision changes', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        llmDeliveryPath: 'text',
+        previewRevision: 'current-revision',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'legacy file',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filename: 'report.pdf', type: 'application/pdf' }],
+      });
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [
+          {
+            file_id: docId,
+            source: 'local',
+            filepath: `/uploads/${userId}/${docId}`,
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            bytes: 1024,
+            previewRevision: 'published-revision',
+          },
+        ],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result?.messages[0].files?.[0].llmDeliveryPath).toBeUndefined();
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots?.[0].llmDeliveryPath).toBeUndefined();
+    });
+
     test('runs public projection preflight before persisting a legacy backfill', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;

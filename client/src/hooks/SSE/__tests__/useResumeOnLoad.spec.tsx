@@ -2248,20 +2248,12 @@ describe('useResumeOnLoad', () => {
         buildActiveStatus([{ steerId: 'queued-1', text: 'still queued', createdAt: 5, files }]),
       );
 
-      const rendered = renderUseResumeOnLoad({
+      renderUseResumeOnLoad({
         messages: [buildUserMessage(CONVERSATION_ID)],
         pendingSteers: [staleChip],
         onPendingSteers: (steers) => observedSteers.push(steers),
       });
 
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(observedSteers[observedSteers.length - 1]?.[0].files).toEqual(files);
-
-      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
-      rendered.rerender();
       await act(async () => {
         await Promise.resolve();
       });
@@ -2272,7 +2264,7 @@ describe('useResumeOnLoad', () => {
           text: 'still queued',
           status: 'pending',
           createdAt: 5,
-          files: [{ ...files[0], llmDeliveryPath: 'text' }],
+          files,
           generationCreatedAt: 1234,
           generationProtocolVersion: 2,
         },

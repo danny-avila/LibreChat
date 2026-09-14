@@ -401,6 +401,61 @@ async function persistBackfilledSnapshots(
   return current.fileSnapshots ?? [];
 }
 
+function snapshotMatchesCurrentVersion(
+  snapshot: t.SharedFileSnapshot,
+  current: t.SharedFileSnapshot,
+): boolean {
+  const revisionChanged = (snapshot.previewRevision ?? null) !== (current.previewRevision ?? null);
+  const sourceGenerationChanged =
+    snapshot.sourceDispatchedAt != null &&
+    snapshot.sourceDispatchedAt !== (current.sourceDispatchedAt ?? null);
+  const bytesChanged =
+    snapshot.bytes != null && current.bytes != null && snapshot.bytes !== current.bytes;
+  return !revisionChanged && !sourceGenerationChanged && !bytesChanged;
+}
+
+/**
+ * Add the delivery marker introduced after file snapshots shipped without changing
+ * what an existing link authorizes. Each marker is copied only when the live file
+ * still passes the same revision checks as the public file route. The caller persists
+ * after public-projection preflight with the full prior snapshot as a compare-and-set
+ * guard. A legacy file with no explicit marker used provider delivery, which remains
+ * the compatible fallback.
+ */
+async function enrichSnapshotDeliveryPaths(
+  mongoose: typeof import('mongoose'),
+  share: t.ISharedLink & { messages: t.IMessage[] },
+  messages: t.IMessage[],
+): Promise<{ snapshots: t.SharedFileSnapshot[]; changed: boolean }> {
+  const existing = share.fileSnapshots ?? [];
+  if (existing.every((snapshot) => snapshot.llmDeliveryPath != null) || share._id == null) {
+    return { snapshots: existing, changed: false };
+  }
+
+  const currentById = new Map(
+    (await buildFileSnapshots(mongoose, messages, share.user)).map((snapshot) => [
+      snapshot.file_id,
+      snapshot,
+    ]),
+  );
+  let changed = false;
+  const enriched = existing.map((snapshot) => {
+    if (snapshot.llmDeliveryPath != null) {
+      return snapshot;
+    }
+    const current = currentById.get(snapshot.file_id);
+    if (current == null || !snapshotMatchesCurrentVersion(snapshot, current)) {
+      return snapshot;
+    }
+    changed = true;
+    return { ...snapshot, llmDeliveryPath: current.llmDeliveryPath ?? ('provider' as const) };
+  });
+  if (!changed) {
+    return { snapshots: existing, changed: false };
+  }
+  return { snapshots: enriched, changed: true };
+}
+
 /** Share-scoped file route that serves a snapshotted file independent of owner ACL. */
 function shareFileRoute(shareId: string, fileId: string): string {
   return `/api/share/${shareId}/files/${encodeURIComponent(fileId)}`;
@@ -921,10 +976,16 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const perLinkEnabled = share.snapshotFiles !== false;
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
+      const originalFileSnapshots = share.fileSnapshots;
+      let shouldPersistEnrichedDeliveryPaths = false;
       const shouldPersistFileSnapshots =
         includeFiles && fileSnapshots === undefined && share._id != null;
       if (shouldPersistFileSnapshots) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
+      } else if (includeFiles && fileSnapshots !== undefined) {
+        const enriched = await enrichSnapshotDeliveryPaths(mongoose, share, messagesToShare);
+        fileSnapshots = enriched.snapshots;
+        shouldPersistEnrichedDeliveryPaths = enriched.changed;
       }
 
       const snapshotIds = includeFiles
@@ -978,6 +1039,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       if (shouldPersistFileSnapshots) {
         await persistBackfilledSnapshots(SharedLink, { _id: share._id }, fileSnapshots ?? []);
+      } else if (
+        shouldPersistEnrichedDeliveryPaths &&
+        share._id != null &&
+        originalFileSnapshots !== undefined
+      ) {
+        await SharedLink.updateOne(
+          {
+            _id: share._id,
+            fileSnapshots: originalFileSnapshots,
+            snapshotFiles: { $ne: false },
+          },
+          { $set: { fileSnapshots } },
+          { timestamps: false },
+        );
       }
 
       return result;

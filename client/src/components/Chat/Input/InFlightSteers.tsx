@@ -18,6 +18,7 @@ import {
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
+import { carriedSteerContext, cn, hydrateFileDeliveryMetadata } from '~/utils';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
@@ -25,7 +26,7 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import SteerReceipt from '~/components/Chat/Steering/Receipt';
-import { carriedSteerContext, cn } from '~/utils';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 /** Restores a message's text into the composer, or refuses (false) when the
@@ -633,7 +634,17 @@ const InFlightSteers = memo(function InFlightSteers({
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
-  const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
+  const fileMap = useFileMapContext();
+  const inFlight = useMemo(
+    () =>
+      steers
+        .filter((steer) => steer.status !== 'failed')
+        .map((steer) => {
+          const files = hydrateFileDeliveryMetadata(steer.files, undefined, fileMap);
+          return files === steer.files ? steer : { ...steer, files };
+        }),
+    [fileMap, steers],
+  );
   /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
    *  other escalation control disables rather than arming a second seal. The
    *  escalating flag covers an arm request's round trip, before its chip
