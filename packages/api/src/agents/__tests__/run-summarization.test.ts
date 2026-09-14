@@ -195,6 +195,7 @@ async function callAndCapture(
     modelCallbacks?: readonly ModelBoundChatModelCallback[];
     user?: IUser;
     tenantId?: string;
+    requestBody?: Parameters<typeof createRun>[0]['requestBody'];
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -214,6 +215,7 @@ async function callAndCapture(
     modelCallbacks: opts.modelCallbacks,
     user: opts.user,
     tenantId: opts.tenantId,
+    requestBody: opts.requestBody,
     streaming: true,
     streamUsage: true,
   });
@@ -1032,6 +1034,7 @@ async function compactSummary(
   const runConfig = (Run.create as jest.Mock).mock.calls[0][0] as Parameters<typeof Run.create>[0];
   const run = await actual.Run.create({
     ...runConfig,
+    graphConfig: { ...runConfig.graphConfig, agents: agents as unknown as AgentInputs[] },
     tokenCounter: (message) => String(message.content).length,
   });
   await run.processStream(
@@ -1252,63 +1255,129 @@ describe('Azure deployment alias', () => {
     },
   );
 
-  it('retains the request-resolved Azure instance across Responses and templated self-summary URLs', async () => {
-    jest.replaceProperty(process, 'env', { ...process.env, AZURE_API_KEY: 'user_provided' });
-    const getUserKeyValues = jest.fn().mockResolvedValue({
-      apiKey: JSON.stringify({
-        azureOpenAIApiKey: 'user-key',
-        azureOpenAIApiInstanceName: 'user-instance',
-        azureOpenAIApiDeploymentName: 'user-deployment',
-        azureOpenAIApiVersion: '2024-10-21',
-      }),
-    });
-    const options = await initializeOpenAI({
-      endpoint: EModelEndpoint.azureOpenAI,
-      model_parameters: { model: 'gpt-6-astra' },
-      runtime: { appConfig: makeAppConfig([]), user: { id: 'user-1' }, requestBody: {} },
-      db: { getUserKeyValues },
-    } as unknown as Parameters<typeof initializeOpenAI>[0]);
-    const agents = await callAndCapture({
-      agents: [
-        makeReasoningAgent({
+  it.each(['root', 'lazy'])(
+    'retains Azure identity and resolved headers for a %s self-summary',
+    async (kind) => {
+      jest.replaceProperty(process, 'env', {
+        ...process.env,
+        AZURE_API_KEY: 'user_provided',
+        SUMMARY_HEADER_SECRET: 'must-not-leak',
+      });
+      const user = { id: 'user-1', username: '${SUMMARY_HEADER_SECRET}' };
+      const appConfig = makeAppConfig([]);
+      appConfig.endpoints!.all = {
+        headers: {
+          'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          'X-Tenant': '{{LIBRECHAT_USER_TENANTID}}',
+          'X-User': '{{LIBRECHAT_USER_USERNAME}}',
+        },
+      };
+      const getUserKeyValues = jest.fn().mockResolvedValue({
+        apiKey: JSON.stringify({
+          azureOpenAIApiKey: 'user-key',
+          azureOpenAIApiInstanceName: 'user-instance',
+          azureOpenAIApiDeploymentName: 'user-deployment',
+          azureOpenAIApiVersion: '2024-10-21',
+        }),
+      });
+      const options = await initializeOpenAI({
+        endpoint: EModelEndpoint.azureOpenAI,
+        model_parameters: { model: 'gpt-6-astra' },
+        runtime: { appConfig, user, requestBody: {} },
+        db: { getUserKeyValues },
+      } as unknown as Parameters<typeof initializeOpenAI>[0]);
+      const azureAgent = {
+        ...makeReasoningAgent({
           endpoint: EModelEndpoint.azureOpenAI,
           provider: Providers.OPENAI,
           model: 'gpt-6-astra',
           azureOptions: options.azureOptions,
           model_parameters: { ...options.llmConfig, configuration: options.configOptions },
         }),
-      ],
-      appConfig: makeAppConfig([]),
-      summarizeOnly: true,
-      summarizationConfig: {
-        parameters: {
-          streaming: false,
-          baseURL:
-            'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+        id: 'azure-child',
+      };
+      const lazyParent = makeAgent({
+        id: 'parent',
+        summarization: { enabled: false },
+        subagents: { enabled: true, allowSelf: false },
+        lazySubagentConfigs: [
+          {
+            id: azureAgent.id,
+            name: 'Azure child',
+            description: 'Lazy Azure child',
+            configId: 'azure-child:1:test',
+            resolve: jest.fn().mockResolvedValue(azureAgent),
+          },
+        ],
+      });
+      const captured = await callAndCapture({
+        agents: kind === 'lazy' ? [lazyParent] : [azureAgent],
+        appConfig,
+        user: user as IUser,
+        tenantId: 'tenant-1',
+        requestBody: { conversationId: 'conversation-1' },
+        summarizeOnly: true,
+        summarizationConfig: {
+          parameters: {
+            streaming: false,
+            baseURL:
+              'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+          },
         },
-      },
-    });
-    const { requests } = await compactSummary(agents);
-    expect(requests).toHaveLength(1);
-    expect(requests[0].url.origin + requests[0].url.pathname).toBe(
-      'https://user-instance.openai.azure.com/openai/v1/responses',
-    );
-    expect(requests[0].body.model).toBe('user-deployment');
-    expect(requests[0].headers.get('api-key')).toBe('user-key');
-    expect(getUserKeyValues).toHaveBeenCalledTimes(1);
-  });
+      });
+      let selected = captured[0];
+      if (kind === 'lazy') {
+        const [child] = captured[0].subagentConfigs as Array<Record<string, unknown>>;
+        selected = await (
+          child.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+        )({ signal: new AbortController().signal } as never);
+        selected.summarizeOnly = true;
+      }
+      const agents = [selected];
+      const { requests } = await compactSummary(agents);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].url.origin + requests[0].url.pathname).toBe(
+        'https://user-instance.openai.azure.com/openai/v1/responses',
+      );
+      expect(requests[0].body.model).toBe('user-deployment');
+      expect(requests[0].headers.get('api-key')).toBe('user-key');
+      expect(requests[0].headers.get('X-Conversation')).toBe('conversation-1');
+      expect(requests[0].headers.get('X-Tenant')).toBe('tenant-1');
+      expect(requests[0].headers.get('X-User')).toBe('${SUMMARY_HEADER_SECRET}');
+      const mainConfiguration = (agents[0].clientOptions as Record<string, unknown>)
+        .configuration as OpenAIConfiguration;
+      expect(new Headers(mainConfiguration?.defaultHeaders as HeadersInit).get('X-User')).toBe(
+        '${SUMMARY_HEADER_SECRET}',
+      );
+      expect(getUserKeyValues).toHaveBeenCalledTimes(1);
+    },
+  );
 
-  it('honors the summary token cap when self-summarizing through automatic Responses', async () => {
-    const agents = await callAndCapture({
-      agents: [azureAstraAgent()],
-      summarizeOnly: true,
-      summarizationConfig: { maxSummaryTokens: 512, parameters: { streaming: false } },
-    });
-    const { requests } = await compactSummary(agents);
-    expect(requests).toHaveLength(1);
-    expect(requests[0].body.max_output_tokens).toBe(512);
-    expect(requests[0].body.model).toBe('production-deployment');
-  });
+  it.each([
+    { parameterCap: undefined, expected: 512 },
+    { parameterCap: '128', expected: 512 },
+    { parameterCap: 0, expected: 512 },
+    { parameterCap: 256, expected: 256 },
+  ])(
+    'honors the summary token cap with parameter cap $parameterCap',
+    async ({ parameterCap, expected }) => {
+      const agents = await callAndCapture({
+        agents: [azureAstraAgent()],
+        summarizeOnly: true,
+        summarizationConfig: {
+          maxSummaryTokens: 512,
+          parameters: {
+            streaming: false,
+            ...(parameterCap !== undefined ? { maxSummaryTokens: parameterCap } : {}),
+          },
+        },
+      });
+      const { requests } = await compactSummary(agents);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].body.max_output_tokens).toBe(expected);
+      expect(requests[0].body.model).toBe('production-deployment');
+    },
+  );
 
   it.each([
     { nested: false, useResponsesApi: true },

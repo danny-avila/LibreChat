@@ -1422,7 +1422,11 @@ function shapeSummarizationConfig(
   });
 
   /** The SDK sets maxTokens for this cap, but LangChain spreads modelKwargs after it. */
-  const summaryTokenCap = userParameters?.maxSummaryTokens ?? config?.maxSummaryTokens;
+  const parameterTokenCap = userParameters?.maxSummaryTokens;
+  const summaryTokenCap =
+    typeof parameterTokenCap === 'number' && parameterTokenCap > 0
+      ? parameterTokenCap
+      : config?.maxSummaryTokens;
   const inheritedKwargs =
     provider === fallbackProvider ? agentModelKwargs(agent?.model_parameters) : undefined;
   const effectiveKwargs = isPlainObject(parameters?.modelKwargs)
@@ -2326,6 +2330,21 @@ export async function createRun({
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
+    /**
+     * Resolve request-based headers across provider-specific header locations
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
+     * Google `customHeaders`). Done at this step because the request body may
+     * contain dynamic values (e.g. conversationId) that are only known after
+     * agent initialization. Resolve before a self-summary snapshots this configuration.
+     */
+    resolveConfigHeaders({
+      llmConfig: agent.model_parameters as Partial<t.RunLLMConfig>,
+      user: createSafeUser(user),
+      tenantId,
+      body: requestBody,
+    });
+
+    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const shapedSummarization = shapeSummarizationConfig(
       agent.summarization ?? summarizationConfig,
       provider as string,
@@ -2348,7 +2367,6 @@ export async function createRun({
         }
       : shapedSummarization;
 
-    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',
@@ -2379,20 +2397,6 @@ export async function createRun({
     const additionalInstructions = [dynamicToolInstructions, agent.additional_instructions ?? '']
       .join('\n')
       .trim();
-
-    /**
-     * Resolve request-based headers across provider-specific header locations
-     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
-     * Google `customHeaders`). Done at this step because the request body may
-     * contain dynamic values (e.g. conversationId) that are only known after
-     * agent initialization.
-     */
-    resolveConfigHeaders({
-      llmConfig,
-      user: createSafeUser(user),
-      tenantId,
-      body: requestBody,
-    });
 
     /** Resolves issues with new OpenAI usage field */
     if (
