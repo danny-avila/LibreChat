@@ -39,9 +39,11 @@ async function seedChats(prefix: string, count: number): Promise<Seeded[]> {
 }
 
 /** Pinned chats are ordinary conversations carrying `pinned: true`; the sidebar
- *  lifts them out of the date groups into the Pinned section. */
-async function seedPins(prefix: string, count: number): Promise<Seeded[]> {
-  const now = Date.now();
+ *  lifts them out of the date groups into the Pinned section. `ageDays` backs
+ *  them out of the recent window, for a spec that needs the first page of the
+ *  chats query to be chats rather than the pins it strips back out. */
+async function seedPins(prefix: string, count: number, ageDays = 0): Promise<Seeded[]> {
+  const now = Date.now() - ageDays * 24 * 60 * 60 * 1000;
   const pins: Seeded[] = Array.from({ length: count }, (_, index) => ({
     conversationId: randomUUID(),
     title: titleOf(prefix, index),
@@ -372,8 +374,10 @@ test.describe('sidebar single scroll', () => {
   }) => {
     await clearUserConversations(userEmail);
     /* Enough pins to hold the chats list below the fold on both a desktop
-     * panel and an emulated handset. */
-    remember(await seedPins('E2E pin', 24));
+     * panel and an emulated handset, and old enough that the first page of the
+     * chats query is chats: pins ride that query too, and a page made only of
+     * rows the list strips back out has its own reason to fetch another. */
+    remember(await seedPins('E2E pin', 24, 400));
     remember(await seedChats('E2E chat', 60));
 
     const pages: string[] = [];
