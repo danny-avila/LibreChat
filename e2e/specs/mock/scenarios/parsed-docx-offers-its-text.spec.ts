@@ -24,7 +24,8 @@ test('an attached Word document offers the text the server extracted @scenario:p
 
   expect(response.status(), await response.text()).toBe(200);
   const stored = (await response.json()) as UploadedTextFile;
-  expect(stored.source).toBe('text');
+  /* Storage keeps the original document, so the record says "delivered as text"
+   * through llmDeliveryPath rather than through its storage source. */
   expect(stored.llmDeliveryPath).toBe('text');
   expect(stored.type).toBe(DOCX_MIME);
   /** Markdown structure, not a flat dump: the table survives the conversion. */

@@ -18,7 +18,7 @@ test('a part-scanned PDF keeps its text and names the omitted page @scenario:par
 
   expect(response.status(), await response.text()).toBe(200);
   const stored = (await response.json()) as UploadedTextFile;
-  expect(stored.source).toBe('text');
+  expect(stored.llmDeliveryPath).toBe('text');
   expect(stored.text).toContain('Quarterly Report');
   expect(stored.text).toContain('Page 2 of this document contains no extractable text');
   expect(stored.text).toContain('requires an OCR service to read');

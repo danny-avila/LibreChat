@@ -14,15 +14,18 @@ import Image from './Image';
  * Whether a staged upload already has extracted text to show.
  *
  * Parsing happens server-side on upload, so the text exists as soon as the
- * progress bar completes, before the message is ever sent. `source` is only
- * copied onto the staged record by the same update that sets `progress` to 1,
- * and only parser-written records carry `FileSources.text`: the same PDF sent
- * to file_search or execute_code is stored as a binary with no text.
+ * progress bar completes, before the message is ever sent. The routing fields are
+ * copied onto the staged record by the same update that sets `progress` to 1.
+ *
+ * `llmDeliveryPath: 'text'` is what the upload path stamps on a record whose text
+ * replaces its bytes for the model; `FileSources.text` is the same statement from
+ * records written before storage kept the original document. The same PDF sent to
+ * file_search or execute_code carries neither and is stored as a binary with no text.
  */
 const hasExtractedText = (file: ExtendedFile): boolean =>
   !!file.file_id &&
   file.progress >= 1 &&
-  file.source === FileSources.text &&
+  (file.llmDeliveryPath === 'text' || file.source === FileSources.text) &&
   isParsedDocument(file.type, file.filename);
 
 /**

@@ -21,7 +21,7 @@ test('a viewer of a shared conversation can read the parsed document text @scena
   const upload = documentFixture('structured.docx');
   const uploadResponse = await uploadViaUnifiedButton(page, upload);
   expect(uploadResponse.status(), await uploadResponse.text()).toBe(200);
-  expect(((await uploadResponse.json()) as UploadedTextFile).source).toBe('text');
+  expect(((await uploadResponse.json()) as UploadedTextFile).llmDeliveryPath).toBe('text');
 
   const prompt = `Shared parsed document ${Date.now()}`;
   const sent = await sendMessage(page, prompt);

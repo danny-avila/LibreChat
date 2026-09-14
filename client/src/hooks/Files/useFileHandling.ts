@@ -315,6 +315,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
               width: data.width,
               filename: data.filename,
               source: data.source,
+              /** What decides whether this chip can offer the extracted text: storage
+               * keeps the original document, so the record's source no longer says it. */
+              llmDeliveryPath: data.llmDeliveryPath,
               embedded: data.embedded,
             },
             assistant_id ? true : false,

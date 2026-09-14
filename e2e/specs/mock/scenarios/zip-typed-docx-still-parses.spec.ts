@@ -25,7 +25,7 @@ test('a Word document a client typed as a zip archive is still parsed @scenario:
 
   expect(response.status(), await response.text()).toBe(200);
   const stored = (await response.json()) as UploadedTextFile;
-  expect(stored.source).toBe('text');
+  expect(stored.llmDeliveryPath).toBe('text');
   expect(stored.type).toBe(DOCX_MIME);
   expect(stored.text).toContain('# Quarterly Report');
 

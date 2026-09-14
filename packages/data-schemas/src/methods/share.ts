@@ -299,26 +299,36 @@ async function buildFileSnapshots(
      * filepath; a configured RAG `/text` extraction leaves the temporary upload path,
      * which is gone by the time anyone views the share. Recognizing the second by its
      * type the way the owner's own preview does is what keeps a shared DOCX from
-     * reporting no preview while its text sits in MongoDB. */
-    const hasTextPreview =
-      source === FileSources.text &&
+     * reporting no preview while its text sits in MongoDB.
+     *
+     * `llmDeliveryPath: 'text'` is the marker the upload path stamps once storage keeps
+     * the original document too; `FileSources.text` is the same statement from records
+     * written before it. A record can now carry both a durable object and its text. */
+    const carriesText =
+      (file.llmDeliveryPath === 'text' || source === FileSources.text) &&
       (documentParserSources.has(file.filepath ?? '') ||
         isParsedDocument(file.type, file.filename));
-    if (!SNAPSHOT_STREAMABLE_SOURCES.has(source) && !hasTextPreview) {
+    /* A record stored as its text alone has no object anything can stream: the local
+     * parser left its engine name in `filepath` and a configured extraction left a
+     * temporary upload path, both gone by the time a viewer arrives. A record written
+     * since storage keeps the original document has a real one, so a shared viewer can
+     * download it beside the text. */
+    const hasStoredObject = source !== FileSources.text;
+    if (!SNAPSHOT_STREAMABLE_SOURCES.has(source) && !carriesText) {
       continue;
     }
     snapshots.push({
       file_id: file.file_id,
       source,
       storageKey: file.storageKey,
-      ...(hasTextPreview ? {} : { filepath: file.filepath }),
+      ...(carriesText && !hasStoredObject ? {} : { filepath: file.filepath }),
       type: file.type,
       filename: file.filename,
       bytes: file.bytes,
       width: file.width,
       height: file.height,
       model: file.model,
-      ...(hasTextPreview && { hasTextPreview: true }),
+      ...(carriesText && { hasTextPreview: true }),
       previewRevision: file.previewRevision,
       sourceDispatchedAt: file.metadata?.sourceDispatchedAt,
       tenantId: file.tenantId,

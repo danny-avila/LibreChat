@@ -141,6 +141,10 @@ const isParserInputLimitError = (err) =>
 const isParserOutputLimitError = (err) =>
   err?.code === 'PARSER_OUTPUT_LIMIT' || err?.name === 'ParserOutputLimitError';
 
+/* Not a refusal: the parser ran and the document simply holds no extractable text. */
+const isNoDocumentTextError = (err) =>
+  err?.code === 'NO_DOCUMENT_TEXT' || err?.name === 'NoDocumentTextError';
+
 const isDocumentParserRefusal = (err) =>
   isZipBombError(err) ||
   isArchiveRefusal(err) ||
@@ -1115,6 +1119,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       } catch (err) {
         if (isDocumentParserRefusal(err)) {
           throw err;
+        }
+        /* The parser read the document and found no text in it. That is the case a
+         * configured OCR service exists for, and without one it is the image-based
+         * refusal below, so it must not surface as a parser failure. */
+        if (isNoDocumentTextError(err)) {
+          return;
         }
         const { errorMetadata } = getExtractionLogDetails(err);
         logger.error(

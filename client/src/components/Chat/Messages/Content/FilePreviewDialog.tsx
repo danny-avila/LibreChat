@@ -3,6 +3,7 @@ import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { FileSources, isParsedDocument } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
@@ -26,11 +27,13 @@ interface FilePreviewDialogProps {
   fileSource?: string;
   fileSize?: number;
   /**
-   * Storage backend the record was written to. Only `FileSources.text` records
-   * hold extracted text, so the parsed-text fallback stays off when the caller
-   * cannot supply it rather than promising text that was never stored.
+   * Storage backend the record was written to. Older parsed records carry
+   * `FileSources.text`; records written since storage keeps the original document
+   * say the same thing through `deliveryPath`.
    */
   source?: FileSources;
+  /** `'text'` when the record's text replaces its bytes for the model. */
+  deliveryPath?: TFile['llmDeliveryPath'];
   /** Share-safe replacement for `source`, which shared-message sanitization removes. */
   hasTextPreview?: boolean;
 }
@@ -89,6 +92,7 @@ export default function FilePreviewDialog({
   fileSource,
   fileSize,
   source,
+  deliveryPath,
   hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
@@ -100,7 +104,7 @@ export default function FilePreviewDialog({
    * unavailable" outcome behind an empty state.
    */
   const showParsedText =
-    (source === FileSources.text || hasTextPreview === true) &&
+    (deliveryPath === 'text' || source === FileSources.text || hasTextPreview === true) &&
     isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate

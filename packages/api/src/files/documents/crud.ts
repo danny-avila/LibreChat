@@ -81,6 +81,21 @@ export class ParserInputLimitError extends Error {
   }
 }
 
+/**
+ * The parsers' way of reporting that a document held no text at all: both engines
+ * return a result, and this refuses it rather than storing an empty extraction. Coded
+ * because the upload router treats it as an outcome — the case a configured OCR service
+ * exists for — while a genuine parser failure has to keep surfacing as itself.
+ */
+export class NoDocumentTextError extends Error {
+  readonly code = 'NO_DOCUMENT_TEXT';
+
+  constructor() {
+    super('No text found in document');
+    this.name = 'NoDocumentTextError';
+  }
+}
+
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
@@ -146,7 +161,7 @@ export async function parseDocument({
   const result = await withParserAdmission(() => extractor.extract(parserFile, signal), signal);
 
   if (!result.text?.trim()) {
-    throw new Error('No text found in document');
+    throw new NoDocumentTextError();
   }
 
   return result;

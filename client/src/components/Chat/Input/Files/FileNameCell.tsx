@@ -9,13 +9,15 @@ import { useLocalize } from '~/hooks';
 /**
  * Whether the record actually holds extracted text.
  *
- * Only the parser writes `text`, and every record it writes carries
- * `FileSources.text`. The same PDF uploaded to file_search or execute_code is
- * stored as a binary with no text at all, so the MIME check alone would offer a
- * control that always dead-ends in an empty state.
+ * A record whose text replaces its bytes for the model is stamped
+ * `llmDeliveryPath: 'text'` by the upload path; records written before storage kept
+ * the original document say the same thing with `FileSources.text`. The same PDF
+ * uploaded to file_search or execute_code is stored as a binary with no text at all,
+ * so the MIME check alone would offer a control that always dead-ends in an empty state.
  */
 const hasExtractedText = (file: TFile): boolean =>
-  file.source === FileSources.text && isParsedDocument(file.type, file.filename);
+  (file.llmDeliveryPath === 'text' || file.source === FileSources.text) &&
+  isParsedDocument(file.type, file.filename);
 
 /**
  * Filename cell for the file manager.
