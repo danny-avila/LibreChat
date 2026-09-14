@@ -91,11 +91,13 @@ jest.mock('~/server/services/Config', () => ({
 
 const mockLoadToolDefinitions = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
+const mockResolveScheduleUpstreamTokenProvider = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
   isFatalAgentInitializationError: (error) =>
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+  isScheduleFireRequest: (req) => req?._isScheduledFire === true,
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
   createAuthIdentityContext: ({ user, tenantId }) => ({
@@ -191,6 +193,10 @@ jest.mock('~/server/services/MCP', () => ({
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
 }));
+jest.mock('~/server/services/Schedules/upstreamToken', () => ({
+  resolveScheduleUpstreamTokenProvider: (...args) =>
+    mockResolveScheduleUpstreamTokenProvider(...args),
+}));
 
 const {
   loadAgentTools,
@@ -255,6 +261,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockResolveMcpServerNames.mockResolvedValue([]);
     mockPrimeSearchFiles.mockResolvedValue({});
     mockPrimeCodeFiles.mockResolvedValue({});
+    mockResolveScheduleUpstreamTokenProvider.mockResolvedValue(undefined);
   });
 
   describe('processRequiredActions content protection', () => {
@@ -2171,6 +2178,58 @@ describe('ToolService - Action Capability Gating', () => {
             tenantId: 'tenant-1',
             openidIssuer: 'https://issuer.example.com',
           }),
+        }),
+      );
+      expect(mockResolveScheduleUpstreamTokenProvider).not.toHaveBeenCalled();
+    });
+
+    it('uses renewable upstream credentials when loading tools for a scheduled run', async () => {
+      const serverName = 'Scheduled-OBO';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      req._isScheduledFire = true;
+      req.body = { conversationId: 'conv-123', messageId: 'msg-123' };
+      req.user = {
+        id: 'user_123',
+        provider: 'openid',
+        openidId: 'oidc-sub-123',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+      };
+      const scheduledProvider = jest.fn().mockResolvedValue({ access_token: 'renewed-token' });
+      mockResolveScheduleUpstreamTokenProvider.mockResolvedValue(scheduledProvider);
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/obo',
+        obo: { scopes: 'api://obo/Mcp.Tools.ReadWrite' },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, dependencies) => {
+        await dependencies.refreshMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools: {} });
+      const signal = new AbortController().signal;
+
+      await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+        signal,
+      });
+
+      expect(mockResolveScheduleUpstreamTokenProvider).toHaveBeenCalledWith(req.user, { signal });
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          forceNew: true,
+          upstreamTokenProvider: scheduledProvider,
         }),
       );
     });

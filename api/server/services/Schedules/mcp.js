@@ -8,6 +8,7 @@ const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { getLogStores } = require('~/cache');
 const methods = require('~/models');
+const { resolveScheduleUpstreamTokenProvider } = require('./upstreamToken');
 
 module.exports = createScheduleMCPPreflight({
   getRoleByName: methods.getRoleByName,
@@ -21,6 +22,7 @@ module.exports = createScheduleMCPPreflight({
   getServerConfigs: (userId, config, role) =>
     getMCPServersRegistry().getAllServerConfigs(userId, config, role),
   findPluginAuthsByKeys: methods.findPluginAuthsByKeys,
+  resolveUpstreamTokenProvider: resolveScheduleUpstreamTokenProvider,
   connect: (options) =>
     getMCPManager().getConnection({
       ...options,

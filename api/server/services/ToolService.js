@@ -61,6 +61,7 @@ const {
   getTransactionsConfig,
   checkToolRolePermission,
   resolveToolRolePermissions,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const {
   Time,
@@ -113,6 +114,9 @@ const {
   resolveCollisionAuditNames,
 } = require('~/server/services/MCP');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
+const {
+  resolveScheduleUpstreamTokenProvider,
+} = require('~/server/services/Schedules/upstreamToken');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -988,23 +992,25 @@ async function loadToolDefinitionsWrapper({
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const requestScopedConnections = getMCPRequestContext(req, res);
-  /**
-   * Build the OBO upstream-token closure once at this request boundary and pass
-   * the function into MCP handling, so `reinitMCPServer` never receives the raw
-   * Express request. `res` is forwarded so a rotated refresh token can be
-   * mirrored to the `refreshToken` cookie when the response is still writable.
-   */
+  /** Resolve unattended credentials afresh for scheduled runs. Interactive
+   * requests retain their request-scoped session provider, including cookie
+   * rotation while the response is writable. */
   const oboIdentityContext = createAuthIdentityContext({
     user: req.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
+  const sessionUpstreamTokenProvider = createOpenIDSessionTokenProvider({
     req,
     res,
     user: req.user,
     identityContext: oboIdentityContext,
     tokenPreference: 'access_token',
   });
+  const upstreamTokenProvider =
+    isScheduleFireRequest(req) && hasFilteredMCPTools
+      ? ((await resolveScheduleUpstreamTokenProvider(req.user, { signal })) ??
+        sessionUpstreamTokenProvider)
+      : sessionUpstreamTokenProvider;
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;
