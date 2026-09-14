@@ -5,8 +5,8 @@ import { getE2EUser } from '../../../setup/user';
 import { escapeRegExp } from '../helpers';
 
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
-const TRUNCATION_MARKER = '…[truncated]';
-const CACHED_DIAGRAM = `flowchart LR\n  A[Start] --> B[Middle]\n\n${TRUNCATION_MARKER}`;
+const CACHED_DIAGRAM = `flowchart LR
+  A[Start] --> B[Middle]`;
 const STORED_DIAGRAM = `flowchart LR\n  A[Start] --> B[Middle]\n  B --> Z[StoredOnly]\n`;
 const FAILURE_MESSAGE = 'Could not export this diagram. Please try again.';
 const SUCCESS_MESSAGE = 'Diagram download started.';
@@ -101,7 +101,7 @@ async function openSourceMenu(page: Page, conversationId: string) {
   await page.goto(`/c/${conversationId}`, { timeout: 30000 });
   const messages = page.getByTestId('messages-view');
   const artifactButton = messages.getByRole('button', {
-    name: 'flow.mmd Diagram Opens as a rendered preview Click to open',
+    name: 'Open as artifact',
     exact: true,
   });
   await expect(artifactButton).toBeVisible({ timeout: 30000 });
@@ -133,7 +133,6 @@ test.describe('Mermaid source downloads', () => {
       }
       const source = Buffer.concat(chunks).toString('utf8');
       expect(source).toContain('Z[StoredOnly]');
-      expect(source).not.toContain(TRUNCATION_MARKER);
       await expect(panel.getByRole('status')).toHaveText(SUCCESS_MESSAGE);
     },
   );

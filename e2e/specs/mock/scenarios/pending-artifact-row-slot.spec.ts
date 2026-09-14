@@ -23,6 +23,7 @@ test.describe('pending artifact row ordering', () => {
     const now = new Date(0).toISOString();
     const pendingFilename = 'data.xlsx';
     const resolvedFilename = 'index.html';
+    const toolCallId = `${conversationId}-tool`;
 
     const pendingAttachment = {
       file_id: pendingFileId,
@@ -33,7 +34,7 @@ test.describe('pending artifact row ordering', () => {
       bytes: 2048,
       messageId,
       conversationId,
-      toolCallId: `${conversationId}-tool`,
+      toolCallId,
       status: 'pending',
       metadata: {
         codeEnvRef: { kind: 'user', id: 'e2e-user', storage_session_id: 'e2e-session' },
@@ -48,6 +49,7 @@ test.describe('pending artifact row ordering', () => {
       bytes: 16,
       messageId,
       conversationId,
+      toolCallId,
       status: 'ready',
       text: '<h1>hi</h1>',
       textFormat: 'html',
@@ -65,7 +67,7 @@ test.describe('pending artifact row ordering', () => {
         {
           type: 'tool_call',
           tool_call: {
-            id: `${conversationId}-tool`,
+            id: toolCallId,
             name: 'execute_code',
             args: '{}',
             output: 'created files',
