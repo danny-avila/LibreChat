@@ -609,6 +609,8 @@ const InFlightSteer = memo(function InFlightSteer({
           fileType={selectedFile?.type ?? undefined}
           fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
+          source={selectedFile?.source}
+          deliveryPath={selectedFile?.llmDeliveryPath}
         />
       )}
     </div>

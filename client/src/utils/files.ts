@@ -10,13 +10,16 @@ import {
   megabyte,
   Providers,
   QueryKeys,
-  inferMimeType,
+  resolveEffectiveMimeType,
   excelMimeTypes,
   EToolResources,
   EModelEndpoint,
   retrievalMimeTypes,
+  documentParserMimeTypes,
+  isNativelyReadableText,
   isBedrockDocumentType,
   isExplicitMimeConfig,
+  isPermissiveMimeConfig,
   codeInterpreterMimeTypes,
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
@@ -414,6 +417,7 @@ export const validateFiles = ({
   fileConfig,
   skipSizeValidation = false,
   skipBatchRules = false,
+  ocrEnabled = true,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -426,6 +430,8 @@ export const validateFiles = ({
   /** The caller partitions the selection itself, so the rules that would reject the batch as a
    * whole — the file count and duplicates — wait until it has dropped what it can */
   skipBatchRules?: boolean;
+  /** Whether the agent may use OCR, which decides if a configured OCR route counts. */
+  ocrEnabled?: boolean;
 }) => {
   const { supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
@@ -445,7 +451,7 @@ export const validateFiles = ({
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
-    const fileType = inferMimeType(originalFile.name, originalFile.type);
+    const fileType = resolveEffectiveMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
     if (!fileType) {
@@ -460,20 +466,12 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
-    /* Unified mode routes by MIME type but does not widen what may be uploaded: the
-     * endpoint allowlist is the same ceiling the server enforces in `filterFile`, so
-     * accepting extraction-capable types beyond it only turns a preflight message into
-     * a failed request. */
-    let mimeTypesToCheck = supportedMimeTypes;
-    if (toolResource === EToolResources.context) {
-      mimeTypesToCheck = [
-        ...(fileConfig?.text?.supportedMimeTypes || []),
-        ...(fileConfig?.ocr?.supportedMimeTypes || []),
-        ...(fileConfig?.stt?.supportedMimeTypes || []),
-      ];
-    }
+    const isSupported =
+      toolResource === EToolResources.context
+        ? isContextType(originalFile.type, fileConfig, ocrEnabled)
+        : checkType(originalFile.type, supportedMimeTypes);
 
-    if (!checkType(originalFile.type, mimeTypesToCheck)) {
+    if (!isSupported) {
       setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
@@ -501,6 +499,7 @@ export type UploadOptionContext = {
   fileSearchEnabled: boolean;
   codeEnabled: boolean;
   contextEnabled: boolean;
+  ocrEnabled: boolean;
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
@@ -547,12 +546,55 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
   return type.startsWith('image/');
 };
 
-const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
-  checkType(type, [
-    ...(fileConfig?.text?.supportedMimeTypes || []),
-    ...(fileConfig?.ocr?.supportedMimeTypes || []),
-    ...(fileConfig?.stt?.supportedMimeTypes || []),
-  ]);
+/**
+ * Known document formats prefer the local parser allowlist. A deployment-supplied OCR
+ * or RAG text override may provide the route when local parsing deliberately excludes
+ * one, so all three are checked here for the same reason the upload path checks all
+ * three: a file the server would accept must not be refused before it is sent.
+ */
+const isContextType = (
+  type: string,
+  fileConfig: FileConfig | null,
+  allowConfiguredOcr = true,
+): boolean => {
+  /* Checked before the built-in list, not inside it: an operator who adds a vendor MIME
+   * alias to `documentParser.supportedMimeTypes` has told the server to parse it, and
+   * the server obeys that allowlist whether or not the type is one it ships with. */
+  if (checkType(type, fileConfig?.documentParser?.supportedMimeTypes || documentParserMimeTypes)) {
+    return true;
+  }
+
+  if (checkType(type, documentParserMimeTypes)) {
+    const configuredOcrEnabled =
+      allowConfiguredOcr &&
+      fileConfig?.ocr?.enabled === true &&
+      checkType(type, fileConfig.ocr.supportedMimeTypes || []);
+    /* Mirrors `shouldUseConfiguredText`: a RAG service exists, and the admin named this
+     * type in a text allowlist they actually narrowed. The permissive default means
+     * "everything", which is not a request to route documents away from the parser. */
+    const configuredTextEnabled =
+      fileConfig?.text?.enabled === true &&
+      !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+      checkType(type, fileConfig.text?.supportedMimeTypes || []);
+    return configuredOcrEnabled || configuredTextEnabled;
+  }
+
+  const configuredOcrEnabled =
+    allowConfiguredOcr &&
+    fileConfig?.ocr?.enabled === true &&
+    checkType(type, fileConfig.ocr.supportedMimeTypes || []);
+  const configuredTextType = checkType(type, fileConfig?.text?.supportedMimeTypes || []);
+  const textFallbackEnabled =
+    configuredTextType &&
+    (!isPermissiveMimeConfig(fileConfig?.text?.supportedMimeTypes) ||
+      fileConfig?.text?.enabled === true ||
+      isNativelyReadableText(type));
+  return (
+    textFallbackEnabled ||
+    configuredOcrEnabled ||
+    checkType(type, fileConfig?.stt?.supportedMimeTypes || [])
+  );
+};
 
 /**
  * Upload destinations a file set can be routed to, given the active endpoint and agent
@@ -580,7 +622,7 @@ export const getViableUploadOptions = (
   if (fileList.length === 0) {
     return [];
   }
-  const types = fileList.map((file) => inferMimeType(file.name, file.type));
+  const types = fileList.map((file) => resolveEffectiveMimeType(file.name, file.type));
   if (types.some((type) => !type)) {
     return [];
   }
@@ -605,7 +647,7 @@ export const getViableUploadOptions = (
   ) {
     options.push(EToolResources.execute_code);
   }
-  if (ctx.contextEnabled && every((type) => isContextType(type, ctx.fileConfig))) {
+  if (ctx.contextEnabled && every((type) => isContextType(type, ctx.fileConfig, ctx.ocrEnabled))) {
     options.push(EToolResources.context);
   }
   return options;

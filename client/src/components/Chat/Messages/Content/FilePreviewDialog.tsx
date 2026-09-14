@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { FileSources, isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import type { TFile } from 'librechat-data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
+import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -23,6 +26,16 @@ interface FilePreviewDialogProps {
   fileType?: string;
   fileSource?: string;
   fileSize?: number;
+  /**
+   * Storage backend the record was written to. Older parsed records carry
+   * `FileSources.text`; records written since storage keeps the original document
+   * say the same thing through `deliveryPath`.
+   */
+  source?: FileSources;
+  /** `'text'` when the record's text replaces its bytes for the model. */
+  deliveryPath?: TFile['llmDeliveryPath'];
+  /** Share-safe replacement for `source`, which shared-message sanitization removes. */
+  hasTextPreview?: boolean;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -72,15 +85,37 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
+  filePath,
   relevance,
   pages,
   pageRelevance,
   fileType,
   fileSource,
   fileSize,
+  source,
+  deliveryPath,
+  hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  /**
+   * Parsed documents render no preview of their own, so fall back to their text.
+   * The MIME type alone is not enough: a stored PDF whose download fails is not a
+   * parsed record, and offering its "extracted text" hides the real "preview
+   * unavailable" outcome behind an empty state.
+   */
+  const showParsedText =
+    (deliveryPath === 'text' || source === FileSources.text || hasTextPreview === true) &&
+    isParsedDocument(fileType, fileName);
+  /**
+   * Whether the record is its text and nothing else. The parser used to be the whole
+   * record, so those carry `FileSources.text` and have no object to download; a shared
+   * snapshot of one carries no `filepath` either. A record written since storage keeps
+   * the original document is both, and hiding its download control would strip the only
+   * way to get the document back.
+   */
+  const isTextOnlyRecord =
+    source === FileSources.text || (hasTextPreview === true && filePath == null);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -104,7 +139,7 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const previewKind = showParsedText ? false : getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
   const cancelledRef = useRef(false);
@@ -239,7 +274,7 @@ export default function FilePreviewDialog({
             <OGDialogDescription className="min-w-0 truncate">
               {metaParts.join(' · ')}
             </OGDialogDescription>
-            {fileId && (
+            {fileId && !isTextOnlyRecord && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -261,7 +296,7 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {previewError && (
+          {previewError && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
@@ -293,12 +328,22 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* Parsed documents have no stored binary here, but the parser already read
+           * them for the model. Showing that text avoids a request for a marker path. */}
+          {!previewKind && !loading && showParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
+            </>
           )}
         </div>
       </OGDialogContent>
