@@ -577,9 +577,12 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       throwError: true,
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
-    const upstreamTokenProvider = await deps.resolveUpstreamTokenProvider?.(user, {
-      signal: options.signal,
-    });
+    const requiresUpstreamToken = [...selected.keys()].some(
+      (server) => servers[server]?.obo != null,
+    );
+    const upstreamTokenProvider = requiresUpstreamToken
+      ? await deps.resolveUpstreamTokenProvider?.(user, { signal: options.signal })
+      : undefined;
     throwIfAborted();
     const requestBody = {
       messageId: randomUUID(),

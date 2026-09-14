@@ -182,11 +182,12 @@ describe('initializeClient — processAgent ACL gate', () => {
     },
   });
 
-  it('resolves a host credential provider at the agent initialization boundary', async () => {
+  it('resolves a host credential provider at a scheduled agent initialization boundary', async () => {
     const upstreamTokenProvider = jest.fn();
     const resolveUpstreamTokenProvider = jest.fn().mockResolvedValue(upstreamTokenProvider);
     const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
     const req = makeReq();
+    req._isScheduledFire = true;
     const signal = new AbortController().signal;
     mockInitializeAgent.mockImplementationOnce(async ({ loadTools, agent }) => {
       await loadTools({
@@ -207,6 +208,21 @@ describe('initializeClient — processAgent ACL gate', () => {
 
     expect(resolveUpstreamTokenProvider).toHaveBeenCalledWith(req.user, { signal });
     expect(loadAgentTools).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
+  });
+
+  it('keeps interactive agent initialization independent of the host resolver', async () => {
+    const resolveUpstreamTokenProvider = jest.fn();
+    const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+
+    await hostInitializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(resolveUpstreamTokenProvider).not.toHaveBeenCalled();
   });
 
   it('replaces untrusted artifact route metadata with the executing agent context', async () => {

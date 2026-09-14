@@ -82,6 +82,9 @@ it('uses persisted identity with isolated connections and disposes them after di
 
 it('resolves an upstream token provider for unattended preflight', async () => {
   const { check, deps } = setup();
+  deps.getServerConfigs = jest.fn(async () => ({
+    docs: { ...server, obo: { scopes: 'api://mcp/.default' } },
+  }));
   const upstreamTokenProvider: UpstreamTokenProvider = jest.fn(async () => ({
     access_token: 'current-token',
   }));
@@ -94,6 +97,16 @@ it('resolves an upstream token provider for unattended preflight', async () => {
     { signal: undefined },
   );
   expect(deps.connect).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
+});
+
+it('does not resolve upstream credentials for non-OBO servers', async () => {
+  const { check, deps } = setup();
+  deps.resolveUpstreamTokenProvider = jest.fn(async () => {
+    throw new Error('credential service unavailable');
+  });
+
+  await expect(check('agent', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.resolveUpstreamTokenProvider).not.toHaveBeenCalled();
 });
 
 it('rejects partial readiness and reports each server without exception details', async () => {

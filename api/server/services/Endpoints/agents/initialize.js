@@ -40,6 +40,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   extractFileContext,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -1864,10 +1865,11 @@ const initializeClientWithProvider = async ({
  */
 function createInitializeClient(dependencies = {}) {
   return async (params) => {
-    const upstreamTokenProvider = await dependencies.resolveUpstreamTokenProvider?.(
-      params.req.user,
-      { signal: params.signal },
-    );
+    const upstreamTokenProvider = isScheduleFireRequest(params.req)
+      ? await dependencies.resolveUpstreamTokenProvider?.(params.req.user, {
+          signal: params.signal,
+        })
+      : undefined;
     return initializeClientWithProvider({ ...params, upstreamTokenProvider });
   };
 }
