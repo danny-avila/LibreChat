@@ -55,6 +55,8 @@ export type CheckAgentPermission = (params: {
 export interface DiscoverConnectedAgentsParams {
   req: ServerRequest;
   res: ServerResponse;
+  /** Owning run signal used to distinguish cancellation from dependency aborts. */
+  signal?: AbortSignal;
   /** The already-initialized primary agent config (starting point for BFS). */
   primaryConfig: InitializedAgent;
   /**
@@ -329,7 +331,7 @@ export async function resolveSubagentGraphs(
               }
               return resolved;
             } catch (error) {
-              if (isFatalAgentInitializationError(error)) {
+              if (isFatalAgentInitializationError(error, { signal: params.signal })) {
                 throw error;
               }
               failedMemberIds.add(memberId);
@@ -458,7 +460,7 @@ export async function discoverConnectedAgents(
         collectEdges(agent.edges);
       }
     } catch (err) {
-      if (isFatalAgentInitializationError(err)) {
+      if (isFatalAgentInitializationError(err, { signal: params.signal })) {
         throw err;
       }
       logger.error(`[discoverConnectedAgents] Error processing agent ${agentId}:`, err);
@@ -475,7 +477,7 @@ export async function discoverConnectedAgents(
       try {
         await processAgent(agentId);
       } catch (err) {
-        if (isFatalAgentInitializationError(err)) {
+        if (isFatalAgentInitializationError(err, { signal: params.signal })) {
           throw err;
         }
         logger.error(`[discoverConnectedAgents] Error processing chain agent ${agentId}:`, err);

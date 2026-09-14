@@ -1205,6 +1205,36 @@ describe('discoverConnectedAgents', () => {
     },
   );
 
+  it.each([
+    ['handoff', [{ from: 'A', to: 'B', edgeType: 'handoff' }], undefined],
+    ['legacy chain', undefined, ['B']],
+  ])('propagates owning-run cancellation during %s discovery', async (_case, edges, agentIds) => {
+    const controller = new AbortController();
+    controller.abort();
+    mockInitializeAgent.mockRejectedValueOnce(controller.signal.reason);
+
+    await expect(
+      discoverConnectedAgents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          signal: controller.signal,
+          primaryConfig: makeConfig('A', edges),
+          agent_ids: agentIds,
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+        },
+        {
+          getAgent: jest.fn(async () => makeAgent('B', [])),
+          checkPermission: jest.fn().mockResolvedValue(true),
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      ),
+    ).rejects.toBe(controller.signal.reason);
+  });
+
   it('skips when request has no authenticated user', async () => {
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
 
@@ -1308,6 +1338,49 @@ describe('resolveSubagentGraphs', () => {
       primary: { token: 'primary-token' },
       graph: { token: 'graph-token' },
     });
+  });
+
+  it('propagates owning-run cancellation while resolving a graph member', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    mockInitializeAgent.mockRejectedValueOnce(controller.signal.reason);
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: [
+        {
+          type: 'team',
+          name: 'Team',
+          description: 'A remote graph team',
+          agent_ids: ['A', 'B'],
+          edges: [{ from: 'A', to: 'B', edgeType: 'direct' }],
+          entry_agent_id: 'A',
+          result_agent_id: 'B',
+        },
+      ],
+    };
+
+    await expect(
+      resolveSubagentGraphs(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          signal: controller.signal,
+          primaryConfig,
+          rootConfigs: [primaryConfig],
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+          resourceType: 'remote_agent',
+        },
+        {
+          getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+          checkPermission: jest.fn().mockResolvedValue(true),
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      ),
+    ).rejects.toBe(controller.signal.reason);
   });
 
   it('does not charge initialized root members against the graph load budget', async () => {

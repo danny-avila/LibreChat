@@ -780,6 +780,7 @@ const initializeClientWithProvider = async ({
     {
       req,
       res,
+      signal,
       primaryConfig,
       agent_ids: primaryConfig.agent_ids,
       endpointOption,

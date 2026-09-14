@@ -663,6 +663,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         const discoveryParams = {
           req,
           res,
+          signal: execution.signal,
           primaryConfig,
           endpointOption,
           allowedProviders,
