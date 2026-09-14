@@ -248,6 +248,8 @@ export interface BasicConnectionOptions {
   skipEnvProcessing?: boolean;
   /** When true, the connection is intentionally short-lived for a single request/tool call */
   ephemeralConnection?: boolean;
+  /** Immutable client capabilities negotiated for this connection. */
+  capabilityProfile?: import('../capabilities').MCPClientCapabilityProfile;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
@@ -265,6 +267,8 @@ export interface UserConnectionContext {
   /** Cancels the connection's SDK requests when the caller itself is cancelled; previously only
    *  OAuth connections could carry a signal, leaving non-OAuth discovery uncancellable. */
   signal?: AbortSignal;
+  /** Immutable client capabilities requested by this caller. */
+  capabilityProfile?: import('../capabilities').MCPClientCapabilityProfile;
   /** Absolute epoch-ms bound on the whole connect-and-list operation. `connectionTimeout` bounds
    *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
    *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
@@ -381,6 +385,8 @@ export interface ToolDiscoveryOptions {
   upstreamTokenProvider?: UpstreamTokenProvider;
   upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   oboIdentityContext?: AuthIdentityContext;
+  /** Immutable client capabilities used for this discovery session. */
+  capabilityProfile?: import('../capabilities').MCPClientCapabilityProfile;
 }
 
 export interface ToolDiscoveryResult {

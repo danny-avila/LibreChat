@@ -4,10 +4,12 @@ import type * as t from './types';
 import {
   cancelMCPToolsChanged,
   getMCPAppToolsPublicationGeneration,
+  getMCPToolCatalogGeneration,
   notifyMCPToolsChanged,
 } from './toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
 import { canUseAppConnection, isUserSourced } from './utils';
 import { MCPConnection } from './connection';
 
@@ -172,7 +174,9 @@ export class ConnectionsRepository {
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: this.ownerId });
     const publicationGeneration =
-      this.ownerId === undefined ? getMCPAppToolsPublicationGeneration(serverConfig) : undefined;
+      this.ownerId === undefined
+        ? getMCPToolCatalogGeneration(serverConfig, STANDARD_MCP_CAPABILITY_PROFILE)
+        : undefined;
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
@@ -181,13 +185,18 @@ export class ConnectionsRepository {
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
       },
       this.oauthOpts,
     );
 
     if (this.shuttingDown) {
       await connection.dispose();
-      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+      await cancelMCPToolsChanged({
+        userId: this.ownerId,
+        serverName,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+      });
       return null;
     }
 
@@ -212,6 +221,7 @@ export class ConnectionsRepository {
         userId: this.ownerId,
         publicationGeneration,
         publicationRevision,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
       });
       void latestToolsChangedPublication;
     });
@@ -240,6 +250,7 @@ export class ConnectionsRepository {
           serverConfig,
           publicationGeneration,
           publicationRevision: ordering.publicationRevision,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         });
         return this.returnExpectedConnection(serverName, connection, expectedGeneration);
       }
@@ -255,6 +266,7 @@ export class ConnectionsRepository {
             serverConfig,
             publicationGeneration,
             publicationRevision: snapshot.publicationRevision,
+            capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
           });
         }
       } else {
@@ -311,7 +323,11 @@ export class ConnectionsRepository {
   private async disconnectConnection(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
     if (!connection) {
-      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+      await cancelMCPToolsChanged({
+        userId: this.ownerId,
+        serverName,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+      });
       return;
     }
     this.connections.delete(serverName);
@@ -322,7 +338,11 @@ export class ConnectionsRepository {
     } catch {
       logger.error(`${this.prefix()} Error disposing`);
     } finally {
-      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+      await cancelMCPToolsChanged({
+        userId: this.ownerId,
+        serverName,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+      });
     }
   }
 

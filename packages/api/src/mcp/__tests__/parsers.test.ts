@@ -289,25 +289,36 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact?.resourceId).toEqual(expect.any(String));
     });
 
-    it('treats non-HTML ui:// resources as plain text rather than renderable markers', () => {
+    it('transports non-HTML ui:// resources with matching placement markers', () => {
       const result: t.MCPToolCallResponse = {
         content: [
           {
             type: 'resource',
             resource: {
               uri: 'ui://legacy',
-              mimeType: 'application/json',
+              mimeType: 'application/vnd.example.chart+json',
               text: '{"items": []}',
             },
           },
         ],
       };
 
-      const [content, artifacts] = formatToolContent(result, 'openai');
-      expect(content).toContain('Resource Text: {"items": []}');
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
+      });
+      const resource = artifacts?.ui_resources?.data?.[0];
+
+      expect(resource).toMatchObject({
+        uri: 'ui://legacy',
+        mimeType: 'application/vnd.example.chart+json',
+        text: '{"items": []}',
+        resourceId: expect.any(String),
+      });
+      expect(content).toContain(`UI Resource ID: ${resource?.resourceId}`);
+      expect(content).toContain(`UI Resource Marker: \\ui{${resource?.resourceId}}`);
+      expect(content).toContain('UI Resource Markers Available:');
       expect(content).toContain('Resource URI: ui://legacy');
-      expect(content).not.toContain('UI Resource Marker:');
-      expect(artifacts).toBeUndefined();
+      expect(content).not.toContain('{"items": []}');
     });
 
     it('uses the separately resolved document and preserves the canonical tool result', () => {
@@ -1307,7 +1318,7 @@ describe('formatToolContent', () => {
       expect(artifacts).toBeUndefined();
       // Suppressing the app must not paste a whole untrusted HTML document into model context: the
       // pre-apps baseline never carried one, and the document is meant for the sandbox.
-      expect(content).toBe('Resource URI: ui://app\nResource MIME Type: text/html;profile=mcp-app');
+      expect(content).toBe('Resource URI: ui://app\nType: text/html;profile=mcp-app');
       expect(content).not.toContain('<p>hi</p>');
     });
 
@@ -1331,6 +1342,118 @@ describe('formatToolContent', () => {
       expect(artifacts?.ui_resources).toBeUndefined();
       expect(artifacts?.content).toBeUndefined();
       expect(content).toContain('base64data');
+    });
+
+    it('keeps bounded standalone images in model output beside a legacy UI attachment', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'image', data: 'base64data', mimeType: 'image/png' },
+          {
+            type: 'resource',
+            resource: { uri: 'ui://legacy', mimeType: 'text/html', text: '<p>view</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider);
+
+      const resource = artifacts?.ui_resources?.data?.[0];
+      expect(content).toContain('base64data');
+      expect(content).toContain(`UI Resource Marker: \\ui{${resource?.resourceId}}`);
+      expect(content.split(`UI Resource Marker: \\ui{${resource?.resourceId}}`)).toHaveLength(2);
+      expect(artifacts?.content).toBeUndefined();
+      expect(resource).toMatchObject({ uri: 'ui://legacy', mimeType: 'text/html' });
+    });
+
+    it('keeps bounded embedded image blobs in model output beside a legacy UI attachment', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'file:///chart.png', mimeType: 'image/png', blob: 'aW1hZ2U=' },
+          },
+          {
+            type: 'resource',
+            resource: { uri: 'ui://legacy', mimeType: 'text/html', text: '<p>view</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider);
+
+      expect(content).toContain('data:image/png;base64,aW1hZ2U=');
+      expect(artifacts?.content).toBeUndefined();
+      expect(artifacts?.ui_resources?.data).toHaveLength(1);
+    });
+
+    it.each([
+      {
+        name: 'standalone image',
+        part: { type: 'image', data: 'QUJDRA==', mimeType: 'image/png' },
+      },
+      {
+        name: 'embedded image resource',
+        part: {
+          type: 'resource',
+          resource: { uri: 'file:///chart.png', mimeType: 'image/png', blob: 'QUJDRA==' },
+        },
+      },
+    ])('enforces the image cap for a mixed $name result', ({ part }) => {
+      const originalMaxImageBytes = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+      try {
+        process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+        const result: t.MCPToolCallResponse = {
+          content: [
+            part as t.ToolContentPart,
+            {
+              type: 'resource',
+              resource: { uri: 'ui://legacy', mimeType: 'text/html', text: '<p>view</p>' },
+            },
+          ],
+        };
+
+        expect(() => formatToolContent(result, 'vertexai' as t.Provider)).toThrow(
+          'MCP image result exceeds maximum size of 3 bytes',
+        );
+      } finally {
+        if (originalMaxImageBytes === undefined) {
+          delete process.env.MCP_IMAGE_DATA_MAX_BYTES;
+        } else {
+          process.env.MCP_IMAGE_DATA_MAX_BYTES = originalMaxImageBytes;
+        }
+      }
+    });
+
+    it('transports custom UI data when Apps and legacy HTML are disabled', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://custom/chart',
+              mimeType: 'application/vnd.example.chart+json',
+              text: '{"series":[1,2]}',
+            },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
+        mcpApps: { enabled: false, legacyHtmlEnabled: false },
+      });
+
+      const resource = artifacts?.ui_resources?.data?.[0];
+      expect(resource).toMatchObject({
+        uri: 'ui://custom/chart',
+        mimeType: 'application/vnd.example.chart+json',
+        text: '{"series":[1,2]}',
+        resourceId: expect.any(String),
+      });
+      expect(content).toContain('{"series":[1,2]}');
+      expect(content).toContain(`UI Resource ID: ${resource?.resourceId}`);
+      expect(content).toContain(`UI Resource Marker: \\ui{${resource?.resourceId}}`);
+      expect(content).toContain('UI Resource Markers Available:');
+      expect(artifacts?.content).toBeUndefined();
     });
 
     it('extracts a non-app ui:// resource without app-bridge metadata', () => {
@@ -1376,7 +1499,7 @@ describe('formatToolContent', () => {
       ]);
     });
 
-    it('keeps an explicit XHTML ui:// resource in ordinary output', () => {
+    it('transports explicit XHTML without making it HTML-renderable', () => {
       const [content, artifacts] = formatToolContent(
         {
           content: [
@@ -1393,9 +1516,14 @@ describe('formatToolContent', () => {
         'openai',
       );
 
-      expect(content).toContain('Resource Text: <p>xhtml</p>');
-      expect(content).not.toContain('UI Resource Marker:');
-      expect(artifacts?.ui_resources).toBeUndefined();
+      const resource = artifacts?.ui_resources?.data?.[0];
+      expect(content).not.toContain('<p>xhtml</p>');
+      expect(content).toContain(`UI Resource Marker: \\ui{${resource?.resourceId}}`);
+      expect(resource).toMatchObject({
+        uri: 'ui://s/xhtml',
+        mimeType: 'application/xhtml+xml',
+        text: '<p>xhtml</p>',
+      });
     });
   });
 
@@ -1542,13 +1670,13 @@ describe('formatToolContent', () => {
       mcpApps: ENABLED_MCP_APPS_POLICY,
     };
 
-    it.each(['ui://app', 'db://other'])('preserves text and JSON bodies at %s', (uri) => {
+    it('preserves text and JSON bodies for an ordinary resource', () => {
       const [text] = formatToolContent(
         {
           content: [
             {
               type: 'resource',
-              resource: { uri, mimeType: 'application/json', text: '{"ok":true}' },
+              resource: { uri: 'db://other', mimeType: 'application/json', text: '{"ok":true}' },
             },
           ],
         },
@@ -1559,14 +1687,14 @@ describe('formatToolContent', () => {
       expect(text).toContain('Resource Text: {"ok":true}');
     });
 
-    it.each(['ui://app', 'file://other'])('preserves binary summaries at %s', (uri) => {
+    it('preserves binary summaries for an ordinary resource', () => {
       const [text] = formatToolContent(
         {
           content: [
             {
               type: 'resource',
               resource: {
-                uri,
+                uri: 'file://other',
                 mimeType: 'application/octet-stream',
                 blob: Buffer.from([0xff, 0x00]).toString('base64'),
               },
@@ -1580,8 +1708,8 @@ describe('formatToolContent', () => {
       expect(text).toContain('Resource Content: 2 bytes of binary data');
     });
 
-    it('preserves an image resource at the declared URI as an ordinary image artifact', () => {
-      const [, artifacts] = formatToolContent(
+    it('preserves an image resource at the declared URI as image and UI transport', () => {
+      const [content, artifacts] = formatToolContent(
         {
           content: [
             {
@@ -1597,6 +1725,11 @@ describe('formatToolContent', () => {
       expect(artifacts?.content).toEqual([
         { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } },
       ]);
+      const imageResource = artifacts?.ui_resources?.data?.find(
+        (resource) => resource.mimeType === 'image/png',
+      );
+      expect(imageResource).toMatchObject({ uri: 'ui://app', blob: 'aW1hZ2U=' });
+      expect(content).toContain(`UI Resource Marker: \\ui{${imageResource?.resourceId}}`);
     });
   });
 });

@@ -12,6 +12,7 @@ import type {
   UpstreamTokenProviderResolver,
 } from '~/mcp/oauth/obo';
 import type { MCPAppOperationContext, MCPAppValidationContext } from './apps';
+import type { MCPClientCapabilityProfile } from './capabilities';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -29,6 +30,13 @@ import {
   requiresUserScopedConnection,
   resolveServerInstructions,
 } from './utils';
+import {
+  getMCPConnectionPoolKey,
+  getMCPUserConnectionPoolKey,
+  MCP_APPS_CAPABILITY_PROFILE,
+  resolveMCPClientCapabilityProfile,
+  STANDARD_MCP_CAPABILITY_PROFILE,
+} from './capabilities';
 import {
   projectMCPAppRuntimeTarget,
   type MCPAppBindingCodec,
@@ -182,8 +190,23 @@ export class MCPManager extends UserConnectionManager {
     return this.catalogRecoveryTracker;
   }
 
-  public clearCatalogRecoveryState(userId: string, serverName?: string, generation?: string): void {
-    this.catalogRecoveryTracker.clear(userId, serverName, generation);
+  /** Returns shared operator sessions only for the standard handshake they negotiated. */
+  public async getLoadedAppConnections(
+    capabilityProfile: MCPClientCapabilityProfile = STANDARD_MCP_CAPABILITY_PROFILE,
+  ): Promise<Map<string, MCPConnection>> {
+    if (capabilityProfile !== STANDARD_MCP_CAPABILITY_PROFILE) {
+      return new Map();
+    }
+    return (await this.appConnections?.getLoaded()) ?? new Map();
+  }
+
+  public clearCatalogRecoveryState(
+    userId: string,
+    serverName?: string,
+    generation?: string,
+    capabilityProfile?: MCPClientCapabilityProfile,
+  ): void {
+    this.catalogRecoveryTracker.clear(userId, serverName, generation, capabilityProfile);
   }
 
   public override async disconnectUserConnection(
@@ -192,7 +215,7 @@ export class MCPManager extends UserConnectionManager {
     options?: Parameters<UserConnectionManager['disconnectUserConnection']>[2],
   ): Promise<void> {
     if ((options?.reason ?? 'mutation') === 'mutation') {
-      this.clearCatalogRecoveryState(userId, serverName);
+      this.clearCatalogRecoveryState(userId, serverName, undefined, options?.capabilityProfile);
     }
     await super.disconnectUserConnection(userId, serverName, options);
   }
@@ -228,11 +251,16 @@ export class MCPManager extends UserConnectionManager {
       return super.getUserConnection(resolvedOpts);
     }
 
-    const connectionKey = `${userId}:${opts.serverName}`;
+    const capabilityProfile = opts.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
+    const connectionKey = getMCPUserConnectionPoolKey(userId, opts.serverName, capabilityProfile);
     const requestConnection = opts.requestScopedConnections?.connections.get(connectionKey) as
       | MCPConnection
       | undefined;
-    const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
+    const connection =
+      requestConnection ??
+      this.userConnections
+        .get(userId)
+        ?.get(getMCPConnectionPoolKey(opts.serverName, capabilityProfile));
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
     const requestedConfigGeneration = getMCPAppToolsPublicationGeneration(
       connectionTarget.serverConfig,
@@ -428,15 +456,18 @@ export class MCPManager extends UserConnectionManager {
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     const userId = args.user?.id;
+    const capabilityProfile = args.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
     const connectionTarget = await this.resolveCheckoutTarget(args);
     if (
       connectionTarget &&
       userId &&
       (connectionTarget.connectionOwner === 'principal' ||
-        requiresUserScopedConnection(connectionTarget.serverConfig))
+        requiresUserScopedConnection(connectionTarget.serverConfig) ||
+        capabilityProfile === MCP_APPS_CAPABILITY_PROFILE)
     ) {
       return this.getUserConnection({
         ...args,
+        capabilityProfile,
         serverConfig: undefined,
         connectionTarget,
       } as Parameters<typeof this.getUserConnection>[0]);
@@ -444,6 +475,7 @@ export class MCPManager extends UserConnectionManager {
 
     if (
       connectionTarget?.connectionOwner === 'operator' &&
+      capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE &&
       canUseAppConnection(connectionTarget.serverConfig)
     ) {
       const appConnection = await this.appConnections!.get(args.serverName, {
@@ -491,6 +523,7 @@ export class MCPManager extends UserConnectionManager {
    */
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
+    const capabilityProfile = args.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
     const registry = MCPServersRegistry.getInstance();
     const serverConfig = await registry.getServerConfig(serverName, user?.id, args.configServers);
 
@@ -501,6 +534,7 @@ export class MCPManager extends UserConnectionManager {
 
     try {
       const useAppConnection =
+        capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE &&
         canUseAppConnection(serverConfig) &&
         (await registry.isAppServerConfig(serverName, serverConfig));
       const existingAppConnection = useAppConnection
@@ -574,6 +608,7 @@ export class MCPManager extends UserConnectionManager {
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
+      capabilityProfile,
     };
 
     const finalizeDiscoveryResult = async (
@@ -690,7 +725,11 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
     serverConfig?: t.ParsedServerConfig,
-    options?: { deadlineMs?: number; signal?: AbortSignal },
+    options?: {
+      deadlineMs?: number;
+      signal?: AbortSignal;
+      capabilityProfile?: MCPClientCapabilityProfile;
+    },
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
@@ -698,6 +737,7 @@ export class MCPManager extends UserConnectionManager {
   }> {
     try {
       const signal = createDeadlineAbortSignal(options?.deadlineMs, options?.signal);
+      const capabilityProfile = options?.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
       const readToolCatalog = (connection: MCPConnection) =>
         options == null
           ? MCPServerInspector.getToolCatalog(serverName, connection)
@@ -705,6 +745,7 @@ export class MCPManager extends UserConnectionManager {
       const registry = MCPServersRegistry.getInstance();
       const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
       const useAppConnection =
+        capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE &&
         effectiveConfig != null &&
         canUseAppConnection(effectiveConfig) &&
         (await registry.isAppServerConfig(serverName, effectiveConfig));
@@ -717,14 +758,16 @@ export class MCPManager extends UserConnectionManager {
 
       let awaitedRecovery: Promise<void> | undefined;
       while (true) {
-        const userConnections = this.getUserConnections(userId);
-        const connection = userConnections?.get(serverName);
+        const userConnections = this.userConnections.get(userId);
+        const connection = userConnections?.get(
+          getMCPConnectionPoolKey(serverName, capabilityProfile),
+        );
         if (!connection) {
           return { tools: null };
         }
 
         if (effectiveConfig == null) {
-          await this.disconnectUserConnection(userId, serverName);
+          await this.disconnectUserConnection(userId, serverName, { capabilityProfile });
           return { tools: null };
         }
         const connectionConfigGeneration = this.getToolConfigGeneration(connection);
@@ -734,7 +777,7 @@ export class MCPManager extends UserConnectionManager {
           effectiveConfigGeneration != null &&
           connectionConfigGeneration !== effectiveConfigGeneration
         ) {
-          await this.disconnectUserConnection(userId, serverName);
+          await this.disconnectUserConnection(userId, serverName, { capabilityProfile });
           return { tools: null };
         }
         const publicationGeneration = this.getToolPublicationGeneration(connection);
@@ -744,7 +787,7 @@ export class MCPManager extends UserConnectionManager {
           currentGeneration != null &&
           publicationGeneration !== currentGeneration
         ) {
-          await this.disconnectUserConnection(userId, serverName);
+          await this.disconnectUserConnection(userId, serverName, { capabilityProfile });
           return { tools: null };
         }
 
@@ -765,7 +808,7 @@ export class MCPManager extends UserConnectionManager {
             generationAfterFetch != null &&
             publicationGeneration !== generationAfterFetch
           ) {
-            await this.disconnectUserConnection(userId, serverName);
+            await this.disconnectUserConnection(userId, serverName, { capabilityProfile });
             return { tools: null };
           }
           return { tools, publicationGeneration };
@@ -982,7 +1025,12 @@ Please follow these instructions when using tools from the respective MCP server
       });
     }
 
-    const mutationFence = this.createConnectionMutationFence(user.id, serverName);
+    const capabilityProfile = connection.capabilityProfile;
+    const mutationFence = this.createConnectionMutationFence(
+      user.id,
+      serverName,
+      capabilityProfile,
+    );
     const recoveryController = new AbortController();
     const recoverySignal = recoveryController.signal;
     const recovery = Promise.resolve().then(async () => {
@@ -1000,7 +1048,11 @@ Please follow these instructions when using tools from the respective MCP server
         connection.stopReconnecting();
         await this.waitForConnectionBorrowersToDrain(connection);
         recoverySignal.throwIfAborted();
-        const requestConnectionKey = `${user.id}:${serverName}`;
+        const requestConnectionKey = getMCPUserConnectionPoolKey(
+          user.id,
+          serverName,
+          capabilityProfile,
+        );
         if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
           requestScopedConnections.connections.delete(requestConnectionKey);
           await this.disposeEvictedConnection(
@@ -1033,6 +1085,7 @@ Please follow these instructions when using tools from the respective MCP server
           directBearerRecoveryState,
           directBearerResolvedConfig: refreshedConfig,
           signal: recoverySignal,
+          capabilityProfile,
         });
       } finally {
         mutationFence.release();
@@ -1174,17 +1227,10 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   public clearResourceUriCache(serverName?: string, userId?: string): void {
-    if (serverName && userId != null) {
-      const cacheKey = `${serverName}:${userId}`;
-      this.resourceUriCache.delete(cacheKey);
-      this.appHiddenToolCache.delete(cacheKey);
-      this.knownToolNamesCache.delete(cacheKey);
-      this.toolCacheConnStamp.delete(cacheKey);
-      return;
-    }
     if (serverName) {
       for (const key of this.resourceUriCache.keys()) {
-        if (key === serverName || key.startsWith(`${serverName}:`)) {
+        const [keyServerName, keyUserId] = JSON.parse(key) as [string, string | null, string];
+        if (keyServerName === serverName && (userId == null || keyUserId === userId)) {
           this.resourceUriCache.delete(key);
           this.appHiddenToolCache.delete(key);
           this.knownToolNamesCache.delete(key);
@@ -1217,9 +1263,9 @@ Please follow these instructions when using tools from the respective MCP server
    */
   private cacheScope(serverName: string, connection: MCPConnection, userId?: string): string {
     if (this.appConnections?.getPooledConnection(serverName) === connection) {
-      return `${serverName}:`;
+      return JSON.stringify([serverName, null, STANDARD_MCP_CAPABILITY_PROFILE]);
     }
-    return `${serverName}:${userId ?? ''}`;
+    return JSON.stringify([serverName, userId ?? null, connection.capabilityProfile]);
   }
 
   private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
@@ -1229,9 +1275,13 @@ Please follow these instructions when using tools from the respective MCP server
     );
   }
 
-  protected override removeUserConnection(userId: string, serverName: string): void {
+  protected override removeUserConnection(
+    userId: string,
+    serverName: string,
+    capabilityProfile: MCPClientCapabilityProfile,
+  ): void {
     this.clearResourceUriCache(serverName, userId);
-    super.removeUserConnection(userId, serverName);
+    super.removeUserConnection(userId, serverName, capabilityProfile);
   }
 
   private async buildToolCaches(
@@ -1381,6 +1431,7 @@ Please follow these instructions when using tools from the respective MCP server
     mcpApps?: TMCPAppsPolicy;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
+    const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
     this.bindRequestScopedConnectionStore(requestScopedConnections);
     let recoveryTakeoverConsumed = false;
@@ -1452,6 +1503,7 @@ Please follow these instructions when using tools from the respective MCP server
             requestScopedConnections,
             serverConfig: providedConfig,
             directBearerRecoveryState,
+            capabilityProfile,
           }));
           retainConnectionLease();
           const checkoutRecovery = this.oauthRecoveries.get(connection);
@@ -1637,6 +1689,7 @@ Please follow these instructions when using tools from the respective MCP server
                 useSSRFProtection,
                 allowedDomains,
                 allowedAddresses,
+                capabilityProfile,
               },
               {
                 useOAuth: true,
@@ -2083,6 +2136,7 @@ Please follow these instructions when using tools from the respective MCP server
           onOAuthCredentialsChanging,
           directBearerRecoveryState,
           signal,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
         }));
         retain();
 
@@ -2128,6 +2182,7 @@ Please follow these instructions when using tools from the respective MCP server
                   serverConfig: currentOptions,
                   dbSourced: isUserSourced(config),
                   skipEnvProcessing: true,
+                  capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
                   ...allowlists,
                 },
                 {

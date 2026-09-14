@@ -294,6 +294,13 @@ function parseAsString(result: t.MCPToolCallResponse): string {
   return text;
 }
 
+function isUiResource(
+  item: t.ToolContentPart,
+): item is Extract<t.ToolContentPart, { type: 'resource' }> {
+  const uri = item.type === 'resource' ? item.resource?.uri : undefined;
+  return typeof uri === 'string' && uri.startsWith('ui://');
+}
+
 /**
  * MCP Apps renders only `ui://` resources whose mime type is HTML (mime omitted defaults to HTML),
  * the single renderable resource type the spec defines.
@@ -303,11 +310,7 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * differently-cased `Text/HTML;profile=mcp-app` cannot be renderable to one and not the other.
  */
 export function isRenderableUiResource(item: t.ToolContentPart): boolean {
-  if (item.type !== 'resource') {
-    return false;
-  }
-  const uri = item.resource?.uri;
-  if (typeof uri !== 'string' || !uri.startsWith('ui://')) {
+  if (!isUiResource(item)) {
     return false;
   }
   return isHtmlMediaType(resolveMCPUIResourceMimeType(item.resource.mimeType));
@@ -345,8 +348,8 @@ export function formatToolContent(
     metadata.toolName &&
     metadata.serverBinding
   );
-  const hasRenderableResource = result?.content?.some((item) => isRenderableUiResource(item));
-  if (!isRecognizedProvider && !hasSyntheticApp && !hasRenderableResource) {
+  const hasUiResource = result?.content?.some((item) => isUiResource(item));
+  if (!isRecognizedProvider && !hasSyntheticApp && !hasUiResource) {
     return [parseAsString(result), undefined];
   }
 
@@ -357,10 +360,15 @@ export function formatToolContent(
 
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
-  let legacyMarkerCount = 0;
-  let currentTextBlock = '';
+  let placementMarkerCount = 0;
+  // Assistants submits only this string; keep its bounded conversion independent from host UI data.
+  let currentTextBlock = isRecognizedProvider ? '' : parseAsString(result);
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
+
+  const appendTextBlock = (text: string): void => {
+    currentTextBlock += (currentTextBlock ? '\n\n' : '') + text;
+  };
 
   const collectImage = (item: t.ImageContent): void => {
     assertImageDataWithinLimit(item);
@@ -378,15 +386,13 @@ export function formatToolContent(
     resource_link: (item: t.ResourceLink) => void;
   } = {
     text: (item) => {
-      currentTextBlock += (currentTextBlock ? '\n\n' : '') + item.text;
+      if (isRecognizedProvider) {
+        appendTextBlock(item.text);
+      }
     },
 
     image: (item) => {
-      if (!isImageContent(item)) {
-        return;
-      }
-      if (!isRecognizedProvider) {
-        currentTextBlock += (currentTextBlock ? '\n\n' : '') + JSON.stringify(item, null, 2);
+      if (!isRecognizedProvider || !isImageContent(item)) {
         return;
       }
       collectImage(item);
@@ -399,15 +405,21 @@ export function formatToolContent(
         'text' in item.resource && typeof item.resource.text === 'string' ? item.resource.text : '';
       // App-profile documents are resolved separately from the tool result. Plain HTML remains on
       // the legacy renderer, except for an echo of the declared App URI which would duplicate it.
+      const isRenderableResource = isRenderableUiResource(item);
       const isLegacyResource =
         mcpApps.legacyHtmlEnabled &&
-        isRenderableUiResource(item) &&
+        isRenderableResource &&
         !isMcpAppMimeType(item.resource.mimeType);
+      // Custom clients consume non-HTML UI attachments by marker; MIME/policy still own rendering.
+      const isCoreUiResource =
+        isUiResource(item) && !isRenderableResource && !isMcpAppMimeType(item.resource.mimeType);
       const hasInlineBody =
         !!inlineText ||
         ('blob' in item.resource && typeof item.resource.blob === 'string' && !!item.resource.blob);
+      const shouldTransportUiResource =
+        hasInlineBody && (isCoreUiResource || (isLegacyResource && !isDeclaredEcho));
 
-      if (isLegacyResource && !isDeclaredEcho && hasInlineBody) {
+      if (shouldTransportUiResource) {
         // Distinct URIs must not collide into one resourceId even when their markup is identical:
         // the client indexes conversation resources by id, so the second would overwrite the first.
         const baseHash = `${item.resource.uri}\x00${inlineText}`;
@@ -420,14 +432,29 @@ export function formatToolContent(
         );
         const uiResource: UIResource = {
           ...item.resource,
-          mimeType: resolveMCPUIResourceMimeType(item.resource.mimeType),
+          ...(isLegacyResource
+            ? { mimeType: resolveMCPUIResourceMimeType(item.resource.mimeType) }
+            : {}),
           resourceId,
         };
         uiResources.push(uiResource);
-        legacyMarkerCount += 1;
-        resourceText.push(`UI Resource ID: ${resourceId}`);
-        resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
-      } else if (!isRenderableUiResource(item)) {
+        placementMarkerCount += 1;
+        const placementReference =
+          `UI Resource ID: ${resourceId}\n` + `UI Resource Marker: \\ui{${resourceId}}`;
+        if (isRecognizedProvider) {
+          resourceText.push(placementReference);
+        } else {
+          appendTextBlock(placementReference);
+        }
+
+        // A non-HTML ui:// image remains an ordinary image result as well as core UI transport.
+        if (isRecognizedProvider && isCoreUiResource) {
+          const body = readResourceBody(item.resource);
+          if (body.image) {
+            collectImage(body.image);
+          }
+        }
+      } else if (isRecognizedProvider && !isRenderableResource) {
         const body = readResourceBody(item.resource);
         if (body.text) {
           resourceText.push(`Resource Text: ${body.text}`);
@@ -438,22 +465,25 @@ export function formatToolContent(
         }
       }
 
-      if (item.resource.uri.length) {
+      if (isRecognizedProvider && item.resource.uri.length) {
         resourceText.push(`Resource URI: ${flattenMetadata(item.resource.uri)}`);
       }
-      if (item.resource.mimeType != null && item.resource.mimeType) {
+      if (isRecognizedProvider && item.resource.mimeType != null && item.resource.mimeType) {
         resourceText.push(`Resource MIME Type: ${flattenMetadata(item.resource.mimeType)}`);
       }
 
       if (resourceText.length) {
-        currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+        appendTextBlock(resourceText.join('\n'));
       }
     },
 
     resource_link: (item) => {
+      if (!isRecognizedProvider) {
+        return;
+      }
       const lines = describeResourceLink(item);
       if (lines.length) {
-        currentTextBlock += (currentTextBlock ? '\n\n' : '') + lines.join('\n');
+        appendTextBlock(lines.join('\n'));
       }
     },
   };
@@ -462,9 +492,9 @@ export function formatToolContent(
     const handler = contentHandlers[item.type as keyof typeof contentHandlers] as ContentHandler;
     if (handler) {
       handler(item as never);
-    } else {
+    } else if (isRecognizedProvider) {
       const stringified = JSON.stringify(item, null, 2);
-      currentTextBlock += (currentTextBlock ? '\n\n' : '') + stringified;
+      appendTextBlock(stringified);
     }
   }
 
@@ -538,7 +568,7 @@ export function formatToolContent(
     }
   }
 
-  if (legacyMarkerCount > 0) {
+  if (placementMarkerCount > 0) {
     const uiInstructions = `
 
 UI Resource Markers Available:

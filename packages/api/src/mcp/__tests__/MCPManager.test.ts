@@ -11,6 +11,11 @@ import {
 import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
+import {
+  getMCPUserConnectionPoolKey,
+  MCP_APPS_CAPABILITY_PROFILE,
+  STANDARD_MCP_CAPABILITY_PROFILE,
+} from '~/mcp/capabilities';
 import { OboTokenResolutionError, detectOAuthRequirement, resolveOboToken } from '~/mcp/oauth';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '~/mcp/request';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
@@ -189,6 +194,22 @@ describe('MCPManager', () => {
   }
 
   describe('getAppToolFunctions', () => {
+    it('exposes shared operator sessions only to the standard profile', async () => {
+      const loaded = new Map([['shared', {} as MCPConnection]]);
+      const getLoaded = jest.fn().mockResolvedValue(loaded);
+      mockAppConnections({ getLoaded });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(manager.getLoadedAppConnections(STANDARD_MCP_CAPABILITY_PROFILE)).resolves.toBe(
+        loaded,
+      );
+      await expect(manager.getLoadedAppConnections(MCP_APPS_CAPABILITY_PROFILE)).resolves.toEqual(
+        new Map(),
+      );
+      expect(getLoaded).toHaveBeenCalledTimes(1);
+    });
+
     it('should return empty object when no servers have tool functions', async () => {
       (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         server1: { type: 'stdio', command: 'test', args: [] },
@@ -2344,7 +2365,10 @@ describe('MCPManager', () => {
       attachOAuthHandler(() => undefined);
       const manager = await createManager(connection);
       const requestContext = createMCPRequestContext();
-      requestContext.connections.set(`${mockUser.id}:${serverName}`, connection);
+      requestContext.connections.set(
+        getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+        connection,
+      );
 
       const toolPromise = callTool(manager, undefined, jest.fn(), requestContext);
       await new Promise((resolve) => setImmediate(resolve));
@@ -3997,7 +4021,10 @@ describe('MCPManager', () => {
         .spyOn(manager, 'getUserConnection')
         .mockResolvedValueOnce(connection)
         .mockImplementationOnce(async () => {
-          requestScopedConnections.connections.set(`${user.id}:${serverName}`, replacement);
+          requestScopedConnections.connections.set(
+            getMCPUserConnectionPoolKey(user.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            replacement,
+          );
           return replacement;
         });
 
@@ -4021,9 +4048,11 @@ describe('MCPManager', () => {
         connection,
         expect.stringContaining('Request-scoped'),
       );
-      expect(requestScopedConnections.connections.get(`${user.id}:${serverName}`)).toBe(
-        replacement,
-      );
+      expect(
+        requestScopedConnections.connections.get(
+          getMCPUserConnectionPoolKey(user.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+        ),
+      ).toBe(replacement);
       expect(connection.client.request).toHaveBeenCalledTimes(1);
     });
 
@@ -4937,6 +4966,42 @@ describe('MCPManager', () => {
       expect(getUserConnectionSpy).not.toHaveBeenCalled();
     });
 
+    it('uses a profile-separated user session for Apps on an operator server', async () => {
+      const appConnections = {
+        get: jest.fn().mockResolvedValue({} as MCPConnection),
+      };
+      const userConnection = {} as MCPConnection;
+      const operatorConfig: t.SSEOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+      };
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(operatorConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(userConnection);
+
+      await expect(
+        manager.getConnection({
+          serverName,
+          user: mockUser as IUser,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+        }),
+      ).resolves.toBe(userConnection);
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+          connectionTarget: {
+            serverConfig: operatorConfig,
+            connectionOwner: 'operator',
+          },
+        }),
+      );
+    });
+
     it('should use user-scoped connections for trusted runtime context placeholders', async () => {
       const appConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
@@ -5441,6 +5506,75 @@ describe('MCPManager', () => {
         removeAllListeners: jest.fn(),
         dispose: jest.fn().mockResolvedValue(undefined),
       }) as unknown as MCPConnection;
+
+    it('keeps concurrent standard and Apps sessions distinct and disconnects both', async () => {
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      };
+      const created = new Map<string, MCPConnection>();
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (basic: t.BasicConnectionOptions) => {
+          const capabilityProfile = basic.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
+          const connection = Object.assign(newUserConnection(), {
+            serverName,
+            capabilityProfile,
+          });
+          created.set(capabilityProfile, connection);
+          return connection;
+        },
+      );
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const [standard, apps] = await Promise.all([
+        manager.getConnection({
+          serverName,
+          user: mockUser,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+        }),
+        manager.getConnection({
+          serverName,
+          user: mockUser,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+        }),
+      ]);
+
+      expect(standard).toBe(created.get(STANDARD_MCP_CAPABILITY_PROFILE));
+      expect(apps).toBe(created.get(MCP_APPS_CAPABILITY_PROFILE));
+      expect(standard).not.toBe(apps);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+      expect(manager.getUserConnections(userId)?.get(serverName)).toBe(standard);
+      expect(manager.getUserConnections(userId, MCP_APPS_CAPABILITY_PROFILE)?.get(serverName)).toBe(
+        apps,
+      );
+
+      await expect(
+        manager.getConnection({
+          serverName,
+          user: mockUser,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+        }),
+      ).resolves.toBe(standard);
+      await expect(
+        manager.getConnection({
+          serverName,
+          user: mockUser,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+        }),
+      ).resolves.toBe(apps);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+
+      await manager.disconnectUserConnection(userId, serverName);
+
+      expect(standard.dispose).toHaveBeenCalledTimes(1);
+      expect(apps.dispose).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)).toBeUndefined();
+    });
 
     /** An OAuth server whose connection build refreshes credentials, fencing the catalog mid-build. */
     const refreshingOAuthServer = () => {
@@ -7154,7 +7288,11 @@ describe('MCPManager', () => {
       ).toBe(probe);
       expect(await manager.getUserConnection({ serverName, user: mockUser })).toBe(live);
       expect(live.disconnect).not.toHaveBeenCalled();
-      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(probe);
+      expect(
+        requestScopedConnections.connections.get(
+          getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+        ),
+      ).toBe(probe);
     });
 
     it('should reuse BODY-scoped connections within a request-scoped connection store', async () => {
@@ -7202,9 +7340,11 @@ describe('MCPManager', () => {
       expect(first).toBe(requestScopedConnection);
       expect(second).toBe(requestScopedConnection);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
-      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(
-        requestScopedConnection,
-      );
+      expect(
+        requestScopedConnections.connections.get(
+          getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+        ),
+      ).toBe(requestScopedConnection);
     });
 
     it('rechecks the request-scoped owner after a late connection replacement', async () => {
@@ -7237,7 +7377,10 @@ describe('MCPManager', () => {
       });
       await new Promise((resolve) => setImmediate(resolve));
       expect(oldConnection.isConnected).toHaveBeenCalledTimes(1);
-      store.connections.set(`${mockUser.id}:${serverName}`, replacement);
+      store.connections.set(
+        getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+        replacement,
+      );
       finishProbe?.(true);
       await expect(checkout).resolves.toBe(replacement);
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();

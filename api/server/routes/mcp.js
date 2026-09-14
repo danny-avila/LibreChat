@@ -6,6 +6,7 @@ const {
   Permissions,
   PermissionBits,
   PermissionTypes,
+  resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
 const {
   getBasePath,
@@ -997,6 +998,13 @@ router.post(
         }),
         oboIdentityContext,
         recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
+        mcpApps: resolveMCPAppsPolicy(
+          req.config?.mcpSettings?.apps,
+          undefined,
+          req.config?.mcpAppSandbox?.maxPersistedAppBytes,
+          req.config?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
+          req.config?.mcpAppSandbox?.url,
+        ),
       });
 
       if (!result) {

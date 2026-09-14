@@ -11,9 +11,11 @@ import {
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
+import type { MCPClientCapabilityProfile } from './capabilities';
 import { canUseAppConnection, requiresEphemeralUserConnection } from './utils';
-import { getMCPAppToolsPublicationGeneration } from './toolsChanged';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
+import { STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
+import { getMCPToolCatalogGeneration } from './toolsChanged';
 import { isToolHiddenFromModel } from './apps';
 
 type DynamicStructuredToolFields = ConstructorParameters<typeof DynamicStructuredTool>[0];
@@ -47,6 +49,7 @@ export interface MCPToolCacheDeps {
     userId?: string;
     serverName?: string;
     configGeneration?: string;
+    allowLegacyMigration?: boolean;
   }) => Promise<LCAvailableTools | null>;
   updateCachedGlobalTools?: (
     update: (tools: LCAvailableTools) => LCAvailableTools,
@@ -87,6 +90,7 @@ export interface MCPToolCacheService {
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
     publicationRevision?: string;
+    capabilityProfile?: MCPClientCapabilityProfile;
   }) => Promise<LCAvailableTools | null>;
   syncStaticTools: (staticTools: LCAvailableTools) => Promise<void>;
   mergeAppTools: (appTools: LCAvailableTools, staticTools: LCAvailableTools) => Promise<void>;
@@ -103,11 +107,13 @@ export interface MCPToolCacheService {
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
     publicationRevision?: string;
+    capabilityProfile?: MCPClientCapabilityProfile;
   }) => Promise<void>;
   getMCPServerTools: (
     userId: string,
     serverName: string,
     serverConfig?: ParsedServerConfig,
+    capabilityProfile?: MCPClientCapabilityProfile,
   ) => Promise<LCAvailableTools | null>;
 }
 
@@ -278,9 +284,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
     publicationRevision?: string;
+    capabilityProfile?: MCPClientCapabilityProfile;
   }): Promise<LCAvailableTools | null> {
     const { userId, serverName, tools, serverConfig, publicationGeneration, publicationRevision } =
       params;
+    const capabilityProfile = params.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
     try {
       if (tools == null) {
         logger.debug('[MCP Cache] No tools to update');
@@ -291,14 +299,18 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
 
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
       const configGeneration = resolvedConfig
-        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        ? getMCPToolCatalogGeneration(resolvedConfig, capabilityProfile)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
         logger.debug(`[MCP Cache] Built ${tools.length} request-scoped tool(s) without caching`);
         return serverTools;
       }
 
-      if (userId && !(await isAppSharedConfig(serverName, resolvedConfig))) {
+      if (
+        userId &&
+        (capabilityProfile !== STANDARD_MCP_CAPABILITY_PROFILE ||
+          !(await isAppSharedConfig(serverName, resolvedConfig)))
+      ) {
         if (setCachedToolsIfCurrent) {
           if (!publicationGeneration || !configGeneration) {
             logger.debug('[MCP Cache] Skipped unfenced or unaddressed tool publication');
@@ -369,7 +381,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           .filter(([, config]) => config.toolFunctions != null)
           .map(async ([serverName, config]) => {
             const serverTools = getAppServerSlice(appTools, serverName, boundaries);
-            const configGeneration = getMCPAppToolsPublicationGeneration(config);
+            const configGeneration = getMCPToolCatalogGeneration(
+              config,
+              STANDARD_MCP_CAPABILITY_PROFILE,
+            );
             await setCachedAppServerTools(serverName, configGeneration, serverTools);
           }),
       );
@@ -406,7 +421,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       let configGeneration = publicationGeneration;
       if (!configGeneration) {
         const config = await resolveCacheConfig(undefined, serverName);
-        configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+        configGeneration = config
+          ? getMCPToolCatalogGeneration(config, STANDARD_MCP_CAPABILITY_PROFILE)
+          : undefined;
       }
       /** Discarding a publication is warned, not debugged: #14857 was invisible for a release
        * because the only trace of a dropped app catalog was a debug line no deployment runs.
@@ -457,6 +474,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
     publicationRevision?: string;
+    capabilityProfile?: MCPClientCapabilityProfile;
   }): Promise<void> {
     const {
       userId,
@@ -465,18 +483,22 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       serverConfig,
       publicationGeneration,
       publicationRevision,
+      capabilityProfile = STANDARD_MCP_CAPABILITY_PROFILE,
     } = params;
     try {
       const count = Object.keys(serverTools).length;
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
       const configGeneration = resolvedConfig
-        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        ? getMCPToolCatalogGeneration(resolvedConfig, capabilityProfile)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
         logger.debug(`[MCP Cache] Skipped caching ${count} request-scoped tool(s)`);
         return;
       }
-      if (await isAppSharedConfig(serverName, resolvedConfig)) {
+      if (
+        capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE &&
+        (await isAppSharedConfig(serverName, resolvedConfig))
+      ) {
         const appConfigGeneration =
           userId == null
             ? (publicationGeneration ?? configGeneration)
@@ -560,17 +582,21 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     userId: string,
     serverName: string,
     serverConfig?: ParsedServerConfig,
+    capabilityProfile: MCPClientCapabilityProfile = STANDARD_MCP_CAPABILITY_PROFILE,
   ): Promise<LCAvailableTools | null> {
     const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
     if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
       return null;
     }
     try {
-      if (await isAppSharedConfig(serverName, resolvedConfig)) {
+      if (
+        capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE &&
+        (await isAppSharedConfig(serverName, resolvedConfig))
+      ) {
         if (!resolvedConfig) {
           return null;
         }
-        const configGeneration = getMCPAppToolsPublicationGeneration(resolvedConfig);
+        const configGeneration = getMCPToolCatalogGeneration(resolvedConfig, capabilityProfile);
         const serverTools = await getCachedAppServerTools(serverName, configGeneration);
         if (serverTools == null) {
           return null;
@@ -578,9 +604,15 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return normalizeCachedToolKeys(serverTools, serverName);
       }
       const configGeneration = resolvedConfig
-        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        ? getMCPToolCatalogGeneration(resolvedConfig, capabilityProfile)
         : undefined;
-      const cached = (await getCachedTools({ userId, serverName, configGeneration })) ?? null;
+      const cached =
+        (await getCachedTools({
+          userId,
+          serverName,
+          configGeneration,
+          allowLegacyMigration: false,
+        })) ?? null;
       if (!cached) {
         return null;
       }

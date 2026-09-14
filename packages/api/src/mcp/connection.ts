@@ -23,6 +23,7 @@ import type {
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPClientCapabilityProfile } from './capabilities';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import {
@@ -32,6 +33,7 @@ import {
   MCPTransportAuthenticationError,
   isStandaloneSseConflict,
 } from './errors';
+import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { projectMCPAppRuntimeTarget, type MCPAppRuntimeTarget } from './apps/binding';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
@@ -1000,6 +1002,7 @@ interface MCPConnectionParams {
   ephemeralConnection?: boolean;
   /** The owner will replace this connection after a tools/list authentication rejection. */
   directBearerRecoveryEnabled?: boolean;
+  capabilityProfile?: MCPClientCapabilityProfile;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1025,6 +1028,7 @@ export class MCPConnection extends EventEmitter {
   private connectPromise: Promise<void> | null = null;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
+  public readonly capabilityProfile: MCPClientCapabilityProfile;
   private shouldStopReconnecting = false;
   private isReconnecting = false;
   private isInitializing = false;
@@ -1210,6 +1214,7 @@ export class MCPConnection extends EventEmitter {
     super();
     this.options = params.serverConfig;
     this.serverName = params.serverName;
+    this.capabilityProfile = params.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
@@ -1224,13 +1229,10 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
-    // io.modelcontextprotocol/ui is a per-session host capability: LibreChat can always render MCP
-    // App HTML, so it is advertised unconditionally. Whether apps are enabled for a given
-    // instance/tenant is enforced downstream (UI-resource attachment + app endpoints), never by
-    // withholding the handshake capability, so a scoped opt-in still reaches a capable server.
-    const capabilities: ClientCapabilities = {
-      extensions: { [MCP_UI_EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
-    };
+    const capabilities: ClientCapabilities =
+      this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE
+        ? { extensions: { [MCP_UI_EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } }
+        : {};
     this.client = new Client(
       {
         name: '@librechat/api-client',
@@ -2624,6 +2626,7 @@ export class MCPConnection extends EventEmitter {
           serverName: this.serverName,
           serverConfig: this.options,
           userId: this.userId,
+          capabilityProfile: this.capabilityProfile,
         }),
       };
     } catch (error) {

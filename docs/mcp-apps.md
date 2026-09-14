@@ -15,7 +15,7 @@ The lockfile is the executable version boundary.
 | Area                            | Supported behavior                                                                                                          |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | App resource                    | A tool-linked `ui://` resource with `text/html;profile=mcp-app`, supplied as UTF-8 `text` or base64 `blob`                  |
-| MCP connection                  | Shared, ordinary per-user/custom-variable, MCP OAuth, and direct OpenID connections                                         |
+| MCP connection                  | Standard shared sessions when Apps are off; profile-separated per-user, MCP OAuth, and direct OpenID sessions when on       |
 | View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging  |
 | Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                       |
 | Rendering                       | One settled App on its tool-result surface; legacy inline HTML keeps its existing adapter with resize/actions               |
@@ -31,8 +31,14 @@ new MCP Apps stay disabled while existing legacy inline HTML remains enabled for
 compatibility. An explicit `false` disables both. Authenticated clients fail closed when the
 resolved policy is unavailable or malformed; configuration changes take effect when startup
 configuration is refreshed, such as after a page reload.
+LibreChat advertises the `io.modelcontextprotocol/ui` client capability only on sessions admitted
+by that effective Apps policy. Shared operator connections and startup inspection stay on the
+standard MCP handshake; an enabled request uses a profile-separated user session so discovery,
+tool calls, and App follow-ups observe one capability set without changing server or credential
+ownership.
 Legacy `ui://` resources use the installed MCP-UI renderer's `text/html` contract. An omitted MIME
-type is treated as `text/html`; explicit XHTML and other MIME types remain ordinary tool output.
+type is treated as `text/html`; explicit XHTML and other MIME types remain non-executable to that
+renderer while their marker-addressed attachments stay available to custom clients.
 Consequently, a new client paired with an older backend that omits the authenticated policy
 withholds both MCP Apps and legacy inline HTML. LibreChat's monolithic same-version deployment is
 the supported upgrade path.

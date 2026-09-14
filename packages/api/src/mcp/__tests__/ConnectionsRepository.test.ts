@@ -3,8 +3,9 @@ import type * as t from '~/mcp/types';
 import {
   setMCPToolsChangedHandler,
   setMCPToolsChangedRevisionHandler,
-  getMCPAppToolsPublicationGeneration,
+  getMCPToolCatalogGeneration,
 } from '~/mcp/toolsChanged';
+import { STANDARD_MCP_CAPABILITY_PROFILE } from '~/mcp/capabilities';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
@@ -145,6 +146,7 @@ describe('ConnectionsRepository', () => {
           allowedDomains: null,
           allowedAddresses: null,
           dbSourced: false,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         },
         undefined,
       );
@@ -232,7 +234,7 @@ describe('ConnectionsRepository', () => {
         expect.objectContaining({
           serverName: 'server1',
           tools: [],
-          publicationGeneration: getMCPAppToolsPublicationGeneration(mockServerConfigs.server1),
+          publicationGeneration: getMCPToolCatalogGeneration(mockServerConfigs.server1),
         }),
       );
       expect(loaded).toBe(false);
@@ -390,6 +392,7 @@ describe('ConnectionsRepository', () => {
           allowedDomains: null,
           allowedAddresses: null,
           dbSourced: false,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         },
         undefined,
       );
@@ -433,6 +436,7 @@ describe('ConnectionsRepository', () => {
           allowedDomains: null,
           allowedAddresses: null,
           dbSourced: false,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         },
         undefined,
       );

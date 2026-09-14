@@ -61,6 +61,7 @@ async function refreshChangedServerTools({
   serverConfig,
   publicationGeneration,
   publicationRevision,
+  capabilityProfile,
 }) {
   await updateMCPServerTools({
     userId,
@@ -69,6 +70,7 @@ async function refreshChangedServerTools({
     serverConfig,
     ...(publicationGeneration && { publicationGeneration }),
     ...(publicationRevision && { publicationRevision }),
+    capabilityProfile,
   });
   const toolCount = tools.length;
   logger.info(

@@ -64,6 +64,7 @@ const {
   resolveToolRolePermissions,
   splitAssistantMCPToolResult,
   appendAssistantMCPAppArtifact,
+  resolveMCPClientCapabilityProfile,
 } = require('@librechat/api');
 const {
   Time,
@@ -89,6 +90,7 @@ const {
   actionDomainSeparator,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
+  resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
 const {
   createActionTool,
@@ -841,6 +843,14 @@ async function loadToolDefinitionsWrapper({
   }
 
   const appConfig = req.config;
+  const mcpApps = resolveMCPAppsPolicy(
+    appConfig?.mcpSettings?.apps,
+    undefined,
+    appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
+    appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
+    appConfig?.mcpAppSandbox?.url,
+  );
+  const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   const runtimeRequestBody = requestBody ?? req.body;
   const hasExpectedMCPTools = agent.tools.some(isExpectedMCPTool);
   const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
@@ -1187,7 +1197,7 @@ async function loadToolDefinitionsWrapper({
       return mcpAvailableTools[serverName];
     }
 
-    const cached = await getMCPServerTools(userId, serverName, serverConfig);
+    const cached = await getMCPServerTools(userId, serverName, serverConfig, capabilityProfile);
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
       await addPendingOAuthServer();
@@ -1219,6 +1229,7 @@ async function loadToolDefinitionsWrapper({
       upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
+      mcpApps,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1251,6 +1262,7 @@ async function loadToolDefinitionsWrapper({
       upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
+      mcpApps,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1404,6 +1416,7 @@ async function loadToolDefinitionsWrapper({
           upstreamTokenProviderResolver,
           oboIdentityContext,
           recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
+          mcpApps,
         });
 
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
