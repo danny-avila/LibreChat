@@ -374,6 +374,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     if (usesResponsesApi === true) {
       formData.append('useResponsesApi', 'true');
     }
+    /** Multer's `fileFilter` reads this before the mime-type check, so it must
+     *  precede the `file` field — multipart fields are parsed in append order. */
+    if (extendedFile.shareAsUrl === true) {
+      formData.append('share_as_url', 'true');
+    }
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
     if (
@@ -495,6 +500,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     fileList: File[],
     _toolResource?: string,
     uploadLifecycle?: UploadLifecycleCallbacks,
+    _shareAsUrl?: boolean,
   ): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
 
@@ -557,6 +563,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         toolResource: _toolResource,
         skipSizeValidation: true,
         skipBatchRules: selection.keptIndices.length > 0,
+        shareAsUrl: _shareAsUrl,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -595,6 +602,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           initialExtendedFile.tool_resource = _toolResource;
         }
 
+        if (_shareAsUrl === true) {
+          initialExtendedFile.shareAsUrl = true;
+        }
+
         // Add file immediately to show in UI
         addFile(initialExtendedFile);
 
@@ -630,7 +641,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         let resizeDetails: ProcessedUpload['resizeDetails'];
 
         // Apply client-side resizing if available and appropriate
-        if (heicProcessedFile.type.startsWith('image/')) {
+        // (skipped for share-as-URL uploads — the original file should be preserved as-is)
+        if (heicProcessedFile.type.startsWith('image/') && _shareAsUrl !== true) {
           try {
             const resizeResult = await resizeImageIfNeeded(heicProcessedFile);
             finalProcessedFile = resizeResult.file;
@@ -791,7 +803,16 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         });
       }
 
-      if (extendedFile.file?.type.startsWith('image/') === true) {
+      /**
+       * Share-as-URL uploads skip the vision/thumbnail pipeline entirely (no width/height
+       * sent), so `useUploadFileMutation` routes them to the generic `/api/files` endpoint
+       * instead of the image-only `/api/files/images` one — only the former knows about
+       * `share_as_url`.
+       */
+      if (
+        extendedFile.file?.type.startsWith('image/') === true &&
+        extendedFile.shareAsUrl !== true
+      ) {
         loadImage(extendedFile, preview, uploadLifecycle);
         continue;
       }
@@ -806,6 +827,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     _files: FileList | File[],
     _toolResource?: string,
     uploadLifecycle?: UploadLifecycleCallbacks,
+    _shareAsUrl?: boolean,
   ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
@@ -831,7 +853,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         setFilesLoading(false);
         return false;
       }
-      const accepted = await processFiles(fileList, _toolResource, uploadLifecycle);
+      const accepted = await processFiles(fileList, _toolResource, uploadLifecycle, _shareAsUrl);
       if (!accepted && assignedFileId) {
         takeUploadRecovery(assignedFileId);
       }
@@ -846,11 +868,15 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, _toolResource?: string) => {
+  const handleFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+    _toolResource?: string,
+    _shareAsUrl?: boolean,
+  ) => {
     event.stopPropagation();
     if (event.target.files) {
       setFilesLoading(true);
-      handleFiles(event.target.files, _toolResource);
+      handleFiles(event.target.files, _toolResource, undefined, _shareAsUrl);
       // reset the input
       event.target.value = '';
     }

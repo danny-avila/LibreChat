@@ -1,4 +1,5 @@
 import {
+  FileContext,
   FileSources,
   getEndpointFileConfig,
   mergeFileConfig,
@@ -67,8 +68,13 @@ export function isLegacyFileUploadUX(
 
 type EndpointPolicyFile = Pick<TFile, 'bytes' | 'type'> & {
   source?: string;
+  context?: string;
   metadata?: { routingMimeType?: string };
 };
+
+/** A share link puts a URL in the turn and its bytes nowhere, so no endpoint policy about
+ *  what the provider can ingest decides whether it may be attached. */
+const isShareLink = (file: EndpointPolicyFile): boolean => file.context === FileContext.public_url;
 
 export function filterFilesByEndpointRuntimeConfig<T extends EndpointPolicyFile>(
   appConfig: AppConfig | undefined,
@@ -119,7 +125,7 @@ export function filterFilesByEndpointRuntimeConfig<T extends EndpointPolicyFile>
   /** Filter by individual file size limit */
   if (fileSizeLimit !== undefined && fileSizeLimit > 0) {
     filteredFiles = filteredFiles.filter((file) => {
-      return file.bytes <= fileSizeLimit;
+      return isShareLink(file) || file.bytes <= fileSizeLimit;
     });
   }
 
@@ -129,6 +135,7 @@ export function filterFilesByEndpointRuntimeConfig<T extends EndpointPolicyFile>
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
       return (
+        isShareLink(file) ||
         (preserveTextSources && (file.source ?? FileSources.local) === FileSources.text) ||
         isMimeTypeSupported(file.metadata?.routingMimeType ?? file.type, supportedMimeTypes)
       );
@@ -142,6 +149,10 @@ export function filterFilesByEndpointRuntimeConfig<T extends EndpointPolicyFile>
 
     for (let i = 0; i < filteredFiles.length; i++) {
       const file = filteredFiles[i];
+      if (isShareLink(file)) {
+        withinTotalLimit.push(file);
+        continue;
+      }
       if (totalSize + file.bytes <= totalSizeLimit) {
         withinTotalLimit.push(file);
         totalSize += file.bytes;

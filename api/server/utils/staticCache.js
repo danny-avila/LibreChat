@@ -15,13 +15,21 @@ const isEnabled = (value) => value === true || String(value).toLowerCase() === '
  * @param {Object} [options={}] - Configuration options
  * @param {boolean} [options.noCache=false] - If true, disables caching entirely for all files
  * @param {boolean} [options.skipGzipScan=false] - If true, skips expressStaticGzip middleware
+ * @param {boolean} [options.forceDownload=false] - If true, forces browsers to download rather than
+ *   render each file inline and blocks MIME sniffing. Required for directories that accept arbitrary,
+ *   unauthenticated uploads (e.g. public share links), since an inline-rendered `.html`/`.svg` upload
+ *   would execute in the victim's origin (stored XSS).
  * @returns {ReturnType<expressStaticGzip>|ReturnType<express.static>} Express middleware function for serving static files
  */
 function staticCache(staticPath, options = {}) {
-  const { noCache = false, skipGzipScan = false } = options;
+  const { noCache = false, skipGzipScan = false, forceDownload = false } = options;
   const enableBrotli = isEnabled(process.env.ENABLE_STATIC_ASSET_BROTLI);
 
   const setHeaders = (res, filePath) => {
+    if (forceDownload) {
+      res.setHeader('Content-Disposition', 'attachment');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
     if (res.locals?.privateImageCache) {
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Vary', 'Cookie');

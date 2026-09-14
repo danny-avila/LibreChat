@@ -100,6 +100,10 @@ const createFileFilter = (customFileConfig, resolveEndpoint) => {
       return cb(null, true);
     }
 
+    if (req.body.share_as_url === 'true') {
+      return cb(null, true);
+    }
+
     const resolved = resolveEndpoint?.(req);
     const endpoint = resolved?.endpoint ?? req.body.endpoint;
     const endpointType = resolved?.endpointType ?? req.body.endpointType;

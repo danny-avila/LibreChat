@@ -39,6 +39,7 @@ export enum FileContext {
   filterSource = 'filterSource',
   context = 'context',
   bytes = 'bytes',
+  public_url = 'public_url',
 }
 
 /** Structural type for a compiled matcher: a native `RegExp` or a linear-time engine both satisfy it. Only `test` is ever called on `supportedMimeTypes`. */

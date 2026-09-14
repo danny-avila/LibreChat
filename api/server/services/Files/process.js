@@ -777,6 +777,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+  const shareAsUrl = req.body.share_as_url === 'true';
 
   let messageAttachment = isMessageFileUpload(metadata.message_file);
 
@@ -794,7 +795,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
    * and a request naming a tool resource does too. Recording the endpoint mode instead
    * would treat an explicitly sandbox-only upload in unified mode as inferred. */
   const legacyUploadUX = endpointConfig?.legacyFileUploadUX === true;
-  const uploadChoiceMetadata = { destinationChosen: legacyUploadUX || tool_resource != null };
+  /* Choosing the share link is itself a destination decision, so re-resolving it against
+   * the provider of a later turn must not route the file's bytes into the prompt. */
+  const uploadChoiceMetadata = {
+    destinationChosen: legacyUploadUX || tool_resource != null || shareAsUrl,
+  };
 
   if (agent_id && !tool_resource && !messageAttachment) {
     if (legacyUploadUX) {
@@ -876,16 +881,22 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     throw new Error('No agent ID provided for agent file upload');
   }
 
-  const retentionExpiryPromise = getAgentFileRetentionExpiry({
-    req,
-    messageAttachment,
-    tool_resource: effectiveToolResource,
-  });
+  /** Public share links are permanent by design, so they are exempt from agent file retention. */
+  const retentionExpiryPromise = shareAsUrl
+    ? Promise.resolve({})
+    : getAgentFileRetentionExpiry({
+        req,
+        messageAttachment,
+        tool_resource: effectiveToolResource,
+      });
 
   const isImage = file.mimetype.startsWith('image');
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
-  const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
+  const storageBasePath = mime.getType(file.originalname)?.startsWith('image')
+    ? 'images'
+    : 'uploads';
+  const basePath = shareAsUrl ? 'public' : storageBasePath;
   let shouldUploadToCodeEnv = effectiveToolResource === EToolResources.execute_code;
   if (effectiveToolResource === EToolResources.execute_code) {
     const isCodeEnabled =
@@ -1151,7 +1162,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   let storageResult, embeddingResult;
   let storedType = file.mimetype;
   const isImageFile = file.mimetype.startsWith('image');
-  const source = getFileStrategy(appConfig, { isImage: isImageFile });
+  const source = shareAsUrl
+    ? FileSources.local
+    : getFileStrategy(appConfig, { isImage: isImageFile });
 
   if (
     effectiveToolResource === EToolResources.file_search &&
@@ -1182,7 +1195,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * hold them rather than reading the root flag. Omitting it here re-embeds the file on
      * the first search, and aborts that search if RAG is briefly unavailable. */
     fileInfoMetadata = entity_id != null ? { embeddedEntities: [entity_id] } : {};
-  } else if (isImage) {
+  } else if (isImage && !shareAsUrl) {
     /* The conversion is this file's storage step. Uploading the original first left a
      * second object nothing references, and the record's size and dimensions describing
      * bytes that were replaced. Only the storage fields are kept: the record below is
@@ -1317,6 +1330,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   }
 
   const retentionExpiry = await retentionExpiryPromise;
+  const attachmentContext = messageAttachment ? FileContext.message_attachment : FileContext.agents;
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -1326,7 +1340,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filepath,
       ...storageMetadata,
       filename: filename ?? sanitizeFilename(file.originalname),
-      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      context: shareAsUrl ? FileContext.public_url : attachmentContext,
       model: messageAttachment ? undefined : req.body.model,
       metadata: {
         ...(fileInfoMetadata ?? {}),
@@ -1342,7 +1356,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       height,
       width,
       tenantId: req.user.tenantId,
-      llmDeliveryPath,
+      /* Only the link is delivered, never the file: its bytes must stay out of every
+       * encoder, whatever the mime type would otherwise route them into. */
+      llmDeliveryPath: shareAsUrl ? 'none' : llmDeliveryPath,
     }),
     ...retentionExpiry,
   };
@@ -1660,6 +1676,7 @@ function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
     file_id,
     width,
     height,
+    share_as_url,
   } = req.body;
   const endpoint = endpointOverride ?? requestEndpoint;
   /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
@@ -1706,10 +1723,9 @@ function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
     );
   }
 
-  const isSupportedMimeType = fileConfig.checkType(
-    file.mimetype,
-    endpointFileConfig.supportedMimeTypes,
-  );
+  const isSupportedMimeType =
+    share_as_url === 'true' ||
+    fileConfig.checkType(file.mimetype, endpointFileConfig.supportedMimeTypes);
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');

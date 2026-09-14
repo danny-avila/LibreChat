@@ -1,6 +1,7 @@
 import { formatMessage } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain';
 import {
+  FileContext,
   FileSources,
   EModelEndpoint,
   mergeFileConfig,
@@ -148,6 +149,12 @@ export function createRunFileMessageEncoder(
     const textFiles: TFile[] = [];
     for (const file of sharedFiles) {
       const deliveryPath = file.llmDeliveryPath;
+      /* A share link carries no bytes into the turn, only its URL, which
+       * `extractFileContext` renders from the record itself. */
+      if (file.context === FileContext.public_url) {
+        textFiles.push(file);
+        continue;
+      }
       if (deliveryPath === 'none') {
         continue;
       }

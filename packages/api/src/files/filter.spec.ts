@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, FileSources } from 'librechat-data-provider';
+import { EModelEndpoint, FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
@@ -87,6 +87,56 @@ describe('filterFilesByEndpointRuntimeConfig', () => {
     expect(
       filterFilesByEndpointRuntimeConfig(narrowConfig, { files: [webp], endpoint: 'default' }),
     ).toHaveLength(0);
+  });
+
+  describe('public share links', () => {
+    const shareLink = (filename: string, type: string, bytes: number): IMongoFile =>
+      ({
+        ...sizedFile(filename, bytes),
+        type,
+        context: FileContext.public_url,
+        filepath: `/public/user-id/${filename}`,
+      }) as unknown as IMongoFile;
+
+    it('admits a type the endpoint does not accept', () => {
+      const narrowConfig = {
+        fileConfig: {
+          endpoints: { default: { disabled: false, supportedMimeTypes: ['^image/png$'] } },
+        },
+      } as unknown as AppConfig;
+
+      expect(
+        filterFilesByEndpointRuntimeConfig(narrowConfig, {
+          files: [shareLink('bundle.zip', 'application/zip', 1000)],
+          endpoint: 'default',
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('admits a file past the endpoint size limits and spends none of the allowance', () => {
+      const kept = filterFilesByEndpointRuntimeConfig(appConfig, {
+        files: [
+          shareLink('huge.zip', 'application/zip', 50_000_000),
+          sizedFile('doc.pdf', 900_000),
+        ],
+        endpoint: 'default',
+      });
+
+      expect(kept.map((file) => file.filename)).toEqual(['huge.zip', 'doc.pdf']);
+    });
+
+    it('is still dropped when the endpoint disables files entirely', () => {
+      const disabledConfig = {
+        fileConfig: { endpoints: { default: { disabled: true } } },
+      } as unknown as AppConfig;
+
+      expect(
+        filterFilesByEndpointRuntimeConfig(disabledConfig, {
+          files: [shareLink('bundle.zip', 'application/zip', 1000)],
+          endpoint: 'default',
+        }),
+      ).toHaveLength(0);
+    });
   });
 });
 

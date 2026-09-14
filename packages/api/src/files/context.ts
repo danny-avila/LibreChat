@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { FileSources, mergeFileConfig } from 'librechat-data-provider';
+import { FileSources, FileContext, mergeFileConfig } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { TokenCountFn } from '~/utils/text';
 import type { ServerRequest } from '~/types';
@@ -13,6 +13,13 @@ import { processTextWithTokenLimit } from '~/utils/text';
  * its empty text so the UI still renders the attachment on its own.
  */
 export const ATTACHMENT_ONLY_TEXT = 'Please refer to the attached file(s).';
+
+type FileContextAttachment = Pick<TFile, 'text' | 'filename'> & {
+  source?: string;
+  llmDeliveryPath?: string;
+  context?: string;
+  filepath?: string;
+};
 
 /**
  * Title-generation input for a turn the user sent without typing anything.
@@ -30,6 +37,25 @@ export function getAttachmentTitleText(files?: TFile[] | null): string {
 }
 
 /**
+ * Builds the "Files were uploaded to the following URLs" note for attachments
+ * uploaded through the "Upload and Share as URL" menu entry. The link is the
+ * only thing the model ever receives for such a file, and the file is stored
+ * permanently, so this is independent of `fileTokenLimit`.
+ */
+function extractPublicUrlContext(attachments: readonly FileContextAttachment[]): string {
+  const domain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
+  const urls = attachments
+    .filter((file) => file.context === FileContext.public_url && file.filepath)
+    .map((file) => `${domain}${file.filepath}`);
+
+  if (urls.length === 0) {
+    return '';
+  }
+
+  return `Files were uploaded to the following URLs: ${urls.join(' ')}`;
+}
+
+/**
  * Extracts text context from attachments and returns formatted text.
  * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
  * @param params - The parameters object
@@ -43,10 +69,7 @@ export async function extractFileContext({
   req,
   tokenCountFn,
 }: {
-  attachments: readonly (Pick<TFile, 'text' | 'filename'> & {
-    source?: string;
-    llmDeliveryPath?: string;
-  })[];
+  attachments: readonly FileContextAttachment[];
   req?: ServerRequest;
   tokenCountFn: TokenCountFn;
 }): Promise<string | undefined> {
@@ -54,12 +77,14 @@ export async function extractFileContext({
     return undefined;
   }
 
+  const urlContext = extractPublicUrlContext(attachments);
+
   const fileConfig = mergeFileConfig(req?.config?.fileConfig);
   const fileTokenLimit = req?.body?.fileTokenLimit ?? fileConfig.fileTokenLimit;
 
   if (!fileTokenLimit) {
-    // If no token limit, return undefined (no processing)
-    return undefined;
+    // If no token limit, no text is processed; public share links still apply
+    return urlContext || undefined;
   }
 
   let resultText = '';
@@ -90,8 +115,8 @@ export async function extractFileContext({
 
   if (resultText) {
     resultText += '\n```';
-    return resultText;
   }
 
-  return undefined;
+  const combined = [urlContext, resultText].filter(Boolean).join('\n\n');
+  return combined || undefined;
 }
