@@ -23,8 +23,31 @@ test.describe('stream transport fidelity', () => {
     /** Service workers can bypass Playwright's network fault injection. */
     test.use({ serviceWorkers: 'block' });
     for (const existingConversation of [false, true]) {
-      const scenario = existingConversation ? 'after a failed history read' : 'on the first turn';
-      test(`recovers a lost terminal event ${scenario}`, async ({ page }) => {
+      const scenario = existingConversation
+        ? 'on reconnect after exhausting history retries'
+        : 'on the first turn';
+      test(`recovers a lost terminal event ${scenario}`, async ({ page, context }) => {
+        test.setTimeout(90_000);
+        if (existingConversation) {
+          await page.addInitScript(() => {
+            let failedReads = 0;
+            const send = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.send = function (body) {
+              this.addEventListener(
+                'loadend',
+                () => {
+                  if (this.status !== 503 || !this.responseURL.includes('/api/messages/')) return;
+                  if (++failedReads !== 6) return;
+                  /** Yield past the XHR task's promise rejection chain, so the
+                   * hook has consumed its last failure before we go online. */
+                  setTimeout(() => console.debug('E2E terminal history failures consumed'), 0);
+                },
+                { once: true },
+              );
+              send.call(this, body);
+            };
+          });
+        }
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
         await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
@@ -60,11 +83,15 @@ test.describe('stream transport fidelity', () => {
         const expected = `E2E reply ${label}`;
         await expect(messagesView(page)).not.toContainText(expected);
         const conversationUrl = page.url();
+        let failedHistoryReads = 0;
         if (existingConversation) {
           await page.route(
             '**/api/messages/*',
-            (route) => route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } }),
-            { times: 1 },
+            async (route) => {
+              failedHistoryReads++;
+              await route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
+            },
+            { times: 6 },
           );
         }
         const failedHistory = existingConversation
@@ -74,10 +101,25 @@ test.describe('stream transport fidelity', () => {
                 response.status() === 503,
             )
           : undefined;
+        const failuresConsumed = existingConversation
+          ? page.waitForEvent('console', {
+              predicate: (message) => message.text() === 'E2E terminal history failures consumed',
+              timeout: 45_000,
+            })
+          : undefined;
         await page.evaluate(() =>
           document.dispatchEvent(new Event('visibilitychange', { bubbles: true })),
         );
         await failedHistory;
+        if (existingConversation) {
+          await failuresConsumed;
+          expect(failedHistoryReads).toBe(6);
+          await expect(messagesView(page)).not.toContainText(expected);
+          /** Keep the page visible: only the browser's online event can rearm
+           * the exhausted terminal recovery, not another foreground event. */
+          await context.setOffline(true);
+          await context.setOffline(false);
+        }
         await expect(messagesView(page)).toContainText(expected, { timeout: 15000 });
         expect(page.url()).toBe(conversationUrl);
       });

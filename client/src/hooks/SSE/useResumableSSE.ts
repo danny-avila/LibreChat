@@ -1852,9 +1852,10 @@ export default function useResumableSSE(
        * already adjudicates live, terminal and replaced generations; a status
        * preflight only duplicates its snapshot and can fail before recovery starts.
        */
-      const handleForegroundReattach = () => {
+      const handleForegroundReattach = (event: Event) => {
         if (
           document.visibilityState !== 'visible' ||
+          (event.type === 'online' && terminalRecoveryAttemptRef.current <= MAX_RETRIES) ||
           (finalReceived && terminalRecoveryAttemptRef.current <= MAX_RETRIES) ||
           subscriptionRetired ||
           replacementHandoffRef.current ||
@@ -1864,7 +1865,7 @@ export default function useResumableSSE(
           return;
         }
 
-        logger.log('ResumableSSE', 'Re-attaching stream on foreground');
+        logger.log('ResumableSSE', 'Re-attaching stream on foreground or restored connectivity');
         terminalRecoveryAttemptRef.current = 0;
         /** Returning to the app supersedes this attachment's pending backoff. */
         if (reconnectTimeoutRef.current) {
@@ -1884,8 +1885,11 @@ export default function useResumableSSE(
       };
       stopForegroundReattachRef.current?.();
       document.addEventListener('visibilitychange', handleForegroundReattach);
-      stopForegroundReattachRef.current = () =>
+      window.addEventListener('online', handleForegroundReattach);
+      stopForegroundReattachRef.current = () => {
         document.removeEventListener('visibilitychange', handleForegroundReattach);
+        window.removeEventListener('online', handleForegroundReattach);
+      };
 
       sse.addEventListener('open', (e: MessageEvent) => {
         /** sse.js emits open for HTTP error headers too, before its error event. */
@@ -2602,9 +2606,11 @@ export default function useResumableSSE(
         }
         const attempt = ++terminalRecoveryAttemptRef.current;
         if (attempt > MAX_RETRIES) {
-          /** Preserve the unresolved run and accepted steers. A foreground
-           * event can retry without inventing a terminal outcome or polling. */
-          logger.warn('ResumableSSE', 'Terminal recovery paused until foreground', { reason });
+          /** Preserve the unresolved run and accepted steers. Foreground or
+           * restored connectivity can retry without inventing a terminal outcome or polling. */
+          logger.warn('ResumableSSE', 'Terminal recovery paused until foreground or online', {
+            reason,
+          });
           return;
         }
         reconnectTimeoutRef.current = setTimeout(() => {
@@ -2982,45 +2988,8 @@ export default function useResumableSSE(
           });
           clearStepMaps();
           let persistedMessages: TMessage[] | undefined;
-          if (convoId) {
-            try {
-              const messageQueryKey = [QueryKeys.messages, convoId] as const;
-              await queryClient.invalidateQueries({
-                queryKey: messageQueryKey,
-                refetchType: 'none',
-              });
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              const fetched = await dataService.getMessagesByConvoId(convoId);
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              if (Array.isArray(fetched)) {
-                persistedMessages = fetched;
-                setMessages(fetched);
-                terminalRecoveryAttemptRef.current = 0;
-              }
-            } catch (error) {
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              logger.warn('ResumableSSE', 'Could not reconcile persisted messages after 404', {
-                conversationId: convoId,
-                error,
-              });
-              retryFencedTerminalAttachment('expired stream history unavailable');
-              return;
-            }
-            queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
-          }
           const recoveryConvoId = convoId ?? currentStreamId;
-          const reconciledIds = new Set(
-            persistedMessages ? collectAppliedSteerIds(persistedMessages) : [],
-          );
-          if (persistedMessages) {
-            settleAppliedSteerParts(recoveryConvoId, persistedMessages);
-          }
+          const reconciledIds = new Set<string>();
 
           // The status replay is owner-gated and non-destructive; creating a
           // recovered follow-up consumes its exact source. Prefer these
@@ -3127,6 +3096,50 @@ export default function useResumableSSE(
               }, 1_000);
               return;
             }
+            if (status.active !== false) {
+              retryFencedTerminalAttachment('expired stream status inconclusive');
+              return;
+            }
+            /** Read history AFTER the terminal status: a snapshot fetched before
+             * that persistence barrier can still be missing the final output. */
+            if (convoId) {
+              try {
+                const messageQueryKey = [QueryKeys.messages, convoId] as const;
+                await queryClient.invalidateQueries({
+                  queryKey: messageQueryKey,
+                  refetchType: 'none',
+                });
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                const fetched = await dataService.getMessagesByConvoId(convoId);
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                if (Array.isArray(fetched)) {
+                  persistedMessages = fetched;
+                }
+              } catch (error) {
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                logger.warn('ResumableSSE', 'Could not reconcile persisted messages after 404', {
+                  conversationId: convoId,
+                  error,
+                });
+                retryFencedTerminalAttachment('expired stream history unavailable');
+                return;
+              }
+              queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
+            }
+            if (persistedMessages) {
+              setMessages(persistedMessages);
+              terminalRecoveryAttemptRef.current = 0;
+              settleAppliedSteerParts(recoveryConvoId, persistedMessages);
+              for (const id of collectAppliedSteerIds(persistedMessages)) {
+                reconciledIds.add(id);
+              }
+            }
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
@@ -3155,6 +3168,8 @@ export default function useResumableSSE(
               conversationId: recoveryConvoId,
               error,
             });
+            retryFencedTerminalAttachment('expired stream status unavailable');
+            return;
           }
 
           removeActiveJob(currentStreamId);

@@ -10,6 +10,7 @@ import {
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { StreamStatusResponse } from '~/data-provider';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -776,18 +777,28 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('still completes 404 cleanup when the status claim fails', async () => {
-    mockFetchStreamStatus.mockRejectedValue(new Error('network down'));
+  it('defers 404 cleanup until a failed status claim recovers', async () => {
+    jest.useFakeTimers();
+    mockFetchStreamStatus.mockRejectedValueOnce(new Error('network down'));
 
-    const { unmount } = await render404Scenario(CONV_ID);
+    const { unmount, chatHelpers } = await render404Scenario(CONV_ID);
     await act(async () => {
       await Promise.resolve();
     });
 
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockConvertSteersToQueued).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+    await advanceRetryTimer(1_000);
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+    });
+    await flushMicrotasks();
     expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    expect(chatHelpers.setMessages).toHaveBeenCalledWith([]);
     unmount();
   });
 
@@ -4142,9 +4153,14 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it.each(['http', 'frame'])(
-    'bounds terminal history retries across %s attachments and rearms on foreground',
-    async (kind) => {
+  it.each([
+    ['http', 'visibilitychange'],
+    ['frame', 'visibilitychange'],
+    ['http', 'online'],
+    ['frame', 'online'],
+  ])(
+    'bounds terminal history retries across %s attachments and rearms on %s',
+    async (kind, event) => {
       jest.useFakeTimers();
       (request.post as jest.Mock).mockResolvedValue({
         streamId: CONV_ID,
@@ -4157,6 +4173,11 @@ describe('useResumableSSE', () => {
       const chatHelpers = buildChatHelpers();
       const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
       await flushMicrotasks();
+      const initialSSE = getLastSSE();
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(getLastSSE()).toBe(initialSSE);
       const receiveTerminal = async () => {
         await act(async () => {
           if (kind === 'http') {
@@ -4197,14 +4218,114 @@ describe('useResumableSSE', () => {
       expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
 
       mockGetMessagesByConvoId.mockResolvedValue([]);
+      const visibility = jest.spyOn(document, 'visibilityState', 'get');
+      visibility.mockReturnValue('hidden');
       await act(async () => {
-        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(getLastSSE()).toBe(pausedSSE);
+      visibility.mockReturnValue('visible');
+      await act(async () => {
+        (event === 'online' ? window : document).dispatchEvent(new Event(event));
       });
       expect(getLastSSE()).not.toBe(pausedSSE);
       expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+      expect(getLastSSE()._url).toContain('generationProtocolVersion=2');
+      const resumedSSE = getLastSSE();
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(getLastSSE()).toBe(resumedSSE);
       await receiveTerminal();
       expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
       expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
+      expect(request.post).toHaveBeenCalledTimes(1);
+      unmount();
+      const countAfterUnmount = mockSSEInstances.length;
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(mockSSEInstances).toHaveLength(countAfterUnmount);
+    },
+  );
+
+  it.each(['active', 'terminal', 'completed', 'unavailable'])(
+    'preserves live content during 404 status lookup (%s)',
+    async (outcome) => {
+      jest.useFakeTimers();
+      (request.post as jest.Mock).mockResolvedValue({
+        streamId: CONV_ID,
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      });
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      const liveMessages = [
+        submission.userMessage,
+        {
+          ...submission.initialResponse,
+          parentMessageId: submission.userMessage.messageId,
+          content: [{ type: ContentTypes.TEXT, text: 'Live output not yet persisted' }],
+        },
+      ] as TMessage[];
+      chatHelpers.getMessages.mockReturnValue(liveMessages);
+      const persisted = [submission.userMessage] as TMessage[];
+      mockGetMessagesByConvoId.mockResolvedValue(persisted);
+      let resolveStatus!: (status: StreamStatusResponse) => void;
+      let rejectStatus!: (error: Error) => void;
+      mockFetchStreamStatus.mockImplementationOnce(
+        () =>
+          new Promise<StreamStatusResponse>((resolve, reject) => {
+            resolveStatus = resolve;
+            rejectStatus = reject;
+          }),
+      );
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      chatHelpers.setMessages.mockClear();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await flushMicrotasks();
+      expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+      expect(mockGetMessagesByConvoId).not.toHaveBeenCalled();
+      expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+      expect(mockSettleAppliedSteerParts).not.toHaveBeenCalled();
+
+      await act(async () => {
+        if (outcome === 'unavailable') {
+          rejectStatus(new Error('status unavailable'));
+        } else {
+          if (outcome === 'completed') {
+            mockGetMessagesByConvoId.mockResolvedValue(liveMessages);
+          }
+          const terminalStatus = outcome === 'completed' ? 'complete' : 'aborted';
+          resolveStatus({
+            active: outcome === 'active',
+            status: outcome === 'active' ? 'running' : terminalStatus,
+            streamId: CONV_ID,
+            createdAt: 1000,
+            generationProtocolVersion: 2,
+          });
+        }
+      });
+      await flushMicrotasks();
+      if (outcome === 'terminal' || outcome === 'completed') {
+        expect(chatHelpers.setMessages).toHaveBeenCalledWith(
+          outcome === 'completed' ? liveMessages : persisted,
+        );
+        expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+      } else {
+        expect(mockGetMessagesByConvoId).not.toHaveBeenCalled();
+        expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+        expect(mockSetRunEnd).not.toHaveBeenCalled();
+        expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+        expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+        const failedSSE = getLastSSE();
+        await advanceRetryTimer(1_000);
+        expect(getLastSSE()).not.toBe(failedSSE);
+        expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+        expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+      }
       unmount();
     },
   );
