@@ -3,9 +3,20 @@ import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import type { TFile } from 'librechat-data-provider';
+import {
+  getFileExtension,
+  getPreviewKind,
+  shouldUseExtractedTextPreview,
+  shouldUseSharedFileDownload,
+} from './preview';
+import {
+  revokeDownloadURL,
+  useFilePreview,
+  useFileDownload,
+  useSharedFileDownload,
+} from '~/data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
-import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -23,6 +34,7 @@ interface FilePreviewDialogProps {
   fileType?: string;
   fileSource?: string;
   fileSize?: number;
+  deliveryPath?: TFile['llmDeliveryPath'];
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -78,10 +90,24 @@ export default function FilePreviewDialog({
   fileType,
   fileSource,
   fileSize,
+  deliveryPath,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   const { shareId } = useShareContext();
+  const showExtractedText = shouldUseExtractedTextPreview(deliveryPath);
+  const {
+    data: extractedPreview,
+    isInitialLoading: extractedTextLoading,
+    isError: extractedTextError,
+  } = useFilePreview(
+    fileId,
+    {
+      enabled: open && showExtractedText && !!fileId,
+      staleTime: Infinity,
+    },
+    shareId,
+  );
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
@@ -104,8 +130,18 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const previewKind = showExtractedText ? false : getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
+  const displayedText = showExtractedText ? (extractedPreview?.text ?? null) : fileContent;
+  const isLoading =
+    loading ||
+    (showExtractedText && (extractedTextLoading || extractedPreview?.status === 'pending'));
+  const hasPreviewError =
+    previewError ||
+    (showExtractedText &&
+      (extractedTextError ||
+        extractedPreview?.status === 'failed' ||
+        (extractedPreview?.status === 'ready' && extractedPreview.text == null)));
 
   const cancelledRef = useRef(false);
 
@@ -202,13 +238,13 @@ export default function FilePreviewDialog({
   }, [open]);
 
   const handleCopy = useCallback(() => {
-    if (!fileContent) {
+    if (!displayedText) {
       return;
     }
-    copy(fileContent, { format: 'text/plain' });
+    copy(displayedText, { format: 'text/plain' });
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 3000);
-  }, [fileContent]);
+  }, [displayedText]);
 
   const displayType = useMemo(() => getDisplayType(fileType, fileName), [fileType, fileName]);
   const sortedPages = useMemo(
@@ -254,14 +290,14 @@ export default function FilePreviewDialog({
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
-          {loading && (
+          {isLoading && (
             <div className="flex h-60 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="shimmer text-sm text-text-secondary">
                 {localize('com_ui_loading')}
               </span>
             </div>
           )}
-          {previewError && (
+          {hasPreviewError && !isLoading && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
@@ -275,7 +311,7 @@ export default function FilePreviewDialog({
               className="h-[70vh] w-full rounded-lg border border-border-light"
             />
           )}
-          {fileContent !== null && (
+          {displayedText !== null && !isLoading && !hasPreviewError && (
             <>
               <div className="pointer-events-none sticky top-0 z-10 flex justify-end pr-1">
                 <CopyButton
@@ -288,12 +324,12 @@ export default function FilePreviewDialog({
               </div>
               <div className="-mt-8 rounded-lg bg-surface-secondary p-4">
                 <pre className="whitespace-pre-wrap break-words pr-8 font-mono text-sm leading-6 text-text-primary">
-                  {fileContent}
+                  {displayedText}
                 </pre>
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !showExtractedText && !isLoading && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}

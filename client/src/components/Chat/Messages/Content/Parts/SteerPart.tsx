@@ -174,6 +174,7 @@ const SteerPart = memo(function SteerPart({
           fileType={selectedFile?.type ?? undefined}
           fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
+          deliveryPath={selectedFile?.llmDeliveryPath}
         />
       )}
     </div>
