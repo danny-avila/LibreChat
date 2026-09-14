@@ -123,6 +123,7 @@ function createToolLoader(
   streamId = null,
   definitionsOnly = false,
   jobCreatedAt,
+  upstreamTokenProvider,
 ) {
   /**
    * @param {object} params
@@ -164,6 +165,7 @@ function createToolLoader(
         codeExecutionContext,
         definitionsOnly,
         accessibleMcpServerNames,
+        upstreamTokenProvider,
       });
     } catch (error) {
       if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
@@ -185,8 +187,9 @@ function createToolLoader(
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
  * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
  */
-const initializeClient = async ({
+const initializeClientWithProvider = async ({
   req,
   res,
   signal,
@@ -195,6 +198,7 @@ const initializeClient = async ({
   checkpointNamespace,
   foregroundRunId,
   requestBody,
+  upstreamTokenProvider,
 }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -624,7 +628,15 @@ const initializeClient = async ({
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(req, res, signal, streamId, true, jobCreatedAt);
+  const loadTools = createToolLoader(
+    req,
+    res,
+    signal,
+    streamId,
+    true,
+    jobCreatedAt,
+    upstreamTokenProvider,
+  );
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string | undefined} */
@@ -1248,7 +1260,15 @@ const initializeClient = async ({
           req,
           res,
           agent,
-          loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
+          loadTools: createToolLoader(
+            req,
+            res,
+            context.signal,
+            streamId,
+            true,
+            jobCreatedAt,
+            upstreamTokenProvider,
+          ),
           requestFiles,
           authorizedRunFiles: getAuthorizedRunFileSnapshot({
             policy: appConfig.endpoints?.agents?.fileSharing,
@@ -1834,4 +1854,24 @@ const initializeClient = async ({
   return { client, userMCPAuthMap };
 };
 
-module.exports = { initializeClient };
+/**
+ * Creates an agent initializer whose host may resolve renewable credentials at
+ * the execution boundary. The resolver returns a provider closure rather than
+ * token material so refresh remains owned by the host integration.
+ *
+ * @param {object} [dependencies]
+ * @param {(user: import('@librechat/data-schemas').IUser, options: { signal?: AbortSignal }) => import('@librechat/api').UpstreamTokenProvider | undefined | Promise<import('@librechat/api').UpstreamTokenProvider | undefined>} [dependencies.resolveUpstreamTokenProvider]
+ */
+function createInitializeClient(dependencies = {}) {
+  return async (params) => {
+    const upstreamTokenProvider = await dependencies.resolveUpstreamTokenProvider?.(
+      params.req.user,
+      { signal: params.signal },
+    );
+    return initializeClientWithProvider({ ...params, upstreamTokenProvider });
+  };
+}
+
+const initializeClient = createInitializeClient();
+
+module.exports = { createInitializeClient, initializeClient };

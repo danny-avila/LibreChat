@@ -98,7 +98,7 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
-const { initializeClient } = require('./initialize');
+const { createInitializeClient, initializeClient } = require('./initialize');
 const { processAddedConvo } = require('./addedConvo');
 const { getSkillDbMethods, getSkillToolDeps } = require('./skillDeps');
 const { loadAgentTools } = require('~/server/services/ToolService');
@@ -180,6 +180,33 @@ describe('initializeClient — processAgent ACL gate', () => {
       executionProfile: 'default',
       statefulSessions: false,
     },
+  });
+
+  it('resolves a host credential provider at the agent initialization boundary', async () => {
+    const upstreamTokenProvider = jest.fn();
+    const resolveUpstreamTokenProvider = jest.fn().mockResolvedValue(upstreamTokenProvider);
+    const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
+    const req = makeReq();
+    const signal = new AbortController().signal;
+    mockInitializeAgent.mockImplementationOnce(async ({ loadTools, agent }) => {
+      await loadTools({
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+      return makePrimaryConfig([]);
+    });
+
+    await hostInitializeClient({
+      req,
+      res: {},
+      signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(resolveUpstreamTokenProvider).toHaveBeenCalledWith(req.user, { signal });
+    expect(loadAgentTools).toHaveBeenCalledWith(expect.objectContaining({ upstreamTokenProvider }));
   });
 
   it('replaces untrusted artifact route metadata with the executing agent context', async () => {

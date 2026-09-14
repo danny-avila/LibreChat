@@ -61,7 +61,6 @@ const {
   getTransactionsConfig,
   checkToolRolePermission,
   resolveToolRolePermissions,
-  isScheduleFireRequest,
 } = require('@librechat/api');
 const {
   Time,
@@ -114,9 +113,6 @@ const {
   resolveCollisionAuditNames,
 } = require('~/server/services/MCP');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
-const {
-  resolveScheduleUpstreamTokenProvider,
-} = require('~/server/services/Schedules/upstreamToken');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -787,6 +783,7 @@ const isBuiltInTool = (toolName) =>
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @param {AbortSignal} [params.signal] - Effective run cancellation signal
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -807,6 +804,7 @@ async function loadToolDefinitionsWrapper({
   codeExecutionContext,
   accessibleMcpServerNames,
   signal,
+  upstreamTokenProvider: suppliedUpstreamTokenProvider,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -992,25 +990,19 @@ async function loadToolDefinitionsWrapper({
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const requestScopedConnections = getMCPRequestContext(req, res);
-  /** Resolve unattended credentials afresh for scheduled runs. Interactive
-   * requests retain their request-scoped session provider, including cookie
-   * rotation while the response is writable. */
   const oboIdentityContext = createAuthIdentityContext({
     user: req.user,
     tenantId: getTenantId(),
   });
-  const sessionUpstreamTokenProvider = createOpenIDSessionTokenProvider({
-    req,
-    res,
-    user: req.user,
-    identityContext: oboIdentityContext,
-    tokenPreference: 'access_token',
-  });
   const upstreamTokenProvider =
-    isScheduleFireRequest(req) && hasFilteredMCPTools
-      ? ((await resolveScheduleUpstreamTokenProvider(req.user, { signal })) ??
-        sessionUpstreamTokenProvider)
-      : sessionUpstreamTokenProvider;
+    suppliedUpstreamTokenProvider ??
+    createOpenIDSessionTokenProvider({
+      req,
+      res,
+      user: req.user,
+      identityContext: oboIdentityContext,
+      tokenPreference: 'access_token',
+    });
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;
@@ -1573,6 +1565,7 @@ async function loadToolDefinitionsWrapper({
  * @param {boolean} [params.definitionsOnly=true] - When true, returns only serializable
  *   tool definitions without creating full tool instances. Use for event-driven mode
  *   where tools are loaded on-demand during execution.
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
  */
 async function loadAgentTools({
   req,
@@ -1588,6 +1581,7 @@ async function loadAgentTools({
   definitionsOnly = true,
   codeExecutionContext: providedCodeExecutionContext,
   accessibleMcpServerNames,
+  upstreamTokenProvider,
 }) {
   if (definitionsOnly) {
     try {
@@ -1603,6 +1597,7 @@ async function loadAgentTools({
         codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
         signal,
+        upstreamTokenProvider,
       });
     } catch (error) {
       if (
