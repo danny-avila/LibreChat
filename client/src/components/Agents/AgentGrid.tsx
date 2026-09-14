@@ -168,6 +168,21 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     }
   }, [isPendingResults, scopeKey, scrollElementRef]);
   /**
+   * A scope change remounts the grid, which takes an open dialog with it — a debounced
+   * search or a restored history entry can commit while the reader has a card open, and
+   * the element their focus was on leaves the document in that commit. The browser then
+   * drops focus on `document.body`, so the next Tab starts at the top of the page rather
+   * than at the list they are looking at. This panel takes focus in exactly that case:
+   * focus already elsewhere — the search field they were typing in, another control — is
+   * left alone, because only `body` means nobody has it.
+   */
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (document.activeElement === document.body) {
+      panelRef.current?.focus();
+    }
+  }, [scopeKey]);
+  /**
    * Paging is suspended while a failure is held. The rows stay mounted behind the error
    * card now, so the end of the list is still reachable, and without this the virtualized
    * grid would re-request the cursor page that just failed on the next scroll — the
@@ -275,28 +290,25 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   const emptyState = getEmptyStateHeading();
 
   /**
-   * Not while a failure is held: the retry that clears it runs with no data of its own,
-   * so the skeleton would fill the viewport above the error card and push the card's
-   * status, countdown and action below the fold — hiding the recovery it is reporting.
-   * The card owns the waiting state for the request it describes.
-   */
-  const loadingSkeleton =
-    isPendingResults && !failure ? (
-      <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
-    ) : null;
-
-  /**
-   * What the grid shows instead of the list. Rendered inside the grid rather than in
-   * place of it: the grid owns the detail dialog and the element focus returns to, so
-   * swapping it out for a failure or an empty result would tear an open dialog down
-   * mid-flight and leave keyboard focus on a detached card.
+   * What the grid shows instead of the list: a held failure's recovery card, the loading
+   * skeleton, or the empty state, in that order of precedence. Every one of them is
+   * rendered *inside* the grid rather than in place of it, because the grid owns the
+   * detail dialog and the element focus returns to — swapping it out for a pending
+   * replacement, a failure or an emptied result would tear an open dialog down mid-flight
+   * and leave keyboard focus on a detached card. A search debounce or a restored history
+   * entry can commit while a card from the visible scope is open, which is exactly when
+   * the grid must stay where it is.
    *
-   * With rows already loaded the grid renders it before them so keyboard and reading order
-   * reach recovery immediately. It is pinned to the top of the scroll frame: sticky bottom
-   * would only remain visible when the card's flow position had already passed the viewport,
-   * while this card starts before the rows and must stay visible as they scroll underneath it.
-   * Without rows there is nothing to pin it over and it is the whole of the page.
+   * The skeleton never runs beside a held failure: the retry that clears it has no data
+   * of its own, so a viewport of placeholders would push the card's status, countdown and
+   * action below the fold and hide the recovery it is reporting. The card owns the waiting
+   * state for the request it describes.
+   *
+   * With rows already loaded the recovery card is rendered before them so keyboard and
+   * reading order reach it immediately, in a band it reserves at the top of the scroll
+   * frame; without rows it is the whole of the page.
    */
+
   let listPlaceholder: React.ReactNode = null;
   if (failure) {
     const errorCard = (
@@ -346,6 +358,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     ) : (
       errorCard
     );
+  } else if (isPendingResults) {
+    listPlaceholder = (
+      <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
+    );
   } else if (!hasData) {
     listPlaceholder = (
       <div
@@ -362,66 +378,57 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   // Main content component with proper semantic structure
   const mainContent = (
     <div
+      ref={panelRef}
       className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
       role="tabpanel"
       id={`category-panel-${category}`}
       aria-labelledby={`category-tab-${category}`}
       aria-busy={isPendingResults || (isFetching && !isFetchingNextPage)}
-      tabIndex={isPendingResults ? 0 : undefined}
+      /* In the tab order only while it is the thing on screen; `-1` otherwise so it can
+         still take focus the rows dropped when a scope change remounted them. */
+      tabIndex={isPendingResults ? 0 : -1}
     >
-      {loadingSkeleton}
-      {(!isPendingResults || failure) && (
-        <>
-          {hasData && !failure && (
-            <div
-              id="search-results-count"
-              className="sr-only"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {localize('com_agents_grid_announcement', {
-                count: visibleAgents?.length || 0,
-                category: getCategoryDisplayName(category),
-              })}
-            </div>
-          )}
+      {hasData && !failure && (
+        <div id="search-results-count" className="sr-only" aria-live="polite" aria-atomic="true">
+          {localize('com_agents_grid_announcement', {
+            count: visibleAgents?.length || 0,
+            category: getCategoryDisplayName(category),
+          })}
+        </div>
+      )}
 
-          <VirtualizedAgentGrid
-            key={scopeKey}
-            agents={visibleAgents}
-            scrollElementRef={scrollElementRef}
-            label={localize('com_agents_grid_announcement', {
-              count: visibleAgents.length,
-              category: getCategoryDisplayName(category),
-            })}
-            hasNextPage={(hasNextPage ?? false) && !failure}
-            isFetching={isFetching}
-            onLoadMore={loadMore}
-            onSelectAgent={onSelectAgent}
-            placeholder={listPlaceholder}
-            placeholderInset={recoveryInset}
-          />
+      <VirtualizedAgentGrid
+        key={scopeKey}
+        agents={visibleAgents}
+        scrollElementRef={scrollElementRef}
+        label={localize('com_agents_grid_announcement', {
+          count: visibleAgents.length,
+          category: getCategoryDisplayName(category),
+        })}
+        hasNextPage={(hasNextPage ?? false) && !failure}
+        isFetching={isFetching}
+        onLoadMore={loadMore}
+        onSelectAgent={onSelectAgent}
+        placeholder={listPlaceholder}
+        placeholderInset={recoveryInset}
+      />
 
-          {isFetchingNextPage && (
-            <div
-              className="flex justify-center py-8"
-              role="status"
-              aria-live="polite"
-              aria-label={localize('com_agents_loading')}
-            >
-              <Spinner className="h-6 w-6 text-text-primary" />
-              <span className="sr-only">{localize('com_agents_loading')}</span>
-            </div>
-          )}
+      {isFetchingNextPage && (
+        <div
+          className="flex justify-center py-8"
+          role="status"
+          aria-live="polite"
+          aria-label={localize('com_agents_loading')}
+        >
+          <Spinner className="h-6 w-6 text-text-primary" />
+          <span className="sr-only">{localize('com_agents_loading')}</span>
+        </div>
+      )}
 
-          {!failure && hasData && !hasNextPage && (
-            <div className="mt-6 text-center">
-              <p className="text-sm text-text-secondary">
-                {localize('com_agents_no_more_results')}
-              </p>
-            </div>
-          )}
-        </>
+      {!failure && hasData && !hasNextPage && (
+        <div className="mt-6 text-center">
+          <p className="text-sm text-text-secondary">{localize('com_agents_no_more_results')}</p>
+        </div>
       )}
     </div>
   );
