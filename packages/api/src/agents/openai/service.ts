@@ -187,6 +187,8 @@ interface InitializedAgent {
 interface InitializeAgentParams {
   req: Request;
   res: ServerResponse;
+  /** Cancellation signal owned by this chat-completion request. */
+  signal?: CoreInitializeAgentParams['signal'];
   agent: Agent;
   conversationId?: string | null;
   parentMessageId?: string | null;
