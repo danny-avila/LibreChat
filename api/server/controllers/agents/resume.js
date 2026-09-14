@@ -20,8 +20,10 @@ const {
   attachAskUserQuestionAnswers,
   findAskUserQuestionContentIndex,
   findUndecidedToolCalls,
+  hasInvalidToolApprovalResolutions,
   findDisallowedDecisions,
   findIncompleteDecisions,
+  isToolApprovalPayloadValid,
   computeAgentRequestFingerprint,
   computeLegacyAgentRequestFingerprint,
   captureAgentCheckpointGeneration,
@@ -351,6 +353,12 @@ function resolveResumeValue(pendingAction, body) {
   const payload = pendingAction.payload;
   if (payload?.type === 'tool_approval') {
     const resolutions = Array.isArray(body.decisions) ? body.decisions : [];
+    if (!isToolApprovalPayloadValid(payload)) {
+      return { status: 400, error: 'Invalid tool approval payload' };
+    }
+    if (hasInvalidToolApprovalResolutions(payload, resolutions)) {
+      return { status: 400, error: 'Invalid tool approval decisions' };
+    }
     const undecided = findUndecidedToolCalls(payload, resolutions);
     if (undecided.length > 0) {
       return { status: 400, error: 'Every paused tool call must be decided', undecided };

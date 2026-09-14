@@ -266,6 +266,25 @@ export function findUndecidedToolCalls(
   return payload.action_requests.map((a) => a.tool_call_id).filter((id) => !decided.has(id));
 }
 
+/** Reject ambiguous or foreign decisions before adapting them to the SDK's ID-keyed map. */
+export function hasInvalidToolApprovalResolutions(
+  payload: Agents.ToolApprovalInterruptPayload,
+  resolutions: readonly Agents.ToolApprovalResolution[],
+): boolean {
+  const requestedIds = new Set(payload.action_requests.map((request) => request.tool_call_id));
+  const resolutionIds = new Set<string>();
+  for (const resolution of resolutions) {
+    if (
+      resolutionIds.has(resolution.tool_call_id) ||
+      !requestedIds.has(resolution.tool_call_id)
+    ) {
+      return true;
+    }
+    resolutionIds.add(resolution.tool_call_id);
+  }
+  return false;
+}
+
 /**
  * Enforce the policy's per-tool `allowed_decisions`. Returns the `tool_call_id`s
  * whose submitted decision is NOT one the interrupt's `review_configs` permits for

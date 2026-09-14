@@ -14,6 +14,7 @@ import {
   serializeAskUserAnswerVariants,
   resolveAskUserQuestionResume,
   findUndecidedToolCalls,
+  hasInvalidToolApprovalResolutions,
   findDisallowedDecisions,
   findIncompleteDecisions,
   createContentIndexOffsetHandlers,
@@ -227,6 +228,44 @@ describe('findUndecidedToolCalls', () => {
         { tool_call_id: 'z', decision: 'approve' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('hasInvalidToolApprovalResolutions', () => {
+  const payload: Agents.ToolApprovalInterruptPayload = {
+    type: 'tool_approval',
+    action_requests: [
+      { tool_call_id: 'a', name: 'read', arguments: {} },
+      { tool_call_id: 'b', name: 'write', arguments: {} },
+    ],
+    review_configs: [],
+  };
+
+  test('rejects duplicate decisions for one tool-call id', () => {
+    expect(
+      hasInvalidToolApprovalResolutions(payload, [
+        { tool_call_id: 'a', decision: 'approve' },
+        { tool_call_id: 'a', decision: 'reject' },
+      ]),
+    ).toBe(true);
+  });
+
+  test('rejects decisions for a tool call outside the pending batch', () => {
+    expect(
+      hasInvalidToolApprovalResolutions(payload, [
+        { tool_call_id: 'a', decision: 'approve' },
+        { tool_call_id: 'foreign', decision: 'approve' },
+      ]),
+    ).toBe(true);
+  });
+
+  test('accepts one decision for each requested tool call', () => {
+    expect(
+      hasInvalidToolApprovalResolutions(payload, [
+        { tool_call_id: 'a', decision: 'approve' },
+        { tool_call_id: 'b', decision: 'reject' },
+      ]),
+    ).toBe(false);
   });
 });
 
