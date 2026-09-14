@@ -1,7 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
+import type { FormattedMessageWithContent } from '../client';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { prependContextText } from '../client';
 import { getSafeErrorMetadata } from '~/utils';
 
 /** The projection a stored-row loader needs; nothing else is read. */
@@ -424,4 +426,67 @@ export async function buildRetainedAnswersContext(
     logger.warn('[retainedAnswers] Block unavailable for this turn', getSafeErrorMetadata(error));
     return undefined;
   }
+}
+
+export interface ApplyRetainedAnswersInput {
+  /** The rendered block, or nothing to apply. */
+  block: string | null | undefined;
+  /** The rows the prompt was built from, in prompt order. */
+  orderedMessages: readonly ({ isCreatedByUser?: boolean } | null | undefined)[];
+  /** The prompt copies, index-aligned with `orderedMessages`; the chosen one is changed. */
+  formattedMessages: FormattedMessageWithContent[];
+  /** Prompt token count per index; the chosen index grows by the block. */
+  indexTokenCountMap: Record<number, number | undefined>;
+  /** Counts a prompt copy with the run's encoding. */
+  countTokens: (message: FormattedMessageWithContent) => number | undefined;
+  /**
+   * Memory extraction reads a copy of the prompt without the block. `needed`
+   * says whether that copy must still be built once the block is applied; `build`
+   * builds it.
+   */
+  memoryCopy?: { needed: boolean; build: () => Promise<void> };
+}
+
+function latestUserAuthoredIndex(
+  orderedMessages: ApplyRetainedAnswersInput['orderedMessages'],
+): number {
+  for (let index = orderedMessages.length - 1; index >= 0; index--) {
+    if (orderedMessages[index]?.isCreatedByUser === true) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Quotes the block into the latest user-authored prompt copy: the leaf on an
+ * ordinary turn, the turn being continued when the leaf is the assistant's own
+ * unfinished response. The block's cost is the difference between two fresh
+ * counts of that copy, so a stored, calibrated count for the row is left as it
+ * was. Returns the tokens added to the prompt, zero when nothing was applied.
+ */
+export async function applyRetainedAnswers({
+  block,
+  orderedMessages,
+  formattedMessages,
+  indexTokenCountMap,
+  countTokens,
+  memoryCopy,
+}: ApplyRetainedAnswersInput): Promise<number> {
+  if (block == null || block.length === 0) {
+    return 0;
+  }
+  const index = latestUserAuthoredIndex(orderedMessages);
+  const target = index < 0 ? undefined : formattedMessages[index];
+  if (target == null) {
+    return 0;
+  }
+  const before = countTokens(target) ?? 0;
+  prependContextText(target, block, SEPARATOR);
+  const added = Math.max(0, (countTokens(target) ?? 0) - before);
+  indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + added;
+  if (memoryCopy?.needed === true) {
+    await memoryCopy.build();
+  }
+  return added;
 }

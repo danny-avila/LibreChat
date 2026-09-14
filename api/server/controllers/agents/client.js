@@ -75,7 +75,7 @@ const {
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   buildRetainedAnswersContext,
-  prependContextText,
+  applyRetainedAnswers,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -2844,37 +2844,24 @@ class AgentClient extends BaseClient {
     ]);
 
     /**
-     * The answers block rides the latest user turn as quoted context: user
-     * role, rebuilt from the stored rows every turn (which keep the answers past
-     * the summary boundary and the pruner), prompt copy only. The latest
-     * user-authored row is the leaf on an ordinary turn and the turn being
-     * continued when the leaf is the assistant's own unfinished response.
-     * Prepended like file context, after the counts and after the context
-     * kickoff above so a steer-free history keeps its zero-await path; the
-     * persisted row and the memory copy stay untouched and the prompt count is
-     * adjusted here.
+     * The answers block rides the latest user turn as quoted context, prompt
+     * copy only, applied after the context kickoff above so a steer-free
+     * history keeps its zero-await path. The rows the history read handed over
+     * are released here; the block is already rendered.
      */
     const retainedAnswersContext = await retainedAnswersPromise;
     this.loadedHistoryRows = undefined;
-    const retainedAnswersIndex =
-      retainedAnswersContext == null
-        ? -1
-        : orderedMessages.findLastIndex((message) => message?.isCreatedByUser === true);
-    if (retainedAnswersIndex >= 0) {
-      const target = formattedMessages[retainedAnswersIndex];
-      /** The row's own count may be a stored, calibrated figure; the block is
-       *  measured as the difference between two fresh counts of the same copy. */
-      const beforeAnswers = countFormattedMessageTokens(target, encoding);
-      prependContextText(target, retainedAnswersContext, '\n\n');
-      const withAnswers = countFormattedMessageTokens(target, encoding);
-      const answerTokens = Math.max(0, (withAnswers ?? 0) - (beforeAnswers ?? 0));
-      indexTokenCountMap[retainedAnswersIndex] =
-        (indexTokenCountMap[retainedAnswersIndex] ?? 0) + answerTokens;
-      promptTokens += answerTokens;
-      if (this.memoryPayload == null && this.processMemory != null) {
-        await buildMemoryPayload();
-      }
-    }
+    promptTokens += await applyRetainedAnswers({
+      block: retainedAnswersContext,
+      orderedMessages,
+      formattedMessages,
+      indexTokenCountMap,
+      countTokens: (message) => countFormattedMessageTokens(message, encoding),
+      memoryCopy: {
+        needed: this.memoryPayload == null && this.processMemory != null,
+        build: buildMemoryPayload,
+      },
+    });
 
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;

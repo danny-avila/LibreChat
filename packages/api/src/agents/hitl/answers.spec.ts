@@ -1,5 +1,6 @@
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
 import {
+  applyRetainedAnswers,
   buildRetainedAnswersContext,
   collectRetainedAnswers,
   orderConversationBranch,
@@ -500,5 +501,92 @@ describe('buildRetainedAnswersContext', () => {
     });
     expect(text).toBeUndefined();
     expect(mockWarn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('applyRetainedAnswers', () => {
+  const block = '# Answers\n\nQ: Deploy where?\nA: staging';
+  const countTokens = (message: { content?: unknown }) =>
+    JSON.stringify(message.content ?? '').length;
+
+  function turn() {
+    const orderedMessages = [
+      { isCreatedByUser: true },
+      { isCreatedByUser: false },
+      { isCreatedByUser: true },
+      { isCreatedByUser: false },
+    ];
+    const formattedMessages = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: 'latest question' },
+      { role: 'assistant', content: 'unfinished' },
+    ];
+    const indexTokenCountMap: Record<number, number | undefined> = { 0: 5, 1: 5, 2: 5000, 3: 5 };
+    return { orderedMessages, formattedMessages, indexTokenCountMap };
+  }
+
+  test('quotes into the latest user-authored copy, measured against a fresh count', async () => {
+    const { orderedMessages, formattedMessages, indexTokenCountMap } = turn();
+    const build = jest.fn(async () => undefined);
+    const added = await applyRetainedAnswers({
+      block,
+      orderedMessages,
+      formattedMessages,
+      indexTokenCountMap,
+      countTokens,
+      memoryCopy: { needed: true, build },
+    });
+    expect(formattedMessages[2].content).toBe(`${block}\n\nlatest question`);
+    expect(formattedMessages[3].content).toBe('unfinished');
+    const expected =
+      countTokens({ content: `${block}\n\nlatest question` }) -
+      countTokens({ content: 'latest question' });
+    expect(added).toBe(expected);
+    expect(added).toBeGreaterThan(block.length);
+    expect(indexTokenCountMap[2]).toBe(5000 + added);
+    expect(build).toHaveBeenCalledTimes(1);
+  });
+
+  test('builds the memory copy only when it is still needed', async () => {
+    const { orderedMessages, formattedMessages, indexTokenCountMap } = turn();
+    const build = jest.fn(async () => undefined);
+    await applyRetainedAnswers({
+      block,
+      orderedMessages,
+      formattedMessages,
+      indexTokenCountMap,
+      countTokens,
+      memoryCopy: { needed: false, build },
+    });
+    expect(formattedMessages[2].content).toContain(block);
+    expect(build).not.toHaveBeenCalled();
+  });
+
+  test('applies nothing without a block or without a user-authored row', async () => {
+    const empty = turn();
+    const build = jest.fn(async () => undefined);
+    expect(
+      await applyRetainedAnswers({
+        block: undefined,
+        ...empty,
+        countTokens,
+        memoryCopy: { needed: true, build },
+      }),
+    ).toBe(0);
+    const assistantOnly = turn();
+    assistantOnly.orderedMessages.forEach((message) => {
+      message.isCreatedByUser = false;
+    });
+    expect(
+      await applyRetainedAnswers({
+        block,
+        ...assistantOnly,
+        countTokens,
+        memoryCopy: { needed: true, build },
+      }),
+    ).toBe(0);
+    expect(assistantOnly.formattedMessages[2].content).toBe('latest question');
+    expect(build).not.toHaveBeenCalled();
   });
 });
