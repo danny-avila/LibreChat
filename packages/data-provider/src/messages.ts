@@ -188,19 +188,28 @@ export function findMessageById(
 
 /**
  * True when a turn carries the marker the server stamps on a manual compaction:
- * `markCompactionSummary` sets `initiatedBy: 'user'` on the summary a Compact
- * action produced, and nothing else writes it, so an automatic summary detour is
- * not one. This is the compaction's own identity, independent of where it hangs:
- * Compact runs on whatever leaf the branch ends with, so its response can parent
- * onto a user message as easily as onto the answer it summarized. Redoing one is
- * the context indicator's Compact action, never a rerun of the turn behind it.
+ * `markCompactionOutcome` sets `initiatedBy: 'user'` on whichever part carries
+ * the outcome — the summary a Compact action produced, or the error part a run
+ * that produced none recorded instead — and nothing else writes it, so an
+ * automatic summary detour is not one. This is the compaction's own identity,
+ * independent of where it hangs: Compact runs on whatever leaf the branch ends
+ * with, so its response can parent onto a user message as easily as onto the
+ * answer it summarized. Redoing one is the context indicator's Compact action,
+ * never a rerun of the turn behind it.
+ *
+ * Compactions stored before the marker existed carry none, so callers keep
+ * their own ancestry test as the fallback.
  */
 export function isUserInitiatedCompaction(message?: Pick<TMessage, 'content'> | null): boolean {
   const content = message?.content;
   if (!Array.isArray(content)) {
     return false;
   }
-  return content.some((part) => part?.type === ContentTypes.SUMMARY && part.initiatedBy === 'user');
+  return content.some(
+    (part) =>
+      (part?.type === ContentTypes.SUMMARY || part?.type === ContentTypes.ERROR) &&
+      part.initiatedBy === 'user',
+  );
 }
 
 /**

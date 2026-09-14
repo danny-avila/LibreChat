@@ -283,6 +283,7 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
+  resolveFailedTurnContent: jest.requireActual('@librechat/api').resolveFailedTurnContent,
   getFailedTurnTraceFields: (...args) => mockGetFailedTurnTraceFields(...args),
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {

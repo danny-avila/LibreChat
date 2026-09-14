@@ -21,7 +21,7 @@ const mockStripActivityLabelParts = jest.fn((payload) =>
 );
 
 const { Providers } = require('@librechat/agents');
-const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
   GenerationJobManager,
   createStreamServices,
@@ -3120,6 +3120,102 @@ describe('AgentClient - startup telemetry', () => {
         JSON.stringify({ type: 'upstream_model_error', status: 500 }),
     });
     errorSpy.mockRestore();
+  });
+
+  /** A compaction's only record of having been one is the marker on the part it
+   *  produced, and Compact runs on whatever leaf the branch ends with. Without
+   *  the marker on the failure, a compaction that failed on a user leaf keeps a
+   *  Regenerate that answers that user message instead of redoing the run. */
+  it('marks the failure a compaction turn persists instead of a summary', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {
+        throw new Error('summarizer unavailable');
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-failure',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-failure';
+    client.responseMessageId = 'response-compaction-failure';
+    client.parentMessageId = 'parent-compaction-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      expect.objectContaining({ type: ContentTypes.ERROR, initiatedBy: 'user' }),
+    ]);
+  });
+
+  /** A summarizer that returns nothing emits no content at all, so the run has
+   *  neither a summary nor an explanation. The turn records the typed failure
+   *  itself instead of being saved as a bare error row the client cannot tell
+   *  apart from an answer to the message it hangs off. */
+  it('records a marked typed failure when a compaction run produces nothing', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockImplementation(async () => ({
+      Graph: null,
+      processStream: jest.fn(async () => {}),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { compact: true },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-compaction-empty',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-compaction-empty';
+    client.responseMessageId = 'response-compaction-empty';
+    client.parentMessageId = 'parent-compaction-empty';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const { completion } = await client.sendCompletion([]);
+
+    expect(completion).toEqual([
+      {
+        type: ContentTypes.ERROR,
+        error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+        initiatedBy: 'user',
+      },
+    ]);
   });
 
   it('keeps a later non-provider run failure on the generic error path', async () => {

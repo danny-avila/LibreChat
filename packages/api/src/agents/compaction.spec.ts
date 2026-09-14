@@ -1,3 +1,4 @@
+import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
 import { COMPACTION_SEMANTIC_INDEX_LIMITS } from '@librechat/agents';
 import {
   MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
@@ -6,9 +7,12 @@ import {
   MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
 } from '@librechat/data-schemas';
 import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
+import type { SummaryContentPart, TMessageContentParts } from 'librechat-data-provider';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
   createCompactionSemanticIndexProjection,
+  markCompactionOutcome,
+  resolveFailedTurnContent,
   restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
 } from './compaction';
@@ -135,5 +139,99 @@ describe('compaction semantic index continuation projection', () => {
       text: '',
       redacted: true,
     });
+  });
+});
+
+describe('markCompactionOutcome', () => {
+  const summary = (
+    text: string,
+    overrides: Partial<SummaryContentPart> = {},
+  ): TMessageContentParts => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text }],
+    ...overrides,
+  });
+  const failure = (error: string): TMessageContentParts => ({ type: ContentTypes.ERROR, error });
+
+  it('marks the summary a compaction produced', () => {
+    const parts = [summary('Earlier turns, compacted.')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  /** The turn has no other record of having been a compaction: without the
+   *  marker a failure hanging off a user message keeps a Regenerate that
+   *  answers that message instead of redoing the compaction. */
+  it('marks the failure a compaction recorded instead of a summary', () => {
+    const parts = [failure('Nothing to summarize')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  it('marks the failure when only a partial summary streamed before it', () => {
+    const parts = [summary('Half a checkpoint', { failed: true }), failure('Summarization failed')];
+
+    markCompactionOutcome(parts);
+
+    expect(parts[0]).not.toHaveProperty('initiatedBy');
+    expect(parts[1]).toMatchObject({ initiatedBy: 'user' });
+  });
+
+  /** The fallback the reviewed head threw on: a run that produced neither a
+   *  summary nor an explanation now records the typed failure itself, so the
+   *  turn carries the marker on the stream and in storage instead of being
+   *  saved as a bare error row with no content. */
+  it.each([
+    ['nothing at all', []],
+    ['an empty summary', [summary('   ')]],
+    [
+      'a partial summary with no recorded failure',
+      [summary('Half a checkpoint', { failed: true })],
+    ],
+  ])('records a marked typed failure for a run that produced %s', (_label, parts) => {
+    markCompactionOutcome(parts);
+
+    /** The typed failure is the turn's whole outcome: a truncated summary left
+     *  beside it would be read back as the conversation's checkpoint. */
+    expect(parts).toEqual([
+      {
+        type: ContentTypes.ERROR,
+        error: JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+        initiatedBy: 'user',
+      },
+    ]);
+  });
+
+  /** A cancelled compaction stopped early rather than failing, and the abort
+   *  path owns that turn: it must not be turned into a failure row. */
+  it('fails as a typed error when the run was cancelled', () => {
+    const parts: TMessageContentParts[] = [];
+
+    expect(() => markCompactionOutcome(parts, { aborted: true })).toThrow(
+      JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED }),
+    );
+    expect(parts).toHaveLength(0);
+  });
+});
+
+describe('resolveFailedTurnContent', () => {
+  /** A thrown failure leaves the turn with no content of its own, so the row a
+   *  compaction persists carries the marked failure instead. */
+  it('gives a failed compaction turn its marked failure content', () => {
+    expect(resolveFailedTurnContent({ compact: true }, 'Summarization failed')).toEqual({
+      content: [{ type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' }],
+    });
+  });
+
+  it.each([
+    ['an ordinary turn', { compact: false }],
+    ['a turn that never asked to compact', {}],
+    ['a request with no body', undefined],
+  ])('leaves %s with its text-only shape', (_label, requestBody) => {
+    expect(resolveFailedTurnContent(requestBody, 'Something failed')).toEqual({});
   });
 });
