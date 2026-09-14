@@ -17,7 +17,7 @@ import { ChatContext } from '~/Providers/ChatContext';
 import { AuthContext } from '~/hooks/AuthContext';
 import Error from '../Error';
 
-let mockEndpointsData: Record<string, Record<string, unknown>> = {
+let mockEndpointsData: Record<string, Record<string, unknown>> | undefined = {
   openAI: { userProvide: true },
 };
 let mockStartupData = { compactionEnabled: false };
@@ -126,6 +126,14 @@ function localized(key: string, ...values: string[]) {
 }
 
 const numberFormat = new Intl.NumberFormat();
+
+/** A violation row, stamped by the server when it saved the failure (just now by default). */
+const limitRow = (createdAt = Date.now()) =>
+  ({
+    endpoint: 'openAI',
+    model: 'gpt-4o',
+    createdAt: new Date(createdAt).toISOString(),
+  }) as TMessage;
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -413,6 +421,16 @@ describe('Error — user key and limits', () => {
     ).not.toBeInTheDocument();
   });
 
+  /** A shared link's viewer has no endpoint configuration, so who owns the key is unknown. */
+  it('keeps key copy generic where the endpoint configuration is unavailable', () => {
+    mockEndpointsData = undefined;
+    renderError({ type: ErrorTypes.NO_USER_KEY }, providerMessage);
+
+    expect(screen.getByText(catalog.com_error_no_user_key_generic)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('administrator');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('offers the key dialog when a saved user key cannot be read', () => {
     renderError({ type: ErrorTypes.INVALID_USER_KEY }, providerMessage);
 
@@ -515,7 +533,7 @@ describe('Error — user key and limits', () => {
         windowInMinutes: 60,
         resetAt: Date.now() + 2 * 60 * 1000,
       },
-      providerMessage,
+      limitRow(),
     );
 
     expect(screen.getByText(/You can send another message in \d+:\d{2}\./)).toBeInTheDocument();
@@ -529,12 +547,28 @@ describe('Error — user key and limits', () => {
         windowInMinutes: 3 * 24 * 60,
         resetAt: Date.now() + 2 * 24 * 60 * 60 * 1000,
       },
-      providerMessage,
+      limitRow(),
     );
 
     expect(
       screen.getByText(/You can send another message in (47:59:59|48:00:00)\./),
     ).toBeInTheDocument();
+  });
+
+  /** The server stamps both the row and its reset, so the window runs from the row, not this device. */
+  it('keeps a valid countdown when this device clock runs behind the server', () => {
+    const serverNow = Date.now() + 10 * 60 * 1000;
+    renderError(
+      {
+        type: ViolationTypes.MESSAGE_LIMIT,
+        max: 40,
+        windowInMinutes: 60,
+        resetAt: serverNow + 55 * 60 * 1000,
+      },
+      limitRow(serverNow),
+    );
+
+    expect(screen.getByText(/You can send another message in 1:0[45]:\d{2}\./)).toBeInTheDocument();
   });
 
   it('drops a reset further out than the limiter window allows', () => {
@@ -545,7 +579,7 @@ describe('Error — user key and limits', () => {
         windowInMinutes: 60,
         resetAt: Date.now() + 3 * 60 * 60 * 1000,
       },
-      providerMessage,
+      limitRow(),
     );
 
     expect(
@@ -559,7 +593,7 @@ describe('Error — user key and limits', () => {
     const resetAt = Date.now() + 2 * 60 * 1000;
     renderError(
       { type: ViolationTypes.MESSAGE_LIMIT, max: 40, windowInMinutes: 60, resetAt },
-      providerMessage,
+      limitRow(),
     );
 
     expect(screen.getByText(/You can send another message in \d+:\d{2}\./)).toHaveAttribute(
@@ -579,7 +613,7 @@ describe('Error — user key and limits', () => {
         windowInMinutes: 60,
         resetAt: Date.now() - 1000,
       },
-      providerMessage,
+      limitRow(),
     );
 
     expect(screen.getByText(catalog.com_error_retry_available)).toBeInTheDocument();

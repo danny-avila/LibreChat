@@ -87,8 +87,11 @@ export type ErrorEndpoint = {
   model?: string;
   /** The saved agent that produced the failure, when the agents map can resolve it. */
   agent?: Agent;
-  /** The reader, not the deployment, maintains the endpoint's credentials (key, URL or both). */
-  userProvidesCredentials: boolean;
+  /**
+   * The reader, not the deployment, maintains the endpoint's credentials (key, URL or both).
+   * Undefined where no endpoint configuration is available to this viewer, as on a shared link.
+   */
+  userProvidesCredentials?: boolean;
   /** Manual context compaction can be triggered for this conversation. */
   compactionAvailable: boolean;
   endpointsConfig?: TEndpointsConfig;
@@ -123,6 +126,17 @@ function findFailingAgent(
  */
 const readerOwnsCredentials = (config?: TConfig | null): boolean =>
   isUserProvidedEndpointConfig(config) || config?.userProvideURL === true;
+
+/** Without a loaded endpoint configuration, ownership is unknown rather than the deployment's. */
+function resolveCredentialOwnership(
+  endpointsConfig: TEndpointsConfig | undefined,
+  endpoint: string | undefined,
+): boolean | undefined {
+  if (endpoint == null) {
+    return false;
+  }
+  return endpointsConfig == null ? undefined : readerOwnsCredentials(endpointsConfig[endpoint]);
+}
 
 /**
  * Resolves who produced the failure.
@@ -167,9 +181,7 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
       provider: endpoint ? getProviderName(endpoint) : undefined,
       model: agentRow ? (agent?.model ?? undefined) : rowModel,
       agent,
-      userProvidesCredentials: endpoint
-        ? readerOwnsCredentials(endpointsConfig?.[endpoint])
-        : false,
+      userProvidesCredentials: resolveCredentialOwnership(endpointsConfig, endpoint),
       compactionAvailable:
         startupConfig?.compactionEnabled === true && supportsCompaction(rowEndpoint),
       endpointsConfig,

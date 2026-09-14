@@ -32,6 +32,9 @@ function getCreatedAtMs(createdAt?: string | Date): number | undefined {
  * The moment the limiter's window reopens. A reset already in the past still resolves, and reads as
  * "you can send another message now". A future one is bounded by the limiter's own window, which is
  * as far ahead as a reset can lie, rather than by a fixed horizon an operator's window may exceed.
+ * The window is measured from the row's own timestamp when it has one: the server stamped both it
+ * and `resetAt`, so a device clock that disagrees with the server's cannot push a valid reset out
+ * of range.
  */
 function resolveRetryTarget({
   type,
@@ -53,7 +56,8 @@ function resolveRetryTarget({
     return undefined;
   }
 
-  if (windowInMinutes != null && target - Date.now() > windowInMinutes * 60 * 1000) {
+  const violatedAt = getCreatedAtMs(createdAt) ?? Date.now();
+  if (windowInMinutes != null && target > violatedAt + windowInMinutes * 60 * 1000) {
     return undefined;
   }
   return target;

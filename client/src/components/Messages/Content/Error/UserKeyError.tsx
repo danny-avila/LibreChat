@@ -43,15 +43,16 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
   const expiredAt = readString(json, 'expiredAt');
 
   /**
-   * Every one of these codes reads three ways: the endpoint is unknown (shared views), the reader
-   * owns the key and can fix it, or the deployment owns it and only an administrator can.
+   * Every one of these codes reads three ways: who owns the key is unknown (a shared link, or any
+   * view without the endpoint configuration), the reader owns it and can fix it, or the deployment
+   * owns it and only an administrator can.
    */
   const byOwnership = (
     generic: TranslationKeys,
     userProvided: TranslationKeys,
     admin: TranslationKeys,
   ): string => {
-    if (provider == null) {
+    if (provider == null || userProvidesCredentials == null) {
       return localize(generic);
     }
     return localize(userProvidesCredentials ? userProvided : admin, { 0: provider });
@@ -63,7 +64,7 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
    * is still the reader's to edit, the generic sentence otherwise.
    */
   const ownRecord = (generic: TranslationKeys, owned: TranslationKeys): string =>
-    userProvidesCredentials && provider != null
+    userProvidesCredentials === true && provider != null
       ? localize(owned, { 0: provider })
       : localize(generic);
 
@@ -117,7 +118,7 @@ export default function UserKeyError({ json, message }: ErrorRendererProps) {
       errorMessage = localize('com_error_invalid_user_key');
   }
 
-  const canEditKey = userProvidesCredentials && endpoint != null;
+  const canEditKey = userProvidesCredentials === true && endpoint != null;
   const updateLabel =
     (code != null ? actionLabels[code] : undefined) ?? 'com_error_user_key_update';
 
