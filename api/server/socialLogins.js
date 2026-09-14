@@ -41,20 +41,6 @@ const getOpenIdSessionExpiry = () => {
   return Math.max(sessionExpiry, reuseMaxSessionAge);
 };
 
-async function registerOpenIdStrategies() {
-  const config = await setupOpenId();
-  if (!config) {
-    return false;
-  }
-
-  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    logger.info('OpenID token reuse is enabled.');
-    passport.use('openidJwt', openIdJwtLogin(config));
-  }
-  logger.info('OpenID Connect configured successfully.');
-  return true;
-}
-
 /**
  * Configures OpenID Connect for the application.
  * @param {Express.Application} app - The Express application instance.
@@ -78,13 +64,14 @@ async function configureOpenId(app, appConfig) {
   app.use(passport.session());
 
   await registerOpenIdWithRetry({
-    register: registerOpenIdStrategies,
-    startupAttempts:
-      appConfig?.registration?.openidDiscovery?.startupAttempts ??
-      process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
-    retryDelayMs:
-      appConfig?.registration?.openidDiscovery?.retryDelayMs ??
-      process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+    setupOpenId,
+    registerJwtStrategy: (config) => passport.use('openidJwt', openIdJwtLogin(config)),
+    reuseTokens: isEnabled(process.env.OPENID_REUSE_TOKENS),
+    discovery: appConfig?.registration?.openidDiscovery,
+    env: {
+      startupAttempts: process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
+      retryDelayMs: process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+    },
   });
 }
 

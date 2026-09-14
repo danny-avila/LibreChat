@@ -348,7 +348,7 @@ registration:
   # oauthStateTtlMs: 600000
   # OpenID discovery retries when the provider is unreachable (overrides OPENID_DISCOVERY_RETRY_* env vars)
   # openidDiscovery:
-  #   startupAttempts: 3   # attempts before startup continues; 0 = background retries only
+  #   startupAttempts: 1   # attempts before startup continues; 0 = background retries only
   #   retryDelayMs: 5000   # delay between startup and background attempts
 
 # Example Balance settings
