@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
 import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useMarkFilesUsageMutation } from '~/data-provider';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -99,6 +101,20 @@ export default function useQueueDrain(
     store.settledQueuedTurnReceiptsByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
+  /** The row the reveal would pick, and whether one is already revealed: a
+   *  revealed head that is cancelled or dies before admission leaves the
+   *  server-owned queue non-empty and its terminal evidence out of the
+   *  settled receipts, so nothing above re-runs the effect for the row the
+   *  backend moves on to. */
+  const revealedQueuedTurn = useAtomValue(
+    revealedQueuedTurnFamily(activeConversationId ?? Constants.NEW_CONVO),
+  );
+  const admissibleHeadId =
+    [...ownQueue, ...newConvoQueue].find(
+      (item) =>
+        item.server?.id != null &&
+        (item.server.status === 'queued' || item.server.status === 'claimed'),
+    )?.id ?? null;
 
   /* Deduped because the two subscriptions are the same atom before migration.
    * Keyed by id list so the effect re-runs when the held set changes, not
@@ -428,6 +444,8 @@ export default function useQueueDrain(
     markFilesUsage,
     hasServerOwnedQueue,
     settledQueuedTurnReceipts,
+    revealedQueuedTurn,
+    admissibleHeadId,
     revealQueuedTurn,
     ask,
   ]);

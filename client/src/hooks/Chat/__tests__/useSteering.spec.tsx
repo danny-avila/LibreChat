@@ -882,6 +882,15 @@ describe('useSteering', () => {
         expect(result.current.queue[0]).toMatchObject({
           server: { status: 'uncertain', reconciliationExpired: true },
         });
+        /** Held for manual recovery only: the projection owes it nothing more,
+         *  so the poll no longer stays alive on its account. */
+        expect(mockUseAgentQueuedTurns).toHaveBeenLastCalledWith(
+          CONVO_ID,
+          true,
+          [result.current.queue[0].clientRequestId],
+          expect.any(Number),
+          false,
+        );
       } finally {
         jest.useRealTimers();
       }

@@ -466,15 +466,17 @@ export default function useSteering({
     const expiry = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
     return earliest == null ? expiry : Math.min(earliest, expiry);
   }, undefined);
+  /** An expired uncertain row is held for manual recovery only; nothing the
+   *  projection can say about it is still expected. */
   const expectsReceipts = useMemo(
     () =>
       queuedMessages.some(
         (item) =>
           item.server != null &&
           (item.server.status === 'sending' ||
-            item.server.status === 'uncertain' ||
             item.server.status === 'queued' ||
-            item.server.status === 'claimed'),
+            item.server.status === 'claimed' ||
+            (item.server.status === 'uncertain' && item.server.reconciliationExpired !== true)),
       ),
     [queuedMessages],
   );
