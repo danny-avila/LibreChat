@@ -222,6 +222,20 @@ describe('event actor summary state', () => {
     ).toEqual({ text: 'Earlier turns, compacted.', tokenCount: 12, version: 1 });
   });
 
+  it.each([
+    ['nothing to stamp', undefined],
+    ['a null summary', null],
+  ])('records %s as no state at all', (_label, summary) => {
+    expect(createAgentEventActorSummary(summary)).toBeUndefined();
+  });
+
+  /** A summary the formatter reconstructed from durable history arrives in the
+   *  SDK's shape; stamping it is what keeps the next event on the warm path. */
+  it('stamps a summary inherited in the SDK shape', () => {
+    expect(createAgentEventActorSummary({ text: 'Reconstructed.', tokenCount: 9 })).toMatchObject({
+      version: 1,
+    });
+  });
   it('restores a versioned summary for a warm continuation', () => {
     const stored = { text: 'Earlier turns, compacted.', tokenCount: 12, version: 1 };
 

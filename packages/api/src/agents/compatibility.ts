@@ -110,14 +110,19 @@ export function normalizeAgentEventActorDiscoveredTools(
 
 /**
  * The summary a run records as event-actor state, stamped with the provenance
- * version. A caller only reaches here with a summary it already judged usable;
- * the stamp is what lets a later restore tell such a summary apart from one
- * written before the failed/unfinished rounds were filtered out.
+ * version. The version records the writer, not a judgement about this summary:
+ * a build that reaches here has already filtered unusable summaries out of
+ * every source it reads — the turn's own content parts, a validated restore,
+ * or the formatter over the stripped payload. Stamping at the point state is
+ * assembled is what keeps an inherited `{ text, tokenCount }` from the SDK
+ * from being refused by the next event and forcing a cold reload.
  */
-export function createAgentEventActorSummary(summary: {
-  text: string;
-  tokenCount: number;
-}): IAgentEventActorSummary {
+export function createAgentEventActorSummary(
+  summary: { text: string; tokenCount: number } | null | undefined,
+): IAgentEventActorSummary | undefined {
+  if (summary == null) {
+    return undefined;
+  }
   return {
     text: summary.text,
     tokenCount: summary.tokenCount,
