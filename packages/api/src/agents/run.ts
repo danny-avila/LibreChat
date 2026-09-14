@@ -736,18 +736,23 @@ function resolveBuiltInClientOverrides(
   return Object.keys(shaping).length > 0 ? shaping : undefined;
 }
 
-/** Distinct misconfiguration warnings retained before the set resets, so changing configs cannot grow it. */
+/**
+ * Memory bound for the warning deduplication below, not an operator setting: it only decides when a
+ * warning for one of more than this many distinct, concurrently recurring problems is logged again.
+ */
 const MAX_UNRESOLVED_SUMMARIZATION_WARNINGS = 256;
-/** Reported summarization misconfigurations per tenant, so a setting read on every run logs once. */
+/** Reported summarization misconfigurations per tenant, least recently seen first. */
 const unresolvedSummarizationWarnings = new Set<string>();
 
 function warnUnresolvedSummarization(message: string, tenantId?: string): void {
   const key = `${tenantId ?? ''}\n${message}`;
-  if (unresolvedSummarizationWarnings.has(key)) {
+  if (unresolvedSummarizationWarnings.delete(key)) {
+    unresolvedSummarizationWarnings.add(key);
     return;
   }
   if (unresolvedSummarizationWarnings.size >= MAX_UNRESOLVED_SUMMARIZATION_WARNINGS) {
-    unresolvedSummarizationWarnings.clear();
+    const [leastRecentlySeen] = unresolvedSummarizationWarnings;
+    unresolvedSummarizationWarnings.delete(leastRecentlySeen);
   }
   unresolvedSummarizationWarnings.add(key);
   if (tenantId == null) {
@@ -758,7 +763,19 @@ function warnUnresolvedSummarization(message: string, tenantId?: string): void {
 }
 
 /** Azure base URL templates the client fills from its own options rather than the environment. */
-const AZURE_URL_TEMPLATE_PLACEHOLDERS = /\$\{(?:INSTANCE_NAME|DEPLOYMENT_NAME)\}/g;
+const AZURE_URL_TEMPLATE = /(\$\{(?:INSTANCE_NAME|DEPLOYMENT_NAME)\})/;
+
+/** The URL's segments around Azure's reserved templates, which sit at the odd indexes. */
+function splitAzureURLTemplates(url: string): string[] {
+  return url.split(AZURE_URL_TEMPLATE);
+}
+
+/** Expands environment references in a URL, leaving Azure's reserved templates for the client. */
+function expandTransportURL(url: string): string {
+  return splitAzureURLTemplates(url)
+    .map((segment, index) => (index % 2 === 1 ? segment : extractEnvVariable(segment)))
+    .join('');
+}
 
 /**
  * Admin-authored transport values may reference environment variables, as endpoint credentials
@@ -776,12 +793,12 @@ function expandSummarizationTransport(
     expanded.apiKey = extractEnvVariable(params.apiKey);
   }
   if (typeof params.baseURL === 'string') {
-    expanded.baseURL = extractEnvVariable(params.baseURL);
+    expanded.baseURL = expandTransportURL(params.baseURL);
   }
   if (isPlainObject(params.configuration) && typeof params.configuration.baseURL === 'string') {
     expanded.configuration = {
       ...params.configuration,
-      baseURL: extractEnvVariable(params.configuration.baseURL),
+      baseURL: expandTransportURL(params.configuration.baseURL),
     };
   }
   return expanded as SummarizationConfig['parameters'];
@@ -940,7 +957,9 @@ function resolveAzureSummarization(
     isUserProvided(azureOptions.azureOpenAIApiKey) ||
     hasUnresolvedPlaceholder(azureOptions.azureOpenAIApiKey) ||
     (resolvedBaseURL != null &&
-      hasUnresolvedPlaceholder(resolvedBaseURL.replace(AZURE_URL_TEMPLATE_PLACEHOLDERS, '')))
+      splitAzureURLTemplates(resolvedBaseURL).some(
+        (segment, index) => index % 2 === 0 && hasUnresolvedPlaceholder(segment),
+      ))
   ) {
     warnUnresolvedSummarization(
       `Summarization with Azure OpenAI model "${model}" is disabled: it needs a server-configured Azure OpenAI API key and base URL.`,

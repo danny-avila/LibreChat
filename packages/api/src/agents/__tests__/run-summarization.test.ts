@@ -1394,6 +1394,56 @@ describe('Azure deployment alias', () => {
     expect(azure.headers.get('api-key')).toBe('expanded-azure-key');
   });
 
+  it("leaves Azure's reserved URL templates to the summary deployment", async () => {
+    jest.replaceProperty(process, 'env', {
+      ...process.env,
+      INSTANCE_NAME: 'host-instance',
+      DEPLOYMENT_NAME: 'host-deployment',
+      SUMMARY_GATEWAY_PATH: 'openai',
+    });
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-6-astra', 'gpt-4.1-mini'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'gpt-4.1-mini': { group: 'summary' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'test-instance',
+          version: '2025-04-01-preview',
+          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+        },
+        summary: {
+          apiKey: 'summary-key',
+          instanceName: 'summary-instance',
+          version: '2024-10-21',
+          models: { 'gpt-4.1-mini': { deploymentName: 'summary-production' } },
+        },
+      },
+    };
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig,
+      summarizeOnly: true,
+      summarizationConfig: {
+        model: 'gpt-4.1-mini',
+        parameters: {
+          streaming: false,
+          baseURL:
+            'https://${INSTANCE_NAME}.openai.azure.com/${SUMMARY_GATEWAY_PATH}/deployments/${DEPLOYMENT_NAME}',
+        },
+      },
+    });
+
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url } = requests[0];
+    expect(url.origin + url.pathname).toBe(
+      'https://summary-instance.openai.azure.com/openai/deployments/summary-production/chat/completions',
+    );
+  });
+
   it('disables summarization when a credential placeholder has no environment value', async () => {
     jest.replaceProperty(process, 'env', { ...process.env, OPENAI_API_KEY: 'openai-summary-key' });
     const agents = await callAndCapture({
