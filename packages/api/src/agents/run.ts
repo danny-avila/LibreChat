@@ -848,7 +848,11 @@ function resolveAzureSummarization(
   const groupName = azureConfig.modelGroupMap[model]?.group;
   const group = groupName ? azureConfig.groupMap[groupName] : undefined;
   const resolvedBaseURL = baseURL ?? getBuiltInBaseURL(EModelEndpoint.azureOpenAI);
-  if (isUserProvided(resolvedBaseURL) || isUserProvided(azureOptions.azureOpenAIApiKey)) {
+  if (
+    !azureOptions.azureOpenAIApiKey ||
+    isUserProvided(resolvedBaseURL) ||
+    isUserProvided(azureOptions.azureOpenAIApiKey)
+  ) {
     warnUnresolvedSummarization(
       `Summarization with Azure OpenAI model "${model}" is disabled: it needs a server-configured Azure OpenAI API key and base URL.`,
     );

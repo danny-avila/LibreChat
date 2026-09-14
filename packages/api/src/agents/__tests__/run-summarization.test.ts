@@ -1257,14 +1257,27 @@ describe('Azure deployment alias', () => {
       env: { AZURE_OPENAI_BASEURL: 'user_provided' },
       reason: 'it needs a server-configured Azure OpenAI API key and base URL.',
     },
-  ])('disables summarization for $name', async ({ agent, summarizationConfig, env, reason }) => {
+    {
+      name: 'a mapped summary group with an empty API key',
+      agent: () => azureAstraAgent(),
+      summarizationConfig: { model: 'gpt-4.1-nano' },
+      env: {},
+      summaryApiKey: '',
+      reason: 'it needs a server-configured Azure OpenAI API key and base URL.',
+    },
+  ])('disables summarization for $name', async (target) => {
+    const { agent, summarizationConfig, env, reason } = target;
     jest.replaceProperty(process, 'env', { ...process.env, ...env });
     const appConfig = makeAppConfig([]);
     appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
       isValid: true,
       errors: [],
-      modelNames: ['gpt-6-astra', 'gpt-4.1'],
-      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'gpt-4.1': { group: 'summary' } },
+      modelNames: ['gpt-6-astra', 'gpt-4.1', 'gpt-4.1-nano'],
+      modelGroupMap: {
+        'gpt-6-astra': { group: 'main' },
+        'gpt-4.1': { group: 'summary' },
+        'gpt-4.1-nano': { group: 'summary' },
+      },
       groupMap: {
         main: {
           apiKey: 'test-azure-key',
@@ -1273,10 +1286,13 @@ describe('Azure deployment alias', () => {
           models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
         },
         summary: {
-          apiKey: 'summary-key',
+          apiKey: target.summaryApiKey ?? 'summary-key',
           instanceName: 'summary-instance',
           version: '2024-10-21',
-          models: { 'gpt-4.1': { deploymentName: 'summary-production' } },
+          models: {
+            'gpt-4.1': { deploymentName: 'summary-production' },
+            'gpt-4.1-nano': { deploymentName: 'summary-nano' },
+          },
         },
       },
     };
