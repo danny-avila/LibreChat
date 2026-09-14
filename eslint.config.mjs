@@ -150,7 +150,8 @@ export default [
         },
       ],
       'no-console': 'off',
-      'import/no-cycle': 'error',
+      // Import cycles are checked by config/circular-deps.mjs over the bundler graph;
+      // `import/no-cycle` re-walked that graph from every file (80% of a full-tree lint).
       'import/no-self-import': 'error',
       'import/extensions': 'off',
       'no-promise-executor-return': 'off',
@@ -194,9 +195,6 @@ export default [
         ...globals.node,
       },
     },
-    rules: {
-      'import/no-cycle': 'off',
-    },
   },
   {
     files: [
@@ -238,9 +236,7 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    // e2e specs are not part of `client/tsconfig.json`'s program, so typed
-    // linting them errors with "file not found in project"; they still get
-    // the non-type-checked recommended rules from the block above.
+    // e2e specs keep only the non-type-checked recommended rules from the block above.
     ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
@@ -250,9 +246,6 @@ export default [
       parser: tsParser,
       ecmaVersion: 5,
       sourceType: 'script',
-      parserOptions: {
-        project: './client/tsconfig.json',
-      },
     },
     rules: {
       // i18n
@@ -275,8 +268,6 @@ export default [
         },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unnecessary-condition': 'off',
-      '@typescript-eslint/strict-boolean-expressions': 'off',
       '@typescript-eslint/ban-ts-comment': 'off',
       // React
       'react/no-unknown-property': 'warn',
@@ -284,7 +275,6 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       // General
       'no-constant-binary-expression': 'off',
-      'import/no-cycle': 'off',
     },
   },
   {
@@ -294,9 +284,6 @@ export default [
       parser: tsParser,
       ecmaVersion: 'latest',
       sourceType: 'module',
-      parserOptions: {
-        project: './packages/data-provider/tsconfig.json',
-      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
@@ -333,9 +320,6 @@ export default [
       parser: tsParser,
       ecmaVersion: 5,
       sourceType: 'script',
-      parserOptions: {
-        project: './config/translations/tsconfig.json',
-      },
     },
   },
   {
@@ -343,9 +327,6 @@ export default [
     languageOptions: {
       ecmaVersion: 5,
       sourceType: 'script',
-      parserOptions: {
-        project: './packages/data-provider/tsconfig.spec.json',
-      },
     },
   },
   {
@@ -353,9 +334,6 @@ export default [
     languageOptions: {
       ecmaVersion: 5,
       sourceType: 'script',
-      parserOptions: {
-        project: './packages/data-provider/tsconfig.spec.json',
-      },
     },
   },
   {
@@ -363,9 +341,6 @@ export default [
     languageOptions: {
       ecmaVersion: 5,
       sourceType: 'script',
-      parserOptions: {
-        project: './packages/api/tsconfig.spec.json',
-      },
     },
   },
   {
@@ -375,9 +350,6 @@ export default [
       parser: tsParser,
       ecmaVersion: 'latest',
       sourceType: 'module',
-      parserOptions: {
-        project: './packages/data-schemas/tsconfig.json',
-      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [

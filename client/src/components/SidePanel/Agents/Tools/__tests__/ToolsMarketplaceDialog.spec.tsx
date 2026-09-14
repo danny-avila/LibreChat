@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { SVGProps } from 'react';
 import ToolsMarketplaceDialog from '../ToolsMarketplaceDialog';
 
 const mockSetValue = jest.fn();
@@ -96,7 +97,7 @@ jest.mock('../hooks', () => {
         mcpServersMap: mcpServersMap ?? new Map(),
         skills: [],
         actions: agentActions,
-        permissions: { mcp: true, skills: false },
+        permissions: { mcp: true, skills: false, webSearch: true, runCode: true, fileSearch: true },
       });
       const selected = deriveSelectedItems(
         {
@@ -145,6 +146,7 @@ jest.mock('@librechat/client', () => {
       asChild
         ? React.createElement(React.Fragment, null, children)
         : React.createElement('button', { type: 'button' }, children),
+    VerifiedIcon: (props: SVGProps<SVGSVGElement>) => React.createElement('svg', props),
     useToastContext: () => ({ showToast: jest.fn() }),
   };
 });
@@ -249,70 +251,105 @@ describe('ToolsMarketplaceDialog', () => {
     );
   });
 
-  test('clicking a ready request-scoped zero-tool server attaches its runtime wildcard', () => {
+  test.each([
+    [true, false, true],
+    [false, true, true],
+    [false, true, undefined],
+  ])(
+    'attaches a ready empty catalog (requestScoped=%s, connected=%s, ready=%s)',
+    (requestScoped, isConnected, isReadyForAgent) => {
+      mockMcpServersMap = new Map([
+        [
+          'runtime',
+          {
+            serverName: 'runtime',
+            tools: [],
+            isConfigured: true,
+            isConnected,
+            isReadyForAgent,
+            requestScoped,
+            metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+          },
+        ],
+      ]);
+
+      render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+      fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
+
+      expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
+      expect(mockSetValue).toHaveBeenCalledWith(
+        'tools',
+        ['sys__server__sys_mcp_runtime', 'sys__all__sys_mcp_runtime'],
+        { shouldDirty: true },
+      );
+    },
+  );
+
+  test('keeps concrete tool selection for an ordinary server with a populated catalog', () => {
     mockMcpServersMap = new Map([
       [
-        'runtime',
+        'enumerated',
         {
-          serverName: 'runtime',
-          tools: [],
+          serverName: 'enumerated',
+          tools: [{ tool_id: 'search_mcp_enumerated' }, { tool_id: 'read_mcp_enumerated' }],
           isConfigured: true,
-          isConnected: false,
+          isConnected: true,
           isReadyForAgent: true,
-          requestScoped: true,
-          metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+          requestScoped: false,
+          metadata: { name: 'enumerated', description: '' },
         },
       ],
     ]);
-
     render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
-    fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
-
-    expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /enumerated/ }));
     expect(mockSetValue).toHaveBeenCalledWith(
       'tools',
-      ['sys__server__sys_mcp_runtime', 'sys__all__sys_mcp_runtime'],
+      ['sys__server__sys_mcp_enumerated', 'search_mcp_enumerated', 'read_mcp_enumerated'],
       { shouldDirty: true },
     );
   });
 
-  test('clicking a selected zero-tool server removes all of its tokens directly', () => {
-    const selectedTools = [
-      'sys__server__sys_mcp_runtime',
-      'sys__all__sys_mcp_runtime',
-      'search_mcp_runtime',
-      'dalle',
-    ];
-    mockWatchedTools = selectedTools;
-    mockGetValues.mockReturnValue(selectedTools);
-    mockMcpServersMap = new Map([
-      [
-        'runtime',
-        {
-          serverName: 'runtime',
-          tools: [],
-          isConfigured: true,
-          isConnected: true,
-          isReadyForAgent: true,
-          requestScoped: true,
-          metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
-        },
-      ],
-    ]);
+  test.each([true, false])(
+    'removes a selected zero-tool server (requestScoped=%s)',
+    (requestScoped) => {
+      const selectedTools = [
+        'sys__server__sys_mcp_runtime',
+        'sys__all__sys_mcp_runtime',
+        'search_mcp_runtime',
+        'dalle',
+      ];
+      mockWatchedTools = selectedTools;
+      mockGetValues.mockReturnValue(selectedTools);
+      mockMcpServersMap = new Map([
+        [
+          'runtime',
+          {
+            serverName: 'runtime',
+            tools: [],
+            isConfigured: true,
+            isConnected: true,
+            isReadyForAgent: true,
+            requestScoped,
+            metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+          },
+        ],
+      ]);
 
-    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
-    fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
+      render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+      fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
 
-    expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
-    expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
-  });
+      expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
+      expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
+    },
+  );
 
   test.each([
-    ['an ordinary connected', false, true],
-    ['a disconnected request-scoped', true, false],
+    ['an ordinary disconnected', false, false, undefined],
+    ['a disconnected request-scoped', true, false, undefined],
+    ['an explicitly unready connected', false, true, false],
   ])(
     'clicking %s zero-tool server opens setup without changing the form',
-    (_description, requestScoped, isConnected) => {
+    (_description, requestScoped, isConnected, isReadyForAgent) => {
       mockMcpServersMap = new Map([
         [
           'setup-required',
@@ -322,6 +359,7 @@ describe('ToolsMarketplaceDialog', () => {
             isConfigured: true,
             isConnected,
             requestScoped,
+            isReadyForAgent,
             metadata: {
               name: 'setup-required',
               pluginKey: 'setup-required',

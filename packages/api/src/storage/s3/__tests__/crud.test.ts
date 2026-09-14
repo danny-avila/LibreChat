@@ -1485,10 +1485,12 @@ describe('S3 CRUD', () => {
 
     it('handles URL with query parameters', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
-      const key = extractKeyFromS3Url(
-        'https://bucket.s3.amazonaws.com/images/user123/file.png?X-Amz-Signature=abc',
-      );
+      const signedUrl =
+        'https://bucket.s3.amazonaws.com/images/user123/file.png?X-Amz-Signature=abc';
+      const key = extractKeyFromS3Url(signedUrl);
       expect(key).toBe('images/user123/file.png');
+      expect(JSON.stringify((logger.debug as jest.Mock).mock.calls)).not.toContain(signedUrl);
+      expect(JSON.stringify((logger.debug as jest.Mock).mock.calls)).not.toContain(key);
     });
 
     it('decodes percent-encoded keys from virtual-hosted-style URLs', async () => {
@@ -1606,12 +1608,12 @@ describe('S3 CRUD', () => {
       expect(result).toBe(malformedUrl);
     });
 
-    it('strips bucket from custom endpoint URLs (MinIO, R2)', async () => {
+    it('decodes a signed path-style custom endpoint URL for a legacy record', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
       const key = extractKeyFromS3Url(
-        'https://minio.example.com/test-bucket/images/user123/file.jpg',
+        'https://minio.example.com/test-bucket/images/user123/my%20file.jpg?X-Amz-Credential=secret&X-Amz-Signature=signed',
       );
-      expect(key).toBe('images/user123/file.jpg');
+      expect(key).toBe('images/user123/my file.jpg');
     });
   });
 

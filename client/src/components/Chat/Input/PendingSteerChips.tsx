@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { TooltipAnchor, useToastContext } from '@librechat/client';
 import {
   X,
   Zap,
@@ -74,6 +74,33 @@ function QuoteCount({ count, label }: { count: number; label: string }) {
       count={count}
       label={label}
     />
+  );
+}
+
+/**
+ * The one fact a queued row needs to convey ("did my message vanish?" it did
+ * not) rides the clock as a hover hint and its accessible name while a run is
+ * pending, instead of a caption row that costs composer height at rest. The
+ * anchor is a tab stop with a visible ring so keyboard users reach the same
+ * hint: the tooltip opens on focus-visible as well as on hover.
+ */
+function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
+  if (warning) {
+    return <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />;
+  }
+  if (!hint) {
+    return <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />;
+  }
+  return (
+    <TooltipAnchor
+      description={hint}
+      role="img"
+      aria-label={hint}
+      tabIndex={0}
+      className="flex shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+    >
+      <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
+    </TooltipAnchor>
   );
 }
 
@@ -209,11 +236,10 @@ function QueuedRow({
 
   return (
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
-      {isRejected || isUnconfirmed || isIndeterminate ? (
-        <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />
-      ) : (
-        <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />
-      )}
+      <QueuedIcon
+        warning={isRejected || isUnconfirmed || isIndeterminate}
+        hint={steering.duringRunActive ? localize('com_ui_steer_queued_info') : undefined}
+      />
       <span className="min-w-0 flex-1 truncate" title={message.text}>
         {message.text}
       </span>
@@ -463,8 +489,6 @@ function PendingSteerChips({
 
   return (
     <div className="flex flex-col gap-1.5 px-2 pt-2" data-testid="pending-steer-chips">
-      {/* The list owns only listitem rows; the caption lives beside it so the
-       *  ARIA list structure stays valid for assistive tech. */}
       <div
         className="flex flex-col gap-1.5"
         role="list"
@@ -490,14 +514,6 @@ function PendingSteerChips({
           />
         ))}
       </div>
-      {/* One caption for the whole queued group: the single fact users need
-       *  ("did my message vanish?" it did not), shown only while a run is
-       *  actually pending — after it, rows drain or convert on their own. */}
-      {queued.length > 0 && steering.duringRunActive && (
-        <div className="px-3 text-xs text-text-secondary" data-testid="queued-caption">
-          {localize('com_ui_steer_queued_info')}
-        </div>
-      )}
     </div>
   );
 }

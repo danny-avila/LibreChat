@@ -118,7 +118,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
-  createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  createChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
   runAsSystem: jest.fn((fn) => fn()),
   tenantStorage: {
     getStore: jest.fn(() => ({ requestId: 'request-123' })),
@@ -224,7 +224,7 @@ jest.mock('~/server/utils/import/importBatchBuilder', () => ({
 
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
-const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
+const { createChatExpirationDate, logger } = require('@librechat/data-schemas');
 const {
   deleteSharedLinkWithCleanup,
   isFileSnapshotEnabled,
@@ -790,7 +790,7 @@ describe('share routes', () => {
       }),
       expect.objectContaining({
         getConvo: expect.any(Function),
-        createExpirationDate: createTempChatExpirationDate,
+        createExpirationDate: createChatExpirationDate,
         logger,
       }),
     );
@@ -1176,7 +1176,7 @@ describe('share routes', () => {
       }),
       expect.objectContaining({
         getConvo: expect.any(Function),
-        createExpirationDate: createTempChatExpirationDate,
+        createExpirationDate: createChatExpirationDate,
         logger,
       }),
     );

@@ -601,8 +601,6 @@ export default function useEventHandlers({
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-      queryClient.invalidateQueries([QueryKeys.mcpTools]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       /**
        * The spread carries `manualSkills` through from

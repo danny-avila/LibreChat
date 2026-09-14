@@ -113,8 +113,8 @@ export interface SerializableJobData {
   status: JobStatus;
   createdAt: number;
   generationProtocolVersion?: GenerationProtocolVersion;
-  /** Saver-level checkpoint scope for this exact generation. New jobs use
-   * their final store-assigned epoch; LangGraph still sees an empty root
+  /** Saver-level checkpoint scope for this exact generation. New jobs use a
+   * globally unique opaque identity; LangGraph still sees an empty root
    * `checkpoint_ns`, which the saver adapter maps to this storage scope.
    * Legacy paused jobs omit it and use the historical unscoped storage. */
   checkpointNamespace?: string;
@@ -320,6 +320,8 @@ export interface SerializableJobData {
    * resume request can't be trusted to re-send the flag.
    */
   isTemporary?: boolean;
+  /** Original server-authenticated retention deadline, serialized across replicas. */
+  retentionExpiresAt?: string;
   agentEventDeliveryKey?: string;
   /** Original actor invocation when an internal completion delivery owns this generation. */
   agentEventInvocationKey?: string;
@@ -453,6 +455,7 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'retentionExpiresAt'
     | 'agentEventDeliveryKey'
     | 'agentEventInvocationKey'
     | 'agentEventInvocationGenerationCreatedAt'
@@ -953,6 +956,15 @@ export interface IJobStore {
   getJobCountByStatus(status: JobStatus): Promise<number>;
   destroy(): Promise<void>;
   getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
+
+  /** Complete owner cleanup query, including terminal host work and legacy-index recovery.
+   * Managers retain the global-index fallback for older third-party stores. */
+  getCleanupJobIdsByUser?(userId: string, tenantId?: string): Promise<string[]>;
+
+  /** Enumerates every extant job in the owner's retained index, including a
+   * stale paused generation that account deletion must erase before its worker
+   * finalizes it. Optional custom stores fall back to cleanup-blocking jobs. */
+  getRetainedJobIdsByUser?(userId: string, tenantId?: string): Promise<string[]>;
   setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
   setContentParts(
     streamId: string,

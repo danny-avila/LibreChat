@@ -43,6 +43,7 @@ const {
   setPluginHookSource,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
+  injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -57,6 +58,8 @@ const {
   createScheduleWriteGate,
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
+  warnOnUnreachableDeliveryPaths,
+  createCodeApiUploadRegistry,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -100,6 +103,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+app.locals.codeApiUploadRegistry = createCodeApiUploadRegistry();
 let serverReady = false;
 /** @type {import('@librechat/api').ScheduleEngineState} */
 let scheduleEngineState = 'starting';
@@ -228,6 +232,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
+  warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
@@ -279,6 +284,16 @@ const startServer = async () => {
       indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
     }
   }
+
+  /* The composer lays out against whether a footer bar sits beneath it, and
+     `/api/config` answers that only after it has painted. One shell serves every
+     request, before there is a caller whose overrides could be resolved, so the
+     answer is the deployment's base configuration; `/api/config` resolves the
+     caller's and the client prefers it. */
+  indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
+    customFooter: process.env.CUSTOM_FOOTER,
+    interfaceConfig: appConfig?.interfaceConfig,
+  });
 
   const cspPolicy = createCspPolicy();
   const shellCache = shellCacheHeaders(cspPolicy != null);
@@ -369,7 +384,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    await configureSocialLogins(app);
+    await configureSocialLogins(app, appConfig);
   }
 
   /* Per-request capability cache — must be registered before any route that calls hasCapability */
@@ -399,6 +414,7 @@ const startServer = async () => {
   app.use('/api/search', routes.search);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
+  app.use('/api/traces', routes.traces);
   app.use('/api/presets', routes.presets);
   app.use('/api/projects', routes.projects);
   app.use('/api/prompts', routes.prompts);

@@ -113,6 +113,7 @@ describe('GenerationJobManager startup telemetry', () => {
         model: 'test-model',
         agent_id: 'agent-1',
         isTemporary: false,
+        retentionExpiresAt: '2030-01-01T00:00:00.000Z',
         promptTokens: 0,
         discoveredTools: [],
         pendingAction: {
@@ -131,7 +132,7 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(job.metadata).toMatchObject({
       userId: 'user-1',
       conversationId: 'conversation-1',
-      checkpointNamespace: String(job.createdAt),
+      checkpointNamespace: expect.stringMatching(/^lcg:v2:[0-9a-f]{64}:[0-9a-f-]{36}$/),
       userMessage: {
         messageId: 'message-1',
         parentMessageId: 'parent-1',
@@ -149,6 +150,7 @@ describe('GenerationJobManager startup telemetry', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      retentionExpiresAt: '2030-01-01T00:00:00.000Z',
       promptTokens: 0,
       discoveredTools: [],
       providerExecutionId: expect.any(String),

@@ -6,6 +6,7 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
+const mongoose = require('mongoose');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
@@ -23,6 +24,8 @@ const {
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   isMCPOAuthSecretReentryRequiredError,
+  prepareMCPServerOAuthDeletion,
+  cleanupDeletedMCPServerOAuthUsers,
 } = require('@librechat/api');
 const {
   Constants,
@@ -227,11 +230,14 @@ const getMCPTools = async (req, res) => {
         }),
         oboIdentityContext,
         signal: catalogAbortController.signal,
+        recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
       });
     } finally {
       res.off('close', abortCatalogLoad);
     }
     const { serverTools: serverToolsMap, serversWithoutTools } = catalogResult;
+    const reauthRequiredServers = catalogResult.reauthRequiredServers ?? new Set();
+    const reauthRequiredGenerations = catalogResult.reauthRequiredGenerations ?? new Map();
     if (serversWithoutTools.length > 0) {
       logger.debug(
         `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
@@ -248,7 +254,11 @@ const getMCPTools = async (req, res) => {
         const server = {
           name: serverName,
           icon: serverConfig?.iconPath || '',
-          authenticated: true,
+          authenticated: !reauthRequiredServers.has(serverName),
+          ...(reauthRequiredServers.has(serverName) && {
+            authorizationState: 'reauth_required',
+            authorizationGeneration: reauthRequiredGenerations.get(serverName),
+          }),
           authConfig: [],
           tools: [],
         };
@@ -626,13 +636,33 @@ const updateMCPServerController = async (req, res) => {
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
-const deleteMCPServerController = async (req, res) => {
+const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
   try {
     const userId = req.user?.id;
     const { serverName } = req.params;
     const registry = getMCPServersRegistry();
     const existingConfig = await registry.getServerConfig(serverName, userId);
-    const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
+    const tokenIdentifier = `mcp:${serverName}`;
+    const getTokenUserIds = () =>
+      mongoose.models.Token
+        ? mongoose.models.Token.distinct('userId', {
+            identifier: {
+              $in: [tokenIdentifier, `${tokenIdentifier}:client`, `${tokenIdentifier}:refresh`],
+            },
+          })
+        : Promise.resolve([]);
+    const getAclEntries = () =>
+      existingConfig?.dbId && mongoose.models.AclEntry
+        ? mongoose.models.AclEntry.find({
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: existingConfig.dbId,
+            permBits: { $bitsAnySet: PermissionBits.VIEW },
+          }).lean()
+        : Promise.resolve([]);
+    const [oauthDeletionSnapshot, retainedTools] = await Promise.all([
+      prepareMCPServerOAuthDeletion({ getTokenUserIds, getAclEntries }),
+      getMCPServerTools(userId, serverName, existingConfig),
+    ]);
     await invalidateCachedTools({ userId, serverName });
     try {
       await registry.removeServer(serverName, 'DB', userId);
@@ -648,6 +678,32 @@ const deleteMCPServerController = async (req, res) => {
     /** Fence connections another replica could have created before deletion committed. */
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
+    try {
+      await cleanupDeletedMCPServerOAuthUsers({
+        ownerUserId: userId,
+        serverName,
+        serverConfig: existingConfig,
+        snapshot: oauthDeletionSnapshot,
+        getTokenUserIds,
+        getUserPrincipals: (candidateUserId) => db.getUserPrincipals({ userId: candidateUserId }),
+        resolveAllowlists: (candidateUserId) =>
+          registry.resolveAllowlists({ userId: candidateUserId }),
+        fenceAndDisconnectUser: async (candidateUserId) => {
+          if (candidateUserId === userId) {
+            return;
+          }
+          await fenceCommittedMCPMutation({ userId: candidateUserId, serverName });
+          await disconnectLocalMCPServer(candidateUserId, serverName);
+        },
+        uninstallOAuthMCP,
+      });
+    } catch (error) {
+      logger.warn(
+        `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
+        error,
+      );
+      throw error;
+    }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

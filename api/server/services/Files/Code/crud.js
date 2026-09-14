@@ -4,6 +4,7 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const { EModelEndpoint, getCodeEnvRefs } = require('librechat-data-provider');
 const {
   logAxiosError,
+  wrapCodeApiUploadError,
   appendCodeEnvFile,
   createAxiosInstance,
   codeServerHttpAgent,
@@ -183,7 +184,8 @@ async function deleteCodeEnvFile(req, file) {
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
- * @returns {Promise<{ storage_session_id: string; file_id: string }>}
+ * @param {AbortSignal} [params.signal] - Effective cancellation signal.
+ * @returns {Promise<{ storage_session_id: string; file_id: string; filename: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
  */
@@ -197,6 +199,7 @@ async function uploadCodeEnvFile({
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
+  signal,
 }) {
   try {
     const form = new FormData();
@@ -220,6 +223,7 @@ async function uploadCodeEnvFile({
       timeout: 120000,
       maxContentLength: MAX_FILE_SIZE,
       maxBodyLength: MAX_FILE_SIZE,
+      ...(signal ? { signal } : {}),
     };
 
     const response = await axios.post(`${baseURL}/upload`, form, options);
@@ -233,14 +237,10 @@ async function uploadCodeEnvFile({
     return {
       storage_session_id: result.storage_session_id,
       file_id: result.files[0].fileId,
+      filename: result.files[0].filename,
     };
   } catch (error) {
-    throw new Error(
-      logAxiosError({
-        message: `Error uploading code environment file: ${error.message}`,
-        error,
-      }),
-    );
+    throw wrapCodeApiUploadError(error, `Error uploading code environment file: ${error.message}`);
   }
 }
 
@@ -279,6 +279,7 @@ async function batchUploadCodeEnvFiles({
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
+  signal,
 }) {
   const form = new FormData();
   appendCodeEnvFileIdentity(form, { kind, id, version });
@@ -306,6 +307,7 @@ async function batchUploadCodeEnvFiles({
     timeout: 120000,
     maxContentLength: MAX_FILE_SIZE,
     maxBodyLength: MAX_FILE_SIZE,
+    signal,
   };
 
   const response = await axios.post(`${baseURL}/upload/batch`, form, options);

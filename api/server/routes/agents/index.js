@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  reportLocatorTraversalFailure,
   isEnabled,
   GenerationJobManager,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
@@ -773,6 +774,9 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               // Source from the job: the stop request does not carry the
               // original temporary-chat flag.
               isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
+              expiredAt: jobData?.retentionExpiresAt
+                ? new Date(jobData.retentionExpiresAt)
+                : undefined,
               interfaceConfig: req?.config?.interfaceConfig,
             };
             const requestMessage = {
@@ -1051,6 +1055,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,
@@ -1071,6 +1076,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,
@@ -1110,6 +1116,7 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   createMessageFilterPii({
+    onTraversalFailure: reportLocatorTraversalFailure,
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
     getFiles,

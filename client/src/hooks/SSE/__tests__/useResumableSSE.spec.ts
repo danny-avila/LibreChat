@@ -1,3 +1,4 @@
+import { getDefaultStore } from 'jotai';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   Constants,
@@ -9,6 +10,7 @@ import {
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -2171,6 +2173,12 @@ describe('useResumableSSE', () => {
     mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
+    getDefaultStore().set(pendingApprovalActionFamily(CONV_ID), {
+      actionId: 'stale-action',
+      streamId: CONV_ID,
+      createdAt: 1000,
+      payload: { type: 'tool_approval', action_requests: [], review_configs: [] },
+    });
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
     await flushMicrotasks();
@@ -2194,6 +2202,7 @@ describe('useResumableSSE', () => {
 
     expect(mockFinalHandler).not.toHaveBeenCalled();
     expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(getDefaultStore().get(pendingApprovalActionFamily(CONV_ID))).toBeNull();
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'none',

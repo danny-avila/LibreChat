@@ -15,6 +15,8 @@ import {
   MAX_SUBAGENTS,
   MAX_SUBAGENTS_CEILING,
   setMaxSubagents,
+  traceViewerDefaults,
+  resolveTraceViewerConfig,
 } from '../src/config';
 import {
   tModelSpecPresetSchema,
@@ -480,6 +482,21 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('defaults and bounds Code API upload recovery controls', () => {
+    expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
+    expect(
+      agentsEndpointSchema.parse({ codeApiUploadConcurrency: 8 }).codeApiUploadConcurrency,
+    ).toBe(8);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 101 }).success).toBe(false);
+    expect(agentsEndpointSchema.parse({}).codeApiMaxRetryWaitMs).toBe(20_000);
+    expect(
+      agentsEndpointSchema.parse({ codeApiMaxRetryWaitMs: 60_000 }).codeApiMaxRetryWaitMs,
+    ).toBe(60_000);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: -1 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: 300_001 }).success).toBe(false);
+  });
+
   it('accepts a non-empty stateful code environment allowlist', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
@@ -1437,6 +1454,27 @@ describe('configSchema skillSync', () => {
 });
 
 describe('interfaceSchema', () => {
+  it('accepts independent retention periods', () => {
+    expect(
+      interfaceSchema.parse({
+        retentionMode: RetentionMode.ALL,
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+      }),
+    ).toMatchObject({
+      temporaryChatRetention: 1,
+      generalChatRetention: 2160,
+    });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('generalChatRetention');
+  });
+
+  it.each([0, 8761, '2160', null])(
+    'rejects invalid general retention: %s',
+    (generalChatRetention) => {
+      expect(interfaceSchema.safeParse({ generalChatRetention }).success).toBe(false);
+    },
+  );
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,
@@ -1871,5 +1909,54 @@ describe('configSchema langfuse', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('interface.traceViewer', () => {
+  it('accepts the documented fields and rejects out-of-range limits', () => {
+    const parse = (traceViewer: Record<string, unknown>) =>
+      interfaceSchema.safeParse({ traceViewer }).success;
+
+    expect(
+      parse({
+        enabled: true,
+        showInputOutput: true,
+        maxRecords: 500,
+        maxContentLength: 2000,
+        requestsPerMinute: 10,
+        requestTimeoutMs: 30_000,
+      }),
+    ).toBe(true);
+    expect(parse({ requestTimeoutMs: 999 })).toBe(false);
+    expect(parse({ requestTimeoutMs: 300_001 })).toBe(false);
+    expect(parse({ maxRecords: 0 })).toBe(false);
+    expect(parse({ maxRecords: 10_001 })).toBe(false);
+    expect(parse({ maxContentLength: 1.5 })).toBe(false);
+    expect(parse({ requestsPerMinute: 1001 })).toBe(false);
+  });
+
+  it('keeps the viewer off with the documented defaults when unset', () => {
+    expect(resolveTraceViewerConfig(undefined)).toEqual(traceViewerDefaults);
+    expect(interfaceSchema.parse({}).traceViewer).toBeUndefined();
+  });
+
+  it('re-validates overrides that bypassed the schema', () => {
+    expect(
+      resolveTraceViewerConfig({
+        enabled: 'true',
+        showInputOutput: 1,
+        maxRecords: 50_000,
+        maxContentLength: -5,
+        requestsPerMinute: Number.NaN,
+        requestTimeoutMs: 50,
+      }),
+    ).toEqual({
+      enabled: false,
+      showInputOutput: false,
+      maxRecords: 10_000,
+      maxContentLength: traceViewerDefaults.maxContentLength,
+      requestsPerMinute: traceViewerDefaults.requestsPerMinute,
+      requestTimeoutMs: traceViewerDefaults.requestTimeoutMs,
+    });
   });
 });

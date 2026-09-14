@@ -41,7 +41,11 @@ const {
   createAuthIdentityContext,
   isOAuthServer,
   isAbortError,
+  isDirectOpenIDBearerRecoveryEnabled,
   OpenIDReauthRequiredError,
+  MCPAuthenticationRefreshError,
+  MCPAuthenticationRejectedError,
+  prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
 const {
   Time,
@@ -69,8 +73,13 @@ const {
   getCachedTools,
   getMCPServerTools,
   cacheMCPServerTools,
+  invalidateCachedTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('./MCPAuthorizationFenceRetry');
 
 const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
@@ -422,6 +431,7 @@ async function getAssistantToolDefinitions({ req, res, tools }) {
           userMCPAuthMap,
           upstreamTokenProvider,
           oboIdentityContext,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
         return result?.availableTools ?? null;
       },
@@ -700,18 +710,23 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 }
 
 function resolveToolCallUserId({ effectiveUser, capturedUser, invocationUserId, serverConfig }) {
-  if (serverConfig?.obo == null) {
+  const identityBoundCredential =
+    serverConfig?.obo != null || isDirectOpenIDBearerRecoveryEnabled(serverConfig ?? {});
+  if (!identityBoundCredential) {
     return effectiveUser?.id || invocationUserId || capturedUser?.id;
   }
 
   const effectiveUserId = effectiveUser?.id;
   const capturedUserId = capturedUser?.id;
+  const credentialLabel = serverConfig?.obo != null ? 'OBO' : 'Direct OpenID bearer';
   if (!effectiveUserId || !capturedUserId) {
-    throw new Error('OBO tool calls require matching captured and effective user ids');
+    throw new Error(
+      `${credentialLabel} tool calls require matching captured and effective user ids`,
+    );
   }
 
   if (effectiveUserId !== capturedUserId) {
-    throw new Error('OBO tool call user mismatch');
+    throw new Error(`${credentialLabel} tool call user mismatch`);
   }
 
   return effectiveUserId;
@@ -749,6 +764,7 @@ async function reconnectServer({
   oboIdentityContext,
   streamId = null,
   jobCreatedAt,
+  recoveryPolicy,
 }) {
   logger.debug('[MCP][reconnectServer] Starting reconnect', {
     userId: user?.id,
@@ -813,6 +829,7 @@ async function reconnectServer({
     requestBody,
     requestScopedConnections,
     upstreamTokenProvider,
+    recoveryPolicy,
     oboIdentityContext,
     forceNew: true,
     returnOnOAuth: false,
@@ -863,6 +880,7 @@ async function createMCPTools({
   streamId = null,
   jobCreatedAt,
 }) {
+  let recoveryPolicy;
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
 
@@ -872,6 +890,7 @@ async function createMCPTools({
       tenantId: user?.tenantId,
       userId: user?.id,
     });
+    recoveryPolicy = appConfig?.mcpSettings?.catalogRecovery;
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
@@ -904,6 +923,7 @@ async function createMCPTools({
     oboIdentityContext,
     streamId,
     jobCreatedAt,
+    recoveryPolicy,
   });
   if (result === null) {
     logger.debug('[MCP] Reconnect throttled; skipping tool creation');
@@ -930,6 +950,7 @@ async function createMCPTools({
       configServers,
       streamId,
       jobCreatedAt,
+      recoveryPolicy,
       availableTools: result.availableTools,
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
@@ -993,6 +1014,7 @@ async function createMCPTool({
   onAvailableTools,
   streamId = null,
   jobCreatedAt,
+  recoveryPolicy,
 }) {
   /** `loadTools` already resolved the server for this key; parsing is the fallback. */
   const [parsedToolName, parsedServerName] = splitMCPToolKey(
@@ -1037,6 +1059,7 @@ async function createMCPTool({
       tenantId: user?.tenantId,
       userId: user?.id,
     });
+    recoveryPolicy ??= appConfig?.mcpSettings?.catalogRecovery;
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
@@ -1121,6 +1144,7 @@ async function createMCPTool({
       oboIdentityContext,
       streamId,
       jobCreatedAt,
+      ...(recoveryPolicy && { recoveryPolicy }),
     });
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
@@ -1165,6 +1189,7 @@ async function createMCPTool({
     oboIdentityContext,
     streamId,
     jobCreatedAt,
+    recoveryPolicy,
   });
 }
 
@@ -1185,6 +1210,7 @@ function createToolInstance({
   oboIdentityContext: capturedOboIdentityContext = null,
   streamId = null,
   jobCreatedAt,
+  recoveryPolicy,
 }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
@@ -1295,6 +1321,16 @@ function createToolInstance({
           updateToken,
           deleteTokens,
         },
+        onOAuthCredentialsChanging: (scope) =>
+          prepareMCPAuthorizationMutation(scope, {
+            invalidateRecoveryGeneration: invalidateCachedTools,
+            persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+            clearPublicationRetry: clearMCPAuthorizationFenceRetry,
+            clearLocalRecovery: (userId, changedServerName) =>
+              mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
+            retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+            attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
+          }),
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,
@@ -1326,7 +1362,11 @@ function createToolInstance({
       }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
-      if (error instanceof OpenIDReauthRequiredError) {
+      if (
+        error instanceof OpenIDReauthRequiredError ||
+        error instanceof MCPAuthenticationRefreshError ||
+        error instanceof MCPAuthenticationRejectedError
+      ) {
         throw error;
       }
 
@@ -1398,14 +1438,14 @@ function createToolInstance({
  * Get MCP setup data including config, connections, and OAuth servers.
  * Resolves config-source servers from admin Config overrides when tenant context is available.
  * @param {string} userId - The user ID
- * @param {{ role?: string, tenantId?: string }} [options] - Optional role/tenant context
+ * @param {{ role?: string, tenantId?: string, appConfig?: object }} [options] - Optional request context
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId, options = {}) {
   const registry = getMCPServersRegistry();
   const { role, tenantId } = options;
 
-  const appConfig = await getAppConfig({ role, tenantId, userId });
+  const appConfig = options.appConfig ?? (await getAppConfig({ role, tenantId, userId }));
   const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   const mcpConfig = role
     ? await registry.getAllServerConfigs(userId, configServers, role)

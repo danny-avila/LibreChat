@@ -4,7 +4,7 @@ import type {
   CodeEnvironmentUserSettings,
 } from '../config';
 
-export const CODE_APPROVAL_MODES = ['ask', 'acceptEdits'] as const;
+export const CODE_APPROVAL_MODES = ['ask', 'acceptEdits', 'fullAccess'] as const;
 export type CodeApprovalMode = (typeof CODE_APPROVAL_MODES)[number];
 
 type CodePermissions = Required<NonNullable<CodeEnvironmentUserSettings['permissions']>>;
@@ -12,6 +12,7 @@ type CodePermissions = Required<NonNullable<CodeEnvironmentUserSettings['permiss
 const MODE_PERMISSIONS: Record<CodeApprovalMode, CodePermissions> = {
   ask: { fileWrite: 'ask', commandExecution: 'ask' },
   acceptEdits: { fileWrite: 'allow', commandExecution: 'ask' },
+  fullAccess: { fileWrite: 'allow', commandExecution: 'allow' },
 };
 
 export type CodeApprovalConstraints = {

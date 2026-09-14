@@ -9,9 +9,9 @@ import {
   areMessageRowPropsEqual,
   getHeaderPrefixForScreenReader,
 } from '~/utils';
-import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
+import { useLocalize, useAttachments, useMessageHelpers, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
+import { getHeaderHoverLabel } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -45,6 +45,7 @@ function MessageParts(props: TMessageProps) {
     copyToClipboard,
     getCanCopy,
     regenerateMessage,
+    hasConfiguredSender,
   } = useMessageHelpers(props, searchResults);
 
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -112,7 +113,8 @@ function MessageParts(props: TMessageProps) {
           id={messageId ?? ''}
           icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
           label={name}
-          hoverLabel={getHeaderModelName(
+          hoverLabel={getHeaderHoverLabel(
+            hasConfiguredSender,
             agent?.model,
             assistant?.model,
             message.model,
@@ -127,6 +129,17 @@ function MessageParts(props: TMessageProps) {
           isEditing={edit}
           footer={
             <SubRow classes={cn(messageFooterClasses, isCreatedByUser && 'justify-end')}>
+              {/* The reading holds the column start: it takes over the slot the streaming
+                  dot vacates, so the retry navigation beside it — whose width the footer
+                  reserves whether or not hover has revealed it — must never push the
+                  timer inboard of that column. */}
+              {shouldShowElapsed({
+                isSubmitting,
+                isLatestMessage: messageId === latestMessageId,
+                isCreatedByUser,
+                siblingIdx,
+                siblingCount,
+              }) && <Elapsed index={index} />}
               {/* While the answer is generating every other action is withheld, which
                   would otherwise leave this counter sitting alone under a half-written
                   response. It reveals on hover there, like the actions it sits with. */}
@@ -138,13 +151,6 @@ function MessageParts(props: TMessageProps) {
                   isSubmitting && messageId === latestMessageId && revealOnRowHoverClasses,
                 )}
               />
-              {shouldShowElapsed({
-                isSubmitting,
-                isLatestMessage: messageId === latestMessageId,
-                isCreatedByUser,
-                siblingIdx,
-                siblingCount,
-              }) && <Elapsed index={index} />}
               <HoverButtons
                 index={index}
                 isEditing={edit}

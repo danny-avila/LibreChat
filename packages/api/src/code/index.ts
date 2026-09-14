@@ -5,3 +5,6 @@ export * from './bridge';
 export * from './lifecycle';
 export * from './workspace';
 export * from './command';
+export * from './capabilities';
+export * from './decision';
+export * from './errors';

@@ -112,8 +112,12 @@ jest.mock('lucide-react', () => ({
   TriangleAlert: () => <span>{'warning'}</span>,
 }));
 
+const mockSubmittedAskAnswers = new Map<string, string>();
+
 jest.mock('~/utils/approval', () => ({
   ASK_USER_QUESTION: 'ask_user_question',
+  getSubmittedAskAnswer: (toolCallId?: string) =>
+    toolCallId != null ? mockSubmittedAskAnswers.get(toolCallId) : undefined,
 }));
 
 jest.mock('~/utils', () => ({
@@ -271,6 +275,7 @@ describe('ToolCallGroup image hoisting', () => {
   beforeEach(() => {
     mockScheduleMessageContentLayoutReconcile.mockClear();
     mockMCPServerNames.length = 0;
+    mockSubmittedAskAnswers.clear();
   });
 
   it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
@@ -956,6 +961,39 @@ describe('ToolCallGroup image hoisting', () => {
     ).toBeInTheDocument();
   });
 
+  it('counts a persisted ordinary background cancellation as cancelled', () => {
+    const cancelled = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'bash_tool',
+        args: '{"command":"sleep 600"}',
+        output: 'Error: [bash_tool] tool call failed: Background task cancellation requested',
+        runStepStatus: 'completed',
+        backgrounded: true,
+        backgroundTask: {
+          version: 1,
+          taskId: 'background-task-1',
+          toolName: 'bash_tool',
+          status: 'error',
+          cancelled: true,
+          settledAt: new Date(),
+        },
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: cancelled, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    expect(screen.getByRole('button', { name: /· 1 cancelled$/ })).toBeInTheDocument();
+  });
+
   it('labels a homogeneous ask_user_question group as its own category', () => {
     renderGroup({
       ...baseProps,
@@ -986,6 +1024,7 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
+    expect(screen.getByTestId('question-icon').parentElement).toHaveClass('animate-pulse');
   });
 
   it('uses a singular completed label for one question grouped with reasoning', () => {
@@ -996,6 +1035,39 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+  });
+
+  /** The `tool_call` part carries no output until the turn finalizes, so a group
+   *  the user already answered kept reading "Asking 1 question" for the rest of
+   *  the turn. Position cannot settle it: a live pause appends its interactive
+   *  card AFTER this group, so the group is not the last part exactly while the
+   *  question is open. */
+  it('settles the question label once the answer is recorded locally', () => {
+    mockSubmittedAskAnswers.set('q1', 'Option A');
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('q1', '', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+    /** The glyph reads as part of the same control, so it settles with it. */
+    expect(screen.getByTestId('question-icon').parentElement).not.toHaveClass('animate-pulse');
+  });
+
+  it('keeps the active label while one question of a batch is unanswered', () => {
+    mockSubmittedAskAnswers.set('q1', 'Option A');
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('q1', '', 'ask_user_question'), idx: 0 },
+        { part: makePart('q2', '', 'ask_user_question'), idx: 1 },
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
   });
 
   it('uses a singular active label for one question grouped with reasoning', () => {

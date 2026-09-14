@@ -18,7 +18,7 @@ export const THEME_VERSION = 1 as const;
  * hand-maintained token maps, so a slot added to one and missed in another
  * fails the build rather than surfacing as a broken theme downstream.
  */
-type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type Assert<Declared extends true> = Declared;
 type DeclaredIn<Keys extends PropertyKey, Tokens> = [Keys] extends [keyof Tokens] ? true : false;
 
@@ -31,6 +31,20 @@ export type SeriesTokensAreDeclared = [
 export const themeColorTokens: readonly (keyof IThemeRGB)[] = Object.freeze(
   Object.keys(defaultTheme) as Array<keyof IThemeRGB>,
 );
+
+/**
+ * What the verified mark is measured against: the fill it wore before it had a
+ * token, the check it carries, and the backgrounds `ToolCard` takes at rest and
+ * on hover. A theme naming any of these coordinated the mark; one naming none
+ * of them never looked at it.
+ */
+export const MARK_NEIGHBOURHOOD: readonly (keyof IThemeRGB)[] = Object.freeze([
+  'rgb-status-success-strong',
+  'rgb-text-on-status',
+  'rgb-surface-dialog',
+  'rgb-surface-secondary',
+  'rgb-surface-tertiary',
+]);
 
 export const themeAppearanceProperties: Readonly<
   Record<keyof IThemeAppearance, `--theme-${string}`>
@@ -391,6 +405,50 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-border-light'] !== undefined
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
+  /**
+   * Slot 8 arrived after the seven-slot scale shipped, so a stored or
+   * environment theme that paints its own scale cannot name it. Filling the
+   * omission from the bundled base would drop LibreChat's indigo onto that
+   * theme's own surfaces — the one pairing it never checked, since the stop's
+   * 3:1 mark contrast is a claim about the bundled surfaces only. The RESOLVED
+   * secondary text is the one colour that tracks whatever the theme reads its
+   * body copy against, whether it names its own or inherits ours, so slot 8
+   * stays exactly as visible as that text; hue-neutral, it cannot collide with
+   * a custom slot 1–7 under protanopia/deuteranopia either. A theme that wants
+   * a hue for slot 8 names it, the way `rgb-surface-composer-hover` opts out of
+   * its own fallback.
+   */
+  const ownsSeriesScale =
+    customColors != null &&
+    ([1, 2, 3, 4, 5, 6, 7] as const).some(
+      (slot) => customColors[`rgb-series-${slot}`] !== undefined,
+    );
+  const seriesEightFallback =
+    customColors?.['rgb-series-8'] === undefined && ownsSeriesScale
+      ? {
+          'rgb-series-8': customColors?.['rgb-text-secondary'] ?? baseColors['rgb-text-secondary'],
+        }
+      : {};
+  /**
+   * The verified mark was painted with `status-success-strong` until it earned
+   * its own token, so a theme that paints what the mark is measured against —
+   * the fill it used to wear, the check it carries, or the card it sits on —
+   * coordinated that green and cannot have named the blue. Dropping LibreChat's
+   * stock blue into such a palette puts an unchecked pairing on surfaces the
+   * theme chose; keeping the old fill preserves the relationship it did check.
+   * A theme that repaints anything else keeps the bundled default, and any
+   * theme takes the blue by naming the token, the way
+   * `rgb-surface-composer-hover` opts out of its own fallback.
+   */
+  const ownsMarkSurroundings =
+    customColors != null && MARK_NEIGHBOURHOOD.some((token) => customColors[token] !== undefined);
+  const verifiedFallback =
+    ownsMarkSurroundings && customColors?.['rgb-status-verified'] === undefined
+      ? {
+          'rgb-status-verified':
+            customColors?.['rgb-status-success-strong'] ?? baseColors['rgb-status-success-strong'],
+        }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -405,6 +463,8 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...textMutedFallback,
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
+      ...seriesEightFallback,
+      ...verifiedFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */
