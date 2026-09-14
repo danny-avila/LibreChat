@@ -147,3 +147,72 @@ describe('Azure Astra requests', () => {
     },
   );
 });
+
+describe('Azure full-hostname instances', () => {
+  it.each([
+    {
+      model: 'gpt-6-astra',
+      provider: Providers.OPENAI,
+      path: '/openai/v1/responses',
+    },
+    {
+      model: 'gpt-4.1',
+      provider: Providers.AZURE,
+      path: '/openai/deployments/production-deployment/chat/completions',
+    },
+  ])('sends $model requests to the instance host without a base URL', async (target) => {
+    const urls: URL[] = [];
+    const fetch: NonNullable<NonNullable<OpenAIConfiguration>['fetch']> = async (url) => {
+      urls.push(new URL(String(url)));
+      const text = 'Four.';
+      return Response.json({
+        id: 'resp_test',
+        object: 'response',
+        status: 'completed',
+        model: 'production-deployment',
+        choices: [
+          { index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' },
+        ],
+        output: [
+          {
+            type: 'message',
+            id: 'msg_test',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text, annotations: [] }],
+          },
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 1, input_tokens: 5, output_tokens: 1 },
+      });
+    };
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      'test-azure-key',
+      {
+        streaming: false,
+        azure: {
+          azureOpenAIApiInstanceName: 'test-instance.cognitiveservices.azure.com',
+          azureOpenAIApiDeploymentName: 'production-deployment',
+          azureOpenAIApiVersion: '2024-10-21',
+          azureOpenAIApiKey: 'test-azure-key',
+        },
+        modelOptions: { model: target.model },
+      },
+      EModelEndpoint.azureOpenAI,
+    );
+    const model = initializeModel({
+      provider: target.provider,
+      clientOptions: {
+        ...llmConfig,
+        verbosity: undefined,
+        configuration: { ...configOptions, fetch },
+      },
+    });
+
+    await model.invoke('What is 2 + 2?');
+
+    expect(urls).toHaveLength(1);
+    expect(urls[0].origin + urls[0].pathname).toBe(
+      `https://test-instance.cognitiveservices.azure.com${target.path}`,
+    );
+  });
+});

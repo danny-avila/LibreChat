@@ -17,6 +17,7 @@ import {
   isCanonicalAzureURL,
   getAzureDeploymentName,
   constructAzureChatBasePath,
+  constructAzureInstanceBasePath,
 } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
@@ -1044,10 +1045,14 @@ export function getOpenAILLMConfig({
   }
 
   const constructAzureOpenAIBasePath = () => {
-    if (!baseURL) {
+    if (baseURL) {
+      updatedAzure.azureOpenAIBasePath = constructAzureChatBasePath(baseURL, updatedAzure);
       return;
     }
-    updatedAzure.azureOpenAIBasePath = constructAzureChatBasePath(baseURL, updatedAzure);
+    const instanceBasePath = constructAzureInstanceBasePath(updatedAzure);
+    if (instanceBasePath != null && updatedAzure.azureOpenAIBasePath == null) {
+      updatedAzure.azureOpenAIBasePath = instanceBasePath;
+    }
   };
 
   constructAzureOpenAIBasePath();

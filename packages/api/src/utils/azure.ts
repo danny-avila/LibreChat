@@ -139,6 +139,20 @@ function isAzureRootPath(pathname: string): boolean {
   return /^\/(?:openai\/?|v1\/?)?$/.test(pathname);
 }
 
+/** An instance name that is already a full Azure hostname, which `genAzureEndpoint` also accepts. */
+function getAzureInstanceHost(instanceName?: string): string | undefined {
+  return instanceName && isCanonicalAzureURL(`https://${instanceName}`) ? instanceName : undefined;
+}
+
+/**
+ * The deployments path for a full-hostname instance without a base URL. A resource name needs
+ * none: the client derives `<name>.openai.azure.com` itself, which a full hostname would double.
+ */
+export function constructAzureInstanceBasePath(azureOptions: AzureOptions): string | undefined {
+  const host = getAzureInstanceHost(azureOptions.azureOpenAIApiInstanceName);
+  return host ? `https://${host}/openai/deployments` : undefined;
+}
+
 export function constructAzureChatBasePath(baseURL: string, azureOptions: AzureOptions): string {
   const resolvedURL = constructAzureURL({ baseURL, azureOptions });
   if (isCanonicalAzureURL(resolvedURL)) {
@@ -171,10 +185,11 @@ export function constructAzureResponsesURL(
   baseURL: string | null | undefined,
   azureOptions: AzureOptions,
 ): URL {
-  const resolvedURL = constructAzureURL({
-    baseURL: baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
-    azureOptions,
-  });
+  const instanceName = azureOptions.azureOpenAIApiInstanceName ?? '';
+  const instanceHost = getAzureInstanceHost(instanceName) ?? `${instanceName}.openai.azure.com`;
+  const resolvedURL = baseURL
+    ? constructAzureURL({ baseURL, azureOptions })
+    : `https://${instanceHost}/openai/v1`;
   const url = new URL(resolvedURL);
   url.pathname = url.pathname.replace(/\/deployments(?:\/.*)?$/, '/v1');
   if (isCanonicalAzureURL(resolvedURL) && isAzureRootPath(url.pathname)) {

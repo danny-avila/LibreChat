@@ -1077,21 +1077,112 @@ describe('Azure deployment alias', () => {
     return (summaryModel.invocationParams() as Record<string, unknown>).model;
   };
 
-  it('lets a different summarization model replace the Astra deployment', async () => {
+  it('keeps the Astra deployment alias out of a custom-endpoint summarizer', async () => {
     const agents = await callAndCapture({
       agents: [azureAstraAgent()],
-      summarizationConfig: { model: 'gpt-4.1-mini' },
+      appConfig: makeAppConfig([
+        {
+          name: 'Gateway',
+          apiKey: 'gateway-key',
+          baseURL: 'https://gateway.example/v1',
+          models: { default: ['gpt-4.1-mini'] },
+        },
+      ]),
+      summarizeOnly: true,
+      summarizationConfig: {
+        provider: 'Gateway',
+        model: 'gpt-4.1-mini',
+        parameters: { streaming: false },
+      },
     });
 
-    const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
-    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
-
-    expect(mainClientOptions.modelKwargs).toEqual({
+    expect((agents[0].clientOptions as Record<string, unknown>).modelKwargs).toEqual({
       model: 'production-deployment',
       max_output_tokens: 2048,
     });
-    expect(summaryConfig.parameters).toEqual({ modelKwargs: { max_output_tokens: 2048 } });
-    expect(summaryRequestModel(mainClientOptions, summaryConfig)).toBe('gpt-4.1-mini');
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url, headers, body } = requests[0];
+    expect(url.origin).toBe('https://gateway.example');
+    expect(headers.get('api-key')).toBeNull();
+    expect(body.model).toBe('gpt-4.1-mini');
+  });
+
+  it.each([
+    { useModelAsDeploymentName: undefined, deployment: 'env-deployment' },
+    { useModelAsDeploymentName: 'true', deployment: 'gpt-41-mini' },
+  ])(
+    'resolves a different summary model through the legacy Azure environment to $deployment',
+    async ({ useModelAsDeploymentName, deployment }) => {
+      jest.replaceProperty(process, 'env', {
+        ...process.env,
+        AZURE_API_KEY: 'env-key',
+        AZURE_OPENAI_API_INSTANCE_NAME: 'env-instance',
+        AZURE_OPENAI_API_DEPLOYMENT_NAME: 'env-deployment',
+        AZURE_OPENAI_API_VERSION: '2024-10-21',
+        AZURE_USE_MODEL_AS_DEPLOYMENT_NAME: useModelAsDeploymentName,
+      });
+      const agents = await callAndCapture({
+        agents: [azureAstraAgent()],
+        appConfig: makeAppConfig([]),
+        summarizeOnly: true,
+        summarizationConfig: { model: 'gpt-4.1-mini', parameters: { streaming: false } },
+      });
+
+      const { requests } = await compactSummary(agents);
+      expect(requests).toHaveLength(1);
+      const { url, headers, body } = requests[0];
+      expect(url.origin + url.pathname).toBe(
+        `https://env-instance.openai.azure.com/openai/deployments/${deployment}/chat/completions`,
+      );
+      expect(headers.get('api-key')).toBe('env-key');
+      expect(body.model).toBe(deployment);
+    },
+  );
+
+  it('applies summarization base URL and API key overrides to an Azure summary deployment', async () => {
+    const appConfig = makeAppConfig([]);
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
+      isValid: true,
+      errors: [],
+      modelNames: ['gpt-6-astra', 'gpt-4.1-mini'],
+      modelGroupMap: { 'gpt-6-astra': { group: 'main' }, 'gpt-4.1-mini': { group: 'summary' } },
+      groupMap: {
+        main: {
+          apiKey: 'test-azure-key',
+          instanceName: 'test-instance',
+          version: '2025-04-01-preview',
+          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+        },
+        summary: {
+          apiKey: 'summary-key',
+          instanceName: 'summary-instance',
+          version: '2024-10-21',
+          models: { 'gpt-4.1-mini': { deploymentName: 'summary-production' } },
+        },
+      },
+    };
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig,
+      summarizeOnly: true,
+      summarizationConfig: {
+        model: 'gpt-4.1-mini',
+        parameters: {
+          streaming: false,
+          apiKey: 'gateway-key',
+          baseURL: 'https://summary-gateway.example/openai/deployments/${DEPLOYMENT_NAME}',
+        },
+      },
+    });
+
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    const { url, headers } = requests[0];
+    expect(url.origin + url.pathname).toBe(
+      'https://summary-gateway.example/openai/deployments/summary-production/chat/completions',
+    );
+    expect(headers.get('api-key')).toBe('gateway-key');
   });
 
   it('keeps the deployment alias when the summarizer runs the agent model', async () => {
@@ -1265,37 +1356,47 @@ describe('Azure deployment alias', () => {
       summaryApiKey: '',
       reason: 'it needs a server-configured Azure OpenAI API key and base URL.',
     },
+    {
+      name: 'a legacy Azure environment whose key is user-provided',
+      agent: () => azureAstraAgent(),
+      summarizationConfig: { model: 'gpt-4o' },
+      env: { AZURE_API_KEY: 'user_provided' },
+      legacyEnvironment: true,
+      reason: 'it needs a server-configured Azure OpenAI API key and base URL.',
+    },
   ])('disables summarization for $name', async (target) => {
     const { agent, summarizationConfig, env, reason } = target;
     jest.replaceProperty(process, 'env', { ...process.env, ...env });
     const appConfig = makeAppConfig([]);
-    appConfig.endpoints![EModelEndpoint.azureOpenAI] = {
-      isValid: true,
-      errors: [],
-      modelNames: ['gpt-6-astra', 'gpt-4.1', 'gpt-4.1-nano'],
-      modelGroupMap: {
-        'gpt-6-astra': { group: 'main' },
-        'gpt-4.1': { group: 'summary' },
-        'gpt-4.1-nano': { group: 'summary' },
-      },
-      groupMap: {
-        main: {
-          apiKey: 'test-azure-key',
-          instanceName: 'test-instance',
-          version: '2025-04-01-preview',
-          models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
-        },
-        summary: {
-          apiKey: target.summaryApiKey ?? 'summary-key',
-          instanceName: 'summary-instance',
-          version: '2024-10-21',
-          models: {
-            'gpt-4.1': { deploymentName: 'summary-production' },
-            'gpt-4.1-nano': { deploymentName: 'summary-nano' },
+    appConfig.endpoints![EModelEndpoint.azureOpenAI] = target.legacyEnvironment
+      ? undefined
+      : {
+          isValid: true,
+          errors: [],
+          modelNames: ['gpt-6-astra', 'gpt-4.1', 'gpt-4.1-nano'],
+          modelGroupMap: {
+            'gpt-6-astra': { group: 'main' },
+            'gpt-4.1': { group: 'summary' },
+            'gpt-4.1-nano': { group: 'summary' },
           },
-        },
-      },
-    };
+          groupMap: {
+            main: {
+              apiKey: 'test-azure-key',
+              instanceName: 'test-instance',
+              version: '2025-04-01-preview',
+              models: { 'gpt-6-astra': { deploymentName: 'production-deployment' } },
+            },
+            summary: {
+              apiKey: target.summaryApiKey ?? 'summary-key',
+              instanceName: 'summary-instance',
+              version: '2024-10-21',
+              models: {
+                'gpt-4.1': { deploymentName: 'summary-production' },
+                'gpt-4.1-nano': { deploymentName: 'summary-nano' },
+              },
+            },
+          },
+        };
     const agents = await callAndCapture({
       agents: [agent()],
       appConfig,
