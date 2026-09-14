@@ -121,6 +121,7 @@ import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
 import { resolveDownloadPath } from '~/storage/path';
 import { parseFrontmatter } from '../skills/import';
+import { summarizeVerifiedWrite } from './persist';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 import { instrumentPtcToolMap } from './ptc';
@@ -2940,8 +2941,16 @@ async function writeSandboxTextForAuthoring({
     );
   }
 
-  const action = created ? 'Created' : 'Updated';
-  const summary = `${action} ${filePath} (${content.length} chars).`;
+  const verified = summarizeVerifiedWrite({
+    action: created ? 'Created' : 'Updated',
+    path: filePath,
+    content,
+    evidence: { kind: 'named-files', files: writeResult.files },
+  });
+  if (!verified.ok) {
+    return errorResult(tc, verified.message);
+  }
+  const summary = verified.summary;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
     path: filePath,
     [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
@@ -3576,22 +3585,28 @@ async function writeSkillMd({
       throw error;
     }
     rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
+    const displayPath = `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`;
+    const verified = summarizeVerifiedWrite({
+      action: 'Created',
+      path: displayPath,
+      content,
+      evidence: { kind: 'body', body: result.skill.body },
+    });
+    if (!verified.ok) {
+      return errorResult(tc, verified.message);
+    }
     const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
-    return successResult(
-      tc,
-      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).${surfacedWarnings?.contentSuffix ?? ''}`,
-      {
-        path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
-        bytes_written: Buffer.byteLength(content, 'utf8'),
-        created: true,
-        ...(surfacedWarnings
-          ? {
-              warnings: surfacedWarnings.warnings,
-              warning_count: surfacedWarnings.warningCount,
-            }
-          : {}),
-      },
-    );
+    return successResult(tc, `${verified.summary}${surfacedWarnings?.contentSuffix ?? ''}`, {
+      path: displayPath,
+      bytes_written: Buffer.byteLength(content, 'utf8'),
+      created: true,
+      ...(surfacedWarnings
+        ? {
+            warnings: surfacedWarnings.warnings,
+            warning_count: surfacedWarnings.warningCount,
+          }
+        : {}),
+    });
   }
 
   const editDenied = await ensureCanEditSkill(tc, options, req, skill._id);
@@ -3638,11 +3653,20 @@ async function writeSkillMd({
     return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
   }
 
-  const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
+  const displayPath = `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`;
+  const verified = summarizeVerifiedWrite({
+    action: 'Updated',
+    path: displayPath,
+    content,
+    evidence: { kind: 'body', body: result.skill.body },
+  });
+  if (!verified.ok) {
+    return errorResult(tc, verified.message);
+  }
   const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
-  const summaryWithWarnings = `${summary}${surfacedWarnings?.contentSuffix ?? ''}`;
+  const summaryWithWarnings = `${verified.summary}${surfacedWarnings?.contentSuffix ?? ''}`;
   return successResult(tc, diff ? `${summaryWithWarnings}\n\n${diff}` : summaryWithWarnings, {
-    path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+    path: displayPath,
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created: false,
     ...(diff ? { diff } : {}),
@@ -3719,15 +3743,23 @@ async function writeBundledSkillFile({
     diff = undefined;
   }
 
-  await options.saveSkillFileContent({
+  const saved = await options.saveSkillFileContent({
     req,
     skillId: skill._id,
     relativePath,
     content,
     mimeType: guessMimeType(relativePath),
   });
-  const action = created ? 'Created' : 'Updated';
-  const summary = `${action} ${displayPath} (${content.length} chars).`;
+  const verified = summarizeVerifiedWrite({
+    action: created ? 'Created' : 'Updated',
+    path: displayPath,
+    content,
+    evidence: { kind: 'bytes', bytes: saved?.bytes },
+  });
+  if (!verified.ok) {
+    return errorResult(tc, verified.message);
+  }
+  const summary = verified.summary;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
     path: displayPath,
     bytes_written: Buffer.byteLength(content, 'utf8'),
@@ -3812,8 +3844,16 @@ async function handleAttachedWorkspaceCreateFileCall({
       overwrite,
       ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
     });
-    const action = result.created ? 'Created' : 'Updated';
-    return successResult(tc, `${action} workspace/${path.filePath} (${content.length} chars).`, {
+    const verified = summarizeVerifiedWrite({
+      action: result.created ? 'Created' : 'Updated',
+      path: `workspace/${path.filePath}`,
+      content,
+      evidence: { kind: 'bytes', bytes: result.bytesWritten },
+    });
+    if (!verified.ok) {
+      return errorResult(tc, verified.message);
+    }
+    return successResult(tc, verified.summary, {
       path: `workspace/${path.filePath}`,
       [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
       bytes_written: result.bytesWritten,

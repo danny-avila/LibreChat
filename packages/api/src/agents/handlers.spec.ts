@@ -3093,7 +3093,7 @@ describe('createToolExecuteHandler', () => {
       }));
       const getSkillByName = jest.fn(async () => createdSkill);
       const saveSkillFileContent = jest.fn(async () => ({
-        bytes: 12,
+        bytes: Buffer.byteLength('reference text', 'utf8'),
         relativePath: 'references/a.md',
       }));
       const handler = makeAuthoringHandler(
@@ -3490,7 +3490,7 @@ describe('createToolExecuteHandler', () => {
     it('repairs protected bundled file text without echoing removed lines in the diff', async () => {
       const protectedValue = 'PROTECTED-BUNDLED-DIFF';
       const saveSkillFileContent = jest.fn(async () => ({
-        bytes: 10,
+        bytes: Buffer.byteLength('removed\nsafe line\n', 'utf8'),
         relativePath: 'references/private.md',
       }));
       const filteredReq = {
@@ -3562,7 +3562,10 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('coerces a stringified edits array (JSON-in-JSON) so the edit still applies', async () => {
-      const saveSkillFileContent = jest.fn();
+      const saveSkillFileContent = jest.fn(async ({ content }: { content: string }) => ({
+        bytes: Buffer.byteLength(content, 'utf8'),
+        relativePath: 'references/a.md',
+      }));
       const handler = makeAuthoringHandler({
         getSkillByName: jest.fn(async () => ({
           _id: SKILL_ID,
@@ -3606,7 +3609,10 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('coerces stringified entries inside an edits array', async () => {
-      const saveSkillFileContent = jest.fn();
+      const saveSkillFileContent = jest.fn(async ({ content }: { content: string }) => ({
+        bytes: Buffer.byteLength(content, 'utf8'),
+        relativePath: 'references/a.md',
+      }));
       const handler = makeAuthoringHandler({
         getSkillByName: jest.fn(async () => ({
           _id: SKILL_ID,
@@ -4343,6 +4349,38 @@ describe('createToolExecuteHandler', () => {
       expect(result.artifact).toBeUndefined();
     });
 
+    it('does not report a sandbox write as created when the file is missing from the result', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/probe.txt: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 7 bytes to /mnt/data/probe.txt\n',
+        session_id: 'sess-new',
+        files: [],
+      }));
+      const handler = makeSandboxAuthoringHandler({
+        readSandboxFile,
+        writeSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_sandbox_unpersisted',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/probe.txt',
+            content: 'missing',
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Write of "/mnt/data/probe.txt" did not persist');
+      expect(result.errorMessage).toContain('sandbox result did not include that file');
+      expect(result.errorMessage).not.toContain('Created /mnt/data/probe.txt');
+      expect(result.artifact).toBeUndefined();
+    });
+
     it('carries whole file refs into the next authoring call on the same path', async () => {
       /**
        * Regression: the batch-local sandbox context rebuilt each ref from
@@ -4537,6 +4575,47 @@ describe('createToolExecuteHandler', () => {
         bridgeWorkerId: 'user-worker',
         req,
       });
+    });
+
+    it('does not report a workspace write as created when the persisted size does not match', async () => {
+      const writeWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'write_file' as const,
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 0,
+      }));
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace_unpersisted',
+          name: 'create_file',
+          args: {
+            path: 'workspace/src/new.ts',
+            content: 'export const ok = 1;',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Write of "workspace/src/new.ts" did not persist');
+      expect(result.errorMessage).toContain('expected 20 bytes, got 0');
+      expect(result.errorMessage).not.toContain('Created workspace/src/new.ts');
+      expect(result.artifact).toBeUndefined();
     });
 
     it('surfaces an attached create-only conflict without retrying as an overwrite', async () => {
