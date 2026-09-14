@@ -186,6 +186,15 @@ test.describe('Mermaid source downloads', () => {
         rowBox!.y + rowBox!.height + 1,
       );
 
+      /* On a phone the artifact opens as a sheet over the message list, so
+       * dismiss the panel with its own close control before reaching the
+       * row's download; the trigger stays a row once opened. */
+      await page.locator('#artifact-viewer').getByRole('button', { name: 'Close' }).click();
+      await expect(page.locator('#artifact-viewer')).toBeHidden();
+      await expect(row).toHaveAttribute('aria-expanded', 'false');
+      await expect(messages.getByText('flow.mmd', { exact: true })).toHaveCount(1);
+      await expect(download).toHaveCount(1);
+
       const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
       expect(file.suggestedFilename()).toBe('flow.mmd');
     },
