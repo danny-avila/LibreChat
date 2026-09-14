@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useAtomValue, useStore } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
@@ -43,6 +44,7 @@ import {
   mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import { useLatestMessage } from '~/hooks/Messages';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
@@ -411,6 +413,7 @@ export default function useSteering({
 }: UseSteeringParams) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const jotaiStore = useStore();
   const setFilesToDelete = useSetFilesToDelete();
   const convertSteersToQueued = useSteerConvert();
   /** `mutate` is a stable callback; the mutation result objects are fresh
@@ -463,12 +466,30 @@ export default function useSteering({
     const expiry = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
     return earliest == null ? expiry : Math.min(earliest, expiry);
   }, undefined);
+  const expectsReceipts = useMemo(
+    () =>
+      queuedMessages.some(
+        (item) =>
+          item.server != null &&
+          (item.server.status === 'sending' ||
+            item.server.status === 'uncertain' ||
+            item.server.status === 'queued' ||
+            item.server.status === 'claimed'),
+      ),
+    [queuedMessages],
+  );
   const { data: serverQueuedTurns } = useAgentQueuedTurns(
     conversationId,
     serverQueueEnabled,
     knownClientRequestIds,
     reconciliationUntil,
+    expectsReceipts,
   );
+  /** A queued follow-up already shown as the next user turn, whose server copy
+   *  has not been seen yet. The run it opens is imminent, so the composer keeps
+   *  queueing behind it rather than starting a turn anchored on a row the
+   *  server has not persisted. */
+  const revealPending = useAtomValue(revealedQueuedTurnFamily(queueKey)) != null;
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(queueKey),
   );
@@ -594,7 +615,7 @@ export default function useSteering({
    * `isSubmitting` flips earlier so the user can keep typing; during that
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
   const canControlGeneration = activeGenerationCreatedAt != null;
-  const duringRunActive = enabled && isSubmitting && !answerModeActive;
+  const duringRunActive = enabled && (isSubmitting || revealPending) && !answerModeActive;
   /** Queue rows can be sent concurrently. Keep their captured origins while
    *  absent so a later capture still sees the complete logical queue. Origins
    *  are isolated per conversation because this hook survives navigation. */
@@ -715,7 +736,7 @@ export default function useSteering({
   /** Whether a queued row has a real immediate-send path. Answer mode keeps
    * `isSubmitting` true while hiding during-run steering, so presenting Send
    * now there would be an enabled no-op. */
-  const canSendQueuedNow = !isSubmitting || (duringRunActive && canSteer);
+  const canSendQueuedNow = (!isSubmitting && !revealPending) || (duringRunActive && canSteer);
   /** Steering needs a live server-side job; degrade to queue otherwise. */
   const effectiveAction: DuringRunAction = canSteer ? defaultAction : 'queue';
 
@@ -1299,6 +1320,12 @@ export default function useSteering({
             return false;
           }
           applyQueuedTurnReceipts([receipt], 'direct');
+          /** The turn was shown as next; the confirmed cancellation ends that
+           *  at once rather than on the next receipt refetch. */
+          const revealFamily = revealedQueuedTurnFamily(queueKey);
+          if (jotaiStore.get(revealFamily)?.clientRequestId === item.clientRequestId) {
+            jotaiStore.set(revealFamily, null);
+          }
           return downgradeServerQueuedTurn(item.id);
         } catch {
           showToast({
@@ -1350,6 +1377,8 @@ export default function useSteering({
       hasRealConvoId,
       localize,
       showToast,
+      jotaiStore,
+      queueKey,
     ],
   );
 

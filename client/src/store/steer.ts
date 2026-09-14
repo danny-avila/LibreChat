@@ -1,5 +1,6 @@
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai/utils';
+import type { TMessage } from 'librechat-data-provider';
 
 /**
  * Measured pixel height of the in-flight steer overlay for a conversation.
@@ -20,3 +21,24 @@ export const steerOverlayHeightFamily = atomFamily((_conversationId: string) => 
  * and the chip-derived check cannot see an arm until its response lands.
  */
 export const escalatingSteerFamily = atomFamily((_conversationId: string) => atom<boolean>(false));
+
+/** A server-owned queued follow-up shown as the newest user turn before the
+ *  backend has admitted it, keyed by conversation. Presentation intent only:
+ *  the row renders after the completed response it names and never enters the
+ *  message cache. `clientRequestId` ties it to the queued row's receipt so the
+ *  chip reduces to its remove action and negative evidence can end it. */
+export type RevealedQueuedTurn = {
+  clientRequestId: string;
+  /** The completed response the turn follows. The row shows only while this
+   *  is the thread's tail, and the intent ends once anything parents on it. */
+  parentMessageId: string;
+  text: string;
+  files?: TMessage['files'];
+  quotes?: string[];
+  manualSkills?: string[];
+  revealedAt: string;
+};
+
+export const revealedQueuedTurnFamily = atomFamily((_conversationId: string) =>
+  atom<RevealedQueuedTurn | null>(null),
+);

@@ -3,6 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
 
@@ -75,6 +76,7 @@ export default function useQueueDrain(
   index: string | number,
   activeConversationId: string | undefined,
   ask: TAskFunction,
+  revealQueuedTurn?: (item: QueuedMessage, end: RunEnd) => void,
 ) {
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(
@@ -172,12 +174,16 @@ export default function useQueueDrain(
   // awaits may interleave with the reads.
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): {
-        next: QueuedMessage;
-        conversationId: string;
-        queuedMessageOrigin: QueuedMessageOrigin;
-        expectedPredecessorCreatedAt?: number;
-      } | null => {
+      ():
+        | {
+            kind: 'drain';
+            next: QueuedMessage;
+            conversationId: string;
+            queuedMessageOrigin: QueuedMessageOrigin;
+            expectedPredecessorCreatedAt?: number;
+          }
+        | { kind: 'reveal'; item: QueuedMessage; end: RunEnd }
+        | null => {
         let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         let fromParked = false;
         if (
@@ -305,8 +311,11 @@ export default function useQueueDrain(
           /** Keep the one-shot terminal signal until the authoritative snapshot
            * removes the server row. If it was admitted, its own later terminal
            * signal orders the remaining local queue; if it was cancelled/dead,
-           * this signal still lets the legacy successor make progress. */
-          return null;
+           * this signal still lets the legacy successor make progress. The
+           * head the server is about to admit can already be shown as the
+           * next user turn; the signal itself stays untouched. */
+          const reveal = selectQueuedTurnReveal(end, merged);
+          return reveal == null ? null : { kind: 'reveal', item: reveal, end };
         }
 
         // Consume only after server authority has yielded the boundary — a
@@ -324,6 +333,7 @@ export default function useQueueDrain(
         }
         return next
           ? {
+              kind: 'drain',
               next,
               conversationId,
               queuedMessageOrigin: {
@@ -363,6 +373,10 @@ export default function useQueueDrain(
     }
     const drained = drainNext();
     if (drained == null) {
+      return;
+    }
+    if (drained.kind === 'reveal') {
+      revealQueuedTurn?.(drained.item, drained.end);
       return;
     }
     const { next, conversationId, queuedMessageOrigin, expectedPredecessorCreatedAt } = drained;
@@ -414,6 +428,7 @@ export default function useQueueDrain(
     markFilesUsage,
     hasServerOwnedQueue,
     settledQueuedTurnReceipts,
+    revealQueuedTurn,
     ask,
   ]);
 }

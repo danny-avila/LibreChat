@@ -854,6 +854,7 @@ describe('useSteering', () => {
         true,
         [clientRequestId],
         uncertainSince! + 60_000,
+        true,
       );
     });
 
