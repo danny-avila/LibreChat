@@ -54,6 +54,7 @@ const {
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
   cacheConfig,
+  createClusteredFileSweep,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -407,11 +408,7 @@ if (cluster.isMaster) {
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
-  /** Redis coordinates sweep ownership across every worker and pod. Without
-   * Redis, retain the primary process's single-worker IPC assignment. */
-  let shouldStartExpiredFileSweep = cacheConfig.USE_REDIS;
-  let expiredFileSweepOptions = null;
-  let expiredFileSweepStarted = false;
+  const expiredFileSweep = createClusteredFileSweep(cacheConfig.USE_REDIS, startExpiredFileSweep);
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   const rejectScheduleWritesUntilReady = (req, res, next) => {
@@ -422,15 +419,6 @@ if (cluster.isMaster) {
       code: 'SCHEDULES_NOT_SUPPORTED',
       error: 'Scheduled chats are not available in clustered mode.',
     });
-  };
-
-  const startExpiredFileSweepOnce = () => {
-    if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
-      return;
-    }
-
-    expiredFileSweepStarted = true;
-    startExpiredFileSweep(expiredFileSweepOptions);
   };
 
   /** Handle inter-process messages from master */
@@ -450,9 +438,8 @@ if (cluster.isMaster) {
   });
   process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
-      shouldStartExpiredFileSweep = true;
       logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
-      startExpiredFileSweepOnce();
+      expiredFileSweep.assign();
     }
   });
   const startServer = async () => {
@@ -526,8 +513,7 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
-    startExpiredFileSweepOnce();
+    expiredFileSweep.configure({ appConfig, loadAppConfig: getAppConfig });
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
       await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
