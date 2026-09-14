@@ -168,6 +168,7 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+    expect(submission.conversation.codeApprovalMode).toBe('acceptEdits');
   });
 
   it('preallocates a durable Agents user id for the optimistic response anchor', () => {

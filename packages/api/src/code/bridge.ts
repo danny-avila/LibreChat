@@ -3,11 +3,13 @@ import {
   CODE_WORKSPACE_ID_PATTERN,
   CODE_WORKSPACE_MAX_COUNT,
   CODE_WORKSPACE_OPERATIONS,
+  isCodeWorkspaceEnvironment,
 } from 'librechat-data-provider';
 import type { CodeWorkspaceDescriptor, CodeWorkspaceOperation } from 'librechat-data-provider';
 
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
-const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 64 * 1024;
+// Covers 32 roots with 32 bounded action names and escaped metadata per root.
+const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 256 * 1024;
 
 export type CodeBridgePrincipalType = 'deployment' | 'tenant' | 'user' | 'role' | 'group';
 
@@ -183,11 +185,12 @@ function validWorkspaceCapabilities(value: unknown): value is {
     const workspace = value as Record<string, unknown>;
     if (
       Object.keys(workspace).some(
-        (key) => key !== 'id' && key !== 'name' && key !== 'operations',
+        (key) => key !== 'id' && key !== 'name' && key !== 'operations' && key !== 'environment',
       ) ||
       typeof workspace.id !== 'string' ||
       !CODE_WORKSPACE_ID_PATTERN.test(workspace.id) ||
       ids.has(workspace.id) ||
+      (workspace.environment !== undefined && !isCodeWorkspaceEnvironment(workspace.environment)) ||
       (workspace.name !== undefined &&
         (typeof workspace.name !== 'string' ||
           workspace.name.trim().length === 0 ||

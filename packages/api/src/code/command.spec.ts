@@ -66,6 +66,37 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
+  test('dispatches only advertised named actions with the resolved definition fingerprint', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1/',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      environment: {
+        fingerprint: 'a'.repeat(64),
+        repo: 'example/app',
+        ref: 'main',
+        actions: ['typecheck'],
+      },
+      fetchImpl,
+    });
+    await bashTool.invoke({ environmentAction: 'typecheck' });
+    const [, options] = (fetchImpl as jest.Mock).mock.calls[0];
+    expect(JSON.parse(options.body)).toMatchObject({
+      workspaceId: 'project-a',
+      environmentAction: { name: 'typecheck', fingerprint: 'a'.repeat(64) },
+      timeoutMs: 30000,
+    });
+    for (const input of [
+      { environmentAction: 'missing' },
+      { environmentAction: 'typecheck', command: 'rm x' },
+      { environmentAction: 'typecheck', cwd: 'other' },
+      {},
+    ]) {
+      await expect(bashTool.invoke(input)).rejects.toThrow();
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
   test('disconnects the actual HTTP request when an invoked command is cancelled', async () => {
     let markStarted!: () => void;
     let markDisconnected!: () => void;
