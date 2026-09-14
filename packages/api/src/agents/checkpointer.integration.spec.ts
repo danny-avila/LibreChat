@@ -9,7 +9,7 @@ import {
   hasDurableAgentInterruptCheckpoint,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  deleteAgentCheckpoints,
+  deleteOwnedAgentCheckpoints,
   forkAgentEventCheckpoint,
   captureAgentEventCheckpoint,
   LazyMongoSaver,
@@ -19,6 +19,7 @@ import {
   setupCheckpointIndexes,
   __resetCheckpointerForTests,
 } from './checkpointer';
+import { createCheckpointNamespace } from '../stream/checkpoints';
 
 /**
  * Integration tests for the durable Mongo checkpointer seam, against a real
@@ -477,6 +478,33 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(await saver!.getTuple(readConfig(threadB))).toBeDefined();
   });
 
+  it('scheduled namespace capture prunes root and nested writes while preserving a replacement', async () => {
+    const db = mongoose.connection.db!;
+    const threadId = 'scheduled-owned-run';
+    const namespace = createCheckpointNamespace('owner', 'tenant');
+    const replacement = createCheckpointNamespace('owner', 'tenant');
+    const rows = [namespace, `${namespace}|child`, replacement, ''].map((checkpoint_ns) => ({
+      thread_id: threadId,
+      checkpoint_ns,
+      checkpoint_id: 'same-checkpoint-id',
+    }));
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      await db.collection(name).insertMany(rows.map((row) => ({ ...row })));
+    }
+    const capture = await captureAgentCheckpointGeneration(threadId, MONGO_CFG, {
+      checkpointNamespace: namespace,
+      throwOnError: true,
+    });
+    expect(capture?.checkpointIds).toContain('same-checkpoint-id');
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, capture, { throwOnError: true });
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      expect(await db.collection(name).distinct('checkpoint_ns', { thread_id: threadId })).toEqual(
+        expect.arrayContaining([replacement, '']),
+      );
+      expect(await db.collection(name).countDocuments({ thread_id: threadId })).toBe(2);
+    }
+  });
+
   it('generation-scoped cleanup preserves a replacement checkpoint on the same thread', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
@@ -507,6 +535,41 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
       await mongoose.connection
         .db!.collection('agent_checkpoint_writes')
         .countDocuments({ thread_id: threadId, checkpoint_id: resumed.id }),
+    ).toBe(0);
+  });
+
+  it('legacy capture and cleanup preserve ordinary owned payload even with matching checkpoint IDs', async () => {
+    const saver = (await getAgentCheckpointer(MONGO_CFG))!;
+    const threadId = 'legacy-owner-collision';
+    const legacy = await seedInterruptCheckpoint(saver, threadId);
+    const ownedNamespace = createCheckpointNamespace('other-owner', 'tenant');
+    const db = mongoose.connection.db!;
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      const row = await db.collection(name).findOne({ thread_id: threadId });
+      const { _id, ...payload } = row!;
+      await db.collection(name).insertOne({ ...payload, checkpoint_ns: ownedNamespace });
+      await db
+        .collection(name)
+        .insertOne({ ...payload, checkpoint_id: 'only-owned', checkpoint_ns: ownedNamespace });
+    }
+    const captured = await captureAgentCheckpointGeneration(threadId, MONGO_CFG);
+    expect(captured.checkpointIds).toEqual([legacy.id]);
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, captured, { throwOnError: true });
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, { throwOnError: true });
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      const rows = await db.collection(name).find({ thread_id: threadId }).toArray();
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.checkpoint_ns === ownedNamespace)).toBe(true);
+    }
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, {
+      checkpointNamespace: ownedNamespace,
+      throwOnError: true,
+    });
+    expect(await db.collection('agent_checkpoints').countDocuments({ thread_id: threadId })).toBe(
+      0,
+    );
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
     ).toBe(0);
   });
 
@@ -618,39 +681,46 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     await expect(deleteAgentCheckpoint(undefined, MONGO_CFG)).resolves.toBeUndefined();
   });
 
-  it('deleteAgentCheckpoints bulk-prunes exactly the given threads (checkpoints AND writes)', async () => {
-    // The bulk path behind conversation deletion / delete-all / account deletion:
-    // one $in deleteMany per collection instead of two round-trips per thread.
+  it('bulk-deletes only an owned generation scope when thread IDs collide', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
-    const threadA = `convo-${new mongoose.Types.ObjectId().toString()}`;
-    const threadB = `convo-${new mongoose.Types.ObjectId().toString()}`;
-    const threadC = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const threadId = `collision-${new mongoose.Types.ObjectId().toString()}`;
+    const ownedNamespace = createCheckpointNamespace('owner', 'tenant');
+    await seedInterruptCheckpoint(saver!, threadId, ownedNamespace);
+    await seedInterruptCheckpoint(saver!, threadId, `${ownedNamespace}|subgraph`);
+    await seedInterruptCheckpoint(saver!, threadId, 'foreign-generation');
+    await seedInterruptCheckpoint(saver!, threadId, '');
 
-    await seedInterruptCheckpoint(saver!, threadA);
-    await seedInterruptCheckpoint(saver!, threadB);
-    await seedInterruptCheckpoint(saver!, threadC);
+    await deleteOwnedAgentCheckpoints('owner', 'tenant', [threadId, threadId], MONGO_CFG);
 
-    // Falsy entries are skipped rather than widening the delete.
-    await deleteAgentCheckpoints([threadA, undefined, threadB, null], MONGO_CFG);
-
-    expect(await saver!.getTuple(readConfig(threadA))).toBeUndefined();
-    expect(await saver!.getTuple(readConfig(threadB))).toBeUndefined();
-    expect(await saver!.getTuple(readConfig(threadC))).toBeDefined();
-
-    const db = mongoose.connection.db!;
-    const writesFilter = { thread_id: { $in: [threadA, threadB] } };
-    expect(await db.collection('agent_checkpoints').countDocuments(writesFilter)).toBe(0);
-    expect(await db.collection('agent_checkpoint_writes').countDocuments(writesFilter)).toBe(0);
-    // The untouched thread keeps its interrupt write row.
+    expect(await saver!.getTuple(readConfig(threadId, ownedNamespace))).toBeUndefined();
     expect(
-      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadC }),
-    ).toBe(1);
+      await saver!.getTuple(readConfig(threadId, `${ownedNamespace}|subgraph`)),
+    ).toBeUndefined();
+    expect(await saver!.getTuple(readConfig(threadId, 'foreign-generation'))).toBeDefined();
+    expect(await saver!.getTuple(readConfig(threadId, ''))).toBeDefined();
+    const db = mongoose.connection.db!;
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({
+        thread_id: threadId,
+        checkpoint_ns: { $in: [ownedNamespace, `${ownedNamespace}|subgraph`] },
+      }),
+    ).toBe(0);
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBe(2);
   });
 
-  it('deleteAgentCheckpoints is a no-op for an empty or all-falsy list', async () => {
-    await expect(deleteAgentCheckpoints([], MONGO_CFG)).resolves.toBeUndefined();
-    await expect(deleteAgentCheckpoints([undefined, null], MONGO_CFG)).resolves.toBeUndefined();
-    await expect(deleteAgentCheckpoints(undefined, MONGO_CFG)).resolves.toBeUndefined();
+  it('propagates a bulk checkpoint deletion failure for retry', async () => {
+    const deletion = jest
+      .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
+      .mockRejectedValueOnce(new Error('checkpoint deletion unavailable'));
+    try {
+      await expect(
+        deleteOwnedAgentCheckpoints('owner', 'tenant', ['conversation-1'], MONGO_CFG),
+      ).rejects.toThrow('checkpoint deletion unavailable');
+    } finally {
+      deletion.mockRestore();
+    }
   });
 });
 

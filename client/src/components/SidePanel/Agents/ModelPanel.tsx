@@ -2,14 +2,20 @@ import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { Alert, Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { alternateName, LocalStorageKeys, resolveModelCatalogKey } from 'librechat-data-provider';
+import {
+  Permissions,
+  alternateName,
+  PermissionTypes,
+  LocalStorageKeys,
+  resolveModelCatalogKey,
+} from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { pruneAgentModelParameters, resolveAgentParameterSettings } from './parameters';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { useLiveAnnouncer } from '~/Providers';
-import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
 
@@ -63,6 +69,11 @@ export default function ModelPanel({
     return endpointsConfig?.[provider]?.availableRegions ?? [];
   }, [endpointsConfig, provider]);
 
+  const webSearchAllowed = useHasAccess({
+    permissionType: PermissionTypes.WEB_SEARCH,
+    permission: Permissions.USE,
+  });
+
   const parameterSettings = useMemo(
     () =>
       resolveAgentParameterSettings({
@@ -70,10 +81,13 @@ export default function ModelPanel({
         model: model ?? '',
         provider,
         startupConfig,
+        webSearchAllowed,
       }),
-    [endpointsConfig, model, provider, startupConfig],
+    [endpointsConfig, model, provider, startupConfig, webSearchAllowed],
   );
-  const { parameters } = parameterSettings;
+  /** The rendered set omits role-gated controls; `parameterSettings.parameters`
+   *  stays complete so the pruning effect below still recognises them. */
+  const { visibleParameters: parameters } = parameterSettings;
 
   /**
    * Prunes `model_parameters` entries that no longer have a visible control (e.g. a

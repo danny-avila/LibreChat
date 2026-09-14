@@ -460,6 +460,10 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
+    /* Unified mode routes by MIME type but does not widen what may be uploaded: the
+     * endpoint allowlist is the same ceiling the server enforces in `filterFile`, so
+     * accepting extraction-capable types beyond it only turns a preflight message into
+     * a failed request. */
     let mimeTypesToCheck = supportedMimeTypes;
     if (toolResource === EToolResources.context) {
       mimeTypesToCheck = [
@@ -556,6 +560,19 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
  * Each option requires every file to be valid for it, so the caller can decide between
  * auto-routing (one option), prompting (multiple), or rejecting (none).
  */
+/**
+ * Whether uploads route from the file itself rather than through the destination chooser.
+ * Answering it needs a config the server actually returned: without one the built-in
+ * defaults apply, and their absent `legacyFileUploadUX` reads as unified, which is the
+ * wrong uploader on a legacy deployment. A failed or paused query is as unresolved as a
+ * pending one, so the caller passes whether the fetch succeeded rather than whether it
+ * has stopped.
+ */
+export const isUnifiedUploadMode = (
+  endpointFileConfig: EndpointFileConfig | undefined,
+  isConfigResolved: boolean,
+): boolean => isConfigResolved && endpointFileConfig?.legacyFileUploadUX !== true;
+
 export const getViableUploadOptions = (
   fileList: File[],
   ctx: UploadOptionContext,

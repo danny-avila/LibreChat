@@ -3,6 +3,10 @@ import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
 } from './openidRefreshFlight';
+export {
+  createMCPAuthorizationFenceRetryStorage,
+  type MCPAuthorizationFenceRetryStorage,
+} from './mcpAuthorizationFenceRetry';
 import {
   createRefreshTokenBridgeMethods,
   type RefreshTokenBridgeMethods,
@@ -69,6 +73,8 @@ import {
   type SubagentTaskResultClaim,
   type BackgroundToolResultClaim,
   type BackgroundToolResultRecord,
+  type ConversationTraceRefs,
+  type SampledTraceMessage,
 } from './message';
 import {
   createConversationMethods,
@@ -148,7 +154,14 @@ import type {
   UpsertSkillSyncCredentialInput,
 } from './skillSync';
 /* Tier 5 — Agent */
-import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
+import {
+  createAgentMethods,
+  type AgentMethods,
+  type AgentDeps,
+  type AgentGraphNode,
+  type AgentGraphAccess,
+  type AgentGraphAccessContext,
+} from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 import {
@@ -422,6 +435,8 @@ export function createMethods(
     removeAllPermissions,
     getActions: actionMethods.getActions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    getUserPrincipals: userGroupMethods.getUserPrincipals,
+    findAccessibleResources: aclEntryMethods.findAccessibleResources,
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
@@ -519,6 +534,8 @@ export type {
   SubagentTaskResultClaim,
   BackgroundToolResultClaim,
   BackgroundToolResultRecord,
+  ConversationTraceRefs,
+  SampledTraceMessage,
   ConversationMethods,
   AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,
@@ -547,6 +564,9 @@ export type {
   AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,
   AgentMethods,
+  AgentGraphNode,
+  AgentGraphAccess,
+  AgentGraphAccessContext,
   ConfigMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,

@@ -492,6 +492,82 @@ describe('Agent queued-turn continuation', () => {
     );
   });
 
+  it('does not reinterpret a missing underscore-suffixed anchor', async () => {
+    const { methods, spies } = resolverMethods();
+    const queued = claim();
+    queued.parentMessageId = 'user-1_';
+    spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: queued });
+    spies.getMessages.mockResolvedValueOnce([
+      persistedMessage({
+        messageId: 'user-1',
+        parentMessageId: 'root',
+        isCreatedByUser: true,
+        createdAt: new Date(NOW - 1_000),
+      }),
+      persistedMessage({
+        messageId: 'assistant-1',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW),
+      }),
+    ]);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).rejects.toMatchObject({
+      code: 'PARENT_NOT_FOUND',
+    });
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: queued.queuedTurnId,
+        disposition: 'dead',
+        failure: expect.objectContaining({ code: 'PARENT_NOT_FOUND' }),
+      }),
+    );
+  });
+
+  it('continues after the newest regenerated response under a durable user anchor', async () => {
+    const { methods, spies } = resolverMethods();
+    const queued = claim();
+    queued.parentMessageId = 'user-1';
+    spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: queued });
+    spies.getMessages.mockResolvedValueOnce([
+      persistedMessage({
+        messageId: 'user-1',
+        parentMessageId: 'root',
+        isCreatedByUser: true,
+        createdAt: new Date(NOW - 3_000),
+      }),
+      persistedMessage({
+        messageId: 'old-assistant',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW - 2_000),
+      }),
+      persistedMessage({
+        messageId: 'regenerated-assistant',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW),
+      }),
+    ]);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
+      status: 'ready',
+      parentMessageId: 'regenerated-assistant',
+    });
+  });
+
   it('dead-letters a legacy admission order that cannot be reconstructed safely', async () => {
     const { methods, spies } = resolverMethods();
     (

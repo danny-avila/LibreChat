@@ -1,5 +1,6 @@
 const {
   createAgentTriggerService,
+  createCheckpointDeletionReclaimer,
   createAgentContinuationResolver,
   createAgentEventContinueResolver,
   createSubagentCompletionWakeupResolver,
@@ -44,6 +45,9 @@ const queuedTurnLifecycle = createAgentQueuedTurnLifecycle({
 
 service = createAgentTriggerService({
   methods,
+  reclaimCheckpointDeletions: createCheckpointDeletionReclaimer((userId, tenantId) =>
+    GenerationJobManager.getAccountCleanupJobIdsForUser(userId, tenantId),
+  ),
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
   settleSourceBeforeDeadLetter: queuedTurnLifecycle.settleBeforeDeadLetter,

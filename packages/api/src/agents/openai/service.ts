@@ -1,3 +1,4 @@
+import type { LocatorTraversalReporter } from '../../protection/diagnostics';
 /**
  * OpenAI-compatible chat completions service for agents.
  *
@@ -72,6 +73,7 @@ import {
 } from '~/middleware/modelBoundContent';
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
+import { resolveToolRoleGrants } from '../../tools/rolePermissions';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
@@ -83,6 +85,7 @@ import { createSafeUser } from '~/utils';
  * Dependencies for the chat completion service
  */
 export interface ChatCompletionDependencies {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   /** Get agent by ID */
   getAgent: (params: { id: string }) => Promise<Agent | null>;
   /** Initialize agent for use */
@@ -119,6 +122,13 @@ export interface ChatCompletionDependencies {
    * keep tenant tracing and code execution working.
    */
   appConfig?: AppConfig;
+  /**
+   * Supply to have `codeEnvAvailable` and `fileSearchAvailable` respect the
+   * caller's `RUN_CODE` / `FILE_SEARCH` grants as well as the deployment
+   * capabilities. Optional so existing embedders keep their current behavior;
+   * without it this route is gated by capability alone.
+   */
+  getRoleByName?: Parameters<typeof resolveToolRoleGrants>[0]['getRoleByName'];
   /** Tool execute options for event-driven tool execution */
   toolExecuteOptions?: ToolExecuteOptions;
 }
@@ -195,6 +205,19 @@ interface InitializeAgentParams {
    * skips the expansion (same semantics as the in-repo controllers).
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether `file_search` is available to this caller — the capability AND, when
+   * the embedder wires `getRoleByName`, the `FILE_SEARCH` grant. Read only when
+   * re-hydrating a conversation's prior-turn files; absent / `undefined` leaves
+   * that priming unconditional.
+   */
+  fileSearchAvailable?: boolean;
+  /**
+   * Resolves the `WEB_SEARCH` role grant. `initializeAgent` calls it only when an
+   * agent's built provider config turns native web search on, and strips that
+   * search when it resolves `false`.
+   */
+  resolveWebSearchGrant?: () => Promise<boolean>;
   /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
@@ -520,6 +543,13 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
     return { valid: false, error: 'conversation_id must be a string' };
   }
+  if (request.code_environment_mode !== undefined || request.code_workspaces !== undefined) {
+    return {
+      valid: false,
+      error:
+        'code_environment_mode and code_workspaces are not supported by this service because it cannot enforce a persisted conversation decision',
+    };
+  }
 
   if (request.parent_message_id !== undefined && typeof request.parent_message_id !== 'string') {
     return { valid: false, error: 'parent_message_id must be a string' };
@@ -668,7 +698,31 @@ export async function createAgentChatCompletion(
       agentsConfig != null && typeof agentsConfig === 'object'
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
         : undefined;
-    const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
+    const capabilityAllowsCodeEnv = capabilityEnabled(AgentCapabilities.execute_code);
+    /** Paired with the role grant when the embedder wires `getRoleByName`;
+     *  `initializeAgent` rebuilds `bash_tool`, `read_file` and the workspace
+     *  file tools from this flag, so a denied role would otherwise keep the
+     *  code environment's file handlers. */
+    const codeEnvAvailable =
+      capabilityAllowsCodeEnv === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).runCode
+        : capabilityAllowsCodeEnv;
+    const capabilityAllowsFileSearch = capabilityEnabled(AgentCapabilities.file_search);
+    /** The same pairing for the other gated tool, read only by the resend-file
+     *  priming inside `initializeAgent`. The grant resolution is memoized on the
+     *  request, so pairing both flags costs one role read. */
+    const fileSearchAvailable =
+      capabilityAllowsFileSearch === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
+        : capabilityAllowsFileSearch;
+    /** Wired whenever the embedder supplies `getRoleByName`, independent of
+     *  `appConfig`: provider-native web search is a model parameter with no
+     *  capability of its own, so the role grant is its only gate. */
+    const { getRoleByName } = deps;
+    const resolveWebSearchGrant =
+      getRoleByName != null
+        ? async () => (await resolveToolRoleGrants({ req, getRoleByName })).webSearch
+        : undefined;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -717,6 +771,8 @@ export async function createAgentChatCompletion(
       allowedProviders,
       isInitialAgent: true,
       codeEnvAvailable,
+      fileSearchAvailable,
+      resolveWebSearchGrant,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
@@ -733,6 +789,7 @@ export async function createAgentChatCompletion(
       );
     }
     assertModelBoundContent({
+      onTraversalFailure: deps.onTraversalFailure,
       filters,
       legacyPii,
       submittedMessages,
@@ -775,7 +832,16 @@ export async function createAgentChatCompletion(
     // Create event handlers
     const eventHandlers =
       isStreaming && handlerConfig
-        ? createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions)
+        ? createOpenAIHandlers(
+            handlerConfig,
+            deps.toolExecuteOptions == null
+              ? undefined
+              : {
+                  ...deps.toolExecuteOptions,
+                  runSignal: abortController.signal,
+                  foregroundRunId: requestId,
+                },
+          )
         : {};
 
     // Convert messages to internal format

@@ -206,6 +206,7 @@ jest.mock('~/server/services/MCPRequestContext', () => ({
 
 // Import after mocks
 const ResumeAgentController = require('~/server/controllers/agents/resume');
+const { captureCodeExecutionApprovalBinding } = require('@librechat/api');
 
 /** Drain the microtask + immediate queues so the post-ACK continuation settles. */
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -427,20 +428,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
-    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace, requestBody }) => {
-      // Capture the request state the controller seeds BEFORE reconstruction.
-      capturedInit = {
-        parentMessageId: req.body.parentMessageId,
-        files: req.body.files,
-        isTemporary: req.body.isTemporary,
-        turnStartedAt: req.turnStartedAt,
-        isScheduledFire: req._isScheduledFire,
-        timezone: req.body.timezone,
-        checkpointNamespace,
-        requestBody,
-      };
-      return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
-    });
+    mockInitializeClient = jest.fn(
+      async ({ req, checkpointNamespace, foregroundRunId, requestBody }) => {
+        // Capture the request state the controller seeds BEFORE reconstruction.
+        capturedInit = {
+          parentMessageId: req.body.parentMessageId,
+          files: req.body.files,
+          isTemporary: req.body.isTemporary,
+          turnStartedAt: req.turnStartedAt,
+          isScheduledFire: req._isScheduledFire,
+          timezone: req.body.timezone,
+          checkpointNamespace,
+          foregroundRunId,
+          requestBody,
+        };
+        return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
+      },
+    );
 
     app = express();
     app.use(express.json());
@@ -856,30 +860,41 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       },
     );
 
-    it('fails closed when a versioned job marker no longer matches canonical suspension', async () => {
-      configureEventActorResume();
-      mockGenerationJobManager.getJob.mockResolvedValue(
-        makeToolApprovalJob({
-          metadata: {
-            agentEventSuspension: { version: 1, suspensionId: 'stale', attempt: 0 },
-          },
-        }),
-      );
-      mockGetAgentEventActorSnapshot.mockResolvedValue({
-        state: null,
-        epoch: 1,
-        legacyTurn: null,
-        reconciliations: [],
-        suspension: null,
-      });
+    it.each([null, 'pending_owned', 'claimed_owned'])(
+      'does not consume approval for an unsupported raw suspension state: %s',
+      async (status) => {
+        configureEventActorResume();
+        mockGenerationJobManager.getJob.mockResolvedValue(
+          makeToolApprovalJob({
+            metadata: {
+              agentEventSuspension: { version: 1, suspensionId: 'stale', attempt: 0 },
+            },
+          }),
+        );
+        mockGetAgentEventActorSnapshot.mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension:
+            status == null
+              ? null
+              : {
+                  status,
+                  actionId: ACTION_ID,
+                  jobCreatedAt: 1000,
+                  suspension: { suspensionId: 'stale', attempt: 0 },
+                },
+        });
 
-      const res = await post(approveBody());
+        const res = await post(approveBody());
 
-      expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_SUSPENSION_STALE' });
-      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
-      expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
-    });
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_SUSPENSION_STALE' });
+        expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+        expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
+      },
+    );
 
     it('fails promptly when suspension validation rejects before the job claim callback', async () => {
       configureEventActorResume();
@@ -1070,6 +1085,25 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           checkpointNamespace: '1000',
         },
       });
+
+    it('persists the server namespace when a scheduled approval pauses again', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ pendingApproval: { actionId: NEXT_ACTION_ID } }),
+        userMCPAuthMap: {},
+      });
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheduleId: 'schedule-1',
+          status: 'requires_action',
+          checkpointNamespace: '1000',
+        }),
+      );
+    });
 
     it('settles and prunes a scheduled occurrence terminalized by recovery validation', async () => {
       const scheduledJob = makeScheduledJob();
@@ -2427,6 +2461,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
     });
 
+    it('enforces the current fingerprint while retaining the rolling-deploy digest', async () => {
+      const { computeAgentRequestFingerprint, computeLegacyAgentRequestFingerprint } =
+        jest.requireActual('@librechat/api');
+      const pausedBody = {
+        endpoint: 'agents',
+        agent_id: AGENT_ID,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-a' }],
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.requestFingerprint =
+        computeLegacyAgentRequestFingerprint(pausedBody);
+      job.metadata.pendingAction.requestFingerprintV2 = computeAgentRequestFingerprint(pausedBody);
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(
+        approveBody({
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-b' }],
+        }),
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/different agent configuration/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('403 when the resume sends a different promptPrefix than the paused config', async () => {
       const { computeAgentRequestFingerprint } = jest.requireActual('@librechat/api');
       const job = makeToolApprovalJob();
@@ -2606,6 +2667,69 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {
+    const statefulCodeAgent = (bridgeWorkerId) => ({
+      id: AGENT_ID,
+      codeExecutionContext: {
+        baseUrl: 'https://bridge.example/v1',
+        codeSessionKey: `execute_code:stateful:route-a:${bridgeWorkerId}`,
+        executionProfile: 'stateful',
+        executionRouteKey: 'stateful:route-a',
+        runtimeSessionHint: 'v3:environment-a:agent-user:scope-a',
+        statefulSessions: true,
+        environmentId: 'environment-a',
+        environmentType: 'attached',
+        bridgeWorkerId,
+      },
+    });
+
+    it('resumes when the rebuilt stateful code target matches the paused approval', async () => {
+      const agent = statefulCodeAgent('worker-a');
+      const codeExecutionBinding = captureCodeExecutionApprovalBinding([agent]);
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { pendingAction: { codeExecutionBinding } } }),
+      );
+      const resumedClient = makeClient({
+        options: { agent },
+        agentConfigs: new Map(),
+      });
+      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.beginProviderExecution).toHaveBeenCalledTimes(1);
+      expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails before provider execution when the approved stateful code target changed', async () => {
+      const pausedAgent = statefulCodeAgent('worker-a');
+      const codeExecutionBinding = captureCodeExecutionApprovalBinding([pausedAgent]);
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { pendingAction: { codeExecutionBinding } } }),
+      );
+      const resumedClient = makeClient({
+        options: { agent: statefulCodeAgent('worker-b') },
+        agentConfigs: new Map(),
+      });
+      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+      expect(resumedClient.resumeCompletion).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.stringContaining('Retry the request and review the action again'),
+        1000,
+      );
+      expect(mockDisposeClient).toHaveBeenCalledWith(resumedClient);
+    });
+
     it('seals the exact paused legacy-event fence only after resumed history persists', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({ metadata: { agentEventLegacyTurnToken: 'legacy-hitl-token' } }),
@@ -2705,6 +2829,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationId: CONVO_ID,
         parentMessageId: USER_MSG_ID,
       });
+      expect(capturedInit.foregroundRunId).toBe(RESPONSE_MSG_ID);
 
       expect(mockInitializeClient).toHaveBeenCalledTimes(1);
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
@@ -2865,6 +2990,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
 
       expect(capturedInit.files).toEqual([{ file_id: 'f1' }]);
+    });
+
+    it.each([false, true])('preserves the job deadline when re-pause=%s', async (rePause) => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: { isTemporary: true, retentionExpiresAt: expiredAt.toISOString() },
+        }),
+      );
+      if (rePause) {
+        mockInitializeClient.mockResolvedValue({
+          client: makeClient({
+            pendingApproval: { actionId: NEXT_ACTION_ID },
+            contentParts: [{ type: 'text', text: 'partial' }],
+          }),
+          userMCPAuthMap: {},
+        });
+      }
+      const res = await post(approveBody({ isTemporary: false }));
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it.each([

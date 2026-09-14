@@ -43,6 +43,7 @@ import {
   recoveredSteerPayloadMatches,
   RecoveredSteerPayloadMismatchError,
 } from '~/stream/SteerRecovery';
+import { createCheckpointNamespace } from '~/stream/checkpoints';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
@@ -535,7 +536,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       createdAt,
       generationProtocolVersion: initialMetadata.generationProtocolVersion === 1 ? 1 : 2,
       ...(initialMetadata.generationProtocolVersion !== 1 && {
-        checkpointNamespace: String(createdAt),
+        checkpointNamespace: createCheckpointNamespace(userId, tenantId),
       }),
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && {
@@ -1367,6 +1368,19 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return this.getJobIdsByUser(userId, tenantId, true);
   }
 
+  async getCleanupJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  async getRetainedJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const ownerKeys = tenantId ? [`${tenantId}:${userId}`, userId] : [userId];
+    const streamIds = new Set(ownerKeys.flatMap((key) => [...(this.userJobMap.get(key) ?? [])]));
+    return [...streamIds].filter((streamId) => {
+      const job = this.jobs.get(streamId);
+      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
+    });
+  }
+
   private getJobIdsByUser(
     userId: string,
     tenantId: string | undefined,
@@ -1397,17 +1411,29 @@ export class InMemoryJobStore implements IJobStoreV2 {
       if (
         job.status === 'running' ||
         job.status === 'requires_action' ||
-        (includeUndrained && job.providerDrained === false)
+        (includeUndrained &&
+          (job.providerDrained === false ||
+            job.terminalPersistencePending === true ||
+            job.terminalHostActionPending === true))
       ) {
         if (
           job.status === 'requires_action' &&
           isPendingActionStale(job) &&
-          !(includeUndrained && job.providerDrained === false)
+          !(
+            includeUndrained &&
+            (job.providerDrained === false ||
+              job.terminalPersistencePending === true ||
+              job.terminalHostActionPending === true)
+          )
         ) {
           continue;
         }
         activeIds.push(streamId);
-      } else if (job.providerDrained !== false) {
+      } else if (
+        job.providerDrained !== false &&
+        job.terminalPersistencePending !== true &&
+        job.terminalHostActionPending !== true
+      ) {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now
         trackedIds.delete(streamId);
       }

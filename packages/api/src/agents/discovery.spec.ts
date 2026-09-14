@@ -273,6 +273,72 @@ describe('discoverConnectedAgents', () => {
     );
   });
 
+  /** A handoff agent re-hydrates the same conversation's prior-turn files, so
+   *  it has to prime them on exactly the terms its parent did — forgetting this
+   *  gives a denied role its search files back one hop later. */
+  it.each([true, false, undefined])(
+    'forwards fileSearchAvailable=%s verbatim to every handoff initializeAgent call',
+    async (fileSearchAvailable) => {
+      const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+      const getAgent = jest.fn(async () => makeAgent('B', []));
+      const checkPermission = jest.fn().mockResolvedValue(true);
+
+      await discoverConnectedAgents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          primaryConfig,
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+          fileSearchAvailable,
+        },
+        {
+          getAgent,
+          checkPermission,
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      );
+
+      expect(mockInitializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ fileSearchAvailable }),
+        expect.anything(),
+      );
+    },
+  );
+
+  /** A handoff agent's provider config can turn native web search on as well, so
+   *  dropping the resolver here would leave it ungated one hop later. */
+  it('forwards resolveWebSearchGrant to every handoff initializeAgent call', async () => {
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const resolveWebSearchGrant = jest.fn().mockResolvedValue(false);
+
+    await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resolveWebSearchGrant,
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveWebSearchGrant }),
+      expect.anything(),
+    );
+  });
+
   it('forwards normalized request metadata to every handoff initializeAgent call', async () => {
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
     const getAgent = jest.fn(async () => makeAgent('B', []));

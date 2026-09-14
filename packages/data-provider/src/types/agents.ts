@@ -93,11 +93,15 @@ export namespace Agents {
       taskId: string;
       toolName: string;
       status: 'completed' | 'error';
+      /** Additive rolling-deploy-compatible cancellation discriminator. */
+      cancelled?: true;
       settledAt: Date;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
         claimedAt: Date;
+        /** Response generation that owns a manual delivery claim. */
+        generationId?: string;
       };
     };
     /** The tool call was rejected before execution because its input failed schema validation. */
@@ -420,6 +424,8 @@ export namespace Agents {
     tool_call_id: string;
     /** Optional human-readable description shown alongside the prompt */
     description?: string;
+    /** Server-authored provenance. Absent for user, MCP, action, and older tool calls. */
+    source?: 'librechat_code';
   }
 
   /**
@@ -533,6 +539,8 @@ export namespace Agents {
      * so the id check can't.
      */
     requestFingerprint?: string;
+    /** Current-version fingerprint; server-only and omitted from client projections. */
+    requestFingerprintV2?: string;
     /**
      * Graph-determining request fields (endpoint, agent_id, model, spec, promptPrefix,
      * ephemeralAgent) captured at pause. The resume route REPLAYS these onto the request
@@ -540,6 +548,24 @@ export namespace Agents {
      * no longer reconstruct the ephemeral config — still rebuilds the same agent/graph.
      */
     resumeContext?: Record<string, unknown>;
+    /**
+     * Opaque, server-only identity of the stateful code targets selected when a
+     * tool approval paused. Resume rejects a changed target before provider or
+     * tool execution so an approval cannot migrate to another VM or workspace.
+     */
+    codeExecutionBinding?: CodeExecutionApprovalBinding;
+  }
+
+  export interface CodeExecutionApprovalTargetBinding {
+    /** Agent identity when available; anonymous ephemeral agents use null. */
+    agentId: string | null;
+    /** SHA-256 of the resolved route, worker and runtime-session identity. */
+    targetHash: string;
+  }
+
+  export interface CodeExecutionApprovalBinding {
+    version: 1;
+    targets: CodeExecutionApprovalTargetBinding[];
   }
 
   /**

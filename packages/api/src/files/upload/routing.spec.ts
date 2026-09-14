@@ -1,0 +1,106 @@
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { ServerRequest } from '~/types';
+import { resolveUploadEndpoint, resolveEffectiveToolResource } from './routing';
+
+describe('resolveUploadEndpoint', () => {
+  const req = { user: { id: 'user-1' } } as unknown as ServerRequest;
+
+  beforeEach(() => {
+    delete (req as unknown as { _uploadAgentCache?: unknown })._uploadAgentCache;
+  });
+
+  it('reads the agent so its provider governs an agent upload', async () => {
+    const getAgent = jest.fn().mockResolvedValue({ provider: 'Custom Provider' });
+
+    const endpoint = await resolveUploadEndpoint({
+      req,
+      metadata: { endpoint: EModelEndpoint.agents, agent_id: 'agent_saved01' },
+      getAgent,
+    });
+
+    expect(endpoint).toBe('Custom Provider');
+    expect(getAgent).toHaveBeenCalled();
+  });
+
+  it('ignores an agent id on an assistants upload', async () => {
+    /* Assistants have their own pipeline and skip the agent authorization gate, so
+     * resolving the named agent here would let its provider shape the validation errors
+     * an unauthorized caller sees. */
+    const getAgent = jest.fn().mockResolvedValue({ provider: 'Custom Provider' });
+
+    const endpoint = await resolveUploadEndpoint({
+      req,
+      metadata: { endpoint: EModelEndpoint.assistants, agent_id: 'agent_victim01' },
+      getAgent,
+    });
+
+    expect(endpoint).toBe(EModelEndpoint.assistants);
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+
+  it('leaves an upload naming no agent alone', async () => {
+    const getAgent = jest.fn();
+
+    const endpoint = await resolveUploadEndpoint({
+      req,
+      metadata: { endpoint: EModelEndpoint.openAI },
+      getAgent,
+    });
+
+    expect(endpoint).toBe(EModelEndpoint.openAI);
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveEffectiveToolResource Responses handling', () => {
+  const makeReq = () =>
+    ({
+      user: { id: 'user-1' },
+      file: { mimetype: 'application/pdf' },
+      config: { fileConfig: undefined },
+    }) as unknown as ServerRequest;
+
+  it('treats the multipart string form of the Responses flag as set', async () => {
+    /* Form data has no booleans, so the flag arrives as "true" and a strict comparison
+     * would route an Azure PDF to extracted text on a deployment that carries it. */
+    const withString = await resolveEffectiveToolResource({
+      req: makeReq(),
+      metadata: { endpoint: 'azureOpenAI', useResponsesApi: 'true' },
+      getAgent: jest.fn(),
+    });
+    const withoutFlag = await resolveEffectiveToolResource({
+      req: makeReq(),
+      metadata: { endpoint: 'azureOpenAI' },
+      getAgent: jest.fn(),
+    });
+
+    expect(withString).toBeUndefined();
+    expect(withoutFlag).toBe('context');
+  });
+
+  it('does not classify audio as a context upload when no STT provider is usable', async () => {
+    /* Transcription needs exactly one non-empty provider block. A schema holding only
+     * allowedAddresses reports STT present while the service refuses it, so calling this
+     * a context upload promises a transcript the preflight then waits on. */
+    const makeAudioReq = (stt: Record<string, unknown>) =>
+      ({
+        user: { id: 'user-1' },
+        file: { mimetype: 'audio/mpeg' },
+        config: { fileConfig: undefined, speech: { stt } },
+      }) as unknown as ServerRequest;
+
+    const unusable = await resolveEffectiveToolResource({
+      req: makeAudioReq({ allowedAddresses: ['127.0.0.1'] }),
+      metadata: { endpoint: EModelEndpoint.openAI },
+      getAgent: jest.fn(),
+    });
+    const usable = await resolveEffectiveToolResource({
+      req: makeAudioReq({ openai: { apiKey: 'sk-test' } }),
+      metadata: { endpoint: EModelEndpoint.openAI },
+      getAgent: jest.fn(),
+    });
+
+    expect(unusable).not.toBe('context');
+    expect(usable).toBe('context');
+  });
+});

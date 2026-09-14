@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.15
+version: 1.3.16
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -223,7 +223,13 @@ interface:
   #   maxPerUser: 10
   #   minIntervalMinutes: 60
   #   autoDisableAfterFailures: 5
+  #   # Maximum occurrences concurrently passing readiness admission per replica (1-100).
+  #   admissionConcurrency: 20
   #   fireConcurrency: 5
+  #   # Maximum MCP readiness connections opened at once by one schedule admission (1-10).
+  #   mcpPreflightConcurrency: 3
+  #   # Maximum wall-clock time for one MCP readiness admission (1000-600000 ms).
+  #   mcpPreflightTimeoutMs: 300000
   #   # Require every schedule to be filed under a chat project. Enforced on
   #   # create/update AND at each fire, so turning it on stops (auto-disables)
   #   # schedules that predate it rather than letting their runs land loose.
@@ -241,6 +247,26 @@ interface:
   fileCitations: true
   # Show the thumbs up/thumbs down feedback buttons on responses (default: true)
   feedback: true
+  # Conversation trace viewer: a waterfall of the model calls and tool spans behind
+  # each response, read from the deployment's Langfuse project. The control only
+  # appears on the requesting user's own conversations with a sampled trace, and
+  # needs a Langfuse release that serves the v2 Observations API.
+  # traceViewer:
+  #   enabled: false
+  #   # Traces are matched to users by the internal user id, so no trace is shown while
+  #   # langfuse.trace.userIdField exports another user field.
+  #   # Return observation input, output and metadata in the record inspector. Input
+  #   # carries system prompts, agent instructions and tool definitions, which a
+  #   # user chatting with a shared agent cannot otherwise see.
+  #   showInputOutput: false
+  #   # Observations read per request (1-10000); older records load on demand.
+  #   maxRecords: 1000
+  #   # Characters kept from each input, output and metadata value (1-1000000).
+  #   maxContentLength: 50000
+  #   # Trace reads one user may start per minute (1-1000).
+  #   requestsPerMinute: 30
+  #   # Budget for each request to Langfuse, in milliseconds (1000-300000).
+  #   requestTimeoutMs: 10000
   # Tools pinned to the prompt bar by default for all users.
   # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
   # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
@@ -266,6 +292,9 @@ interface:
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
+  #   # Poll only while MCP controls are visible, in milliseconds (0 disables polling).
+  #   toolsRefreshInterval: 300000
+  #   statusRefreshInterval: 30000
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers
   # - create: Allow users to create and manage new MCP servers
@@ -286,6 +315,10 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Regular chat retention in hours under retentionMode: "all" (min: 1, max: 8760).
+  # Defaults to the temporary chat retention policy when omitted.
+  # generalChatRetention: 2160 # 90 days, independently of temporary chats
+  # Existing stored deadlines are not migrated when these settings change.
   # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
   # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
   # that should stop expiring:
@@ -311,6 +344,12 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
+  # How long a started social login may take to return from the provider (ms, default 600000)
+  # oauthStateTtlMs: 600000
+  # OpenID discovery retries when the provider is unreachable (overrides OPENID_DISCOVERY_RETRY_* env vars)
+  # openidDiscovery:
+  #   startupAttempts: 1   # attempts before startup continues; 0 = background retries only
+  #   retryDelayMs: 5000   # delay between startup and background attempts
 
 # Example Balance settings
 # balance:
@@ -320,6 +359,7 @@ registration:
 #   refillIntervalValue: 30
 #   refillIntervalUnit: 'days'
 #   refillAmount: 10000
+#   reservationTtlMs: 1800000  # How long an in-flight request's reserved credits count if never released
 
 # Example Transactions settings
 # Controls whether to save transaction records to the database
@@ -474,6 +514,14 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   private-openid:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     headers:
+#       # Trusted operator configs automatically use the live session token and replace the
+#       # connection once after a 401/403. A rejected tools/call is never replayed automatically.
+#       # Enabled oauth or obo configuration takes precedence over this passthrough mode.
+#       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
 #   puppeteer:
 #     type: stdio
 #     command: npx
@@ -568,6 +616,19 @@ endpoints:
   #   # (optional) Maximum explicit subagents per agent, for both the flat list and
   #   # graph definitions. Defaults to 10; hard cap 50.
   #   maxSubagents: 20
+  #   # (optional) Shared files during an active agent run. Each delegating agent must
+  #   # also opt in with subagents.shareFiles. Inputs are read-only; outputs stay
+  #   # private until explicitly published. Published files remain downloadable.
+  #   fileSharing:
+  #     enabled: false
+  #     allowSiblingSharing: false # permit explicitly named sibling/descendant recipients
+  #     maxFiles: 100 # manifest capacity, 1–1000
+  #     maxPrivateBytes: 268435456 # aggregate private output snapshots, 256 MiB
+  #     ttlMs: 3600000 # active manifest lifetime, at most 24 hours
+  #   # (optional) Maximum concurrent Code API uploads per route and user. Defaults to 3.
+  #   codeApiUploadConcurrency: 3
+  #   # (optional) Maximum total time spent waiting on Code API rate limits. Defaults to 20000 ms.
+  #   codeApiMaxRetryWaitMs: 20000
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
@@ -615,11 +676,19 @@ endpoints:
   #         owner: deployment
   #         # Optionally expose only these bounded preferences to environment owners.
   #         configSchema:
+  #           limits:
+  #             # Maximum Bash execution budget the model may request per call.
+  #             # Omit to preserve the historical 30-second limit. Hard cap: 300000.
+  #             maxCommandTimeoutMs: 120000
   #           permissions:
   #             fileWrite:
   #               allowed: [allow, ask, deny]
   #               default: ask
   #             commandExecution:
+  #               # Add allow to offer Full access in the chat composer. Both
+  #               # permission categories must permit allow; defaults can stay ask.
+  #               # Full access skips routine code prompts within the worker sandbox.
+  #               # Explicit endpoint ask/deny rules and hooks still apply.
   #               allowed: [ask, deny]
   #               default: ask
   #         pairing:
@@ -633,6 +702,8 @@ endpoints:
   #   # Enabled by default; set false to keep background tools and subagents poll-only.
   #   backgroundTasks:
   #     completionWakeups: true
+  #     # Allow owners to cooperatively cancel ordinary background tools, including BYOM Bash.
+  #     ordinaryToolCancellation: false
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
@@ -1019,7 +1090,11 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   fileContextSizeLimit: 128  # Maximum aggregate model-bound attachment size in one agent turn (MB)
+#   fileContextCharLimit: 1000000  # Maximum aggregate extracted-text characters in one agent turn
 #   endpoints:
+#     agents:
+#       fileLimit: 10
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB

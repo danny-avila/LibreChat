@@ -7,6 +7,7 @@ const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schem
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const {
   enrichRemoteAgentPrincipals,
+  createPrincipalSearch,
   backfillRemoteAgentPermissions,
   auditInsightsPermissionChanges,
   getInsightsPrincipalState,
@@ -471,120 +472,13 @@ const getUserEffectivePermissions = async (req, res) => {
  * Supports hybrid local database + Entra ID search when configured
  * @route GET /api/permissions/search-principals
  */
-const searchPrincipals = async (req, res) => {
-  try {
-    const { q: rawQuery, limit = 20, types } = req.query;
-
-    if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0) {
-      return res.status(400).json({
-        error: 'Query parameter "q" is required and must not be empty',
-      });
-    }
-
-    const query = rawQuery.trim();
-
-    if (query.length < 2) {
-      return res.status(400).json({
-        error: 'Query must be at least 2 characters long',
-      });
-    }
-
-    const searchLimit = Math.min(Math.max(1, parseInt(limit) || 10), 50);
-
-    let typeFilters = null;
-    if (types) {
-      const typesArray = Array.isArray(types) ? types : types.split(',');
-      const validTypes = typesArray.filter((t) =>
-        [PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE].includes(t),
-      );
-      typeFilters = validTypes.length > 0 ? validTypes : null;
-    }
-
-    const localResults = await db.searchPrincipals(query, searchLimit, typeFilters);
-    let allPrincipals = [...localResults];
-
-    const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
-
-    if (useEntraId && localResults.length < searchLimit) {
-      try {
-        let graphType = 'all';
-        if (typeFilters && typeFilters.length === 1) {
-          const graphTypeMap = {
-            [PrincipalType.USER]: 'users',
-            [PrincipalType.GROUP]: 'groups',
-          };
-          const mappedType = graphTypeMap[typeFilters[0]];
-          if (mappedType) {
-            graphType = mappedType;
-          }
-        }
-
-        const authHeader = req.headers.authorization;
-        const accessToken =
-          authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        if (accessToken) {
-          const graphResults = await searchEntraIdPrincipals(
-            accessToken,
-            req.user.openidId,
-            query,
-            graphType,
-            searchLimit - localResults.length,
-          );
-
-          const localEmails = new Set(
-            localResults.map((p) => p.email?.toLowerCase()).filter(Boolean),
-          );
-          const localGroupSourceIds = new Set(
-            localResults.map((p) => p.idOnTheSource).filter(Boolean),
-          );
-
-          for (const principal of graphResults) {
-            const isDuplicateByEmail =
-              principal.email && localEmails.has(principal.email.toLowerCase());
-            const isDuplicateBySourceId =
-              principal.idOnTheSource && localGroupSourceIds.has(principal.idOnTheSource);
-
-            if (!isDuplicateByEmail && !isDuplicateBySourceId) {
-              allPrincipals.push(principal);
-            }
-          }
-        }
-      } catch (graphError) {
-        logger.warn('Graph API search failed, falling back to local results:', graphError.message);
-      }
-    }
-    const scoredResults = allPrincipals.map((item) => ({
-      ...item,
-      _searchScore: db.calculateRelevanceScore(item, query),
-    }));
-
-    const finalResults = db
-      .sortPrincipalsByRelevance(scoredResults)
-      .slice(0, searchLimit)
-      .map((result) => {
-        const { _searchScore, ...resultWithoutScore } = result;
-        return resultWithoutScore;
-      });
-
-    res.status(200).json({
-      query,
-      limit: searchLimit,
-      types: typeFilters,
-      results: finalResults,
-      count: finalResults.length,
-      sources: {
-        local: finalResults.filter((r) => r.source === 'local').length,
-        entra: finalResults.filter((r) => r.source === 'entra').length,
-      },
-    });
-  } catch (error) {
-    logger.error('Error searching principals:', error);
-    res.status(500).json({
-      error: 'Failed to search principals',
-    });
-  }
-};
+const searchPrincipals = createPrincipalSearch({
+  searchPrincipals: db.searchPrincipals,
+  calculateRelevanceScore: db.calculateRelevanceScore,
+  sortPrincipalsByRelevance: db.sortPrincipalsByRelevance,
+  entraIdPrincipalFeatureEnabled,
+  searchEntraIdPrincipals,
+});
 
 /**
  * Get user's effective permissions for all accessible resources of a type

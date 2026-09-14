@@ -14,6 +14,10 @@ module.exports = (run, context) => {
       { path: 'workspace/proof.txt', old_text: 'native-original', new_text: 'native-edited' },
     ],
     read: ['read_file', { path: 'workspace/proof.txt' }],
+    fullCreate: [
+      'create_file',
+      { path: 'workspace/unattended.txt', content: 'native-unattended', overwrite: false },
+    ],
     reject: [
       'create_file',
       { path: 'workspace/rejected.txt', content: 'must-not-exist', overwrite: false },

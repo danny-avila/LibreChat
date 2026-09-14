@@ -3,13 +3,14 @@ const {
   assertConversationImportWriteSize,
   assertModelBoundContent,
   assertConversationImportContentAllowed,
+  reportLocatorTraversalFailure,
   executeConversationImportWrites,
 } = require('@librechat/api');
 const {
   getTenantId,
   logger,
   createFallbackRetentionDate,
-  createTempChatExpirationDate,
+  createChatExpirationDate,
 } = require('@librechat/data-schemas');
 const {
   EModelEndpoint,
@@ -56,6 +57,7 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters, legac
 async function assertConversationContentAllowed(filters, snapshot, resolutionContext = {}) {
   return assertConversationImportContentAllowed(filters, snapshot, {
     ...resolutionContext,
+    onTraversalFailure: reportLocatorTraversalFailure,
     assertModelBoundContent,
   });
 }
@@ -94,7 +96,7 @@ class ImportBatchBuilder {
     try {
       this.retentionFields = {
         isTemporary: false,
-        expiredAt: createTempChatExpirationDate(this.interfaceConfig),
+        expiredAt: createChatExpirationDate(this.interfaceConfig),
       };
     } catch (error) {
       logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);

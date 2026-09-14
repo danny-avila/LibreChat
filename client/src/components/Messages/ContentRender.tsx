@@ -11,11 +11,11 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
-import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import { useLocalize, useAttachments, useMessageActions, useContentMetadata } from '~/hooks';
 import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
-import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
+import { getHeaderHoverLabel } from '~/components/Chat/Messages/ui/HeaderLabel';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -100,6 +100,7 @@ const ContentRender = memo(function ContentRender({
     getCanCopy,
     regenerateMessage,
     latestMessageDepth,
+    hasConfiguredSender,
   } = useMessageActions({
     message: msg,
     searchResults,
@@ -158,7 +159,8 @@ const ContentRender = memo(function ContentRender({
       id={msg.messageId}
       icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
       label={messageLabel ?? ''}
-      hoverLabel={getHeaderModelName(
+      hoverLabel={getHeaderHoverLabel(
+        hasConfiguredSender,
         agent?.model,
         assistant?.model,
         msg.model,
@@ -173,6 +175,17 @@ const ContentRender = memo(function ContentRender({
       isEditing={edit}
       footer={
         <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
+          {/* The reading holds the column start: it takes over the slot the streaming
+              dot vacates, so the retry navigation beside it — whose width the footer
+              reserves whether or not hover has revealed it — must never push the
+              timer inboard of that column. */}
+          {shouldShowElapsed({
+            isSubmitting,
+            isLatestMessage,
+            isCreatedByUser: msg.isCreatedByUser,
+            siblingIdx,
+            siblingCount,
+          }) && <Elapsed index={index} />}
           {/* While the answer is generating every other action is withheld, which
               would otherwise leave this counter sitting alone under a half-written
               response. It reveals on hover there, like the actions it sits with. */}
@@ -182,13 +195,6 @@ const ContentRender = memo(function ContentRender({
             setSiblingIdx={setSiblingIdx}
             className={cn(isSubmitting && isLatestMessage && revealOnRowHoverClasses)}
           />
-          {shouldShowElapsed({
-            isSubmitting,
-            isLatestMessage,
-            isCreatedByUser: msg.isCreatedByUser,
-            siblingIdx,
-            siblingCount,
-          }) && <Elapsed index={index} />}
           <HoverButtons
             index={index}
             message={msg}

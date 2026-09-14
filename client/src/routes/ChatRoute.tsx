@@ -4,7 +4,13 @@ import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import {
+  Constants,
+  EModelEndpoint,
+  PermissionBits,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+} from 'librechat-data-provider';
 import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
   defaultSpecAwaitsAgents,
@@ -55,8 +61,6 @@ export default function ChatRoute() {
       },
     [],
   );
-  useAppStartup({ startupConfig, user });
-
   const index = 0;
   const [searchParams, setSearchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
@@ -64,6 +68,10 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
+  const mcpWarmupAllowed =
+    conversation != null &&
+    !(isAgentsEndpoint(conversation.endpoint) && isEphemeralAgentId(conversation.agent_id ?? ''));
+  useAppStartup({ startupConfig, user, mcpWarmupAllowed });
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();

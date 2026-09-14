@@ -296,6 +296,46 @@ describe('PermissionService', () => {
       expect(principalId).toBe(currentUser._id.toString());
     });
 
+    test('accepts a directory user already linked to the supplied source id', async () => {
+      const directoryUser = await User.create({
+        name: 'ACL Principal Directory User',
+        email: 'acl-principal-directory-user@example.com',
+        provider: 'openid',
+        idOnTheSource: 'directory-user-id',
+      });
+
+      const principalId = await ensurePrincipalExists({
+        type: PrincipalType.USER,
+        name: directoryUser.name,
+        email: directoryUser.email,
+        source: 'entra',
+        idOnTheSource: directoryUser.idOnTheSource,
+      });
+
+      expect(principalId).toBe(directoryUser._id.toString());
+    });
+
+    test('uses an existing user found only by email without linking its identity', async () => {
+      const existingUser = await User.create({
+        name: 'ACL Principal Existing User',
+        email: 'acl-principal-existing-user@example.com',
+        provider: 'local',
+      });
+
+      const principalId = await ensurePrincipalExists({
+        type: PrincipalType.USER,
+        name: existingUser.name,
+        email: existingUser.email,
+        source: 'entra',
+        idOnTheSource: 'unlinked-directory-id',
+      });
+
+      const unchangedUser = await User.findById(existingUser._id).lean();
+      expect(principalId).toBe(existingUser._id.toString());
+      expect(unchangedUser.provider).toBe('local');
+      expect(unchangedUser.idOnTheSource).toBeUndefined();
+    });
+
     test('rejects a local group id outside the current request context', async () => {
       const outsideGroup = await Group.create({
         name: 'ACL Principal Outside Group',

@@ -119,6 +119,23 @@ describe('processAddedConvo', () => {
     );
   });
 
+  /** The added convo re-hydrates the same conversation's prior-turn files, so a
+   *  denied `FILE_SEARCH` grant has to travel with it — otherwise the parallel
+   *  agent primes the search files the primary just skipped. `undefined` stays
+   *  `undefined`, which leaves priming unconditional for callers that never
+   *  resolved the grant. */
+  it.each([true, false, undefined])(
+    'forwards fileSearchAvailable=%s verbatim to the added-convo initializeAgent call',
+    async (fileSearchAvailable) => {
+      await processAddedConvo(baseParams({ fileSearchAvailable }));
+
+      expect(mockInitializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ fileSearchAvailable }),
+        expect.anything(),
+      );
+    },
+  );
+
   it('forwards codeEnvAvailable=false verbatim (not coerced to undefined)', async () => {
     /* Symmetric coverage: if the runtime gate is off for the primary, the
        parallel agent must not accidentally re-enable code execution via a
