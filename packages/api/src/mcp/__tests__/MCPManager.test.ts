@@ -12,6 +12,7 @@ import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
 import {
+  getMCPConnectionPoolKey,
   getMCPUserConnectionPoolKey,
   MCP_APPS_CAPABILITY_PROFILE,
   STANDARD_MCP_CAPABILITY_PROFILE,
@@ -613,7 +614,7 @@ describe('MCPManager', () => {
       );
     });
 
-    it('should catch synchronous errors from getUserConnections', async () => {
+    it('should catch synchronous errors from the profile pool lookup', async () => {
       (MCPServerInspector.getToolCatalog as jest.Mock) = jest.fn().mockResolvedValue({ tools: {} });
 
       mockAppConnections({
@@ -622,7 +623,10 @@ describe('MCPManager', () => {
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
-      const spy = jest.spyOn(manager, 'getUserConnections').mockImplementation(() => {
+      const userConnections = (
+        manager as unknown as { userConnections: Map<string, Map<string, MCPConnection>> }
+      ).userConnections;
+      const spy = jest.spyOn(userConnections, 'get').mockImplementation(() => {
         throw new Error('Failed to get user connections');
       });
 
@@ -682,7 +686,12 @@ describe('MCPManager', () => {
         userConnections: Map<string, Map<string, MCPConnection>>;
         waitForConnectionBorrowersToDrain: (connection: MCPConnection) => Promise<void>;
       };
-      lifecycle.userConnections.set(userId, new Map([[serverName, connection]]));
+      lifecycle.userConnections.set(
+        userId,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
 
       const toolsPromise = manager.getServerToolFunctions(userId, serverName);
       await new Promise((resolve) => setImmediate(resolve));
@@ -720,7 +729,12 @@ describe('MCPManager', () => {
         >;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(userId, new Map([[serverName, staleConnection]]));
+      internals.userConnections.set(
+        userId,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), staleConnection],
+        ]),
+      );
       internals.oauthRecoveries.set(staleConnection, {
         promise: recovery,
         allowsTakeover: true,
@@ -731,7 +745,15 @@ describe('MCPManager', () => {
 
       expect(MCPServerInspector.getToolCatalog).not.toHaveBeenCalled();
 
-      internals.userConnections.set(userId, new Map([[serverName, recoveredConnection]]));
+      internals.userConnections.set(
+        userId,
+        new Map([
+          [
+            getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            recoveredConnection,
+          ],
+        ]),
+      );
       internals.oauthRecoveries.delete(staleConnection);
       resolveRecovery?.();
 
@@ -791,7 +813,12 @@ describe('MCPManager', () => {
       const internals = manager as unknown as {
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(userId, new Map([[serverName, overlayConnection]]));
+      internals.userConnections.set(
+        userId,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), overlayConnection],
+        ]),
+      );
 
       await expect(
         manager.getServerToolFunctionsSnapshot(userId, serverName, overlayConfig),
@@ -811,6 +838,7 @@ describe('MCPManager', () => {
 
     function createConnection(): MCPConnection {
       return {
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
         timeout: 30000,
@@ -844,7 +872,15 @@ describe('MCPManager', () => {
       const activeConnection = createConnection();
       const replacementConnection = createConnection();
       const internals = getManagerInternals(manager);
-      internals.userConnections.set(mockUser.id, new Map([[serverName, replacementConnection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [
+            getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            replacementConnection,
+          ],
+        ]),
+      );
       jest.spyOn(manager, 'getConnection').mockResolvedValue(activeConnection);
       const updateActivity = jest.spyOn(internals, 'updateUserLastActivity');
 
@@ -1775,6 +1811,7 @@ describe('MCPManager', () => {
     function createConnection(request: jest.Mock) {
       const emitter = new EventEmitter();
       return Object.assign(emitter, {
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         client: { request },
         connect: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn().mockResolvedValue(undefined),
@@ -2418,7 +2455,12 @@ describe('MCPManager', () => {
       const internals = manager as unknown as {
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
 
       const toolPromise = callTool(manager);
       await new Promise((resolve) => setImmediate(resolve));
@@ -2694,7 +2736,12 @@ describe('MCPManager', () => {
         >;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
       internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
 
       const connectionPromise = manager.getUserConnection({
@@ -2741,7 +2788,12 @@ describe('MCPManager', () => {
         >;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
 
       const connectionPromise = manager.getUserConnection({
         serverName,
@@ -2792,7 +2844,12 @@ describe('MCPManager', () => {
         releaseConnection: (connection: MCPConnection) => Promise<void>;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, staleConnection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), staleConnection],
+        ]),
+      );
       internals.retainConnection(staleConnection);
       internals.oauthRecoveries.set(staleConnection, {
         promise: recovery,
@@ -2832,7 +2889,12 @@ describe('MCPManager', () => {
         >;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
       internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
       const controller = new AbortController();
       const abortReason = new Error('request aborted');
@@ -2874,7 +2936,15 @@ describe('MCPManager', () => {
       };
       (
         manager as unknown as { userConnections: Map<string, Map<string, MCPConnection>> }
-      ).userConnections.set(mockUser.id, new Map([[serverName, unusableConnection]]));
+      ).userConnections.set(
+        mockUser.id,
+        new Map([
+          [
+            getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            unusableConnection,
+          ],
+        ]),
+      );
       lifecycle.retainConnection(unusableConnection);
 
       await expect(
@@ -2910,7 +2980,15 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       (
         manager as unknown as { userConnections: Map<string, Map<string, MCPConnection>> }
-      ).userConnections.set(mockUser.id, new Map([[serverName, unusableConnection]]));
+      ).userConnections.set(
+        mockUser.id,
+        new Map([
+          [
+            getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            unusableConnection,
+          ],
+        ]),
+      );
 
       await expect(
         manager.getUserConnection({
@@ -2936,7 +3014,12 @@ describe('MCPManager', () => {
         refreshToolList: jest.fn().mockResolvedValue(undefined),
       } as unknown as MCPConnection;
       const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
-        connections: new Map([[`${mockUser.id}:${serverName}`, requestConnection]]),
+        connections: new Map([
+          [
+            getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            requestConnection,
+          ],
+        ]),
         pending: new Map(),
       };
       const bodyScopedConfig: t.ParsedServerConfig = {
@@ -2995,7 +3078,12 @@ describe('MCPManager', () => {
         >;
         userConnections: Map<string, Map<string, MCPConnection>>;
       };
-      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        mockUser.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
       internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
 
       await expect(
@@ -3769,6 +3857,7 @@ describe('MCPManager', () => {
         finishConnectionCheck = resolve;
       });
       const connection = {
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         isConnected: jest.fn().mockReturnValueOnce(connectionCheck).mockResolvedValue(true),
         isStale: jest.fn().mockReturnValue(false),
       } as unknown as MCPConnection;
@@ -3792,7 +3881,12 @@ describe('MCPManager', () => {
           }
         >;
       };
-      internals.userConnections.set(user.id, new Map([[serverName, connection]]));
+      internals.userConnections.set(
+        user.id,
+        new Map([
+          [getMCPConnectionPoolKey(serverName, STANDARD_MCP_CAPABILITY_PROFILE), connection],
+        ]),
+      );
       const directBearerRecoveryState: t.DirectBearerRecoveryState = { attempted: false };
       const sharedState: t.DirectBearerRecoveryState = { attempted: true };
 
@@ -3984,6 +4078,7 @@ describe('MCPManager', () => {
         },
       };
       const connection = {
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
         stopReconnecting: jest.fn(),
@@ -3995,7 +4090,12 @@ describe('MCPManager', () => {
         isConnected: jest.fn().mockResolvedValue(true),
       } as unknown as MCPConnection;
       const requestScopedConnections = {
-        connections: new Map([[`${user.id}:${serverName}`, connection]]),
+        connections: new Map([
+          [
+            getMCPUserConnectionPoolKey(user.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            connection,
+          ],
+        ]),
         pending: new Map(),
       };
       const upstreamTokenProvider = jest
@@ -4061,7 +4161,10 @@ describe('MCPManager', () => {
       async (abortAt) => {
         const controller = new AbortController();
         const cancelled = new Error('request stopped');
-        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const connection = {
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+          stopReconnecting: jest.fn(),
+        } as unknown as MCPConnection;
         const upstreamTokenProvider = jest.fn(async () => {
           if (abortAt === 'refresh') {
             controller.abort(cancelled);
@@ -4128,7 +4231,10 @@ describe('MCPManager', () => {
           entered();
           await gate;
         };
-        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const connection = {
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+          stopReconnecting: jest.fn(),
+        } as unknown as MCPConnection;
         const replacement = {} as MCPConnection;
         const upstreamTokenProvider = jest.fn(async () => {
           if (stage === 'refresh') {
@@ -4190,7 +4296,10 @@ describe('MCPManager', () => {
       'accounts for a borrower before it can join recovery (joins=%s)',
       async (joins) => {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
-        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const connection = {
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+          stopReconnecting: jest.fn(),
+        } as unknown as MCPConnection;
         const controller = new AbortController();
         let finish!: () => void;
         let entered!: () => void;
@@ -4239,6 +4348,7 @@ describe('MCPManager', () => {
 
     it('fences a delayed direct-bearer replacement when the server config mutates', async () => {
       const connection = {
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         stopReconnecting: jest.fn(),
       } as unknown as MCPConnection;
       let finishRefresh: ((tokens: { access_token: string }) => void) | undefined;
@@ -4318,6 +4428,7 @@ describe('MCPManager', () => {
 
     const connection = (request: jest.Mock, tools = [{ name: 'do_thing', _meta: {} }]) =>
       ({
+        capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
         createdAt: 1,
         toolListVersion: 1,
         isConnected: jest.fn().mockResolvedValue(true),
@@ -4678,7 +4789,10 @@ describe('MCPManager', () => {
         manager as unknown as {
           userConnections: Map<string, Map<string, MCPConnection>>;
         }
-      ).userConnections.set(user.id, new Map([['srv', appConnection]]));
+      ).userConnections.set(
+        user.id,
+        new Map([[getMCPConnectionPoolKey('srv', MCP_APPS_CAPABILITY_PROFILE), appConnection]]),
+      );
       const signal = new AbortController().signal;
 
       await manager.listResources({ ...context('srv', config, { signal }), cursor: 'next' });
@@ -4800,7 +4914,10 @@ describe('MCPManager', () => {
         manager as unknown as {
           userConnections: Map<string, Map<string, MCPConnection>>;
         }
-      ).userConnections.set(user.id, new Map([['srv', stale]]));
+      ).userConnections.set(
+        user.id,
+        new Map([[getMCPConnectionPoolKey('srv', MCP_APPS_CAPABILITY_PROFILE), stale]]),
+      );
       let refreshStarted!: () => void;
       const started = new Promise<void>((resolve) => {
         refreshStarted = resolve;
@@ -5724,6 +5841,7 @@ describe('MCPManager', () => {
           userId,
           serverName,
           serverConfig,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         });
       } finally {
         notifySpy.mockRestore();
@@ -6076,9 +6194,14 @@ describe('MCPManager', () => {
           }
         ).activeConnectionCreations;
 
-        expect(activeCreations.get(`${userId}:${serverName}`)?.size).toBe(1);
+        const poolKey = getMCPUserConnectionPoolKey(
+          userId,
+          serverName,
+          STANDARD_MCP_CAPABILITY_PROFILE,
+        );
+        expect(activeCreations.get(poolKey)?.size).toBe(1);
         await expect(creation).resolves.toBe(connection);
-        expect(activeCreations.has(`${userId}:${serverName}`)).toBe(false);
+        expect(activeCreations.has(poolKey)).toBe(false);
       },
     );
 
@@ -6351,7 +6474,17 @@ describe('MCPManager', () => {
 
         /** A creation re-established while disposal is still awaited publishes its own catalog;
          *  a cancellation issued after that point would drop the replacement's pending change. */
-        expect(cancelSpy).toHaveBeenCalledWith({ userId, serverName });
+        expect(cancelSpy).toHaveBeenNthCalledWith(1, {
+          userId,
+          serverName,
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+        });
+        expect(cancelSpy).toHaveBeenNthCalledWith(2, {
+          userId,
+          serverName,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+        });
+        expect(cancelSpy).toHaveBeenCalledTimes(2);
         expect(cancelSpy.mock.invocationCallOrder[0]).toBeLessThan(
           (connection.dispose as jest.Mock).mock.invocationCallOrder[0],
         );
@@ -6368,7 +6501,28 @@ describe('MCPManager', () => {
       expect(clearRecoveryState).not.toHaveBeenCalled();
 
       await manager.disconnectUserConnection(userId, serverName);
-      expect(clearRecoveryState).toHaveBeenCalledWith(userId, serverName, undefined);
+      expect(clearRecoveryState).toHaveBeenNthCalledWith(
+        1,
+        userId,
+        serverName,
+        undefined,
+        undefined,
+      );
+      expect(clearRecoveryState).toHaveBeenNthCalledWith(
+        2,
+        userId,
+        serverName,
+        undefined,
+        STANDARD_MCP_CAPABILITY_PROFILE,
+      );
+      expect(clearRecoveryState).toHaveBeenNthCalledWith(
+        3,
+        userId,
+        serverName,
+        undefined,
+        MCP_APPS_CAPABILITY_PROFILE,
+      );
+      expect(clearRecoveryState).toHaveBeenCalledTimes(3);
     });
 
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
@@ -6584,6 +6738,7 @@ describe('MCPManager', () => {
           serverName,
           serverConfig,
           publicationGeneration: 'generation-a',
+          capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
         });
       } finally {
         generationSpy.mockRestore();
@@ -7359,7 +7514,12 @@ describe('MCPManager', () => {
       } as unknown as MCPConnection;
       const replacement = newUserConnection();
       const store = {
-        connections: new Map([[`${mockUser.id}:${serverName}`, oldConnection]]),
+        connections: new Map([
+          [
+            getMCPUserConnectionPoolKey(mockUser.id, serverName, STANDARD_MCP_CAPABILITY_PROFILE),
+            oldConnection,
+          ],
+        ]),
         pending: new Map(),
       };
       const manager = await MCPManager.createInstance(newMCPServersConfig());
