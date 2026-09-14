@@ -119,10 +119,11 @@ describe('MermaidExport', () => {
 
     await user.keyboard('{Enter}');
     const svgItem = await screen.findByRole('menuitem', { name: 'com_ui_export_svg' });
-    /* Opening from the keyboard focuses the menu itself; the items are reached
-     * by the arrow keys, so drive the export the way a keyboard user does
-     * rather than asserting the first item is focused on open. */
-    await user.keyboard('{ArrowDown}');
+    /* `Home` rather than `ArrowDown`: opening from the keyboard sometimes
+     * lands on the first item already (CI observed it active), and one
+     * ArrowDown from there walks past SVG onto PNG. `Home` is the first
+     * item from either starting point, which is what a keyboard user gets. */
+    await user.keyboard('{Home}');
     await waitFor(() => expect(svgItem).toHaveFocus());
     await user.keyboard('{Enter}');
 
