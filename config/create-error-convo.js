@@ -242,6 +242,9 @@ const ERROR_CASES = [
     code: ErrorTypes.AUTH_RATE_LIMITED,
   }),
   payloadCase('Authentication banned', { code: ErrorTypes.AUTH_BANNED }),
+  payloadCase('Authentication rejected from another site', {
+    code: ErrorTypes.AUTH_CROSS_ORIGIN,
+  }),
 
   /* ---------- violations ---------- */
   payloadCase('Account banned', { type: ViolationTypes.BAN }),

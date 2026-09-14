@@ -502,7 +502,6 @@
   "com_error_no_user_key_generic": "An API key is required to send messages.",
   "com_error_non_browser": "This request was blocked because it did not come from a browser.",
   "com_error_provider_failed": "{{0}} could not complete this request.",
-  "com_error_provider_failed_status": "{{0}} could not complete this request (status {{1}}).",
   "com_error_refusal": "{{0}} declined to answer this request. Rewrite your message and try again.",
   "com_error_refusal_reason": "The model's explanation",
   "com_error_refusal_unknown": "The model declined to answer this request. Rewrite your message and try again.",

@@ -147,6 +147,20 @@ beforeEach(() => {
   mockAccess = {};
 });
 
+describe('Error — every client-facing error type', () => {
+  /** The seeded gallery refuses to run while a member lacks a case; this is the renderer's half. */
+  it.each([...Object.values(ErrorTypes), ...Object.values(ViolationTypes)])(
+    'renders %s as authored copy rather than the unknown-failure fallback',
+    (type) => {
+      renderError({ type }, providerMessage);
+
+      expect(screen.queryByText(catalog.com_error_unknown)).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('{');
+      expectReadable();
+    },
+  );
+});
+
 describe('Error — reader-facing provider and fallback copy', () => {
   it.each([
     [ErrorTypes.INVALID_REQUEST, 'com_error_invalid_request_error', 'OpenAI'],
@@ -354,26 +368,17 @@ describe('Error — provider and model identity', () => {
     expectReadable();
   });
 
-  it('names the provider behind an upstream model failure, with and without a status', () => {
+  /** The server persists this sentence as the failure's own text, so the copy stays provider-neutral. */
+  it('renders the provider-neutral upstream copy with and without a status', () => {
     const { unmount } = renderError({ type: ErrorTypes.UPSTREAM_MODEL_ERROR }, providerMessage);
-    expect(screen.getByText(localized('com_error_provider_failed', 'OpenAI'))).toBeInTheDocument();
+    expect(screen.getByText(catalog.com_error_upstream_model)).toBeInTheDocument();
     unmount();
 
     renderError({ type: ErrorTypes.UPSTREAM_MODEL_ERROR, status: 529 }, providerMessage);
     expect(
-      screen.getByText(localized('com_error_provider_failed_status', 'OpenAI', '529')),
-    ).toBeInTheDocument();
-  });
-
-  it('keeps generic upstream copy where the provider is unknown', () => {
-    const { unmount } = renderError({ type: ErrorTypes.UPSTREAM_MODEL_ERROR });
-    expect(screen.getByText(catalog.com_error_upstream_model)).toBeInTheDocument();
-    unmount();
-
-    renderError({ type: ErrorTypes.UPSTREAM_MODEL_ERROR, status: 529 });
-    expect(
       screen.getByText(localized('com_error_upstream_model_status', '529')),
     ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('OpenAI');
   });
 
   it.each([
@@ -669,6 +674,21 @@ describe('Error — token balance and context budget', () => {
     ).toBeInTheDocument();
   });
 
+  it('lists every generation charge rather than a truncated subset', () => {
+    const generations = Array.from({ length: 25 }, (_, index) => ({
+      model: `model-${index + 1}`,
+      promptTokens: 100,
+      completionTokens: 10,
+    }));
+    renderError({ type: ViolationTypes.TOKEN_BALANCE, balance: 10, tokenCost: 900, generations });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: catalog.com_error_token_balance_generations }),
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    expect(screen.getByText(/^model-25 —/)).toBeInTheDocument();
+  });
+
   it('formats input length and offers the standard context next steps', () => {
     renderError({ type: ErrorTypes.INPUT_LENGTH, info: '214500 / 128000' }, providerMessage);
 
@@ -791,6 +811,25 @@ describe('Error — identity of the row an error part belongs to', () => {
       screen.getByText(localized('com_error_refusal', 'claude-sonnet-4-5')),
     ).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('gpt-4o');
+  });
+
+  /** A restored row without identity must not borrow whatever the conversation selected since. */
+  it("keeps a row's missing identity unknown instead of borrowing the conversation's", () => {
+    renderError({ type: ErrorTypes.NO_USER_KEY }, { text: 'restored' } as TMessage, {
+      conversation: { endpoint: EModelEndpoint.openAI, model: 'gpt-4o' },
+    });
+
+    expect(screen.getByText(catalog.com_error_no_user_key_generic)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('OpenAI');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('reads the conversation only for an error rendered with no row at all', () => {
+    renderError({ type: ErrorTypes.REFUSAL }, undefined, {
+      conversation: { endpoint: EModelEndpoint.openAI, model: 'gpt-4o' },
+    });
+
+    expect(screen.getByText(localized('com_error_refusal', 'gpt-4o'))).toBeInTheDocument();
   });
 
   it('lets a row passed directly outrank the surrounding source', () => {

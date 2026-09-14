@@ -60,13 +60,9 @@ export default function ModelError({ json, message }: ErrorRendererProps) {
       : localize('com_error_code_workspace_unavailable');
   }
 
+  /** Provider-neutral, matching the sentence the server persists as the failure's own text. */
   const status = readNumber(json, 'status');
-  if (provider == null) {
-    return status != null
-      ? localize('com_error_upstream_model_status', { 0: status })
-      : localize('com_error_upstream_model');
-  }
   return status != null
-    ? localize('com_error_provider_failed_status', { 0: provider, 1: status })
-    : localize('com_error_provider_failed', { 0: provider });
+    ? localize('com_error_upstream_model_status', { 0: status })
+    : localize('com_error_upstream_model');
 }

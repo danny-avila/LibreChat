@@ -46,10 +46,7 @@ export default function BalanceError({ json }: ErrorRendererProps) {
   const tokenCost = readNumber(json, 'tokenCost');
   const promptTokens = readNumber(json, 'promptTokens');
   const generations = Array.isArray(json.generations)
-    ? json.generations
-        .map(readGeneration)
-        .filter((row): row is GenerationRow => row != null)
-        .slice(0, 20)
+    ? json.generations.map(readGeneration).filter((row): row is GenerationRow => row != null)
     : [];
 
   const summary =

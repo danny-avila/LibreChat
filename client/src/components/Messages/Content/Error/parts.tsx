@@ -163,8 +163,17 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
   const { data: endpointsConfig } = useGetEndpointsQuery({ enabled: inChat });
   const { data: startupConfig } = useGetStartupConfig({ enabled: inChat });
 
-  const rowEndpoint = source?.endpoint ?? chat?.conversation?.endpoint ?? undefined;
-  const rowModel = source?.model ?? chat?.conversation?.model ?? undefined;
+  /**
+   * A row's own endpoint and model are authoritative even where it lacks them: borrowing the
+   * conversation's current selection would attribute an old failure to whatever the reader picked
+   * since, so only an error rendered with no row at all reads the conversation. The conversation's
+   * agent is still consulted for an agents row that stores no agent id; persisted agent rows always
+   * store one (`saveErrorTurn`, `getResponseModel`), which leaves the live row of a turn that just
+   * failed.
+   */
+  const identity = source ?? chat?.conversation ?? undefined;
+  const rowEndpoint = identity?.endpoint ?? undefined;
+  const rowModel = identity?.model ?? undefined;
   const conversationAgentId = chat?.conversation?.agent_id ?? undefined;
   const handoffAgentId = source?.handoffAgentId;
 
