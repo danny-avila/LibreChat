@@ -20,7 +20,9 @@ import Error from '../Error';
 let mockEndpointsData: Record<string, Record<string, unknown>> | undefined = {
   openAI: { userProvide: true },
 };
-let mockStartupData = { compactionEnabled: false };
+let mockStartupData: { compactionEnabled: boolean; interface?: { contextUsage?: boolean } } = {
+  compactionEnabled: false,
+};
 let mockAccess: Record<string, boolean> = {};
 
 /** Keep this unit spec independent of query providers while exercising the real renderer hooks. */
@@ -713,6 +715,24 @@ describe('Error — token balance and context budget', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(catalog.com_error_context_next_steps_compact)).toBeInTheDocument();
+  });
+
+  /** The compact action lives in the context usage popover, which that setting removes. */
+  it('does not suggest compaction where the context usage indicator is hidden', () => {
+    mockStartupData = { compactionEnabled: true, interface: { contextUsage: false } };
+    renderError(
+      {
+        type: ErrorTypes.FINAL_CONTEXT_OVERFLOW,
+        projectedMessageTokens: 214500,
+        availableMessageTokens: 128000,
+      },
+      providerMessage,
+    );
+
+    expect(screen.getByText(catalog.com_error_context_next_steps)).toBeInTheDocument();
+    expect(
+      screen.queryByText(catalog.com_error_context_next_steps_compact),
+    ).not.toBeInTheDocument();
   });
 
   it('renders empty-message context copy and formatted budget detail', () => {

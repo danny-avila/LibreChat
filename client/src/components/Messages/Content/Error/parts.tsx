@@ -92,7 +92,10 @@ export type ErrorEndpoint = {
    * Undefined where no endpoint configuration is available to this viewer, as on a shared link.
    */
   userProvidesCredentials?: boolean;
-  /** Manual context compaction can be triggered for this conversation. */
+  /**
+   * Manual context compaction can be triggered for this conversation. It is only offered from the
+   * context usage popover, so a deployment that hides that indicator has no compaction to suggest.
+   */
   compactionAvailable: boolean;
   endpointsConfig?: TEndpointsConfig;
 };
@@ -183,7 +186,9 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
       agent,
       userProvidesCredentials: resolveCredentialOwnership(endpointsConfig, endpoint),
       compactionAvailable:
-        startupConfig?.compactionEnabled === true && supportsCompaction(rowEndpoint),
+        startupConfig?.compactionEnabled === true &&
+        startupConfig.interface?.contextUsage !== false &&
+        supportsCompaction(rowEndpoint),
       endpointsConfig,
     };
   }, [
@@ -195,6 +200,7 @@ export function useErrorEndpoint(source?: ErrorSource, payloadEndpoint?: string)
     agentsMap,
     endpointsConfig,
     startupConfig?.compactionEnabled,
+    startupConfig?.interface?.contextUsage,
   ]);
 }
 
