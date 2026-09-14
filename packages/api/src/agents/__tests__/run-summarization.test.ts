@@ -1077,7 +1077,7 @@ describe('Azure deployment alias', () => {
     return (summaryModel.invocationParams() as Record<string, unknown>).model;
   };
 
-  it('keeps the Astra deployment alias out of a custom-endpoint summarizer', async () => {
+  it("keeps the Astra agent's API mode and deployment alias out of a custom-endpoint summarizer", async () => {
     const agents = await callAndCapture({
       agents: [azureAstraAgent()],
       appConfig: makeAppConfig([
@@ -1103,9 +1103,10 @@ describe('Azure deployment alias', () => {
     const { requests } = await compactSummary(agents);
     expect(requests).toHaveLength(1);
     const { url, headers, body } = requests[0];
-    expect(url.origin).toBe('https://gateway.example');
+    expect(url.origin + url.pathname).toBe('https://gateway.example/v1/chat/completions');
     expect(headers.get('api-key')).toBeNull();
     expect(body.model).toBe('gpt-4.1-mini');
+    expect(body).not.toHaveProperty('include');
   });
 
   it.each([
@@ -1442,6 +1443,29 @@ describe('Azure deployment alias', () => {
     expect(url.origin + url.pathname).toBe(
       'https://summary-instance.openai.azure.com/openai/deployments/summary-production/chat/completions',
     );
+  });
+
+  it('expands Azure-reserved names as ordinary variables for an OpenAI summarizer', async () => {
+    jest.replaceProperty(process, 'env', {
+      ...process.env,
+      OPENAI_API_KEY: 'openai-summary-key',
+      INSTANCE_NAME: 'gateway-host',
+    });
+    const agents = await callAndCapture({
+      agents: [azureAstraAgent()],
+      appConfig: makeAppConfig([]),
+      summarizeOnly: true,
+      summarizationConfig: {
+        provider: EModelEndpoint.openAI,
+        model: 'gpt-4.1-mini',
+        parameters: { streaming: false, baseURL: 'https://${INSTANCE_NAME}.example/v1' },
+      },
+    });
+
+    expect(agents[0].summarizationEnabled).toBe(true);
+    const { requests } = await compactSummary(agents);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url.origin).toBe('https://gateway-host.example');
   });
 
   it('disables summarization when a credential placeholder has no environment value', async () => {

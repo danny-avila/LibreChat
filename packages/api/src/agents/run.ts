@@ -770,8 +770,11 @@ function splitAzureURLTemplates(url: string): string[] {
   return url.split(AZURE_URL_TEMPLATE);
 }
 
-/** Expands environment references in a URL, leaving Azure's reserved templates for the client. */
-function expandTransportURL(url: string): string {
+/** Expands environment references in a URL, leaving Azure's reserved templates for an Azure client. */
+function expandTransportURL(url: string, targetsAzure: boolean): string {
+  if (!targetsAzure) {
+    return extractEnvVariable(url);
+  }
   return splitAzureURLTemplates(url)
     .map((segment, index) => (index % 2 === 1 ? segment : extractEnvVariable(segment)))
     .join('');
@@ -783,6 +786,7 @@ function expandTransportURL(url: string): string {
  */
 function expandSummarizationTransport(
   parameters: SummarizationConfig['parameters'],
+  targetsAzure: boolean,
 ): SummarizationConfig['parameters'] {
   if (!isPlainObject(parameters)) {
     return parameters;
@@ -793,12 +797,12 @@ function expandSummarizationTransport(
     expanded.apiKey = extractEnvVariable(params.apiKey);
   }
   if (typeof params.baseURL === 'string') {
-    expanded.baseURL = expandTransportURL(params.baseURL);
+    expanded.baseURL = expandTransportURL(params.baseURL, targetsAzure);
   }
   if (isPlainObject(params.configuration) && typeof params.configuration.baseURL === 'string') {
     expanded.configuration = {
       ...params.configuration,
-      baseURL: expandTransportURL(params.configuration.baseURL),
+      baseURL: expandTransportURL(params.configuration.baseURL, targetsAzure),
     };
   }
   return expanded as SummarizationConfig['parameters'];
@@ -1175,10 +1179,19 @@ function resolveSummarizationProvider(
      * agent flow builds for that endpoint (`initializeAgent` applies the same
      * precedence).
      */
-    return {
-      provider: detectedProvider ?? overrideProvider,
-      clientOverrides,
-    };
+    const provider = detectedProvider ?? overrideProvider;
+    /**
+     * On the agent's provider the SDK layers these over the agent's own client options, so this
+     * different endpoint replaces the agent's API mode, first-party declaration, reasoning and
+     * request kwargs (an Azure Astra agent's Responses routing, for one) instead of inheriting them.
+     */
+    if (provider === target.agentProvider) {
+      clientOverrides.useResponsesApi ??= false;
+      clientOverrides.firstPartyEndpoint ??= false;
+      clientOverrides.modelKwargs ??= {};
+      clientOverrides.reasoning ??= undefined;
+    }
+    return { provider, clientOverrides };
   } catch (error) {
     logger.warn(
       `[resolveSummarizationProvider] failed to resolve "${rawProvider}"; falling back to raw provider`,
@@ -1212,11 +1225,13 @@ function shapeSummarizationConfig(
     normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
 
   const model = config?.model ?? fallbackModel;
-  const userParameters = expandSummarizationTransport(config?.parameters);
+  const targetsAzure =
+    rawProvider === EModelEndpoint.azureOpenAI ||
+    (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null);
+  const userParameters = expandSummarizationTransport(config?.parameters, targetsAzure);
 
   const selectsAzureDeployment =
-    (rawProvider === EModelEndpoint.azureOpenAI ||
-      (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null)) &&
+    targetsAzure &&
     isNonEmptyString(model) &&
     config?.enabled !== false &&
     (agentEndpoint !== EModelEndpoint.azureOpenAI || model !== fallbackModel);
