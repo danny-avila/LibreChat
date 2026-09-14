@@ -343,13 +343,14 @@ export function getUploadExtractedTextPlan(
   ) {
     return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
   }
-  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
+  const parserMimeTypes =
+    input.fileConfig.documentParser?.supportedMimeTypes ?? documentParserMimeTypes;
+  const isKnownDocumentType = documentParserMimeTypes.some((mimePattern) =>
     mimePattern.test(input.mimeType),
   );
-  if (!isDocumentParserEligible) {
-    return null;
-  }
-  return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
+  const isDocumentParserEligible =
+    checkType?.(input.mimeType, parserMimeTypes) ?? isKnownDocumentType;
+  return isDocumentParserEligible ? UPLOAD_EXTRACTED_TEXT_PLANS.documentParser : null;
 }
 
 /** Whether a context upload has a downstream extraction step that can inspect derived text. */

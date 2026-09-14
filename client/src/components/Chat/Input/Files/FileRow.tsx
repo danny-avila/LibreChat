@@ -1,13 +1,29 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, FileSources, isParsedDocument } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { logger, getCachedPreview } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
+import FileTextDialog from './FileTextDialog';
 import FileContainer from './FileContainer';
 import { useLocalize } from '~/hooks';
 import Image from './Image';
+
+/**
+ * Whether a staged upload already has extracted text to show.
+ *
+ * Parsing happens server-side on upload, so the text exists as soon as the
+ * progress bar completes, before the message is ever sent. `source` is only
+ * copied onto the staged record by the same update that sets `progress` to 1,
+ * and only parser-written records carry `FileSources.text`: the same PDF sent
+ * to file_search or execute_code is stored as a binary with no text.
+ */
+const hasExtractedText = (file: ExtendedFile): boolean =>
+  !!file.file_id &&
+  file.progress >= 1 &&
+  file.source === FileSources.text &&
+  isParsedDocument(file.type, file.filename);
 
 /**
  * Shared wrapper with a stable module-scope identity. Passing an inline arrow as
@@ -59,6 +75,7 @@ export default function FileRow({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const [textFile, setTextFile] = useState<ExtendedFile | null>(null);
   const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
@@ -164,6 +181,7 @@ export default function FileRow({
               file.progress >= 1 &&
               isPastedTextFile(file) &&
               !isPasteActionPending?.(file);
+            const showsText = hasExtractedText(file);
 
             return (
               <div
@@ -185,11 +203,19 @@ export default function FileRow({
                   <FileContainer
                     file={file}
                     onDelete={handleDelete}
-                    onClick={isEditablePaste ? () => onEditPastedText(file) : undefined}
+                    onClick={
+                      isEditablePaste
+                        ? () => onEditPastedText(file)
+                        : showsText
+                          ? () => setTextFile(file)
+                          : undefined
+                    }
                     ariaLabel={
                       isEditablePaste
                         ? localize('com_ui_pasted_text_edit_chip', { 0: file.filename ?? '' })
-                        : undefined
+                        : showsText
+                          ? localize('com_ui_view_extracted_text_var', { 0: file.filename ?? '' })
+                          : undefined
                     }
                     subtitleAction={
                       isEditablePaste && onMovePastedTextInline != null
@@ -208,9 +234,28 @@ export default function FileRow({
     );
   };
 
+  const textDialog = (
+    <FileTextDialog
+      open={textFile !== null}
+      onOpenChange={(open) => !open && setTextFile(null)}
+      fileId={textFile?.file_id ?? ''}
+      filename={textFile?.filename ?? ''}
+    />
+  );
+
   if (Wrapper) {
-    return <Wrapper>{renderFiles()}</Wrapper>;
+    return (
+      <>
+        <Wrapper>{renderFiles()}</Wrapper>
+        {textDialog}
+      </>
+    );
   }
 
-  return renderFiles();
+  return (
+    <>
+      {renderFiles()}
+      {textDialog}
+    </>
+  );
 }
