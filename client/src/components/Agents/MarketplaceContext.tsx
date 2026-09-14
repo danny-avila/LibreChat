@@ -1,6 +1,10 @@
 import React from 'react';
+import { Constants } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { clearMessagesCache } from '~/utils/messages';
 import { ChatContext } from '~/Providers';
 import { useChatHelpers } from '~/hooks';
+import store from '~/store';
 
 /**
  * Minimal marketplace provider that provides only what SidePanel actually needs
@@ -10,8 +14,48 @@ interface MarketplaceProviderProps {
   children: React.ReactNode;
 }
 
+/**
+ * App-global chat operations the marketplace invokes but does not own.
+ *
+ * Starting an agent from a card is a new conversation with that agent, not another
+ * column beside whatever was already open and not the transcript the last new chat
+ * left behind. Both of those live in the app's conversation state, so the host
+ * performs the reset and the marketplace only asks for it — otherwise every card
+ * would be coupled to the conversation store it merely consumes.
+ */
+export interface MarketplaceHost {
+  resetNewConversation: () => void;
+}
+
+export const MarketplaceHostContext = React.createContext<MarketplaceHost | null>(null);
+
+/** Throws rather than defaulting to a no-op: a missing host would silently leave the
+ *  previous conversations open, which is the whole reason the reset exists. */
+export function useMarketplaceHost(): MarketplaceHost {
+  const host = React.useContext(MarketplaceHostContext);
+  if (host == null) {
+    throw new Error('useMarketplaceHost must be used inside a MarketplaceProvider');
+  }
+  return host;
+}
+
 export const MarketplaceProvider: React.FC<MarketplaceProviderProps> = ({ children }) => {
   const chatHelpers = useChatHelpers(0, 'new');
+  const queryClient = useQueryClient();
+  const clearAllConversations = store.useClearConvoState();
+  const host = React.useMemo<MarketplaceHost>(
+    () => ({
+      resetNewConversation: () => {
+        clearAllConversations(true);
+        clearMessagesCache(queryClient, Constants.NEW_CONVO);
+      },
+    }),
+    [clearAllConversations, queryClient],
+  );
 
-  return <ChatContext.Provider value={chatHelpers}>{children}</ChatContext.Provider>;
+  return (
+    <ChatContext.Provider value={chatHelpers}>
+      <MarketplaceHostContext.Provider value={host}>{children}</MarketplaceHostContext.Provider>
+    </ChatContext.Provider>
+  );
 };

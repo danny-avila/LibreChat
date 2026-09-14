@@ -2,18 +2,101 @@ import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Agent, AgentAvatar } from 'librechat-data-provider';
 
-const MAX_AVATAR_REFRESH_AGENTS = 1000;
-const AVATAR_REFRESH_BATCH_SIZE = 20;
+const MAX_AVATAR_REFRESH_AGENTS: number = 1000;
+const AVATAR_REFRESH_BATCH_SIZE: number = 20;
+/** Maximum number of per-agent coverage deadlines retained for one user. */
+const MAX_AVATAR_REFRESH_COVERAGE_IDS: number = MAX_AVATAR_REFRESH_AGENTS;
 
-export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE };
+export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE, MAX_AVATAR_REFRESH_COVERAGE_IDS };
+
+/**
+ * Selects the agents whose S3 avatar URLs should be refreshed for one list response.
+ * The caller supplies the already-paginated page, so refresh work follows the requested
+ * ordering while retaining a hard upper bound for unusually large page limits.
+ */
+export const selectAvatarRefreshAgents = (
+  agents: Agent[] | null | undefined,
+  coveredIds: Iterable<string> = [],
+): Agent[] => {
+  const covered = new Set(coveredIds);
+  return (agents ?? [])
+    .filter(
+      (agent) =>
+        agent?.avatar?.source === FileSources.s3 &&
+        Boolean(agent?.avatar?.filepath) &&
+        Boolean(agent?.id) &&
+        !covered.has(agent.id),
+    )
+    .slice(0, MAX_AVATAR_REFRESH_AGENTS);
+};
+
+export type AvatarRefreshCacheEntry = {
+  urlCache: Record<string, string>;
+  /** Maps each covered agent ID to the absolute time at which its coverage expires. */
+  coveredIds: Record<string, number>;
+};
+
+type LegacyAvatarRefreshCacheEntry = {
+  urlCache?: Record<string, string>;
+  coveredIds?: string[] | Record<string, number>;
+};
+
+const getAvatarRefreshCoverage = (
+  entry: unknown,
+  now: number,
+  coverageTtl: number,
+): Record<string, number> => {
+  if (!entry || typeof entry !== 'object') {
+    return {};
+  }
+
+  const cacheEntry = entry as LegacyAvatarRefreshCacheEntry;
+  const coveredIds = cacheEntry.coveredIds;
+  if (coveredIds && !Array.isArray(coveredIds) && typeof coveredIds === 'object') {
+    return Object.fromEntries(
+      Object.entries(coveredIds).filter(
+        ([, expiresAt]) => Number.isFinite(expiresAt) && expiresAt > now,
+      ),
+    );
+  }
+
+  const legacyIds = Array.isArray(coveredIds) ? coveredIds : Object.keys(cacheEntry.urlCache ?? {});
+  const expiresAt = now + Math.max(0, coverageTtl);
+  return Object.fromEntries(
+    legacyIds.filter((id) => typeof id === 'string').map((id) => [id, expiresAt]),
+  );
+};
+
+export const getAvatarRefreshCoveredIds = (entry: unknown, now: number = Date.now()): string[] =>
+  Object.keys(getAvatarRefreshCoverage(entry, now, 0));
+
+const getAvatarRefreshCacheTtl = (
+  entry: AvatarRefreshCacheEntry,
+  now: number,
+  fallbackTtl: number,
+): number => {
+  const furthestExpiry = Math.max(...Object.values(entry.coveredIds), now);
+  return Math.max(1, furthestExpiry - now || fallbackTtl);
+};
 
 export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
 
-export type UpdateAgentFn = (
-  searchParams: { id: string },
-  updateData: { avatar: AgentAvatar },
-  options: { updatingUserId: string; skipVersioning: boolean },
-) => Promise<unknown>;
+export type UpdateAgentFn = (params: { id: string; avatar: AgentAvatar }) => Promise<unknown>;
+
+export type AvatarRefreshCache = {
+  set: (key: string, value: AvatarRefreshCacheEntry, ttl: number) => Promise<unknown>;
+};
+
+export type ResolveAvatarRefreshParams = {
+  agents: Agent[];
+  userId: string;
+  cachedRefreshEntry: unknown;
+  cache: AvatarRefreshCache;
+  refreshKey: string;
+  cacheTtl: number;
+  refreshS3Url: RefreshS3UrlFn;
+  updateAgent: UpdateAgentFn;
+};
 
 export type RefreshListAvatarsParams = {
   agents: Agent[];
@@ -31,14 +114,116 @@ export type RefreshStats = {
   persist_error: number;
   /** Maps agentId to the latest valid presigned filepath for re-application on cache hits */
   urlCache: Record<string, string>;
+  /** IDs whose S3 URL refresh was attempted during this pass, including unchanged/error results. */
+  coveredIds: string[];
+};
+
+/**
+ * Resolves the cache and refresh work for one already-paginated agent page.
+ * Cache coverage is page-independent: each response contributes the rows it saw,
+ * so later pages can refresh rows absent from earlier responses.
+ */
+export const resolveAvatarRefresh = async ({
+  agents,
+  userId,
+  cachedRefreshEntry,
+  cache,
+  refreshKey,
+  cacheTtl,
+  refreshS3Url,
+  updateAgent,
+}: ResolveAvatarRefreshParams): Promise<AvatarRefreshCacheEntry | null> => {
+  const now = Date.now();
+  const isValidCachedRefresh =
+    cachedRefreshEntry != null &&
+    typeof cachedRefreshEntry === 'object' &&
+    (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache != null;
+  const cachedCoverage = getAvatarRefreshCoverage(cachedRefreshEntry, now, cacheTtl);
+  const cachedCoveredIds = Object.keys(cachedCoverage);
+  const refreshAgents = selectAvatarRefreshAgents(agents, cachedCoveredIds);
+
+  if (!refreshAgents.length && isValidCachedRefresh) {
+    logger.debug(
+      '[resolveAvatarRefresh] S3 avatar refresh already checked for this page, skipping',
+    );
+    return {
+      urlCache: Object.fromEntries(
+        Object.entries(
+          (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache ?? {},
+        ).filter(([id]) => cachedCoverage[id] != null),
+      ),
+      coveredIds: cachedCoverage,
+    };
+  }
+
+  try {
+    const { urlCache, coveredIds } = await refreshListAvatars({
+      agents: refreshAgents,
+      userId,
+      refreshS3Url,
+      updateAgent,
+    });
+    const refreshEntry = mergeAvatarRefreshCacheEntry(
+      cachedRefreshEntry,
+      { urlCache, coveredIds },
+      cacheTtl,
+    );
+    const refreshedAt = Date.now();
+    await cache.set(
+      refreshKey,
+      refreshEntry,
+      getAvatarRefreshCacheTtl(refreshEntry, refreshedAt, cacheTtl),
+    );
+    return refreshEntry;
+  } catch (err) {
+    logger.error('[resolveAvatarRefresh] Error refreshing avatars for list page: %o', err);
+    return null;
+  }
+};
+
+export const mergeAvatarRefreshCacheEntry = (
+  previous: unknown,
+  stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'>,
+  coverageTtl: number = 30 * 60 * 1000,
+  now: number = Date.now(),
+): AvatarRefreshCacheEntry => {
+  const previousEntry =
+    previous && typeof previous === 'object'
+      ? (previous as Partial<AvatarRefreshCacheEntry>)
+      : undefined;
+  const coverage = getAvatarRefreshCoverage(previous, now, coverageTtl);
+  const expiresAt = now + Math.max(0, coverageTtl);
+  for (const id of stats.coveredIds) {
+    delete coverage[id];
+    coverage[id] = expiresAt;
+  }
+  // Expired entries are removed first; when full, retain the furthest deadlines.
+
+  const retainedCoverage = Object.entries(coverage)
+    .filter(([, deadline]) => deadline > now)
+    .sort(([, firstDeadline], [, secondDeadline]) => firstDeadline - secondDeadline)
+    .slice(-MAX_AVATAR_REFRESH_COVERAGE_IDS);
+  const coveredIds = Object.fromEntries(retainedCoverage);
+  const retainedIds = new Set(Object.keys(coveredIds));
+  const urlCache = Object.fromEntries(
+    Object.entries(previousEntry?.urlCache ?? {}).filter(([id]) => retainedIds.has(id)),
+  );
+  for (const [id, url] of Object.entries(stats.urlCache)) {
+    if (retainedIds.has(id)) {
+      urlCache[id] = url;
+    }
+  }
+
+  return { urlCache, coveredIds };
 };
 
 /**
  * Opportunistically refreshes S3-backed avatars for agent list responses.
  * Processes agents in batches to prevent database connection pool exhaustion.
  * Only list responses are refreshed because they're the highest-traffic surface and
- * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
- * so we refresh once per interval at most.
+ * the avatar URLs have a short-lived TTL. Per-user cache coverage suppresses repeat
+ * refreshes for agents already attempted within 30 minutes while allowing a later page
+ * to refresh rows not yet covered.
  *
  * Any user with VIEW access to an agent can refresh its avatar URL. This ensures
  * avatars remain accessible even when the owner hasn't logged in recently.
@@ -46,7 +231,6 @@ export type RefreshStats = {
  */
 export const refreshListAvatars = async ({
   agents,
-  userId,
   refreshS3Url,
   updateAgent,
 }: RefreshListAvatarsParams): Promise<RefreshStats> => {
@@ -58,6 +242,7 @@ export const refreshListAvatars = async ({
     s3_error: 0,
     persist_error: 0,
     urlCache: {},
+    coveredIds: [],
   };
 
   if (!agents?.length) {
@@ -84,6 +269,7 @@ export const refreshListAvatars = async ({
           stats.no_id++;
           return;
         }
+        stats.coveredIds.push(agent.id);
 
         try {
           logger.debug('[refreshListAvatars] Refreshing S3 avatar for agent: %s', agent._id);
@@ -97,11 +283,10 @@ export const refreshListAvatars = async ({
           stats.urlCache[agent.id] = newPath;
 
           try {
-            await updateAgent(
-              { id: agent.id },
-              { avatar: { filepath: newPath, source: agent.avatar.source } },
-              { updatingUserId: userId, skipVersioning: true },
-            );
+            await updateAgent({
+              id: agent.id,
+              avatar: { filepath: newPath, source: agent.avatar.source },
+            });
             stats.updated++;
           } catch (persistErr) {
             logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);
