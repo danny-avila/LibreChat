@@ -32,10 +32,11 @@ export interface RetainedAnswersConfig {
 
 export type RetainedAnswerTokenCounter = (text: string) => number | Promise<number>;
 
-/** Owner-scoped read of the branch rows, for a caller whose in-memory rows do not hold them. */
-export type RetainedAnswerRowLoader = () => Promise<
-  readonly RetainedAnswerSource[] | null | undefined
->;
+/** The stored-row query, in the shape the data layer's `getMessages` already has. */
+export type RetainedAnswerRowQuery = (
+  filter: { conversationId: string; user: string },
+  select: string,
+) => Promise<readonly RetainedAnswerSource[] | null | undefined>;
 
 const SEPARATOR = '\n\n';
 
@@ -284,10 +285,12 @@ export function resolveRetainedAnswersConfig(
 }
 
 async function loadBranchRows(
-  loadMessages: RetainedAnswerRowLoader,
+  getMessages: RetainedAnswerRowQuery,
+  conversationId: string,
+  userId: string,
 ): Promise<readonly RetainedAnswerSource[]> {
   try {
-    return (await loadMessages()) ?? [];
+    return (await getMessages({ conversationId, user: userId }, RETAINED_ANSWER_ROW_FIELDS)) ?? [];
   } catch (error) {
     logger.warn(
       '[retainedAnswers] Stored rows unavailable; carrying only the answers already in memory',
@@ -297,31 +300,63 @@ async function loadBranchRows(
   }
 }
 
-/**
- * The retained-answers block for one turn, or `undefined` when there is nothing
- * to carry. `messages` are the rows in memory and `parentMessageId` the branch to
- * read; `loadMessages` fetches the rest of the branch for a caller that did not
- * load history, and is only called when retention is on.
- */
-export async function buildRetainedAnswersContext({
-  messages,
-  parentMessageId,
-  loadMessages,
-  config,
-  countTokens,
-}: {
+export interface RetainedAnswersContextInput {
+  /** The rows in memory; the whole branch unless `historyLoaded` says otherwise. */
   messages: readonly RetainedAnswerSource[];
   parentMessageId: string | null | undefined;
-  loadMessages?: RetainedAnswerRowLoader;
+  /**
+   * Whether `messages` holds the stored branch. A warm event-actor turn skips the
+   * history read and holds only the new event message, so the rest of the branch
+   * is read through `getMessages` — only when retention is on.
+   */
+  historyLoaded?: boolean;
+  conversationId?: string | null;
+  userId?: string | null;
+  getMessages?: RetainedAnswerRowQuery;
   config: TAskUserQuestionConfig | null | undefined;
   countTokens: RetainedAnswerTokenCounter;
-}): Promise<string | undefined> {
+}
+
+async function buildContext({
+  messages,
+  parentMessageId,
+  historyLoaded = true,
+  conversationId,
+  userId,
+  getMessages,
+  config,
+  countTokens,
+}: RetainedAnswersContextInput): Promise<string | undefined> {
   const resolved = resolveRetainedAnswersConfig(config);
   if (!resolved.enabled) {
     return undefined;
   }
-  const rows =
-    loadMessages == null ? messages : [...messages, ...(await loadBranchRows(loadMessages))];
+  const canLoad =
+    !historyLoaded &&
+    getMessages != null &&
+    typeof conversationId === 'string' &&
+    conversationId.length > 0 &&
+    typeof userId === 'string' &&
+    userId.length > 0;
+  const rows = canLoad
+    ? [...messages, ...(await loadBranchRows(getMessages, conversationId, userId))]
+    : messages;
   const sets = collectRetainedAnswers(orderConversationBranch(rows, parentMessageId));
   return renderRetainedAnswers(sets, resolved.maxTokens, countTokens);
+}
+
+/**
+ * The retained-answers block for one turn, or `undefined` when there is nothing
+ * to carry or the block could not be built: a failure here costs the turn its
+ * carried answers, never the turn, and is logged once per occurrence.
+ */
+export async function buildRetainedAnswersContext(
+  input: RetainedAnswersContextInput,
+): Promise<string | undefined> {
+  try {
+    return await buildContext(input);
+  } catch (error) {
+    logger.warn('[retainedAnswers] Block unavailable for this turn', getSafeErrorMetadata(error));
+    return undefined;
+  }
 }

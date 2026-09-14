@@ -75,7 +75,6 @@ const {
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   buildRetainedAnswersContext,
-  RETAINED_ANSWER_ROW_FIELDS,
   prependContextText,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -2283,35 +2282,22 @@ class AgentClient extends BaseClient {
      * Answers the user gave to earlier `ask_user_question` calls, read from the
      * stored rows of the whole branch before `messages` is narrowed to
      * `orderedMessages` (which stops at a checkpoint summary and would hide the
-     * very answers that need carrying). A warm event-actor turn holds only the
-     * new event message in memory, so it reads the rest of the branch on demand.
+     * very answers that need carrying). Rendered here, quoted into the current
+     * user turn after the context kickoff below.
      */
     const retainedAnswersPromise = buildRetainedAnswersContext({
       messages,
       parentMessageId,
-      loadMessages:
-        this.eventActorContinuation === 'warm'
-          ? () =>
-              db.getMessages(
-                {
-                  conversationId: this.conversationId,
-                  user: this.user ?? this.options.req.user?.id,
-                },
-                RETAINED_ANSWER_ROW_FIELDS,
-              )
-          : undefined,
+      historyLoaded: this.eventActorContinuation !== 'warm',
+      conversationId: this.conversationId,
+      userId: this.user ?? this.options.req.user?.id,
+      getMessages: db.getMessages,
       config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
       countTokens: (text) =>
         countFormattedMessageTokens(
           { role: 'user', content: [{ type: ContentTypes.TEXT, text }] },
           this.getEncoding(),
         ),
-    }).catch((error) => {
-      logger.warn(
-        '[AgentClient] Retained answers unavailable for this turn',
-        getSafeErrorMetadata(error),
-      );
-      return undefined;
     });
 
     let payload;

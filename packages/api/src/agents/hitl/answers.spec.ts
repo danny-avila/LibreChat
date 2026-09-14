@@ -325,24 +325,43 @@ describe('buildRetainedAnswersContext', () => {
     ).toBeUndefined();
   });
 
-  test('loads the rest of the branch on demand, only when retention is on', async () => {
-    const loadMessages = jest.fn(async () => rows.slice(0, 4));
+  test('reads the rest of the branch through the injected query, only when retention is on', async () => {
+    const getMessages = jest.fn(async () => rows.slice(0, 4));
     const text = await buildRetainedAnswersContext({
       messages: [rows[4]],
       parentMessageId: 'u3',
-      loadMessages,
+      historyLoaded: false,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      getMessages,
       config: undefined,
       countTokens: countChars,
     });
     expect(text).toContain(ANSWER_LINE);
-    expect(loadMessages).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledWith(
+      { conversationId: 'convo-1', user: 'user-1' },
+      RETAINED_ANSWER_ROW_FIELDS,
+    );
 
     const untouched = jest.fn(async () => rows);
     await buildRetainedAnswersContext({
       messages: [rows[4]],
       parentMessageId: 'u3',
-      loadMessages: untouched,
+      historyLoaded: false,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      getMessages: untouched,
       config: { retainedAnswers: { enabled: false } },
+      countTokens: countChars,
+    });
+    await buildRetainedAnswersContext({
+      messages: rows,
+      parentMessageId: 'u3',
+      historyLoaded: true,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      getMessages: untouched,
+      config: undefined,
       countTokens: countChars,
     });
     expect(untouched).not.toHaveBeenCalled();
@@ -358,13 +377,29 @@ describe('buildRetainedAnswersContext', () => {
     const text = await buildRetainedAnswersContext({
       messages: inMemory,
       parentMessageId: 'u10',
-      loadMessages: async () => {
+      historyLoaded: false,
+      conversationId: 'convo-1',
+      userId: 'user-1',
+      getMessages: async () => {
         throw new Error('rows unavailable');
       },
       config: undefined,
       countTokens: countChars,
     });
     expect(text).toContain('Q: Ok?\nA: yes');
+    expect(mockWarn).toHaveBeenCalledTimes(1);
+  });
+
+  test('never rejects: a failing counter costs the turn its block, not the turn', async () => {
+    const text = await buildRetainedAnswersContext({
+      messages: rows,
+      parentMessageId: 'u3',
+      config: undefined,
+      countTokens: () => {
+        throw new Error('tokenizer down');
+      },
+    });
+    expect(text).toBeUndefined();
     expect(mockWarn).toHaveBeenCalledTimes(1);
   });
 });
