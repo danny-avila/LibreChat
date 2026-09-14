@@ -369,7 +369,7 @@ test.describe('sidebar single scroll', () => {
       .toBeGreaterThan(100);
   });
 
-  test('chats load their next page only once chats are on screen @scenario:chats-page-loads-only-when-chats-come-into-view', async ({
+  test('chats stop fetching pages while they sit below the fold @scenario:chats-page-loads-only-when-chats-come-into-view', async ({
     page,
   }) => {
     await clearUserConversations(userEmail);
@@ -393,18 +393,31 @@ test.describe('sidebar single scroll', () => {
     await expect(pinnedRegion(page).getByTestId('convo-item').first()).toBeVisible({
       timeout: 30_000,
     });
-    await page.waitForTimeout(2_000);
 
-    /* The chats sit under a screenful of pins, so nothing about them has been
-     * read yet: asking the server for a second page before the reader has seen
-     * a single chat row is a request nobody needed. */
+    /** The pins arrive on their own query, so until they land the chats hold
+     *  the sidebar and reading them is exactly what a person does. The claim
+     *  is about the settled layout: once they sit below a screenful of pins,
+     *  rendering no rows, nothing keeps asking the server for more of them. */
+    await expect
+      .poll(
+        () =>
+          historyRegion(page).evaluate((region) => {
+            const grid = region.querySelector('.ReactVirtualized__Grid');
+            return grid ? Math.round(grid.getBoundingClientRect().height) : -1;
+          }),
+        { timeout: 30_000 },
+      )
+      .toBe(0);
+
+    const settled = pages.length;
+    await page.waitForTimeout(3_000);
     expect(
       pages.length,
-      `only the first page should have been fetched, got ${pages.join(', ')}`,
-    ).toBe(1);
+      `no page should be fetched for chats nobody can see, got ${pages.join(', ')}`,
+    ).toBe(settled);
 
     await scrollToBottom(page, 8);
 
-    await expect.poll(() => pages.length, { timeout: 30_000 }).toBeGreaterThan(1);
+    await expect.poll(() => pages.length, { timeout: 30_000 }).toBeGreaterThan(settled);
   });
 });
