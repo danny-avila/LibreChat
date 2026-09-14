@@ -196,7 +196,7 @@ describe('markCompactionOutcome', () => {
     markCompactionOutcome(parts);
 
     /** The typed failure is the turn's whole outcome: a truncated summary left
-     *  beside it would be read back as the conversation's checkpoint. */
+     *  beside it would report the same failure a second time. */
     expect(parts).toEqual([
       {
         type: ContentTypes.ERROR,

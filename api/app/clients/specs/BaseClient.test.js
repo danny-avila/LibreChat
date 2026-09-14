@@ -590,6 +590,30 @@ describe('BaseClient', () => {
       expect(result[0].content).toEqual([{ type: 'text', text: 'Legacy summary only' }]);
       expect(result[0].tokenCount).toBe(15);
     });
+
+    it('should not stop traversal at a failed summary, keeping the prior history', () => {
+      /** A summarize round that errored keeps the deltas it streamed, so its
+       *  text is a truncated prefix; treating it as the checkpoint would send
+       *  it in place of the history it never finished summarizing. */
+      const messagesWithFailedSummary = [
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '3',
+          parentMessageId: '2',
+          text: '',
+          content: [{ type: 'summary', text: 'Partial sum', tokenCount: 5, failed: true }],
+        },
+        { id: '4', parentMessageId: '3', text: 'Message 4' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithFailedSummary,
+        parentMessageId: '4',
+        summary: true,
+      });
+      expect(result.map((message) => message.id)).toEqual(['1', '2', '3', '4']);
+      expect(result.every((message) => message.role !== 'system')).toBe(true);
+    });
   });
 
   describe('findSummaryContentBlock', () => {
@@ -629,6 +653,24 @@ describe('BaseClient', () => {
     it('should skip summary blocks with no text', () => {
       const message = {
         content: [{ type: 'summary', tokenCount: 10 }],
+      };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    });
+
+    it('should skip a failed summary block and keep the last complete one', () => {
+      const message = {
+        content: [
+          { type: 'summary', text: 'Complete summary', tokenCount: 50 },
+          { type: 'summary', text: 'Partial sum', tokenCount: 5, failed: true },
+        ],
+      };
+      const result = TestClient.constructor.findSummaryContentBlock(message);
+      expect(result.text).toBe('Complete summary');
+    });
+
+    it('should return null when the only summary block failed', () => {
+      const message = {
+        content: [{ type: 'summary', content: [{ type: 'text', text: 'Partial' }], failed: true }],
       };
       expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
     });

@@ -1445,7 +1445,15 @@ class BaseClient {
     return summaryBlock.text ?? '';
   }
 
-  /** Finds the last summary content block in a message's content array (last-summary-wins). */
+  /**
+   * Finds the last summary content block in a message's content array
+   * (last-summary-wins). A summarize round that errored keeps whatever deltas
+   * it already streamed and is stamped `failed: true`, so its text is a
+   * truncated prefix of the history it was summarizing; accepting it as the
+   * conversation's checkpoint would drop everything older than the turn it
+   * failed on. Only a complete summary is a checkpoint — the renderer already
+   * labels a failed one "Summarization failed" rather than a summary.
+   */
   static findSummaryContentBlock(message) {
     if (!Array.isArray(message?.content)) {
       return null;
@@ -1454,6 +1462,7 @@ class BaseClient {
     for (const part of message.content) {
       if (
         part?.type === ContentTypes.SUMMARY &&
+        part.failed !== true &&
         BaseClient.getSummaryText(part).trim().length > 0
       ) {
         lastSummary = part;
