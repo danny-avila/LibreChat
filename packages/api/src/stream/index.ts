@@ -4,6 +4,7 @@ export {
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
   type TerminalJobClaim,
+  GENERATION_RECOVERY_FAILED_ERROR,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from './GenerationJobManager';
 
@@ -69,3 +70,5 @@ export { InMemoryJobStore } from './implementations/InMemoryJobStore';
 export { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 export { RedisJobStore } from './implementations/RedisJobStore';
 export { RedisEventTransport } from './implementations/RedisEventTransport';
+
+export { waitForGenerationPersistence } from './persistence';

@@ -3,8 +3,11 @@ const { Calculator, createSearchTool, createCodeExecutionTool } = require('@libr
 const {
   checkAccess,
   toolkitParent,
+  toolRolePermissions,
+  checkToolRolePermission,
   createSafeUser,
   createAuthIdentityContext,
+  selectMCPUpstreamTokenProvider,
   mcpToolPattern,
   loadWebSearchAuth,
   splitMCPToolKey,
@@ -347,6 +350,26 @@ const loadTools = async ({
   const shadowedServers = findShadowedServerNames(collisionAudit.names);
 
   for (const tool of tools) {
+    /** `loadTools` is the shared boundary for every runtime that equips these
+     *  tools — agents, and the Assistants required-action flow via
+     *  `processRequiredActions`, which never passes through the agent capability
+     *  filter. Gate here so a denied role cannot reach the sandbox or the search
+     *  index down any of them. The check is request-cached, so the agent path
+     *  that already resolved this grant pays nothing for the second look. */
+    const rolePermission = toolRolePermissions[tool];
+    if (rolePermission != null && options.req?.user != null) {
+      const allowed = await checkToolRolePermission({
+        req: options.req,
+        user: options.req.user,
+        permissionType: rolePermission,
+        getRoleByName,
+        context: 'handleTools',
+      });
+      if (!allowed) {
+        continue;
+      }
+    }
+
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
         const statefulSessions =
@@ -366,6 +389,7 @@ const loadTools = async ({
           });
         const { files, toolContext } = await primeCodeFiles({
           ...options,
+          signal,
           agentId: agent?.id,
           codeApiBaseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
@@ -615,12 +639,18 @@ const loadTools = async ({
     user: options.req?.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
-    req: options.req,
-    res: options.res,
-    user: options.req?.user,
-    identityContext: oboIdentityContext,
-    tokenPreference: 'access_token',
+  const upstreamTokenProviderResolver = options.upstreamTokenProviderResolver;
+  const upstreamTokenProvider = selectMCPUpstreamTokenProvider({
+    upstreamTokenProvider: options.upstreamTokenProvider,
+    upstreamTokenProviderResolver,
+    createSessionProvider: () =>
+      createOpenIDSessionTokenProvider({
+        req: options.req,
+        res: options.res,
+        user: options.req?.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }),
   });
 
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
@@ -643,6 +673,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           streamId: options.req?._resumableStreamId || null,
           jobCreatedAt: options.jobCreatedAt,

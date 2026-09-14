@@ -1,4 +1,4 @@
-const { Constants, ContentTypes } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const BaseClientClass = require('../BaseClient');
 const { ContentFilterError } = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
@@ -48,9 +48,22 @@ jest.mock('~/models', () => ({
   deleteFiles: jest.fn(),
   getFiles: jest.fn(),
   updateFileUsage: jest.fn(),
+  getMultiplier: jest.fn(),
+  reserveBalance: jest.fn(),
+  renewBalanceReservation: jest.fn(),
+  releaseBalanceReservation: jest.fn(),
 }));
 
-const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
+const {
+  releaseBalanceReservation,
+  reserveBalance,
+  getMultiplier,
+  saveMessage,
+  getMessages,
+  saveConvo,
+  getFiles,
+  getConvo,
+} = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -277,6 +290,36 @@ describe('BaseClient', () => {
 
       expect(getMessages).toHaveBeenCalledTimes(1);
       expect(result.map((m) => m.messageId)).toEqual(['root', 'reply']);
+    });
+
+    test('prunes pre-summary history before hydrating attachments', async () => {
+      const addPreviousAttachments = jest.fn(async (messages) => messages);
+      receiver.shouldSummarize = true;
+      receiver.addPreviousAttachments = addPreviousAttachments;
+      getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'pre-summary',
+          parentMessageId: Constants.NO_PARENT,
+          files: [{ file_id: 'old-file' }],
+        },
+        {
+          messageId: 'summary',
+          parentMessageId: 'pre-summary',
+          summary: 'Earlier context',
+          summaryTokenCount: 10,
+        },
+        { messageId: 'latest', parentMessageId: 'summary', text: 'Continue' },
+      ]);
+
+      const result = await loadHistory('latest');
+
+      expect(result.map((message) => message.messageId)).toEqual(['summary', 'latest']);
+      expect(addPreviousAttachments).toHaveBeenCalledWith(
+        expect.not.arrayContaining([expect.objectContaining({ messageId: 'pre-summary' })]),
+      );
+      receiver.shouldSummarize = false;
+      receiver.addPreviousAttachments = async (messages) => messages;
+      receiver.previous_summary = undefined;
     });
   });
 
@@ -547,47 +590,29 @@ describe('BaseClient', () => {
       expect(result[0].content).toEqual([{ type: 'text', text: 'Legacy summary only' }]);
       expect(result[0].tokenCount).toBe(15);
     });
-  });
 
-  describe('findSummaryContentBlock', () => {
-    it('should find a summary block in the content array', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'summary', text: 'Summary of conversation', tokenCount: 50 },
-        ],
-      };
-      const result = TestClient.constructor.findSummaryContentBlock(message);
-      expect(result).toBeTruthy();
-      expect(result.text).toBe('Summary of conversation');
-      expect(result.tokenCount).toBe(50);
-    });
-
-    it('should return null when no summary block exists', () => {
-      const message = {
-        content: [
-          { type: 'text', text: 'some text' },
-          { type: 'tool_call', tool_call: {} },
-        ],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for string content', () => {
-      const message = { content: 'just a string' };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
-    });
-
-    it('should return null for missing content', () => {
-      expect(TestClient.constructor.findSummaryContentBlock({})).toBeNull();
-      expect(TestClient.constructor.findSummaryContentBlock(null)).toBeNull();
-    });
-
-    it('should skip summary blocks with no text', () => {
-      const message = {
-        content: [{ type: 'summary', tokenCount: 10 }],
-      };
-      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    it('should not stop traversal at a failed summary, keeping the prior history', () => {
+      /** A summarize round that errored keeps the deltas it streamed, so its
+       *  text is a truncated prefix; treating it as the checkpoint would send
+       *  it in place of the history it never finished summarizing. */
+      const messagesWithFailedSummary = [
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '3',
+          parentMessageId: '2',
+          text: '',
+          content: [{ type: 'summary', text: 'Partial sum', tokenCount: 5, failed: true }],
+        },
+        { id: '4', parentMessageId: '3', text: 'Message 4' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithFailedSummary,
+        parentMessageId: '4',
+        summary: true,
+      });
+      expect(result.map((message) => message.id)).toEqual(['1', '2', '3', '4']);
+      expect(result.every((message) => message.role !== 'system')).toBe(true);
     });
   });
 
@@ -1987,9 +2012,11 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         endpointType: 'openai',
         temperature: 0.7,
+        isTemporary: true,
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
       };
       const user = { id: 'user-id' };
-      const req = { user, resolvedConversation: existingConvo };
+      const req = { user, body: { isTemporary: false }, resolvedConversation: existingConvo };
 
       getConvo.mockClear();
       saveMessage.mockResolvedValue({ messageId: 'msg-1' });
@@ -2009,7 +2036,15 @@ describe('BaseClient', () => {
       );
 
       expect(getConvo).not.toHaveBeenCalled();
-      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(saveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isTemporary: true,
+          expiredAt: existingConvo.expiredAt,
+        }),
+        expect.any(Object),
+        expect.any(Object),
+      );
+      expect(req.resolvedConversation).toBe(existingConvo);
       expect(TestClient.fetchedConvo).toBe(true);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.any(Object),
@@ -2018,6 +2053,19 @@ describe('BaseClient', () => {
           unsetFields: expect.objectContaining({ temperature: 1 }),
         }),
       );
+      await TestClient.saveMessageToDatabase(
+        { messageId: 'response-1', conversationId: existingConvo.conversationId, text: 'reply' },
+        { endpoint: 'openai' },
+        user,
+      );
+      for (const save of [saveMessage, saveConvo]) {
+        expect(save).toHaveBeenLastCalledWith(
+          expect.objectContaining({ isTemporary: true, expiredAt: existingConvo.expiredAt }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      }
+      expect(getConvo).not.toHaveBeenCalled();
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {
@@ -2169,6 +2217,91 @@ describe('BaseClient', () => {
           transactions: { enabled: true },
         }),
       );
+    });
+  });
+
+  describe('balance reservation lifecycle', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+    let events;
+
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      TestClient.options.endpoint = EModelEndpoint.openAI;
+      delete TestClient.options.endpointType;
+      TestClient.options.req = { config: { balance: { enabled: true } } };
+
+      events = [];
+      getMultiplier.mockReturnValue(1);
+      reserveBalance.mockImplementation(async () => {
+        events.push('reserve');
+        return { reserved: true, balance: 1000 };
+      });
+      releaseBalanceReservation.mockImplementation(async () => {
+        events.push('release');
+      });
+      TestClient.sendCompletion.mockImplementation(async () => {
+        events.push('completion');
+        return { completion: 'Mock response text', metadata: undefined };
+      });
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn(async () => {
+        events.push('usage');
+      });
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('releases the reservation once the response usage is recorded, before persistence', async () => {
+      const beforeResponsePersistence = jest.fn(async () => {
+        events.push('persist');
+        return true;
+      });
+
+      await TestClient.sendMessage('Hello', { beforeResponsePersistence });
+
+      expect(events).toEqual(['reserve', 'completion', 'usage', 'release', 'persist']);
+      const [{ reservationId, amount }] = reserveBalance.mock.calls[0];
+      expect(releaseBalanceReservation).toHaveBeenCalledTimes(1);
+      expect(releaseBalanceReservation).toHaveBeenCalledWith({
+        user: TestClient.user,
+        reservationId,
+        amount,
+      });
+    });
+
+    test('releases the reservation when the completion fails', async () => {
+      TestClient.sendCompletion.mockRejectedValue(new Error('provider unavailable'));
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow('provider unavailable');
+
+      expect(events).toEqual(['reserve', 'release']);
+    });
+
+    test('releases the reservation when work after the completion fails', async () => {
+      TestClient.recordTokenUsage.mockRejectedValue(new Error('usage write failed'));
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow('usage write failed');
+
+      expect(events).toEqual(['reserve', 'completion', 'release']);
+    });
+
+    test('takes no reservation when the balance check refuses the request', async () => {
+      reserveBalance.mockResolvedValue({ reserved: false, balance: 0 });
+
+      await expect(TestClient.sendMessage('Hello', {})).rejects.toThrow();
+
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+      expect(releaseBalanceReservation).not.toHaveBeenCalled();
     });
   });
 
@@ -2443,6 +2576,7 @@ describe('BaseClient', () => {
         }
       });
       TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.assertHistoricalAttachmentLimits = undefined;
       TestClient.checkVisionRequest = jest.fn();
     });
 
@@ -2717,7 +2851,7 @@ describe('BaseClient', () => {
       const [message] = await messagesPromise;
 
       expect(message.fileContext).toBe('authorized owner text');
-      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([]);
     });
 
     test('preserves download-only historical attachments without trusting file fields', async () => {
@@ -2756,6 +2890,92 @@ describe('BaseClient', () => {
       expect(JSON.stringify(message)).not.toContain('untrusted text');
       expect(JSON.stringify(message)).not.toContain('forged-source');
       expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('processes only historical files admitted by the runtime endpoint policy', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async () => []);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(TestClient.processAttachments).not.toHaveBeenCalled();
+      expect(message.files).toEqual([expect.objectContaining({ file_id: modelFile.file_id })]);
+    });
+
+    test('includes nested steer file references in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.authorizedHistoricalReplayFiles.get(modelFile.file_id)).toEqual(modelFile);
+    });
+
+    test('preserves repeated steer file injections in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer-repeat',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment once.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+            {
+              type: 'steer',
+              steer: 'Use the attachment again.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([
+        modelFile,
+        modelFile,
+      ]);
+      expect(TestClient.modelBoundHistoricalSteerFiles).toEqual([modelFile, modelFile]);
+    });
+
+    test('keeps canonical byte metadata for processed historical survivors', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined, bytes: 120 * 1024 * 1024 };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.processAttachments.mockResolvedValue([{ file_id: modelFile.file_id }]);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-canonical-bytes',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.message_file_map['msg-canonical-bytes']).toEqual([modelFile]);
     });
 
     test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
@@ -2965,5 +3185,537 @@ describe('BaseClient', () => {
         completion[0],
       ]);
     });
+  });
+
+  describe('processAttachments llmDeliveryPath handling', () => {
+    beforeEach(() => {
+      TestClient.options = {
+        endpoint: EModelEndpoint.openAI,
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      TestClient.addImageURLs = jest.fn(async (message, files) => {
+        message.image_urls = ['encoded-image'];
+        return files;
+      });
+      TestClient.addDocuments = jest.fn(async (message, files) => {
+        message.documents = [{ type: 'file' }];
+        return files;
+      });
+      TestClient.addVideos = jest.fn(async (_message, files) => files);
+      TestClient.modelOptions = undefined;
+      TestClient.addAudios = jest.fn(async (_message, files) => files);
+    });
+
+    /* The stored path is an upload-time inference, so delivery re-resolves it for the
+     * endpoint running the turn. A test asserting a route has to configure that route
+     * rather than rely on the stored value alone. */
+    const routeTo = (path, ...mimeTypes) => {
+      TestClient.options.req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [EModelEndpoint.openAI]: {
+                defaultLLMDeliveryPath: {
+                  overrides: Object.fromEntries(mimeTypes.map((mime) => [mime, path])),
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+    };
+
+    test('keeps a none image in returned files without adding image URLs', async () => {
+      routeTo('none', 'image/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-image',
+        filename: 'image.png',
+        filepath: '/uploads/image.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.image_urls).toBeUndefined();
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('does not inject extracted text after the current provider resolves none', () => {
+      routeTo('none', 'application/pdf');
+      const file = {
+        file_id: 'none-pdf',
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    test('does not inject extracted text when the current provider resolves native delivery', () => {
+      routeTo('provider', 'application/pdf');
+      const file = {
+        file_id: 'provider-pdf',
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    test('re-resolves a path stored under a different provider', async () => {
+      /* Audio uploaded under Google stores `provider`, and the OpenAI encoder emits no
+       * audio payload for it, so the inference is not this endpoint's to honor.
+       *
+       * What this does not do is produce a transcript: the record holds raw media and no
+       * extracted text, and extraction at delivery is Phase 2 work. So the model receives
+       * nothing here either way, which the assertions state rather than imply, and the
+       * change is limited to not downloading and encoding a file to no purpose. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'foreign-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addAudios).not.toHaveBeenCalled();
+      expect(message.audios).toBeUndefined();
+      expect(file.text).toBeUndefined();
+    });
+
+    test('re-resolves a converted image against the type it was routed on', async () => {
+      /* Conversion rewrote the stored type, so resolving against that asks about a format
+       * the administrator never configured a route for and delivers what they excluded. */
+      routeTo('none', 'image/png');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'converted-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.webp',
+        type: 'image/webp',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+        metadata: { routingMimeType: 'image/png' },
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('reads the Responses setting from a plain conversation too', async () => {
+      /* A non-agent Azure chat carries it in model options, and reading only the agent
+       * parameters re-resolves a natively supported PDF to text, which the record has
+       * none of, so the model receives nothing. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.azureOpenAI,
+        req: { config: { fileConfig: undefined } },
+      };
+      TestClient.modelOptions = { useResponsesApi: true };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'azure-pdf',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      TestClient.modelOptions = undefined;
+    });
+
+    test('resolves a custom endpoint policy by the name the admin configured', async () => {
+      /* `initializeAgent` rewrites `agent.provider` to the client family a custom endpoint
+       * runs on, so resolving by it looks up `openAI` and silently loses every override
+       * written against the endpoint's own name. Upload routed under that name, and
+       * delivery has to agree or the file is stored and never sent. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: 'Mock Provider B' },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                'Mock Provider B': {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'custom-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('resolves an agent policy by its own endpoint, not the agents container', async () => {
+      /* getEndpointFileConfig prefers endpointType, and an agents chat carries `agents`,
+       * so supplying it answers with the generic entry rather than the agent's.
+       * `initializeAgent` sets `agent.endpoint` from the agent's provider, so it names a
+       * configurable entry and never the container. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: EModelEndpoint.openAI },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                [EModelEndpoint.openAI]: {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'agent-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('keeps an explicitly named destination even under a different provider', async () => {
+      /* The user named this one, through the chooser or by requesting a tool resource,
+       * and that decision is not this endpoint's to re-derive. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'chosen-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { destinationChosen: true },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addAudios).toHaveBeenCalled();
+    });
+
+    test('keeps a none PDF in returned files without adding documents', async () => {
+      routeTo('none', 'application/pdf');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('keeps a text-delivery markdown file in returned files without adding documents', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'text-markdown',
+        filename: 'notes.md',
+        filepath: '/uploads/notes.md',
+        type: 'text/markdown',
+        bytes: 100,
+        source: 'local',
+        text: 'extracted markdown',
+        llmDeliveryPath: 'text',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('still delivers a provider PDF that lazy provisioning marked embedded', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-pdf',
+        filename: 'report.pdf',
+        filepath: '/uploads/report.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      expect(message.documents).toEqual([{ type: 'file' }]);
+    });
+
+    test('still delivers a provider image that carries a codeEnvRef', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-image',
+        filename: 'chart.png',
+        filepath: '/uploads/chart.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { codeEnvRef: { kind: 'user', id: 'u1' } },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addImageURLs).toHaveBeenCalled();
+      expect(message.image_urls).toEqual(['encoded-image']);
+    });
+
+    test('keeps excluding embedded legacy files that have no delivery path', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-embedded',
+        filename: 'legacy.pdf',
+        filepath: '/uploads/legacy.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('routes legacy files without llmDeliveryPath normally', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toEqual([{ type: 'file' }]);
+      expect(TestClient.addDocuments).toHaveBeenCalledWith(message, [file]);
+    });
+  });
+});
+
+describe('BaseClient compaction turns', () => {
+  const compactionOptions = { modelOptions: { model: 'gpt-4o-mini', temperature: 0 } };
+  const compactionHistory = [
+    { role: 'user', isCreatedByUser: true, text: 'Hello', messageId: 'u1' },
+    {
+      role: 'assistant',
+      isCreatedByUser: false,
+      text: 'Hi',
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      tokenCount: 7,
+    },
+  ];
+  let CompactClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compactionHistory);
+  });
+
+  test('presents the leaf as the user message and never re-saves it', async () => {
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage).toEqual({
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      conversationId: undefined,
+      isCreatedByUser: false,
+      text: '',
+    });
+    expect(CompactClient.skipSaveUserMessage).toBe(true);
+    /** History is loaded through the leaf, and nothing is appended to it. */
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+  });
+
+  test('refuses a compaction whose anchor is not the loaded leaf', async () => {
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 'missing',
+        preallocatedUserMessageId: 'missing',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'COMPACTION_ANCHOR_NOT_FOUND' });
+  });
+
+  test('refuses to compact a branch whose leaf is already a finished compaction', async () => {
+    const compacted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+            boundary: { messageId: 'step_summary', contentIndex: 0 },
+          },
+        ],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compacted);
+
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 's1',
+        preallocatedUserMessageId: 's1',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'NOTHING_TO_COMPACT',
+      message: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+    });
+  });
+
+  test('lets an interrupted compaction be retried', async () => {
+    const interrupted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [{ type: ContentTypes.SUMMARY, content: [], summarizing: true }],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, interrupted);
+
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 's1',
+      preallocatedUserMessageId: 's1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage.messageId).toBe('s1');
+  });
+
+  test('parents the response onto the leaf and persists only the response', async () => {
+    const saveSpy = jest.spyOn(CompactClient, 'saveMessageToDatabase').mockResolvedValue({});
+    const updateSpy = jest.spyOn(CompactClient, 'updateMessageInDatabase').mockResolvedValue({});
+    /** A calibration ratio and a counted anchor would, on an ordinary turn,
+     *  rewrite the user message's persisted count; the leaf's must survive. */
+    CompactClient.contextMeta = { calibrationRatio: 0.5 };
+    CompactClient.buildMessages = jest.fn(async () => ({
+      prompt: [],
+      tokenCountMap: { a1: 7 },
+      promptTokens: 7,
+    }));
+
+    const response = await CompactClient.sendMessage('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(response.parentMessageId).toBe('a1');
+    expect(response.isCreatedByUser).toBe(false);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(saveSpy.mock.calls[0][0].messageId).toBe(response.messageId);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+    expect(compactionHistory[1].tokenCount).toBe(7);
   });
 });

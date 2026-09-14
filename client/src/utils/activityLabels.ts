@@ -1,5 +1,6 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
+import { findResponseMessageIndex } from '~/utils/steer';
 import { hasParallelLanes } from '~/utils/lanes';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
@@ -677,29 +678,13 @@ export function lastCursorContentIdx(
   return lastIdx;
 }
 
-/**
- * Resolves the assistant response message an activity-label event targets.
- * Exact-id assistant match when `responseMessageId` is present (a miss
- * returns -1 so the caller retries next frame); best-effort last assistant
- * otherwise. Mirrors `findSteerMessageIndex`.
- */
+/** Resolves the assistant row an activity label targets; see `findResponseMessageIndex`. */
 export function findActivityLabelMessageIndex(
   messages: TMessage[],
   event: TActivityLabelEvent,
+  fallbackMessageIds: readonly (string | null | undefined)[] = [],
 ): number {
-  const isAssistant = (message: TMessage | undefined) => message?.isCreatedByUser === false;
-  const { responseMessageId } = event;
-  if (responseMessageId) {
-    return messages.findIndex(
-      (message) => message.messageId === responseMessageId && isAssistant(message),
-    );
-  }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (isAssistant(messages[i])) {
-      return i;
-    }
-  }
-  return -1;
+  return findResponseMessageIndex(messages, event.responseMessageId, fallbackMessageIds);
 }
 
 /**

@@ -1116,6 +1116,93 @@ describe('useStepHandler', () => {
         groupId: 2,
       });
     });
+
+    it('carries a steer landed on the placeholder into the renamed response', () => {
+      const user = createUserMessage({ messageId: 'user-1' });
+      const steerPart = {
+        type: ContentTypes.STEER,
+        [ContentTypes.STEER]: 'change of plan',
+        steerId: 'steer-1',
+      } as TMessageContentParts;
+      const placeholder = createResponseMessage({
+        messageId: 'user-1_',
+        parentMessageId: 'user-1',
+        content: [steerPart],
+      });
+      mockGetMessages.mockReturnValue([user, placeholder]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: user,
+        messages: [user, placeholder],
+        initialResponse: createResponseMessage({ messageId: 'user-1_', parentMessageId: 'user-1' }),
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ runId: 'server-resp', index: 1 }),
+          },
+          submission,
+        );
+      });
+
+      const calls = mockSetMessages.mock.calls;
+      const written = calls[calls.length - 1][0] as TMessage[];
+      expect(written.map((message) => message.messageId)).toEqual(['user-1', 'server-resp']);
+      expect(written[1].content?.[0]).toEqual(
+        expect.objectContaining({ type: ContentTypes.STEER, steerId: 'steer-1' }),
+      );
+    });
+
+    it('seeds a regenerated response from the submission placeholder, steer included', () => {
+      const user = createUserMessage({ messageId: 'user-1' });
+      const priorResponse = createResponseMessage({
+        messageId: 'prior-resp',
+        parentMessageId: 'user-1',
+        content: [{ type: ContentTypes.TEXT, text: 'old answer' }],
+      });
+      const steerPart = {
+        type: ContentTypes.STEER,
+        [ContentTypes.STEER]: 'change of plan',
+        steerId: 'steer-1',
+      } as TMessageContentParts;
+      const placeholder = createResponseMessage({
+        messageId: 'user-1_',
+        parentMessageId: 'user-1',
+        content: [steerPart],
+      });
+      mockGetMessages.mockReturnValue([user, priorResponse, placeholder]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: user,
+        isRegenerate: true,
+        messages: [user, priorResponse],
+        initialResponse: placeholder,
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ runId: 'server-resp', index: 1 }),
+          },
+          submission,
+        );
+      });
+
+      const calls = mockSetMessages.mock.calls;
+      const written = calls[calls.length - 1][0] as TMessage[];
+      const ids = written.map((message) => message.messageId);
+      expect(ids).toContain('server-resp');
+      expect(ids).not.toContain('user-1_');
+      const response = written.find((message) => message.messageId === 'server-resp');
+      expect(response?.content?.[0]).toEqual(
+        expect.objectContaining({ type: ContentTypes.STEER, steerId: 'steer-1' }),
+      );
+    });
   });
 
   describe('on_agent_update event', () => {

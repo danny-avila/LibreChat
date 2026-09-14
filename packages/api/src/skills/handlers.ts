@@ -36,6 +36,7 @@ import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { getDeploymentSkillIds } from './deployment';
+import { resolveDownloadPath } from '~/storage/path';
 import { resolveSkillFilePathParam } from './path';
 import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
@@ -702,7 +703,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
           'Content-Disposition',
           `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
         );
-        const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
+        const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
         stream.on('error', (err: Error) => {
           logger.error('[downloadFile] Stream error:', err);
           if (!res.headersSent) {
@@ -736,7 +737,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       // destroy (binary) or continue reading (text) in the same iteration.
       // N.B. breaking out of `for await...of` destroys the stream via
       // iterator.return(), so we must NOT use break + a second loop.
-      const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
+      const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
       const chunks: Buffer[] = [];
       let totalBytes = 0;
       let binaryChecked = false;

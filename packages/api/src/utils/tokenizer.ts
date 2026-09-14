@@ -78,6 +78,38 @@ class Tokenizer {
     }
   }
 
+  /**
+   * Token count for content that must not be estimated, or `undefined` when it
+   * cannot be produced, so the caller can omit a figure instead of publishing a
+   * guess. Used for a value that is ADDED to exact provider accounting — see the
+   * retained tool results of a turn stopped at the tool-call limit — where
+   * {@link getTokenCount}'s two fallbacks would corrupt the sum: the cold-start
+   * estimate is a character ratio, and the oversized-input shortcut returns byte
+   * length, several times the real count on ordinary text.
+   *
+   * The input is tokenized whole. Counting it in slices would be cheaper but not
+   * exact — a BPE merge spanning a seam is charged twice, ~1 token per 4 KiB
+   * measured — and this is the one caller that needs the real number. It costs
+   * ~60 ms/MB, so the caller decides how much content is worth counting
+   * (`endpoints.agents.maxRetainedToolCountChars`) rather than a bound here.
+   */
+  countExactTokens(text: string, encoding: EncodingName = 'o200k_base'): number | undefined {
+    if (text.length === 0) {
+      return 0;
+    }
+    const tokenizer = this.tokenizersCache[encoding];
+    if (!tokenizer) {
+      void this.initEncoding(encoding);
+      return undefined;
+    }
+    try {
+      return tokenizer.count(text);
+    } catch (error) {
+      this.handleCountError(encoding, tokenizer, error);
+      return undefined;
+    }
+  }
+
   private handleCountError(encoding: EncodingName, tokenizer: AiTokenizer, error: unknown): void {
     logger.error('[Tokenizer] Error getting token count:', error);
     if (this.tokenizersCache[encoding] !== tokenizer) {

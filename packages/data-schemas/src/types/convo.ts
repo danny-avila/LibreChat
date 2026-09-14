@@ -1,4 +1,9 @@
-import type { TSubagentThreadLineage } from 'librechat-data-provider';
+import type {
+  CodeApprovalMode,
+  CodeEnvironmentMode,
+  CodeWorkspaceSelection,
+  TSubagentThreadLineage,
+} from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 import type { ICompactionSemanticIndexProjection } from './compaction';
 
@@ -7,6 +12,14 @@ export const MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS = 128;
 export const MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH = 512;
 export const MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH = 1_000_000;
 export const MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH = 128;
+/**
+ * Provenance of a stored event-actor summary. States written before this
+ * version kept only `{ text, tokenCount }`, so a round that failed or never
+ * finished is indistinguishable from a checkpoint once persisted. A restore
+ * requires the current version, which is what lets a warm continuation trust
+ * the summary instead of rebuilding from durable history.
+ */
+export const AGENT_EVENT_ACTOR_SUMMARY_VERSION = 1;
 
 export interface ISubagentThreadLease {
   token: string;
@@ -43,6 +56,8 @@ export interface IAgentEventActorSkillIdentity {
 export interface IAgentEventActorSummary {
   text: string;
   tokenCount: number;
+  /** {@link AGENT_EVENT_ACTOR_SUMMARY_VERSION}; absent on pre-version states. */
+  version?: number;
 }
 
 /**
@@ -188,7 +203,8 @@ export interface IAgentEventActorSuspension {
   handlingGenerationCreatedAt?: number;
   actionId: string;
   jobCreatedAt: number;
-  status: 'pending' | 'claimed' | 'closed';
+  /** Owned states fence legacy replicas; snapshot readers expose pending/claimed. */
+  status: 'pending' | 'claimed' | 'pending_owned' | 'claimed_owned' | 'closed';
   resumeAttemptId?: string;
   outcome?: 'committed' | 'stale' | 'settled' | 'cancelled';
   closedAt?: Date;
@@ -264,6 +280,9 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  codeApprovalMode?: CodeApprovalMode;
+  codeEnvironmentMode?: CodeEnvironmentMode;
+  codeWorkspaces?: CodeWorkspaceSelection[];
   /** Immutable primary persisted-agent attribution for Insights. */
   initial_agent_id?: string | null;
   subagentThread?: TSubagentThreadLineage;
@@ -273,6 +292,8 @@ export interface IConversation extends Document {
   agentEventBinding?: IAgentEventBinding;
   /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
   agentEventActor?: IAgentEventActorState;
+  /** Prune work persisted atomically before the actor rotates its predecessor. */
+  agentEventActorCleanup?: IAgentEventActorCheckpoint[];
   /** Private invocation proof: active lifecycle fences plus settled same-ID receipts. */
   agentEventActorReconciliations?: IAgentEventActorReconciliation[];
   /** Private invalidation epoch; see {@link IAgentEventActorSnapshot.epoch}. */

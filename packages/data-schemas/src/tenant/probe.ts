@@ -108,6 +108,28 @@ function pinsTenant(filter: unknown, tenantId: string): boolean {
   return (filter as CommandDocument).tenantId === tenantId;
 }
 
+/** The exact atomic-claim predicate emitted by persisted document saves. */
+function pinsTenantOrLegacy(filter: unknown, tenantId: string): boolean {
+  if (filter == null || typeof filter !== 'object' || Array.isArray(filter)) {
+    return false;
+  }
+  const condition = (filter as CommandDocument).tenantId;
+  if (condition == null || typeof condition !== 'object' || Array.isArray(condition)) {
+    return false;
+  }
+  const keys = Object.keys(condition);
+  const values = (condition as CommandDocument).$in;
+  return (
+    keys.length === 1 &&
+    keys[0] === '$in' &&
+    Array.isArray(values) &&
+    values.length === 3 &&
+    values[0] === tenantId &&
+    values[1] === null &&
+    values[2] === ''
+  );
+}
+
 /** A `$lookup` reads its foreign collection inside the outer command. */
 function lookupTargetsTenant(lookup: unknown, tenantId: string): boolean {
   if (lookup == null || typeof lookup !== 'object') {
@@ -272,7 +294,11 @@ function isScoped(command: CommandDocument, commandName: string, tenantId: strin
   if (!PREDICATE_PATHS.has(commandName)) {
     return false;
   }
-  return predicatesOf(command, commandName).every((predicate) => pinsTenant(predicate, tenantId));
+  return predicatesOf(command, commandName).every(
+    (predicate) =>
+      pinsTenant(predicate, tenantId) ||
+      (commandName === 'update' && pinsTenantOrLegacy(predicate, tenantId)),
+  );
 }
 
 export function attachTenantProbe(

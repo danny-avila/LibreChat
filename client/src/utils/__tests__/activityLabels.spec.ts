@@ -7,6 +7,7 @@ import {
   lastCursorContentIdx,
   lastVisibleContentIdx,
   offsetActivityPhaseBoundary,
+  findActivityLabelMessageIndex,
 } from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
@@ -833,5 +834,29 @@ describe('groupActivityPhases — what a fold may not swallow', () => {
         childLabel('Checked the callers'),
       ]),
     ).toBeUndefined();
+  });
+});
+
+describe('findActivityLabelMessageIndex', () => {
+  const user: TMessage = { ...buildMessage([]), messageId: 'user-1', isCreatedByUser: true };
+  const placeholder: TMessage = { ...buildMessage([]), messageId: 'user-1_' };
+  const older: TMessage = { ...buildMessage([]), messageId: 'older-response' };
+  const event = {
+    index: 0,
+    part: labelPart(),
+    responseMessageId: 'server-resp',
+  } as TActivityLabelEvent;
+
+  it("falls back to the pane's own placeholder before the first run step renames it", () => {
+    expect(findActivityLabelMessageIndex([user, placeholder], event, ['user-1_'])).toBe(1);
+  });
+
+  it('never guesses by position when the event names a row the pane has not rendered', () => {
+    expect(findActivityLabelMessageIndex([user, older], event)).toBe(-1);
+    expect(findActivityLabelMessageIndex([user, older], event, [undefined, null])).toBe(-1);
+  });
+
+  it('ignores a placeholder id that names a user message', () => {
+    expect(findActivityLabelMessageIndex([user, older], event, ['user-1'])).toBe(-1);
   });
 });

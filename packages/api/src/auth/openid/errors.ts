@@ -1,6 +1,7 @@
 import type { LogArgument } from './types';
 
 export const OPENID_REFRESH_OWNERSHIP_LOST = 'OPENID_REFRESH_OWNERSHIP_LOST';
+export const OPENID_REFRESH_CANCELLED_BEFORE_GRANT = 'OPENID_REFRESH_CANCELLED_BEFORE_GRANT';
 
 /** Express-session uses this exact error when reload cannot find the persisted session. */
 export function isOpenIDSessionMissingError(error: unknown): boolean {

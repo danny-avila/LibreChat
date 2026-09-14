@@ -222,6 +222,35 @@ export function scopeReplacement(
 }
 
 /**
+ * The predicate a `save()` must carry for an already-persisted document, which
+ * would otherwise be filtered on identity alone.
+ *
+ * The legacy alternatives make pre-tenancy rows claimable while keeping the
+ * claim atomic: once one tenant stamps the row, another tenant's save no longer
+ * matches. `tenantIdModified` reflects caller changes before the save hook
+ * stamps a legacy row.
+ */
+export function tenantWritePredicate(
+  scope: TenantScope,
+  tenantIdModified: boolean,
+  tenantId: unknown,
+): { tenantId: { $in: [string, null, ''] } } | undefined {
+  if (
+    tenantIdModified &&
+    scope.kind !== 'system' &&
+    (scope.kind !== 'scoped' || tenantId !== scope.tenantId)
+  ) {
+    throw new TenantIsolationError(
+      '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
+    );
+  }
+  if (scope.kind !== 'scoped') {
+    return undefined;
+  }
+  return { tenantId: { $in: [scope.tenantId, null, ''] } };
+}
+
+/**
  * Stamps the active tenant onto a document being inserted.
  *
  * A document that already names a different tenant is refused in strict mode

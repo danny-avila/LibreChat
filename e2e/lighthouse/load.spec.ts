@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedConversations, seedMessages } from '../specs/mock/db';
 import { getE2EUser } from '../setup/user';
-import { auditPage } from './audit';
+import { auditPage, lcpElement } from './audit';
 
 const conversationId = '16390000-0000-4000-8000-000000000001';
 const title = 'Lighthouse latency audit';
@@ -35,7 +35,7 @@ test('serial database latency stays within web-vitals budgets', async ({ page, b
   for (const report of reports) {
     expect(report.finalDisplayedUrl, 'Do not measure a login redirect').toBe(url);
     expect(
-      JSON.stringify(report.audits['largest-contentful-paint-element'].details),
+      lcpElement(report),
       'The measured LCP must be the seeded transcript, not the shell or a spinner',
     ).toContain(transcriptMarker);
   }

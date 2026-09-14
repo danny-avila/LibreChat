@@ -97,6 +97,7 @@ const solidFills: Array<keyof IThemeRGB> = [
   'rgb-status-info-strong',
   'rgb-status-warning-strong',
   'rgb-status-error-strong',
+  'rgb-status-verified',
 ];
 
 const borderTokens: Array<keyof IThemeRGB> = [

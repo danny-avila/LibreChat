@@ -1,6 +1,14 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { useAtom } from 'jotai';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRecoilValue } from 'recoil';
+import { useAtom, useStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { AskAnswerStatus } from '~/components/Chat/ask/state';
@@ -9,6 +17,7 @@ import {
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { askSubmitStatusAtom } from '~/components/Chat/ask/state';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
@@ -49,6 +58,14 @@ interface ApprovalContextValue {
   ) => void;
   /** Current decision a card holds, if any (drives selected-state styling). */
   getDecision: (actionId: string, toolCallId: string) => Agents.ToolApprovalResolution | undefined;
+  /** Shared form state for duplicated timeline/composer review surfaces. */
+  getDecisionDraft: (actionId: string, toolCallId: string) => ToolApprovalDecisionDraft | undefined;
+  /** Replace a tool call's shared form state and notify every rendered surface. */
+  setDecisionDraft: (
+    actionId: string,
+    toolCallId: string,
+    draft: ToolApprovalDecisionDraft,
+  ) => void;
   /** Every recorded decision for an action, in registration order (the submit batch). */
   getDecisions: (actionId: string) => Agents.ToolApprovalResolution[];
   /** Declare that a tool_call belongs to an action so submit can require all. */
@@ -67,6 +84,10 @@ interface ApprovalContextValue {
   getStatus: (actionId: string) => AskAnswerStatus;
   /** Set an action's submission status (driven by the cards' submit via `useResumeSubmit`). */
   setStatus: (actionId: string, status: AskAnswerStatus) => void;
+  /** Atomically claim submission for an action across every rendered review surface. */
+  beginToolSubmission: (actionId: string) => boolean;
+  /** Release a claimed action after a retryable submission failure. */
+  endToolSubmission: (actionId: string) => void;
   /** Restore a free-form question answer after transient phase-slice remounts. */
   getAskAnswerDraft: (actionId: string) => string;
   /** Retain a free-form question answer for this response message's lifetime. */
@@ -74,6 +95,13 @@ interface ApprovalContextValue {
 }
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
+
+export interface ToolApprovalDecisionDraft {
+  active: Agents.ToolApprovalDecisionType | null;
+  editText: string;
+  responseText: string;
+  reason: string;
+}
 
 /** Cards call this; outside a provider it degrades to inert no-ops so a tool
  *  call without an active approval never crashes. */
@@ -86,6 +114,8 @@ const FALLBACK: ApprovalContextValue = {
   version: 0,
   setDecision: () => undefined,
   getDecision: () => undefined,
+  getDecisionDraft: () => undefined,
+  setDecisionDraft: () => undefined,
   getDecisions: () => [],
   registerToolCall: () => undefined,
   unregisterToolCall: () => undefined,
@@ -94,6 +124,8 @@ const FALLBACK: ApprovalContextValue = {
   isReady: () => false,
   getStatus: () => 'idle',
   setStatus: () => undefined,
+  beginToolSubmission: () => false,
+  endToolSubmission: () => undefined,
   getAskAnswerDraft: () => '',
   setAskAnswerDraft: () => undefined,
 };
@@ -117,27 +149,77 @@ const isExpiredError = (error: unknown): boolean => {
  * context-dependent submit lives in {@link useResumeSubmit}, which the cards call —
  * and the cards only render inside a live chat view where those providers exist.
  */
-export default function ApprovalProvider({ children }: { children: React.ReactNode }) {
+export default function ApprovalProvider({
+  children,
+  pendingAction,
+}: {
+  children: React.ReactNode;
+  pendingAction?: Agents.PendingAction | null;
+}) {
+  /** Content slices keep their historical local provider so exported/read-only
+   *  renderers remain self-contained. Inside a live chat, reuse the provider
+   *  spanning messages and composer instead of shadowing its decisions. */
+  const parent = useContext(ApprovalContext);
+  if (parent != null) {
+    return <>{children}</>;
+  }
+  return <ApprovalStateProvider pendingAction={pendingAction}>{children}</ApprovalStateProvider>;
+}
+
+function ApprovalStateProvider({
+  children,
+  pendingAction,
+}: {
+  children: React.ReactNode;
+  pendingAction?: Agents.PendingAction | null;
+}) {
   /** actionId → (tool_call_id → resolution). Mutable refs so reads are
    *  synchronous for `isReady`/submit; `version` is threaded into the context
    *  value so each bump produces a new value reference and consumers re-render
    *  (the callbacks alone are referentially stable, so without it a bump would
    *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
-  const registeredRef = useRef(new Map<string, Set<string>>());
+  const decisionDraftsRef = useRef(new Map<string, Map<string, ToolApprovalDecisionDraft>>());
+  const registeredRef = useRef(new Map<string, Map<string, number>>());
+  /** Server-owned batch membership. Unlike card registrations, this survives
+   *  folding, virtualization, late tool parts, and a second composer surface. */
+  const authoritativeRef = useRef(new Map<string, string[]>());
+  const authoritativeActionIdRef = useRef<string | null>(null);
   const askAnswerDraftsRef = useRef(new Map<string, string>());
+  const submittingToolActionIdsRef = useRef(new Set<string>());
   const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
   const [statusByAction, setStatusByAction] = useState<Record<string, AskAnswerStatus>>({});
 
+  useEffect(() => {
+    if (pendingAction?.payload.type !== 'tool_approval') {
+      authoritativeRef.current.clear();
+      authoritativeActionIdRef.current = null;
+      rerender();
+      return;
+    }
+    const { actionId } = pendingAction;
+    const nextIds = Array.from(
+      new Set(pendingAction.payload.action_requests.map((request) => request.tool_call_id)),
+    );
+    if (authoritativeActionIdRef.current !== actionId) {
+      decisionsRef.current.clear();
+      decisionDraftsRef.current.clear();
+      registeredRef.current.clear();
+      authoritativeRef.current.clear();
+      submittingToolActionIdsRef.current.clear();
+      setStatusByAction({});
+    }
+    authoritativeActionIdRef.current = actionId;
+    authoritativeRef.current.set(actionId, nextIds);
+    rerender();
+  }, [pendingAction, rerender]);
+
   const registerToolCall = useCallback(
     (actionId: string, toolCallId: string) => {
-      const set = registeredRef.current.get(actionId) ?? new Set<string>();
-      if (set.has(toolCallId)) {
-        return;
-      }
-      set.add(toolCallId);
-      registeredRef.current.set(actionId, set);
+      const counts = registeredRef.current.get(actionId) ?? new Map<string, number>();
+      counts.set(toolCallId, (counts.get(toolCallId) ?? 0) + 1);
+      registeredRef.current.set(actionId, counts);
       /** A newly-registered call shifts the lead / "of N" count for sibling
        *  cards — re-render so they reflect it. */
       rerender();
@@ -147,12 +229,17 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
 
   const unregisterToolCall = useCallback(
     (actionId: string, toolCallId: string) => {
-      const set = registeredRef.current.get(actionId);
-      if (!set || !set.has(toolCallId)) {
+      const counts = registeredRef.current.get(actionId);
+      const count = counts?.get(toolCallId);
+      if (!counts || count == null) {
         return;
       }
-      set.delete(toolCallId);
-      if (set.size === 0) {
+      if (count > 1) {
+        counts.set(toolCallId, count - 1);
+      } else {
+        counts.delete(toolCallId);
+      }
+      if (counts.size === 0) {
         registeredRef.current.delete(actionId);
       }
       /** Keep the decision for the provider's message-scoped lifetime. A
@@ -166,12 +253,17 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
   );
 
   const getLeadToolCallId = useCallback(
-    (actionId: string) => registeredRef.current.get(actionId)?.values().next().value,
+    (actionId: string) =>
+      authoritativeRef.current.get(actionId)?.[0] ??
+      registeredRef.current.get(actionId)?.keys().next().value,
     [],
   );
 
   const getRegisteredCount = useCallback(
-    (actionId: string) => registeredRef.current.get(actionId)?.size ?? 0,
+    (actionId: string) =>
+      authoritativeRef.current.get(actionId)?.length ??
+      registeredRef.current.get(actionId)?.size ??
+      0,
     [],
   );
 
@@ -194,25 +286,45 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     [],
   );
 
+  const getDecisionDraft = useCallback(
+    (actionId: string, toolCallId: string) =>
+      decisionDraftsRef.current.get(actionId)?.get(toolCallId),
+    [],
+  );
+
+  const setDecisionDraft = useCallback(
+    (actionId: string, toolCallId: string, draft: ToolApprovalDecisionDraft) => {
+      const drafts = decisionDraftsRef.current.get(actionId) ?? new Map();
+      drafts.set(toolCallId, draft);
+      decisionDraftsRef.current.set(actionId, drafts);
+      rerender();
+    },
+    [rerender],
+  );
+
   const getDecisions = useCallback((actionId: string) => {
-    const registered = registeredRef.current.get(actionId);
+    const required = authoritativeRef.current.get(actionId) ?? [
+      ...(registeredRef.current.get(actionId)?.keys() ?? []),
+    ];
     const decisions = decisionsRef.current.get(actionId);
-    if (registered == null || decisions == null) {
+    if (required.length === 0 || decisions == null) {
       return [];
     }
-    return [...registered].flatMap((toolCallId) => {
+    return required.flatMap((toolCallId) => {
       const decision = decisions.get(toolCallId);
       return decision == null ? [] : [decision];
     });
   }, []);
 
   const isReady = useCallback((actionId: string) => {
-    const registered = registeredRef.current.get(actionId);
+    const required = authoritativeRef.current.get(actionId) ?? [
+      ...(registeredRef.current.get(actionId)?.keys() ?? []),
+    ];
     const decided = decisionsRef.current.get(actionId);
-    if (!registered || registered.size === 0) {
+    if (required.length === 0) {
       return false;
     }
-    for (const toolCallId of registered) {
+    for (const toolCallId of required) {
       if (!decided?.has(toolCallId)) {
         return false;
       }
@@ -227,6 +339,18 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
 
   const setStatus = useCallback((actionId: string, status: AskAnswerStatus) => {
     setStatusByAction((prev) => ({ ...prev, [actionId]: status }));
+  }, []);
+
+  const beginToolSubmission = useCallback((actionId: string): boolean => {
+    if (submittingToolActionIdsRef.current.has(actionId)) {
+      return false;
+    }
+    submittingToolActionIdsRef.current.add(actionId);
+    return true;
+  }, []);
+
+  const endToolSubmission = useCallback((actionId: string) => {
+    submittingToolActionIdsRef.current.delete(actionId);
   }, []);
 
   const getAskAnswerDraft = useCallback(
@@ -247,6 +371,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       version,
       setDecision,
       getDecision,
+      getDecisionDraft,
+      setDecisionDraft,
       getDecisions,
       registerToolCall,
       unregisterToolCall,
@@ -255,6 +381,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      beginToolSubmission,
+      endToolSubmission,
       getAskAnswerDraft,
       setAskAnswerDraft,
     }),
@@ -262,6 +390,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       version,
       setDecision,
       getDecision,
+      getDecisionDraft,
+      setDecisionDraft,
       getDecisions,
       registerToolCall,
       unregisterToolCall,
@@ -270,6 +400,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      beginToolSubmission,
+      endToolSubmission,
       getAskAnswerDraft,
       setAskAnswerDraft,
     ],
@@ -292,15 +424,14 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  * than crashing.
  */
 export function useResumeSubmit() {
+  const jotaiStore = useStore();
   const chatContext = useContext(ChatContext);
   const conversation = chatContext?.conversation;
   const getEphemeralAgent = useGetEphemeralAgent();
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
-  const { getDecisions, isReady, setStatus } = useApprovalContext();
-  /** React state cannot lock a second click in the same browser task. Keep a
-   *  synchronous action-id guard alongside the rendered submission status. */
-  const submittingToolActionIdsRef = useRef(new Set<string>());
+  const { getDecisions, isReady, setStatus, beginToolSubmission, endToolSubmission } =
+    useApprovalContext();
   const submittingAskActionIdsRef = useRef(new Set<string>());
   /** Ask status lives in Jotai so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
@@ -340,27 +471,41 @@ export function useResumeSubmit() {
       if (!fields || decisions.length === 0 || !isReady(actionId)) {
         return;
       }
-      if (submittingToolActionIdsRef.current.has(actionId)) {
+      if (!beginToolSubmission(actionId)) {
         return;
       }
-      submittingToolActionIdsRef.current.add(actionId);
       setStatus(actionId, 'submitting');
       approvalMutation.mutate(
         { ...fields, actionId, decisions },
         {
-          onSuccess: () => setStatus(actionId, 'submitted'),
+          onSuccess: () => {
+            setStatus(actionId, 'submitted');
+            const pendingAtom = pendingApprovalActionFamily(fields.conversationId);
+            if (jotaiStore.get(pendingAtom)?.actionId === actionId) {
+              jotaiStore.set(pendingAtom, null);
+            }
+          },
           onError: (error) => {
             const expired = isExpiredError(error);
             if (!expired) {
               // Network/validation failures are retryable; a 409 is terminal.
-              submittingToolActionIdsRef.current.delete(actionId);
+              endToolSubmission(actionId);
             }
             setStatus(actionId, expired ? 'expired' : 'error');
           },
         },
       );
     },
-    [approvalMutation, buildResumeFields, getDecisions, isReady, setStatus],
+    [
+      approvalMutation,
+      beginToolSubmission,
+      buildResumeFields,
+      endToolSubmission,
+      getDecisions,
+      isReady,
+      jotaiStore,
+      setStatus,
+    ],
   );
 
   const submitAskAnswer = useCallback(

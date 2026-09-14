@@ -258,6 +258,16 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(result.oauthServers).toEqual(new Set());
     });
 
+    it('reuses request-loaded app configuration', async () => {
+      const appConfig = { mcpConfig: { server1: { type: 'stdio' } } };
+      mockGetAppConfig.mockClear();
+
+      await getMCPSetupData(mockUserId, { role: 'user', appConfig });
+
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.ensureConfigServers).toHaveBeenCalledWith(appConfig.mcpConfig);
+    });
+
     it('should handle null values from MCP manager gracefully', async () => {
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
@@ -1674,6 +1684,51 @@ describe('User parameter passing tests', () => {
       );
     });
 
+    it('preserves AbortError from the MCP tool implementation', async () => {
+      const mockUser = { id: 'cancel-user', role: 'USER' };
+      const abortController = new AbortController();
+      const abort = Object.assign(new Error('Stopped'), { name: 'AbortError' });
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn(async () => {
+          abortController.abort(abort);
+          throw abort;
+        }),
+      });
+
+      const mcpTool = await createMCPTool({
+        user: mockUser,
+        config: { url: 'https://cancel.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.func({}, undefined, {
+          signal: abortController.signal,
+          configurable: { user: mockUser },
+          metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+          toolCall: {},
+        }),
+      ).rejects.toBe(abort);
+    });
+
     it('keeps a real failure racing the Stop at error level', async () => {
       const mockUser = { id: 'race-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
@@ -2560,6 +2615,47 @@ describe('User parameter passing tests', () => {
           },
         ),
       ).rejects.toThrow('OBO tool call user mismatch');
+
+      expect(mockGetMCPManager).not.toHaveBeenCalled();
+    });
+
+    it('should reject direct OpenID bearer execution when effective and captured users differ', async () => {
+      const capturedUser = { id: 'captured-user', email: 'captured@example.com', role: 'USER' };
+      const effectiveUser = { id: 'effective-user', email: 'effective@example.com', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: capturedUser,
+        toolKey: `test-tool${D}direct-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        config: {
+          type: 'streamable-http',
+          url: 'https://direct.example.com',
+          source: 'yaml',
+          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        },
+        availableTools: {
+          [`test-tool${D}direct-server`]: {
+            function: {
+              description: 'Cached direct bearer tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: { user: effectiveUser },
+            metadata: { provider: 'openai', thread_id: 't1', run_id: 'r1' },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow('Direct OpenID bearer tool call user mismatch');
 
       expect(mockGetMCPManager).not.toHaveBeenCalled();
     });

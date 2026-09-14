@@ -1,9 +1,11 @@
 import { Constants } from 'librechat-data-provider';
-import type { EventSubmission, TMessage } from 'librechat-data-provider';
+import type { EventSubmission, TMessage, TConversation } from 'librechat-data-provider';
 import {
   buildCreatedInitialResponse,
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
+  keepLocalCodeApprovalMode,
+  buildRecoveryPreset,
   mergeErrorMessages,
   mergeRegenerateFinalMessages,
   startedAsNewConversation,
@@ -287,5 +289,66 @@ describe('mergeErrorMessages', () => {
 
     expect(merged.map(({ messageId }) => messageId)).toEqual(['user-1', 'assistant-1']);
     expect(merged[1]).toEqual(errorMessage);
+  });
+});
+
+describe('keepLocalCodeApprovalMode', () => {
+  const server = { conversationId: 'conversation-1', codeApprovalMode: 'ask' } as TConversation;
+  const local = {
+    conversationId: 'conversation-1',
+    codeApprovalMode: 'acceptEdits',
+  } as TConversation;
+
+  it('keeps a locally picked mode over the server copy', () => {
+    expect(keepLocalCodeApprovalMode(server, local, 'conversation-1').codeApprovalMode).toBe(
+      'acceptEdits',
+    );
+  });
+
+  it('lets the server copy win when nothing was picked locally', () => {
+    const unset = { conversationId: 'conversation-1' } as TConversation;
+    expect(keepLocalCodeApprovalMode(server, unset, 'conversation-1')).toBe(server);
+    expect(keepLocalCodeApprovalMode(server, null, 'conversation-1')).toBe(server);
+  });
+
+  it('ignores the mode of a conversation the user navigated to mid-run', () => {
+    const elsewhere = { conversationId: 'conversation-2', codeApprovalMode: 'fullAccess' };
+    expect(keepLocalCodeApprovalMode(server, elsewhere as TConversation, 'conversation-1')).toBe(
+      server,
+    );
+  });
+
+  it('follows a new chat to the id the server assigned', () => {
+    const assigned = { conversationId: 'server-id', codeApprovalMode: 'acceptEdits' };
+    expect(
+      keepLocalCodeApprovalMode(
+        { conversationId: 'server-id' } as TConversation,
+        assigned as TConversation,
+        'server-id',
+      ).codeApprovalMode,
+    ).toBe('acceptEdits');
+    expect(keepLocalCodeApprovalMode(server, assigned as TConversation, Constants.NEW_CONVO)).toBe(
+      server,
+    );
+  });
+});
+
+describe('buildRecoveryPreset', () => {
+  const sent = {
+    conversationId: 'conversation-1',
+    endpoint: 'agents',
+    agent_id: 'agent-1',
+    codeApprovalMode: 'ask',
+  } as TConversation;
+
+  it('carries the mode the detail cache holds for the rebuilt conversation', () => {
+    const cached = { ...sent, codeApprovalMode: 'acceptEdits' } as TConversation;
+    const preset = buildRecoveryPreset(sent, cached, 'conversation-1');
+    expect(preset.codeApprovalMode).toBe('acceptEdits');
+    expect(preset.agent_id).toBe('agent-1');
+  });
+
+  it('falls back to the sent mode when no record exists', () => {
+    expect(buildRecoveryPreset(sent, undefined, '_fresh').codeApprovalMode).toBe('ask');
   });
 });

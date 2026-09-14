@@ -351,6 +351,40 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('inherits the parent retention deadline across the child transcript lifecycle', async () => {
+    const userId = 'retained-subagent-user';
+    const parentConversationId = randomUUID();
+    const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+    await methods.saveConvo(
+      { userId, isTemporary: true, expiredAt },
+      {
+        conversationId: parentConversationId,
+        endpoint: EModelEndpoint.agents,
+        title: 'Retained parent thread',
+        agent_id: 'parent-agent',
+      },
+    );
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+
+    const started = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, started);
+    const threadId = requireThreadId(started);
+    const [conversation, messages] = await Promise.all([
+      methods.getConvo(userId, threadId),
+      methods.getMessages({ user: userId, conversationId: threadId }),
+    ]);
+
+    expect(conversation).toMatchObject({ isTemporary: true, expiredAt });
+    expect(messages).toHaveLength(2);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+      ]),
+    );
+  });
+
   it('registers a host-safe wakeup before child provider work begins', async () => {
     const userId = 'wakeup-user';
     const parentConversationId = randomUUID();
@@ -4244,12 +4278,16 @@ describe('SubagentThreadTaskStore', () => {
     );
     const taskId = requireAccepted(started).task.taskId;
     const threadId = requireThreadId(started);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if ((await methods.getConvo(userId, threadId)) != null) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
     expect(await methods.getConvo(userId, threadId)).not.toBeNull();
 
     const accepted = await ownerStore.controlTask(

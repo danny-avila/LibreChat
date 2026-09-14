@@ -81,7 +81,6 @@ librechat.yaml
 librechat.yml
 
 # Environment
-.npmrc
 .env*
 my.secrets
 !**/.env.example
@@ -192,5 +191,5 @@ codedb.snapshot
 scripts/activity-labels/results/
 
 !e2e/lighthouse/librechat.yaml
-/.lighthouseci/
+/.lighthouse/
 /e2e/lighthouse/.test-results/

@@ -11,6 +11,8 @@ import {
   extractEnvVariable,
   providerEndpointMap,
   normalizeEndpointName,
+  mapModelToAzureConfig,
+  resolveUseResponsesApi,
 } from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
@@ -35,6 +37,9 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  ImageDetail,
+  TAzureConfig,
+  CodeApprovalMode,
   TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
@@ -47,6 +52,7 @@ import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
+import type { ModelErrorTrackerCallback } from '~/agents/failures/tracker';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { TerminalSteerHook } from '~/agents/steering/runtime';
@@ -55,6 +61,7 @@ import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
+import type { RunFileSession } from './files/session';
 import type { RunFadingTiers } from './fading';
 import type * as t from '~/types';
 import {
@@ -62,6 +69,7 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  resolveAttachedCodeApprovalMode,
 } from '~/agents/hitl/byom';
 import {
   CHECK_BACKGROUND_TASK_NAME,
@@ -89,17 +97,23 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import {
+  createRunFileTools,
+  eventOnlyRunFileTools,
+  isRunFileSharingSupported,
+} from './files/runtime';
+import {
   resolveStreamLimits,
   resolveSubagentMaxTurns,
   resolveRecursionLimit,
 } from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
+import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
-import { resolveConfigHeaders, resolveModelHeaders } from '~/utils/headers';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
+import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -402,11 +416,13 @@ export function shouldReplayReasoningContent(
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
+  azureOptions?: t.AzureOptions;
   tools?: GenericTool[];
   maxContextTokens?: number;
   /** Pre-ratio context budget from initializeAgent. */
   baseContextTokens?: number;
   useLegacyContent?: boolean;
+  imageDetail?: ImageDetail;
   toolContextMap?: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   toolRegistry?: LCToolRegistry;
@@ -565,18 +581,66 @@ function normalizeAgentModelParameters(
  * Merges user-supplied summarization parameters on top of endpoint-resolved
  * overrides. User params win for top-level keys; `configuration` is
  * deep-merged so user additions (e.g. `defaultQuery`) don't wipe out the
- * resolved `baseURL`/`defaultHeaders`/`fetchOptions`.
+ * resolved `baseURL`/`defaultHeaders`/`fetchOptions`. When transport resolution already
+ * consumed the user's URL, retain its normalized form instead of restoring the raw template.
  */
 function mergeParameters(
   overrides: SummarizationClientOverrides,
   userParams: SummarizationConfig['parameters'],
+  resolvedTransport = false,
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...overrides, ...(userParams ?? {}) };
   const userConfiguration = (userParams as Record<string, unknown> | undefined)?.configuration;
   if (isPlainObject(overrides.configuration) && isPlainObject(userConfiguration)) {
-    merged.configuration = { ...overrides.configuration, ...userConfiguration };
+    merged.configuration = {
+      ...overrides.configuration,
+      ...userConfiguration,
+      ...(resolvedTransport ? { baseURL: overrides.configuration.baseURL } : {}),
+      defaultHeaders: mergeHeaders(
+        overrides.configuration.defaultHeaders as Record<string, string> | undefined,
+        userConfiguration.defaultHeaders as Record<string, string> | undefined,
+      ),
+      defaultQuery: {
+        ...(isPlainObject(overrides.configuration.defaultQuery)
+          ? overrides.configuration.defaultQuery
+          : {}),
+        ...(isPlainObject(userConfiguration.defaultQuery) ? userConfiguration.defaultQuery : {}),
+      },
+    };
   }
   return merged;
+}
+
+/** `model_parameters` is the agent's resolved `llmConfig`, whose kwargs the schema type omits. */
+function agentModelKwargs(
+  modelParameters: AgentModelParameters | undefined,
+): Record<string, unknown> | undefined {
+  if (modelParameters == null || !('modelKwargs' in modelParameters)) {
+    return undefined;
+  }
+  return isPlainObject(modelParameters.modelKwargs) ? modelParameters.modelKwargs : undefined;
+}
+
+/**
+ * `getOpenAILLMConfig` carries an Azure Astra deployment alias in
+ * `modelKwargs.model`, which langchain spreads after `model`. The SDK's
+ * same-provider summarizer copies the agent's client options and overrides only
+ * `model`, so a summarizer on another model would still reach the agent's
+ * deployment. Hand it the agent's kwargs without the alias.
+ */
+function summarizationModelKwargs(
+  agentKwargs: Record<string, unknown> | undefined,
+  agentModel: string | undefined,
+  summarizationModel: string | undefined,
+): Record<string, unknown> | undefined {
+  if (agentKwargs == null || !('model' in agentKwargs)) {
+    return undefined;
+  }
+  if (!isNonEmptyString(summarizationModel) || summarizationModel === agentModel) {
+    return undefined;
+  }
+  const { model: _alias, ...kwargs } = agentKwargs;
+  return kwargs;
 }
 
 /**
@@ -687,6 +751,370 @@ function resolveBuiltInClientOverrides(
     ...shaping
   } = llmConfig;
   return Object.keys(shaping).length > 0 ? shaping : undefined;
+}
+
+/**
+ * Memory bound for the warning deduplication below, not an operator setting: it only decides when a
+ * warning for one of more than this many distinct, concurrently recurring problems is logged again.
+ */
+const MAX_UNRESOLVED_SUMMARIZATION_WARNINGS = 256;
+/** Reported summarization misconfigurations per tenant, least recently seen first. */
+const unresolvedSummarizationWarnings = new Set<string>();
+
+function warnUnresolvedSummarization(message: string, tenantId?: string): void {
+  const key = `${tenantId ?? ''}\n${message}`;
+  if (unresolvedSummarizationWarnings.delete(key)) {
+    unresolvedSummarizationWarnings.add(key);
+    return;
+  }
+  if (unresolvedSummarizationWarnings.size >= MAX_UNRESOLVED_SUMMARIZATION_WARNINGS) {
+    const [leastRecentlySeen] = unresolvedSummarizationWarnings;
+    unresolvedSummarizationWarnings.delete(leastRecentlySeen);
+  }
+  unresolvedSummarizationWarnings.add(key);
+  if (tenantId == null) {
+    logger.warn(`[createRun] ${message}`);
+    return;
+  }
+  logger.warn(`[createRun] ${message}`, { tenantId });
+}
+
+/** Azure base URL templates the client fills from its own options rather than the environment. */
+const AZURE_URL_TEMPLATE = /(\$\{(?:INSTANCE_NAME|DEPLOYMENT_NAME)\})/;
+
+/** The URL's segments around Azure's reserved templates, which sit at the odd indexes. */
+function splitAzureURLTemplates(url: string): string[] {
+  return url.split(AZURE_URL_TEMPLATE);
+}
+
+/** Expands environment references in a URL, leaving Azure's reserved templates for an Azure client. */
+function expandTransportURL(url: string, targetsAzure: boolean): string {
+  if (!targetsAzure) {
+    return extractEnvVariable(url);
+  }
+  return splitAzureURLTemplates(url)
+    .map((segment, index) => (index % 2 === 1 ? segment : extractEnvVariable(segment)))
+    .join('');
+}
+
+/**
+ * Admin-authored transport values may reference environment variables, as endpoint credentials
+ * do. Expanded once, before resolution and before the parameters are layered over the client.
+ */
+function expandSummarizationTransport(
+  parameters: SummarizationConfig['parameters'],
+  targetsAzure: boolean,
+): SummarizationConfig['parameters'] {
+  if (!isPlainObject(parameters)) {
+    return parameters;
+  }
+  const params = parameters as Record<string, unknown>;
+  const expanded: Record<string, unknown> = { ...params };
+  if (typeof params.apiKey === 'string') {
+    expanded.apiKey = extractEnvVariable(params.apiKey);
+  }
+  if (typeof params.baseURL === 'string') {
+    expanded.baseURL = expandTransportURL(params.baseURL, targetsAzure);
+  }
+  if (isPlainObject(params.configuration) && typeof params.configuration.baseURL === 'string') {
+    expanded.configuration = {
+      ...params.configuration,
+      baseURL: expandTransportURL(params.configuration.baseURL, targetsAzure),
+    };
+  }
+  return expanded as SummarizationConfig['parameters'];
+}
+
+/** The base URL and API key a summarization target's own parameters set, which replace the resolved ones. */
+function summarizationTransportOverrides(parameters: SummarizationConfig['parameters']): {
+  baseURL?: string;
+  apiKey?: string;
+} {
+  const configuration = (parameters as Record<string, unknown> | undefined)?.configuration;
+  const configurationBaseURL =
+    isPlainObject(configuration) && typeof configuration.baseURL === 'string'
+      ? configuration.baseURL
+      : undefined;
+  return {
+    baseURL:
+      configurationBaseURL ??
+      (typeof parameters?.baseURL === 'string' ? parameters.baseURL : undefined),
+    apiKey: typeof parameters?.apiKey === 'string' ? parameters.apiKey : undefined,
+  };
+}
+
+/** Reject unusable transports while shaping the run, before a compaction client can fail it. */
+function isSummarizationURLAvailable(baseURL: string | undefined, azure?: t.AzureOptions): boolean {
+  if (baseURL == null) {
+    return azure == null || isNonEmptyString(azure.azureOpenAIApiInstanceName);
+  }
+  try {
+    const url = new URL(constructAzureURL({ baseURL, azureOptions: azure }));
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') && !hasUnresolvedPlaceholder(url.href)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Azure Responses shares OpenAI's SDK provider, so switching endpoints must replace its transport.
+ * Returns `undefined` when the OpenAI credentials cannot be resolved without a per-user lookup.
+ */
+function resolveOpenAISummarization(
+  model: string,
+  appConfig: AppConfig | undefined,
+  parameters: SummarizationConfig['parameters'],
+  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
+  const overrides = summarizationTransportOverrides(parameters);
+  const baseURL = overrides.baseURL ?? getBuiltInBaseURL(EModelEndpoint.openAI);
+  const apiKey = overrides.apiKey ?? process.env.OPENAI_API_KEY;
+  if (
+    !apiKey ||
+    !isSummarizationURLAvailable(baseURL) ||
+    isUserProvided(baseURL) ||
+    isUserProvided(apiKey) ||
+    hasUnresolvedPlaceholder(apiKey) ||
+    (baseURL != null && hasUnresolvedPlaceholder(baseURL))
+  ) {
+    warnUnresolvedSummarization(
+      `Summarization with OpenAI model "${model}" is disabled for Azure OpenAI agents: it needs a server-configured OpenAI API key and base URL.`,
+      headerContext.tenantId,
+    );
+    return undefined;
+  }
+  const headers = mergeHeaders(
+    appConfig?.endpoints?.all?.headers,
+    appConfig?.endpoints?.openAI?.headers,
+  );
+  const { llmConfig, configOptions } = getOpenAIConfig(
+    apiKey,
+    {
+      modelOptions: {
+        model,
+        reasoning_effort: summarizationReasoningEffort(parameters),
+        useResponsesApi:
+          typeof parameters?.useResponsesApi === 'boolean' ? parameters.useResponsesApi : undefined,
+      },
+      reverseProxyUrl: baseURL,
+      proxy: process.env.PROXY ?? undefined,
+      headers: resolveModelHeaders({
+        headers: headers ?? {},
+        user: createSafeUser(headerContext.user),
+        tenantId: headerContext.tenantId,
+        body: headerContext.requestBody,
+      }),
+    },
+    EModelEndpoint.openAI,
+  );
+  return {
+    provider: Providers.OPENAI,
+    clientOverrides: {
+      ...llmConfig,
+      apiKey,
+      useResponsesApi: llmConfig.useResponsesApi ?? false,
+      firstPartyEndpoint: llmConfig.firstPartyEndpoint ?? false,
+      reasoning: llmConfig.reasoning,
+      modelKwargs: llmConfig.modelKwargs ?? {},
+      configuration: configOptions,
+    },
+  };
+}
+
+type AzureSummarizationTarget = Omit<ReturnType<typeof mapModelToAzureConfig>, 'azureOptions'> & {
+  azureOptions: t.AzureOptions;
+  group?: TAzureConfig['groupMap'][string];
+};
+
+/**
+ * The summary model's Azure credentials, resolved the way `initializeOpenAI` resolves an agent's:
+ * the `azureOpenAI` configuration when present, otherwise the legacy environment credentials.
+ * Returns `undefined` (reported once) when the configuration does not define the model.
+ */
+function resolveAzureSummarizationTarget(
+  model: string,
+  azureConfig: TAzureConfig | undefined,
+  tenantId: string | undefined,
+): AzureSummarizationTarget | undefined {
+  if (!azureConfig) {
+    return { azureOptions: getAzureCredentials() };
+  }
+  try {
+    const groupName = azureConfig.modelGroupMap[model]?.group;
+    return {
+      ...mapModelToAzureConfig({
+        modelName: model,
+        modelGroupMap: azureConfig.modelGroupMap,
+        groupMap: azureConfig.groupMap,
+      }),
+      group: groupName ? azureConfig.groupMap[groupName] : undefined,
+    };
+  } catch (error) {
+    warnUnresolvedSummarization(
+      `Summarization with Azure OpenAI model "${model}" is disabled: ${(error as Error).message}`,
+      tenantId,
+    );
+    return undefined;
+  }
+}
+
+/** Reuse request-resolved credentials for self-summaries, including user-provided Azure keys. */
+function azureSummarizationSource(agent: RunAgent): AzureSummarizationTarget {
+  const options = agent.model_parameters as Partial<t.OAIClientOptions> & t.AzureOptions;
+  const configuration = options.configuration;
+  const baseURL = configuration?.baseURL ?? options.azureOpenAIBasePath;
+  const deployment = agentModelKwargs(agent.model_parameters)?.model;
+  return {
+    serverless: agent.useLegacyContent === true,
+    baseURL: baseURL ?? undefined,
+    azureOptions: {
+      azureOpenAIApiKey:
+        options.azureOpenAIApiKey ??
+        (typeof options.apiKey === 'string' ? options.apiKey : undefined),
+      azureOpenAIApiInstanceName:
+        options.azureOpenAIApiInstanceName ?? agent.azureOptions?.azureOpenAIApiInstanceName,
+      azureOpenAIApiDeploymentName:
+        options.azureOpenAIApiDeploymentName ??
+        (typeof deployment === 'string' ? deployment : options.model),
+      azureOpenAIApiVersion:
+        options.azureOpenAIApiVersion ??
+        agent.azureOptions?.azureOpenAIApiVersion ??
+        configuration?.defaultQuery?.['api-version'] ??
+        undefined,
+    },
+  };
+}
+
+/**
+ * Resolve the summary model's deployment and transport before the SDK inherits agent options.
+ * A same-provider summarizer layers these over the agent's client options, so a summary group
+ * without a base path clears the agent's instead of sending its deployment to that resource.
+ * Returns `undefined` when the model cannot be resolved without a per-user lookup.
+ */
+function resolveAzureSummarization(
+  model: string,
+  appConfig: AppConfig | undefined,
+  parameters: SummarizationConfig['parameters'],
+  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  source?: RunAgent,
+): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
+  const sourceOptions = source?.model_parameters as Partial<t.OAIClientOptions> | undefined;
+  const target = source
+    ? azureSummarizationSource(source)
+    : resolveAzureSummarizationTarget(
+        model,
+        appConfig?.endpoints?.[EModelEndpoint.azureOpenAI],
+        headerContext.tenantId,
+      );
+  if (!target) {
+    return undefined;
+  }
+  const { baseURL, headers, serverless, group } = target;
+  const overrides = summarizationTransportOverrides(parameters);
+  const azureOptions: t.AzureOptions = {
+    ...target.azureOptions,
+    azureOpenAIApiKey: overrides.apiKey ?? target.azureOptions.azureOpenAIApiKey,
+  };
+  const resolvedBaseURL =
+    overrides.baseURL ?? baseURL ?? getBuiltInBaseURL(EModelEndpoint.azureOpenAI);
+  if (
+    !azureOptions.azureOpenAIApiKey ||
+    !isSummarizationURLAvailable(resolvedBaseURL, serverless ? undefined : azureOptions) ||
+    Object.values(azureOptions).some(
+      (value) =>
+        typeof value === 'string' && (isUserProvided(value) || hasUnresolvedPlaceholder(value)),
+    ) ||
+    isUserProvided(resolvedBaseURL) ||
+    (resolvedBaseURL != null &&
+      splitAzureURLTemplates(resolvedBaseURL).some(
+        (segment, index) => index % 2 === 0 && hasUnresolvedPlaceholder(segment),
+      ))
+  ) {
+    warnUnresolvedSummarization(
+      `Summarization with Azure OpenAI model "${model}" is disabled: it needs a server-configured Azure OpenAI API key and base URL.`,
+      headerContext.tenantId,
+    );
+    return undefined;
+  }
+  const resolvedHeaders = sourceOptions
+    ? (sourceOptions.configuration?.defaultHeaders as Record<string, string> | undefined)
+    : resolveModelHeaders({
+        headers: mergeHeaders(appConfig?.endpoints?.all?.headers, headers) ?? {},
+        user: createSafeUser(headerContext.user),
+        tenantId: headerContext.tenantId,
+        body: headerContext.requestBody,
+      });
+  const { llmConfig, configOptions } = getOpenAIConfig(
+    azureOptions.azureOpenAIApiKey,
+    {
+      azure: serverless ? undefined : azureOptions,
+      reverseProxyUrl: resolvedBaseURL,
+      proxy: process.env.PROXY ?? undefined,
+      headers:
+        serverless || sourceOptions != null
+          ? { ...resolvedHeaders, 'api-key': azureOptions.azureOpenAIApiKey }
+          : resolvedHeaders,
+      defaultQuery:
+        serverless && azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined,
+      modelOptions: {
+        model: source?.model ?? model,
+        reasoning_effort: summarizationReasoningEffort(parameters),
+        useResponsesApi:
+          typeof parameters?.useResponsesApi === 'boolean'
+            ? parameters.useResponsesApi
+            : sourceOptions?.useResponsesApi,
+      },
+      addParams: {
+        ...group?.addParams,
+        ...(typeof parameters?.useResponsesApi === 'boolean'
+          ? { useResponsesApi: parameters.useResponsesApi }
+          : {}),
+      },
+      dropParams: group?.dropParams?.filter(
+        (key) => key !== 'useResponsesApi' || typeof parameters?.useResponsesApi !== 'boolean',
+      ),
+    },
+    EModelEndpoint.azureOpenAI,
+  );
+  const sourceKwargs = agentModelKwargs(source?.model_parameters);
+  const preservesApiMode = !!sourceOptions?.useResponsesApi === !!llmConfig.useResponsesApi;
+  const sourceTokenLimit = sourceKwargs?.max_output_tokens ?? sourceKwargs?.max_completion_tokens;
+  const inheritedTokenLimit =
+    typeof sourceTokenLimit === 'number'
+      ? {
+          [llmConfig.useResponsesApi ? 'max_output_tokens' : 'max_completion_tokens']:
+            sourceTokenLimit,
+        }
+      : {};
+  return {
+    provider: !serverless && !llmConfig.useResponsesApi ? Providers.AZURE : Providers.OPENAI,
+    clientOverrides: {
+      ...sourceOptions,
+      azureOpenAIBasePath: undefined,
+      azureOpenAIApiKey: undefined,
+      azureOpenAIApiInstanceName: undefined,
+      azureOpenAIApiDeploymentName: undefined,
+      azureOpenAIApiVersion: undefined,
+      ...llmConfig,
+      apiKey: azureOptions.azureOpenAIApiKey,
+      useResponsesApi: llmConfig.useResponsesApi ?? false,
+      firstPartyEndpoint: llmConfig.firstPartyEndpoint ?? false,
+      reasoning: llmConfig.reasoning ?? (preservesApiMode ? sourceOptions?.reasoning : undefined),
+      modelKwargs: {
+        ...(preservesApiMode ? sourceKwargs : undefined),
+        ...inheritedTokenLimit,
+        ...llmConfig.modelKwargs,
+        model: llmConfig.modelKwargs?.model ?? llmConfig.model,
+      },
+      configuration: sourceOptions
+        ? { ...sourceOptions.configuration, ...configOptions }
+        : configOptions,
+    },
+  };
 }
 
 /**
@@ -849,10 +1277,19 @@ function resolveSummarizationProvider(
      * agent flow builds for that endpoint (`initializeAgent` applies the same
      * precedence).
      */
-    return {
-      provider: detectedProvider ?? overrideProvider,
-      clientOverrides,
-    };
+    const provider = detectedProvider ?? overrideProvider;
+    /**
+     * On the agent's provider the SDK layers these over the agent's own client options, so this
+     * different endpoint replaces the agent's API mode, first-party declaration, reasoning and
+     * request kwargs (an Azure Astra agent's Responses routing, for one) instead of inheriting them.
+     */
+    if (provider === target.agentProvider) {
+      clientOverrides.useResponsesApi ??= false;
+      clientOverrides.firstPartyEndpoint ??= false;
+      clientOverrides.modelKwargs ??= {};
+      clientOverrides.reasoning ??= undefined;
+    }
+    return { provider, clientOverrides };
   } catch (error) {
     logger.warn(
       `[resolveSummarizationProvider] failed to resolve "${rawProvider}"; falling back to raw provider`,
@@ -870,6 +1307,7 @@ function shapeSummarizationConfig(
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
   headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  agent?: RunAgent,
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
   /**
@@ -885,14 +1323,61 @@ function shapeSummarizationConfig(
     normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
 
   const model = config?.model ?? fallbackModel;
+  const targetsAzure =
+    rawProvider === EModelEndpoint.azureOpenAI ||
+    (agentEndpoint === EModelEndpoint.azureOpenAI && config?.provider == null);
+  const userParameters = expandSummarizationTransport(config?.parameters, targetsAzure);
 
-  const { provider, clientOverrides } = isSameEndpointAsAgent
-    ? { provider: fallbackProvider, clientOverrides: undefined }
-    : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
+  const selfAzureModel =
+    agentEndpoint === EModelEndpoint.azureOpenAI &&
+    (model === fallbackModel || model === agent?.model);
+  const transportOverrides = summarizationTransportOverrides(userParameters);
+  const overridesAzureTransport =
+    transportOverrides.baseURL != null ||
+    transportOverrides.apiKey != null ||
+    typeof userParameters?.useResponsesApi === 'boolean';
+  const selectsAzureDeployment =
+    targetsAzure &&
+    isNonEmptyString(model) &&
+    config?.enabled !== false &&
+    (agentEndpoint !== EModelEndpoint.azureOpenAI ||
+      model !== fallbackModel ||
+      overridesAzureTransport);
+  const azureOverrides = selectsAzureDeployment
+    ? resolveAzureSummarization(
         model,
-        parameters: config?.parameters,
-        agentProvider: fallbackProvider,
-      });
+        appConfig,
+        userParameters,
+        headerContext,
+        selfAzureModel ? agent : undefined,
+      )
+    : undefined;
+  const selectsOpenAIForAzureAgent =
+    agentEndpoint === EModelEndpoint.azureOpenAI &&
+    config?.provider === EModelEndpoint.openAI &&
+    config.enabled !== false &&
+    isNonEmptyString(model);
+  const openAIOverrides = selectsOpenAIForAzureAgent
+    ? resolveOpenAISummarization(model, appConfig, userParameters, headerContext)
+    : undefined;
+  /**
+   * A target resolved here is not handed to another client when resolution fails. Azure Responses
+   * shares the `openAI` provider, so the SDK would summarize an OpenAI target through the agent's
+   * Azure resource, and would send an unmapped Azure model name where a deployment belongs.
+   */
+  const targetUnavailable =
+    (selectsAzureDeployment && azureOverrides == null) ||
+    (selectsOpenAIForAzureAgent && openAIOverrides == null);
+  const { provider, clientOverrides } =
+    openAIOverrides ??
+    azureOverrides ??
+    (isSameEndpointAsAgent
+      ? { provider: fallbackProvider, clientOverrides: undefined }
+      : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
+          model,
+          parameters: userParameters,
+          agentProvider: fallbackProvider,
+        }));
   const trigger =
     config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
@@ -901,9 +1386,8 @@ function shapeSummarizationConfig(
   /**
    * Custom-endpoint overrides are merged into `parameters` so the SDK's
    * `buildSummarizationClientConfig` spreads them onto the summarization
-   * client options. Only applied when summarization targets a *different*
-   * custom endpoint than the main agent; the same-endpoint case leaves
-   * `parameters` untouched so `agentContext.clientOptions` wins.
+   * client options. Azure self-summaries with explicit transport overrides also resolve here,
+   * using the initialized agent's identity and credentials instead of a new configuration lookup.
    *
    * Order matters: `clientOverrides` supplies endpoint defaults (baseURL,
    * apiKey, headers, transforms), then explicit user `summarization.parameters`
@@ -914,18 +1398,56 @@ function shapeSummarizationConfig(
    */
   const mergedParameters =
     clientOverrides != null
-      ? mergeParameters(clientOverrides, config?.parameters)
-      : config?.parameters;
+      ? mergeParameters(
+          clientOverrides,
+          userParameters,
+          azureOverrides != null || openAIOverrides != null,
+        )
+      : userParameters;
+  /** Placed first so an explicit user `modelKwargs` still replaces the agent's wholesale. */
+  const modelKwargs =
+    provider === fallbackProvider
+      ? summarizationModelKwargs(agentModelKwargs(agent?.model_parameters), fallbackModel, model)
+      : undefined;
   /**
    * A scalar `reasoning_effort` — the only reasoning shape the yaml schema
    * accepts — is inert as a client option and leaves the summarizer running at
    * whatever effort the main agent resolved. Translate it the way the main
    * flow's `getOpenAIConfig` would for the summarization target.
    */
-  const parameters = resolveReasoningParams({ provider, model, parameters: mergedParameters });
+  let parameters = resolveReasoningParams({
+    provider,
+    model,
+    parameters: modelKwargs != null ? { modelKwargs, ...mergedParameters } : mergedParameters,
+  });
+
+  /** The SDK sets maxTokens for this cap, but LangChain spreads modelKwargs after it. */
+  const parameterTokenCap = userParameters?.maxSummaryTokens;
+  const summaryTokenCap =
+    typeof parameterTokenCap === 'number' && parameterTokenCap > 0
+      ? parameterTokenCap
+      : config?.maxSummaryTokens;
+  const inheritedKwargs =
+    provider === fallbackProvider ? agentModelKwargs(agent?.model_parameters) : undefined;
+  const effectiveKwargs = isPlainObject(parameters?.modelKwargs)
+    ? parameters.modelKwargs
+    : inheritedKwargs;
+  if (typeof summaryTokenCap === 'number' && effectiveKwargs != null) {
+    const {
+      max_tokens: _maxTokens,
+      max_completion_tokens: _maxCompletionTokens,
+      max_output_tokens: _maxOutputTokens,
+      ...kwargs
+    } = effectiveKwargs;
+    parameters = { ...parameters, modelKwargs: kwargs };
+  }
 
   return {
-    enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
+    enabled:
+      !targetUnavailable &&
+      config?.enabled !== false &&
+      isNonEmptyString(provider) &&
+      isNonEmptyString(model),
     config: {
       trigger,
       provider,
@@ -975,6 +1497,8 @@ type CallbackClientOptions = {
   fallbacks?: FallbackConfig[];
 };
 
+type RunModelCallback = ModelBoundChatModelCallback | ModelErrorTrackerCallback;
+
 /**
  * Installs run-stable callbacks on the model client itself. Subagent child
  * graphs intentionally replace invocation callbacks with their own event
@@ -983,7 +1507,7 @@ type CallbackClientOptions = {
  */
 function withModelCallbacks<T extends object>(
   options: T,
-  modelCallbacks: readonly ModelBoundChatModelCallback[] | undefined,
+  modelCallbacks: readonly RunModelCallback[] | undefined,
 ): T {
   if (!modelCallbacks?.length) {
     return options;
@@ -1551,6 +2075,7 @@ export async function createRun({
   messages,
   discoveredToolNames,
   requestBody,
+  codeApprovalMode: requestedCodeApprovalMode,
   user,
   tenantId,
   centralTraceExportEnabled,
@@ -1560,6 +2085,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  summarizeOnly = false,
   compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
@@ -1569,6 +2095,7 @@ export async function createRun({
   appConfig,
   subagentUsageSink,
   subagentTasks,
+  runFiles,
   steering,
   activityLabel,
   activityPhase,
@@ -1589,6 +2116,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  codeApprovalMode?: CodeApprovalMode;
   user?: IUser;
   tenantId?: string;
   /**
@@ -1615,12 +2143,18 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /**
+   * Manual compaction: the primary agent summarizes the history outright and
+   * the run ends after the summary without a model call. Applies to the
+   * primary agent only; a chained or delegated agent never runs.
+   */
+  summarizeOnly?: boolean;
   /** Bounded, source-addressed navigation guidance derived with provider messages. */
   compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
-  /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
-  modelCallbacks?: readonly ModelBoundChatModelCallback[];
+  /** Model callbacks inherited by root, summary, fallback, and subagent clients. */
+  modelCallbacks?: readonly RunModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**
@@ -1653,6 +2187,8 @@ export async function createRun({
   subagentUsageSink?: (event: SubagentUsageEvent) => void;
   /** Host-owned detached-subagent task store and trusted parent-thread scope. */
   subagentTasks?: SubagentTaskConfig;
+  /** Run-scoped file authorization and child context, supplied by the host. */
+  runFiles?: RunFileSession;
   /**
    * The run-scoped steer-drain hook (a `PostToolBatch` callback built via
    * `createSteerDrainHook`). Registered on the run's hook registry independent
@@ -1713,6 +2249,28 @@ export async function createRun({
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
 >): Promise<Run<IState>> {
+  const resolvedRunId = runId ?? randomUUID();
+  const runFilesActive =
+    runFiles?.activate(
+      resolvedRunId,
+      conversationId ?? requestBody?.conversationId ?? '',
+      agents.map((agent) => agent.id),
+      signal,
+    ) === true;
+  if (
+    appConfig?.endpoints?.agents?.fileSharing?.enabled === true &&
+    agents[0]?.subagents?.enabled === true &&
+    agents[0]?.subagents?.shareFiles === true &&
+    !runFilesActive
+  ) {
+    throw new Error('Run file sharing is not supported by this endpoint: a file host is required.');
+  }
+  if (runFilesActive && !isRunFileSharingSupported()) {
+    throw new Error('Run file sharing requires an agents SDK with subagent context support.');
+  }
+  // Detached child threads resume in a new host request without this run's
+  // input snapshot or publication routing. Shared children stay foreground.
+  const activeSubagentTasks = runFilesActive ? undefined : subagentTasks;
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -1745,12 +2303,48 @@ export async function createRun({
 
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
+    if (runFilesActive) {
+      for (const { memberConfigs } of agent.subagentGraphConfigs ?? []) {
+        const deliveryTargets = new Set(
+          memberConfigs.map((member) =>
+            JSON.stringify([
+              member.provider,
+              member.endpoint ?? member.provider,
+              member.model_parameters?.model ?? member.model,
+              resolveUseResponsesApi(member.model_parameters?.useResponsesApi) === true,
+              // Unset detail inherits the request value, which may differ from explicit auto.
+              member.imageDetail ?? null,
+            ]),
+          ),
+        );
+        if (deliveryTargets.size > 1) {
+          throw new Error(
+            'Shared-file subagent teams must use the same provider, endpoint, model, API mode, and image-detail setting for every member.',
+          );
+        }
+      }
+    }
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
+    /**
+     * Resolve request-based headers across provider-specific header locations
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
+     * Google `customHeaders`). Done at this step because the request body may
+     * contain dynamic values (e.g. conversationId) that are only known after
+     * agent initialization. Resolve before a self-summary snapshots this configuration.
+     */
+    resolveConfigHeaders({
+      llmConfig: agent.model_parameters as Partial<t.RunLLMConfig>,
+      user: createSafeUser(user),
+      tenantId,
+      body: requestBody,
+    });
+
+    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const shapedSummarization = shapeSummarizationConfig(
       agent.summarization ?? summarizationConfig,
       provider as string,
@@ -1758,6 +2352,7 @@ export async function createRun({
       appConfig,
       agent.endpoint ?? undefined,
       { user, tenantId, requestBody },
+      agent,
     );
     const summarization = modelCallbacks?.length
       ? {
@@ -1772,7 +2367,6 @@ export async function createRun({
         }
       : shapedSummarization;
 
-    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',
@@ -1803,20 +2397,6 @@ export async function createRun({
     const additionalInstructions = [dynamicToolInstructions, agent.additional_instructions ?? '']
       .join('\n')
       .trim();
-
-    /**
-     * Resolve request-based headers across provider-specific header locations
-     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
-     * Google `customHeaders`). Done at this step because the request body may
-     * contain dynamic values (e.g. conversationId) that are only known after
-     * agent initialization.
-     */
-    resolveConfigHeaders({
-      llmConfig,
-      user: createSafeUser(user),
-      tenantId,
-      body: requestBody,
-    });
 
     /** Resolves issues with new OpenAI usage field */
     if (
@@ -1897,7 +2477,7 @@ export async function createRun({
      * admin-disabled) it is stripped fail-closed with no replacement.
      */
     let tools = agent.tools;
-    let askGraphTools: GenericTool[] | undefined;
+    let graphTools: GenericTool[] | undefined;
     if (agentRequestsAskUserQuestion(agent)) {
       tools = tools?.filter(
         (tool) => (tool as { name?: string } | undefined)?.name !== ASK_USER_QUESTION_TOOL_NAME,
@@ -1908,10 +2488,14 @@ export async function createRun({
         toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
       }
       if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
-        askGraphTools = [
+        graphTools = [
           createAskUserQuestionTool(toolInputValidationErrors) as unknown as GenericTool,
         ];
       }
+    }
+
+    if (runFilesActive) {
+      tools = eventOnlyRunFileTools(tools, toolDefinitions);
     }
 
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
@@ -1960,14 +2544,17 @@ export async function createRun({
       initialSessions: buildAgentInitialToolSessions(agent, initialSessions),
       codeSessionKey: agent.codeSessionKey,
     };
-    if (askGraphTools) {
+    if (runFilesActive && runFiles != null && (isSubagent || agent.subagents?.enabled === true)) {
+      graphTools = [...(graphTools ?? []), ...createRunFileTools(runFiles, agent.id, signal)];
+    }
+    if (graphTools) {
       /**
        * Typed structurally — not as `AgentInputs['graphTools']` — because the
        * field ships in `@librechat/agents` > 3.2.57 (agents#289); older SDK
        * versions ignore it at runtime (the tool is then simply absent, never
        * broken). Inline the field in the literal once the dependency is bumped.
        */
-      (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = askGraphTools;
+      (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = graphTools;
     }
     return agentInput;
   };
@@ -1975,6 +2562,11 @@ export async function createRun({
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
   const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
+  const codeApprovalMode = resolveAttachedCodeApprovalMode(
+    requestedCodeApprovalMode,
+    attachedCodeEnvironmentSettings,
+    agentsEndpointConfig?.toolApproval?.enabled !== false,
+  );
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
     hitlCapable,
@@ -2012,6 +2604,9 @@ export async function createRun({
   }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
+    if (summarizeOnly && agent === agents[0]) {
+      agentInput.summarizeOnly = true;
+    }
     const subagentConfigs = buildSubagentConfigs(
       agent,
       agentInput,
@@ -2021,7 +2616,7 @@ export async function createRun({
       undefined,
       0,
       prebuiltGraphInputs,
-      subagentTasks != null,
+      activeSubagentTasks != null,
       (resolvedAgent) => registerResolvedMCPToolAliases(resolvedAgent),
     );
     if (subagentConfigs.length > 0) {
@@ -2029,11 +2624,14 @@ export async function createRun({
       /** Seed the SDK countdown that bounds nested delegation across isolated child graphs. */
       agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
     }
-    if (subagentTasks != null) {
+    if (activeSubagentTasks != null) {
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
-        subagentCompletionWakeups: agentUsesSubagentCompletionWakeups(subagentTasks, agent.id),
+        subagentCompletionWakeups: agentUsesSubagentCompletionWakeups(
+          activeSubagentTasks,
+          agent.id,
+        ),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -2133,6 +2731,7 @@ export async function createRun({
                   hook: createAttachedCodeEnvironmentPolicyHook(
                     attachedCodeEnvironmentAgentIds,
                     attachedCodeEnvironmentSettings,
+                    codeApprovalMode,
                   ),
                 },
               ]
@@ -2142,6 +2741,9 @@ export async function createRun({
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
     if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
+      // The admission hook closes over these collections. A lazily resolved agent
+      // therefore receives its own current machine policy before its first tool call;
+      // a mode that machine does not permit safely falls back to ask/deny there.
       attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
       attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
         configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,
@@ -2191,13 +2793,13 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
-  if (usesSubagentCompletionWakeups(subagentTasks)) {
+  if (usesSubagentCompletionWakeups(activeSubagentTasks)) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolUse', {
       pattern: String(Constants.SUBAGENT),
       hooks: [
         createSubagentWakeupHandleHook((agentId) =>
-          agentUsesSubagentCompletionWakeups(subagentTasks, agentId),
+          agentUsesSubagentCompletionWakeups(activeSubagentTasks, agentId),
         ),
       ],
       internal: true,
@@ -2277,7 +2879,6 @@ export async function createRun({
   }
 
   const streamLimits = resolveStreamLimits(agentsEndpointConfig);
-  const resolvedRunId = runId ?? randomUUID();
 
   /**
    * Built as a variable (not an inline literal) so the extra
@@ -2297,7 +2898,11 @@ export async function createRun({
     fadingTiers,
     indexTokenCountMap,
     subagentUsageSink,
-    subagentTasks,
+    subagentTasks: activeSubagentTasks,
+    ...(runFilesActive &&
+      runFiles != null && {
+        subagentContext: { prepare: runFiles.prepare, complete: runFiles.complete },
+      }),
     // Exclude side-effecting / large-free-form-arg tools from eager execution.
     // Eager speculatively runs a tool mid-stream; for a big streamed arg (a
     // file body, a bash heredoc, a code block) the accumulated args can diverge
