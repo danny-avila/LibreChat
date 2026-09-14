@@ -80,7 +80,10 @@ import {
   supportsGenerationProtocolV2,
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
-import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import useEventHandlers, {
+  buildCreatedInitialResponse,
+  keepLocalCodeApprovalMode,
+} from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -4296,7 +4299,16 @@ export default function useResumableSSE(
                 replacementStart.conversationId,
               ]);
               if (authoritativeConversation?.conversationId === replacementStart.conversationId) {
-                setConversation?.(authoritativeConversation);
+                const localConversationId = isInitialNewConversation(submission)
+                  ? Constants.NEW_CONVO
+                  : replacementStart.conversationId;
+                setConversation?.((current) =>
+                  keepLocalCodeApprovalMode(
+                    authoritativeConversation,
+                    current,
+                    localConversationId,
+                  ),
+                );
               }
               queryClient.setQueryData(streamStatusQueryKey(replacementStart.conversationId), {
                 ...replacementStatus,
@@ -4394,12 +4406,30 @@ export default function useResumableSSE(
             }
 
             if (persistedConversation != null) {
+              /** The persisted copy carries the mode the settled turn started
+               *  with; a pick made while the start was pending is newer. The
+               *  live conversation still holds the new-chat id here because no
+               *  stream event ran for this turn. */
+              const settledCopy = persistedConversation;
+              const localConversationId = startedAsNewConvo
+                ? Constants.NEW_CONVO
+                : settledConversationId;
+              const conversationRecord = keepLocalCodeApprovalMode(
+                settledCopy,
+                queryClient.getQueryData<TConversation>([
+                  QueryKeys.conversation,
+                  settledConversationId,
+                ]),
+                settledConversationId,
+              );
               queryClient.setQueryData(
                 [QueryKeys.conversation, settledConversationId],
-                persistedConversation,
+                conversationRecord,
               );
-              upsertConvoInAllQueries(queryClient, persistedConversation);
-              setConversation?.(persistedConversation);
+              upsertConvoInAllQueries(queryClient, conversationRecord);
+              setConversation?.((current) =>
+                keepLocalCodeApprovalMode(settledCopy, current, localConversationId),
+              );
               if (startedAsNewConvo) {
                 replaceNewConversationUrl(settledConversationId);
               }
