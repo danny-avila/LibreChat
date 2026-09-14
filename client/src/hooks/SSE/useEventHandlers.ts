@@ -18,6 +18,7 @@ import type {
   TConversation,
   EventSubmission,
   TStartupConfig,
+  CodeApprovalMode,
 } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
@@ -298,6 +299,24 @@ const createErrorMessage = ({
   return tMessageSchema.parse(errorMessage) as TMessage;
 };
 
+/**
+ * A code approval mode picked while a run streams applies to the NEXT send. The
+ * conversation the final and abort events return carries the mode the run
+ * started with, so merging it verbatim would silently revert the pick. Returns
+ * the mode to keep when the local selection moved during the run, `undefined`
+ * when the server value should win.
+ */
+export const retainMidRunCodeApprovalMode = (
+  prevState: TConversation | null | undefined,
+  submissionConvo: Pick<TConversation, 'codeApprovalMode'> | undefined,
+): CodeApprovalMode | undefined => {
+  const localMode = prevState?.codeApprovalMode;
+  if (localMode == null || localMode === submissionConvo?.codeApprovalMode) {
+    return undefined;
+  }
+  return localMode;
+};
+
 export const getConvoTitle = ({
   parentId,
   queryClient,
@@ -512,6 +531,10 @@ export default function useEventHandlers({
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const update = { ...prevState, ...convoUpdate };
+          const retainedMode = retainMidRunCodeApprovalMode(prevState, submission.conversation);
+          if (retainedMode != null) {
+            update.codeApprovalMode = retainedMode;
+          }
           return update;
         });
       }
@@ -929,6 +952,10 @@ export default function useEventHandlers({
             };
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
+            }
+            const retainedMode = retainMidRunCodeApprovalMode(prevState, submissionConvo);
+            if (retainedMode != null) {
+              update.codeApprovalMode = retainedMode;
             }
             const prevTitle = prevState?.title;
             if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {

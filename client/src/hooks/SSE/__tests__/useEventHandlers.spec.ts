@@ -1,9 +1,10 @@
 import { Constants } from 'librechat-data-provider';
-import type { EventSubmission, TMessage } from 'librechat-data-provider';
+import type { EventSubmission, TMessage, TConversation } from 'librechat-data-provider';
 import {
   buildCreatedInitialResponse,
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
+  retainMidRunCodeApprovalMode,
   mergeErrorMessages,
   mergeRegenerateFinalMessages,
   startedAsNewConversation,
@@ -287,5 +288,31 @@ describe('mergeErrorMessages', () => {
 
     expect(merged.map(({ messageId }) => messageId)).toEqual(['user-1', 'assistant-1']);
     expect(merged[1]).toEqual(errorMessage);
+  });
+});
+
+describe('retainMidRunCodeApprovalMode', () => {
+  const sentWith = (codeApprovalMode?: 'ask' | 'acceptEdits' | 'fullAccess') =>
+    ({ conversationId: 'conversation-1', codeApprovalMode }) as TConversation;
+
+  it('keeps a mode picked while the run streamed', () => {
+    expect(retainMidRunCodeApprovalMode(sentWith('acceptEdits'), sentWith('ask'))).toBe(
+      'acceptEdits',
+    );
+  });
+
+  it('keeps a pick made during a run that was sent without a mode', () => {
+    expect(retainMidRunCodeApprovalMode(sentWith('fullAccess'), sentWith())).toBe('fullAccess');
+  });
+
+  it('defers to the server when the selection did not move', () => {
+    expect(retainMidRunCodeApprovalMode(sentWith('acceptEdits'), sentWith('acceptEdits'))).toBe(
+      undefined,
+    );
+  });
+
+  it('defers to the server when the conversation never held a mode', () => {
+    expect(retainMidRunCodeApprovalMode(sentWith(), sentWith('ask'))).toBe(undefined);
+    expect(retainMidRunCodeApprovalMode(null, sentWith('ask'))).toBe(undefined);
   });
 });

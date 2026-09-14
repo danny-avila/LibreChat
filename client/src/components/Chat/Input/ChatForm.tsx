@@ -855,7 +855,7 @@ const ChatForm = memo(function ChatForm({
                   conversation={conversation}
                   addedConversation={addedConvo}
                   setConversation={setConversation}
-                  disabled={disableInputs || isSubmitting}
+                  disabled={disableInputs}
                 />
                 {index === 0 && conversationId != null && (
                   <PendingToolApprovalButton conversationId={conversationId} />
