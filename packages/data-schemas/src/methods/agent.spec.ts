@@ -6816,6 +6816,29 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
     });
 
+    test('rejects an author boundary whose primary is not a string', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+
+      /* Coerced, these become the ordinary author keys `'undefined'`, `'null'` and
+         `'[object Object]'`, and the walk would resume partway through the alphabet
+         instead of answering that it cannot honour the cursor. */
+      for (const primary of [undefined, null, 42, { key: 'mike' }]) {
+        await expect(
+          getListAgentsByAccess({
+            accessibleIds,
+            otherParams: {},
+            sort: 'author',
+            limit: 1,
+            after: encode({
+              sort: 'author',
+              version: 2,
+              boundary: { primary, secondary: validObjectId() },
+            }),
+          }),
+        ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
+      }
+    });
+
     test('accepts the empty primary reserved for the missing-createdAt tier', async () => {
       const { accessibleIds } = await seedTwoAgents();
 

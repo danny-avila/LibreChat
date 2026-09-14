@@ -34,6 +34,7 @@ jest.mock('../AgentDetailContent', () => {
       <OGDialogContent aria-describedby={undefined} showCloseButton={false}>
         <OGDialogTitle>{agent.name}</OGDialogTitle>
         <p>{agent.description}</p>
+        <p>{agent.category}</p>
         {agent.conversation_starters?.map((starter) => (
           <p key={starter}>{starter}</p>
         ))}
@@ -158,20 +159,23 @@ describe('VirtualizedAgentGrid', () => {
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Agent 0' }));
     expect(await screen.findByRole('dialog', { name: 'Agent 0' })).toBeInTheDocument();
 
+    /* The per-agent VIEW response carries no `category`, so a dialog that took that
+       response for the whole agent dropped the badge off an agent that still has one. */
+    const { category: _omitted, ...withoutCategory } = agents[0];
     mockQueriedAgent = {
-      ...agents[0],
+      ...withoutCategory,
       description: 'Fresh description from the agent endpoint.',
       conversation_starters: ['Fresh starter'],
     };
     view.rerender(<Harness agents={agents.slice(1)} placeholder={<p>{'No agents found'}</p>} />);
 
+    const dialog = screen.getByRole('dialog');
     expect(
       await screen.findByText('Fresh description from the agent endpoint.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Fresh starter')).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('dialog')).queryByText(agents[0].description ?? ''),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(agents[0].description ?? '')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('general')).toBeInTheDocument();
   });
 
   it('tabs to the next logical agent even when its row is not currently mounted', async () => {
