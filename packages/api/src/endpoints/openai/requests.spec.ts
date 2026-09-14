@@ -151,16 +151,24 @@ describe('Azure Astra requests', () => {
 describe('Azure full-hostname instances', () => {
   it.each([
     {
+      baseURL: undefined,
       model: 'gpt-6-astra',
       provider: Providers.OPENAI,
       path: '/openai/v1/responses',
     },
     {
+      baseURL: undefined,
       model: 'gpt-4.1',
       provider: Providers.AZURE,
       path: '/openai/deployments/production-deployment/chat/completions',
     },
-  ])('sends $model requests to the instance host without a base URL', async (target) => {
+    {
+      baseURL: 'https://test-instance.cognitiveservices.azure.com/openai/v1',
+      model: 'gpt-4.1',
+      provider: Providers.AZURE,
+      path: '/openai/deployments/production-deployment/chat/completions',
+    },
+  ])('sends $model requests to the instance host (base URL: $baseURL)', async (target) => {
     const urls: URL[] = [];
     const fetch: NonNullable<NonNullable<OpenAIConfiguration>['fetch']> = async (url) => {
       urls.push(new URL(String(url)));
@@ -189,6 +197,7 @@ describe('Azure full-hostname instances', () => {
       'test-azure-key',
       {
         streaming: false,
+        reverseProxyUrl: target.baseURL,
         azure: {
           azureOpenAIApiInstanceName: 'test-instance.cognitiveservices.azure.com',
           azureOpenAIApiDeploymentName: 'production-deployment',

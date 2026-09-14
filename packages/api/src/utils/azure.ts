@@ -136,7 +136,7 @@ export function isCanonicalAzureURL(baseURL: string): boolean {
 }
 
 function isAzureRootPath(pathname: string): boolean {
-  return /^\/(?:openai\/?|v1\/?)?$/.test(pathname);
+  return /^\/(?:openai(?:\/v1)?\/?|v1\/?)?$/.test(pathname);
 }
 
 /** An instance name that is already a full Azure hostname, which `genAzureEndpoint` also accepts. */
