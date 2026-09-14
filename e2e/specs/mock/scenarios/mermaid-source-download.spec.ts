@@ -167,7 +167,9 @@ test.describe('Mermaid source downloads', () => {
       await expect(messages.getByRole('button', { name: 'Download flow.mmd' })).toHaveCount(1);
       await openButton.click();
 
-      const row = messages.locator('[data-artifact-trigger^="mermaid-artifact-"]');
+      /* A file-backed diagram's trigger carries the attachment's artifact
+       * id, not the `mermaid-artifact-` id a model-authored fence gets. */
+      const row = messages.locator('[data-artifact-trigger]');
       await expect(row).toHaveCount(1);
       await expect(row).toHaveAccessibleName(/flow\.mmd Diagram/);
       /* The row replaced the wrapper header rather than stacking on top of
