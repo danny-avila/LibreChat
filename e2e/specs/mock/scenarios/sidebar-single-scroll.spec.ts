@@ -424,8 +424,12 @@ test.describe('sidebar single scroll', () => {
       `no page should be fetched for chats nobody can see, got ${pages.join(', ')}`,
     ).toBe(settled);
 
-    await scrollToBottom(page, 8);
-
+    /* Kept scrolling until the list answers, the way a reader does: one burst
+     * lands wherever the rows rendered so far end, and the list grows as they
+     * are measured. */
+    for (let turn = 0; turn < 12 && pages.length === settled; turn++) {
+      await scrollToBottom(page, 2);
+    }
     await expect.poll(() => pages.length, { timeout: 30_000 }).toBeGreaterThan(settled);
   });
 });
