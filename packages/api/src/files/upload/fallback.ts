@@ -27,8 +27,8 @@ export type UploadFallbackTextPlan =
 export interface UploadFallbackTextRoute {
   /** The route the upload resolved to. */
   deliveryPath: TDefaultLLMDeliveryPath;
-  /** The tool resource the request named, if any. */
-  toolResource?: string | null;
+  /** Whether the user chose the destination, by tool resource or the legacy chooser. */
+  destinationChosen: boolean;
   /** Whether the upload attaches to a message; an agent's own tool files never reach a prompt. */
   isMessageAttachment: boolean;
   mimeType: string;
@@ -53,8 +53,8 @@ const builtInExtractors: UploadFallbackTextExtractors = { parseDocument, parseTe
  *
  * Where the endpoint enables `textFallbackWithoutTools`, a turn that runs no tool able to read a
  * `none`-routed file delivers this text instead (`resolveTurnLLMDeliveryPath`). Only an inferred
- * route on a message attachment qualifies: naming a tool resource is the user keeping the file
- * off the model, and files kept on an agent's tool resources never reach a prompt. A file filed
+ * route on a message attachment qualifies: a turn never re-resolves a destination the user chose,
+ * and files kept on an agent's tool resources never reach a prompt. A file filed
  * under a tool that reads it still gets text, because a later turn may run without that tool: a
  * handoff agent, or the same agent after its tools or grants change. Only built-in extractors
  * run, so a file meant for a tool never costs a RAG or OCR call.
@@ -65,7 +65,7 @@ export function getUploadFallbackTextPlan(
   if (
     route.endpointConfig?.textFallbackWithoutTools !== true ||
     route.deliveryPath !== 'none' ||
-    route.toolResource != null ||
+    route.destinationChosen ||
     !route.isMessageAttachment
   ) {
     return null;

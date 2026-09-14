@@ -15,6 +15,7 @@ import { parseTextNative } from '~/files/text';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const csvRoute = {
   deliveryPath: 'none' as const,
+  destinationChosen: false,
   isMessageAttachment: true,
   mimeType: 'text/csv',
   endpointConfig: { textFallbackWithoutTools: true },
@@ -51,8 +52,8 @@ describe('getUploadFallbackTextPlan', () => {
     expect(getUploadFallbackTextPlan({ ...csvRoute, deliveryPath: 'provider' })).toBeNull();
   });
 
-  it('respects a tool destination the user named', () => {
-    expect(getUploadFallbackTextPlan({ ...csvRoute, toolResource: 'execute_code' })).toBeNull();
+  it('runs nothing for a destination the user chose, which no turn re-resolves', () => {
+    expect(getUploadFallbackTextPlan({ ...csvRoute, destinationChosen: true })).toBeNull();
   });
 
   it('runs nothing for a file kept on an agent, which no turn delivers as text', () => {

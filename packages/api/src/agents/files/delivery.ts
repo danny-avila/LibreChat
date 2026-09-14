@@ -2,6 +2,7 @@ import {
   mergeFileConfig,
   getEndpointFileConfig,
   resolveUseResponsesApi,
+  getCustomEndpointProvider,
   isSpeechProviderConfigured,
   resolveTurnLLMDeliveryPath,
   hasInferredLLMDeliveryPath,
@@ -19,11 +20,16 @@ export interface AgentDeliveryRouting {
   fileConfig: FileConfig;
   endpointConfig: EndpointFileConfig;
   endpoint: string;
-  /** The provider the agent runs as, which decides whether a custom endpoint receives media. */
-  endpointProvider: string;
+  /** The dialect a custom endpoint declares, which decides whether it receives media. Read from
+   *  config as upload reads it, so it holds before and after initialization swaps the agent's
+   *  provider for the backing client; undefined for a built-in or OpenAI-compatible endpoint. */
+  endpointProvider?: string;
   useResponsesApi?: boolean;
   sttConfigured: boolean;
 }
+
+/** The app config a turn's attachment routing reads. */
+export type AgentDeliveryConfig = Pick<AppConfig, 'fileConfig' | 'speech' | 'endpoints'>;
 
 /** The fields of an agent that route its attachments. */
 export interface AgentDeliveryIdentity {
@@ -38,7 +44,7 @@ export function resolveAgentDeliveryRouting({
   config,
 }: {
   agent: AgentDeliveryIdentity;
-  config?: Pick<AppConfig, 'fileConfig' | 'speech'>;
+  config?: AgentDeliveryConfig;
 }): AgentDeliveryRouting {
   /* Agent file policy is configured under the endpoint the agent names, not the client family
    * initialization may rewrite it to. */
@@ -48,7 +54,7 @@ export function resolveAgentDeliveryRouting({
     fileConfig,
     endpointConfig: getEndpointFileConfig({ fileConfig, endpoint }),
     endpoint,
-    endpointProvider: agent.provider,
+    endpointProvider: getCustomEndpointProvider(config?.endpoints?.custom, endpoint),
     useResponsesApi: resolveUseResponsesApi(agent.model_parameters?.useResponsesApi),
     sttConfigured: isSpeechProviderConfigured(config?.speech?.stt),
   };
@@ -73,7 +79,7 @@ export function applyTurnDelivery<T extends TurnDeliveryFile>(
     consumers,
   }: {
     agent?: AgentDeliveryIdentity | null;
-    config?: Pick<AppConfig, 'fileConfig' | 'speech'>;
+    config?: AgentDeliveryConfig;
     consumers?: TurnFileConsumers;
   },
 ): T[] {

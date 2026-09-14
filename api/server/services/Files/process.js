@@ -1159,7 +1159,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     file,
     fileId: file_id,
     deliveryPath: llmDeliveryPath,
-    toolResource: tool_resource,
+    destinationChosen: uploadChoiceMetadata.destinationChosen,
     isMessageAttachment: messageAttachment,
     endpointConfig,
     filters: appConfig?.filters,

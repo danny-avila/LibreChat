@@ -4515,12 +4515,14 @@ describe('initializeAgent tool-routed text fallback', () => {
     textFallbackWithoutTools = true,
     provider = Providers.OPENAI,
     overrideProvider,
+    supportedMimeTypes,
   }: {
     tools: string[];
     csv: IMongoFile;
     textFallbackWithoutTools?: boolean;
     provider?: string;
     overrideProvider?: string;
+    supportedMimeTypes?: string[];
   }) {
     const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
       filterFilesByEndpointRuntimeConfig: jest.Mock;
@@ -4533,6 +4535,7 @@ describe('initializeAgent tool-routed text fallback', () => {
           [provider]: {
             defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
             textFallbackWithoutTools,
+            ...(supportedMimeTypes != null && { supportedMimeTypes }),
           },
         },
       },
@@ -4593,6 +4596,31 @@ describe('initializeAgent tool-routed text fallback', () => {
       expect.objectContaining({ files: [{ ...image, llmDeliveryPath: 'provider' }] }),
     );
     expect(image.llmDeliveryPath).toBe('none');
+  });
+
+  it('keeps media a custom endpoint opted into on its provider route before the provider swap', async () => {
+    /* The encoders send OpenAI-format media to a custom endpoint that lists the type, so the
+     * route has to read that endpoint's dialect from config, not the name still in `provider`. */
+    const video = {
+      file_id: 'video-file',
+      filename: 'clip.mp4',
+      type: 'video/mp4',
+      llmDeliveryPath: 'provider',
+      metadata: { destinationChosen: false },
+    } as IMongoFile;
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv: video,
+      provider: 'MyGateway',
+      overrideProvider: Providers.OPENAI,
+      supportedMimeTypes: ['video/mp4'],
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [video] }),
+    );
   });
 
   it('resolves a custom endpoint agent under the endpoint its upload was routed by', async () => {

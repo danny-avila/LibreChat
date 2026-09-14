@@ -3243,7 +3243,7 @@ describe('fallback text for uploads left to tools', () => {
         file: req.file,
         fileId: 'file-uuid-csv',
         deliveryPath: 'none',
-        toolResource: undefined,
+        destinationChosen: false,
         isMessageAttachment: true,
         endpointConfig: expect.objectContaining({ textFallbackWithoutTools: true }),
       }),
@@ -3251,6 +3251,28 @@ describe('fallback text for uploads left to tools', () => {
     expect(createFile).toHaveBeenCalledWith(
       expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
       true,
+    );
+  });
+
+  test('marks a legacy chooser upload as chosen, so no fallback text is extracted for it', async () => {
+    const { resolveUploadFallbackText } = require('@librechat/api');
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      endpoints: {
+        'Custom Provider': {
+          defaultLLMDeliveryPath: { fallback: 'none' },
+          textFallbackWithoutTools: true,
+          legacyFileUploadUX: true,
+        },
+      },
+    });
+    setupStoredFileUpload();
+
+    const { upload } = uploadCsv();
+    await upload;
+
+    expect(resolveUploadFallbackText).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationChosen: true, isMessageAttachment: true }),
     );
   });
 
@@ -3264,7 +3286,7 @@ describe('fallback text for uploads left to tools', () => {
     await upload;
 
     expect(resolveUploadFallbackText).toHaveBeenCalledWith(
-      expect.objectContaining({ toolResource: undefined, isMessageAttachment: true }),
+      expect.objectContaining({ destinationChosen: false, isMessageAttachment: true }),
     );
     expect(createFile).toHaveBeenCalledWith(
       expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),

@@ -27,13 +27,22 @@ describe('resolveAgentDeliveryRouting', () => {
     ).toBe('Azure Foundry');
   });
 
-  it('routes custom endpoint media by the provider the agent runs as', () => {
-    expect(
-      resolveAgentDeliveryRouting({
-        agent: { provider: 'anthropic', endpoint: 'MyClaude' },
-        config,
-      }).endpointProvider,
-    ).toBe('anthropic');
+  it('reads a custom endpoint dialect as upload does, before and after the provider swap', () => {
+    /* Initialization first stores the endpoint name in both fields and only later replaces the
+     * provider with the backing client, so the dialect has to come from config either way. */
+    const declared = {
+      ...config,
+      endpoints: {
+        custom: [{ name: 'MyClaude', provider: 'anthropic' }],
+      },
+    } as Parameters<typeof resolveAgentDeliveryRouting>[0]['config'];
+    const dialect = (agent: { provider: string; endpoint?: string }, routingConfig = declared) =>
+      resolveAgentDeliveryRouting({ agent, config: routingConfig }).endpointProvider;
+
+    expect(dialect({ provider: 'MyClaude', endpoint: 'MyClaude' })).toBe('anthropic');
+    expect(dialect({ provider: 'anthropic', endpoint: 'MyClaude' })).toBe('anthropic');
+    expect(dialect({ provider: 'MyGateway', endpoint: 'MyGateway' }, config)).toBeUndefined();
+    expect(dialect({ provider: 'openAI', endpoint: 'MyGateway' }, config)).toBeUndefined();
   });
 
   it('carries the agent Responses API choice into routing', () => {
