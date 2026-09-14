@@ -993,7 +993,9 @@ export default function useEventHandlers({
                 (cachedConvo) => {
                   const merged = keepLocalCodeApprovalMode(
                     { ...cachedConvo, ...serverConversation } as TConversation,
-                    cachedConvo ?? prevState,
+                    prevState?.conversationId === conversation.conversationId
+                      ? prevState
+                      : cachedConvo,
                     conversation.conversationId,
                   );
                   const cachedTitle = cachedConvo?.title;
