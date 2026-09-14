@@ -182,6 +182,19 @@ export default function FileRow({
               isPastedTextFile(file) &&
               !isPasteActionPending?.(file);
             const showsText = hasExtractedText(file);
+            /** One chip, one primary action: returning a paste to the composer takes
+             * precedence over opening extracted text, and an inert chip gets neither. */
+            let onChipClick: (() => void) | undefined;
+            let chipAriaLabel: string | undefined;
+            if (isEditablePaste) {
+              onChipClick = () => onEditPastedText(file);
+              chipAriaLabel = localize('com_ui_pasted_text_edit_chip', { 0: file.filename ?? '' });
+            } else if (showsText) {
+              onChipClick = () => setTextFile(file);
+              chipAriaLabel = localize('com_ui_view_extracted_text_var', {
+                0: file.filename ?? '',
+              });
+            }
 
             return (
               <div
@@ -203,20 +216,8 @@ export default function FileRow({
                   <FileContainer
                     file={file}
                     onDelete={handleDelete}
-                    onClick={
-                      isEditablePaste
-                        ? () => onEditPastedText(file)
-                        : showsText
-                          ? () => setTextFile(file)
-                          : undefined
-                    }
-                    ariaLabel={
-                      isEditablePaste
-                        ? localize('com_ui_pasted_text_edit_chip', { 0: file.filename ?? '' })
-                        : showsText
-                          ? localize('com_ui_view_extracted_text_var', { 0: file.filename ?? '' })
-                          : undefined
-                    }
+                    onClick={onChipClick}
+                    ariaLabel={chipAriaLabel}
                     subtitleAction={
                       isEditablePaste && onMovePastedTextInline != null
                         ? {

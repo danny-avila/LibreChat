@@ -1083,9 +1083,14 @@ describe('filterFilesByEndpointConfig', () => {
         type: 'application/pdf',
       } as IMongoFile;
 
+      /* Every agent runtime call site passes `preserveTextSources`
+       * (packages/api/src/agents/initialize.ts, attachments.ts, files/encode.ts,
+       * files/host.ts, api/server/controllers/agents/client.js), which is what keeps a
+       * narrowed endpoint allowlist from discarding text that exists to serve it. */
       const result = filterFilesByEndpointConfig(req, {
         files: [parsedPdf, binaryPdf],
         endpoint: Providers.OPENAI,
+        preserveTextSources: true,
       });
 
       expect(result).toEqual([parsedPdf]);
@@ -1116,6 +1121,7 @@ describe('filterFilesByEndpointConfig', () => {
       const result = filterFilesByEndpointConfig(req, {
         files: [parsedPdf],
         endpoint: Providers.OPENAI,
+        preserveTextSources: true,
       });
 
       expect(result).toEqual([]);
