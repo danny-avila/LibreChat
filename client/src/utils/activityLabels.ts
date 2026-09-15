@@ -134,15 +134,6 @@ export function getActivityLabelText(part: ActivityLabelPart | undefined): strin
   return typeof label === 'string' ? label.trim() : '';
 }
 
-/** Maps a completion-local half-open boundary into edited-response coordinates. */
-export function offsetActivityPhaseBoundary(
-  boundary: number,
-  prefixLength: number,
-  foldedFirstPart: boolean,
-): number {
-  return boundary + prefixLength - (foldedFirstPart && boundary <= 1 ? 1 : 0);
-}
-
 /**
  * Mirrors `SUBSTANTIAL_TEXT_CHARS` in `activityPhases/runtime.ts`. Short
  * commentary belongs inside a phase; a real block of prose ends one.

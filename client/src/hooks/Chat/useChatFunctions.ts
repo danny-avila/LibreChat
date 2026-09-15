@@ -404,6 +404,14 @@ export default function useChatFunctions({
       return false;
     }
 
+    if (isExistingConversation) {
+      /** Cancel the retryer synchronously without reverting newer local cache writes. */
+      void queryClient.cancelQueries(
+        { queryKey: [QueryKeys.messages, conversationId], exact: true },
+        { revert: false },
+      );
+    }
+
     setShowStopButton(false);
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);

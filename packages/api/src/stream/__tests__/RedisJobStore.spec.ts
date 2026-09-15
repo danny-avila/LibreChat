@@ -1,3 +1,4 @@
+import { ContentTypes } from 'librechat-data-provider';
 import type { Cluster } from 'ioredis';
 import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import { RedisJobStore } from '../implementations/RedisJobStore';
@@ -44,6 +45,42 @@ function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
 }
 
 describe('RedisJobStore', () => {
+  test('serializes retained content and provenance atomically with the epoch-fenced pending flag', async () => {
+    const hash = { streamId: 'retained', userId: 'user-1', status: 'running', createdAt: '100' };
+    const evalUpdate = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalUpdate,
+      hgetall: jest.fn(async () => hash),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+    const retainedContent = {
+      type: ContentTypes.THINK as const,
+      parts: [{ type: 'think', think: 'Retained reasoning' }],
+      userSubmittedPaths: ['/content/0/think'],
+      userSubmittedMessageFieldPaths: [],
+    };
+    await store.updateJob('retained', { retainedContent, retainedContentPending: false }, 100);
+    const [script, keyCount, ...args] = evalUpdate.mock.calls[0];
+    expect(script).toContain('"createdAt") ~= ARGV[1] then return 0');
+    expect(args[keyCount]).toBe('100');
+    const fields = args.slice(keyCount + 5);
+    Object.assign(
+      hash,
+      Object.fromEntries(
+        Array.from({ length: fields.length / 2 }, (_, i) => [fields[2 * i], fields[2 * i + 1]]),
+      ),
+    );
+    expect(hash).toMatchObject({
+      retainedContent: JSON.stringify(retainedContent),
+      retainedContentPending: '0',
+    });
+    await expect(store.getJob('retained')).resolves.toMatchObject({
+      retainedContent,
+      retainedContentPending: false,
+    });
+  });
+
   test('marks only the exact provider segment drained', async () => {
     const evalDrain = jest.fn().mockResolvedValue(1);
     const redis = {

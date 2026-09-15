@@ -3145,6 +3145,73 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       });
     });
 
+    it.each([false, true])(
+      'keeps the prefix out of the HITL seed but composes persistence (re-pause=%s)',
+      async (rePause) => {
+        const retainedContent = {
+          type: 'text',
+          parts: [{ type: 'text', text: 'Edited prefix' }],
+          userSubmittedPaths: ['/content/0/text'],
+        };
+        const completion = [makeToolCallContent({ output: 'Approved response' })];
+        const job = makeToolApprovalJob({ metadata: { retainedContent } });
+        job.metadata.pendingAction.payload.review_configs = [
+          { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
+        ];
+        mockGenerationJobManager.getJob.mockResolvedValue(job);
+        mockGenerationJobManager.getResumeState.mockResolvedValue({
+          aggregatedContent: [makeToolCallContent()],
+          retainedContent,
+        });
+        const client = makeClient({
+          contentParts: completion,
+          pendingApproval: rePause ? { actionId: NEXT_ACTION_ID } : false,
+        });
+        mockInitializeClient.mockResolvedValue({ client, userMCPAuthMap: {} });
+
+        const response = await post(
+          approveBody({
+            decisions: [
+              { tool_call_id: 'tc1', decision: 'respond', responseText: 'Approved response' },
+            ],
+          }),
+        );
+        expect(response.status).toBe(200);
+        await settled;
+        await flush();
+        expect(client.resumeCompletion).toHaveBeenCalledWith(
+          expect.objectContaining({
+            seedContent: [makeToolCallContent()],
+          }),
+        );
+        const persisted = {
+          content: [...retainedContent.parts, ...completion],
+          userSubmittedPaths: ['/content/0/text'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/1/tool_call/output', field: 'decision_response' },
+          ],
+          unfinished: rePause,
+        };
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining(persisted),
+          expect.anything(),
+        );
+        expect(job.metadata.userSubmittedMessageFieldPaths).toEqual([
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ]);
+        expect(client.contentParts).toEqual(completion);
+        if (rePause) {
+          expect(mockGenerationJobManager.publishTerminalClaim).not.toHaveBeenCalled();
+        } else {
+          expect(mockGenerationJobManager.publishTerminalClaim).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ responseMessage: expect.objectContaining(persisted) }),
+          );
+        }
+      },
+    );
+
     it('persists the response, claims terminal ownership, emits done, finishes, and prunes', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       await post(approveBody());
@@ -3600,7 +3667,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         }),
         expect.anything(),
       );
-      expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
+      expect(mockSaveMessage.mock.calls[0][1].userSubmittedPaths).toEqual([]);
       expect(mockGenerationJobManager.claimTerminalJob).toHaveBeenCalledWith(
         CONVO_ID,
         'complete',
@@ -3825,11 +3892,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           expect.anything(),
         );
         if (expectedField) {
-          expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
+          expect(mockSaveMessage.mock.calls[0][1].userSubmittedPaths).toEqual([]);
         } else {
-          expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty(
-            'userSubmittedMessageFieldPaths',
-          );
+          expect(mockSaveMessage.mock.calls[0][1].userSubmittedMessageFieldPaths).toEqual([]);
         }
       },
     );
@@ -3852,7 +3917,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         CONVO_ID,
         expect.objectContaining({ userSubmittedPaths: expect.anything() }),
       );
-      expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
+      expect(mockSaveMessage.mock.calls[0][1].userSubmittedPaths).toEqual([]);
     });
 
     it('generates a title for a first-turn pause before completing the stream', async () => {

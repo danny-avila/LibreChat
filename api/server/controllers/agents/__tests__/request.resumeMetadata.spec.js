@@ -26,6 +26,7 @@ const mockGenerationJobManager = {
   getResumeState: jest.fn(),
   getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
+  captureRetainedContent: jest.fn(),
   persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
   resumeClaimedGeneration: jest.fn(),
@@ -63,9 +64,6 @@ const mockGetViolationInfo = jest.fn(() => ({
   pendingRequests: 3,
   score: 1,
 }));
-const mockFilterPersistableAbortContent = jest.fn((content) =>
-  content.filter((part) => part?.type !== 'tool_call'),
-);
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
@@ -284,6 +282,11 @@ jest.mock('@librechat/api', () => ({
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
   resolveFailedTurnContent: jest.requireActual('@librechat/api').resolveFailedTurnContent,
+  applyRetainedContentEdit: jest.requireActual('@librechat/api').applyRetainedContentEdit,
+  withBalanceReservations: jest.requireActual('@librechat/api').withBalanceReservations,
+  getModelMaxTokens: jest.requireActual('@librechat/api').getModelMaxTokens,
+  projectRetainedMessageContent: jest.requireActual('@librechat/api').projectRetainedMessageContent,
+  getRetainedContentMetadata: jest.requireActual('@librechat/api').getRetainedContentMetadata,
   getFailedTurnTraceFields: (...args) => mockGetFailedTurnTraceFields(...args),
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
@@ -298,7 +301,6 @@ jest.mock('@librechat/api', () => ({
   cleanupMCPRequestContext: (...args) => mockCleanupMCPRequestContext(...args),
   createMCPRequestContext: (...args) => mockCreateMCPRequestContext(...args),
   getMCPRequestContext: (...args) => mockGetMCPRequestContext(...args),
-  filterPersistableAbortContent: (...args) => mockFilterPersistableAbortContent(...args),
   cleanupMCPRequestContextForReq: (...args) => mockCleanupMCPRequestContextForReq(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
@@ -369,6 +371,10 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn(),
+}));
+
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   saveConvo: (...args) => mockSaveConvo(...args),
@@ -415,6 +421,7 @@ const { AttachmentStorageError, encodeAndFormatImages } = require('@librechat/ap
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
+const { initializeFakeClient } = require('~/app/clients/specs/FakeClient');
 
 function createResumableResponse() {
   const res = new EventEmitter();
@@ -1532,6 +1539,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(requestBody.parentMessageId).toBe(requestBody.messageId);
     expect(requestBody.messageId).not.toBe('existing-response-message');
     expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+    expect(jobOptions.initialMetadata.retainedContentPending).toBe(true);
   });
 
   it('stores model spec icon fallbacks and agent ids in early resume metadata', async () => {
@@ -1685,99 +1693,119 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it('filters OAuth prompts before saving partial responses on disconnect', async () => {
-    const conversationId = 'conversation-123';
-    let allSubscribersLeftHandler;
-    mockGenerationJobManager.createJob.mockResolvedValue({
-      createdAt: 1000,
-      readyPromise: Promise.resolve(),
-      abortController: new AbortController(),
-      emitter: {
-        on: jest.fn((event, handler) => {
-          if (event === 'allSubscribersLeft') {
-            allSubscribersLeftHandler = handler;
-          }
-        }),
-      },
-    });
-    mockGenerationJobManager.getResumeState.mockResolvedValue({
-      conversationId,
-      responseMessageId: 'response-message',
-      iconURL: 'https://example.com/spec-icon.png',
-      model: 'gpt-4.1',
-      userMessage: {
-        messageId: 'user-message',
-        parentMessageId: 'parent-message',
-        conversationId,
-        text: 'Use Google Workspace',
-      },
-    });
-
-    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after setup'));
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Use Google Workspace',
-        messageId: 'user-message',
-        parentMessageId: 'parent-message',
-        conversationId,
-        endpointOption: {
-          endpoint: 'agents',
-          iconURL: 'https://example.com/fallback-icon.png',
-          modelOptions: { model: 'gpt-3.5-turbo' },
+  it.each(['ordinary', 'retained', 'prefix-only'])(
+    'filters and composes %s partial responses on disconnect',
+    async (mode) => {
+      const conversationId = 'conversation-123';
+      let allSubscribersLeftHandler;
+      mockGenerationJobManager.createJob.mockResolvedValue({
+        createdAt: 1000,
+        readyPromise: Promise.resolve(),
+        abortController: new AbortController(),
+        emitter: {
+          on: jest.fn((event, handler) => {
+            if (event === 'allSubscribersLeft') {
+              allSubscribersLeftHandler = handler;
+            }
+          }),
         },
-      },
-      config: {},
-    };
-    const res = {
-      headersSent: true,
-      json: jest.fn(() => {
-        res.headersSent = true;
-      }),
-      status: jest.fn(() => res),
-    };
-
-    await AgentController(req, res, jest.fn(), initializeClient, null);
-    expect(allSubscribersLeftHandler).toEqual(expect.any(Function));
-    mockSaveMessage.mockClear();
-    mockSaveConvo.mockClear();
-
-    const oauthPart = {
-      type: 'tool_call',
-      tool_call: {
-        name: 'oauth_mcp_Google-Workspace',
-        auth: 'https://auth.example.com/oauth',
-      },
-    };
-    const textPart = { type: 'text', text: 'Partial response...' };
-
-    mockSaveMessage.mockResolvedValueOnce(undefined).mockResolvedValueOnce({});
-    await allSubscribersLeftHandler([oauthPart, textPart]);
-    await allSubscribersLeftHandler([oauthPart, textPart]);
-
-    expect(mockFilterPersistableAbortContent).toHaveBeenCalledWith([oauthPart, textPart]);
-    expect(mockSaveMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-123' }),
-      expect.objectContaining({
-        content: [textPart],
+      });
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        conversationId,
+        responseMessageId: 'response-message',
         iconURL: 'https://example.com/spec-icon.png',
         model: 'gpt-4.1',
-        messageId: 'response-message',
-        parentMessageId: 'user-message',
-      }),
-      expect.any(Object),
-    );
-    expect(mockSaveMessage).toHaveBeenCalledTimes(2);
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      '[ResumableAgentController] Error saving partial response:',
-      expect.objectContaining({
-        message: 'Partial response could not be persisted after disconnect',
-      }),
-    );
-  });
+        userMessage: {
+          messageId: 'user-message',
+          parentMessageId: 'parent-message',
+          conversationId,
+          text: 'Use Google Workspace',
+        },
+      });
+      mockGenerationJobManager.getJobStore().getJob.mockResolvedValue({
+        createdAt: 1000,
+        ...(mode !== 'ordinary' && {
+          retainedContent: {
+            parts: [{ type: 'text', text: 'Edited prefix. ' }],
+            type: 'text',
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        }),
+      });
+
+      const initializeClient = jest.fn().mockRejectedValue(new Error('stop after setup'));
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Use Google Workspace',
+          messageId: 'user-message',
+          parentMessageId: 'parent-message',
+          conversationId,
+          endpointOption: {
+            endpoint: 'agents',
+            iconURL: 'https://example.com/fallback-icon.png',
+            modelOptions: { model: 'gpt-3.5-turbo' },
+          },
+        },
+        config: {},
+      };
+      const res = {
+        headersSent: true,
+        json: jest.fn(() => {
+          res.headersSent = true;
+        }),
+        status: jest.fn(() => res),
+      };
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+      expect(allSubscribersLeftHandler).toEqual(expect.any(Function));
+      mockSaveMessage.mockClear();
+      mockSaveConvo.mockClear();
+
+      const oauthPart = {
+        type: 'tool_call',
+        tool_call: {
+          name: 'oauth_mcp_Google-Workspace',
+          auth: 'https://auth.example.com/oauth',
+        },
+      };
+      const textPart = { type: 'text', text: 'Partial response...' };
+
+      mockSaveMessage.mockResolvedValueOnce(undefined).mockResolvedValueOnce({});
+      const generated = mode === 'prefix-only' ? [] : [oauthPart, textPart];
+      await allSubscribersLeftHandler(generated);
+      await allSubscribersLeftHandler(generated);
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          content: [
+            {
+              type: 'text',
+              text: `${mode === 'ordinary' ? '' : 'Edited prefix. '}${mode === 'prefix-only' ? '' : textPart.text}`,
+            },
+          ],
+          userSubmittedPaths: mode === 'ordinary' ? [] : ['/content/0/text'],
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-4.1',
+          messageId: 'response-message',
+          parentMessageId: 'user-message',
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledTimes(2);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[ResumableAgentController] Error saving partial response:',
+        expect.objectContaining({
+          message: 'Partial response could not be persisted after disconnect',
+        }),
+      );
+    },
+  );
 
   it('uses model spec and agent fallbacks when saving partial responses on disconnect', async () => {
     const conversationId = 'conversation-123';
+    mockGenerationJobManager.getJobStore().getJob.mockResolvedValue({ createdAt: 1000 });
     let allSubscribersLeftHandler;
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
@@ -3517,7 +3545,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
   });
 
-  it('persists a paused response as unfinished before releasing its Stop/resume barrier', async () => {
+  it('persists a paused response with provenance before releasing its barrier', async () => {
     const userMessage = {
       messageId: 'user-msg',
       parentMessageId: 'parent-msg',
@@ -3528,7 +3556,8 @@ describe('ResumableAgentController resume metadata', () => {
       messageId: 'response-msg',
       parentMessageId: userMessage.messageId,
       conversationId: 'conversation-123',
-      content: [{ type: 'text', text: 'Waiting for approval.' }],
+      content: [{ type: 'text', text: 'Edited prefix. Waiting for approval.' }],
+      userSubmittedPaths: ['/content/0/text'],
     };
     let signalPauseSaveStarted;
     const pauseSaveStarted = new Promise((resolve) => {
@@ -3603,6 +3632,7 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({
         messageId: response.messageId,
         content: response.content,
+        userSubmittedPaths: ['/content/0/text'],
         unfinished: true,
       }),
       expect.objectContaining({ context: expect.stringContaining('persist unfinished') }),
@@ -3660,6 +3690,92 @@ describe('ResumableAgentController resume metadata', () => {
         await nextTick();
       }
     }
+
+    it('propagates a retained-content capture rejection through BaseClient and finalizes the failed request', async () => {
+      const req = createFailedRequest({
+        responseMessageId: 'edited-response',
+        isContinued: true,
+        editedContent: { index: 0, type: 'text', text: 'Edited prefix.' },
+      });
+      const client = initializeFakeClient('fake-api-key', { req }, [
+        {
+          messageId: 'user-message',
+          conversationId,
+          text: req.body.text,
+          isCreatedByUser: true,
+        },
+        {
+          messageId: 'edited-response',
+          parentMessageId: 'user-message',
+          conversationId,
+          isCreatedByUser: false,
+          content: [{ type: 'text', text: 'Original response.' }],
+        },
+      ]);
+      const sendMessage = jest.spyOn(client, 'sendMessage');
+      const captureError = new Error('Retained content storage unavailable');
+      let rejectCapture;
+      const captureGate = new Promise((_resolve, reject) => {
+        rejectCapture = reject;
+      });
+      mockGenerationJobManager.captureRetainedContent.mockReturnValueOnce(captureGate);
+
+      await AgentController(
+        req,
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      const onStart = jest.spyOn(sendMessage.mock.calls[0][1], 'onStart');
+      await flushBackgroundGeneration();
+
+      expect(mockGenerationJobManager.captureRetainedContent).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.captureRetainedContent).toHaveBeenCalledWith(
+        conversationId,
+        [{ type: 'text', text: 'Edited prefix.' }],
+        'text',
+        1000,
+        { userSubmittedPaths: ['/content/0/text'], userSubmittedMessageFieldPaths: [] },
+      );
+      expect(onStart).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitChunk).not.toHaveBeenCalled();
+      expect(client.sendCompletion).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledTimes(1);
+      expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+
+      rejectCapture(captureError);
+      await expect(sendMessage.mock.results[0].value).rejects.toBe(captureError);
+      await flushBackgroundGeneration();
+
+      expect(onStart).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitChunk).not.toHaveBeenCalled();
+      expect(client.sendCompletion).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        `[ResumableAgentController] Generation error for ${conversationId}:`,
+        captureError,
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        conversationId,
+        captureError.message,
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalledTimes(1);
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(req.user.id);
+      expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
+        mockDecrementPendingRequest.mock.invocationCallOrder[0],
+      );
+      expect(mockDisposeClient).toHaveBeenCalledWith(client);
+      expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(
+        conversationId,
+        1000,
+        'provider-segment-1',
+      );
+    });
 
     it('persists an initialization failure before terminal error publication', async () => {
       const events = [];

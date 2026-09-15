@@ -7,6 +7,7 @@ import {
   QueryKeys,
   tMessageSchema,
   isAssistantsEndpoint,
+  mergeEditedMessageContent,
 } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
@@ -187,15 +188,25 @@ function buildSubmissionFromResumeState(
           isCreatedByUser: true,
         } as TMessage)));
 
-  // ALWAYS use aggregatedContent from resumeState - it has the latest content from the running job.
-  // DB content may be stale (saved at disconnect, but generation continued).
+  const retainedContent = resumeState.retainedContent;
+  const mergedResumeContent = retainedContent
+    ? mergeEditedMessageContent(
+        retainedContent.parts,
+        resumeState.aggregatedContent ?? [],
+        retainedContent.type,
+      )
+    : undefined;
+  // The generation snapshot is newer than DB content. Edited generations rebuild
+  // their complete response from the server-captured prefix plus local output.
   let initialResponse: TMessage = {
     messageId: existingResponseMessage?.messageId ?? responseMessageId,
     parentMessageId: existingResponseMessage?.parentMessageId ?? userMessage.messageId,
     conversationId,
     text: '',
-    // aggregatedContent is authoritative - it reflects actual job state
-    content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
+    content:
+      (mergedResumeContent?.content as TMessage['content']) ??
+      (resumeState.aggregatedContent as TMessage['content']) ??
+      [],
     isCreatedByUser: false,
     role: 'assistant',
     sender: responseMetadataMessage?.sender ?? resumeState.sender,
@@ -233,6 +244,13 @@ function buildSubmissionFromResumeState(
     ...(regenerateMessages && { regenerateMessages }),
     isTemporary: false,
     endpointOption: {},
+    ...(retainedContent && {
+      editPrefixLength: retainedContent.parts.length,
+      editPrefixType: retainedContent.type,
+      editPrefixFirstPartFolded: resumeState.aggregatedContent?.length
+        ? mergedResumeContent?.firstPartMerged
+        : undefined,
+    }),
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new
     resumeStreamId: streamId,
     ...(generationCreatedAt != null && { resumeGenerationCreatedAt: generationCreatedAt }),

@@ -49,7 +49,7 @@ function isOAuthPromptContentPart(part: AbortContentPart): boolean {
   return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
 }
 
-function isPersistableAbortContentPart(
+export function isPersistableAbortContentPart(
   part: AbortContentPart,
 ): part is PersistableAbortContentPart {
   if (!isRecord(part)) {

@@ -1,7 +1,24 @@
-import type { TMessageContentParts } from './types/assistants';
+import type { TextData, TMessageContentParts } from './types/assistants';
+import type { Agents } from './types/agents';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
 import { ContentTypes } from './types/runs';
+
+const mergeTextData = (
+  existing: string | TextData,
+  incoming: string | TextData,
+): string | Exclude<TextData, undefined> => {
+  const value =
+    (typeof existing === 'string' ? existing : (existing?.value ?? '')) +
+    (typeof incoming === 'string' ? incoming : (incoming?.value ?? ''));
+  if (existing != null && typeof existing === 'object') {
+    return { ...existing, value };
+  }
+  if (incoming != null && typeof incoming === 'object') {
+    return { ...incoming, value };
+  }
+  return value;
+};
 
 /** A generated reasoning title describes the text as it existed at generation time.
  *  Any manual edit or merge into a different reasoning step invalidates the entire
@@ -20,6 +37,95 @@ export function stripReasoningLabelMetadata(part: TMessageContentParts): TMessag
     ...unlabeledPart
   } = part;
   return unlabeledPart;
+}
+
+export function mergeEditedMessageContent(
+  existingContent: Agents.MessageContentComplex[],
+  newCompletion: Agents.MessageContentComplex[],
+  editedType: string,
+): { content: Agents.MessageContentComplex[]; firstPartMerged: boolean } {
+  if (newCompletion.length === 0) {
+    return { content: [...existingContent], firstPartMerged: false };
+  }
+
+  const lastIndex = existingContent.length - 1;
+  const lastExisting = existingContent[lastIndex] as TMessageContentParts | undefined;
+  const firstNew = newCompletion[0] as TMessageContentParts | undefined;
+  const textPhaseCompatible =
+    editedType !== ContentTypes.TEXT ||
+    (lastExisting?.type === ContentTypes.TEXT ? (lastExisting.phase ?? null) : null) ===
+      (firstNew?.type === ContentTypes.TEXT ? (firstNew.phase ?? null) : null);
+  const firstPartMerged =
+    (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
+    lastExisting?.type === firstNew?.type &&
+    firstNew?.type === editedType &&
+    textPhaseCompatible;
+  const phaseIndexOffset = firstPartMerged ? lastIndex : existingContent.length;
+  const adjustedCompletion = newCompletion.map((part) => {
+    if (
+      part?.type !== ContentTypes.ACTIVITY_LABEL ||
+      part.activity_label_type !== 'phase' ||
+      typeof part.activity_start_index !== 'number'
+    ) {
+      return part;
+    }
+    return {
+      ...part,
+      activity_start_index: part.activity_start_index + phaseIndexOffset,
+      ...(typeof part.activity_end_index === 'number' && {
+        activity_end_index: part.activity_end_index + phaseIndexOffset,
+      }),
+    };
+  });
+
+  if (!firstPartMerged) {
+    return { content: existingContent.concat(adjustedCompletion), firstPartMerged: false };
+  }
+
+  const mergedContent = [...existingContent];
+  if (editedType === ContentTypes.TEXT) {
+    const existingPart = mergedContent[lastIndex] as TMessageContentParts & {
+      type: ContentTypes.TEXT;
+    };
+    const incomingPart = adjustedCompletion[0] as TMessageContentParts & {
+      type: ContentTypes.TEXT;
+    };
+    mergedContent[lastIndex] = {
+      ...existingPart,
+      ...(incomingPart.phase != null && { phase: incomingPart.phase }),
+      [ContentTypes.TEXT]: mergeTextData(
+        existingPart[ContentTypes.TEXT],
+        incomingPart[ContentTypes.TEXT],
+      ),
+    };
+  } else {
+    const existingPart = mergedContent[lastIndex] as TMessageContentParts & {
+      type: ContentTypes.THINK;
+    };
+    const incomingPart = adjustedCompletion[0] as TMessageContentParts & {
+      type: ContentTypes.THINK;
+    };
+    mergedContent[lastIndex] = {
+      ...stripReasoningLabelMetadata(existingPart),
+      ...(incomingPart.reasoning_label_step_id != null && {
+        reasoning_label: incomingPart.reasoning_label,
+        reasoning_label_step_id: incomingPart.reasoning_label_step_id,
+        reasoning_label_attempts: incomingPart.reasoning_label_attempts,
+        reasoning_label_submitted_chars: incomingPart.reasoning_label_submitted_chars,
+        reasoning_label_revision: incomingPart.reasoning_label_revision,
+        reasoning_label_status: incomingPart.reasoning_label_status,
+      }),
+      [ContentTypes.THINK]: mergeTextData(
+        existingPart[ContentTypes.THINK],
+        incomingPart[ContentTypes.THINK],
+      ),
+    };
+  }
+
+  return {
+    content: mergedContent.concat(adjustedCompletion.slice(1)),
+    firstPartMerged: true,
+  };
 }
 
 export type ParentMessage = TMessage & { children: TMessage[]; depth: number };

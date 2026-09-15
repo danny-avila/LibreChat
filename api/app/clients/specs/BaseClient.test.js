@@ -675,8 +675,15 @@ describe('BaseClient', () => {
         ],
         metadata: undefined,
       });
+      const captureStarted = deferred();
+      const captureFinished = deferred();
+      const onRetainedContent = jest.fn(() => {
+        captureStarted.resolve();
+        return captureFinished.promise;
+      });
+      const onStart = jest.fn();
 
-      const response = await TestClient.sendMessage('ignored during edit', {
+      const sending = TestClient.sendMessage('ignored during edit', {
         conversationId: 'conversation-1',
         parentMessageId: 'assistant-message',
         responseMessageId: 'assistant-message',
@@ -687,9 +694,40 @@ describe('BaseClient', () => {
           text: 'User replacement',
           type: ContentTypes.TEXT,
         },
+        onRetainedContent,
+        onStart,
       });
+      await captureStarted.promise;
+      expect(onStart).not.toHaveBeenCalled();
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+      captureFinished.resolve();
+      const response = await sending;
+
+      expect(onRetainedContent).toHaveBeenCalledTimes(1);
+      expect(onStart).toHaveBeenCalledTimes(1);
+      expect(TestClient.sendCompletion).toHaveBeenCalledTimes(1);
+      expect(onRetainedContent).toHaveBeenCalledWith(
+        [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: { name: 'ask_user_question', output: 'Prior answer' },
+          },
+          { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Prior user-edited reasoning' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'User replacement' },
+        ],
+        ContentTypes.TEXT,
+        {
+          userSubmittedPaths: ['/content/1/think', '/content/2/text'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'answer' },
+          ],
+        },
+      );
 
       const modelBoundEditedMessage = TestClient.buildMessages.mock.calls[0][0].at(-1);
+      expect(onRetainedContent.mock.invocationCallOrder[0]).toBeLessThan(
+        onStart.mock.invocationCallOrder[0],
+      );
       expect(modelBoundEditedMessage.userSubmittedPaths).toEqual([
         '/content/1/think',
         '/content/2/text',

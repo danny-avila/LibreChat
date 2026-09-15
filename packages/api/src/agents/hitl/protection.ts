@@ -1151,48 +1151,10 @@ export function getUserFacingResumeError(
   return typeof error?.message === 'string' ? error.message : GENERIC_RESUME_ERROR;
 }
 
-export const mergeUserSubmittedPaths = (
-  ...pathLists: readonly (readonly (string | null | undefined)[] | null | undefined)[]
-): string[] => [
-  ...new Set(
-    pathLists
-      .flatMap((paths) => paths ?? [])
-      .filter(
-        (path): path is string =>
-          typeof path === 'string' && path.startsWith('/') && path.length <= 2048,
-      ),
-  ),
-];
-
-export const mergeUserSubmittedMessageFieldPaths = (
-  ...entryLists: readonly (
-    | readonly (UserSubmittedMessageFieldPath | null | undefined)[]
-    | null
-    | undefined
-  )[]
-): UserSubmittedMessageFieldPath[] => {
-  const entries: UserSubmittedMessageFieldPath[] = [];
-  const seen = new Set<string>();
-  const allowedFields = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
-  for (const entry of entryLists.flatMap((values) => values ?? [])) {
-    if (
-      entry == null ||
-      typeof entry.path !== 'string' ||
-      !entry.path.startsWith('/') ||
-      entry.path.length > 2048 ||
-      !allowedFields.has(entry.field)
-    ) {
-      continue;
-    }
-    const key = `${entry.field}:${entry.path}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    entries.push(entry);
-  }
-  return entries;
-};
+export {
+  mergeUserSubmittedPaths,
+  mergeUserSubmittedMessageFieldPaths,
+} from '~/protection/provenance';
 
 /** Map user decisions to the exact assistant fields they mutate during resume. */
 export function getResumeUserSubmittedPaths(

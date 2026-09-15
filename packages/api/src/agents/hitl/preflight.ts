@@ -3,6 +3,7 @@ import type {
   AssertResumeContentAllowedInput,
   ResumeContentProtectionDependencies,
 } from './protection';
+import type { RetainedContent } from '~/stream/retained';
 import {
   assertResumeContentAllowed,
   getResumeUserSubmittedMessageFieldPaths,
@@ -10,6 +11,7 @@ import {
   mergeUserSubmittedMessageFieldPaths,
   mergeUserSubmittedPaths,
 } from './protection';
+import { projectRetainedMessageContent } from '~/stream/retained';
 import { attachAskUserQuestionAnswer } from './resume';
 
 interface ResumePreflightBody {
@@ -78,6 +80,17 @@ export function getResumeProvenance({
       getResumeUserSubmittedMessageFieldPaths(messageFieldContent, pendingAction, body),
     ),
   };
+}
+
+export function projectResumedMessageContent(
+  input: GetResumeProvenanceInput & {
+    content: Agents.MessageContentComplex[];
+    retainedContent?: RetainedContent;
+  },
+): ReturnType<typeof projectRetainedMessageContent> {
+  return projectRetainedMessageContent(input.content, input, {
+    provenance: getResumeProvenance(input),
+  });
 }
 
 /**

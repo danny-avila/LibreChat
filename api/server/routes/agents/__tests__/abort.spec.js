@@ -385,7 +385,14 @@ describe('Agent Abort Endpoint', () => {
               { path: '/content/0/tool_call/output', field: 'decision_response' },
             ],
           },
-          content: [{ type: 'text', text: 'Partial response...' }],
+          content: [
+            { type: 'text', text: 'Partial response...' },
+            { type: 'tool_call', tool_call: { args: '{}', output: 'Human response' } },
+          ],
+          userSubmittedPaths: ['/content/0/text', '/content/1/tool_call/args'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/1/tool_call/output', field: 'decision_response' },
+          ],
           text: 'Partial response...',
         };
         mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
@@ -404,7 +411,7 @@ describe('Agent Abort Endpoint', () => {
             messageId: responseMessageId,
             parentMessageId: userMessageId,
             conversationId: jobStreamId,
-            content: [{ type: 'text', text: 'Partial response...' }],
+            content: abortResult.content,
             text: 'Partial response...',
             sender: 'TestAgent',
             endpoint: 'anthropic',
@@ -413,9 +420,9 @@ describe('Agent Abort Endpoint', () => {
             unfinished: true,
             error: false,
             isCreatedByUser: false,
-            userSubmittedPaths: ['/content/0/tool_call/args'],
+            userSubmittedPaths: ['/content/0/text', '/content/1/tool_call/args'],
             userSubmittedMessageFieldPaths: [
-              { path: '/content/0/tool_call/output', field: 'decision_response' },
+              { path: '/content/1/tool_call/output', field: 'decision_response' },
             ],
             user: 'test-user-123',
           }),

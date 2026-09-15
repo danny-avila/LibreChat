@@ -63,6 +63,11 @@ export namespace Agents {
 
   export type MessageContent = string | MessageContentComplex[];
 
+  export type RetainedContent = {
+    parts: MessageContentComplex[];
+    type: ContentTypes.TEXT | ContentTypes.THINK;
+  };
+
   /**
    * A call to a tool.
    */
@@ -297,6 +302,8 @@ export namespace Agents {
     runSteps: RunStep[];
     /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
     aggregatedContent?: MessageContentComplex[];
+    /** Server-derived edited response prefix retained outside completion-local stream content. */
+    retainedContent?: RetainedContent;
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
     /** True when the live generation replaces an existing assistant branch. */

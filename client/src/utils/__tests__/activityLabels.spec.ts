@@ -6,7 +6,6 @@ import {
   groupActivityPhases,
   lastCursorContentIdx,
   lastVisibleContentIdx,
-  offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
 } from '../activityLabels';
 
@@ -198,15 +197,6 @@ describe('lastCursorContentIdx', () => {
     const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
 
     expect(lastCursorContentIdx([undefined, emptyText])).toBe(1);
-  });
-});
-
-describe('offsetActivityPhaseBoundary', () => {
-  it('folds only boundaries covered by the merged first completion part', () => {
-    expect(offsetActivityPhaseBoundary(0, 5, true)).toBe(4);
-    expect(offsetActivityPhaseBoundary(1, 5, true)).toBe(5);
-    expect(offsetActivityPhaseBoundary(3, 5, true)).toBe(8);
-    expect(offsetActivityPhaseBoundary(3, 5, false)).toBe(8);
   });
 });
 
