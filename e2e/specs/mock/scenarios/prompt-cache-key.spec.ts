@@ -56,6 +56,7 @@ async function selectAgent(page: Page, agentName: string) {
   await page.getByRole('option', { name: agentName, exact: true }).click();
   await expect(form.getByLabel('Agent name')).toHaveValue(agentName);
   await form.getByRole('button', { name: 'Select Agent' }).click();
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
 }
 
 function persistedText(message: TMessage): string {
@@ -74,7 +75,6 @@ function persistedText(message: TMessage): string {
 }
 
 async function sendAssertion(page: Page, agentName: string, distinctText: string): Promise<string> {
-  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
   await selectAgent(page, agentName);
   const response = await sendMessageAndWaitForCompletion(
     page,
@@ -117,6 +117,10 @@ test.afterEach(async ({ page }) => {
 });
 
 test.describe('prompt cache key', () => {
+  test.skip(
+    ({ isMobile }) => isMobile === true,
+    'Prompt cache key scenarios require desktop Agent Builder',
+  );
   test('shares one cache key for a stable agent prefix across conversations @scenario:stable-prefix-shares-one-cache-key-across-conversations', async ({
     page,
   }) => {
@@ -142,7 +146,13 @@ test.describe('prompt cache key', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const token = await getAccessToken(page);
     const initialInstructions = 'Use the initial stable instructions for this cache scenario.';
-    const agent = await createAgent(page, token, OPENAI_PROVIDER, OPENAI_MODEL, initialInstructions);
+    const agent = await createAgent(
+      page,
+      token,
+      OPENAI_PROVIDER,
+      OPENAI_MODEL,
+      initialInstructions,
+    );
 
     const firstKey = await sendAssertion(page, agent.name, 'before instruction change');
     expect(firstKey).not.toBe('');
