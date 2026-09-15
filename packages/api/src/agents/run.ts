@@ -2581,13 +2581,17 @@ export async function createRun({
      * reach one cache entry instead of each writing their own. `llmConfig` is
      * the object `agentInput.clientOptions` already holds.
      */
-    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & { response_format?: unknown };
+    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & {
+      response_format?: unknown;
+      text?: { format?: unknown };
+    };
     if (cacheOptions.promptCacheKeyEnabled === true && cacheOptions.promptCacheKey == null) {
       cacheOptions.promptCacheKey = buildPromptCacheKey({
         model: cacheOptions.model,
         instructions: systemContent,
         boundTools: [...toolDefinitions, ...(graphTools ?? []), ...(tools ?? [])],
         responseSchema: cacheOptions.response_format,
+        responsesTextFormat: cacheOptions.text?.format,
       });
     }
     delete cacheOptions.promptCacheKeyEnabled;
