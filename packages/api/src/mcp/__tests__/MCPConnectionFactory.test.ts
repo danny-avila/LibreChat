@@ -5586,6 +5586,11 @@ describe('MCPConnectionFactory', () => {
       );
 
       expect(upstreamTokenProviderResolver).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProviderResolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: { mcpServer: 'obo-srv', scopes: oboServerConfig.obo?.scopes },
+        }),
+      );
       expect(resolveOboToken).toHaveBeenCalledWith(
         mockUser,
         oboServerConfig.obo,

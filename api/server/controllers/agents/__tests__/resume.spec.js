@@ -1275,6 +1275,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
 
       expect(capturedInit.isScheduledFire).toBe(true);
+      expect(mockInitializeClient.mock.calls[0][0].scheduledTokenContext).toEqual({
+        scheduleId: 'schedule-1',
+        ownerId: USER_ID,
+        tenantId: TENANT_ID,
+        agentId: AGENT_ID,
+        invocationMode: 'delegated',
+      });
 
       expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
         expectedConfigRevision: 4,

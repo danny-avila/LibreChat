@@ -1873,7 +1873,7 @@ const initializeClientWithProvider = async ({
  * token material so refresh remains owned by the host integration.
  *
  * @param {object} [dependencies]
- * @param {(user: import('@librechat/data-schemas').IUser, options: { signal?: AbortSignal }) => import('@librechat/api').UpstreamTokenProvider | undefined | Promise<import('@librechat/api').UpstreamTokenProvider | undefined>} [dependencies.resolveUpstreamTokenProvider]
+ * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [dependencies.resolveUpstreamTokenProvider]
  */
 function createInitializeClient(dependencies = {}) {
   return async (params) => {
@@ -1881,6 +1881,7 @@ function createInitializeClient(dependencies = {}) {
       params.req,
       dependencies.resolveUpstreamTokenProvider,
       params.signal,
+      params.scheduledTokenContext,
     );
     return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
   };

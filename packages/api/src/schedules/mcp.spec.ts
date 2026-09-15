@@ -93,8 +93,13 @@ function setup(tools = ['search_mcp_docs']) {
     disconnect,
     check: (
       agentId: string,
-      user: typeof principal,
-      options?: { concurrency?: number; signal?: AbortSignal; deadlineMs?: number },
+      user: typeof principal & { tenantId?: string },
+      options?: {
+        concurrency?: number;
+        signal?: AbortSignal;
+        deadlineMs?: number;
+        scheduleId?: string;
+      },
     ) => preflight(agentId, user, { concurrency: 3, ...options }),
   };
 }
@@ -155,6 +160,36 @@ it('does not resolve upstream credentials for non-OBO servers', async () => {
 
   await expect(check('agent', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
   expect(deps.resolveUpstreamTokenProvider).not.toHaveBeenCalled();
+});
+
+it('passes admission identity to the host and rejects a changed tenant before connection', async () => {
+  const { check, deps } = setup();
+  const user = { ...principal, tenantId: 'tenant' };
+  deps.getUser = jest.fn(async () => user as IUser);
+  deps.resolveUpstreamTokenProvider = jest.fn(async () =>
+    jest.fn(async () => ({ access_token: 'token' })),
+  );
+  const connect = deps.connect;
+  deps.connect = jest.fn(async (options) => {
+    await options.upstreamTokenProviderResolver?.();
+    return connect(options);
+  });
+  await check('agent', user, { scheduleId: 'schedule' });
+  expect(deps.resolveUpstreamTokenProvider).toHaveBeenCalledWith(user, {
+    signal: undefined,
+    context: {
+      scheduleId: 'schedule',
+      ownerId: 'owner',
+      tenantId: 'tenant',
+      agentId: 'agent',
+      invocationMode: 'delegated',
+    },
+  });
+  jest.mocked(deps.connect).mockClear();
+  await expect(
+    check('agent', { ...user, tenantId: 'different' }, { scheduleId: 'schedule' }),
+  ).rejects.toBeInstanceOf(ScheduleMCPError);
+  expect(deps.connect).not.toHaveBeenCalled();
 });
 
 it('does not expose an OBO provider to a sibling direct-bearer server', async () => {

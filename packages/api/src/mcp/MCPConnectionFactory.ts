@@ -654,6 +654,7 @@ export class MCPConnectionFactory {
       this.upstreamTokenProvider = createLazyOboUpstreamTokenProvider(
         this.upstreamTokenProviderResolver,
         this.signal,
+        { mcpServer: this.serverName, scopes: oboConfig.scopes },
       );
     }
     if (!this.upstreamTokenProvider) {

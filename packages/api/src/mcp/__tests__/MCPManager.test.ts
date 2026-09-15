@@ -2914,6 +2914,11 @@ describe('MCPManager', () => {
       });
 
       expect(upstreamTokenProviderResolver).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProviderResolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: { mcpServer: serverName, scopes: serverConfig.obo?.scopes },
+        }),
+      );
       expect(mockResolveOboToken).toHaveBeenCalledWith(
         mockUser,
         serverConfig.obo,
