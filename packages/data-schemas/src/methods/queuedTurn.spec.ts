@@ -90,7 +90,7 @@ describe('agent queued turn methods', () => {
     const input = enqueueInput({
       text: '  follow up  ',
       files: [
-        { file_id: ' file-1 ', filename: ' report.pdf ' },
+        { file_id: ' file-1 ', filename: ' report.pdf ', llmDeliveryPath: 'text' },
         { file_id: 'file-1', filename: 'ignored duplicate' },
       ],
       quotes: [' quote ', '', 'second'],
@@ -102,6 +102,8 @@ describe('agent queued turn methods', () => {
     const replay = await methods.enqueueAgentQueuedTurn({
       ...input,
       text: 'follow up',
+      /** Older replicas do not know the display-only delivery marker; their retry
+       * must still replay the same accepted intent during a rolling deployment. */
       files: [{ file_id: 'file-1', filename: 'report.pdf' }],
       quotes: ['quote', 'second'],
       manualSkills: ['skill-a'],
@@ -115,7 +117,7 @@ describe('agent queued turn methods', () => {
       sequence: 1,
       status: 'queued',
       text: 'follow up',
-      files: [{ file_id: 'file-1', filename: 'report.pdf' }],
+      files: [{ file_id: 'file-1', filename: 'report.pdf', llmDeliveryPath: 'text' }],
       quotes: ['quote', 'second'],
       manualSkills: ['skill-a'],
       expectedPredecessorCreatedAt: 42,

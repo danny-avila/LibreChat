@@ -126,6 +126,7 @@ export interface WorkspaceExecuteCommandRequest {
   cwd?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  environmentAction?: { name: string; fingerprint: string };
 }
 
 export interface WorkspaceWriteRequest {

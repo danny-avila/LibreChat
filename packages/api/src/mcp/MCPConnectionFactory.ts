@@ -11,7 +11,12 @@ import type {
   OAuthStoredClientMetadata,
   OAuthClientSource,
 } from '~/mcp/oauth';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
@@ -43,7 +48,9 @@ import {
   createDeadlineAbortSignal,
 } from './utils';
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
+import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
@@ -103,6 +110,7 @@ export class MCPConnectionFactory {
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
+  protected upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   protected readonly oboIdentityContext?: AuthIdentityContext;
   /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
   private oboRefreshError?: Error;
@@ -612,6 +620,7 @@ export class MCPConnectionFactory {
 
     this.user = options?.user;
     this.upstreamTokenProvider = options?.upstreamTokenProvider;
+    this.upstreamTokenProviderResolver = options?.upstreamTokenProviderResolver;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
@@ -641,6 +650,12 @@ export class MCPConnectionFactory {
       return null;
     }
 
+    if (!this.upstreamTokenProvider && this.upstreamTokenProviderResolver) {
+      this.upstreamTokenProvider = createLazyOboUpstreamTokenProvider(
+        this.upstreamTokenProviderResolver,
+        this.signal,
+      );
+    }
     if (!this.upstreamTokenProvider) {
       throw new Error(
         `${this.logPrefix} Internal: upstreamTokenProvider not plumbed for OBO connection. ` +
@@ -651,11 +666,14 @@ export class MCPConnectionFactory {
 
     if (this.oboTrustChecker) {
       const config = this.serverConfig as t.ParsedServerConfig;
-      const trusted = await this.oboTrustChecker({
-        source: config.source,
-        author: config.author,
-        dbId: config.dbId,
-      });
+      const trusted = await awaitOboOperation(
+        this.oboTrustChecker({
+          source: config.source,
+          author: config.author,
+          dbId: config.dbId,
+        }),
+        this.signal,
+      );
       if (!trusted) {
         logger.warn(
           `${this.logPrefix} OBO config not trusted (author lacks CONFIGURE_OBO permission); skipping OBO token exchange`,
@@ -665,13 +683,16 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return resolveOboToken(
-      this.user,
-      oboConfig,
-      this.oboTokenResolver,
-      this.upstreamTokenProvider,
-      this.oboIdentityContext,
-      forceRefresh,
+    return awaitOboOperation(
+      resolveOboToken(
+        this.user,
+        oboConfig,
+        this.oboTokenResolver,
+        this.upstreamTokenProvider,
+        this.oboIdentityContext,
+        forceRefresh,
+      ),
+      this.signal,
     );
   }
 
@@ -680,7 +701,7 @@ export class MCPConnectionFactory {
     return !!this.serverConfig.obo && !!this.oboTokenResolver && !!this.user;
   }
 
-  protected createOboConnectionError(error: OboTokenResolutionError): Error {
+  protected createOboConnectionError(error: OboTokenResolutionError): OboTokenResolutionError {
     let recoveryHint = 'Re-authenticate the user and retry.';
 
     if (error.retryable) {
@@ -689,8 +710,11 @@ export class MCPConnectionFactory {
       recoveryHint = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
     }
 
-    return new Error(
+    return new OboTokenResolutionError(
+      error.reason,
       `${error.userMessage} Unable to connect to OBO server "${this.serverName}". ${recoveryHint}`,
+      error.retryable,
+      error,
     );
   }
 
@@ -784,6 +808,7 @@ export class MCPConnectionFactory {
     this.oauthEnd = undefined;
     this.returnOnOAuth = false;
     this.upstreamTokenProvider = undefined;
+    this.upstreamTokenProviderResolver = undefined;
   }
 
   private getServerUrl(): string | undefined {
@@ -1438,7 +1463,11 @@ export class MCPConnectionFactory {
         logger.info(`${this.logPrefix} OBO token re-exchanged; retrying connection`);
         connection.emit('oauthHandled');
       } catch (error) {
-        logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        if (isAbortError(error)) {
+          logger.debug(`${this.logPrefix} OBO token re-exchange cancelled`);
+        } else {
+          logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        }
         /**
          * `connectClient` rejects its handling promise with this error and then
          * rethrows the server's original 401, so a diagnosis like an unrefreshable
@@ -1464,6 +1493,11 @@ export class MCPConnectionFactory {
     }
     if (error instanceof Error) {
       return error;
+    }
+    if (isAbortError(error)) {
+      return Object.assign(new Error('The operation was aborted.', { cause: error }), {
+        name: 'AbortError',
+      });
     }
     return new Error(`OBO token re-exchange failed for "${this.serverName}".`);
   }

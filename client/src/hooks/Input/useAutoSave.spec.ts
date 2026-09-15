@@ -36,6 +36,7 @@ import { useGetFiles } from '~/data-provider';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import {
   encodeBase64,
+  clearAllDrafts,
   getAskAnswerDraftId,
   getDraft,
   getFilesDraft,
@@ -735,6 +736,41 @@ describe('useAutoSave — file cache updates', () => {
     expect(mockSetValue).not.toHaveBeenCalledWith('text', 'other tab text');
     expect(getFilesDraft('convo-2').tabId).toBe('other-tab');
   });
+  it('consumes the retained pending draft without clearing a foreign conversation draft', () => {
+    markTabLive('other-tab');
+    (clearAllDrafts as jest.Mock).mockImplementation(jest.requireActual('~/utils').clearAllDrafts);
+    const { result, rerender, unmount } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-2',
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+    setFilesDraft(Constants.PENDING_CONVO, { fileIds: ['ours'], pendingPastes: {} });
+    setFilesDraft('convo-2', {
+      fileIds: ['theirs'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    const pendingTextKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
+    const foreignTextKey = `${LocalStorageKeys.TEXT_DRAFT}convo-2`;
+    localStorage.setItem(pendingTextKey, encodeBase64('submitted text'));
+    localStorage.setItem(foreignTextKey, encodeBase64('their text'));
+    act(() => rerender({ isSubmitting: false }));
+    act(() => result.current());
+    expect(clearAllDrafts).toHaveBeenLastCalledWith(Constants.PENDING_CONVO);
+    expect(localStorage.getItem(pendingTextKey)).toBeNull();
+    expect(getFilesDraft(Constants.PENDING_CONVO).fileIds).toEqual([]);
+    expect(localStorage.getItem(foreignTextKey)).toBe(encodeBase64('their text'));
+    expect(getFilesDraft('convo-2').fileIds).toEqual(['theirs']);
+    unmount();
+    (clearAllDrafts as jest.Mock).mockReset();
+  });
+
   it('keeps autosaving to the pending key while the destination is owned by another live tab', () => {
     jest.useFakeTimers();
     markTabLive('other-tab');

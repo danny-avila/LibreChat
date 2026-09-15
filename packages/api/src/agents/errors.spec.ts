@@ -12,13 +12,27 @@ import {
 } from './errors';
 
 describe('isFatalAgentInitializationError', () => {
-  it.each([
-    ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-    ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
-    ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
-    AGENT_ATTACHMENT_LIMIT_EXCEEDED,
-    AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
-  ])('classifies %s as fatal', (code) => {
+  it('propagates cancellation even when optional MCP fallback is allowed', () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    const controller = new AbortController();
+    expect(isFatalAgentInitializationError(abort, { signal: controller.signal })).toBe(false);
+    controller.abort(abort);
+    expect(
+      isFatalAgentInitializationError(abort, {
+        allowExpectedMCPFallback: true,
+        signal: controller.signal,
+      }),
+    ).toBe(true);
+  });
+  it.each(
+    [
+      ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+      AGENT_ATTACHMENT_LIMIT_EXCEEDED,
+      AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
+    ].filter((code): code is string => typeof code === 'string'),
+  )('classifies %s as fatal', (code) => {
     expect(isFatalAgentInitializationError({ code })).toBe(true);
   });
 
@@ -38,6 +52,10 @@ describe('isFatalAgentInitializationError', () => {
       expect(isFatalAgentInitializationError(error)).toBe(false);
     },
   );
+
+  it('does not classify a missing code as fatal when an enum member is unavailable', () => {
+    expect(isFatalAgentInitializationError(new Error('ordinary failure'))).toBe(false);
+  });
 });
 
 describe('LangChain provider error text', () => {

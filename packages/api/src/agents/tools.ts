@@ -12,7 +12,12 @@ import {
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
-import type { AgentToolOptions, CodeWorkspaceOperation, GraphEdge } from 'librechat-data-provider';
+import type {
+  AgentToolOptions,
+  CodeWorkspaceOperation,
+  CodeWorkspaceDescriptor,
+  GraphEdge,
+} from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
 import {
@@ -406,6 +411,7 @@ export interface RegisterCodeExecutionToolsParams {
   workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
   /** Deployment ceiling advertised on attached Bash tool definitions. */
   workspaceCommandTimeoutMaxMs?: number;
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'];
   /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
@@ -916,6 +922,7 @@ function createBashToolDef(
   statefulSessions = false,
   workspaceTools = false,
   workspaceCommandTimeoutMaxMs?: number,
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'],
 ): LCTool {
   /* Passed as a variable (not an inline literal) so the extra
    * `statefulSessions` key stays assignable against pinned SDK versions
@@ -925,10 +932,10 @@ function createBashToolDef(
     name: BashExecutionToolDefinition.name,
     toolType: 'builtin',
     description: workspaceTools
-      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
+      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences, workspaceEnvironment)
       : buildBashExecutionToolDescription(descriptionOpts),
     parameters: (workspaceTools
-      ? buildAttachedWorkspaceBashSchema(workspaceCommandTimeoutMaxMs)
+      ? buildAttachedWorkspaceBashSchema(workspaceCommandTimeoutMaxMs, workspaceEnvironment)
       : BashExecutionToolDefinition.schema) as unknown as LCTool['parameters'],
   }) as LCTool;
 }
@@ -941,6 +948,7 @@ function buildBashToolDef(opts: {
   statefulSessions?: boolean;
   workspaceTools?: boolean;
   workspaceCommandTimeoutMaxMs?: number;
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'];
 }): LCTool {
   /* Stateful defs are built on demand: the stateless pair covers the
    * default path, and per-run construction is negligible next to init. */
@@ -950,6 +958,7 @@ function buildBashToolDef(opts: {
       opts.statefulSessions === true,
       opts.workspaceTools === true,
       opts.workspaceCommandTimeoutMaxMs,
+      opts.workspaceEnvironment,
     );
   }
   return opts.enableToolOutputReferences
@@ -982,6 +991,7 @@ export function registerCodeExecutionTools(
     workspaceTools = false,
     workspaceOperations,
     workspaceCommandTimeoutMaxMs,
+    workspaceEnvironment,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
@@ -1001,6 +1011,7 @@ export function registerCodeExecutionTools(
         statefulSessions,
         workspaceTools,
         workspaceCommandTimeoutMaxMs,
+        workspaceEnvironment,
       }),
     );
   }

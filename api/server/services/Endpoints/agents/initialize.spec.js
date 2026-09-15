@@ -98,7 +98,7 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
-const { initializeClient } = require('./initialize');
+const { createInitializeClient, initializeClient } = require('./initialize');
 const { processAddedConvo } = require('./addedConvo');
 const { getSkillDbMethods, getSkillToolDeps } = require('./skillDeps');
 const { loadAgentTools } = require('~/server/services/ToolService');
@@ -180,6 +180,53 @@ describe('initializeClient — processAgent ACL gate', () => {
       executionProfile: 'default',
       statefulSessions: false,
     },
+  });
+
+  it('defers host credential resolution during scheduled agent initialization', async () => {
+    const upstreamTokenProvider = jest.fn();
+    const resolveUpstreamTokenProvider = jest.fn().mockResolvedValue(upstreamTokenProvider);
+    const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
+    const req = makeReq();
+    req._isScheduledFire = true;
+    const signal = new AbortController().signal;
+    mockInitializeAgent.mockImplementationOnce(async ({ loadTools, agent }) => {
+      await loadTools({
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+      return makePrimaryConfig([]);
+    });
+
+    await hostInitializeClient({
+      req,
+      res: {},
+      signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(resolveUpstreamTokenProvider).not.toHaveBeenCalled();
+    const toolLoadParams = loadAgentTools.mock.calls[0][0];
+    expect(toolLoadParams.upstreamTokenProvider).toBeUndefined();
+    const resolver = toolLoadParams.upstreamTokenProviderResolver;
+    await expect(resolver({ signal })).resolves.toBe(upstreamTokenProvider);
+    expect(resolveUpstreamTokenProvider).toHaveBeenCalledWith(req.user, { signal });
+  });
+
+  it('keeps interactive agent initialization independent of the host resolver', async () => {
+    const resolveUpstreamTokenProvider = jest.fn();
+    const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+
+    await hostInitializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(resolveUpstreamTokenProvider).not.toHaveBeenCalled();
   });
 
   it('replaces untrusted artifact route metadata with the executing agent context', async () => {
