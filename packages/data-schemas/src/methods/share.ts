@@ -244,12 +244,24 @@ async function buildFileSnapshots(
     collectSteerFileIds(message.content, fileIds);
   }
 
+  return readFileSnapshots(mongoose, fileIds, ownerId);
+}
+
+async function readFileSnapshots(
+  mongoose: typeof import('mongoose'),
+  fileIds: Set<string>,
+  ownerId: string,
+): Promise<t.SharedFileSnapshot[]> {
   if (fileIds.size === 0) {
     return [];
   }
 
   const File = mongoose.models.File as Model<t.IMongoFile>;
-  const files = await File.find({ file_id: { $in: Array.from(fileIds) }, user: ownerId }).lean();
+  const files = await File.find({ file_id: { $in: Array.from(fileIds) }, user: ownerId })
+    .select(
+      'file_id source storageKey filepath type filename bytes width height model llmDeliveryPath previewRevision metadata.sourceDispatchedAt tenantId',
+    )
+    .lean();
 
   const snapshots: t.SharedFileSnapshot[] = [];
   for (const file of files) {
@@ -268,7 +280,7 @@ async function buildFileSnapshots(
       width: file.width,
       height: file.height,
       model: file.model,
-      llmDeliveryPath: isLlmDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined,
+      llmDeliveryPath: isLlmDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : 'provider',
       previewRevision: file.previewRevision,
       sourceDispatchedAt: file.metadata?.sourceDispatchedAt,
       tenantId: file.tenantId,
@@ -425,29 +437,33 @@ function snapshotMatchesCurrentVersion(
 async function enrichSnapshotDeliveryPaths(
   mongoose: typeof import('mongoose'),
   share: t.ISharedLink & { messages: t.IMessage[] },
-  messages: t.IMessage[],
 ): Promise<{ snapshots: t.SharedFileSnapshot[]; changed: boolean }> {
   const existing = share.fileSnapshots ?? [];
-  if (existing.every((snapshot) => snapshot.llmDeliveryPath != null) || share._id == null) {
+  const missingIds = new Set(
+    existing
+      .filter((snapshot) => snapshot.llmDeliveryPath === undefined)
+      .map((snapshot) => snapshot.file_id),
+  );
+  if (missingIds.size === 0 || share._id == null || !share.user) {
     return { snapshots: existing, changed: false };
   }
 
   const currentById = new Map(
-    (await buildFileSnapshots(mongoose, messages, share.user)).map((snapshot) => [
+    (await readFileSnapshots(mongoose, missingIds, share.user)).map((snapshot) => [
       snapshot.file_id,
       snapshot,
     ]),
   );
   let changed = false;
   const enriched = existing.map((snapshot) => {
-    if (snapshot.llmDeliveryPath != null) {
+    if (snapshot.llmDeliveryPath !== undefined) {
       return snapshot;
     }
     const current = currentById.get(snapshot.file_id);
-    if (current == null || !snapshotMatchesCurrentVersion(snapshot, current)) {
-      return snapshot;
-    }
     changed = true;
+    if (current == null || !snapshotMatchesCurrentVersion(snapshot, current)) {
+      return { ...snapshot, llmDeliveryPath: null };
+    }
     return { ...snapshot, llmDeliveryPath: current.llmDeliveryPath ?? ('provider' as const) };
   });
   if (!changed) {
@@ -983,7 +999,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       if (shouldPersistFileSnapshots) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
       } else if (includeFiles && fileSnapshots !== undefined) {
-        const enriched = await enrichSnapshotDeliveryPaths(mongoose, share, messagesToShare);
+        const enriched = await enrichSnapshotDeliveryPaths(mongoose, share);
         fileSnapshots = enriched.snapshots;
         shouldPersistEnrichedDeliveryPaths = enriched.changed;
       }

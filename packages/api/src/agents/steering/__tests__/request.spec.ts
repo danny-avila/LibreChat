@@ -957,6 +957,18 @@ describe('generation protocol bridge for steering mutations', () => {
       'client-current-file-ref',
     );
     expect(current?.fingerprint).toBe(legacy?.fingerprint);
+    for (const [clientSteerId, files] of [
+      ['client-legacy-file-ref', [{ ...base.files[0], llmDeliveryPath: 'text' }]],
+      ['client-current-file-ref', base.files],
+    ] as const) {
+      const replay = await handleSteerRequest(
+        user,
+        { ...base, clientSteerId, files },
+        { generationProtocolVersion: 2 },
+      );
+      expect(replay.body).toMatchObject({ replayed: true });
+    }
+    expect(await GenerationJobManager.steering.peek(streamId)).toHaveLength(2);
   });
 
   it('treats quotes as part of the idempotency identity', async () => {

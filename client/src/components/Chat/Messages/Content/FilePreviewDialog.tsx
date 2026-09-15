@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
@@ -25,7 +25,7 @@ import {
 } from '~/data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
-import { useShareContext } from '~/Providers';
+import { useFileMapContext, useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -102,7 +102,10 @@ export default function FilePreviewDialog({
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   const { shareId } = useShareContext();
-  const showExtractedText = shouldUseExtractedTextPreview(deliveryPath);
+  const fileMap = useFileMapContext();
+  const showExtractedText = shouldUseExtractedTextPreview(
+    deliveryPath ?? (!shareId && fileId ? fileMap?.[fileId]?.llmDeliveryPath : undefined),
+  );
   const {
     data: extractedPreview,
     isInitialLoading: extractedTextLoading,
@@ -113,7 +116,6 @@ export default function FilePreviewDialog({
     fileId,
     {
       enabled: open && showExtractedText && !!fileId,
-      staleTime: Infinity,
     },
     shareId,
   );
@@ -137,13 +139,12 @@ export default function FilePreviewDialog({
   const [loading, setLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const loadingRef = useRef(false);
 
   const previewKind = showExtractedText ? false : getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
   const displayedText = showExtractedText ? (extractedPreview?.text ?? null) : fileContent;
   const isLoading =
-    loading ||
+    (!showExtractedText && loading) ||
     (showExtractedText &&
       isExtractedTextPreviewLoading(
         extractedPreview?.status,
@@ -151,65 +152,73 @@ export default function FilePreviewDialog({
         extractedTextError,
       ));
   const hasPreviewError =
-    previewError ||
+    (!showExtractedText && previewError) ||
     (showExtractedText &&
       (extractedTextError ||
         extractedPreview?.status === 'failed' ||
         (extractedPreview?.status === 'ready' && extractedPreview.text == null)));
 
-  const cancelledRef = useRef(false);
-
-  const loadPreview = useCallback(async () => {
-    if (!fileId || !previewKind || loadingRef.current) {
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    setFileContent(null);
+    setFileBlobUrl(null);
+    setPreviewError(false);
+    setLoading(false);
+    if (!open || !fileId || !previewKind) {
       return;
     }
-    loadingRef.current = true;
-    cancelledRef.current = false;
-    setLoading(true);
-    setPreviewError(false);
 
-    try {
-      const result = await previewFile();
-      if (!result.data) {
-        if (!cancelledRef.current) {
+    setLoading(true);
+    const load = async () => {
+      try {
+        const result = await previewFile();
+        if (!result.data) {
+          if (!cancelled) {
+            setPreviewError(true);
+          }
+          return;
+        }
+        let blob: Blob;
+        try {
+          if (cancelled) {
+            return;
+          }
+          const response = await fetch(result.data);
+          blob = await response.blob();
+        } finally {
+          revokeDownloadURL(result.data);
+        }
+        if (cancelled) {
+          return;
+        }
+        if (previewKind === 'text') {
+          const text = await blob.text();
+          if (!cancelled) {
+            setFileContent(text);
+          }
+        } else {
+          objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+          setFileBlobUrl(objectUrl);
+        }
+      } catch {
+        if (!cancelled) {
           setPreviewError(true);
         }
-        return;
-      }
-      if (cancelledRef.current) {
-        revokeDownloadURL(result.data);
-        return;
-      }
-
-      let blob: Blob;
-      try {
-        const resp = await fetch(result.data);
-        blob = await resp.blob();
       } finally {
-        revokeDownloadURL(result.data);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-
-      if (cancelledRef.current) {
-        return;
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
       }
-
-      if (previewKind === 'text') {
-        setFileContent(await blob.text());
-      } else {
-        const typed = new Blob([blob], { type: 'application/pdf' });
-        setFileBlobUrl(URL.createObjectURL(typed));
-      }
-    } catch {
-      if (!cancelledRef.current) {
-        setPreviewError(true);
-      }
-    } finally {
-      loadingRef.current = false;
-      if (!cancelledRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [fileId, previewKind, previewFile]);
+    };
+  }, [open, fileId, previewKind, previewFile, shareId, user?.id]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
@@ -227,26 +236,7 @@ export default function FilePreviewDialog({
   }, [downloadFile, downloadFilename, fileId]);
 
   useEffect(() => {
-    if (open && previewKind && fileContent === null && !fileBlobUrl) {
-      loadPreview();
-    }
-  }, [open, previewKind, fileContent, fileBlobUrl, loadPreview]);
-
-  useEffect(() => {
-    return () => {
-      if (fileBlobUrl) {
-        URL.revokeObjectURL(fileBlobUrl);
-      }
-    };
-  }, [fileBlobUrl]);
-
-  useEffect(() => {
     if (!open) {
-      cancelledRef.current = true;
-      setFileContent(null);
-      setFileBlobUrl(null);
-      setPreviewError(false);
-      setLoading(false);
       setIsCopied(false);
     }
   }, [open]);
@@ -329,7 +319,7 @@ export default function FilePreviewDialog({
               )}
             </div>
           )}
-          {fileBlobUrl && (
+          {fileBlobUrl && !showExtractedText && (
             <iframe
               src={fileBlobUrl}
               title={`${localize('com_ui_preview')}: ${fileName}`}

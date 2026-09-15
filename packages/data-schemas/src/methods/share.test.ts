@@ -3382,6 +3382,19 @@ describe('Share Methods', () => {
       const saved = await SharedLink.findOne({ shareId }).lean();
       expect(saved?.fileSnapshots?.[0].llmDeliveryPath).toBe('text');
       expect(saved?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
+      const find = jest.spyOn(File, 'find');
+      await shareMethods.getSharedMessages(shareId);
+      expect(find).not.toHaveBeenCalled();
+      find.mockRestore();
+
+      await SharedLink.updateOne({ shareId }, { $unset: { 'fileSnapshots.0.llmDeliveryPath': 1 } });
+      await shareMethods.getSharedMessages(shareId, undefined, {
+        preflight: async () => {
+          await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots: [] } });
+        },
+      });
+      const republished = await SharedLink.findOne({ shareId }).lean();
+      expect(republished?.fileSnapshots).toEqual([]);
     });
 
     test('does not enrich an existing snapshot after its file revision changes', async () => {
@@ -3422,7 +3435,11 @@ describe('Share Methods', () => {
       const result = await shareMethods.getSharedMessages(shareId);
       expect(result?.messages[0].files?.[0].llmDeliveryPath).toBeUndefined();
       const saved = await SharedLink.findOne({ shareId }).lean();
-      expect(saved?.fileSnapshots?.[0].llmDeliveryPath).toBeUndefined();
+      expect(saved?.fileSnapshots?.[0].llmDeliveryPath).toBeNull();
+      const find = jest.spyOn(File, 'find');
+      await shareMethods.getSharedMessages(shareId);
+      expect(find).not.toHaveBeenCalled();
+      find.mockRestore();
     });
 
     test('runs public projection preflight before persisting a legacy backfill', async () => {
