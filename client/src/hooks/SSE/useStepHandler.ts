@@ -467,13 +467,16 @@ export default function useStepHandler({
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
       incomingPhase?: 'commentary' | 'final_answer',
-      firstPartFolded = false,
+      firstPartFolded?: boolean,
+      editedType?: string,
     ): number => {
-      /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
+      /** A populated SYNC has already decided. Live index 0 uses the same
+       * edit-type and phase eligibility as mergeEditedMessageContent. */
       if (
-        !firstPartFolded &&
+        firstPartFolded === undefined &&
         serverIndex === 0 &&
         editPrefixOffset > 0 &&
+        incomingContentType === editedType &&
         (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
       ) {
         const targetIndex = serverIndex + editPrefixOffset - 1;
@@ -1112,17 +1115,19 @@ export default function useStepHandler({
               phasedContentPart.type || '',
               updatedResponse.content,
               phase,
-              submission.editPrefixFirstPartFolded === true,
+              submission.editPrefixFirstPartFolded,
+              submission.editPrefixType ?? submission.editedContent?.type,
             );
             if (
               submission != null &&
-              submission.editPrefixFirstPartFolded !== true &&
+              submission.editPrefixFirstPartFolded === undefined &&
               runStep.index === 0 &&
-              editPrefixOffset > 0 &&
-              currentIndex === editPrefixOffset - 1
+              editPrefixOffset > 0
             ) {
-              submission.editPrefixFirstPartFolded = true;
-              editPrefixOffset -= 1;
+              submission.editPrefixFirstPartFolded = currentIndex === editPrefixOffset - 1;
+              if (submission.editPrefixFirstPartFolded) {
+                editPrefixOffset -= 1;
+              }
             }
             if (phasedContentPart.type === ContentTypes.THINK) {
               updatedResponse = prepareReasoningPartForStep(
@@ -1181,17 +1186,19 @@ export default function useStepHandler({
               contentPart.type || '',
               updatedResponse.content,
               undefined,
-              submission.editPrefixFirstPartFolded === true,
+              submission.editPrefixFirstPartFolded,
+              submission.editPrefixType ?? submission.editedContent?.type,
             );
             if (
               submission != null &&
-              submission.editPrefixFirstPartFolded !== true &&
+              submission.editPrefixFirstPartFolded === undefined &&
               runStep.index === 0 &&
-              editPrefixOffset > 0 &&
-              currentIndex === editPrefixOffset - 1
+              editPrefixOffset > 0
             ) {
-              submission.editPrefixFirstPartFolded = true;
-              editPrefixOffset -= 1;
+              submission.editPrefixFirstPartFolded = currentIndex === editPrefixOffset - 1;
+              if (submission.editPrefixFirstPartFolded) {
+                editPrefixOffset -= 1;
+              }
             }
             updatedResponse = prepareReasoningPartForStep(
               updatedResponse,

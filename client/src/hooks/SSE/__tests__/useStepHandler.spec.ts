@@ -8,6 +8,7 @@ import {
   StepEvents,
   ContentTypes,
   ToolCallTypes,
+  mergeEditedMessageContent,
 } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -3713,6 +3714,65 @@ describe('useStepHandler', () => {
    * spaces. These cases pin the states no other suite constructs.
    */
   describe('edit-prefix index space across resume', () => {
+    it.each([
+      [ContentTypes.THINK, ContentTypes.TEXT, false],
+      [ContentTypes.THINK, ContentTypes.TEXT, true],
+      [ContentTypes.TEXT, ContentTypes.THINK, false],
+      [ContentTypes.TEXT, ContentTypes.THINK, true],
+    ] as const)(
+      'keeps a %s edit separate from generated %s and its tools (populated=%s)',
+      (editedType, generatedType, populated) => {
+        const prefix: TMessageContentParts[] = [
+          { type: editedType, [editedType]: 'edited' } as TMessageContentParts,
+          { type: generatedType, [generatedType]: 'retained' } as TMessageContentParts,
+        ];
+        const generated = { type: generatedType, [generatedType]: 'new' } as TMessageContentParts;
+        const merged = mergeEditedMessageContent(prefix, populated ? [generated] : [], editedType);
+        expect(merged.firstPartMerged).toBe(false);
+        const submission = createSubmission({
+          editedContent: populated ? undefined : { index: 0, type: editedType },
+          initialResponse: createResponseMessage({
+            content: merged.content as TMessageContentParts[],
+          }),
+        });
+        submission.editPrefixLength = prefix.length;
+        submission.editPrefixFirstPartFolded = populated ? merged.firstPartMerged : undefined;
+        let messages = [submission.initialResponse];
+        mockGetMessages.mockImplementation(() => messages);
+        mockSetMessages.mockImplementation((next: TMessage[]) => {
+          messages = next;
+        });
+        const { result } = renderHook(() => useStepHandler(createHookParams()));
+        act(() => {
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createRunStep() },
+            submission,
+          );
+          for (const text of [populated ? ' continued' : 'new continued', ' again']) {
+            result.current.stepHandler(
+              generatedType === ContentTypes.TEXT
+                ? { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', text) }
+                : {
+                    event: StepEvents.ON_REASONING_DELTA,
+                    data: createReasoningDelta('step-1', text),
+                  },
+              submission,
+            );
+          }
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createToolCallRunStep({ index: 1 }) },
+            submission,
+          );
+        });
+        expect(messages.find((message) => !message.isCreatedByUser)?.content).toMatchObject([
+          ...prefix,
+          { type: generatedType, [generatedType]: 'new continued again' },
+          { type: ContentTypes.TOOL_CALL, tool_call: { name: 'test_tool' } },
+        ]);
+        expect(submission.editPrefixFirstPartFolded).toBe(false);
+      },
+    );
+
     const textPart = (text: string): TMessageContentParts =>
       ({ type: ContentTypes.TEXT, [ContentTypes.TEXT]: text }) as TMessageContentParts;
 
@@ -3863,7 +3923,7 @@ describe('useStepHandler', () => {
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
       expect(
         (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
-      ).toBeUndefined();
+      ).toBe(false);
     });
 
     it('records when the first completion part actually folds into the retained tail', () => {
@@ -3908,7 +3968,8 @@ describe('useStepHandler', () => {
           }),
         });
         submission.editPrefixLength = 2;
-        submission.editPrefixFirstPartFolded = restored;
+        submission.editPrefixType = ContentTypes.TEXT;
+        submission.editPrefixFirstPartFolded = restored ? true : undefined;
         let currentMessages = [submission.initialResponse as TMessage];
         mockGetMessages.mockImplementation(() => currentMessages);
         mockSetMessages.mockImplementation((messages: TMessage[]) => {

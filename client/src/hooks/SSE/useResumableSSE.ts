@@ -656,7 +656,10 @@ const buildResumeEventSubmission = (
     initialResponse,
     ...(retainedContent && {
       editPrefixLength: retainedContent.parts.length,
-      editPrefixFirstPartFolded: mergedResumeContent?.firstPartMerged === true,
+      editPrefixType: retainedContent.type,
+      editPrefixFirstPartFolded: resumeState.aggregatedContent?.length
+        ? mergedResumeContent?.firstPartMerged
+        : undefined,
       editPrefixCleared: false,
     }),
   } as EventSubmission;
@@ -912,7 +915,7 @@ export default function useResumableSSE(
   const activityLabelRetryFramesRef = useRef<Set<number>>(new Set());
   /** Legacy servers return completion-local snapshots without retained content. */
   const editPrefixClearedRef = useRef(false);
-  const editPrefixFirstPartFoldedRef = useRef(false);
+  const editPrefixFirstPartFoldedRef = useRef<boolean | undefined>(undefined);
   /** Prefix state belongs to the request ID or restored generation epoch,
    *  not the response ID that SYNC can replace within the same generation. */
   const prefixStateGenerationIdRef = useRef<string | null>(null);
@@ -1291,7 +1294,7 @@ export default function useResumableSSE(
   const stepHandler = useCallback(
     (...[event, submission]: Parameters<typeof rawStepHandler>) => {
       const eventSubmission =
-        editPrefixClearedRef.current || editPrefixFirstPartFoldedRef.current
+        editPrefixClearedRef.current || editPrefixFirstPartFoldedRef.current != null
           ? {
               ...submission,
               editPrefixCleared: editPrefixClearedRef.current,
@@ -1299,9 +1302,7 @@ export default function useResumableSSE(
             }
           : submission;
       rawStepHandler(event, eventSubmission);
-      if (eventSubmission.editPrefixFirstPartFolded === true) {
-        editPrefixFirstPartFoldedRef.current = true;
-      }
+      editPrefixFirstPartFoldedRef.current = eventSubmission.editPrefixFirstPartFolded;
     },
     [rawStepHandler],
   );
@@ -1429,7 +1430,7 @@ export default function useResumableSSE(
       if (prefixStateGenerationIdRef.current !== generationId) {
         prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;
-        editPrefixFirstPartFoldedRef.current = currentSubmission.editPrefixFirstPartFolded === true;
+        editPrefixFirstPartFoldedRef.current = currentSubmission.editPrefixFirstPartFolded;
       }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
@@ -2220,8 +2221,7 @@ export default function useResumableSSE(
             const hasServerRetainedContent = data.resumeState?.retainedContent != null;
             if (hasServerRetainedContent) {
               editPrefixClearedRef.current = false;
-              editPrefixFirstPartFoldedRef.current =
-                resumeSubmission.editPrefixFirstPartFolded === true;
+              editPrefixFirstPartFoldedRef.current = resumeSubmission.editPrefixFirstPartFolded;
             }
             /**
              * Totals rebuild from the persisted backfill at sync. Replayed or

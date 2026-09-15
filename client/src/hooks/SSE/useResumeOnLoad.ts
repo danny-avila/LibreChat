@@ -246,7 +246,10 @@ function buildSubmissionFromResumeState(
     endpointOption: {},
     ...(retainedContent && {
       editPrefixLength: retainedContent.parts.length,
-      editPrefixFirstPartFolded: mergedResumeContent?.firstPartMerged === true,
+      editPrefixType: retainedContent.type,
+      editPrefixFirstPartFolded: resumeState.aggregatedContent?.length
+        ? mergedResumeContent?.firstPartMerged
+        : undefined,
     }),
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new
     resumeStreamId: streamId,

@@ -2310,7 +2310,52 @@ describe('useResumeOnLoad', () => {
     ]);
     expect(submission?.editPrefixLength).toBe(1);
     expect(submission?.editPrefixFirstPartFolded).toBe(true);
+    expect(submission?.editPrefixType).toBe(ContentTypes.TEXT);
   });
+
+  it.each([false, true])(
+    'preserves server edit eligibility on cold restore (populated=%s)',
+    async (populated) => {
+      const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+      const parts = [
+        { type: ContentTypes.THINK, think: 'edited' },
+        { type: ContentTypes.TEXT, text: 'retained', phase: 'final_answer' },
+      ];
+      const generated = populated
+        ? [{ type: ContentTypes.TEXT, text: 'new', phase: 'final_answer' }]
+        : [];
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: true,
+          status: 'running',
+          streamId: CONVERSATION_ID,
+          resumeState: {
+            runSteps: [],
+            aggregatedContent: generated,
+            retainedContent: { parts, type: ContentTypes.THINK },
+            responseMessageId: 'edited-response',
+            conversationId: CONVERSATION_ID,
+            userMessage: rootUser,
+          },
+        },
+      });
+      renderUseResumeOnLoad({
+        messages: [rootUser],
+        onSubmission: (submission) => observedSubmissions.push(submission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const submission = observedSubmissions[observedSubmissions.length - 1];
+      expect(submission?.editedContent).toBeUndefined();
+      expect(submission?.editPrefixType).toBe(ContentTypes.THINK);
+      expect(submission?.editPrefixFirstPartFolded).toBe(populated ? false : undefined);
+      expect(submission?.initialResponse?.content).toEqual([...parts, ...generated]);
+    },
+  );
 
   describe('steer chip restore', () => {
     const staleChip: PendingSteer = {

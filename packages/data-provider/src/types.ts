@@ -227,7 +227,9 @@ export type TSubmission = {
    * resumes for run steps and activity labels alike.
    */
   editPrefixLength?: number;
-  /** True once server index 0 text/reasoning actually merged into the retained tail. */
+  /** Server-captured edit type, available even after a cold resume without editedContent. */
+  editPrefixType?: TEditedContent['type'];
+  /** Undefined until G exists; false forbids folding, true means index 0 folded into P. */
   editPrefixFirstPartFolded?: boolean;
   /**
    * Set once a resume SYNC has replaced the response's retained prefix with

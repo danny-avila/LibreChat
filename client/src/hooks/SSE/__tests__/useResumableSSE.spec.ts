@@ -4115,6 +4115,7 @@ describe('useResumableSSE', () => {
           content: parts,
         },
       }),
+      editPrefixType: ContentTypes.THINK as const,
       resumeStreamId: CONV_ID,
       resumeGenerationCreatedAt: 1000,
     };
@@ -4389,6 +4390,150 @@ describe('useResumableSSE', () => {
       eventHandlers.mockImplementation(originalHandlers);
     }
   });
+
+  it.each([
+    [ContentTypes.THINK, 'final_answer', false],
+    [ContentTypes.THINK, 'final_answer', true],
+    [ContentTypes.TEXT, 'final_answer', false],
+    [ContentTypes.TEXT, 'final_answer', true],
+    [ContentTypes.TEXT, 'commentary', false],
+    [ContentTypes.TEXT, 'commentary', true],
+  ] as const)(
+    'keeps SYNC and live indices consistent for a %s edit with %s tail (populated=%s)',
+    async (editedType, tailPhase, populated) => {
+      jest.useFakeTimers();
+      const parts: TMessageContentParts[] = [
+        { type: ContentTypes.THINK, think: 'retained reasoning' },
+        { type: ContentTypes.TEXT, text: 'retained text', phase: tailPhase },
+      ];
+      const submission = {
+        ...buildSubmission(),
+        resumeStreamId: CONV_ID,
+        resumeGenerationCreatedAt: 1000,
+      };
+      expect(submission.editedContent).toBeUndefined();
+      const chatHelpers = buildChatHelpers();
+      let messages = [submission.userMessage, submission.initialResponse] as TMessage[];
+      chatHelpers.getMessages.mockImplementation(() => messages);
+      chatHelpers.setMessages.mockImplementation((next: TMessage[]) => {
+        messages = next;
+      });
+      const recoilCallback = jest
+        .spyOn(jest.requireMock<typeof import('recoil')>('recoil'), 'useRecoilCallback')
+        .mockImplementation(
+          jest.requireActual<typeof import('recoil')>('recoil').useRecoilCallback,
+        );
+      const step = renderHook(
+        () =>
+          useStepHandler({
+            ...chatHelpers,
+            announcePolite: jest.fn(),
+            lastAnnouncementTimeRef: { current: 0 },
+          }),
+        { wrapper: RecoilRoot },
+      );
+      recoilCallback.mockRestore();
+      const handlers = jest.mocked(useEventHandlers);
+      const original = handlers.getMockImplementation();
+      if (!original) throw new Error('Expected the existing event-handler harness');
+      handlers.mockImplementation((params) => ({ ...original(params), ...step.result.current }));
+      const textStep: Agents.RunStep = {
+        id: 'text-0',
+        runId: 'resp-1',
+        index: 0,
+        type: StepTypes.MESSAGE_CREATION,
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'resp-1', content_type: 'text', phase: 'final_answer' },
+        },
+        usage: null,
+      };
+      const phase: TActivityLabelEvent['part'] = {
+        type: ContentTypes.ACTIVITY_LABEL,
+        activity_label: 'Looked up',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: 1,
+      };
+      const folds = editedType === ContentTypes.TEXT && tailPhase === 'final_answer';
+      const offset = parts.length - (folds ? 1 : 0);
+      let unmount: (() => void) | undefined;
+      try {
+        ({ unmount } = renderHook(() => useResumableSSE(submission, chatHelpers)));
+        await flushMicrotasks();
+        const emit = (payload: object) =>
+          getLastSSE()._emit('message', { data: JSON.stringify(payload) });
+        act(() => {
+          emit({
+            sync: true,
+            resumeState: {
+              conversationId: CONV_ID,
+              responseMessageId: 'resp-1',
+              userMessage: submission.userMessage,
+              runSteps: [textStep],
+              retainedContent: { parts, type: editedType },
+              aggregatedContent: populated
+                ? [{ type: ContentTypes.TEXT, text: 'new', phase: 'final_answer' }]
+                : [],
+            },
+          });
+          for (const text of [populated ? ' continued' : 'new continued', ' again']) {
+            emit({
+              event: StepEvents.ON_MESSAGE_DELTA,
+              data: {
+                id: textStep.id,
+                delta: { content: [{ type: ContentTypes.TEXT, text }] },
+              },
+            });
+          }
+          emit({
+            event: StepEvents.ON_RUN_STEP,
+            data: {
+              id: 'tool-1',
+              runId: 'resp-1',
+              index: 1,
+              type: StepTypes.TOOL_CALLS,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [{ id: 'call-1', name: 'search', args: '{}' }],
+              },
+            },
+          });
+          emit({
+            event: 'on_activity_label',
+            data: { responseMessageId: 'resp-1', index: 2, part: phase },
+          });
+        });
+        const content = messages.find((message) => message.messageId === 'resp-1')?.content;
+        expect(content).toHaveLength(offset + 3);
+        expect(content?.[0]).toEqual(parts[0]);
+        if (!folds) expect(content?.[1]).toEqual(parts[1]);
+        expect(content?.[offset]).toMatchObject({
+          type: ContentTypes.TEXT,
+          phase: 'final_answer',
+          text: `${folds ? 'retained text' : ''}new continued again`,
+        });
+        expect(content?.[offset + 1]).toMatchObject({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { name: 'search' },
+        });
+        expect(content?.[offset + 2]).toEqual({
+          ...phase,
+          activity_start_index: offset,
+          activity_end_index: offset + 1,
+        });
+        expect(parts[1]).toEqual({
+          type: ContentTypes.TEXT,
+          text: 'retained text',
+          phase: tailPhase,
+        });
+      } finally {
+        unmount?.();
+        step.unmount();
+        handlers.mockImplementation(original);
+      }
+    },
+  );
 
   it.each(['complete', 'aborted', 'error'] as const)(
     'preserves a page-restored prefix when the first sync is lost before %s',
