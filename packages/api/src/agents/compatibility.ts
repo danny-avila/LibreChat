@@ -48,6 +48,7 @@ export interface AgentContextDefinition {
 export interface AgentTurnSemanticContext {
   agents: readonly AgentContextDefinition[];
   approvalPolicy?: object;
+  retainedAnswers?: { enabled: boolean; maxTokens: number };
   memory?: readonly AgentContextMemorySnapshot[];
   checkpointerType?: string;
   discoveredToolNames?: readonly string[];
@@ -251,6 +252,7 @@ export function createAgentContextFingerprint(
     checkpointerType: input.checkpointerType,
     discoveredToolNames: normalizeAgentEventActorDiscoveredTools(input.discoveredToolNames),
     approvalPolicy: input.approvalPolicy,
+    retainedAnswers: input.retainedAnswers,
     agents: input.agents.map((agent) => ({
       ...agent,
       modelParameters: redactModelParameterCredentials(agent.modelParameters),
@@ -300,6 +302,7 @@ export function createInitializedAgentContextFingerprint(input: {
   agents: readonly InitializedAgentContextSource[];
   invokedSkills?: readonly AgentContextSkillIdentity[];
   approvalPolicy?: object;
+  retainedAnswers?: { enabled: boolean; maxTokens: number };
   memory?: readonly AgentContextMemorySnapshot[];
   checkpointerType?: string;
   discoveredToolNames?: readonly string[];
@@ -307,6 +310,7 @@ export function createInitializedAgentContextFingerprint(input: {
   return createAgentContextFingerprint({
     checkpointerType: input.checkpointerType,
     approvalPolicy: input.approvalPolicy,
+    retainedAnswers: input.retainedAnswers,
     memory: input.memory,
     discoveredToolNames: input.discoveredToolNames,
     agents: input.agents.map((agent, index) => ({

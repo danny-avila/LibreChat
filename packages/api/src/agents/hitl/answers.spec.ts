@@ -1,4 +1,4 @@
-import { formatAgentMessages } from '@librechat/agents';
+import { formatAgentMessages, messagesStateReducer } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
 import {
   HumanMessage,
@@ -10,6 +10,8 @@ import {
 } from '@librechat/agents/langchain/messages';
 import {
   applyRetainedAnswers,
+  selectRetainedAnswerInvocationMessages,
+  RETAINED_ANSWERS_MESSAGE_ID,
   buildRetainedAnswersContext,
   collectRetainedAnswers,
   orderConversationBranch,
@@ -445,7 +447,9 @@ describe('buildRetainedAnswersContext', () => {
       { conversationId: 'convo-1', user: 'user-1' },
       RETAINED_ANSWER_ROW_FIELDS,
     );
-    expect(RETAINED_ANSWER_ROW_FIELDS).toBe('messageId parentMessageId content');
+    expect(RETAINED_ANSWER_ROW_FIELDS).toContain(
+      'isUserSubmitted userSubmittedPaths userSubmittedMessageFieldPaths',
+    );
   });
 
   test('completes the branch from the rows the turn already read instead of querying again', async () => {
@@ -580,7 +584,7 @@ describe('applyRetainedAnswers', () => {
   const block = '# Answers\n\nQ: Deploy where?\nA: staging';
   const tokenCounter = (message: { content: unknown }) => JSON.stringify(message.content).length;
 
-  test('copies only the last human message and preserves calibrated counts and metadata', () => {
+  test('adds dedicated context and preserves user messages and calibrated counts', () => {
     const user = new HumanMessage({ content: [{ type: 'text', text: 'go on' }], id: 'user-1' });
     const assistant = new AIMessage('unfinished');
     const messages = [user, assistant];
@@ -591,14 +595,17 @@ describe('applyRetainedAnswers', () => {
       indexTokenCountMap: counts,
       tokenCounter,
     });
-    expect(result.messages[0].content).toEqual([{ type: 'text', text: block + '\n\ngo on' }]);
-    expect(result.messages[0].id).toBe('user-1');
-    expect(result.messages[1]).toBe(assistant);
+    expect(result.messages[0].content).toBe(block);
+    expect(result.messages[0].id).toBe(RETAINED_ANSWERS_MESSAGE_ID);
+    expect(result.messages[1]).toBe(user);
+    expect(result.messages[2]).toBe(assistant);
     expect(user.content).toEqual([{ type: 'text', text: 'go on' }]);
     expect(counts).toEqual({ 0: 5000, 1: 12 });
-    expect(result.indexTokenCountMap[0]).toBe(
-      5000 + tokenCounter(result.messages[0]) - tokenCounter(user),
-    );
+    expect(result.indexTokenCountMap).toEqual({
+      0: tokenCounter(result.messages[0]),
+      1: 5000,
+      2: 12,
+    });
   });
 
   test('survives real summary slicing with no human turn left and preserves the continuation', () => {
@@ -644,8 +651,7 @@ describe('applyRetainedAnswers', () => {
       expect(result.messages[0].additional_kwargs).toEqual({
         librechat_retained_answers: block,
       });
-      expect(result.messages[1]).toBe(prime);
-      expect(result.messages[2]).toBe(continuation);
+      expect(result.messages.slice(1)).toEqual(messages);
       expect(prime.content).toBe('skill instructions');
     }
   });
@@ -692,13 +698,11 @@ describe('applyRetainedAnswers', () => {
     (failure) => {
       const messages = [new HumanMessage('go on')];
       const counts = { 0: 8 };
-      let calls = 0;
       const result = applyRetainedAnswers({
         block,
         messages,
         indexTokenCountMap: counts,
         tokenCounter: () => {
-          if (calls++ === 0) return 8;
           if (failure === 'throw') throw new Error('counter unavailable');
           return failure === 'nan' ? Number.NaN : (undefined as never);
         },
@@ -736,6 +740,55 @@ describe('applyRetainedAnswers', () => {
 });
 
 describe('retained answer lifecycle', () => {
+  test('replaces retained context over repeated serialized warm checkpoint turns', () => {
+    let checkpoint: ReturnType<typeof messagesStateReducer> = [];
+    const counter = (message: { content: unknown }) => String(message.content).length;
+    for (let turn = 0; turn < 50; turn++) {
+      const event = new HumanMessage({ id: `event-${turn}`, content: `event ${turn}` });
+      const block = `answers for turn ${turn}`;
+      const prepared = applyRetainedAnswers({ block, messages: [event], tokenCounter: counter });
+      const invocation = selectRetainedAnswerInvocationMessages(prepared.messages, turn > 0);
+      checkpoint = messagesStateReducer(checkpoint, invocation);
+      checkpoint = mapStoredMessagesToChatMessages(
+        JSON.parse(JSON.stringify(mapChatMessagesToStoredMessages(checkpoint))),
+      );
+      const retained = checkpoint.filter((message) => message.id === RETAINED_ANSWERS_MESSAGE_ID);
+      expect(retained).toHaveLength(1);
+      expect(retained[0].content).toBe(block);
+      expect(checkpoint.filter((message) => message.id?.startsWith('event-'))).toHaveLength(
+        turn + 1,
+      );
+    }
+  });
+
+  test('rejects imported and caller-authored stamps while preserving exact HITL answer provenance', () => {
+    const content = [askPart({ question: 'Where?' }, 'staging')];
+    expect(collectRetainedAnswers([{ content, isUserSubmitted: true }])).toEqual([]);
+    expect(collectRetainedAnswers([{ content, isCreatedByUser: true }])).toEqual([]);
+    for (const path of [
+      '/content',
+      '/content/0',
+      '/content/0/tool_call/name',
+      '/content/0/tool_call/args',
+      '/content/0/tool_call/output',
+    ]) {
+      expect(collectRetainedAnswers([{ content, userSubmittedPaths: [path] }])).toEqual([]);
+    }
+    expect(
+      collectRetainedAnswers([
+        {
+          content,
+          isCreatedByUser: false,
+          userSubmittedPaths: ['/content/0/tool_call/output'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'answer' },
+          ],
+        },
+      ]),
+    ).toHaveLength(1);
+    expect(collectRetainedAnswers([{ content }])).toHaveLength(1);
+  });
+
   test('exact-counts only marked retained text across serialization and merged large content', async () => {
     const prepared = await prepareRetainedAnswers({
       messages: [

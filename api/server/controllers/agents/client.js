@@ -77,6 +77,8 @@ const {
   prepareRetainedAnswers,
   withRetainedAnswerTokenCounter,
   applyRetainedAnswers,
+  selectRetainedAnswerInvocationMessages,
+  resolveRetainedAnswersConfig,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -2191,6 +2193,7 @@ class AgentClient extends BaseClient {
         agents: this.eventActorAgentContextSources ?? agents,
         invokedSkills: skillManifest,
         approvalPolicy: agentsConfig?.toolApproval,
+        retainedAnswers: resolveRetainedAnswersConfig(agentsConfig?.askUserQuestion),
         memory,
         discoveredToolNames,
         checkpointerType: agentsConfig?.checkpointer?.type,
@@ -4999,8 +5002,10 @@ class AgentClient extends BaseClient {
         /** The inherited tier must be on the job before any Stop can read it. */
         await this.publishRunContextMeta?.();
         try {
-          const invocationMessages =
-            this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
+          const invocationMessages = selectRetainedAnswerInvocationMessages(
+            messages,
+            this.eventActorContinuation === 'warm',
+          );
           await run.processStream({ messages: invocationMessages }, config, {
             callbacks: {
               [Callback.TOOL_ERROR]: logToolError,

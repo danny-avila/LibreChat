@@ -6,19 +6,27 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import type { TokenCounter } from '@librechat/agents';
 import type { EncodingName } from '~/utils/tokenizer';
-import { prependContextText, CLAUDE_TOKEN_CORRECTION } from '../client';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { CLAUDE_TOKEN_CORRECTION } from '../client';
 import { getSafeErrorMetadata } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
 
 /** The projection a stored-row loader needs; nothing else is read. */
-export const RETAINED_ANSWER_ROW_FIELDS = 'messageId parentMessageId content';
+export const RETAINED_ANSWER_ROW_FIELDS =
+  'messageId parentMessageId content isCreatedByUser isUserSubmitted userSubmittedPaths userSubmittedMessageFieldPaths';
+
+/** Stable within one graph: the SDK reducer replaces this context on warm turns. */
+export const RETAINED_ANSWERS_MESSAGE_ID = 'librechat:retained-answers';
 
 /** The fields the scan reads from a stored row or an in-memory message. */
 export interface RetainedAnswerSource {
   messageId?: string | null;
   parentMessageId?: string | null;
   content?: unknown;
+  isCreatedByUser?: boolean;
+  isUserSubmitted?: boolean;
+  userSubmittedPaths?: readonly string[];
+  userSubmittedMessageFieldPaths?: readonly { path: string; field: string }[];
 }
 
 export interface RetainedAnswer {
@@ -194,10 +202,24 @@ export function collectRetainedAnswers(
 ): RetainedAnswerSet[] {
   const sets: RetainedAnswerSet[] = [];
   for (const source of sources) {
-    if (!Array.isArray(source?.content)) {
+    if (
+      source?.isUserSubmitted === true ||
+      source?.isCreatedByUser === true ||
+      !Array.isArray(source?.content)
+    ) {
       continue;
     }
-    for (const part of source.content) {
+    for (const [index, part] of source.content.entries()) {
+      const root = `/content/${index}`;
+      const output = `${root}/tool_call/output`;
+      const trustedAnswer = source.userSubmittedMessageFieldPaths?.some(
+        (entry) => entry.path === output && entry.field === 'answer',
+      );
+      const callerAuthored = source.userSubmittedPaths?.some((path) => {
+        if (path === output && trustedAnswer) return false;
+        return path === '/content' || path === root || path.startsWith(`${root}/`);
+      });
+      if (callerAuthored) continue;
       const set = readAskToolCall(part);
       if (set != null) {
         sets.push(set);
@@ -564,13 +586,10 @@ export async function prepareRetainedAnswers(
 }
 
 /**
- * Apply after SDK summary slicing and replay. Before that boundary, the latest
- * user row can disappear together with its summary-covered prefix. A continued
- * assistant generation with no surviving human turn gets human context after any system prefix
- * and before the assistant continuation, leaving its unfinished assistant message last.
- *
- * The input remains the memory-extraction transcript. Clone only the affected
- * message and the two small containers, and commit nothing if counting fails.
+ * Apply after SDK summary slicing and replay. Keep a dedicated ordinary human
+ * message so neither user text nor synthetic provenance is modified. Its stable
+ * ID replaces the previous block in warm checkpoint state instead of accumulating
+ * another copy. The caller's transcript remains unchanged for memory extraction.
  */
 export function applyRetainedAnswers({
   block,
@@ -584,65 +603,45 @@ export function applyRetainedAnswers({
   tokenCounter: TokenCounter;
 }): { messages: BaseMessage[]; indexTokenCountMap: Record<number, number> } {
   const unchanged = { messages, indexTokenCountMap };
-  if (!block) {
-    return unchanged;
-  }
+  if (!block) return unchanged;
   try {
-    let index = messages.length - 1;
-    while (
-      index >= 0 &&
-      (messages[index].getType() !== 'human' ||
-        messages[index].additional_kwargs.isMeta === true ||
-        messages[index].additional_kwargs.injected === true ||
-        (messages[index].additional_kwargs.source != null &&
-          messages[index].additional_kwargs.source !== 'steer') ||
-        messages[index].additional_kwargs.role === 'system')
-    ) {
-      index--;
-    }
-    const target = index < 0 ? undefined : messages[index];
-    const content = { content: target?.content ?? '' };
-    prependContextText(content, block, SEPARATOR);
-    const updated = withMessageRole(
+    const retained = withMessageRole(
       new HumanMessage({
-        ...target,
-        content: target == null ? block : content.content,
-        additional_kwargs: {
-          ...target?.additional_kwargs,
-          librechat_retained_answers: block,
-        },
+        id: RETAINED_ANSWERS_MESSAGE_ID,
+        content: block,
+        additional_kwargs: { librechat_retained_answers: block },
       }),
       'user',
     );
-    const before = target == null ? 0 : tokenCounter(target);
-    const after = tokenCounter(updated);
-    if (!Number.isFinite(before) || !Number.isFinite(after) || before < 0 || after < 0) {
+    const count = tokenCounter(retained);
+    if (!Number.isFinite(count) || count < 0)
       throw new Error('Invalid retained-answer token count');
-    }
-    if (index < 0) {
-      let insertion = 0;
-      while (insertion < messages.length && messages[insertion].getType() === 'system') {
+    const entries = messages.flatMap((message, index) =>
+      message.id === RETAINED_ANSWERS_MESSAGE_ID
+        ? []
+        : [{ message, count: indexTokenCountMap[index] }],
+    );
+    // Place before the latest ordinary human turn, or after the system prefix
+    // when only a summary/assistant continuation survives. Never split tool pairs.
+    let insertion = entries.findLastIndex(
+      ({ message }) =>
+        message.getType() === 'human' &&
+        message.additional_kwargs.isMeta !== true &&
+        message.additional_kwargs.injected !== true &&
+        message.additional_kwargs.source == null &&
+        message.additional_kwargs.role !== 'system',
+    );
+    if (insertion < 0) {
+      insertion = 0;
+      while (insertion < entries.length && entries[insertion].message.getType() === 'system')
         insertion++;
-      }
-      const counts: Record<number, number> = { [insertion]: after };
-      for (const [key, value] of Object.entries(indexTokenCountMap)) {
-        const position = Number(key);
-        counts[position < insertion ? position : position + 1] = value;
-      }
-      return {
-        messages: [...messages.slice(0, insertion), updated, ...messages.slice(insertion)],
-        indexTokenCountMap: counts,
-      };
     }
-    const copies = [...messages];
-    copies[index] = updated;
-    return {
-      messages: copies,
-      indexTokenCountMap: {
-        ...indexTokenCountMap,
-        [index]: (indexTokenCountMap[index] ?? before) + Math.max(0, after - before),
-      },
-    };
+    entries.splice(insertion, 0, { message: retained, count });
+    const counts: Record<number, number> = {};
+    entries.forEach((entry, index) => {
+      if (entry.count != null) counts[index] = entry.count;
+    });
+    return { messages: entries.map((entry) => entry.message), indexTokenCountMap: counts };
   } catch (error) {
     logger.warn(
       '[retainedAnswers] Prompt unchanged after application failure',
@@ -650,4 +649,16 @@ export function applyRetainedAnswers({
     );
     return unchanged;
   }
+}
+
+/** Warm invocations upsert the stable context as well as appending the new event. */
+export function selectRetainedAnswerInvocationMessages(
+  messages: BaseMessage[],
+  warm: boolean,
+): BaseMessage[] {
+  if (!warm) return messages;
+  const latest = messages.at(-1);
+  if (latest == null) return [];
+  const retained = messages.find((message) => message.id === RETAINED_ANSWERS_MESSAGE_ID);
+  return retained == null || retained === latest ? [latest] : [retained, latest];
 }

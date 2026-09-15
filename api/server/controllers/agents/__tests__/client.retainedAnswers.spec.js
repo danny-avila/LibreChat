@@ -208,7 +208,7 @@ describe('AgentClient retained answers', () => {
 
   const ROW_QUERY = [
     { conversationId: 'convo-123', user: 'user-123' },
-    'messageId parentMessageId content',
+    'messageId parentMessageId content isCreatedByUser isUserSubmitted userSubmittedPaths userSubmittedMessageFieldPaths',
   ];
 
   beforeEach(() => {
@@ -234,15 +234,14 @@ describe('AgentClient retained answers', () => {
     expect(getMessages).toHaveBeenCalledTimes(1);
     expect(client.loadedHistoryRows).toBeUndefined();
     expect(JSON.stringify(memoryMessages)).not.toContain(ANSWER_LINE);
-    const latest = prompt[prompt.length - 1];
-    const text = contentText(latest);
+    const text = prompt.map(contentText).join('\n');
     expect(text).toContain(ANSWER_LINE);
     expect(text.indexOf(ANSWER_LINE)).toBeLessThan(text.indexOf(LATEST_TEXT));
     expect(text.endsWith(LATEST_TEXT)).toBe(true);
     expect(client.options.agent.additional_instructions ?? '').not.toContain(ANSWER_LINE);
     expect(cut[1].text).toBe(LATEST_TEXT);
     expect(cut[1].content).toBeUndefined();
-    expect(counts[prompt.length - 1]).toBeGreaterThan(tokenCountMap.u3);
+    expect(counts[prompt.length - 1]).toBe(tokenCountMap.u3);
     expect(contentText(memoryMessages[memoryMessages.length - 1])).not.toContain(ANSWER_LINE);
   });
 
@@ -270,21 +269,26 @@ describe('AgentClient retained answers', () => {
 
       expect(mockCreateRun).toHaveBeenCalledTimes(1);
       const input = mockCreateRun.mock.calls[0][0];
-      expect(contentText(input.messages[input.messages.length - 1])).toContain(ANSWER_LINE);
+      expect(input.messages.map(contentText).join('\n')).toContain(ANSWER_LINE);
       expect(mockRuntimeCounter).toHaveBeenCalledTimes(1);
       expect(input.tokenCounter).toBe(mockRuntimeCounter.mock.results[0].value);
       if (continuation === 'warm') {
         expect(input.indexTokenCountMap).toEqual({});
-        expect(input.tokenCounter(input.messages.at(-1))).toBeGreaterThan(built.tokenCountMap.u3);
+        expect(
+          input.tokenCounter(
+            input.messages.find((message) => message.id === 'librechat:retained-answers'),
+          ),
+        ).toBeGreaterThan(0);
       } else {
-        expect(input.indexTokenCountMap[input.messages.length - 1]).toBeGreaterThan(
-          built.tokenCountMap.u3,
-        );
+        expect(input.indexTokenCountMap[input.messages.length - 1]).toBe(built.tokenCountMap.u3);
       }
       expect(client.runMemory).toHaveBeenCalledTimes(1);
       expect(contentText(client.runMemory.mock.calls[0][0].at(-1))).not.toContain(ANSWER_LINE);
       expect(client.memoryPayload).toBeNull();
       expect(processStream).toHaveBeenCalledTimes(1);
+      expect(processStream.mock.calls[0][0].messages.map(contentText).join('\n')).toContain(
+        ANSWER_LINE,
+      );
     },
   );
 
@@ -325,7 +329,9 @@ describe('AgentClient retained answers', () => {
     const { prompt } = await buildPrompt(client, rows, 'u3');
 
     expect(getMessages).not.toHaveBeenCalled();
-    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(
+      contentText(prompt.find((message) => message.id === 'librechat:retained-answers')),
+    ).toContain(ANSWER_LINE);
   });
 
   it('leaves the turn alone when the operator turned retained answers off', async () => {
@@ -346,7 +352,9 @@ describe('AgentClient retained answers', () => {
     const { prompt } = await buildPrompt(client, [latestUserMessage()], 'u3');
 
     expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
-    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(
+      contentText(prompt.find((message) => message.id === 'librechat:retained-answers')),
+    ).toContain(ANSWER_LINE);
   });
 
   it('leaves an array-form user row and its memory copy untouched', async () => {
@@ -360,7 +368,9 @@ describe('AgentClient retained answers', () => {
 
     const { prompt, memoryMessages } = await buildPrompt(client, rows, 'u3');
 
-    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(
+      contentText(prompt.find((message) => message.id === 'librechat:retained-answers')),
+    ).toContain(ANSWER_LINE);
     expect(shared).toEqual([{ type: ContentTypes.TEXT, text: LATEST_TEXT }]);
     expect(rows[4].content).toBe(shared);
     expect(contentText(memoryMessages[memoryMessages.length - 1])).toBe(LATEST_TEXT);
@@ -380,7 +390,10 @@ describe('AgentClient retained answers', () => {
       role: 'user',
       content: [{ type: ContentTypes.TEXT, text: ANSWER_LINE }],
     });
-    expect(counts[prompt.length - 1]).toBeGreaterThanOrEqual(5000 + blockOnly);
+    expect(counts[prompt.length - 1]).toBe(5000);
+    expect(
+      counts[prompt.findIndex((message) => message.id === 'librechat:retained-answers')],
+    ).toBeGreaterThanOrEqual(blockOnly);
   });
 
   it('builds no memory copy when memory processing is inactive', async () => {
@@ -391,7 +404,9 @@ describe('AgentClient retained answers', () => {
 
     const { prompt } = await buildPrompt(client, rows, 'u3');
 
-    expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
+    expect(
+      contentText(prompt.find((message) => message.id === 'librechat:retained-answers')),
+    ).toContain(ANSWER_LINE);
     expect(client.memoryPayload).toBeNull();
   });
 
@@ -412,7 +427,9 @@ describe('AgentClient retained answers', () => {
     const { prompt } = await buildPrompt(client, rows, 'a3');
 
     expect(prompt[prompt.length - 1].getType()).toBe('ai');
-    expect(contentText(prompt[prompt.length - 2])).toContain(ANSWER_LINE);
+    expect(
+      contentText(prompt.find((message) => message.id === 'librechat:retained-answers')),
+    ).toContain(ANSWER_LINE);
     expect(contentText(prompt[prompt.length - 1])).not.toContain(ANSWER_LINE);
   });
 });
