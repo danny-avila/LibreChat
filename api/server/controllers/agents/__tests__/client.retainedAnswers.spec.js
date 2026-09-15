@@ -22,7 +22,7 @@ jest.mock('@librechat/api', () => ({
   createRun: (...args) => mockCreateRun(...args),
   countFormattedMessageTokens: (...args) => mockCountFormattedMessageTokens(...args),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
-  createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
+  createCachedTokenCounter: jest.fn(async () => mockCountFormattedMessageTokens),
   getAgentCheckpointer: jest.fn(),
   hasDurableAgentInterruptCheckpoint: jest.fn().mockResolvedValue(true),
   initializeAgent: jest.fn(),
@@ -57,6 +57,24 @@ jest.mock('~/config', () => ({
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const { getMessages } = require('~/models');
 const AgentClient = require('../client');
+const { applyRetainedAnswers, GenerationJobManager } = jest.requireActual('@librechat/api');
+const { formatAgentMessages } = jest.requireActual('@librechat/agents');
+
+async function buildPrompt(client, rows, parent) {
+  const built = await client.buildMessages(rows, parent, {});
+  const formatted = formatAgentMessages(built.prompt, client.indexTokenCountMap);
+  const applied = applyRetainedAnswers({
+    block: client.retainedAnswers?.block,
+    ...formatted,
+    tokenCounter: mockCountFormattedMessageTokens,
+  });
+  return {
+    ...built,
+    prompt: applied.messages,
+    counts: applied.indexTokenCountMap,
+    memoryMessages: formatted.messages,
+  };
+}
 
 const ANSWER_LINE = 'Q: Which environment should I deploy to?\nA: staging';
 const LATEST_TEXT = 'what is next?';
@@ -162,15 +180,25 @@ function makeClient(agentsConfig = {}) {
       tools: [],
     },
     endpoint: EModelEndpoint.agents,
+    endpointTokenConfig: {},
+    eventHandlers: {},
+    contentParts: [],
+    collectedUsage: [],
+    artifactPromises: [],
   });
   client.conversationId = 'convo-123';
   client.responseMessageId = 'response-123';
   client.shouldSummarize = true;
   client.maxContextTokens = 4096;
+  client.recordCollectedUsage = jest.fn().mockResolvedValue();
   return client;
 }
 
 describe('AgentClient retained answers', () => {
+  afterAll(async () => {
+    await GenerationJobManager.destroy();
+  });
+
   const ROW_QUERY = [
     { conversationId: 'convo-123', user: 'user-123' },
     'messageId parentMessageId content',
@@ -194,11 +222,11 @@ describe('AgentClient retained answers', () => {
     expect(getMessages).toHaveBeenCalledTimes(1);
     expect(client.loadedHistoryRows).toBe(rows);
 
-    const { prompt, tokenCountMap } = await client.buildMessages(cut, 'u3', {});
+    const { prompt, tokenCountMap, counts, memoryMessages } = await buildPrompt(client, cut, 'u3');
 
     expect(getMessages).toHaveBeenCalledTimes(1);
     expect(client.loadedHistoryRows).toBeUndefined();
-    expect(prompt.map((message) => message.messageId)).not.toContain('a1');
+    expect(JSON.stringify(memoryMessages)).not.toContain(ANSWER_LINE);
     const latest = prompt[prompt.length - 1];
     const text = contentText(latest);
     expect(text).toContain(ANSWER_LINE);
@@ -207,10 +235,39 @@ describe('AgentClient retained answers', () => {
     expect(client.options.agent.additional_instructions ?? '').not.toContain(ANSWER_LINE);
     expect(cut[1].text).toBe(LATEST_TEXT);
     expect(cut[1].content).toBeUndefined();
-    expect(client.indexTokenCountMap[prompt.length - 1]).toBeGreaterThan(tokenCountMap.u3);
-    expect(contentText(client.memoryPayload[client.memoryPayload.length - 1])).not.toContain(
-      ANSWER_LINE,
+    expect(counts[prompt.length - 1]).toBeGreaterThan(tokenCountMap.u3);
+    expect(contentText(memoryMessages[memoryMessages.length - 1])).not.toContain(ANSWER_LINE);
+  });
+
+  it('delivers the block through chatCompletion while memory receives the unmodified SDK transcript', async () => {
+    const client = makeClient();
+    client.processMemory = jest.fn();
+    client.runMemory = jest.fn().mockResolvedValue();
+    client.user = 'user-123';
+    getMessages.mockResolvedValue(compactedBranch());
+    const cut = await client.loadHistory('convo-123', 'u3');
+    const built = await client.buildMessages(cut, 'u3', {});
+    mockFormatAgentMessages.mockImplementationOnce(formatAgentMessages);
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+
+    await client.chatCompletion({ payload: built.prompt });
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    const input = mockCreateRun.mock.calls[0][0];
+    expect(contentText(input.messages[input.messages.length - 1])).toContain(ANSWER_LINE);
+    expect(input.indexTokenCountMap[input.messages.length - 1]).toBeGreaterThan(
+      built.tokenCountMap.u3,
     );
+    expect(client.runMemory).toHaveBeenCalledTimes(1);
+    expect(contentText(client.runMemory.mock.calls[0][0].at(-1))).not.toContain(ANSWER_LINE);
+    expect(client.memoryPayload).toBeNull();
+    expect(processStream).toHaveBeenCalledTimes(1);
   });
 
   it('reads nothing when the rows in memory already reach the branch root', async () => {
@@ -219,7 +276,7 @@ describe('AgentClient retained answers', () => {
     const rows = compactedBranch();
     rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
 
-    const { prompt } = await client.buildMessages(rows, 'u3', {});
+    const { prompt } = await buildPrompt(client, rows, 'u3');
 
     expect(getMessages).not.toHaveBeenCalled();
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
@@ -228,7 +285,7 @@ describe('AgentClient retained answers', () => {
   it('leaves the turn alone when the operator turned retained answers off', async () => {
     const client = makeClient({ askUserQuestion: { retainedAnswers: { enabled: false } } });
 
-    const { prompt } = await client.buildMessages(compactedBranch(), 'u3', {});
+    const { prompt } = await buildPrompt(client, compactedBranch(), 'u3');
 
     expect(getMessages).not.toHaveBeenCalled();
     expect(contentText(prompt[prompt.length - 1])).toBe(LATEST_TEXT);
@@ -240,7 +297,7 @@ describe('AgentClient retained answers', () => {
     client.eventActorContinuation = 'warm';
     getMessages.mockResolvedValue(compactedBranch());
 
-    const { prompt } = await client.buildMessages([latestUserMessage()], 'u3', {});
+    const { prompt } = await buildPrompt(client, [latestUserMessage()], 'u3');
 
     expect(getMessages).toHaveBeenCalledWith(...ROW_QUERY);
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
@@ -255,12 +312,12 @@ describe('AgentClient retained answers', () => {
     const shared = [{ type: ContentTypes.TEXT, text: LATEST_TEXT }];
     rows[4] = { ...rows[4], text: undefined, content: shared };
 
-    const { prompt } = await client.buildMessages(rows, 'u3', {});
+    const { prompt, memoryMessages } = await buildPrompt(client, rows, 'u3');
 
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
     expect(shared).toEqual([{ type: ContentTypes.TEXT, text: LATEST_TEXT }]);
     expect(rows[4].content).toBe(shared);
-    expect(contentText(client.memoryPayload[client.memoryPayload.length - 1])).toBe(LATEST_TEXT);
+    expect(contentText(memoryMessages[memoryMessages.length - 1])).toBe(LATEST_TEXT);
   });
 
   it('measures the block against a fresh count even when the stored count was calibrated', async () => {
@@ -270,14 +327,14 @@ describe('AgentClient retained answers', () => {
     rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
     rows[4].tokenCount = 5000;
 
-    const { prompt, tokenCountMap } = await client.buildMessages(rows, 'u3', {});
+    const { prompt, tokenCountMap, counts } = await buildPrompt(client, rows, 'u3');
 
     expect(tokenCountMap.u3).toBe(5000);
     const blockOnly = mockCountFormattedMessageTokens({
       role: 'user',
       content: [{ type: ContentTypes.TEXT, text: ANSWER_LINE }],
     });
-    expect(client.indexTokenCountMap[prompt.length - 1]).toBeGreaterThanOrEqual(5000 + blockOnly);
+    expect(counts[prompt.length - 1]).toBeGreaterThanOrEqual(5000 + blockOnly);
   });
 
   it('builds no memory copy when memory processing is inactive', async () => {
@@ -286,7 +343,7 @@ describe('AgentClient retained answers', () => {
     const rows = compactedBranch();
     rows[3].content = [{ type: ContentTypes.TEXT, text: 'Deployed.' }];
 
-    const { prompt } = await client.buildMessages(rows, 'u3', {});
+    const { prompt } = await buildPrompt(client, rows, 'u3');
 
     expect(contentText(prompt[prompt.length - 1])).toContain(ANSWER_LINE);
     expect(client.memoryPayload).toBeNull();
@@ -306,11 +363,10 @@ describe('AgentClient retained answers', () => {
       unfinished: true,
     });
 
-    const { prompt } = await client.buildMessages(rows, 'a3', {});
+    const { prompt } = await buildPrompt(client, rows, 'a3');
 
-    const ids = prompt.map((message) => message.messageId);
-    expect(ids[ids.length - 1]).toBe('a3');
-    expect(contentText(prompt[ids.indexOf('u3')])).toContain(ANSWER_LINE);
-    expect(contentText(prompt[ids.length - 1])).not.toContain(ANSWER_LINE);
+    expect(prompt[prompt.length - 1].getType()).toBe('ai');
+    expect(contentText(prompt[prompt.length - 2])).toContain(ANSWER_LINE);
+    expect(contentText(prompt[prompt.length - 1])).not.toContain(ANSWER_LINE);
   });
 });

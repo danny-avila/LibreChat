@@ -1051,7 +1051,7 @@ export const askUserQuestionRetainedAnswersSchema = z.object({
  * (`filteredTools` / `includedTools`).
  *
  * `retainedAnswers`: every answer the user gave to an agent's question is
- * re-sent verbatim in the run's dynamic instructions, so it survives after the
+ * quoted verbatim in the run's user context, so it survives after the
  * messages that carried it were summarized, pruned or dropped from the context
  * window. On by default.
  */

@@ -1,7 +1,10 @@
 import { logger } from '@librechat/data-schemas';
+import { withMessageRole } from '@librechat/agents';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
-import type { FormattedMessageWithContent } from '../client';
+import type { TokenCounter } from '@librechat/agents';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
 import { prependContextText } from '../client';
 import { getSafeErrorMetadata } from '~/utils';
@@ -260,6 +263,17 @@ function omittedNote(count: number): string {
   return `(${count} earlier answer${count === 1 ? '' : 's'} omitted to stay within the retained-answer budget.)`;
 }
 
+async function measureTokens(
+  text: string,
+  countTokens: RetainedAnswerTokenCounter,
+): Promise<number> {
+  const count = await countTokens(text);
+  if (!Number.isFinite(count) || count < 0) {
+    throw new Error('Invalid retained-answer token count');
+  }
+  return count;
+}
+
 /**
  * The block quoted into the current user turn. When every set fits `maxTokens`
  * with the header and separators, all of them are rendered oldest first.
@@ -275,39 +289,36 @@ export async function renderRetainedAnswers(
   if (sets.length === 0) {
     return undefined;
   }
-  const rendered = sets.map(renderSet);
-  const costs: number[] = [];
-  let total = await countTokens(RETAINED_ANSWERS_HEADER);
-  for (const text of rendered) {
-    const cost = await countTokens(SEPARATOR + text);
-    costs.push(cost);
-    total += cost;
-  }
-  if (total <= maxTokens) {
-    return [RETAINED_ANSWERS_HEADER, ...rendered].join(SEPARATOR);
-  }
-  let totalAnswers = 0;
-  for (const set of sets) {
-    totalAnswers += set.answers.length;
-  }
-  const budget =
-    maxTokens -
-    (await countTokens(RETAINED_ANSWERS_HEADER)) -
-    (await countTokens(SEPARATOR + omittedNote(totalAnswers)));
-  let used = 0;
-  let start = sets.length;
-  for (let index = sets.length - 1; index >= 0; index--) {
-    if (index < sets.length - 1 && used + costs[index] > budget) {
+  let start = sets.length - 1;
+  let body = renderSet(sets[start]);
+  let block = RETAINED_ANSWERS_HEADER + SEPARATOR + body;
+  await measureTokens(block, countTokens);
+  let omitted = sets.reduce((count, set) => count + set.answers.length, 0);
+  omitted -= sets[start].answers.length;
+  const rendered = [body];
+  while (start > 0) {
+    const older = renderSet(sets[start - 1]);
+    const candidate = RETAINED_ANSWERS_HEADER + SEPARATOR + older + SEPARATOR + body;
+    if ((await measureTokens(candidate, countTokens)) > maxTokens) {
       break;
     }
-    used += costs[index];
-    start = index;
+    body = older + SEPARATOR + body;
+    block = candidate;
+    rendered.push(older);
+    omitted -= sets[--start].answers.length;
   }
-  let omitted = 0;
-  for (let index = 0; index < start; index++) {
-    omitted += sets[index].answers.length;
+  if (start === 0) {
+    return block;
   }
-  return [RETAINED_ANSWERS_HEADER, omittedNote(omitted), ...rendered.slice(start)].join(SEPARATOR);
+  while (true) {
+    block = [RETAINED_ANSWERS_HEADER, omittedNote(omitted), body].join(SEPARATOR);
+    if ((await measureTokens(block, countTokens)) <= maxTokens || rendered.length === 1) {
+      return block;
+    }
+    rendered.pop();
+    omitted += sets[start++].answers.length;
+    body = [...rendered].reverse().join(SEPARATOR);
+  }
 }
 
 /** Config as the run reads it: on unless disabled, and a positive integer budget. */
@@ -319,7 +330,7 @@ export function resolveRetainedAnswersConfig(
   return {
     enabled: retained?.enabled !== false,
     maxTokens:
-      typeof maxTokens === 'number' && Number.isFinite(maxTokens) && maxTokens > 0
+      typeof maxTokens === 'number' && Number.isFinite(maxTokens) && maxTokens >= 1
         ? Math.floor(maxTokens)
         : DEFAULT_RETAINED_ANSWER_TOKENS,
   };
@@ -400,10 +411,13 @@ async function buildContext({
   if (parentMessageId == null || parentMessageId === Constants.NO_PARENT) {
     return undefined;
   }
-  let branch = orderConversationBranch(messages, parentMessageId);
-  if (!reachesBranchRoot(branch)) {
+  let branch = orderConversationBranch(
+    storedRows == null ? messages : [...storedRows, ...messages],
+    parentMessageId,
+  );
+  if (storedRows == null && !reachesBranchRoot(branch)) {
     const load = resolveRowLoad(getMessages, conversationId, userId);
-    const stored = storedRows ?? (load == null ? undefined : await load());
+    const stored = load == null ? undefined : await load();
     if (stored != null) {
       branch = orderConversationBranch([...stored, ...messages], parentMessageId);
     }
@@ -428,65 +442,89 @@ export async function buildRetainedAnswersContext(
   }
 }
 
-export interface ApplyRetainedAnswersInput {
-  /** The rendered block, or nothing to apply. */
-  block: string | null | undefined;
-  /** The rows the prompt was built from, in prompt order. */
-  orderedMessages: readonly ({ isCreatedByUser?: boolean } | null | undefined)[];
-  /** The prompt copies, index-aligned with `orderedMessages`; the chosen one is changed. */
-  formattedMessages: FormattedMessageWithContent[];
-  /** Prompt token count per index; the chosen index grows by the block. */
-  indexTokenCountMap: Record<number, number | undefined>;
-  /** Counts a prompt copy with the run's encoding. */
-  countTokens: (message: FormattedMessageWithContent) => number | undefined;
-  /**
-   * Memory extraction reads a copy of the prompt without the block. `needed`
-   * says whether that copy must still be built once the block is applied; `build`
-   * builds it.
-   */
-  memoryCopy?: { needed: boolean; build: () => Promise<void> };
-}
-
-function latestUserAuthoredIndex(
-  orderedMessages: ApplyRetainedAnswersInput['orderedMessages'],
-): number {
-  for (let index = orderedMessages.length - 1; index >= 0; index--) {
-    if (orderedMessages[index]?.isCreatedByUser === true) {
-      return index;
-    }
+/** The early admission estimate and the block are built together with one failure policy. */
+export async function prepareRetainedAnswers(
+  input: RetainedAnswersContextInput,
+): Promise<{ block?: string; tokenCount: number }> {
+  try {
+    const block = await buildRetainedAnswersContext(input);
+    return { block, tokenCount: block == null ? 0 : await measureTokens(block, input.countTokens) };
+  } catch (error) {
+    logger.warn('[retainedAnswers] Block unavailable for this turn', getSafeErrorMetadata(error));
+    return { tokenCount: 0 };
   }
-  return -1;
 }
 
 /**
- * Quotes the block into the latest user-authored prompt copy: the leaf on an
- * ordinary turn, the turn being continued when the leaf is the assistant's own
- * unfinished response. The block's cost is the difference between two fresh
- * counts of that copy, so a stored, calibrated count for the row is left as it
- * was. Returns the tokens added to the prompt, zero when nothing was applied.
+ * Apply after SDK summary slicing and replay. Before that boundary, the latest
+ * user row can disappear together with its summary-covered prefix. A continued
+ * assistant generation with no surviving human turn gets human context after any system prefix
+ * and before the assistant continuation, leaving its unfinished assistant message last.
+ *
+ * The input remains the memory-extraction transcript. Clone only the affected
+ * message and the two small containers, and commit nothing if counting fails.
  */
-export async function applyRetainedAnswers({
+export function applyRetainedAnswers({
   block,
-  orderedMessages,
-  formattedMessages,
-  indexTokenCountMap,
-  countTokens,
-  memoryCopy,
-}: ApplyRetainedAnswersInput): Promise<number> {
-  if (block == null || block.length === 0) {
-    return 0;
+  messages,
+  indexTokenCountMap = {},
+  tokenCounter,
+}: {
+  block: string | null | undefined;
+  messages: BaseMessage[];
+  indexTokenCountMap?: Record<number, number>;
+  tokenCounter: TokenCounter;
+}): { messages: BaseMessage[]; indexTokenCountMap: Record<number, number> } {
+  const unchanged = { messages, indexTokenCountMap };
+  if (!block) {
+    return unchanged;
   }
-  const index = latestUserAuthoredIndex(orderedMessages);
-  const target = index < 0 ? undefined : formattedMessages[index];
-  if (target == null) {
-    return 0;
+  try {
+    let index = messages.length - 1;
+    while (index >= 0 && messages[index].getType() !== 'human') {
+      index--;
+    }
+    const target = index < 0 ? undefined : messages[index];
+    const content = { content: target?.content ?? '' };
+    prependContextText(content, block, SEPARATOR);
+    const updated = withMessageRole(
+      new HumanMessage({ ...target, content: target == null ? block : content.content }),
+      'user',
+    );
+    const before = target == null ? 0 : tokenCounter(target);
+    const after = tokenCounter(updated);
+    if (!Number.isFinite(before) || !Number.isFinite(after) || before < 0 || after < 0) {
+      throw new Error('Invalid retained-answer token count');
+    }
+    if (index < 0) {
+      let insertion = 0;
+      while (insertion < messages.length && messages[insertion].getType() === 'system') {
+        insertion++;
+      }
+      const counts: Record<number, number> = { [insertion]: after };
+      for (const [key, value] of Object.entries(indexTokenCountMap)) {
+        const position = Number(key);
+        counts[position < insertion ? position : position + 1] = value;
+      }
+      return {
+        messages: [...messages.slice(0, insertion), updated, ...messages.slice(insertion)],
+        indexTokenCountMap: counts,
+      };
+    }
+    const copies = [...messages];
+    copies[index] = updated;
+    return {
+      messages: copies,
+      indexTokenCountMap: {
+        ...indexTokenCountMap,
+        [index]: (indexTokenCountMap[index] ?? before) + Math.max(0, after - before),
+      },
+    };
+  } catch (error) {
+    logger.warn(
+      '[retainedAnswers] Prompt unchanged after application failure',
+      getSafeErrorMetadata(error),
+    );
+    return unchanged;
   }
-  const before = countTokens(target) ?? 0;
-  prependContextText(target, block, SEPARATOR);
-  const added = Math.max(0, (countTokens(target) ?? 0) - before);
-  indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + added;
-  if (memoryCopy?.needed === true) {
-    await memoryCopy.build();
-  }
-  return added;
 }

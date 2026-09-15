@@ -74,7 +74,7 @@ const {
   checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
-  buildRetainedAnswersContext,
+  prepareRetainedAnswers,
   applyRetainedAnswers,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -2291,9 +2291,9 @@ class AgentClient extends BaseClient {
      * summary, or a warm event-actor turn holds only its new event message) the
      * module completes the branch from the rows that read already fetched, or
      * through the stored-row query when there was no read. Rendered here,
-     * quoted into the latest user turn after the context kickoff below.
+     * applied after SDK summary slicing in chatCompletion.
      */
-    const retainedAnswersPromise = buildRetainedAnswersContext({
+    const retainedAnswersPromise = prepareRetainedAnswers({
       messages,
       parentMessageId,
       storedRows: this.loadedHistoryRows,
@@ -2307,6 +2307,7 @@ class AgentClient extends BaseClient {
           this.getEncoding(),
         ),
     });
+    this.loadedHistoryRows = undefined;
 
     let payload;
     /** @type {number | undefined} */
@@ -2793,10 +2794,7 @@ class AgentClient extends BaseClient {
         }
       }
     }
-    /** The memory copy is built once the prompt copy is known to differ from
-     *  the rows (file context here, the retained-answers block below) and
-     *  memory extraction will read it. */
-    const buildMemoryPayload = async () => {
+    if (hasFileContext) {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
           memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
@@ -2821,12 +2819,8 @@ class AgentClient extends BaseClient {
           resendFiles: false,
         });
       }
-      this.memoryPayload = memoryPayload;
-    };
-    this.memoryPayload = null;
-    if (hasFileContext) {
-      await buildMemoryPayload();
     }
+    this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
@@ -2843,25 +2837,8 @@ class AgentClient extends BaseClient {
       agentScopedContextPromise,
     ]);
 
-    /**
-     * The answers block rides the latest user turn as quoted context, prompt
-     * copy only, applied after the context kickoff above so a steer-free
-     * history keeps its zero-await path. The rows the history read handed over
-     * are released here; the block is already rendered.
-     */
-    const retainedAnswersContext = await retainedAnswersPromise;
-    this.loadedHistoryRows = undefined;
-    promptTokens += await applyRetainedAnswers({
-      block: retainedAnswersContext,
-      orderedMessages,
-      formattedMessages,
-      indexTokenCountMap,
-      countTokens: (message) => countFormattedMessageTokens(message, encoding),
-      memoryCopy: {
-        needed: this.memoryPayload == null && this.processMemory != null,
-        build: buildMemoryPayload,
-      },
-    });
+    this.retainedAnswers = await retainedAnswersPromise;
+    promptTokens += this.retainedAnswers.tokenCount;
 
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;
@@ -4763,6 +4740,14 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memorySourceMessages = initialMessages;
+      ({ messages: initialMessages, indexTokenCountMap } = applyRetainedAnswers({
+        block: this.retainedAnswers?.block,
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      }));
+
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
@@ -4772,7 +4757,7 @@ class AgentClient extends BaseClient {
               skillPrimeResult?.skills,
               hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
-          : initialMessages;
+          : memorySourceMessages;
 
       /**
        * @param {BaseMessage[]} messages

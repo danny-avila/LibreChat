@@ -1,4 +1,11 @@
+import { formatAgentMessages } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
+import {
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+} from '@librechat/agents/langchain/messages';
 import {
   applyRetainedAnswers,
   buildRetainedAnswersContext,
@@ -8,7 +15,10 @@ import {
   renderRetainedAnswers,
   resolveRetainedAnswersConfig,
   RETAINED_ANSWER_ROW_FIELDS,
+  prepareRetainedAnswers,
 } from './answers';
+import { countFormattedMessageTokens } from '../client';
+import { attachAskUserQuestionAnswers } from './resume';
 
 const mockWarn = jest.fn();
 jest.mock('@librechat/data-schemas', () => ({
@@ -273,6 +283,49 @@ describe('renderRetainedAnswers', () => {
     expect(text).not.toContain('First?');
   });
 
+  test('measures whole blocks when the tokenizer charges per-message overhead', async () => {
+    const framed = (text: string) => text.length + 10;
+    const full = (await renderRetainedAnswers(sets, 10_000, framed)) as string;
+    expect(await renderRetainedAnswers(sets, framed(full), framed)).toBe(full);
+  });
+
+  test('stops tokenizing old answers once the retained suffix fills the budget', async () => {
+    const history = Array.from({ length: 10_000 }, (_, index) => ({
+      answers: [{ question: `Q${index}?`, answer: 'yes' }],
+    }));
+    const counter = jest.fn(countChars);
+    const text = await renderRetainedAnswers(history, 600, counter);
+    expect(text).toContain('Q9999?');
+    expect(text?.length).toBeLessThanOrEqual(600);
+    expect(counter.mock.calls.length).toBeLessThan(30);
+  });
+
+  test('does not claim omissions when the only set exceeds the budget', async () => {
+    expect(await renderRetainedAnswers([sets[0]], 1, countChars)).not.toContain('omitted');
+  });
+
+  test.each(['o200k_base', 'claude'] as const)(
+    'fits the final rendered block with the real %s tokenizer',
+    async (encoding) => {
+      const history = Array.from({ length: 100 }, (_, index) => ({
+        answers: [
+          {
+            question: `Choose ${index}: café or 東京?`,
+            answer: '東京 — keep the original wording.',
+          },
+        ],
+      }));
+      const counter = (text: string) =>
+        countFormattedMessageTokens({ role: 'user', content: text }, encoding) ?? 0;
+      const full = (await renderRetainedAnswers(history, 100_000, counter)) as string;
+      expect(await renderRetainedAnswers(history, counter(full), counter)).toBe(full);
+      const limited = (await renderRetainedAnswers(history, 300, counter)) as string;
+      expect(counter(limited)).toBeGreaterThan(0);
+      expect(counter(limited)).toBeLessThanOrEqual(300);
+      expect(limited).toContain('Choose 99');
+    },
+  );
+
   test('returns undefined for no sets', async () => {
     expect(await renderRetainedAnswers([], 100, countChars)).toBeUndefined();
   });
@@ -300,7 +353,7 @@ describe('resolveRetainedAnswersConfig', () => {
   });
 
   test('falls back to the default for a budget that reaches runtime unvalidated', () => {
-    for (const maxTokens of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, '2048', null]) {
+    for (const maxTokens of [0, 0.5, -1, Number.NaN, Number.POSITIVE_INFINITY, '2048', null]) {
       expect(
         resolveRetainedAnswersConfig({ retainedAnswers: { maxTokens: maxTokens as never } })
           .maxTokens,
@@ -470,6 +523,21 @@ describe('buildRetainedAnswersContext', () => {
     expect(text).toContain('Q: Ship it?\nA: yes');
   });
 
+  test('uses canonical stored answers even when a mapped branch still reaches its root', async () => {
+    const mapped = rows.map((row) => (row.messageId === 'a1' ? { ...row, content: [] } : row));
+    const query = jest.fn();
+    const text = await buildRetainedAnswersContext({
+      messages: mapped,
+      storedRows: rows,
+      parentMessageId: 'u3',
+      getMessages: query,
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(text).toContain(ANSWER_LINE);
+    expect(query).not.toHaveBeenCalled();
+  });
+
   test('carries what is in memory and warns when the stored rows cannot be read', async () => {
     const inMemory = [
       { messageId: 'a9', parentMessageId: 'u9', content: [askPart({ question: 'Ok?' }, 'yes')] },
@@ -506,87 +574,178 @@ describe('buildRetainedAnswersContext', () => {
 
 describe('applyRetainedAnswers', () => {
   const block = '# Answers\n\nQ: Deploy where?\nA: staging';
-  const countTokens = (message: { content?: unknown }) =>
-    JSON.stringify(message.content ?? '').length;
+  const tokenCounter = (message: { content: unknown }) => JSON.stringify(message.content).length;
 
-  function turn() {
-    const orderedMessages = [
-      { isCreatedByUser: true },
-      { isCreatedByUser: false },
-      { isCreatedByUser: true },
-      { isCreatedByUser: false },
-    ];
-    const formattedMessages = [
-      { role: 'user', content: 'first' },
-      { role: 'assistant', content: 'reply' },
-      { role: 'user', content: 'latest question' },
-      { role: 'assistant', content: 'unfinished' },
-    ];
-    const indexTokenCountMap: Record<number, number | undefined> = { 0: 5, 1: 5, 2: 5000, 3: 5 };
-    return { orderedMessages, formattedMessages, indexTokenCountMap };
-  }
-
-  test('quotes into the latest user-authored copy, measured against a fresh count', async () => {
-    const { orderedMessages, formattedMessages, indexTokenCountMap } = turn();
-    const build = jest.fn(async () => undefined);
-    const added = await applyRetainedAnswers({
+  test('copies only the last human message and preserves calibrated counts and metadata', () => {
+    const user = new HumanMessage({ content: [{ type: 'text', text: 'go on' }], id: 'user-1' });
+    const assistant = new AIMessage('unfinished');
+    const messages = [user, assistant];
+    const counts = { 0: 5000, 1: 12 };
+    const result = applyRetainedAnswers({
       block,
-      orderedMessages,
-      formattedMessages,
-      indexTokenCountMap,
-      countTokens,
-      memoryCopy: { needed: true, build },
+      messages,
+      indexTokenCountMap: counts,
+      tokenCounter,
     });
-    expect(formattedMessages[2].content).toBe(`${block}\n\nlatest question`);
-    expect(formattedMessages[3].content).toBe('unfinished');
-    const expected =
-      countTokens({ content: `${block}\n\nlatest question` }) -
-      countTokens({ content: 'latest question' });
-    expect(added).toBe(expected);
-    expect(added).toBeGreaterThan(block.length);
-    expect(indexTokenCountMap[2]).toBe(5000 + added);
-    expect(build).toHaveBeenCalledTimes(1);
+    expect(result.messages[0].content).toEqual([{ type: 'text', text: block + '\n\ngo on' }]);
+    expect(result.messages[0].id).toBe('user-1');
+    expect(result.messages[1]).toBe(assistant);
+    expect(user.content).toEqual([{ type: 'text', text: 'go on' }]);
+    expect(counts).toEqual({ 0: 5000, 1: 12 });
+    expect(result.indexTokenCountMap[0]).toBe(
+      5000 + tokenCounter(result.messages[0]) - tokenCounter(user),
+    );
   });
 
-  test('builds the memory copy only when it is still needed', async () => {
-    const { orderedMessages, formattedMessages, indexTokenCountMap } = turn();
-    const build = jest.fn(async () => undefined);
-    await applyRetainedAnswers({
-      block,
-      orderedMessages,
-      formattedMessages,
-      indexTokenCountMap,
-      countTokens,
-      memoryCopy: { needed: false, build },
-    });
-    expect(formattedMessages[2].content).toContain(block);
-    expect(build).not.toHaveBeenCalled();
+  test('survives real summary slicing with no human turn left and preserves the continuation', () => {
+    const payload = [
+      { role: 'user', content: 'earlier user' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'summary', text: 'Summary', tokenCount: 5 },
+          { type: 'text', text: 'unfinished' },
+        ],
+      },
+    ];
+    const formatted = formatAgentMessages(payload, { 0: 20, 1: 30 });
+    expect(formatted.messages.every((message) => message.getType() !== 'human')).toBe(true);
+    const result = applyRetainedAnswers({ block, ...formatted, tokenCounter });
+    expect(result.messages.map((message) => message.getType())).toEqual(['human', 'ai']);
+    expect(result.messages[0].content).toBe(block);
+    expect(result.messages[1]).toBe(formatted.messages[0]);
+    expect(result.indexTokenCountMap[1]).toBe(formatted.indexTokenCountMap?.[0]);
+    expect(result.indexTokenCountMap[0]).toBe(tokenCounter(result.messages[0]));
+    expect(formatted.messages).toHaveLength(1);
   });
 
-  test('applies nothing without a block or without a user-authored row', async () => {
-    const empty = turn();
-    const build = jest.fn(async () => undefined);
-    expect(
-      await applyRetainedAnswers({
-        block: undefined,
-        ...empty,
-        countTokens,
-        memoryCopy: { needed: true, build },
-      }),
-    ).toBe(0);
-    const assistantOnly = turn();
-    assistantOnly.orderedMessages.forEach((message) => {
-      message.isCreatedByUser = false;
+  test('keeps a legacy system summary first when adding context to a continuation', () => {
+    const messages = [new SystemMessage('Summary'), new AIMessage('unfinished')];
+    const result = applyRetainedAnswers({
+      block,
+      messages,
+      indexTokenCountMap: { 0: 10, 1: 20 },
+      tokenCounter,
     });
-    expect(
-      await applyRetainedAnswers({
+    expect(result.messages.map((message) => message.getType())).toEqual(['system', 'human', 'ai']);
+    expect(result.indexTokenCountMap).toEqual({
+      0: 10,
+      1: tokenCounter(result.messages[1]),
+      2: 20,
+    });
+  });
+
+  test('keeps tool-call/result adjacency when summary replay has no human message', () => {
+    const messages = [
+      new AIMessage({ content: '', tool_calls: [{ id: 'call', name: 'lookup', args: {} }] }),
+      new ToolMessage({ content: 'result', tool_call_id: 'call' }),
+      new AIMessage('unfinished'),
+    ];
+    const result = applyRetainedAnswers({
+      block,
+      messages,
+      indexTokenCountMap: { 0: 10, 1: 20, 2: 30 },
+      tokenCounter,
+    });
+    expect(result.messages.slice(1)).toEqual(messages);
+    expect(result.indexTokenCountMap).toEqual({
+      0: tokenCounter(result.messages[0]),
+      1: 10,
+      2: 20,
+      3: 30,
+    });
+  });
+
+  test.each(['throw', 'nan', 'undefined'])(
+    'leaves the memory transcript and counts untouched on counter failure: %s',
+    (failure) => {
+      const messages = [new HumanMessage('go on')];
+      const counts = { 0: 8 };
+      let calls = 0;
+      const result = applyRetainedAnswers({
         block,
-        ...assistantOnly,
-        countTokens,
-        memoryCopy: { needed: true, build },
+        messages,
+        indexTokenCountMap: counts,
+        tokenCounter: () => {
+          if (calls++ === 0) return 8;
+          if (failure === 'throw') throw new Error('counter unavailable');
+          return failure === 'nan' ? Number.NaN : (undefined as never);
+        },
+      });
+      expect(result.messages).toBe(messages);
+      expect(result.indexTokenCountMap).toBe(counts);
+      expect(messages[0].content).toBe('go on');
+    },
+  );
+
+  test('uses a fresh baseline when the formatted token map has no entry', () => {
+    const result = applyRetainedAnswers({
+      block,
+      messages: [new HumanMessage('go on')],
+      indexTokenCountMap: {},
+      tokenCounter,
+    });
+    expect(result.indexTokenCountMap[0]).toBe(tokenCounter(result.messages[0]));
+  });
+
+  test('does no work when there is no block', () => {
+    const messages = [new HumanMessage('go on')];
+    const counts = { 0: 8 };
+    const counter = jest.fn();
+    expect(
+      applyRetainedAnswers({
+        block: undefined,
+        messages,
+        indexTokenCountMap: counts,
+        tokenCounter: counter,
       }),
-    ).toBe(0);
-    expect(assistantOnly.formattedMessages[2].content).toBe('latest question');
-    expect(build).not.toHaveBeenCalled();
+    ).toEqual({ messages, indexTokenCountMap: counts });
+    expect(counter).not.toHaveBeenCalled();
+  });
+});
+
+describe('retained answer lifecycle', () => {
+  test('carries durable resume stamps after reconstruction, summary slicing, and a second turn without duplication', async () => {
+    const request = { questions: [{ id: 'env', question: 'Deploy where?' }] };
+    const stamped = attachAskUserQuestionAnswers(
+      [askPart(request, undefined)],
+      [{ toolCallId: 'tc-1', request, output: JSON.stringify({ answers: { env: 'staging' } }) }],
+    );
+    const rows = JSON.parse(
+      JSON.stringify([
+        { messageId: 'u1', parentMessageId: NO_PARENT, content: [] },
+        { messageId: 'a1', parentMessageId: 'u1', content: stamped },
+        {
+          messageId: 'a2',
+          parentMessageId: 'a1',
+          content: [
+            { type: 'summary', text: 'Summary', tokenCount: 5 },
+            { type: 'text', text: 'unfinished' },
+          ],
+        },
+      ]),
+    );
+    const prepared = await prepareRetainedAnswers({
+      messages: [rows[2]],
+      storedRows: rows,
+      parentMessageId: 'a2',
+      config: undefined,
+      countTokens: countChars,
+    });
+    expect(prepared.block).toContain('Q: Deploy where?\nA: staging');
+    expect(prepared.tokenCount).toBe(prepared.block?.length);
+    const original = formatAgentMessages([{ role: 'assistant', content: rows[2].content }], {
+      0: 50,
+    });
+    for (let turn = 0; turn < 2; turn++) {
+      const result = applyRetainedAnswers({
+        block: prepared.block,
+        ...original,
+        tokenCounter: (message) => JSON.stringify(message.content).length,
+      });
+      expect(JSON.stringify(result.messages).match(/Deploy where/g)).toHaveLength(1);
+      expect(original.messages).toHaveLength(1);
+      expect(JSON.stringify(rows[2])).not.toContain('Deploy where');
+    }
   });
 });
