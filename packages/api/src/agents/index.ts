@@ -42,6 +42,7 @@ export * from './parameters';
 export * from './plan';
 export * from './prewarm';
 export * from './ptc';
+export * from './programmatic';
 export * from './openai';
 export * from './transactions';
 export * from './traversal';
