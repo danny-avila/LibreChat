@@ -71,6 +71,26 @@ import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
 
+export function toRestoredComposerFile(
+  file: NonNullable<TMessage['files']>[number],
+): ExtendedFile | null {
+  if (!file.file_id) {
+    return null;
+  }
+  return {
+    file_id: file.file_id,
+    filename: file.filename,
+    filepath: file.filepath,
+    type: file.type ?? '',
+    height: file.height,
+    width: file.width,
+    size: file.bytes ?? 0,
+    progress: 1,
+    attached: true,
+    llmDeliveryPath: file.llmDeliveryPath,
+  };
+}
+
 interface ChatFormProps {
   index: number;
   placeholder?: string;
@@ -347,20 +367,11 @@ const ChatForm = memo(function ChatForm({
         setFiles((prev) => {
           const next = new Map(prev);
           for (const file of chipFiles) {
-            if (!file.file_id) {
+            const restoredFile = toRestoredComposerFile(file);
+            if (restoredFile == null) {
               continue;
             }
-            next.set(file.file_id, {
-              file_id: file.file_id,
-              filename: file.filename,
-              filepath: file.filepath,
-              type: file.type ?? '',
-              height: file.height,
-              width: file.width,
-              size: file.bytes ?? 0,
-              progress: 1,
-              attached: true,
-            });
+            next.set(restoredFile.file_id, restoredFile);
           }
           return next;
         });

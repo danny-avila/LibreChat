@@ -170,6 +170,7 @@ describe('PanelTable handleFileClick', () => {
       filename: 'report.pdf',
       context: FileContext.run_artifact,
       metadata: { runFile },
+      llmDeliveryPath: 'text',
     });
     mockFileMap = { [file.file_id]: file };
 
@@ -182,6 +183,7 @@ describe('PanelTable handleFileClick', () => {
         filename: 'report.pdf',
         filepath: file.filepath,
         metadata: { runFile },
+        llmDeliveryPath: 'text',
         attached: true,
         progress: 1,
       }),

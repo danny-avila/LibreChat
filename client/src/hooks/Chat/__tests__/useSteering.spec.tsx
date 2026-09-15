@@ -3,12 +3,12 @@ import { getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
+import useSteering, { mergeQueuedTurnFileMetadata } from '../useSteering';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
-import useSteering from '../useSteering';
 import store from '~/store';
 
 const CONVO_ID = 'convo-steer-ui';
@@ -23,7 +23,12 @@ const mockMarkUsage = jest.fn();
 let mockMessages: TMessage[] | undefined;
 let mockLatestMessage: TMessage | null | undefined;
 let mockServerQueuedTurns: unknown[] | undefined;
+let mockFileMap: Record<string, Pick<TFile, 'llmDeliveryPath'>> = {};
 const mockUseAgentQueuedTurns = jest.fn((..._args: unknown[]) => ({ data: mockServerQueuedTurns }));
+
+jest.mock('~/Providers', () => ({
+  useFileMapContext: () => mockFileMap,
+}));
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelSteer }),
@@ -145,6 +150,51 @@ describe('useSteering', () => {
     mockMessages = undefined;
     mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
+    mockFileMap = {};
+  });
+
+  it('keeps optimistic delivery metadata when a legacy receipt omits it', () => {
+    expect(
+      mergeQueuedTurnFileMetadata(
+        [{ file_id: 'stored-doc', filename: 'report.pdf', type: 'application/pdf' }],
+        [
+          {
+            file_id: 'stored-doc',
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            llmDeliveryPath: 'text',
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        file_id: 'stored-doc',
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        llmDeliveryPath: 'text',
+      },
+    ]);
+  });
+
+  it('hydrates legacy receipt delivery metadata from the stored file map', () => {
+    expect(
+      mergeQueuedTurnFileMetadata(
+        [{ file_id: 'stored-doc', filename: 'report.pdf', type: 'application/pdf' }],
+        undefined,
+        {
+          'stored-doc': {
+            llmDeliveryPath: 'text',
+          },
+        },
+      ),
+    ).toEqual([
+      {
+        file_id: 'stored-doc',
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        llmDeliveryPath: 'text',
+      },
+    ]);
   });
 
   describe('effectiveAction', () => {
@@ -1001,6 +1051,11 @@ describe('useSteering', () => {
     });
 
     it('projects the authoritative server snapshot into Recoil', async () => {
+      mockFileMap = {
+        'stored-doc': {
+          llmDeliveryPath: 'text',
+        },
+      };
       mockServerQueuedTurns = [
         {
           queuedTurnId: 'server-snapshot-1',
@@ -1008,6 +1063,7 @@ describe('useSteering', () => {
           conversationId: CONVO_ID,
           parentMessageId: 'visible-assistant-tail',
           text: 'restored after reload',
+          files: [{ file_id: 'stored-doc', filename: 'report.pdf', type: 'application/pdf' }],
           status: 'queued',
           revision: 3,
           createdAt: new Date(200).toISOString(),
@@ -1020,6 +1076,14 @@ describe('useSteering', () => {
       expect(rendered.result.current.queue[0]).toMatchObject({
         id: 'client-snapshot-1',
         text: 'restored after reload',
+        files: [
+          {
+            file_id: 'stored-doc',
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            llmDeliveryPath: 'text',
+          },
+        ],
         server: { id: 'server-snapshot-1', status: 'queued', revision: 3 },
       });
     });
