@@ -17,8 +17,9 @@ import type {
   TPreset,
   TMessage,
   TConversation,
-  EventSubmission,
   TStartupConfig,
+  EventSubmission,
+  TMessageContentParts,
 } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
@@ -229,6 +230,37 @@ export type EventHandlerParams = {
   setShowStopButton: SetterOrUpdater<boolean>;
 };
 
+const CONNECTION_ERROR_TEXT = 'Error connecting to server, try refreshing the page.';
+
+const isEmptyTextPart = (part: TMessageContentParts): boolean => {
+  if (part.type !== ContentTypes.TEXT) {
+    return false;
+  }
+  const text = part[ContentTypes.TEXT];
+  return typeof text === 'string' ? text === '' : (text?.value ?? '') === '';
+};
+
+/**
+ * The parts the in-flight response has streamed so far, without the holes an interrupted stream
+ * leaves and the empty text part a run opens before its first token. Only the transcript's tail
+ * can be the in-flight response; a user row there means no response was placed.
+ */
+const getStreamedContent = (message?: TMessage): TMessageContentParts[] => {
+  if (message == null || message.isCreatedByUser === true) {
+    return [];
+  }
+  const content = (message.content ?? []).filter(
+    (part): part is TMessageContentParts => part != null,
+  );
+  const lastPart = content[content.length - 1];
+  return lastPart != null && isEmptyTextPart(lastPart) ? content.slice(0, -1) : content;
+};
+
+/**
+ * A failure that lands after the run has streamed keeps what streamed and takes the failure as
+ * one more part, the way the server records a failure inside a run; one that lands before
+ * anything streamed is the whole row.
+ */
 const createErrorMessage = ({
   errorMetadata,
   getMessages,
@@ -242,41 +274,18 @@ const createErrorMessage = ({
 }): TMessage => {
   const currentMessages = getMessages();
   const latestMessage = currentMessages?.[currentMessages.length - 1];
-  let errorMessage: TMessage;
   const text = submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
   const errorText =
     (errorMetadata?.text || text || (error as Error | undefined)?.message) ??
     'Error cancelling request';
-  const latestContent = latestMessage?.content ?? [];
-  let isValidContentPart = false;
-  if (latestContent.length > 0) {
-    const latestContentPart = latestContent[latestContent.length - 1];
-    if (latestContentPart != null) {
-      const latestPartValue = latestContentPart[latestContentPart.type ?? ''];
-      isValidContentPart =
-        latestContentPart.type !== ContentTypes.TEXT ||
-        (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
-          ? true
-          : latestPartValue?.value !== '';
-    }
-  }
-  if (
-    latestMessage?.conversationId &&
-    latestMessage?.messageId &&
-    latestContent &&
-    isValidContentPart
-  ) {
-    const content = [...latestContent];
-    content.push({
-      type: ContentTypes.ERROR,
-      error: errorText,
-    });
-    errorMessage = {
+  const streamedContent = getStreamedContent(latestMessage);
+  if (latestMessage?.conversationId && latestMessage.messageId && streamedContent.length > 0) {
+    const errorMessage: TMessage = {
       ...latestMessage,
       ...errorMetadata,
       error: undefined,
       text: '',
-      content,
+      content: [...streamedContent, { type: ContentTypes.ERROR, error: errorText }],
     };
     if (
       submission.userMessage.messageId &&
@@ -285,18 +294,94 @@ const createErrorMessage = ({
       errorMessage.parentMessageId = submission.userMessage.messageId;
     }
     return errorMessage;
-  } else if (errorMetadata) {
+  }
+  if (errorMetadata) {
     return errorMetadata as TMessage;
-  } else {
-    errorMessage = {
-      ...submission,
-      ...submission.initialResponse,
-      text: errorText,
-      unfinished: !!text.length,
+  }
+  return tMessageSchema.parse({
+    ...submission,
+    ...submission.initialResponse,
+    text: errorText,
+    unfinished: !!text.length,
+    error: true,
+  }) as TMessage;
+};
+
+export interface ErrorTurn {
+  conversationId: string;
+  errorResponse: TMessage;
+  /** The conversation must be rebuilt: it never learned its id, the transport failed, or the
+   *  server named a conversation the new-chat route has not navigated to. */
+  recover: boolean;
+}
+
+/** Builds the row a failed turn leaves in the transcript and names the conversation it belongs to. */
+export const resolveErrorTurn = ({
+  data,
+  submission,
+  getMessages,
+  isNewConversationRoute,
+}: {
+  data?: TResData;
+  submission: EventSubmission;
+  getMessages: () => TMessage[] | undefined;
+  isNewConversationRoute: boolean;
+}): ErrorTurn => {
+  const { userMessage, initialResponse } = submission;
+  const conversationId =
+    userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
+
+  const parseErrorResponse = (payload: TResData | Partial<TMessage>): TMessage => {
+    const metadata = payload['responseMessage'] ?? payload;
+    const errorMessage: Partial<TMessage> = {
+      ...initialResponse,
+      ...metadata,
       error: true,
+      parentMessageId: userMessage.messageId,
+    };
+
+    if (errorMessage.messageId === undefined || errorMessage.messageId === '') {
+      errorMessage.messageId = v4();
+    }
+
+    return tMessageSchema.parse(errorMessage) as TMessage;
+  };
+  const build = (errorMetadata: TMessage): TMessage =>
+    createErrorMessage({ errorMetadata, getMessages, submission });
+
+  if (!data) {
+    const convoId = conversationId || `_${v4()}`;
+    return {
+      conversationId: convoId,
+      recover: true,
+      errorResponse: build(
+        parseErrorResponse({ text: CONNECTION_ERROR_TEXT, ...submission, conversationId: convoId }),
+      ),
     };
   }
-  return tMessageSchema.parse(errorMessage) as TMessage;
+
+  const receivedConvoId = data.conversationId ?? '';
+  if (!conversationId && !receivedConvoId) {
+    return {
+      conversationId: `_${v4()}`,
+      recover: true,
+      errorResponse: build(parseErrorResponse(data)),
+    };
+  }
+  if (!receivedConvoId) {
+    return { conversationId, recover: false, errorResponse: build(parseErrorResponse(data)) };
+  }
+  return {
+    conversationId: receivedConvoId,
+    recover: isNewConversationRoute,
+    errorResponse: build(
+      tMessageSchema.parse({
+        ...data,
+        error: true,
+        parentMessageId: userMessage.messageId,
+      }) as TMessage,
+    ),
+  };
 };
 
 /**
@@ -1056,81 +1141,22 @@ export default function useEventHandlers({
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { userMessage, initialResponse } = submission;
-      setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+      setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
       setSubmissionStart(null);
 
-      const conversationId =
-        userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
-
-      const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
-        setMessages(finalMessages);
-        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
-      };
-
-      const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
-        const metadata = data['responseMessage'] ?? data;
-        const errorMessage: Partial<TMessage> = {
-          ...initialResponse,
-          ...metadata,
-          error: true,
-          parentMessageId: userMessage.messageId,
-        };
-
-        if (errorMessage.messageId === undefined || errorMessage.messageId === '') {
-          errorMessage.messageId = v4();
-        }
-
-        return tMessageSchema.parse(errorMessage) as TMessage;
-      };
-
-      if (!data) {
-        const convoId = conversationId || `_${v4()}`;
-        const errorMetadata = parseErrorResponse({
-          text: 'Error connecting to server, try refreshing the page.',
-          ...submission,
-          conversationId: convoId,
-        });
-        const errorResponse = createErrorMessage({
-          errorMetadata,
-          getMessages,
-          submission,
-        });
-        setErrorMessages(convoId, errorResponse);
-        recoverConversation(convoId, submission);
-        setIsSubmitting(false);
-        return;
+      const { conversationId, errorResponse, recover } = resolveErrorTurn({
+        data,
+        submission,
+        getMessages,
+        isNewConversationRoute: paramId === Constants.NEW_CONVO,
+      });
+      const finalMessages = mergeErrorMessages({ ...submission, errorMessage: errorResponse });
+      setMessages(finalMessages);
+      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], finalMessages);
+      if (recover) {
+        recoverConversation(conversationId, submission);
       }
-
-      const receivedConvoId = data.conversationId ?? '';
-      if (!conversationId && !receivedConvoId) {
-        const convoId = `_${v4()}`;
-        const errorResponse = parseErrorResponse(data);
-        setErrorMessages(convoId, errorResponse);
-        recoverConversation(convoId, submission);
-        setIsSubmitting(false);
-        return;
-      } else if (!receivedConvoId) {
-        const errorResponse = parseErrorResponse(data);
-        setErrorMessages(conversationId, errorResponse);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const errorResponse = tMessageSchema.parse({
-        ...data,
-        error: true,
-        parentMessageId: userMessage.messageId,
-      }) as TMessage;
-
-      setErrorMessages(receivedConvoId, errorResponse);
-      if (receivedConvoId && paramId === Constants.NEW_CONVO) {
-        recoverConversation(receivedConvoId, submission);
-      }
-
       setIsSubmitting(false);
-      return;
     },
     [
       setCompleted,

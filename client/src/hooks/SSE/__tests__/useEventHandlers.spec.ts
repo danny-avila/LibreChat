@@ -1,5 +1,11 @@
-import { Constants } from 'librechat-data-provider';
-import type { EventSubmission, TMessage, TConversation } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  EventSubmission,
+  TConversation,
+  TMessage,
+} from 'librechat-data-provider';
+import type { TResData } from '~/common';
 import {
   buildCreatedInitialResponse,
   getExistingConversationAbortMessages,
@@ -8,6 +14,7 @@ import {
   buildRecoveryPreset,
   mergeErrorMessages,
   mergeRegenerateFinalMessages,
+  resolveErrorTurn,
   startedAsNewConversation,
 } from '~/hooks/SSE/useEventHandlers';
 
@@ -350,5 +357,165 @@ describe('buildRecoveryPreset', () => {
 
   it('falls back to the sent mode when no record exists', () => {
     expect(buildRecoveryPreset(sent, undefined, '_fresh').codeApprovalMode).toBe('ask');
+  });
+});
+
+describe('resolveErrorTurn', () => {
+  const userMessage = {
+    messageId: 'user-1',
+    conversationId: 'conversation-1',
+    parentMessageId: Constants.NO_PARENT,
+    isCreatedByUser: true,
+    text: 'Look up the issue',
+    sender: 'User',
+  } as TMessage;
+  const initialResponse = {
+    messageId: 'user-1_',
+    parentMessageId: 'user-1',
+    conversationId: 'conversation-1',
+    isCreatedByUser: false,
+    text: '',
+    sender: 'Lia',
+    endpoint: 'agents',
+    model: 'agent_1',
+  } as TMessage;
+  const submission = {
+    messages: [],
+    userMessage,
+    initialResponse,
+    conversation: { conversationId: 'conversation-1' },
+  } as unknown as EventSubmission;
+  const streamedParts = [
+    { type: ContentTypes.THINK, think: 'Checking the issue' },
+    { type: ContentTypes.TEXT, text: 'Let me try the GitHub CLI from the workspace.' },
+    {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'call-1', name: 'execute_code', args: '{}', progress: 1 },
+    },
+  ] as TMessageContentParts[];
+  const streamedResponse = { ...initialResponse, content: streamedParts };
+  const startFailure = {
+    text: JSON.stringify({ code: 'code_workspace_unavailable', reason: 'locked' }),
+    metadata: { streamStartFailed: true },
+  } as unknown as TResData;
+
+  it('keeps what the run streamed and takes the failure as one more part', () => {
+    const { conversationId, errorResponse, recover } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [userMessage, streamedResponse],
+      isNewConversationRoute: false,
+    });
+
+    expect(conversationId).toBe('conversation-1');
+    expect(recover).toBe(false);
+    expect(errorResponse.content).toEqual([
+      ...streamedParts,
+      { type: ContentTypes.ERROR, error: startFailure.text },
+    ]);
+    expect(errorResponse.error).toBeUndefined();
+    expect(errorResponse.text).toBe('');
+    expect(errorResponse.messageId).toBe('user-1_');
+    expect(errorResponse.parentMessageId).toBe('user-1');
+    expect(errorResponse.metadata).toEqual({ streamStartFailed: true });
+  });
+
+  it('drops stream holes and the empty text part a run opens before its first token', () => {
+    const { errorResponse } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [
+        userMessage,
+        {
+          ...initialResponse,
+          content: [...streamedParts, undefined, { type: ContentTypes.TEXT, text: '' }],
+        } as TMessage,
+      ],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse.content).toEqual([
+      ...streamedParts,
+      { type: ContentTypes.ERROR, error: startFailure.text },
+    ]);
+  });
+
+  it('is the whole row when nothing streamed', () => {
+    const { errorResponse } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [userMessage, initialResponse],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse.content).toBeUndefined();
+    expect(errorResponse.error).toBe(true);
+    expect(errorResponse.text).toBe(startFailure.text);
+    expect(errorResponse.messageId).toBe('user-1_');
+    expect(errorResponse.parentMessageId).toBe('user-1');
+  });
+
+  it('never takes a user row at the tail for the failed response', () => {
+    const { errorResponse } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [
+        { ...userMessage, content: [{ type: ContentTypes.TEXT, text: 'Look up the issue' }] },
+      ],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse.content).toBeUndefined();
+    expect(errorResponse.error).toBe(true);
+  });
+
+  it('records a lost connection as a part of the streamed response and rebuilds the chat', () => {
+    const { conversationId, errorResponse, recover } = resolveErrorTurn({
+      data: undefined,
+      submission,
+      getMessages: () => [userMessage, streamedResponse],
+      isNewConversationRoute: false,
+    });
+
+    expect(conversationId).toBe('conversation-1');
+    expect(recover).toBe(true);
+    expect(errorResponse.content).toEqual([
+      ...streamedParts,
+      {
+        type: ContentTypes.ERROR,
+        error: 'Error connecting to server, try refreshing the page.',
+      },
+    ]);
+  });
+
+  it('keeps the streamed parts under a failure the server addressed to the conversation', () => {
+    const data = {
+      conversationId: 'conversation-1',
+      messageId: 'user-1_',
+      isCreatedByUser: false,
+      sender: 'Lia',
+      text: JSON.stringify({ type: 'invalid_request' }),
+    } as unknown as TResData;
+
+    const fromChat = resolveErrorTurn({
+      data,
+      submission,
+      getMessages: () => [userMessage, streamedResponse],
+      isNewConversationRoute: false,
+    });
+    const fromNewChat = resolveErrorTurn({
+      data,
+      submission,
+      getMessages: () => [userMessage, streamedResponse],
+      isNewConversationRoute: true,
+    });
+
+    expect(fromChat.recover).toBe(false);
+    expect(fromNewChat.recover).toBe(true);
+    expect(fromChat.errorResponse.content).toEqual([
+      ...streamedParts,
+      { type: ContentTypes.ERROR, error: data.text },
+    ]);
+    expect(fromChat.errorResponse.parentMessageId).toBe('user-1');
   });
 });
