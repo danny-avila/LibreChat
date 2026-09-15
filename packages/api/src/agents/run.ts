@@ -1451,14 +1451,21 @@ function shapeSummarizationConfig(
    * A summarization request that reuses the agent's client options inherits the
    * `prompt_cache_key` `createRun` synthesizes for the agent's stable
    * instruction prefix — a prefix this request does not send, so leaving the
-   * key on would file unrelated prompts under one cache identity. Cleared only
-   * for the synthesized key: a key an administrator pinned through `addParams`
-   * is a deliberate endpoint-wide choice and stays.
+   * key on would file unrelated prompts under one cache identity.
+   *
+   * Only the inherited key is cleared. One the summarization config supplies
+   * itself, like one an administrator pins through `addParams`, is a
+   * deliberate choice about this request's own routing and survives; the merge
+   * above already establishes that explicit user parameters win.
    */
   const agentParameters = agent?.model_parameters as
     | { promptCacheKeyEnabled?: boolean }
     | undefined;
-  if (provider === fallbackProvider && agentParameters?.promptCacheKeyEnabled === true) {
+  if (
+    provider === fallbackProvider &&
+    agentParameters?.promptCacheKeyEnabled === true &&
+    parameters?.promptCacheKey == null
+  ) {
     parameters = { ...parameters, promptCacheKey: undefined };
   }
 
@@ -1843,15 +1850,26 @@ export function anyAgentReplaysReasoningContent(
  */
 function finalizePromptCacheKey(input: AgentInputs): void {
   const options = input.clientOptions as
-    | (Partial<t.OAIClientOptions> & { response_format?: unknown; text?: { format?: unknown } })
+    | (Partial<t.OAIClientOptions> & {
+        response_format?: unknown;
+        text?: { format?: unknown };
+        modelKwargs?: { model?: unknown };
+      })
     | undefined;
   if (options == null) {
     return;
   }
   if (options.promptCacheKeyEnabled === true && options.promptCacheKey == null) {
     const { graphTools } = input as AgentInputs & { graphTools?: GenericTool[] };
+    /**
+     * Azure Astra keeps its visible identity in `model` and sends the
+     * deployment through the `modelKwargs` override, so the override is the
+     * wire model whenever it is present.
+     */
+    const wireModel =
+      typeof options.modelKwargs?.model === 'string' ? options.modelKwargs.model : options.model;
     options.promptCacheKey = buildPromptCacheKey({
-      model: options.model,
+      model: wireModel,
       instructions: input.instructions,
       boundTools: [
         ...(input.toolDefinitions ?? []),
