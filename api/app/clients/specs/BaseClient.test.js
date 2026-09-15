@@ -1,6 +1,11 @@
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const BaseClientClass = require('../BaseClient');
-const { ContentFilterError } = require('@librechat/api');
+const {
+  ContentFilterError,
+  resolveTurnDeliveryRouting,
+  buildSteerMedia,
+  Tokenizer,
+} = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
@@ -1172,6 +1177,69 @@ describe('BaseClient', () => {
         {},
       );
       expect(TestClient.buildMessages).toHaveBeenCalled();
+    });
+
+    test('keeps the turn view of historical files that projection and steer replay read', async () => {
+      const routedCsv = {
+        file_id: 'csv-file',
+        filename: 'sales.csv',
+        filepath: '/uploads/sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+        user: 'user-1',
+      };
+      getFiles.mockReset();
+      getFiles.mockResolvedValueOnce([routedCsv]);
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          agent: {
+            provider: EModelEndpoint.openAI,
+            fileConsumers: { executeCode: false, fileSearch: false },
+          },
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            config: {
+              fileConfig: {
+                endpoints: {
+                  [EModelEndpoint.openAI]: {
+                    defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+                    textFallbackWithoutTools: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        [
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'Summarize my sheet',
+            files: [{ file_id: 'csv-file' }],
+            messageId: 'historical-csv-message',
+            parentMessageId: Constants.NO_PARENT,
+          },
+        ],
+      );
+
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req.config,
+      });
+      await TestClient.sendMessage('And the totals?', {
+        conversationId: 'historical-csv-conversation',
+        parentMessageId: 'historical-csv-message',
+      });
+
+      expect(TestClient.authorizedHistoricalFiles.get('csv-file')).toEqual({
+        ...routedCsv,
+        llmDeliveryPath: 'text',
+      });
+      expect(routedCsv.llmDeliveryPath).toBe('none');
     });
 
     test('does not block a missing historical file omitted from the final payload', async () => {
@@ -2580,6 +2648,110 @@ describe('BaseClient', () => {
       TestClient.checkVisionRequest = jest.fn();
     });
 
+    describe('tool-routed files on a later turn', () => {
+      const routedCsv = {
+        file_id: 'csv-file',
+        filename: 'sales.csv',
+        filepath: '/uploads/sales.csv',
+        source: 'local',
+        type: 'text/csv',
+        user: 'user-1',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+
+      const replayCsv = async (
+        fileConsumers,
+        endpointConfig = {
+          defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+          textFallbackWithoutTools: true,
+        },
+      ) => {
+        getFiles.mockResolvedValueOnce([routedCsv]);
+        TestClient.options.req.config = {
+          fileConfig: { endpoints: { [EModelEndpoint.openAI]: endpointConfig } },
+        };
+        TestClient.options.agent = { provider: EModelEndpoint.openAI, fileConsumers };
+        TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+          agent: TestClient.options.agent,
+          config: TestClient.options.req?.config,
+        });
+        TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+        const [message] = await TestClient.addPreviousAttachments([
+          { messageId: 'msg-csv', text: 'Summarize it', files: [{ file_id: 'csv-file' }] },
+        ]);
+        return message;
+      };
+
+      test('replays the stored text when this turn runs no tool that can read the file', async () => {
+        const message = await replayCsv({ executeCode: false, fileSearch: false });
+        const replayed = { ...routedCsv, llmDeliveryPath: 'text' };
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([replayed]);
+        expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [replayed]);
+        expect(TestClient.authorizedHistoricalFiles.get('csv-file')).toEqual(replayed);
+        expect(message.fileContext).toBe('region,total');
+        expect(routedCsv.llmDeliveryPath).toBe('none');
+      });
+
+      test('replays the stored text once the endpoint routes the type to text', async () => {
+        const message = await replayCsv(
+          { executeCode: true, fileSearch: false },
+          { defaultLLMDeliveryPath: { overrides: { 'text/csv': 'text' } } },
+        );
+        const replayed = { ...routedCsv, llmDeliveryPath: 'text' };
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([replayed]);
+        expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [replayed]);
+        expect(message.fileContext).toBe('region,total');
+      });
+
+      test('admits a historical tool-routed file this turn sends to the provider', async () => {
+        const routedImage = {
+          file_id: 'image-file',
+          filename: 'chart.png',
+          filepath: '/uploads/chart.png',
+          source: 'local',
+          type: 'image/png',
+          user: 'user-1',
+          llmDeliveryPath: 'none',
+          metadata: { destinationChosen: false },
+        };
+        getFiles.mockResolvedValueOnce([routedImage]);
+        TestClient.options.req.config = { fileConfig: { endpoints: {} } };
+        TestClient.options.agent = {
+          provider: EModelEndpoint.openAI,
+          fileConsumers: { executeCode: false, fileSearch: false },
+        };
+        TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+          agent: TestClient.options.agent,
+          config: TestClient.options.req?.config,
+        });
+        TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+        await TestClient.addPreviousAttachments([
+          {
+            messageId: 'msg-image',
+            text: 'What does it show?',
+            files: [{ file_id: 'image-file' }],
+          },
+        ]);
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([
+          { ...routedImage, llmDeliveryPath: 'provider' },
+        ]);
+      });
+
+      test('keeps the file off the prompt when this turn can read it with code', async () => {
+        const message = await replayCsv({ executeCode: true, fileSearch: false });
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([]);
+        expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
+        expect(message.fileContext).toBeUndefined();
+      });
+    });
+
     test('rehydrates historical file refs from owner-scoped DB rows only', async () => {
       getFiles.mockResolvedValueOnce([ownerFile]);
 
@@ -3192,8 +3364,6 @@ describe('BaseClient', () => {
       TestClient.options = {
         endpoint: EModelEndpoint.openAI,
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
       TestClient.addImageURLs = jest.fn(async (message, files) => {
         message.image_urls = ['encoded-image'];
         return files;
@@ -3207,9 +3377,18 @@ describe('BaseClient', () => {
       TestClient.addAudios = jest.fn(async (_message, files) => files);
     });
 
-    /* The stored path is an upload-time inference, so delivery re-resolves it for the
-     * endpoint running the turn. A test asserting a route has to configure that route
-     * rather than rely on the stored value alone. */
+    /** The routing initialization settles for an agent, from the request config it reads. */
+    const routedAgent = (agent) => ({
+      ...agent,
+      deliveryRouting: resolveTurnDeliveryRouting({
+        agent,
+        config: TestClient.options.req?.config,
+      }),
+    });
+
+    /* The stored path is an upload-time inference, so delivery resolves it again by the
+     * routing settled for the agent running the turn. A test asserting a route has to
+     * configure that route rather than rely on the stored value alone. */
     const routeTo = (path, ...mimeTypes) => {
       TestClient.options.req = {
         config: {
@@ -3224,8 +3403,10 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.openAI,
+        endpoint: EModelEndpoint.openAI,
+      });
     };
 
     test('keeps a none image in returned files without adding image URLs', async () => {
@@ -3256,6 +3437,144 @@ describe('BaseClient', () => {
         filename: 'report.pdf',
         type: 'application/pdf',
         llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    const routeCsvToTools = ({ textFallbackWithoutTools = true } = {}) => {
+      routeTo('none', 'text/csv');
+      TestClient.options.req.config.fileConfig.endpoints[
+        EModelEndpoint.openAI
+      ].textFallbackWithoutTools = textFallbackWithoutTools;
+    };
+
+    test('injects the text stored for a tool-routed file when this turn runs no reader', () => {
+      routeCsvToTools();
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: false, fileSearch: false },
+      };
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req?.config,
+      });
+      /* Agent initialization marks the copy it hands this client, so the stored route reads
+       * `text` while the configured route stays `none`. */
+      const file = {
+        file_id: 'fallback-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getAttachmentDeliveryPath(file)).toBe('text');
+      expect(TestClient.getTextContextAttachments([file])).toEqual([file]);
+    });
+
+    test('delivers a late steer through fallback even when the initialized agent has file tools', async () => {
+      routeCsvToTools();
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: true, fileSearch: true },
+      });
+      const file = {
+        file_id: 'late-csv',
+        filename: 'late.csv',
+        type: 'text/csv',
+        source: 'local',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+      const assertFilesAllowed = jest.fn();
+      const initEncoding = jest.spyOn(Tokenizer, 'initEncoding').mockResolvedValue(undefined);
+      const getTokenCount = jest.spyOn(Tokenizer, 'getTokenCount').mockReturnValue(4);
+      let result;
+      try {
+        result = await buildSteerMedia({
+          client: {
+            resolveTurnAttachments: TestClient.resolveTurnAttachments.bind(TestClient),
+            addFileContextToMessage:
+              BaseClientClass.prototype.addFileContextToMessage.bind(TestClient),
+            processAttachments: BaseClientClass.prototype.processAttachments.bind(TestClient),
+          },
+          user: { id: 'user-1' },
+          item: { steerId: 'late', text: 'Read this file', files: [{ file_id: file.file_id }] },
+          getFiles: jest.fn().mockResolvedValue([file]),
+          assertFilesAllowed,
+        });
+      } finally {
+        initEncoding.mockRestore();
+        getTokenCount.mockRestore();
+      }
+      expect(assertFilesAllowed).toHaveBeenCalledWith([{ ...file, llmDeliveryPath: 'text' }]);
+      expect(JSON.stringify(result.content)).toContain('region,total');
+      expect(file.llmDeliveryPath).toBe('none');
+      expect(TestClient.options.agent.fileConsumers).toEqual({
+        executeCode: true,
+        fileSearch: true,
+      });
+    });
+
+    test('keeps a tool-routed file off the prompt when this turn can read it with code', () => {
+      routeCsvToTools();
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: true, fileSearch: false },
+      };
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req?.config,
+      });
+      const file = {
+        file_id: 'code-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getAttachmentDeliveryPath(file)).toBe('none');
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    test('does not fall back on an endpoint that has not enabled it', () => {
+      routeCsvToTools({ textFallbackWithoutTools: false });
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: false, fileSearch: false },
+      };
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req?.config,
+      });
+      const file = {
+        file_id: 'disabled-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getAttachmentDeliveryPath(file)).toBe('none');
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    test('does not fall back when the turn tools are unknown', () => {
+      routeCsvToTools();
+      TestClient.options.agent = { provider: EModelEndpoint.openAI };
+      const file = {
+        file_id: 'unknown-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
         metadata: { destinationChosen: false },
       };
 
@@ -3327,17 +3646,19 @@ describe('BaseClient', () => {
       expect(TestClient.addImageURLs).not.toHaveBeenCalled();
     });
 
-    test('reads the Responses setting from a plain conversation too', async () => {
-      /* A non-agent Azure chat carries it in model options, and reading only the agent
-       * parameters re-resolves a natively supported PDF to text, which the record has
-       * none of, so the model receives nothing. */
+    test('reads the Responses setting the turn runs on from the settled routing', async () => {
+      /* Azure sends a PDF natively only under the Responses API. The routing carries the
+       * decision initialization made, so a record stored as `provider` is not resolved
+       * again to text it has none of, which would leave the model with nothing. */
       TestClient.options = {
-        endpoint: EModelEndpoint.azureOpenAI,
+        endpoint: EModelEndpoint.agents,
         req: { config: { fileConfig: undefined } },
       };
-      TestClient.modelOptions = { useResponsesApi: true };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.azureOpenAI,
+        endpoint: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      });
       const message = {};
       const file = {
         user: 'user1',
@@ -3353,7 +3674,6 @@ describe('BaseClient', () => {
       await TestClient.processAttachments(message, [file]);
 
       expect(TestClient.addDocuments).toHaveBeenCalled();
-      TestClient.modelOptions = undefined;
     });
 
     test('resolves a custom endpoint policy by the name the admin configured', async () => {
@@ -3377,8 +3697,7 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent(TestClient.options.agent);
       const message = {};
       const file = {
         user: 'user1',
@@ -3418,8 +3737,7 @@ describe('BaseClient', () => {
           },
         },
       };
-      TestClient._mergedFileConfig = undefined;
-      TestClient._endpointFileConfig = undefined;
+      TestClient.options.agent = routedAgent(TestClient.options.agent);
       const message = {};
       const file = {
         user: 'user1',

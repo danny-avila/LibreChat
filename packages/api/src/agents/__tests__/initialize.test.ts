@@ -133,6 +133,7 @@ jest.mock('../../middleware/modelBoundContent', () => {
 });
 
 import { initializeAgent } from '../initialize';
+import { primeResources } from '../resources';
 import { isFatalAgentInitializationError } from '../errors';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
@@ -1655,7 +1656,7 @@ describe('initializeAgent — attachment scoping', () => {
     expect(db.updateFilesUsage).not.toHaveBeenCalled();
     expect(primeResources).not.toHaveBeenCalled();
     expect(loadTools).not.toHaveBeenCalled();
-    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -4497,5 +4498,354 @@ describe('initializeAgent — provider-native web search role gate', () => {
     const result = await run({});
 
     expect(result.tools).toContainEqual(OPENAI_SEARCH);
+  });
+});
+
+describe('initializeAgent tool-routed text fallback', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const routedCsv = () =>
+    ({
+      file_id: 'csv-file',
+      filename: 'sales.csv',
+      type: 'text/csv',
+      text: 'region,total',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    }) as IMongoFile;
+
+  async function initializeWith({
+    tools,
+    csv,
+    textFallbackWithoutTools = true,
+    provider = Providers.OPENAI,
+    overrideProvider,
+    supportedMimeTypes,
+    softFailure = false,
+    fileSearchAvailable = true,
+    fileContextCharLimit,
+    useResponsesApi,
+  }: {
+    tools: string[];
+    csv: IMongoFile;
+    textFallbackWithoutTools?: boolean;
+    provider?: string;
+    overrideProvider?: string;
+    supportedMimeTypes?: string[];
+    softFailure?: boolean;
+    fileSearchAvailable?: boolean;
+    fileContextCharLimit?: number;
+    useResponsesApi?: boolean;
+  }) {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider,
+      overrideProvider,
+      loadedToolDefinitions: tools.includes(EToolResources.file_search)
+        ? [{ name: EToolResources.file_search }]
+        : [],
+    });
+    if (useResponsesApi != null) {
+      mockGetProviderConfig.mockReturnValue({
+        overrideProvider: overrideProvider ?? provider,
+        getOptions: jest
+          .fn()
+          .mockResolvedValue({ llmConfig: { model: agent.model, useResponsesApi } }),
+      });
+    }
+    (primeResources as jest.Mock).mockImplementationOnce(async ({ attachments }) => {
+      const files = await attachments;
+      return {
+        attachments: files,
+        requestAttachments: files,
+        agentContextAttachments: [],
+        tool_resources: {},
+      };
+    });
+    agent.tools = tools;
+    if (softFailure) loadTools.mockResolvedValue(undefined);
+    req.config = {
+      fileConfig: {
+        fileContextCharLimit,
+        endpoints: {
+          [provider]: {
+            defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+            textFallbackWithoutTools,
+            ...(supportedMimeTypes != null && { supportedMimeTypes }),
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([csv]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [csv],
+        codeEnvAvailable: true,
+        fileSearchAvailable,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([provider]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    return { result, filterFilesByEndpointRuntimeConfig };
+  }
+
+  it.each([true, false])(
+    'admits Azure PDFs with the final Responses mode %s',
+    async (useResponsesApi) => {
+      const pdf = { ...routedCsv(), type: 'application/pdf', text: undefined };
+      const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
+        tools: [],
+        csv: pdf,
+        provider: EModelEndpoint.azureOpenAI,
+        overrideProvider: Providers.OPENAI,
+        useResponsesApi,
+      });
+      expect(result.deliveryRouting.useResponsesApi).toBe(useResponsesApi);
+      expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          files: [{ ...pdf, llmDeliveryPath: useResponsesApi ? 'provider' : 'text' }],
+        }),
+      );
+    },
+  );
+
+  it('keeps fallback out of the prompt when file search loads successfully', async () => {
+    const csv = routedCsv();
+    const { result } = await initializeWith({ tools: [EToolResources.file_search], csv });
+    expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: true });
+    expect(result.requestAttachments).toEqual([csv]);
+  });
+
+  it('falls back after file search soft-fails and admits the returned text copy', async () => {
+    const csv = routedCsv();
+    const { result } = await initializeWith({
+      tools: [EToolResources.file_search],
+      csv,
+      softFailure: true,
+    });
+    expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: false });
+    expect(result.requestAttachments).toEqual([{ ...csv, llmDeliveryPath: 'text' }]);
+    expect(csv.llmDeliveryPath).toBe('none');
+  });
+
+  it('rejects fallback text that exceeds admission after a reader soft-fails', async () => {
+    await expect(
+      initializeWith({
+        tools: [EToolResources.file_search],
+        csv: routedCsv(),
+        softFailure: true,
+        fileContextCharLimit: 3,
+      }),
+    ).rejects.toMatchObject({ name: 'AgentAttachmentLimitError' });
+  });
+
+  it('hands endpoint filtering a text copy when the agent runs no tool that can read the file', async () => {
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({ tools: [], csv });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...csv, llmDeliveryPath: 'text' }] }),
+    );
+    expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: false });
+    expect(csv.llmDeliveryPath).toBe('none');
+  });
+
+  it('hands endpoint filtering the provider route a tool-routed file takes on this turn', async () => {
+    /* Admission reads the route, so a record left for tools that this endpoint sends to the
+     * provider must reach filtering, limits and inspection as a provider file. */
+    const image = {
+      file_id: 'image-file',
+      filename: 'chart.png',
+      type: 'image/png',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    } as IMongoFile;
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv: image,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...image, llmDeliveryPath: 'provider' }] }),
+    );
+    expect(image.llmDeliveryPath).toBe('none');
+  });
+
+  it('keeps media a custom endpoint opted into on its provider route before the provider swap', async () => {
+    /* The encoders send OpenAI-format media to a custom endpoint that lists the type, so the
+     * route has to read that endpoint's dialect from config, not the name still in `provider`. */
+    const video = {
+      file_id: 'video-file',
+      filename: 'clip.mp4',
+      type: 'video/mp4',
+      llmDeliveryPath: 'provider',
+      metadata: { destinationChosen: false },
+    } as IMongoFile;
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv: video,
+      provider: 'MyGateway',
+      overrideProvider: Providers.OPENAI,
+      supportedMimeTypes: ['video/mp4'],
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [video] }),
+    );
+  });
+
+  it('resolves a custom endpoint agent under the endpoint its upload was routed by', async () => {
+    /* Uploads resolve the agent's saved provider, which for a custom endpoint is its name.
+     * Initialization later swaps the provider for the backing client, so an opt-in set only
+     * on the custom endpoint must still be read under that name, here and after the swap. */
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv,
+      provider: 'MyGateway',
+      overrideProvider: Providers.OPENAI,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [{ ...csv, llmDeliveryPath: 'text' }] }),
+    );
+    expect(result.provider).toBe(Providers.OPENAI);
+    expect(result.endpoint).toBe('MyGateway');
+  });
+
+  it('leaves the file on its tool route where the endpoint has not enabled the fallback', async () => {
+    const csv = routedCsv();
+
+    const { filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [],
+      csv,
+      textFallbackWithoutTools: false,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [csv] }),
+    );
+  });
+
+  it('leaves the file to Run Code when the agent can run code', async () => {
+    const csv = routedCsv();
+
+    const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
+      tools: [EToolResources.execute_code],
+      csv,
+    });
+
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ files: [csv] }),
+    );
+    expect(result.fileConsumers).toEqual({ executeCode: true, fileSearch: false });
+  });
+});
+
+describe('initializeAgent turn delivery routing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('settles the routing once, after the provider swap and the Responses API decision', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({ provider: 'MyClaude' });
+    req.config = {
+      fileConfig: { endpoints: { MyClaude: { supportedMimeTypes: ['video/mp4'] } } },
+      endpoints: { custom: [{ name: 'MyClaude', provider: 'anthropic' }] },
+    } as unknown as ServerRequest['config'];
+    mockGetProviderConfig.mockReturnValue({
+      overrideProvider: Providers.ANTHROPIC,
+      getOptions: jest
+        .fn()
+        .mockResolvedValue({ llmConfig: { model: 'test-model', useResponsesApi: true } }),
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set(['MyClaude']),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.provider).toBe(Providers.ANTHROPIC);
+    expect(result.deliveryRouting).toMatchObject({
+      endpoint: 'MyClaude',
+      endpointProvider: 'anthropic',
+      useResponsesApi: true,
+      sttConfigured: false,
+    });
+    expect(result.deliveryRouting.endpointConfig.supportedMimeTypes).toEqual([/video\/mp4/]);
+  });
+
+  it('resolves the provider and its options before any attachment is loaded', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = createMocks();
+    const getOptions = jest.fn().mockResolvedValue({ llmConfig: { model: 'test-model' } });
+    mockGetProviderConfig.mockReturnValue({ overrideProvider: Providers.OPENAI, getOptions });
+    const file = {
+      file_id: 'file-1',
+      filename: 'notes.txt',
+      type: 'text/plain',
+      bytes: 10,
+      text: 'notes',
+      llmDeliveryPath: 'text',
+    } as IMongoFile;
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([file]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [file],
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    const [optionsOrder] = getOptions.mock.invocationCallOrder;
+    const [filesOrder] = (db.getFiles as jest.Mock).mock.invocationCallOrder;
+    const [toolsOrder] = loadTools.mock.invocationCallOrder;
+    expect(optionsOrder).toBeLessThan(filesOrder);
+    expect(filesOrder).toBeLessThan(toolsOrder);
   });
 });

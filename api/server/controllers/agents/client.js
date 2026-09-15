@@ -137,6 +137,7 @@ const {
   isAttachmentObjectNotFoundError,
   buildAgentScopedContext,
   buildAgentScopedAttachmentMap,
+  resolveScopedTurnAttachments,
   buildAgentContextAttachmentsByAgentId,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
@@ -389,7 +390,7 @@ class AgentClient extends BaseClient {
     }
   }
 
-  async processAttachments(message, attachments) {
+  async processAttachments(message, attachments, fileConsumers) {
     const modelBoundAttachments = this.getModelBoundAttachmentsForEndpoint(attachments);
     const processableAttachments = this.getProcessableAttachmentsForEndpoint(
       attachments,
@@ -409,7 +410,7 @@ class AgentClient extends BaseClient {
     };
     logAgentMemorySnapshot('before_process_attachments', memoryContext);
     try {
-      return await super.processAttachments(message, processableAttachments);
+      return await super.processAttachments(message, processableAttachments, fileConsumers);
     } finally {
       logAgentMemorySnapshot('after_process_attachments', memoryContext);
     }
@@ -2374,6 +2375,16 @@ class AgentClient extends BaseClient {
       ...modelBoundRequestAttachments,
     ];
     const sharedRunAttachmentIds = collectFileIds(sharedAttachmentFiles);
+    this.options.agentContextAttachmentsByAgentId = resolveScopedTurnAttachments({
+      agents: allAgents,
+      sharedConversationAgentIds: [this.options.agent.id, ...(this.agentConfigs?.keys() ?? [])],
+      resendFiles: this.options.resendFiles,
+      messages: orderedMessages,
+      historicalFiles: this.authorizedHistoricalFiles,
+      requestAttachments,
+      sharedRunAttachmentIds,
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+    });
     const scopedAttachmentMap = buildAgentScopedAttachmentMap({
       agentIds: allAgents.map(({ agentId }) => agentId),
       attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,

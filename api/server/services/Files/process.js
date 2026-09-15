@@ -36,7 +36,9 @@ const {
   assertExtractedTextInspectable,
   getFileExtractionLogDetails,
   getUploadExtractedTextPlan,
+  resolveUploadFallbackText,
   UPLOAD_EXTRACTED_TEXT_PLANS,
+  MAX_STORED_EXTRACTED_TEXT_BYTES,
   inspectContent,
   extractFileContent,
   hasActiveFileFieldPolicy,
@@ -942,9 +944,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         });
       }
       const textBytes = Buffer.byteLength(text, 'utf8');
-      if (textBytes > 15 * megabyte) {
+      if (textBytes > MAX_STORED_EXTRACTED_TEXT_BYTES) {
         throw new Error(
-          `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
+          `Extracted text from "${file.originalname}" exceeds the ${MAX_STORED_EXTRACTED_TEXT_BYTES / megabyte}MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
       if (
@@ -1152,6 +1154,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     return await createTextFile({ text });
   }
 
+  /* Extracted before storage, which may move the temporary upload the extractors read. */
+  const fallbackText = await resolveUploadFallbackText({
+    file,
+    fileId: file_id,
+    deliveryPath: llmDeliveryPath,
+    destinationChosen: uploadChoiceMetadata.destinationChosen,
+    isMessageAttachment: messageAttachment,
+    endpointConfig,
+    filters: appConfig?.filters,
+  });
+
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
   let storedType = file.mimetype;
@@ -1348,6 +1361,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       width,
       tenantId: req.user.tenantId,
       llmDeliveryPath,
+      text: fallbackText,
     }),
     ...retentionExpiry,
   };

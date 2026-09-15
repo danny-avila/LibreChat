@@ -21,10 +21,12 @@ import type {
   TEndpointOption,
   ReasoningResponseKey,
   StatefulCodeEnvironment,
+  TurnDeliveryRouting,
   ImageDetail,
   TFile,
   Agent,
   TUser,
+  TurnFileConsumers,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -113,10 +115,12 @@ import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
+import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
+import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
@@ -616,6 +620,8 @@ export type InitializedAgent = Agent & {
   currentRequestAttachments: TFile[];
   /** Files attached to this agent's permanent context via tool_resources. */
   agentContextAttachments: IMongoFile[];
+  /** File-reading tools this turn runs, which decide when a tool-routed file falls back to text. */
+  fileConsumers?: TurnFileConsumers;
   toolContextMap: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
@@ -626,6 +632,8 @@ export type InitializedAgent = Agent & {
   /** Detail level LibreChat encodes image content blocks with, from the agent's
    * model parameters. Absent when the agent does not configure one. */
   imageDetail?: ImageDetail;
+  /** How this agent receives its attachments this turn, settled once every routing input is final. */
+  deliveryRouting: TurnDeliveryRouting;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
@@ -1282,6 +1290,88 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /** Settle the provider and its client options before any attachment is judged. The file
+   * policy reads the endpoint's own name, but the route each attachment takes also depends on
+   * the backing client and on the Responses API decision `getOptions` makes, and nothing
+   * between here and tool loading feeds either. */
+  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
+    provider,
+    appConfig,
+  });
+  if (overrideProvider !== agent.provider) {
+    agent.provider = overrideProvider;
+  }
+
+  const finalModelOptions = {
+    ...modelOptions,
+    model: agent.model,
+  };
+
+  const options: InitializeResultBase = await getOptions({
+    runtime: {
+      appConfig,
+      user,
+      requestBody: runtime.requestBody,
+    },
+    endpoint: provider,
+    model_parameters: finalModelOptions,
+    db,
+  });
+
+  const llmConfig = options.llmConfig as Record<string, unknown>;
+  const webSearchDenied =
+    hasProviderWebSearch(options.tools, llmConfig) &&
+    !(await resolveWebSearchGrant({
+      req: params.req as Request | undefined,
+      user,
+      resolve: params.resolveWebSearchGrant,
+      getRoleByName: db.getRoleByName,
+    }));
+  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
+    logger.debug(
+      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
+    );
+  }
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
+  const maxOutputTokens = optionalChainWithEmptyCheck(
+    llmConfig?.maxOutputTokens as number | undefined,
+    llmConfig?.maxTokens as number | undefined,
+    0,
+  );
+  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+    maxContextTokens,
+    getModelMaxTokens(
+      tokensModel ?? '',
+      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
+      options.endpointTokenConfig,
+    ),
+    DEFAULT_MAX_CONTEXT_TOKENS,
+  );
+
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
+  if (options.provider != null) {
+    agent.provider = options.provider;
+  }
+
+  const deliveryRouting = resolveTurnDeliveryRouting({
+    agent: {
+      provider: agent.provider,
+      endpoint: agent.endpoint,
+      model_parameters: {
+        useResponsesApi:
+          typeof llmConfig.useResponsesApi === 'boolean' ? llmConfig.useResponsesApi : undefined,
+      },
+    },
+    config: appConfig,
+  });
+
   /** Resolve the per-agent Code API route before resource/tool priming. A
    * stateful agent must perform freshness checks and recovery uploads against
    * the same isolated deployment its eventual `/exec` request will use. */
@@ -1371,6 +1461,10 @@ export async function initializeAgent(
    * that lookup runs whichever way the setting is configured. */
   const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
   const wantsSearchFiles = toolResourceSet.has(EToolResources.file_search);
+  const fileConsumers: TurnFileConsumers = {
+    executeCode: wantsCodeFiles,
+    fileSearch: wantsSearchFiles,
+  };
   const wantsProvisioning = wantsCodeFiles || wantsSearchFiles;
 
   if (
@@ -1552,6 +1646,14 @@ export async function initializeAgent(
     currentFiles = authorizedRunFiles.map((file) => structuredClone(file));
   } else if (requestFiles.length > 0 || toolFileIds.length > 0) {
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
+  }
+  if (currentFiles?.length) {
+    /* Before any check reads the route: endpoint filtering, model-bound limits and content
+     * inspection below all have to judge each file by the route this turn delivers it by. */
+    currentFiles = applyTurnDelivery(currentFiles, {
+      routing: deliveryRouting,
+      consumers: fileConsumers,
+    });
   }
 
   let endpointFileType: EModelEndpoint | undefined;
@@ -1917,72 +2019,6 @@ export async function initializeAgent(
     }
   }
 
-  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
-    provider,
-    appConfig,
-  });
-  if (overrideProvider !== agent.provider) {
-    agent.provider = overrideProvider;
-  }
-
-  const finalModelOptions = {
-    ...modelOptions,
-    model: agent.model,
-  };
-
-  const options: InitializeResultBase = await getOptions({
-    runtime: {
-      appConfig,
-      user,
-      requestBody: runtime.requestBody,
-    },
-    endpoint: provider,
-    model_parameters: finalModelOptions,
-    db,
-  });
-
-  const llmConfig = options.llmConfig as Record<string, unknown>;
-  const webSearchDenied =
-    hasProviderWebSearch(options.tools, llmConfig) &&
-    !(await resolveWebSearchGrant({
-      req: params.req as Request | undefined,
-      user,
-      resolve: params.resolveWebSearchGrant,
-      getRoleByName: db.getRoleByName,
-    }));
-  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
-    logger.debug(
-      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
-    );
-  }
-  const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
-  const maxOutputTokens = optionalChainWithEmptyCheck(
-    llmConfig?.maxOutputTokens as number | undefined,
-    llmConfig?.maxTokens as number | undefined,
-    0,
-  );
-  const agentMaxContextTokens = optionalChainWithEmptyCheck(
-    maxContextTokens,
-    getModelMaxTokens(
-      tokensModel ?? '',
-      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
-      options.endpointTokenConfig,
-    ),
-    DEFAULT_MAX_CONTEXT_TOKENS,
-  );
-
-  if (
-    agent.endpoint === EModelEndpoint.azureOpenAI &&
-    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
-  ) {
-    agent.provider = Providers.OPENAI;
-  }
-
-  if (options.provider != null) {
-    agent.provider = options.provider;
-  }
-
   /**
    * Unify code-execution tools around `bash_tool` + `read_file` when the
    * agent explicitly lists `execute_code` in its tools and the admin
@@ -2331,11 +2367,60 @@ export async function initializeAgent(
   const toMongoFiles = (files: Array<TFile | undefined> | undefined): IMongoFile[] =>
     (files ?? []).filter((a): a is TFile => a != null).map((a) => a as unknown as IMongoFile);
 
-  const finalAttachments: IMongoFile[] = toMongoFiles(primedAttachments);
-  const requestAttachments: IMongoFile[] = toMongoFiles(primedRequestAttachments);
-  const agentContextAttachments: IMongoFile[] = toMongoFiles(primedAgentContextAttachments);
+  const loadedFileToolNames = new Set([
+    ...(structuredTools ?? []).map((tool) => tool.name),
+    ...(toolDefinitions ?? []).map((tool) => tool.name),
+  ]);
+  const finalFileConsumers: TurnFileConsumers = {
+    executeCode:
+      wantsCodeFiles &&
+      (loadedFileToolNames.has(Tools.execute_code) ||
+        (loadedFileToolNames.has('bash_tool') && loadedFileToolNames.has('read_file'))),
+    fileSearch: wantsSearchFiles && loadedFileToolNames.has(Tools.file_search),
+  };
+  const consumersChanged =
+    fileConsumers.executeCode !== finalFileConsumers.executeCode ||
+    fileConsumers.fileSearch !== finalFileConsumers.fileSearch;
+  Object.assign(fileConsumers, finalFileConsumers);
+  const finalizeAttachments = (files: Array<TFile | undefined> | undefined): IMongoFile[] => {
+    const hydrated = toMongoFiles(files);
+    return consumersChanged
+      ? applyTurnDelivery(hydrated, { routing: deliveryRouting, consumers: fileConsumers })
+      : hydrated;
+  };
+  const finalAttachments = finalizeAttachments(primedAttachments);
+  const finalRequestAttachments = consumersChanged
+    ? applyTurnDelivery(
+        (primedRequestAttachments ?? []).filter((file): file is TFile => file != null),
+        {
+          routing: deliveryRouting,
+          consumers: fileConsumers,
+        },
+      )
+    : primedRequestAttachments;
+  const requestAttachments = toMongoFiles(finalRequestAttachments);
+  const agentContextAttachments = finalizeAttachments(primedAgentContextAttachments);
+  if (consumersChanged) {
+    /* A loader may drop a reader, including a skill extra on retry. Newly model-bound text
+     * must pass admission before it can escape initialization, just like initial fallback. */
+    const admissionFileIds = new Set(
+      (authorizedRunFiles ?? requestUsageFiles).map((file) => file.file_id),
+    );
+    assertAgentAttachmentLimits({
+      attachments: requestAttachments.filter(
+        (file) => admissionFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
+      ),
+      fileConfig: appConfig?.fileConfig,
+      endpoint: agent.endpoint ?? '',
+      endpointType: endpointFileType,
+    });
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      files: [...finalAttachments, ...requestAttachments, ...agentContextAttachments],
+    });
+  }
   const currentRequestFileIds = new Set(requestFileIds);
-  const currentRequestAttachments: TFile[] = (primedRequestAttachments ?? [])
+  const currentRequestAttachments: TFile[] = (finalRequestAttachments ?? [])
     .filter((file): file is TFile => file != null && currentRequestFileIds.has(file.file_id))
     .map((file) => ({
       ...file,
@@ -2371,6 +2456,7 @@ export async function initializeAgent(
     azureOptions: options.azureOptions,
     resendFiles,
     imageDetail,
+    deliveryRouting,
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,
@@ -2405,6 +2491,7 @@ export async function initializeAgent(
     requestAttachments,
     currentRequestAttachments,
     agentContextAttachments,
+    fileConsumers,
     toolContextMap: toolContextMap ?? {},
     dynamicToolContextMap: dynamicToolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

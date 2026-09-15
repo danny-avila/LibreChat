@@ -353,6 +353,93 @@ export function canToolResourceConsume(toolResource: string, mimeType: string): 
 const matchesMimeList = (mimeType: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(mimeType));
 
+/**
+ * The file-reading tools one agent's turn runs. Each flag requires deployment capability,
+ * the caller's role grant, and a reader in the final loaded tool set.
+ */
+export interface TurnFileConsumers {
+  executeCode: boolean;
+  fileSearch: boolean;
+}
+
+/** Whether a tool this turn runs can read a file of this type. */
+export function hasTurnFileConsumer(mimeType: string, consumers: TurnFileConsumers): boolean {
+  return (
+    (consumers.executeCode && canToolResourceConsume(EToolResources.execute_code, mimeType)) ||
+    (consumers.fileSearch && canToolResourceConsume(EToolResources.file_search, mimeType))
+  );
+}
+
+/**
+ * The inputs that route every attachment for the agent running a turn. Initialization
+ * settles them once, after the provider swap and the Responses API decision, and every
+ * reader of a turn route consumes this value rather than deriving one from the agent.
+ */
+export interface TurnDeliveryRouting {
+  fileConfig: FileConfig;
+  endpointConfig: EndpointFileConfig;
+  /** The endpoint the file policy is configured under: a custom endpoint's own name, not
+   *  the client family initialization runs it as. */
+  endpoint: string;
+  /** The dialect a custom endpoint declares, which decides whether it receives OpenAI-format
+   *  media; undefined for a built-in or OpenAI-compatible endpoint. */
+  endpointProvider?: string;
+  useResponsesApi?: boolean;
+  sttConfigured: boolean;
+}
+
+/** The fields of an attachment record that decide its delivery on a turn. */
+export interface TurnDeliveryFile {
+  type?: string;
+  text?: string | null;
+  /** Stored as an upload-time inference, so any string may be read back. */
+  llmDeliveryPath?: string | null;
+  metadata?: { routingMimeType?: string; destinationChosen?: boolean } | null;
+}
+
+const isLLMDeliveryPath = (value: unknown): value is TDefaultLLMDeliveryPath =>
+  value === 'provider' || value === 'text' || value === 'none';
+
+/** Whether a record's stored route was inferred at upload, so each turn resolves it again. */
+export function hasInferredLLMDeliveryPath(file: TurnDeliveryFile): boolean {
+  return file.llmDeliveryPath != null && file.metadata?.destinationChosen !== true;
+}
+
+/**
+ * Delivery path for one attachment on one agent's turn.
+ *
+ * A record predating routing and a destination the user chose keep what they stored. An
+ * inferred route re-resolves against the endpoint handling the turn. A `none` route leaves
+ * the file for a tool; where the endpoint enables `textFallbackWithoutTools` and this turn
+ * runs no tool that can read the file, the text extracted at upload is delivered rather than
+ * the file reaching nothing. Consumers left undefined are unknown and not judged, as in
+ * {@link resolveUploadDestination}.
+ */
+export function resolveTurnLLMDeliveryPath(
+  routing: Partial<TurnDeliveryRouting> | undefined,
+  file: TurnDeliveryFile,
+  consumers?: TurnFileConsumers,
+): TDefaultLLMDeliveryPath | undefined {
+  if (routing == null || !hasInferredLLMDeliveryPath(file)) {
+    return isLLMDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined;
+  }
+  const { endpointConfig } = routing;
+  /* Conversion changes the stored type, so use the type routing originally saw. */
+  const mimeType = file.metadata?.routingMimeType ?? file.type ?? '';
+  const path = resolveUploadLLMDeliveryPath({ mimeType, ...routing });
+  const hasFallbackText = typeof file.text === 'string' && file.text.length > 0;
+  if (
+    path === 'none' &&
+    endpointConfig?.textFallbackWithoutTools === true &&
+    consumers != null &&
+    hasFallbackText &&
+    !hasTurnFileConsumer(mimeType, consumers)
+  ) {
+    return 'text';
+  }
+  return path;
+}
+
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
 export type UploadRejection = 'no-agent-resource' | 'context-disabled' | 'no-consumer';
 

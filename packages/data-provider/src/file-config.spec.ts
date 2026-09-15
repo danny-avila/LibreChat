@@ -2008,6 +2008,58 @@ describe('defaultLLMDeliveryPath config merging', () => {
   });
 });
 
+describe('textFallbackWithoutTools config merging', () => {
+  const resolveFor = (dynamic: Parameters<typeof mergeFileConfig>[0], endpoint: string) =>
+    getEndpointFileConfig({ fileConfig: mergeFileConfig(dynamic), endpoint })
+      .textFallbackWithoutTools;
+
+  it('is off unless configured', () => {
+    expect(mergeFileConfig(undefined).textFallbackWithoutTools).toBeUndefined();
+    expect(resolveFor(undefined, EModelEndpoint.openAI)).toBeUndefined();
+    expect(resolveFor({ endpoints: { default: {} } }, EModelEndpoint.openAI)).toBeUndefined();
+  });
+
+  it('accepts the setting at the top level and on an endpoint', () => {
+    expect(
+      fileConfigSchema.safeParse({
+        textFallbackWithoutTools: true,
+        endpoints: { openAI: { textFallbackWithoutTools: false } },
+      }).success,
+    ).toBe(true);
+    expect(fileConfigSchema.safeParse({ textFallbackWithoutTools: 'yes' }).success).toBe(false);
+  });
+
+  it('reaches an endpoint configured for it', () => {
+    expect(
+      resolveFor(
+        { endpoints: { [EModelEndpoint.openAI]: { textFallbackWithoutTools: true } } },
+        EModelEndpoint.openAI,
+      ),
+    ).toBe(true);
+  });
+
+  it('is inherited from the top level and from the default endpoint', () => {
+    expect(resolveFor({ textFallbackWithoutTools: true }, EModelEndpoint.anthropic)).toBe(true);
+    expect(
+      resolveFor({ endpoints: { default: { textFallbackWithoutTools: true } } }, 'MyGateway'),
+    ).toBe(true);
+  });
+
+  it('lets an endpoint turn off what it would inherit', () => {
+    expect(
+      resolveFor(
+        {
+          endpoints: {
+            default: { textFallbackWithoutTools: true },
+            [EModelEndpoint.openAI]: { textFallbackWithoutTools: false },
+          },
+        },
+        EModelEndpoint.openAI,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('agent attachment context limits', () => {
   it('keeps the turn-memory ceiling separate from agent upload storage', () => {
     expect(baseFileConfig.fileContextSizeLimit).toBe(128 * 1024 * 1024);
