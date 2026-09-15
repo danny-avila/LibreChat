@@ -27,6 +27,9 @@ describe('LibreChat Tailwind preset', () => {
     expect(resolved.theme.spacing['theme-control']).toBe(
       `var(--theme-control-height, ${defaultAppearance.controlHeight})`,
     );
+    expect(resolved.theme.spacing['theme-control-touch']).toBe(
+      `max(var(--theme-control-height, ${defaultAppearance.controlHeight}), 2.75rem)`,
+    );
     expect(resolved.theme.borderRadius['theme-control']).toBe(
       `var(--theme-control-radius, ${defaultAppearance.controlRadius})`,
     );
@@ -48,6 +51,22 @@ describe('LibreChat Tailwind preset', () => {
     expect(resolved.theme.transitionDuration['theme-normal']).toBe(
       `var(--theme-motion-normal, ${defaultAppearance.motionNormal})`,
     );
+  });
+
+  /** The tap-target floor is half CSS and half variant: a spacing key nothing can
+   *  reach is not a floor, so the registration is asserted, not just the value. */
+  it('registers the appearance variants the utilities are written against', () => {
+    const variants = {};
+    tailwindPreset.plugins.forEach((plugin) =>
+      plugin({
+        addVariant: (name, value) => {
+          variants[name] = value;
+        },
+      }),
+    );
+
+    expect(variants.coarse).toBe('@media (pointer: coarse)');
+    expect(variants['high-contrast']).toBe('html.high-contrast &');
   });
 
   it('exposes the preset in the published package', () => {
