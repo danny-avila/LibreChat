@@ -12,7 +12,7 @@ import {
 } from '../agents/management';
 
 const TAG = 'Agents';
-const SECURITY = ['apiKeyBearer', 'oidcBearer'];
+const SECURITY = ['oidcBearer'];
 
 /**
  * `edges[].prompt` accepts a string or a function at runtime (see agents/validation.ts).
@@ -176,12 +176,13 @@ export const agentContracts: EndpointContract[] = [
         'multipart/form-data': {
           schema: {
             type: 'object',
-            required: ['file', 'tool_resource'],
+            required: ['file', 'purpose'],
             properties: {
               file: { type: 'string', format: 'binary' },
-              tool_resource: {
+              purpose: {
                 type: 'string',
-                description: 'The tool resource the file is uploaded for, e.g. file_search.',
+                enum: ['file_search', 'execute_code', 'context'],
+                description: 'The tool resource the file is uploaded for.',
               },
             },
           },

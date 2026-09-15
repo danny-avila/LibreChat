@@ -21,9 +21,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -87,9 +84,6 @@
           "Agents"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -168,9 +162,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -235,9 +226,6 @@
           "Agents"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -314,9 +302,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -384,9 +369,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -409,16 +391,21 @@
                 "type": "object",
                 "required": [
                   "file",
-                  "tool_resource"
+                  "purpose"
                 ],
                 "properties": {
                   "file": {
                     "type": "string",
                     "format": "binary"
                   },
-                  "tool_resource": {
+                  "purpose": {
                     "type": "string",
-                    "description": "The tool resource the file is uploaded for, e.g. file_search."
+                    "enum": [
+                      "file_search",
+                      "execute_code",
+                      "context"
+                    ],
+                    "description": "The tool resource the file is uploaded for."
                   }
                 }
               }
@@ -475,9 +462,6 @@
           "Agents"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -545,9 +529,6 @@
           "Agents"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -624,9 +605,6 @@
           "Skills"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -705,9 +683,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -773,9 +748,6 @@
         ],
         "security": [
           {
-            "apiKeyBearer": []
-          },
-          {
             "oidcBearer": []
           }
         ],
@@ -840,6 +812,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The skill changed since the provided expectedVersion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -852,9 +834,6 @@
           "Skills"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -922,9 +901,6 @@
           "Skills"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -999,9 +975,6 @@
           "Skills"
         ],
         "security": [
-          {
-            "apiKeyBearer": []
-          },
           {
             "oidcBearer": []
           }
@@ -1083,11 +1056,6 @@
   },
   "components": {
     "securitySchemes": {
-      "apiKeyBearer": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "A LibreChat API key, sent as a bearer token."
-      },
       "oidcBearer": {
         "type": "http",
         "scheme": "bearer",

@@ -13,7 +13,7 @@ import {
 import { agentManagementListSchema, agentManagementErrorSchema } from '../agents/management';
 
 const TAG = 'Skills';
-const SECURITY = ['apiKeyBearer', 'oidcBearer'];
+const SECURITY = ['oidcBearer'];
 
 const skillListResponseSchema = z.object({
   object: z.literal('list'),
@@ -88,6 +88,11 @@ export const skillContracts: EndpointContract[] = [
     body: skillManagementUpdateSchema,
     responses: [
       { status: 200, description: 'The updated skill', schema: skillManagementResponseSchema },
+      {
+        status: 409,
+        description: 'The skill changed since the provided expectedVersion',
+        schema: agentManagementErrorSchema,
+      },
       ...errorResponses,
     ],
   },

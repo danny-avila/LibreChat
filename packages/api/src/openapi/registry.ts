@@ -3,13 +3,8 @@ import type { EndpointContract, SecurityScheme } from './adapter';
 import { agentComponentSchemas, agentContracts } from './agents';
 import { skillComponentSchemas, skillContracts } from './skills';
 
-/** The public Agents API accepts an API key or an OIDC token, both as a bearer token. */
+/** The agent and skill management endpoints authenticate with an OIDC access token (bearer). */
 export const securitySchemes: Record<string, SecurityScheme> = {
-  apiKeyBearer: {
-    type: 'http',
-    scheme: 'bearer',
-    description: 'A LibreChat API key, sent as a bearer token.',
-  },
   oidcBearer: {
     type: 'http',
     scheme: 'bearer',
