@@ -17,6 +17,7 @@ import {
   resolveErrorTurn,
   startedAsNewConversation,
 } from '~/hooks/SSE/useEventHandlers';
+import { stripStreamedIndexStamps, getPartKeyIndex } from '~/utils';
 
 describe('buildCreatedInitialResponse', () => {
   const userMessage = {
@@ -394,8 +395,9 @@ describe('resolveErrorTurn', () => {
     },
   ] as TMessageContentParts[];
   const streamedResponse = { ...initialResponse, content: streamedParts };
+  const startFailureText = JSON.stringify({ code: 'code_workspace_unavailable', reason: 'locked' });
   const startFailure = {
-    text: JSON.stringify({ code: 'code_workspace_unavailable', reason: 'locked' }),
+    text: startFailureText,
     metadata: { streamStartFailed: true },
   } as unknown as TResData;
 
@@ -411,7 +413,7 @@ describe('resolveErrorTurn', () => {
     expect(recover).toBe(false);
     expect(errorResponse.content).toEqual([
       ...streamedParts,
-      { type: ContentTypes.ERROR, error: startFailure.text },
+      { type: ContentTypes.ERROR, error: startFailureText },
     ]);
     expect(errorResponse.error).toBeUndefined();
     expect(errorResponse.text).toBe('');
@@ -420,7 +422,7 @@ describe('resolveErrorTurn', () => {
     expect(errorResponse.metadata).toEqual({ streamStartFailed: true });
   });
 
-  it('drops stream holes and the empty text part a run opens before its first token', () => {
+  it('drops holes and empty slots, keeping the identity every kept part streamed under', () => {
     const { errorResponse } = resolveErrorTurn({
       data: startFailure,
       submission,
@@ -428,16 +430,47 @@ describe('resolveErrorTurn', () => {
         userMessage,
         {
           ...initialResponse,
-          content: [...streamedParts, undefined, { type: ContentTypes.TEXT, text: '' }],
+          content: [
+            { type: ContentTypes.THINK, think: '' },
+            streamedParts[0],
+            undefined,
+            streamedParts[1],
+            streamedParts[2],
+            { type: ContentTypes.TEXT, text: '' },
+          ],
         } as TMessage,
       ],
       isNewConversationRoute: false,
     });
 
-    expect(errorResponse.content).toEqual([
+    const content = errorResponse.content ?? [];
+    expect(stripStreamedIndexStamps(content)).toEqual([
       ...streamedParts,
-      { type: ContentTypes.ERROR, error: startFailure.text },
+      { type: ContentTypes.ERROR, error: startFailureText },
     ]);
+    expect(content.map((part, idx) => getPartKeyIndex(part, idx))).toEqual([1, 3, 4, 5]);
+  });
+
+  it('is the whole row when a comparison run failed before either lane streamed', () => {
+    const { errorResponse } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [
+        userMessage,
+        {
+          ...initialResponse,
+          content: [
+            { type: '', agentId: 'agent_a', groupId: 1 },
+            { type: '', agentId: 'agent_b', groupId: 1 },
+          ],
+        } as unknown as TMessage,
+      ],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse.content).toBeUndefined();
+    expect(errorResponse.error).toBe(true);
+    expect(errorResponse.text).toBe(startFailureText);
   });
 
   it('is the whole row when nothing streamed', () => {
@@ -450,7 +483,7 @@ describe('resolveErrorTurn', () => {
 
     expect(errorResponse.content).toBeUndefined();
     expect(errorResponse.error).toBe(true);
-    expect(errorResponse.text).toBe(startFailure.text);
+    expect(errorResponse.text).toBe(startFailureText);
     expect(errorResponse.messageId).toBe('user-1_');
     expect(errorResponse.parentMessageId).toBe('user-1');
   });
@@ -489,12 +522,13 @@ describe('resolveErrorTurn', () => {
   });
 
   it('keeps the streamed parts under a failure the server addressed to the conversation', () => {
+    const serverText = JSON.stringify({ type: 'invalid_request' });
     const data = {
       conversationId: 'conversation-1',
       messageId: 'user-1_',
       isCreatedByUser: false,
       sender: 'Lia',
-      text: JSON.stringify({ type: 'invalid_request' }),
+      text: serverText,
     } as unknown as TResData;
 
     const fromChat = resolveErrorTurn({
@@ -514,7 +548,7 @@ describe('resolveErrorTurn', () => {
     expect(fromNewChat.recover).toBe(true);
     expect(fromChat.errorResponse.content).toEqual([
       ...streamedParts,
-      { type: ContentTypes.ERROR, error: data.text },
+      { type: ContentTypes.ERROR, error: serverText },
     ]);
     expect(fromChat.errorResponse.parentMessageId).toBe('user-1');
   });

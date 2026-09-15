@@ -40,6 +40,8 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
   preserveStreamedContentIdentity,
+  isEmptyContentPart,
+  getPartKeyIndex,
 } from '~/utils';
 import {
   startupConfigKey,
@@ -232,28 +234,38 @@ export type EventHandlerParams = {
 
 const CONNECTION_ERROR_TEXT = 'Error connecting to server, try refreshing the page.';
 
-const isEmptyTextPart = (part: TMessageContentParts): boolean => {
-  if (part.type !== ContentTypes.TEXT) {
-    return false;
-  }
-  const text = part[ContentTypes.TEXT];
-  return typeof text === 'string' ? text === '' : (text?.value ?? '') === '';
-};
-
 /**
- * The parts the in-flight response has streamed so far, without the holes an interrupted stream
- * leaves and the empty text part a run opens before its first token. Only the transcript's tail
- * can be the in-flight response; a user row there means no response was placed.
+ * The parts the in-flight response has streamed so far: the transcript's tail (a user row there
+ * means no response was placed), without the holes an interrupted stream leaves and without the
+ * slots that never received content — a comparison run's `type: ''` placeholders, a text or think
+ * part opened before its first delta. The kept parts carry the render identity they streamed
+ * under, as the final path stamps it, so the settled row does not remount.
  */
 const getStreamedContent = (message?: TMessage): TMessageContentParts[] => {
   if (message == null || message.isCreatedByUser === true) {
     return [];
   }
-  const content = (message.content ?? []).filter(
-    (part): part is TMessageContentParts => part != null,
+  const streamed = message.content ?? [];
+  const kept = streamed.filter(
+    (part): part is TMessageContentParts => part != null && !isEmptyContentPart(part),
   );
-  const lastPart = content[content.length - 1];
-  return lastPart != null && isEmptyTextPart(lastPart) ? content.slice(0, -1) : content;
+  return preserveStreamedContentIdentity(streamed, kept) ?? kept;
+};
+
+/** Keys the appended failure past every key the kept parts render under, physical or stamped. */
+const appendErrorPart = (
+  content: TMessageContentParts[],
+  errorText: string,
+): TMessageContentParts[] => {
+  const keyIndex = content.reduce(
+    (next, part, idx) => Math.max(next, getPartKeyIndex(part, idx) + 1),
+    0,
+  );
+  const errorPart: TMessageContentParts = { type: ContentTypes.ERROR, error: errorText };
+  return [
+    ...content,
+    keyIndex === content.length ? errorPart : { ...errorPart, streamedIndex: keyIndex },
+  ];
 };
 
 /**
@@ -285,7 +297,7 @@ const createErrorMessage = ({
       ...errorMetadata,
       error: undefined,
       text: '',
-      content: [...streamedContent, { type: ContentTypes.ERROR, error: errorText }],
+      content: appendErrorPart(streamedContent, errorText),
     };
     if (
       submission.userMessage.messageId &&
