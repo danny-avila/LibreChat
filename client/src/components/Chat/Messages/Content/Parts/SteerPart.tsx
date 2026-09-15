@@ -4,12 +4,12 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
+import { cn, hydrateFileDeliveryMetadata, usesImagePreview } from '~/utils';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useFileMapContext, useShareContext } from '~/Providers';
 import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { cn, hydrateFileDeliveryMetadata } from '~/utils';
 import CollapsibleText from './CollapsibleText';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -70,12 +70,9 @@ const SteerPart = memo(function SteerPart({
     () => hydrateFileDeliveryMetadata(files, undefined, fileMap),
     [files, fileMap],
   );
-  const imageFiles = useMemo(
-    () => hydratedFiles?.filter((file) => file.type?.startsWith('image/')) ?? [],
-    [hydratedFiles],
-  );
+  const imageFiles = useMemo(() => hydratedFiles?.filter(usesImagePreview) ?? [], [hydratedFiles]);
   const otherFiles = useMemo(
-    () => hydratedFiles?.filter((file) => !file.type?.startsWith('image/')) ?? [],
+    () => hydratedFiles?.filter((file) => !usesImagePreview(file)) ?? [],
     [hydratedFiles],
   );
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);

@@ -188,15 +188,21 @@ describe('SteerPart presentation', () => {
     expect(screen.getByTestId('steer-image')).toBeInTheDocument();
   });
 
-  it('opens the file preview dialog when a non-image steer attachment is clicked', () => {
-    mockFileMap = { f1: { llmDeliveryPath: 'text' } };
-    renderPart([{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }]);
-    expect(screen.queryByTestId('steer-file-preview')).toBeNull();
+  it.each(['application/pdf', 'image/png'])(
+    'opens extracted previews for %s attachments',
+    (type) => {
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
+      renderPart([{ file_id: 'f1', filename: 'notes.pdf', type }]);
+      expect(screen.queryByTestId('steer-file-preview')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('steer-file'));
-    expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
-    expect(screen.getByTestId('steer-file-preview')).toHaveAttribute('data-delivery-path', 'text');
-  });
+      fireEvent.click(screen.getByTestId('steer-file'));
+      expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
+      expect(screen.getByTestId('steer-file-preview')).toHaveAttribute(
+        'data-delivery-path',
+        'text',
+      );
+    },
+  );
 
   it('renders quoted excerpts as reference blocks inside the bubble', () => {
     render(

@@ -18,8 +18,8 @@ import {
   shouldUseSharedFileDownload,
 } from './preview';
 import {
-  revokeDownloadURL,
   useFilePreview,
+  useFilePreviewBlob,
   useFileDownload,
   useSharedFileDownload,
 } from '~/data-provider';
@@ -119,20 +119,14 @@ export default function FilePreviewDialog({
     },
     shareId,
   );
-  // Preview reads revoke their blob after consumption, so they need a separate
-  // query identity from user-triggered downloads that may be in flight concurrently.
+  // Downloads own URLs; previews share bytes and create only their display URL.
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
-  const { refetch: previewOwned } = useFileDownload(user?.id ?? '', fileId, {
-    direct: false,
-    purpose: 'preview',
-  });
-  const { refetch: previewShared } = useSharedFileDownload(shareId, fileId, 'preview');
+  const { refetch: previewFile } = useFilePreviewBlob(user?.id, fileId, shareId);
   // A shared viewer must stay inside the share-scoped authorization boundary;
   // citation and retrieval previews do not carry a rewritten filepath signal.
   const useShared = shouldUseSharedFileDownload(shareId, fileId);
   const downloadFile = useShared ? downloadShared : downloadOwned;
-  const previewFile = useShared ? previewShared : previewOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -172,22 +166,9 @@ export default function FilePreviewDialog({
     setLoading(true);
     const load = async () => {
       try {
-        const result = await previewFile();
-        if (!result.data) {
-          if (!cancelled) {
-            setPreviewError(true);
-          }
-          return;
-        }
-        let blob: Blob;
-        try {
-          if (cancelled) {
-            return;
-          }
-          const response = await fetch(result.data);
-          blob = await response.blob();
-        } finally {
-          revokeDownloadURL(result.data);
+        const { data: blob } = await previewFile();
+        if (!blob) {
+          throw new Error('Preview download unavailable');
         }
         if (cancelled) {
           return;

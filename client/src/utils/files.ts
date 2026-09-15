@@ -35,6 +35,11 @@ import type { ExtendedFile } from '~/common';
 
 export const partialTypes = ['text/x-'];
 
+/** Text-routed images use the file action so their extracted preview is reachable. */
+export function usesImagePreview(file: Partial<Pick<TFile, 'type' | 'llmDeliveryPath'>>): boolean {
+  return file.type?.startsWith('image/') === true && file.llmDeliveryPath !== 'text';
+}
+
 export type FileDeliveryMetadataMap = Readonly<
   Record<string, Pick<TFile, 'llmDeliveryPath'> | undefined>
 >;

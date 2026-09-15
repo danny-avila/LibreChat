@@ -15,10 +15,10 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { carriedSteerContext, cn, hydrateFileDeliveryMetadata, usesImagePreview } from '~/utils';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
-import { carriedSteerContext, cn, hydrateFileDeliveryMetadata } from '~/utils';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
@@ -43,7 +43,7 @@ const splitFiles = (files?: TMessage['files']) => {
   const images: NonNullable<TMessage['files']> = [];
   const others: NonNullable<TMessage['files']> = [];
   for (const file of files ?? []) {
-    (file.type?.startsWith('image/') === true ? images : others).push(file);
+    (usesImagePreview(file) ? images : others).push(file);
   }
   return { images, others };
 };

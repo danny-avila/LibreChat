@@ -42,6 +42,9 @@ jest.mock('~/data-provider', () => ({
   useFileDownload: (_user: string, _file: string, options: { purpose?: string }) => ({
     refetch: options.purpose === 'preview' ? mockOwnedPreview : mockDownload,
   }),
+  useFilePreviewBlob: (_user: string, _file: string, shareId?: string) => ({
+    refetch: shareId ? mockSharedPreview : mockOwnedPreview,
+  }),
   useSharedFileDownload: (_share: string, _file: string, purpose?: string) => ({
     refetch: purpose === 'preview' ? mockSharedPreview : mockDownload,
   }),
@@ -69,19 +72,13 @@ const props = {
 
 describe('FilePreviewDialog lifecycle', () => {
   it('renders an ordinary PDF and revokes its display URL on close', async () => {
-    const fetchDescriptor = Object.getOwnPropertyDescriptor(global, 'fetch');
     const originalCreate = URL.createObjectURL;
     const originalRevoke = URL.revokeObjectURL;
     const revoke = jest.fn();
-    Object.defineProperty(global, 'fetch', {
-      configurable: true,
-      writable: true,
-      value: jest.fn().mockResolvedValue({ blob: async () => new Blob(['pdf']) }),
-    });
     URL.createObjectURL = jest.fn(() => 'blob:display');
     URL.revokeObjectURL = revoke;
     try {
-      mockOwnedPreview.mockResolvedValue({ data: 'blob:download' });
+      mockOwnedPreview.mockResolvedValue({ data: new Blob(['pdf']) });
       const view = render(<FilePreviewDialog {...props} />);
       await waitFor(() =>
         expect(screen.getByTitle('com_ui_preview: report.pdf')).toHaveAttribute(
@@ -89,15 +86,9 @@ describe('FilePreviewDialog lifecycle', () => {
           'blob:display',
         ),
       );
-      expect(mockRevoke).toHaveBeenCalledWith('blob:download');
       view.unmount();
       expect(revoke).toHaveBeenCalledWith('blob:display');
     } finally {
-      if (fetchDescriptor) {
-        Object.defineProperty(global, 'fetch', fetchDescriptor);
-      } else {
-        Reflect.deleteProperty(global, 'fetch');
-      }
       URL.createObjectURL = originalCreate;
       URL.revokeObjectURL = originalRevoke;
     }
@@ -140,7 +131,7 @@ describe('FilePreviewDialog lifecycle', () => {
   });
 
   it('recovers late metadata while open and discards the obsolete binary response', async () => {
-    let resolve!: (value: { data: string }) => void;
+    let resolve!: (value: { data: Blob }) => void;
     mockOwnedPreview.mockReturnValue(
       new Promise((done) => {
         resolve = done;
@@ -151,27 +142,28 @@ describe('FilePreviewDialog lifecycle', () => {
     view.rerender(<FilePreviewDialog {...props} />);
     expect(screen.getByText('extracted document')).toBeInTheDocument();
     await act(async () => {
-      resolve({ data: 'blob:obsolete' });
+      resolve({ data: new Blob(['obsolete']) });
     });
-    expect(mockRevoke).toHaveBeenCalledWith('blob:obsolete');
     expect(screen.queryByTitle('com_ui_preview: report.pdf')).toBeNull();
   });
 
-  it('starts a fresh request after closing and ignores the earlier response', async () => {
-    let resolve!: (value: { data: string }) => void;
-    mockOwnedPreview.mockReturnValueOnce(
+  it('handles a deduplicated response after closing and reopening', async () => {
+    let resolve!: (value: { data: Blob }) => void;
+    mockOwnedPreview.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       }),
     );
-    const view = render(<FilePreviewDialog {...props} />);
-    view.rerender(<FilePreviewDialog {...props} open={false} />);
-    view.rerender(<FilePreviewDialog {...props} />);
+    const textProps = { ...props, fileName: 'notes.txt', fileType: 'text/plain' };
+    const view = render(<FilePreviewDialog {...textProps} />);
+    view.rerender(<FilePreviewDialog {...textProps} open={false} />);
+    view.rerender(<FilePreviewDialog {...textProps} />);
     expect(mockOwnedPreview).toHaveBeenCalledTimes(2);
     await act(async () => {
-      resolve({ data: 'blob:closed' });
+      resolve({ data: { text: async () => 'shared bytes' } as Blob });
     });
-    expect(mockRevoke).toHaveBeenCalledWith('blob:closed');
+    expect(screen.getByText('shared bytes')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_preview_unavailable')).toBeNull();
   });
 
   it('uses only shared metadata and the shared authorization scope', async () => {

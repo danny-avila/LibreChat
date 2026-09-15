@@ -652,22 +652,28 @@ describe('InFlightSteers', () => {
     expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
   });
 
-  it('hydrates preview delivery metadata when the file map arrives after the steer', () => {
-    const steer: PendingSteer = {
-      steerId: 's1',
-      text: 'see attached',
-      status: 'pending',
-      createdAt: 1,
-      files: [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }],
-    };
-    const rendered = renderSteers([steer]);
+  it.each(['application/pdf', 'image/png'])(
+    'hydrates %s preview metadata after the steer',
+    (type) => {
+      const steer: PendingSteer = {
+        steerId: 's1',
+        text: 'see attached',
+        status: 'pending',
+        createdAt: 1,
+        files: [{ file_id: 'f1', filename: 'notes.pdf', type }],
+      };
+      const rendered = renderSteers([steer]);
 
-    mockFileMap = { f1: { llmDeliveryPath: 'text' } };
-    rendered.rerender(steersElement([steer]));
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
+      rendered.rerender(steersElement([steer]));
 
-    fireEvent.click(screen.getByTestId('steer-file'));
-    expect(screen.getByTestId('steer-file-preview')).toHaveAttribute('data-delivery-path', 'text');
-  });
+      fireEvent.click(screen.getByTestId('steer-file'));
+      expect(screen.getByTestId('steer-file-preview')).toHaveAttribute(
+        'data-delivery-path',
+        'text',
+      );
+    },
+  );
 
   it('renders markdown the same way the applied part will, so text does not reflow on apply', () => {
     renderSteers([{ steerId: 's1', text: '**bold** steer', status: 'pending', createdAt: 1 }], {
