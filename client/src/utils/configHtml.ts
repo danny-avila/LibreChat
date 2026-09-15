@@ -42,6 +42,25 @@ export function createConfigHtmlSanitizer({
   };
 }
 
+export function createConfigHtmlTextSanitizer() {
+  const sanitizer = DOMPurify();
+
+  return (html?: string | null): string => {
+    if (!html) {
+      return '';
+    }
+
+    const fragment = sanitizer.sanitize(html, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+      ALLOW_DATA_ATTR: false,
+      ALLOW_ARIA_ATTR: false,
+      RETURN_DOM_FRAGMENT: true,
+    });
+    return fragment.textContent ?? '';
+  };
+}
+
 export function sanitizeConfigHtml(html?: string | null, options?: ConfigHtmlSanitizerOptions) {
   return createConfigHtmlSanitizer(options)(html);
 }
