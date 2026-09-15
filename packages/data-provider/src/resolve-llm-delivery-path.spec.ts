@@ -1,10 +1,15 @@
+import type { TurnFileConsumers } from './resolve-llm-delivery-path';
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
+import type { EndpointFileConfig } from './types/files';
 import type { TEndpoint } from './config';
 import {
+  hasTurnFileConsumer,
   isNativelyReadableText,
   canToolResourceConsume,
   resolveUploadDestination,
   getCustomEndpointProvider,
+  resolveTurnLLMDeliveryPath,
+  hasInferredLLMDeliveryPath,
   resolveDefaultLLMDeliveryPath,
   resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
@@ -748,5 +753,181 @@ describe('provider document capability', () => {
         'bedrock',
       ),
     ).toBe('provider');
+  });
+});
+
+describe('hasTurnFileConsumer', () => {
+  it('finds a reader only among the tools this turn runs', () => {
+    expect(hasTurnFileConsumer('text/csv', { executeCode: false, fileSearch: false })).toBe(false);
+    expect(hasTurnFileConsumer('text/csv', { executeCode: true, fileSearch: false })).toBe(true);
+    expect(hasTurnFileConsumer('text/csv', { executeCode: false, fileSearch: true })).toBe(true);
+  });
+
+  it('does not count a tool that cannot read the type', () => {
+    expect(hasTurnFileConsumer('video/mp4', { executeCode: false, fileSearch: true })).toBe(false);
+  });
+});
+
+describe('hasInferredLLMDeliveryPath', () => {
+  it('re-resolves only a route upload inferred', () => {
+    expect(hasInferredLLMDeliveryPath({ llmDeliveryPath: 'none' })).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      }),
+    ).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: true },
+      }),
+    ).toBe(false);
+    expect(hasInferredLLMDeliveryPath({ type: 'text/csv' })).toBe(false);
+  });
+});
+
+describe('resolveTurnLLMDeliveryPath', () => {
+  const endpointConfig: EndpointFileConfig = {
+    defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+    textFallbackWithoutTools: true,
+  };
+  const noReader: TurnFileConsumers = { executeCode: false, fileSearch: false };
+  const routedCsv = {
+    type: 'text/csv',
+    text: 'region,total\nwest,4',
+    llmDeliveryPath: 'none',
+    metadata: { destinationChosen: false },
+  };
+
+  it('delivers stored text when the turn runs no tool that can read the file', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({ file: routedCsv, consumers: noReader, endpointConfig }),
+    ).toBe('text');
+  });
+
+  it('keeps the tool route on an endpoint that has not enabled the fallback', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { ...endpointConfig, textFallbackWithoutTools: undefined },
+      }),
+    ).toBe('none');
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { ...endpointConfig, textFallbackWithoutTools: false },
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves the file to Run Code when the turn can read it with code', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: { executeCode: true, fileSearch: false },
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves the file to File Search when the turn can read it by retrieval', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: { executeCode: false, fileSearch: true },
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('does not judge a turn whose tools are unknown', () => {
+    expect(resolveTurnLLMDeliveryPath({ file: routedCsv, endpointConfig })).toBe('none');
+  });
+
+  it('keeps the tool route when upload stored no text to fall back to', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, text: undefined },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, text: '' },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('keeps a destination the user chose even when nothing this turn can read it', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, metadata: { destinationChosen: true } },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves a record predating routing to its legacy handling', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { type: 'text/csv', text: 'region,total' },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('does not fall back from a route that already reaches the model', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { defaultLLMDeliveryPath: { overrides: { 'text/csv': 'provider' } } },
+      }),
+    ).toBe('provider');
+  });
+
+  it('re-resolves media against the provider the endpoint runs as', () => {
+    /* A custom endpoint whose admin listed video receives it only while it speaks OpenAI's
+     * format, so the turn route has to see the declared provider the upload route saw. */
+    const video = {
+      type: 'video/mp4',
+      llmDeliveryPath: 'provider',
+      metadata: { destinationChosen: false },
+    };
+    const gateway = {
+      file: video,
+      consumers: noReader,
+      endpoint: 'MyGateway',
+      endpointConfig: { supportedMimeTypes: [/^video\/mp4$/] },
+    };
+
+    expect(resolveTurnLLMDeliveryPath({ ...gateway, endpointProvider: 'openAI' })).toBe('provider');
+    expect(resolveTurnLLMDeliveryPath({ ...gateway, endpointProvider: 'anthropic' })).toBe('none');
+  });
+
+  it('judges readers against the type routing saw before conversion', () => {
+    /* File Search reads the original CSV but not the converted image type, so checking the
+     * stored type here would wrongly find no reader and paste the file into the prompt. */
+    const converted = {
+      ...routedCsv,
+      type: 'image/png',
+      metadata: { destinationChosen: false, routingMimeType: 'text/csv' },
+    };
+
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: converted,
+        consumers: { executeCode: false, fileSearch: true },
+        endpointConfig,
+      }),
+    ).toBe('none');
   });
 });

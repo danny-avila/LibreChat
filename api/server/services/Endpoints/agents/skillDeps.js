@@ -295,6 +295,7 @@ function buildAgentToolContext({ agent, config }) {
       model_parameters: config.model_parameters,
       imageDetail: config.imageDetail,
       agentContextAttachments: config.agentContextAttachments,
+      fileConsumers: config.fileConsumers,
     },
     /** Per-agent resolved endpoint token/pricing config. Retained here because
      *  `agentToolContexts` is the one map that holds every agent — including

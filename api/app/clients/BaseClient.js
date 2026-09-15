@@ -9,6 +9,7 @@ const {
   sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
+  applyTurnDelivery,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   getTransactionsConfig,
@@ -42,7 +43,7 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
-  resolveUploadLLMDeliveryPath,
+  resolveTurnLLMDeliveryPath,
   isSpeechProviderConfigured,
   resolveUseResponsesApi,
   getCustomEndpointProvider,
@@ -832,9 +833,8 @@ class BaseClient {
     if (this.options.resendFiles !== false && this.authorizedHistoricalFiles == null) {
       const historicalFileState = collectModelBoundHistoricalFileIdState(modelBoundStoredMessages);
       this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
-      const files = await getOwnerHistoricalFiles(
-        historicalFileState.fileIds,
-        this.options.req?.user,
+      const files = this.resolveTurnAttachments(
+        await getOwnerHistoricalFiles(historicalFileState.fileIds, this.options.req?.user),
       );
       this.authorizedHistoricalFiles = new Map(
         files
@@ -1804,7 +1804,16 @@ class BaseClient {
     });
   }
 
-  /** Re-resolves an inferred upload route against the provider handling this turn. */
+  /** The turn's view of stored attachment records, applied wherever this client loads them. */
+  resolveTurnAttachments(files) {
+    return applyTurnDelivery(files, {
+      agent: this.options.agent,
+      config: this.options.req?.config,
+      consumers: this.options.agent?.fileConsumers,
+    });
+  }
+
+  /** Resolves an attachment's route against the provider and tools handling this turn. */
   getAttachmentDeliveryPath(file) {
     if (!this._mergedFileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
@@ -1819,23 +1828,21 @@ class BaseClient {
       });
     }
 
-    return file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
-      ? file.llmDeliveryPath
-      : resolveUploadLLMDeliveryPath({
-          /* Conversion changes the stored type, so use the type routing originally saw. */
-          mimeType: file.metadata?.routingMimeType ?? file.type,
-          endpointConfig: this._endpointFileConfig,
-          fileConfig: this._mergedFileConfig,
-          endpoint: this._deliveryEndpoint,
-          endpointProvider:
-            this.options.agent?.provider ??
-            getCustomEndpointProvider(
-              this.options.req?.config?.endpoints?.custom,
-              this._deliveryEndpoint,
-            ),
-          useResponsesApi: this.usesResponsesApi(),
-          sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
-        });
+    return resolveTurnLLMDeliveryPath({
+      file,
+      consumers: this.options.agent?.fileConsumers,
+      endpointConfig: this._endpointFileConfig,
+      fileConfig: this._mergedFileConfig,
+      endpoint: this._deliveryEndpoint,
+      endpointProvider:
+        this.options.agent?.provider ??
+        getCustomEndpointProvider(
+          this.options.req?.config?.endpoints?.custom,
+          this._deliveryEndpoint,
+        ),
+      useResponsesApi: this.usesResponsesApi(),
+      sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
+    });
   }
 
   async processAttachments(message, attachments) {
@@ -1961,9 +1968,8 @@ class BaseClient {
     const historicalFileState = collectModelBoundHistoricalFileIdState(_messages);
     this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
     const authorizedFilesById = new Map();
-    const files = await getOwnerHistoricalFiles(
-      historicalFileState.fileIds,
-      this.options.req?.user,
+    const files = this.resolveTurnAttachments(
+      await getOwnerHistoricalFiles(historicalFileState.fileIds, this.options.req?.user),
     );
     const nonSteerReplayFileIds = collectModelBoundHistoricalFileIdState(
       _messages.map((message) => ({
