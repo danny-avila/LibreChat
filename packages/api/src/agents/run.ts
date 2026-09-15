@@ -114,6 +114,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
+import { buildPromptCacheKey } from '~/endpoints/openai/promptCache';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -1280,14 +1281,18 @@ function resolveSummarizationProvider(
     const provider = detectedProvider ?? overrideProvider;
     /**
      * On the agent's provider the SDK layers these over the agent's own client options, so this
-     * different endpoint replaces the agent's API mode, first-party declaration, reasoning and
-     * request kwargs (an Azure Astra agent's Responses routing, for one) instead of inheriting them.
+     * different endpoint replaces the agent's API mode, first-party declaration, reasoning,
+     * request kwargs (an Azure Astra agent's Responses routing, for one) and prompt-cache
+     * identity instead of inheriting them. The cache key in particular names the agent's stable
+     * prefix, which a summarization request does not send.
      */
     if (provider === target.agentProvider) {
       clientOverrides.useResponsesApi ??= false;
       clientOverrides.firstPartyEndpoint ??= false;
       clientOverrides.modelKwargs ??= {};
       clientOverrides.reasoning ??= undefined;
+      clientOverrides.promptCacheKey ??= undefined;
+      clientOverrides.promptCacheExplicit ??= false;
     }
     return { provider, clientOverrides };
   } catch (error) {
@@ -2517,6 +2522,25 @@ export async function createRun({
         },
       );
     }
+
+    /**
+     * Deterministic `prompt_cache_key`, first-party OpenAI and Azure only.
+     * `getOpenAILLMConfig` resolved whether the endpoint allows one; only here
+     * do the stable instruction prefix and the final tool schemas both exist,
+     * so only here can the value be built. It is keyed on prompt identity and
+     * never on the conversation, so two chats — and two users — that share a
+     * prefix reach one cache entry instead of each writing their own.
+     */
+    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & { response_format?: unknown };
+    if (cacheOptions.promptCacheKeyEnabled === true) {
+      cacheOptions.promptCacheKey = buildPromptCacheKey({
+        model: cacheOptions.model,
+        instructions: systemContent,
+        toolDefinitions,
+        responseSchema: cacheOptions.response_format,
+      });
+    }
+    delete cacheOptions.promptCacheKeyEnabled;
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     const agentInput: AgentInputs = {
