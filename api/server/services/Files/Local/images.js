@@ -97,7 +97,9 @@ async function prepareImagesLocal(req, file) {
   if (!fs.existsSync(userPath)) {
     fs.mkdirSync(userPath, { recursive: true });
   }
-  const filepath = path.join(publicPath, file.filepath);
+  // Strip cache-busting query strings (e.g. reused code-output images add `?v=...`)
+  // so encodeImage reads the real file, not a literal `*.png?v=...` path.
+  const filepath = path.join(publicPath, file.filepath.split('?')[0]);
 
   const promises = [];
   promises.push(updateFile({ file_id: file.file_id }));
