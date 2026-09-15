@@ -978,27 +978,39 @@ export function getOpenAILLMConfig({
     llmConfig.promptCacheRetention = promptCacheRetention;
   }
   /**
-   * Explicit cache controls additionally require a model that accepts them,
-   * because OpenAI rejects unknown body parameters outright rather than
-   * ignoring them. On Azure the visible model is an administrator-chosen
-   * alias, so the deployment it maps to is what identifies the served model.
+   * Explicit cache controls require a model that accepts them, because OpenAI
+   * rejects unknown body parameters outright rather than ignoring them. The
+   * decision is deferred to `applyExplicitPromptCache` below, once the wire
+   * identity is final: on Azure the served model is the deployment, and which
+   * deployment that is depends on `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` and the
+   * base URL, neither of which is resolved yet here.
    */
-  const explicitCacheSupported =
-    supportsExplicitPromptCache(llmConfig.model) ||
-    supportsExplicitPromptCache(azure ? azure.azureOpenAIApiDeploymentName : undefined);
-  if (firstPartyEndpoint && promptCacheExplicit === true && explicitCacheSupported) {
-    llmConfig.promptCacheExplicit = true;
-  }
-  /**
-   * `promptCacheExplicit` is a known parameter, so `addParams` and
-   * `defaultParams` assign it directly and reach the wire without passing the
-   * gate above. Declining to set it is therefore not enough — on a surface
-   * whose contract we own, an unsupported model has to have it removed.
-   * A gateway keeps whatever it is configured with, as everywhere else here.
-   */
-  if (firstPartyEndpoint && !explicitCacheSupported && llmConfig.promptCacheExplicit === true) {
-    delete llmConfig.promptCacheExplicit;
-  }
+  const promptCacheExplicitDropped = dropParams?.includes('promptCacheExplicit') === true;
+  const applyExplicitPromptCache = (deploymentName?: string) => {
+    const supported =
+      supportsExplicitPromptCache(llmConfig.model) || supportsExplicitPromptCache(deploymentName);
+    if (
+      firstPartyEndpoint &&
+      promptCacheExplicit === true &&
+      supported &&
+      !promptCacheExplicitDropped
+    ) {
+      llmConfig.promptCacheExplicit = true;
+      return;
+    }
+    /**
+     * `promptCacheExplicit` is a known parameter, so `addParams` and
+     * `defaultParams` assign it directly and would otherwise reach the wire
+     * without passing this gate. Declining to set it is not enough — on a
+     * surface whose contract we own, an unsupported model has to have it
+     * removed. Running after the drop cascade, this also has to re-honor an
+     * explicit drop rather than reinstate what the cascade removed. A gateway
+     * keeps whatever it is configured with.
+     */
+    if (firstPartyEndpoint && (!supported || promptCacheExplicitDropped)) {
+      delete llmConfig.promptCacheExplicit;
+    }
+  };
 
   if (!useOpenRouter) {
     hasModelKwargs =
@@ -1097,6 +1109,7 @@ export function getOpenAILLMConfig({
   }
 
   if (!azure) {
+    applyExplicitPromptCache();
     llmConfig.apiKey = apiKey;
     return { llmConfig, tools };
   }
@@ -1109,6 +1122,7 @@ export function getOpenAILLMConfig({
     : azure.azureOpenAIApiDeploymentName ||
       getAzureDeploymentName(baseURL, azure) ||
       (firstPartyAstra || llmConfig.useResponsesApi ? model : undefined);
+  applyExplicitPromptCache(updatedAzure.azureOpenAIApiDeploymentName);
 
   if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
     llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;

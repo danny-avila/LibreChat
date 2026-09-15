@@ -1853,7 +1853,21 @@ function finalizePromptCacheKey(input: AgentInputs): void {
     options.promptCacheKey = buildPromptCacheKey({
       model: options.model,
       instructions: input.instructions,
-      boundTools: [...(input.toolDefinitions ?? []), ...(graphTools ?? []), ...(input.tools ?? [])],
+      boundTools: [
+        ...(input.toolDefinitions ?? []),
+        ...(graphTools ?? []),
+        ...(input.tools ?? []),
+        /**
+         * Delegation is a model-facing tool the SDK generates from these
+         * entries rather than one of the arrays above, so its presence and
+         * the targets it offers have to enter the identity here or enabling,
+         * disabling or retargeting subagents would not retire the key.
+         */
+        ...(input.subagentConfigs ?? []).map((config) => ({
+          name: `subagent:${config.name}`,
+          description: config.description,
+        })),
+      ],
       responseSchema: options.response_format,
       responsesTextFormat: options.text?.format,
     });
@@ -1941,6 +1955,35 @@ function buildSubagentConfigs(
       stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
       agent.intentToolNames,
     );
+    const selfChildInputs: AgentInputs | undefined =
+      hasBackground || hasInjectedIntent
+        ? {
+            ...agentInput,
+            toolDefinitions: stripIntentFromToolDefinitions(
+              stripBackgroundFromToolDefinitions(
+                agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+              agent.intentToolNames,
+            ),
+            /** `registerBackgroundTaskTool` mutates the parent registry after
+             * configs are built. Detach its self-child snapshot so the host
+             * poll tool cannot appear there through that shared Map. */
+            toolRegistry:
+              detachedTasksEnabled && sanitizedToolRegistry != null
+                ? new Map(sanitizedToolRegistry)
+                : sanitizedToolRegistry,
+            /**
+             * Detach the client options too. A shallow spread shares the
+             * parent's object, so finalizing the parent's key would stamp this
+             * child with one naming the parent's unsanitized tools.
+             */
+            clientOptions: { ...agentInput.clientOptions },
+          }
+        : undefined;
+    if (selfChildInputs != null) {
+      finalizePromptCacheKey(selfChildInputs);
+    }
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -1948,27 +1991,7 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground || hasInjectedIntent
-        ? {
-            agentInputs: {
-              ...agentInput,
-              toolDefinitions: stripIntentFromToolDefinitions(
-                stripBackgroundFromToolDefinitions(
-                  agentInput.toolDefinitions,
-                  agent.backgroundToolNames,
-                ),
-                agent.intentToolNames,
-              ),
-              /** `registerBackgroundTaskTool` mutates the parent registry after
-               * configs are built. Detach its self-child snapshot so the host
-               * poll tool cannot appear there through that shared Map. */
-              toolRegistry:
-                detachedTasksEnabled && sanitizedToolRegistry != null
-                  ? new Map(sanitizedToolRegistry)
-                  : sanitizedToolRegistry,
-            },
-          }
-        : {}),
+      ...(selfChildInputs != null ? { agentInputs: selfChildInputs } : {}),
     });
   }
 
