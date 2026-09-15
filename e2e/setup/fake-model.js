@@ -70,6 +70,7 @@ const HANDOFF_MARKER = 'E2E_HANDOFF:';
 const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
 const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
+const SUBAGENT_ACTIVITY_FINAL_MARKER = 'E2E_SUBAGENT_ACTIVITY_FINAL:';
 const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
 const RUN_FILES_MARKER = 'E2E_RUN_FILES:';
 const RUN_FILES_CHILD_MARKER = 'E2E_RUN_FILES_CHILD:';
@@ -1743,7 +1744,8 @@ function runFileVersionsResponses(text) {
 }
 
 function parseSubagentActivityMarker(text) {
-  const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
+  const slowFinal = getMarkerValue(text, SUBAGENT_ACTIVITY_FINAL_MARKER);
+  const value = slowFinal || getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
   const separator = value.indexOf(':');
   if (separator <= 0 || separator === value.length - 1) {
     return null;
@@ -1757,6 +1759,7 @@ function parseSubagentActivityMarker(text) {
   return {
     childIds,
     label: value.slice(separator + 1),
+    slowFinal: Boolean(slowFinal),
   };
 }
 
@@ -1795,7 +1798,9 @@ function subagentActivityResponses(text) {
           message.tool_call_id.startsWith('call_e2e_subagent_activity_'),
       );
       if (backgroundTaskResults.length >= marker.childIds.length) {
-        return { response: `E2E detached subagents dispatched ${marker.label}` };
+        /** Leave time to edit a child control draft before the first parent FINAL. */
+        const suffix = marker.slowFinal ? ` ${slowChunkPayload()}` : '';
+        return { response: `E2E detached subagents dispatched ${marker.label}${suffix}` };
       }
 
       return {
