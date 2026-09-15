@@ -314,6 +314,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
+    const signal = new AbortController().signal;
     const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
       tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
       complete: false,
@@ -325,11 +326,13 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     const result = await reinitMCPServer({
       user,
       serverName,
+      signal,
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
     });
 
     expect(result.tools).toBeNull();
     expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
+    expect(fetchOrderedToolsSnapshot).toHaveBeenCalledWith(undefined, signal);
     expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 
@@ -552,6 +555,47 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
       }),
     ).rejects.toBe(rejection);
   });
+
+  it('propagates cancellation instead of hiding the server tool', async () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abort);
+    mockGetConnection.mockRejectedValue(abort);
+    await expect(
+      reinitMCPServer({
+        user: { id: 'user-123' },
+        serverName: 'example-mcp',
+        signal: controller.signal,
+        serverConfig: { type: 'streamable-http', url: 'https://mcp.example.com', source: 'yaml' },
+      }),
+    ).rejects.toBe(abort);
+  });
+
+  it.each([false, true])(
+    'preserves a typed OBO resolution failure (retryable=%s)',
+    async (retryable) => {
+      const { OboTokenResolutionError } = require('@librechat/api');
+      const rejection = new OboTokenResolutionError(
+        'session_refresh_failed',
+        'Sign-in expired.',
+        retryable,
+      );
+      mockGetConnection.mockRejectedValue(rejection);
+
+      await expect(
+        reinitMCPServer({
+          user: { id: 'user-123' },
+          serverName: 'private-mcp',
+          serverConfig: {
+            type: 'streamable-http',
+            url: 'https://mcp.example.com',
+            source: 'yaml',
+            obo: { scopes: 'api://mcp/.default' },
+          },
+        }),
+      ).rejects.toBe(rejection);
+    },
+  );
 });
 
 describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)', () => {

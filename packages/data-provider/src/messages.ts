@@ -334,7 +334,9 @@ export function isCompactedLeaf(message?: Pick<TMessage, 'content'> | null): boo
     if (part?.type !== ContentTypes.SUMMARY) {
       return false;
     }
-    if (part.summarizing === true || part.failed === true) {
+    /** No `boundary` means the round never completed: only the final summary
+     *  block carries one, so a part holding streamed deltas alone lacks it. */
+    if (part.summarizing === true || part.failed === true || part.boundary == null) {
       continue;
     }
     const hasText = (part.content ?? []).some(

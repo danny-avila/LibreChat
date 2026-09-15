@@ -397,6 +397,19 @@ function normalizeOptionalString(value: string | undefined, maxLength: number): 
   return requireBoundedString(value, maxLength);
 }
 
+function normalizeDeliveryPath(
+  value: AgentQueuedTurnFileRef['llmDeliveryPath'],
+): AgentQueuedTurnFileRef['llmDeliveryPath'] {
+  if (value == null) {
+    return undefined;
+  }
+  const normalized = requireBoundedString(value, 32);
+  if (normalized !== 'provider' && normalized !== 'text' && normalized !== 'none') {
+    throw new TypeError('Agent queued turn file delivery path is invalid');
+  }
+  return normalized;
+}
+
 function normalizeFiles(files: readonly AgentQueuedTurnFileRef[] | undefined) {
   if (files == null || files.length === 0) {
     return undefined;
@@ -422,6 +435,9 @@ function normalizeFiles(files: readonly AgentQueuedTurnFileRef[] | undefined) {
       }),
       ...(normalizeOptionalString(file.filename, 1024) != null && {
         filename: normalizeOptionalString(file.filename, 1024),
+      }),
+      ...(normalizeDeliveryPath(file.llmDeliveryPath) != null && {
+        llmDeliveryPath: normalizeDeliveryPath(file.llmDeliveryPath),
       }),
       ...(file.height != null && {
         height: requireNonnegativeNumber(file.height),
@@ -525,7 +541,13 @@ function normalizeEnqueue(input: EnqueueAgentQueuedTurnInput) {
 }
 
 function fingerprint(payload: ReturnType<typeof normalizeEnqueue>): string {
-  return createHash('sha256').update(JSON.stringify(payload)).digest('base64url');
+  /** Delivery routing is display metadata, not user intent. Excluding it keeps
+   * retries compatible with replicas deployed before the field was persisted. */
+  const stableIntent = {
+    ...payload,
+    files: payload.files?.map(({ llmDeliveryPath: _displayMetadata, ...file }) => file),
+  };
+  return createHash('sha256').update(JSON.stringify(stableIntent)).digest('base64url');
 }
 
 function laneKey(input: AgentQueuedTurnConversationScope): string {

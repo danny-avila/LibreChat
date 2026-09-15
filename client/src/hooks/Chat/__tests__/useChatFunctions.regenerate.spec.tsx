@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { getDefaultStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ import type {
   TSubmission,
 } from 'librechat-data-provider';
 import { useGetMessagesByConvoId } from '~/data-provider/Messages/queries';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -196,6 +198,7 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+    expect(submission.conversation.codeApprovalMode).toBe('acceptEdits');
   });
 
   it('preallocates a durable Agents user id for the optimistic response anchor', () => {
@@ -233,6 +236,30 @@ describe('useChatFunctions ask', () => {
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(mockResolveCodeWorkspaceSubmission).toHaveBeenCalledWith([selection], 'attached');
     expect(submission.codeWorkspaces).toEqual([selection]);
+  });
+
+  it('refuses every direct send before consuming composer context during handoff', () => {
+    const family = revealedQueuedTurnFamily('conversation-1');
+    getDefaultStore().set(family, {
+      clientRequestId: 'queued',
+      parentMessageId: 'response',
+      generationCreatedAt: 41,
+      text: 'queued',
+      revealedAt: new Date().toISOString(),
+    });
+    try {
+      const { result, setSubmission, getMessages } = renderAsk([]);
+      expect(result.current.ask({ text: 'direct' })).toBe(false);
+      expect(
+        result.current.ask({ text: 'rerun', parentMessageId: 'earlier' }, { isRegenerate: true }),
+      ).toBe(false);
+      expect(mockResolveCodeWorkspaceSubmission).not.toHaveBeenCalled();
+      expect(getMessages).not.toHaveBeenCalled();
+      expect(setSubmission).not.toHaveBeenCalled();
+      expect(mockSetFilesToDelete).not.toHaveBeenCalled();
+    } finally {
+      getDefaultStore().set(family, null);
+    }
   });
 
   it('refuses to send when workspace submission resolution is not ready', () => {

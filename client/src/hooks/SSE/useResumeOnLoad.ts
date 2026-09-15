@@ -21,6 +21,7 @@ import {
   applyPendingAction,
   carriedSteerContext,
   getBranchSiblingIndexesForTarget,
+  hydrateFileDeliveryMetadata,
 } from '~/utils';
 import {
   useStreamStatus,
@@ -37,7 +38,10 @@ import {
 } from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { revealedQueuedTurnFamily } from '~/store/steer';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 /**
@@ -272,6 +276,7 @@ export default function useResumeOnLoad(
   runIndex = 0,
   messagesLoaded = true,
 ) {
+  const fileMap = useFileMapContext();
   const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
@@ -368,13 +373,18 @@ export default function useResumeOnLoad(
               const keepLocalPreempt =
                 (localChip?.preemptRevision ?? 0) > (steer.preemptRevision ?? 0);
               const chipGenerationCreatedAt = generationCreatedAt ?? localChip?.generationCreatedAt;
+              const restoredFiles = hydrateFileDeliveryMetadata(
+                steer.files,
+                localChip?.files,
+                fileMap,
+              );
               return {
                 steerId: steer.steerId,
                 ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
                 text: steer.text,
                 status: 'pending' as const,
                 createdAt: steer.createdAt ?? Date.now(),
-                ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                ...(restoredFiles && restoredFiles.length > 0 && { files: restoredFiles }),
                 ...((keepLocalPreempt ? localChip?.preempt : steer.preempt) === true && {
                   preempt: true,
                 }),
@@ -399,7 +409,7 @@ export default function useResumeOnLoad(
           ];
         });
       },
-    [],
+    [fileMap],
   );
 
   const settleAppliedSteerParts = useRecoilCallback(
@@ -769,6 +779,17 @@ export default function useResumeOnLoad(
            *  and finished inside a poll gap, its turns are on the server and
            *  nowhere else; one refetch is the whole repair, and marking an
            *  off-screen conversation stale costs nothing until it is opened. */
+          const revealFamily = revealedQueuedTurnFamily(owedConversationId);
+          const pendingReveal = jotaiStore.get(revealFamily);
+          if (
+            pendingReveal != null &&
+            Date.parse(pendingReveal.revealedAt) <= latch.quietSince! &&
+            !isQueuedTurnSuccessorOwed(
+              queryClient.getQueryData(agentQueuedTurnsQueryKey(owedConversationId)),
+            )
+          ) {
+            jotaiStore.set(revealFamily, null);
+          }
           queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, owedConversationId] });
         }, remaining),
       );
@@ -790,7 +811,7 @@ export default function useResumeOnLoad(
         clearTimeout(timer);
       }
     };
-  }, [owedSuccessors, owedIsReporting, conversationId, queryClient]);
+  }, [owedSuccessors, owedIsReporting, conversationId, queryClient, jotaiStore]);
 
   const shouldCheck =
     resumableEnabled &&
@@ -912,6 +933,30 @@ export default function useResumeOnLoad(
 
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      const revealFamily = revealedQueuedTurnFamily(conversationId);
+      const pendingReveal = jotaiStore.get(revealFamily);
+      /** A remounted pane may have missed attachment and the quiet-window
+       * timer. An expired job has no epoch; require a fresh inactive read
+       * after restored history before retiring its surviving handoff guard. */
+      const historyUpdatedAt = queryClient.getQueryState([
+        QueryKeys.messages,
+        conversationId,
+      ])?.dataUpdatedAt;
+      if (
+        pendingReveal != null &&
+        streamStatus.active === false &&
+        streamStatus.createdAt == null &&
+        historyUpdatedAt != null &&
+        streamStatusUpdatedAt >= historyUpdatedAt &&
+        streamStatusUpdatedAt > Date.parse(pendingReveal.revealedAt) &&
+        !isQueuedTurnSuccessorOwed(queuedTurnReceipts) &&
+        (getMessages() ?? []).some(
+          (message) => message.parentMessageId === pendingReveal.parentMessageId,
+        )
+      ) {
+        jotaiStore.set(revealFamily, null);
+      }
+
       // A terminal drain may have parked acknowledged steers no subscriber
       // received (tab closed / reload racing the final event) — the status
       // claim returns them exactly once; restore as queued follow-up chips.
@@ -1042,6 +1087,8 @@ export default function useResumeOnLoad(
     isFetching,
     streamStatus,
     streamStatusUpdatedAt,
+    queuedTurnReceipts,
+    queryClient,
     getMessages,
     setSubmission,
     setSubmissionStart,

@@ -1490,6 +1490,44 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('keeps a mode picked while a settled start was pending', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      conversationId: CONV_ID,
+      status: 'settled',
+      generationProtocolVersion: 2,
+    });
+    mockGetConversationById.mockResolvedValue({
+      conversationId: CONV_ID,
+      endpoint: 'agents',
+      codeApprovalMode: 'fullAccess',
+    });
+    mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+      queryKey[0] === QueryKeys.conversation
+        ? { conversationId: CONV_ID, codeApprovalMode: 'ask' }
+        : undefined,
+    );
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), chatHelpers));
+
+    await waitFor(() => {
+      expect(chatHelpers.setConversation).toHaveBeenCalled();
+    });
+
+    const update = chatHelpers.setConversation.mock.calls.at(-1)?.[0];
+    expect(update({ conversationId: CONV_ID, codeApprovalMode: 'ask' }).codeApprovalMode).toBe(
+      'ask',
+    );
+    expect(
+      update({ conversationId: 'conv-elsewhere', codeApprovalMode: 'ask' }).codeApprovalMode,
+    ).toBe('fullAccess');
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      [QueryKeys.conversation, CONV_ID],
+      expect.objectContaining({ codeApprovalMode: 'ask' }),
+    );
+    unmount();
+  });
+
   it.each(['settled', 'replaced'] as const)(
     'rejects an unnegotiated %s start control response',
     async (status) => {
@@ -2176,73 +2214,114 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('reconciles a synthesized terminal frame without rendering a bogus final or error', async () => {
-    (request.post as jest.Mock).mockResolvedValue({
-      streamId: CONV_ID,
-      status: 'started',
-      generationCreatedAt: 1000,
-      generationProtocolVersion: 2,
-    });
-    const persisted = [
-      {
-        messageId: 'persisted-response',
-        conversationId: CONV_ID,
-        isCreatedByUser: false,
-        text: 'Persisted answer',
-      },
-    ] as TMessage[];
-    mockGetQueryData.mockReturnValue(persisted);
-    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
-    const submission = buildSubmission();
-    const chatHelpers = buildChatHelpers();
-    getDefaultStore().set(pendingApprovalActionFamily(CONV_ID), {
-      actionId: 'stale-action',
-      streamId: CONV_ID,
-      createdAt: 1000,
-      payload: { type: 'tool_approval', action_requests: [], review_configs: [] },
-    });
-
-    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
-    await flushMicrotasks();
-
-    const sse = getLastSSE();
-    await act(async () => {
-      sse._emit('message', {
-        data: JSON.stringify({
-          final: true,
-          reconcile: true,
-          reconcileReason: 'terminal_payload_missing',
-          terminalStatus: 'complete',
-          generationCreatedAt: 1000,
-          generationProtocolVersion: 2,
-          conversation: { conversationId: CONV_ID },
+  it.each([
+    'status',
+    'submission',
+    'unique-placeholder',
+    'ambiguous-placeholder',
+    'missing-response',
+  ])(
+    'reconciles a synthesized terminal using %s response identity instead of a later sibling',
+    async (identitySource) => {
+      (request.post as jest.Mock).mockResolvedValue({
+        streamId: CONV_ID,
+        status: 'started',
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      });
+      const persisted = [
+        {
+          messageId: 'persisted-response',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: 'Persisted answer',
+        },
+        {
+          messageId: 'later-sibling',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: 'A different branch',
+        },
+      ] as TMessage[];
+      if (identitySource === 'unique-placeholder') {
+        persisted.pop();
+      }
+      mockGetQueryData.mockReturnValue(persisted);
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        generationProtocolVersion: 2,
+        ...(identitySource === 'status' && {
+          resumeState: { responseMessageId: 'persisted-response' },
         }),
       });
-      await Promise.resolve();
-    });
-    await flushMicrotasks();
+      const responseIds: Record<string, string> = {
+        submission: 'persisted-response_',
+        'missing-response': 'missing-response_',
+      };
+      const submission = buildSubmission({
+        initialResponse: { messageId: responseIds[identitySource] ?? 'msg-1_' },
+      });
+      const chatHelpers = buildChatHelpers();
+      getDefaultStore().set(pendingApprovalActionFamily(CONV_ID), {
+        actionId: 'stale-action',
+        streamId: CONV_ID,
+        createdAt: 1000,
+        payload: { type: 'tool_approval', action_requests: [], review_configs: [] },
+      });
 
-    expect(mockFinalHandler).not.toHaveBeenCalled();
-    expect(mockErrorHandler).not.toHaveBeenCalled();
-    expect(getDefaultStore().get(pendingApprovalActionFamily(CONV_ID))).toBeNull();
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: [QueryKeys.messages, CONV_ID],
-      refetchType: 'none',
-    });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: [QueryKeys.allConversations],
-    });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: [QueryKeys.pinnedConversations],
-    });
-    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
-    expect(mockSetRunEnd).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
-    );
-    expect(mockSetSubmission).toHaveBeenCalledWith(null);
-    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, null, 1000);
-    unmount();
-  });
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            final: true,
+            reconcile: true,
+            reconcileReason: 'terminal_payload_missing',
+            terminalStatus: 'complete',
+            generationCreatedAt: 1000,
+            generationProtocolVersion: 2,
+            conversation: { conversationId: CONV_ID },
+          }),
+        });
+        await Promise.resolve();
+      });
+      await flushMicrotasks();
+
+      expect(mockFinalHandler).not.toHaveBeenCalled();
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      expect(getDefaultStore().get(pendingApprovalActionFamily(CONV_ID))).toBeNull();
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONV_ID],
+        refetchType: 'none',
+      });
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.allConversations],
+      });
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.pinnedConversations],
+      });
+      expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
+      expect(mockSetRunEnd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: CONV_ID,
+          outcome: 'completed',
+          ...(['status', 'submission', 'unique-placeholder'].includes(identitySource) && {
+            responseMessageId: 'persisted-response',
+          }),
+        }),
+      );
+      if (['ambiguous-placeholder', 'missing-response'].includes(identitySource)) {
+        expect(mockSetRunEnd.mock.calls.at(-1)?.[0]).not.toHaveProperty('responseMessageId');
+      }
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+      expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, null, 1000);
+      unmount();
+    },
+  );
 
   it('ignores v2-only lifecycle reconciliation on a legacy generation', async () => {
     (request.post as jest.Mock).mockResolvedValue({

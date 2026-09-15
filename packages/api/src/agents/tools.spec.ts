@@ -431,6 +431,27 @@ describe('buildHistoricalToolNames', () => {
 });
 
 describe('registerCodeExecutionTools', () => {
+  it('advertises selected named actions to the model', () => {
+    const result = registerCodeExecutionTools({
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      includeBash: true,
+      workspaceTools: true,
+      workspaceOperations: new Set(['execute_command']),
+      workspaceEnvironment: {
+        fingerprint: 'a'.repeat(64),
+        repo: 'owner/app',
+        ref: 'main',
+        actions: ['check'],
+      },
+    });
+    const bash = result.toolDefinitions.find((def) => def.name === 'bash_tool');
+    expect(bash?.parameters).toMatchObject({
+      required: [],
+      properties: { environmentAction: { enum: ['check'] } },
+    });
+    expect(bash?.description).toContain('owner/app');
+  });
   const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
 
   describe('fresh run (no pre-existing defs or registry entries)', () => {

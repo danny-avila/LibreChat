@@ -5,6 +5,8 @@ import useSteerConvert from '../useSteerConvert';
 import store from '~/store';
 
 const mockFetchStreamStatus = jest.fn();
+let mockFileMap: Record<string, { llmDeliveryPath: 'text' }> = {};
+jest.mock('~/Providers', () => ({ useFileMapContext: () => mockFileMap }));
 jest.mock('~/data-provider', () => ({
   fetchStreamStatus: (...args: unknown[]) => mockFetchStreamStatus(...args),
   getGenerationProtocolVersion: (value: unknown) =>
@@ -45,6 +47,47 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void) {
 }
 
 describe('useSteerConvert', () => {
+  beforeEach(() => {
+    mockFileMap = {};
+  });
+
+  it.each([false, true])(
+    'hydrates late metadata during terminal recovery (queued origin: %s)',
+    (fromQueue) => {
+      const files = [{ file_id: 'f1', filename: 'notes.pdf' }];
+      const { result, rerender } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'legacy',
+            text: 'recover',
+            status: 'pending',
+            createdAt: 1,
+            files,
+            ...(fromQueue && {
+              queuedOrigin: {
+                item: { id: 'original', text: 'recover', createdAt: 1, files },
+                beforeIds: [],
+                afterIds: [],
+              },
+            }),
+          },
+        ]);
+      });
+      const retainedCallback = result.current.convert;
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
+      rerender();
+      act(() => {
+        retainedCallback(CONVO_ID, [{ steerId: 'legacy', text: 'recover', files }]);
+      });
+      expect(result.current.queue[0].files).toEqual([{ ...files[0], llmDeliveryPath: 'text' }]);
+      expect(result.current.chips).toEqual([]);
+      act(() => {
+        retainedCallback(CONVO_ID, [{ steerId: 'legacy', text: 'recover', files }]);
+      });
+      expect(result.current.queue).toHaveLength(1);
+    },
+  );
+
   it('converts leftover steers to queued chips and drops their pending chips', () => {
     const { result } = setup(({ set }) => {
       set(store.pendingSteersByConvoId(CONVO_ID), [

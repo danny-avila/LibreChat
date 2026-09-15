@@ -44,6 +44,7 @@ export {
   MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  DEFAULT_RETAINED_ANSWER_TOKENS,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
 
@@ -1036,6 +1037,32 @@ export const toolApprovalPolicySchema = z
 
 export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
 
+export const askUserQuestionRetainedAnswersSchema = z.object({
+  /** `false` stops carrying answers forward; they then live only in the messages. */
+  enabled: z.boolean().optional(),
+  /** Token ceiling for the carried block. Older answers drop first once it is
+   *  exceeded; the newest set is always kept. Defaults to
+   *  `DEFAULT_RETAINED_ANSWER_TOKENS` (4096). */
+  maxTokens: z.number().int().positive().optional(),
+});
+
+/**
+ * Behavior of the `ask_user_question` tool beyond the admin kill switch
+ * (`filteredTools` / `includedTools`).
+ *
+ * `retainedAnswers`: every answer the user gave to an agent's question is
+ * quoted verbatim in the run's user context, so it survives after the
+ * messages that carried it were summarized, pruned or dropped from the context
+ * window. On by default.
+ */
+export const askUserQuestionConfigSchema = z
+  .object({
+    retainedAnswers: askUserQuestionRetainedAnswersSchema.optional(),
+  })
+  .optional();
+
+export type TAskUserQuestionConfig = z.infer<typeof askUserQuestionConfigSchema>;
+
 /**
  * Durable checkpointer backing human-in-the-loop resume.
  *
@@ -1421,6 +1448,8 @@ export const agentsEndpointSchema = baseEndpointSchema
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
+      /** Ask User question behavior; see {@link askUserQuestionConfigSchema}. */
+      askUserQuestion: askUserQuestionConfigSchema,
       /** Durable checkpointer backing tool-approval and Ask User resume.
        *  Defaults to the app's MongoDB when either flow needs it. */
       checkpointer: checkpointerSchema,
@@ -3211,10 +3240,9 @@ const fitlerAssistantModels = (str: string) => {
 const openAIModels = defaultModels[EModelEndpoint.openAI];
 
 /**
- * The OpenAI catalog without the models only the first-party OpenAI endpoint
- * can run. Azure OpenAI shares this list, but Astra is neither routed to the
- * Responses API nor given its request constraints there, and listing it first
- * would let it become the default selection.
+ * Preserve Azure's fallback default selection when the OpenAI catalog gains
+ * Responses-preferred models. Configured Azure deployments supply their own
+ * model list, including Astra when deployed.
  */
 const nonResponsesOnlyOpenAIModels = openAIModels.filter(
   (model) => !responsesOnlyOpenAIModels.includes(model),

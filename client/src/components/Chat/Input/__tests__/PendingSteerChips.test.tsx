@@ -2,10 +2,10 @@ import React from 'react';
 import { getDefaultStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { escalatingSteerFamily } from '~/store/steer';
+import { escalatingSteerFamily, revealedQueuedTurnFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
@@ -705,4 +705,73 @@ describe('PendingSteerChips — queued hint', () => {
     renderChips([queuedItem], { steering: { duringRunActive: false } });
     expect(screen.queryByRole('img', { name: hintName })).toBeNull();
   });
+});
+
+describe('PendingSteerChips — revealed queued turn', () => {
+  const revealedFamily = () => revealedQueuedTurnFamily(CONVO_ID);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    act(() => {
+      getDefaultStore().set(revealedFamily(), null);
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      getDefaultStore().set(revealedFamily(), null);
+    });
+  });
+
+  const serverRow = (clientRequestId: string): QueuedMessage => ({
+    id: `q-${clientRequestId}`,
+    text: `queued ${clientRequestId}`,
+    createdAt: 1,
+    clientRequestId,
+    server: { id: `server-${clientRequestId}`, status: 'queued', revision: 1 },
+  });
+
+  it('reduces the row shown as the next turn to its remove action', () => {
+    getDefaultStore().set(revealedFamily(), {
+      clientRequestId: 'req-1',
+      parentMessageId: 'response-1',
+      text: 'queued req-1',
+      revealedAt: '2026-09-14T00:00:00.000Z',
+    });
+    renderChips([serverRow('req-1'), serverRow('req-2')], {
+      steering: { duringRunActive: true, canSendQueuedNow: false, canSteer: false },
+    });
+
+    const rows = screen.getAllByTestId('queued-message-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('com_ui_queued_turn_starting');
+    expect(within(rows[0]).queryByRole('button', { name: 'com_ui_more_options' })).toBeNull();
+    expect(within(rows[0]).getByRole('button', { name: /com_ui_remove/ })).toBeInTheDocument();
+    expect(rows[1]).not.toHaveTextContent('com_ui_queued_turn_starting');
+    expect(
+      within(rows[1]).getByRole('button', { name: 'com_ui_more_options' }),
+    ).toBeInTheDocument();
+  });
+  it.each([true, false])(
+    'attempts claimed cancellation and respects acceptance=%s',
+    async (accepted) => {
+      const message = serverRow('req-1');
+      message.server!.status = 'claimed';
+      getDefaultStore().set(revealedFamily(), {
+        clientRequestId: 'req-1',
+        parentMessageId: 'response-1',
+        text: message.text,
+        revealedAt: new Date().toISOString(),
+      });
+      mockDiscardQueued.mockResolvedValueOnce(accepted);
+      renderChips([message], { steering: { duringRunActive: true, canSendQueuedNow: false } });
+      const remove = screen.getByRole('button', { name: /com_ui_remove/ });
+      expect(remove).toBeEnabled();
+      await userEvent.click(remove);
+      await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(message));
+      expect(mockRemoveQueued).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(mockRestoreToComposer).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(mockSendQueuedNow).not.toHaveBeenCalled();
+    },
+  );
 });

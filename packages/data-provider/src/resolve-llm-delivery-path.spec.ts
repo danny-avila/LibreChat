@@ -1,11 +1,35 @@
+import type {
+  TurnFileConsumers,
+  TurnDeliveryFile,
+  TurnDeliveryRouting,
+} from './resolve-llm-delivery-path';
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
+import type { EndpointFileConfig } from './types/files';
+import type { TEndpoint } from './config';
 import {
+  hasTurnFileConsumer,
   isNativelyReadableText,
   canToolResourceConsume,
   resolveUploadDestination,
+  getCustomEndpointProvider,
+  resolveTurnLLMDeliveryPath as resolveStoredTurnPath,
+  hasInferredLLMDeliveryPath,
   resolveDefaultLLMDeliveryPath,
+  resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
+import { mergeFileConfig, supportedMimeTypes, getEndpointFileConfig } from './file-config';
+
+function resolveTurnLLMDeliveryPath({
+  file,
+  consumers,
+  ...routing
+}: {
+  file: TurnDeliveryFile;
+  consumers?: TurnFileConsumers;
+} & Partial<TurnDeliveryRouting>) {
+  return resolveStoredTurnPath(routing, file, consumers);
+}
 
 describe('resolveDefaultLLMDeliveryPath', () => {
   it('should return system default for images when no config provided', () => {
@@ -300,6 +324,97 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  describe('media a custom endpoint opted into', () => {
+    /* The encoders emit OpenAI-format media parts for an OpenAI-compatible endpoint only
+     * when the admin listed the type in its `supportedMimeTypes`, so the route has to
+     * agree: an explicit match is provider-capable, the inherited default list is not. */
+    const explicit = [/^image\/.*$/, /^application\/pdf$/, /^video\/.*$/, /^audio\/wav$/];
+    const resolve = (mimeType: string, endpoint: string, types?: RegExp[]) =>
+      resolveDefaultLLMDeliveryPath(
+        mimeType,
+        undefined,
+        undefined,
+        endpoint,
+        undefined,
+        true,
+        types,
+      );
+
+    it('keeps an explicitly allowed type on the provider path for a custom endpoint', () => {
+      expect(resolve('video/mp4', 'MyGateway', explicit)).toBe('provider');
+      expect(resolve('audio/wav', 'MyGateway', explicit)).toBe('provider');
+    });
+
+    it('still downgrades a media type the allowlist does not name', () => {
+      expect(resolve('audio/mpeg', 'MyGateway', explicit)).toBe('text');
+    });
+
+    it('does not read the inherited default list as an opt-in', () => {
+      expect(resolve('video/mp4', 'MyGateway', supportedMimeTypes)).toBe('none');
+      expect(resolve('video/mp4', 'MyGateway', [])).toBe('none');
+    });
+
+    it('does not opt in a built-in endpoint, which the client offers no media for', () => {
+      /* Anthropic and Bedrock encoders have no media branch at all, and OpenAI/Azure are
+       * left out because the picker and drag-drop only open media for custom endpoints:
+       * a route the client cannot send to is a capability with no entry point. */
+      expect(resolve('video/mp4', 'openAI', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'azureOpenAI', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'anthropic', explicit)).toBe('none');
+      expect(resolve('video/mp4', 'bedrock', explicit)).toBe('none');
+    });
+
+    it('keeps a custom endpoint that runs as Anthropic on its previous route', () => {
+      /* A custom endpoint may declare `provider: anthropic`, and the encoders emit
+       * OpenAI-format parts only, so the opt-in would deliver nothing there. Audio keeps
+       * its transcription route and video stays off the model path. */
+      const endpointConfig = { supportedMimeTypes: explicit };
+      const anthropic = { mimeType: 'video/mp4', endpointConfig, endpoint: 'MyClaude' };
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'anthropic' })).toBe(
+        'none',
+      );
+      expect(
+        resolveUploadLLMDeliveryPath({
+          ...anthropic,
+          mimeType: 'audio/wav',
+          endpointProvider: 'anthropic',
+          sttConfigured: true,
+        }),
+      ).toBe('text');
+      expect(resolveUploadLLMDeliveryPath({ ...anthropic, endpointProvider: 'openAI' })).toBe(
+        'provider',
+      );
+      expect(resolveUploadLLMDeliveryPath(anthropic)).toBe('provider');
+    });
+
+    it('reaches the upload resolver through the merged endpoint config', () => {
+      /* The real merge, so the identity check that separates a configured list from the
+       * inherited default is exercised the way the upload route exercises it. */
+      const fileConfig = mergeFileConfig({
+        endpoints: { MyGateway: { supportedMimeTypes: ['image/.*', 'video/.*'] } },
+      });
+      const configured = getEndpointFileConfig({ fileConfig, endpoint: 'MyGateway' });
+      const inherited = getEndpointFileConfig({ fileConfig, endpoint: 'OtherGateway' });
+
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: configured,
+          fileConfig,
+          endpoint: 'MyGateway',
+        }),
+      ).toBe('provider');
+      expect(
+        resolveUploadLLMDeliveryPath({
+          mimeType: 'video/mp4',
+          endpointConfig: inherited,
+          fileConfig,
+          endpoint: 'OtherGateway',
+        }),
+      ).toBe('none');
+    });
+  });
+
   it('leaves media alone when no endpoint is resolved at all', () => {
     /* An ephemeral agent reports no usable endpoint, which is not the same as naming one
      * we cannot identify. */
@@ -545,6 +660,27 @@ describe('resolveUploadDestination', () => {
   });
 });
 
+describe('getCustomEndpointProvider', () => {
+  const custom = [
+    { name: 'My Claude', provider: 'anthropic' },
+    { name: 'Ollama', provider: 'anthropic' },
+    { name: 'MyGateway' },
+  ] as Array<Partial<Pick<TEndpoint, 'name' | 'provider'>>>;
+
+  it('returns the declared dialect for a custom endpoint, matching the normalized name', () => {
+    expect(getCustomEndpointProvider(custom, 'My Claude')).toBe('anthropic');
+    /* The same normalization the file config lookup applies to endpoint names. */
+    expect(getCustomEndpointProvider(custom, 'ollama')).toBe('anthropic');
+  });
+
+  it('returns nothing for an endpoint without a dialect, an unknown one, or no config', () => {
+    expect(getCustomEndpointProvider(custom, 'MyGateway')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, 'Other')).toBeUndefined();
+    expect(getCustomEndpointProvider(undefined, 'My Claude')).toBeUndefined();
+    expect(getCustomEndpointProvider(custom, undefined)).toBeUndefined();
+  });
+});
+
 describe('isNativelyReadableText', () => {
   it('admits the application types whose payload is text', () => {
     /* Kept in step with the textual set in the content-protection code. Missing one sends
@@ -632,5 +768,181 @@ describe('provider document capability', () => {
         'bedrock',
       ),
     ).toBe('provider');
+  });
+});
+
+describe('hasTurnFileConsumer', () => {
+  it('finds a reader only among the tools this turn runs', () => {
+    expect(hasTurnFileConsumer('text/csv', { executeCode: false, fileSearch: false })).toBe(false);
+    expect(hasTurnFileConsumer('text/csv', { executeCode: true, fileSearch: false })).toBe(true);
+    expect(hasTurnFileConsumer('text/csv', { executeCode: false, fileSearch: true })).toBe(true);
+  });
+
+  it('does not count a tool that cannot read the type', () => {
+    expect(hasTurnFileConsumer('video/mp4', { executeCode: false, fileSearch: true })).toBe(false);
+  });
+});
+
+describe('hasInferredLLMDeliveryPath', () => {
+  it('re-resolves only a route upload inferred', () => {
+    expect(hasInferredLLMDeliveryPath({ llmDeliveryPath: 'none' })).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'text',
+        metadata: { destinationChosen: false },
+      }),
+    ).toBe(true);
+    expect(
+      hasInferredLLMDeliveryPath({
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: true },
+      }),
+    ).toBe(false);
+    expect(hasInferredLLMDeliveryPath({ type: 'text/csv' })).toBe(false);
+  });
+});
+
+describe('resolveTurnLLMDeliveryPath', () => {
+  const endpointConfig: EndpointFileConfig = {
+    defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
+    textFallbackWithoutTools: true,
+  };
+  const noReader: TurnFileConsumers = { executeCode: false, fileSearch: false };
+  const routedCsv = {
+    type: 'text/csv',
+    text: 'region,total\nwest,4',
+    llmDeliveryPath: 'none',
+    metadata: { destinationChosen: false },
+  };
+
+  it('delivers stored text when the turn runs no tool that can read the file', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({ file: routedCsv, consumers: noReader, endpointConfig }),
+    ).toBe('text');
+  });
+
+  it('keeps the tool route on an endpoint that has not enabled the fallback', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { ...endpointConfig, textFallbackWithoutTools: undefined },
+      }),
+    ).toBe('none');
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { ...endpointConfig, textFallbackWithoutTools: false },
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves the file to Run Code when the turn can read it with code', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: { executeCode: true, fileSearch: false },
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves the file to File Search when the turn can read it by retrieval', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: { executeCode: false, fileSearch: true },
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('does not judge a turn whose tools are unknown', () => {
+    expect(resolveTurnLLMDeliveryPath({ file: routedCsv, endpointConfig })).toBe('none');
+  });
+
+  it('keeps the tool route when upload stored no text to fall back to', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, text: undefined },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, text: '' },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('keeps a destination the user chose even when nothing this turn can read it', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { ...routedCsv, metadata: { destinationChosen: true } },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBe('none');
+  });
+
+  it('leaves a record predating routing to its legacy handling', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: { type: 'text/csv', text: 'region,total' },
+        consumers: noReader,
+        endpointConfig,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('does not fall back from a route that already reaches the model', () => {
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: routedCsv,
+        consumers: noReader,
+        endpointConfig: { defaultLLMDeliveryPath: { overrides: { 'text/csv': 'provider' } } },
+      }),
+    ).toBe('provider');
+  });
+
+  it('re-resolves media against the provider the endpoint runs as', () => {
+    /* A custom endpoint whose admin listed video receives it only while it speaks OpenAI's
+     * format, so the turn route has to see the declared provider the upload route saw. */
+    const video = {
+      type: 'video/mp4',
+      llmDeliveryPath: 'provider',
+      metadata: { destinationChosen: false },
+    };
+    const gateway = {
+      file: video,
+      consumers: noReader,
+      endpoint: 'MyGateway',
+      endpointConfig: { supportedMimeTypes: [/^video\/mp4$/] },
+    };
+
+    expect(resolveTurnLLMDeliveryPath({ ...gateway, endpointProvider: 'openAI' })).toBe('provider');
+    expect(resolveTurnLLMDeliveryPath({ ...gateway, endpointProvider: 'anthropic' })).toBe('none');
+  });
+
+  it('judges readers against the type routing saw before conversion', () => {
+    /* File Search reads the original CSV but not the converted image type, so checking the
+     * stored type here would wrongly find no reader and paste the file into the prompt. */
+    const converted = {
+      ...routedCsv,
+      type: 'image/png',
+      metadata: { destinationChosen: false, routingMimeType: 'text/csv' },
+    };
+
+    expect(
+      resolveTurnLLMDeliveryPath({
+        file: converted,
+        consumers: { executeCode: false, fileSearch: true },
+        endpointConfig,
+      }),
+    ).toBe('none');
   });
 });
