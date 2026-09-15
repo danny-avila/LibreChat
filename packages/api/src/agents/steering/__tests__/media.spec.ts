@@ -105,10 +105,11 @@ describe('buildSteerMedia', () => {
       getFiles,
     });
 
-    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [
-      secondDoc,
-      imageDoc,
-    ]);
+    expect(client.processAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      [secondDoc, imageDoc],
+      { executeCode: false, fileSearch: false },
+    );
     expect(result?.files?.map((file) => file.file_id)).toEqual(['f2', 'f1']);
   });
 
@@ -153,10 +154,19 @@ describe('buildSteerMedia', () => {
       assertFilesAllowed,
     });
 
-    expect(client.resolveTurnAttachments).toHaveBeenCalledWith([storedCsv]);
+    expect(client.resolveTurnAttachments).toHaveBeenCalledWith([storedCsv], {
+      executeCode: false,
+      fileSearch: false,
+    });
     expect(assertFilesAllowed).toHaveBeenCalledWith([turnCsv]);
-    expect(client.addFileContextToMessage).toHaveBeenCalledWith(expect.anything(), [turnCsv]);
-    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [turnCsv]);
+    expect(client.addFileContextToMessage).toHaveBeenCalledWith(expect.anything(), [turnCsv], {
+      executeCode: false,
+      fileSearch: false,
+    });
+    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [turnCsv], {
+      executeCode: false,
+      fileSearch: false,
+    });
   });
 
   it('prepends extracted file context to the steer text', async () => {
@@ -280,7 +290,7 @@ describe('stampSteerPartMedia', () => {
     await stampSteerPartMedia({ client, user, payload: [message], getFiles });
 
     expect(client.resolveTurnAttachments).toHaveBeenCalledWith([storedCsv]);
-    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [turnCsv]);
+    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [turnCsv], undefined);
   });
 
   it('consumes prefetched docs without issuing a second query', async () => {
@@ -305,7 +315,11 @@ describe('stampSteerPartMedia', () => {
     expect(getFiles).not.toHaveBeenCalled();
     expect(stamped).toHaveLength(1);
     expect(stamped[0].index).toBe(0);
-    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [imageDoc]);
+    expect(client.processAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      [imageDoc],
+      undefined,
+    );
   });
 
   it('does nothing when no steer part carries files', async () => {

@@ -2,6 +2,7 @@ import type { TurnFileConsumers, TurnDeliveryFile } from 'librechat-data-provide
 import {
   applyTurnDelivery as materializeTurnDelivery,
   resolveTurnDeliveryRouting,
+  resolveScopedTurnAttachments,
 } from './delivery';
 
 function applyTurnDelivery<T extends TurnDeliveryFile>(
@@ -224,5 +225,66 @@ describe('applyTurnDelivery', () => {
     const files = [{ ...csv, metadata: { destinationChosen: true } }];
 
     expect(applyTurnDelivery(files, { agent, config, consumers: noReader })).toBe(files);
+  });
+});
+
+describe('resolveScopedTurnAttachments', () => {
+  const file = {
+    file_id: 'csv',
+    type: 'text/csv',
+    text: 'sales,total',
+    llmDeliveryPath: 'none' as const,
+    metadata: { destinationChosen: false },
+  };
+  const routing = resolveTurnDeliveryRouting({ agent: { provider: 'openAI' }, config });
+  const receiver = {
+    agentId: 'handoff',
+    agent: { deliveryRouting: routing, fileConsumers: noReader },
+  };
+
+  it.each([
+    ['explicit destination', { ...file, metadata: { destinationChosen: true } }, routing],
+    ['legacy destination', { ...file, llmDeliveryPath: undefined, metadata: undefined }, routing],
+    [
+      'disabled fallback',
+      file,
+      resolveTurnDeliveryRouting({
+        agent: { provider: 'openAI' },
+        config: {
+          fileConfig: {
+            endpoints: {
+              openAI: { ...config.fileConfig.endpoints.openAI, textFallbackWithoutTools: false },
+            },
+          },
+        },
+      }),
+    ],
+  ])('preserves %s when a receiver has no reader', (_name, candidate, deliveryRouting) => {
+    expect(
+      resolveScopedTurnAttachments({
+        agents: [{ ...receiver, agent: { ...receiver.agent, deliveryRouting } }],
+        sharedConversationAgentIds: ['handoff'],
+        messages: [],
+        requestAttachments: [candidate],
+        sharedRunAttachmentIds: new Set(),
+      }).get('handoff'),
+    ).toEqual([]);
+  });
+
+  it('ignores unhydrated and no-longer-retained history and deduplicates shared prompt files', () => {
+    const stale = { ...file, file_id: 'stale' };
+    expect(
+      resolveScopedTurnAttachments({
+        agents: [receiver],
+        sharedConversationAgentIds: ['handoff'],
+        messages: [{ files: [{ file_id: 'unhydrated', text: 'untrusted' }, { file_id: 'csv' }] }],
+        historicalFiles: new Map([
+          [file.file_id, file],
+          [stale.file_id, stale],
+        ]),
+        requestAttachments: [file],
+        sharedRunAttachmentIds: new Set(['csv']),
+      }).get('handoff'),
+    ).toEqual([]);
   });
 });

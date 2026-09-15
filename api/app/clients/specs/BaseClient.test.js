@@ -1,6 +1,11 @@
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const BaseClientClass = require('../BaseClient');
-const { ContentFilterError, resolveTurnDeliveryRouting } = require('@librechat/api');
+const {
+  ContentFilterError,
+  resolveTurnDeliveryRouting,
+  buildSteerMedia,
+  Tokenizer,
+} = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
@@ -3468,6 +3473,51 @@ describe('BaseClient', () => {
 
       expect(TestClient.getAttachmentDeliveryPath(file)).toBe('text');
       expect(TestClient.getTextContextAttachments([file])).toEqual([file]);
+    });
+
+    test('delivers a late steer through fallback even when the initialized agent has file tools', async () => {
+      routeCsvToTools();
+      TestClient.options.agent = routedAgent({
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: true, fileSearch: true },
+      });
+      const file = {
+        file_id: 'late-csv',
+        filename: 'late.csv',
+        type: 'text/csv',
+        source: 'local',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+      const assertFilesAllowed = jest.fn();
+      const initEncoding = jest.spyOn(Tokenizer, 'initEncoding').mockResolvedValue(undefined);
+      const getTokenCount = jest.spyOn(Tokenizer, 'getTokenCount').mockReturnValue(4);
+      let result;
+      try {
+        result = await buildSteerMedia({
+          client: {
+            resolveTurnAttachments: TestClient.resolveTurnAttachments.bind(TestClient),
+            addFileContextToMessage:
+              BaseClientClass.prototype.addFileContextToMessage.bind(TestClient),
+            processAttachments: BaseClientClass.prototype.processAttachments.bind(TestClient),
+          },
+          user: { id: 'user-1' },
+          item: { steerId: 'late', text: 'Read this file', files: [{ file_id: file.file_id }] },
+          getFiles: jest.fn().mockResolvedValue([file]),
+          assertFilesAllowed,
+        });
+      } finally {
+        initEncoding.mockRestore();
+        getTokenCount.mockRestore();
+      }
+      expect(assertFilesAllowed).toHaveBeenCalledWith([{ ...file, llmDeliveryPath: 'text' }]);
+      expect(JSON.stringify(result.content)).toContain('region,total');
+      expect(file.llmDeliveryPath).toBe('none');
+      expect(TestClient.options.agent.fileConsumers).toEqual({
+        executeCode: true,
+        fileSearch: true,
+      });
     });
 
     test('keeps a tool-routed file off the prompt when this turn can read it with code', () => {

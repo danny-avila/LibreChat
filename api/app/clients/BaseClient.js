@@ -1773,8 +1773,8 @@ class BaseClient {
    * @param {MongoFile[]} attachments - Array of file attachments
    * @returns {Promise<void>}
    */
-  async addFileContextToMessage(message, attachments) {
-    const textAttachments = this.getTextContextAttachments(attachments);
+  async addFileContextToMessage(message, attachments, fileConsumers) {
+    const textAttachments = this.getTextContextAttachments(attachments, fileConsumers);
     const fileContext = await extractFileContext({
       attachments: textAttachments,
       req: this.options?.req,
@@ -1786,9 +1786,9 @@ class BaseClient {
     }
   }
 
-  getTextContextAttachments(attachments) {
+  getTextContextAttachments(attachments, fileConsumers) {
     return attachments.filter((file) => {
-      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      const deliveryPath = this.getAttachmentDeliveryPath(file, fileConsumers);
       /* Records predating delivery paths keep legacy extraction. Current routing is
        * authoritative for inferred uploads, so native provider bytes are not also
        * injected as extracted text after a provider handoff. */
@@ -1797,22 +1797,18 @@ class BaseClient {
   }
 
   /** The turn's view of stored records, applied before admission at every load. */
-  resolveTurnAttachments(files) {
+  resolveTurnAttachments(files, fileConsumers = this.options.agent?.fileConsumers) {
     return applyTurnDelivery(files, {
       routing: this.options.agent?.deliveryRouting,
-      consumers: this.options.agent?.fileConsumers,
+      consumers: fileConsumers,
     });
   }
 
-  getAttachmentDeliveryPath(file) {
-    return resolveTurnLLMDeliveryPath(
-      this.options.agent?.deliveryRouting,
-      file,
-      this.options.agent?.fileConsumers,
-    );
+  getAttachmentDeliveryPath(file, fileConsumers = this.options.agent?.fileConsumers) {
+    return resolveTurnLLMDeliveryPath(this.options.agent?.deliveryRouting, file, fileConsumers);
   }
 
-  async processAttachments(message, attachments) {
+  async processAttachments(message, attachments, fileConsumers) {
     const categorizedAttachments = {
       images: [],
       videos: [],
@@ -1837,7 +1833,7 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
-      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      const deliveryPath = this.getAttachmentDeliveryPath(file, fileConsumers);
       if (deliveryPath === 'text' || deliveryPath === 'none') {
         allFiles.push(file);
         continue;

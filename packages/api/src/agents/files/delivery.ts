@@ -13,6 +13,7 @@ import type {
   TurnFileConsumers,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { collectModelBoundHistoricalFileIdState } from '~/middleware/modelBoundContent';
 
 /** The app config a turn's attachment routing reads. */
 export type TurnDeliveryConfig = Pick<AppConfig, 'fileConfig' | 'speech' | 'endpoints'>;
@@ -90,4 +91,63 @@ export function applyCheckpointDelivery<T extends TurnDeliveryFile>(files: T[]):
       ? { ...file, llmDeliveryPath: 'text' }
       : file,
   );
+}
+
+/**
+ * A primary agent's tool route cannot decide whether a handoff receives text. Keep
+ * owner-hydrated candidates until each receiver resolves them, then add only text absent
+ * from the shared prompt to its scoped context. The existing scoped-context pipeline owns
+ * endpoint filtering, aggregate admission, inspection and extraction for these copies.
+ */
+export function resolveScopedTurnAttachments<T extends TurnDeliveryFile & { file_id: string }>({
+  agents,
+  sharedConversationAgentIds,
+  resendFiles,
+  messages,
+  historicalFiles,
+  requestAttachments,
+  sharedRunAttachmentIds,
+  attachmentsByAgentId,
+}: {
+  agents: readonly {
+    agentId: string;
+    agent: {
+      deliveryRouting?: TurnDeliveryRouting;
+      fileConsumers?: TurnFileConsumers;
+    };
+  }[];
+  /** Only the primary/handoff graph shares root conversation files. */
+  sharedConversationAgentIds: readonly string[];
+  resendFiles?: boolean;
+  messages: Parameters<typeof collectModelBoundHistoricalFileIdState>[0];
+  historicalFiles?: ReadonlyMap<string, T>;
+  requestAttachments: readonly T[];
+  sharedRunAttachmentIds: ReadonlySet<string>;
+  attachmentsByAgentId?: Map<string, T[]> | Record<string, T[]>;
+}): Map<string, T[]> {
+  const candidates = new Map<string, T>();
+  for (const fileId of collectModelBoundHistoricalFileIdState(resendFiles === false ? [] : messages)
+    .fileIds) {
+    const file = historicalFiles?.get(fileId);
+    if (file && !sharedRunAttachmentIds.has(fileId)) candidates.set(fileId, file);
+  }
+  for (const file of requestAttachments) {
+    if (!sharedRunAttachmentIds.has(file.file_id)) candidates.set(file.file_id, file);
+  }
+  const sharedAgents = new Set(sharedConversationAgentIds);
+  const result = new Map<string, T[]>();
+  for (const { agentId, agent } of agents) {
+    const scoped =
+      attachmentsByAgentId instanceof Map
+        ? (attachmentsByAgentId.get(agentId) ?? [])
+        : (attachmentsByAgentId?.[agentId] ?? []);
+    const files = new Map(scoped.map((file) => [file.file_id, file]));
+    for (const [fileId, file] of sharedAgents.has(agentId) ? candidates : []) {
+      if (files.has(fileId)) continue;
+      const path = resolveTurnLLMDeliveryPath(agent.deliveryRouting, file, agent.fileConsumers);
+      if (path === 'text' && file.text) files.set(fileId, { ...file, llmDeliveryPath: path });
+    }
+    result.set(agentId, [...files.values()]);
+  }
+  return result;
 }
