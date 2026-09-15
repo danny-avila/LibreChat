@@ -50,11 +50,19 @@ async function createAgent(
   return agent;
 }
 
+/**
+ * Reopens the combobox for each attempt. Saving the agent refetches the agent
+ * list, and a refetch that lands mid-click re-renders the listbox and detaches
+ * the option under the pointer, so retrying the click alone retries against a
+ * dead node.
+ */
 async function selectAgent(page: Page, agentName: string) {
   const form = await openAgentBuilder(page);
-  await form.getByRole('combobox', { name: 'Agent', exact: true }).click();
-  await page.getByRole('option', { name: agentName, exact: true }).click();
-  await expect(form.getByLabel('Agent name')).toHaveValue(agentName);
+  await expect(async () => {
+    await form.getByRole('combobox', { name: 'Agent', exact: true }).click();
+    await page.getByRole('option', { name: agentName, exact: true }).click({ timeout: 5000 });
+    await expect(form.getByLabel('Agent name')).toHaveValue(agentName, { timeout: 5000 });
+  }).toPass({ timeout: 30000 });
   await form.getByRole('button', { name: 'Select Agent' }).click();
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
 }
