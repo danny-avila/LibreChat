@@ -303,7 +303,12 @@ function QueuedRow({
         aria-label={localize(
           isUnconfirmed ? 'com_ui_dismiss_unconfirmed_delivery' : 'com_ui_remove_queued',
         )}
-        disabled={actionPending || (!serverActionable && !isUnconfirmed)}
+        disabled={
+          actionPending ||
+          (!serverActionable &&
+            !isUnconfirmed &&
+            !(message.server?.id != null && message.server.status === 'claimed'))
+        }
         onClick={() => {
           if (isUnconfirmed) {
             steering.removeQueued(message.id);

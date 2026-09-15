@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import type { TMessage } from 'librechat-data-provider';
 import type { RefObject } from 'react';
 import type { TMessageIcon } from '~/common';
+import { buildRevealedMessage, hasRevealSuccessor } from '~/hooks/Chat/useQueuedTurnReveal';
 import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import { messageFooterClasses } from '~/components/Chat/Messages/styles';
-import { buildRevealedMessage } from '~/hooks/Chat/useQueuedTurnReveal';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { revealedQueuedTurnFamily } from '~/store/steer';
@@ -30,8 +31,12 @@ const FOLLOW_THRESHOLD_PX = 160;
  */
 export default function PendingTurn({
   scrollableRef,
+  messages,
+  maximizeChatSpace = false,
 }: {
   scrollableRef?: RefObject<HTMLDivElement | null>;
+  messages?: TMessage[] | null;
+  maximizeChatSpace?: boolean;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -40,13 +45,20 @@ export default function PendingTurn({
   const reveal = useAtomValue(revealedQueuedTurnFamily(conversationId));
   const usernameDisplay = useRecoilValue(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
-  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const message = useMemo(
     () => (reveal == null ? null : buildRevealedMessage(reveal, conversationId)),
     [reveal, conversationId],
   );
-  const shown = message != null && reveal != null && reveal.parentMessageId === latestMessageId;
+  const successorSeen = useMemo(
+    () => reveal != null && hasRevealSuccessor(messages ?? [], reveal),
+    [messages, reveal],
+  );
+  const shown =
+    message != null &&
+    reveal != null &&
+    reveal.parentMessageId === latestMessageId &&
+    !successorSeen;
 
   /** A reader resting at the end of the thread was following the response;
    *  bring the turn that replaces it into view the way its streaming did.

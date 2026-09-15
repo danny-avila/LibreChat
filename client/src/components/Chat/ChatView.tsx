@@ -108,7 +108,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   // Show a server-owned queued follow-up as the next user turn as soon as its
   // predecessor completes, ahead of the receipt and active-job polls.
-  const revealQueuedTurn = useQueuedTurnReveal(conversationId, chatHelpers.getMessages);
+  const revealQueuedTurn = useQueuedTurnReveal(conversationId, index);
 
   // Auto-send queued follow-up messages once a run finishes cleanly.
   useQueueDrain(index, conversationId, chatHelpers.ask, revealQueuedTurn);

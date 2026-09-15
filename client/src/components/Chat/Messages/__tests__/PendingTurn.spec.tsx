@@ -4,7 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { act, render, screen } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { RevealedQueuedTurn } from '~/store/steer';
 import PendingTurn from '~/components/Chat/Messages/PendingTurn';
 import { revealedQueuedTurnFamily } from '~/store/steer';
@@ -48,9 +48,11 @@ const reveal = (overrides: Partial<RevealedQueuedTurn> = {}): RevealedQueuedTurn
 function renderPendingTurn({
   revealed,
   latestMessageId = RESPONSE_ID,
+  messages,
 }: {
   revealed?: RevealedQueuedTurn | null;
   latestMessageId?: string | undefined;
+  messages?: TMessage[];
 }) {
   const jotaiStore = createStore();
   if (revealed != null) {
@@ -65,7 +67,7 @@ function renderPendingTurn({
       <RecoilRoot>
         <JotaiProvider store={jotaiStore}>
           <ChatContext.Provider value={chatContext}>
-            <PendingTurn />
+            <PendingTurn messages={messages} />
           </ChatContext.Provider>
         </JotaiProvider>
       </RecoilRoot>
@@ -105,5 +107,19 @@ describe('PendingTurn', () => {
     });
 
     expect(screen.queryByTestId('pending-turn')).toBeNull();
+  });
+  it('hides the drawing once history has a successor while the handoff guard remains', () => {
+    const { jotaiStore } = renderPendingTurn({
+      revealed: reveal(),
+      messages: [
+        {
+          messageId: 'real-successor',
+          parentMessageId: RESPONSE_ID,
+          isCreatedByUser: true,
+        } as TMessage,
+      ],
+    });
+    expect(screen.queryByTestId('pending-turn')).toBeNull();
+    expect(jotaiStore.get(revealedQueuedTurnFamily(CONVO_ID))).not.toBeNull();
   });
 });

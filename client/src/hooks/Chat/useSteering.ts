@@ -487,11 +487,10 @@ export default function useSteering({
     reconciliationUntil,
     expectsReceipts,
   );
-  /** A queued follow-up already shown as the next user turn, whose server copy
-   *  has not been seen yet. The run it opens is imminent, so the composer keeps
-   *  queueing behind it rather than starting a turn anchored on a row the
-   *  server has not persisted. */
-  const revealPending = useAtomValue(revealedQueuedTurnFamily(queueKey)) != null;
+  /** Retain admission ownership through history hydration and stream attach;
+   * ordinary sends must not overtake the server-owned successor. */
+  const pendingReveal = useAtomValue(revealedQueuedTurnFamily(queueKey));
+  const revealPending = pendingReveal != null;
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(queueKey),
   );
@@ -976,12 +975,14 @@ export default function useSteering({
         if (trimmed.length === 0) {
           return;
         }
-        const parentMessageId = liveMessageState?.parentMessageId;
-        /** The active epoch is the authority-transfer fence. During startup an
-         * existing branch tail may already be visible while no generation owns
-         * it yet, so keep those turns local until the epoch is concrete. */
+        const parentMessageId = pendingReveal?.parentMessageId ?? liveMessageState?.parentMessageId;
+        const predecessorCreatedAt =
+          activeGenerationCreatedAt ?? pendingReveal?.generationCreatedAt;
+        /** FINAL clears the active epoch before attachment. The revealed
+         * boundary retains its durable fence so follow-ups survive reload;
+         * only initial startup without either epoch remains local. */
         const serverOwned =
-          serverQueueEnabled && parentMessageId != null && activeGenerationCreatedAt != null;
+          serverQueueEnabled && parentMessageId != null && predecessorCreatedAt != null;
         const generatedClientRequestId = options?.clientRequestId == null;
         const clientRequestId = options?.clientRequestId ?? (serverOwned ? v4() : undefined);
         const item: QueuedMessage = {
@@ -993,9 +994,9 @@ export default function useSteering({
             parentMessageId,
             server: { status: 'sending' },
           }),
-          ...((options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt) != null && {
+          ...((options?.expectedPredecessorCreatedAt ?? predecessorCreatedAt) != null && {
             expectedPredecessorCreatedAt:
-              options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt ?? undefined,
+              options?.expectedPredecessorCreatedAt ?? predecessorCreatedAt ?? undefined,
           }),
           ...(options?.files && options.files.length > 0 && { files: options.files }),
           ...(options?.quotes && options.quotes.length > 0 && { quotes: options.quotes }),
@@ -1092,6 +1093,7 @@ export default function useSteering({
       conversationId,
       serverQueueEnabled,
       liveMessageState?.parentMessageId,
+      pendingReveal,
       markQueuedFilesUsage,
       activeGenerationCreatedAt,
       enqueueAgentQueuedTurn,

@@ -37,6 +37,7 @@ import {
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import store from '~/store';
 
 /**
@@ -754,6 +755,11 @@ export default function useResumeOnLoad(
            *  and finished inside a poll gap, its turns are on the server and
            *  nowhere else; one refetch is the whole repair, and marking an
            *  off-screen conversation stale costs nothing until it is opened. */
+          const revealFamily = revealedQueuedTurnFamily(owedConversationId);
+          const pendingReveal = jotaiStore.get(revealFamily);
+          if (pendingReveal != null && Date.parse(pendingReveal.revealedAt) <= latch.quietSince!) {
+            jotaiStore.set(revealFamily, null);
+          }
           queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, owedConversationId] });
         }, remaining),
       );
@@ -775,7 +781,7 @@ export default function useResumeOnLoad(
         clearTimeout(timer);
       }
     };
-  }, [owedSuccessors, owedIsReporting, conversationId, queryClient]);
+  }, [owedSuccessors, owedIsReporting, conversationId, queryClient, jotaiStore]);
 
   const shouldCheck =
     resumableEnabled &&
@@ -897,6 +903,34 @@ export default function useResumeOnLoad(
 
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      const revealFamily = revealedQueuedTurnFamily(conversationId);
+      const pendingReveal = jotaiStore.get(revealFamily);
+      /** A remounted pane may have missed attachment and the quiet-window
+       * timer. An expired job has no epoch; require a fresh inactive read
+       * after restored history before retiring its surviving handoff guard. */
+      const historyUpdatedAt = queryClient.getQueryState([
+        QueryKeys.messages,
+        conversationId,
+      ])?.dataUpdatedAt;
+      if (
+        pendingReveal != null &&
+        streamStatus.active === false &&
+        streamStatus.createdAt == null &&
+        historyUpdatedAt != null &&
+        streamStatusUpdatedAt >= historyUpdatedAt &&
+        streamStatusUpdatedAt > Date.parse(pendingReveal.revealedAt) &&
+        !(queuedTurnReceipts ?? []).some(
+          (receipt) =>
+            receipt.clientRequestId === pendingReveal.clientRequestId &&
+            (receipt.status === 'queued' || receipt.status === 'claimed'),
+        ) &&
+        (getMessages() ?? []).some(
+          (message) => message.parentMessageId === pendingReveal.parentMessageId,
+        )
+      ) {
+        jotaiStore.set(revealFamily, null);
+      }
+
       // A terminal drain may have parked acknowledged steers no subscriber
       // received (tab closed / reload racing the final event) — the status
       // claim returns them exactly once; restore as queued follow-up chips.
@@ -1027,6 +1061,8 @@ export default function useResumeOnLoad(
     isFetching,
     streamStatus,
     streamStatusUpdatedAt,
+    queuedTurnReceipts,
+    queryClient,
     getMessages,
     setSubmission,
     setSubmissionStart,

@@ -712,11 +712,15 @@ describe('PendingSteerChips — revealed queued turn', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    getDefaultStore().set(revealedFamily(), null);
+    act(() => {
+      getDefaultStore().set(revealedFamily(), null);
+    });
   });
 
   afterEach(() => {
-    getDefaultStore().set(revealedFamily(), null);
+    act(() => {
+      getDefaultStore().set(revealedFamily(), null);
+    });
   });
 
   const serverRow = (clientRequestId: string): QueuedMessage => ({
@@ -748,4 +752,26 @@ describe('PendingSteerChips — revealed queued turn', () => {
       within(rows[1]).getByRole('button', { name: 'com_ui_more_options' }),
     ).toBeInTheDocument();
   });
+  it.each([true, false])(
+    'attempts claimed cancellation and respects acceptance=%s',
+    async (accepted) => {
+      const message = serverRow('req-1');
+      message.server!.status = 'claimed';
+      getDefaultStore().set(revealedFamily(), {
+        clientRequestId: 'req-1',
+        parentMessageId: 'response-1',
+        text: message.text,
+        revealedAt: new Date().toISOString(),
+      });
+      mockDiscardQueued.mockResolvedValueOnce(accepted);
+      renderChips([message], { steering: { duringRunActive: true, canSendQueuedNow: false } });
+      const remove = screen.getByRole('button', { name: /com_ui_remove/ });
+      expect(remove).toBeEnabled();
+      await userEvent.click(remove);
+      await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(message));
+      expect(mockRemoveQueued).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(mockRestoreToComposer).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(mockSendQueuedNow).not.toHaveBeenCalled();
+    },
+  );
 });

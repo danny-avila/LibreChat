@@ -126,7 +126,11 @@ function MessagesViewContent({
                       )}
                     </RowMountProvider>
                   </div>
-                  <PendingTurn scrollableRef={scrollableRef} />
+                  <PendingTurn
+                    scrollableRef={scrollableRef}
+                    messages={messages}
+                    maximizeChatSpace={maximizeChatSpace}
+                  />
                 </>
               )}
               <div

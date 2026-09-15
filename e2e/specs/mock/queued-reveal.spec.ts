@@ -67,7 +67,7 @@ function holdBackSuccessor(page: Page, successorText: string) {
       body.active === true && body.resumeState?.userMessage?.text === successorText;
     return route.fulfill({
       response,
-      json: describesSuccessor ? { ...body, active: false } : body,
+      json: describesSuccessor ? { active: false } : body,
     });
   };
   return {
@@ -174,18 +174,22 @@ test.describe('server-queued follow-up reveal', () => {
       await expect(row.getByRole('button', { name: 'Send now' })).toHaveCount(0);
       await expect(row.getByRole('button', { name: 'Remove message' })).toBeVisible();
 
+      const nextQueueText = `Queued during handoff ${label}`;
+      await messageInput(page).fill(nextQueueText);
+      const [handoffEnqueue] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === '/api/agents/chat/queued-turns',
+        ),
+        messageInput(page).press('Enter'),
+      ]);
+      expect(handoffEnqueue.ok()).toBeTruthy();
       await successor.release();
-      /** The mock successor can start and finish inside one active-job poll
-       *  gap. Returning to the tab is the client's standing way to notice a
-       *  run it missed: receipts and status both refetch on focus. */
-      await page.evaluate(() => {
-        document.dispatchEvent(new Event('visibilitychange'));
-        window.dispatchEvent(new Event('focus'));
-      });
 
       /** Once the successor attaches, the shown row is the server's own turn:
        *  exactly one copy of the text, followed by its reply. */
-      await expect(messageTurns(page)).toHaveCount(6, { timeout: 30000 });
+      await expect(messageTurns(page)).toHaveCount(8, { timeout: 30000 });
       await expect(messageTurns(page).filter({ hasText: queueText })).toHaveCount(1);
       const followupReply = messageTurns(page).nth(5);
       await expect(followupReply).toContainText(MOCK_REPLY_TEXT, { timeout: 30000 });
@@ -196,9 +200,11 @@ test.describe('server-queued follow-up reveal', () => {
       const conversationPath = new URL(page.url()).pathname;
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(conversationPath);
-      await expect(messageTurns(page)).toHaveCount(6, { timeout: 30000 });
+      await expect(messageTurns(page)).toHaveCount(8, { timeout: 30000 });
       await expect(messageTurns(page).nth(4)).toContainText(queueText);
       await expect(messageTurns(page).nth(5)).toContainText(MOCK_REPLY_TEXT);
+      await expect(messageTurns(page).nth(6)).toContainText(nextQueueText);
+      await expect(messageTurns(page).nth(7)).toContainText(MOCK_REPLY_TEXT);
     } finally {
       await cleanupAgent(page, agentId);
     }

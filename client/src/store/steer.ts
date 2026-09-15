@@ -22,16 +22,15 @@ export const steerOverlayHeightFamily = atomFamily((_conversationId: string) => 
  */
 export const escalatingSteerFamily = atomFamily((_conversationId: string) => atom<boolean>(false));
 
-/** A server-owned queued follow-up shown as the newest user turn before the
- *  backend has admitted it, keyed by conversation. Presentation intent only:
- *  the row renders after the completed response it names and never enters the
- *  message cache. `clientRequestId` ties it to the queued row's receipt so the
- *  chip reduces to its remove action and negative evidence can end it. */
+/** A server-owned follow-up and its admission handoff, keyed by conversation.
+ * The drawing never enters history. Its guard survives the drawing until a
+ * successor generation owns the pane or terminal evidence settles the turn. */
 export type RevealedQueuedTurn = {
   clientRequestId: string;
-  /** The completed response the turn follows. The row shows only while this
-   *  is the thread's tail, and the intent ends once anything parents on it. */
+  /** The drawing follows this response only while history has no successor. */
   parentMessageId: string;
+  /** Durable predecessor fence retained through the gap before attachment. */
+  generationCreatedAt?: number;
   text: string;
   files?: TMessage['files'];
   quotes?: string[];

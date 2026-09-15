@@ -195,11 +195,13 @@ describe('useQueueDrain', () => {
     });
     await waitFor(() => expect(reveal).toHaveBeenCalled());
     expect(reveal.mock.calls[0][0]).toEqual(first);
-    getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), {
-      clientRequestId: 'client-request-1',
-      parentMessageId: 'response-1',
-      text: first.text,
-      revealedAt: '2026-09-14T00:00:00.000Z',
+    act(() => {
+      getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), {
+        clientRequestId: 'client-request-1',
+        parentMessageId: 'response-1',
+        text: first.text,
+        revealedAt: '2026-09-14T00:00:00.000Z',
+      });
     });
     reveal.mockClear();
 

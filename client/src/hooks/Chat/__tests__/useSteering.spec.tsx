@@ -1,9 +1,11 @@
 import React from 'react';
+import { getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
 import useSteering from '../useSteering';
 import store from '~/store';
@@ -130,6 +132,7 @@ function useQueue(convoId: string) {
 describe('useSteering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
     mockMessages = undefined;
     mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
@@ -296,6 +299,68 @@ describe('useSteering', () => {
         expect.objectContaining({ text: 'wait for the epoch' }),
       ]);
       expect(result.current.queue[0].server).toBeUndefined();
+    });
+
+    it('persists another follow-up against the revealed boundary after FINAL clears the epoch', async () => {
+      const family = revealedQueuedTurnFamily(CONVO_ID);
+      getDefaultStore().set(family, {
+        clientRequestId: 'pending-first',
+        parentMessageId: 'completed-response',
+        generationCreatedAt: 41,
+        text: 'first',
+        revealedAt: new Date().toISOString(),
+      });
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        options.onSuccess({
+          ...input,
+          queuedTurnId: 'durable-second',
+          status: 'queued',
+          revision: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      });
+      const { result, unmount } = setup({ isSubmitting: false }, ({ set }) => {
+        set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted context']);
+        set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill']);
+      });
+      expect(result.current.duringRunActive).toBe(true);
+      expect(result.current.canSteer).toBe(false);
+      await act(async () => {
+        expect(result.current.submitDuringRun('second')).toBe(true);
+      });
+      expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentMessageId: 'completed-response',
+          expectedPredecessorCreatedAt: 41,
+          text: 'second',
+          quotes: ['quoted context'],
+          manualSkills: ['skill'],
+        }),
+        expect.any(Object),
+      );
+      unmount();
+      getDefaultStore().set(family, null);
+      mockServerQueuedTurns = [
+        {
+          ...mockEnqueueQueuedTurn.mock.calls[0][0],
+          queuedTurnId: 'durable-second',
+          status: 'queued',
+          revision: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      const restored = setupServerQueue();
+      await waitFor(() =>
+        expect(restored.result.current.queue[0]).toMatchObject({
+          text: 'second',
+          quotes: ['quoted context'],
+          manualSkills: ['skill'],
+          server: { id: 'durable-second', status: 'queued' },
+        }),
+      );
     });
 
     it('enrolls one optimistic row with a stable request and visible branch identity', async () => {

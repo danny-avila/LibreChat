@@ -1,5 +1,6 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,14 +13,10 @@ import useQueuedTurnReveal, {
   selectQueuedTurnReveal,
   shouldRollbackReveal,
 } from '../useQueuedTurnReveal';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
+import { streamStatusQueryKey } from '~/data-provider/SSE/queries';
 import { revealedQueuedTurnFamily } from '~/store/steer';
-
-const mockUseAgentQueuedTurns = jest.fn();
-jest.mock('~/data-provider', () => ({
-  ...jest.requireActual('~/data-provider'),
-  useAgentQueuedTurns: (conversationId: string, enabled: boolean) =>
-    mockUseAgentQueuedTurns(conversationId, enabled),
-}));
+import store from '~/store';
 
 const CONVO_ID = 'convo-reveal';
 const RESPONSE_ID = 'response-1';
@@ -84,6 +81,9 @@ describe('selectQueuedTurnReveal', () => {
   it('reveals nothing for a stop, an error, or a run with no response to follow', () => {
     expect(selectQueuedTurnReveal(completedEnd({ outcome: 'aborted' }), [serverRow()])).toBeNull();
     expect(selectQueuedTurnReveal(completedEnd({ outcome: 'error' }), [serverRow()])).toBeNull();
+    expect(
+      selectQueuedTurnReveal(completedEnd({ generationCreatedAt: undefined }), [serverRow()]),
+    ).toBeNull();
     expect(
       selectQueuedTurnReveal(completedEnd({ responseMessageId: undefined }), [serverRow()]),
     ).toBeNull();
@@ -174,6 +174,13 @@ describe('buildRevealedMessage', () => {
 
 describe('useQueuedTurnReveal', () => {
   function setup(initialMessages: TMessage[] = history()) {
+    let setSubmitting: (value: boolean) => void;
+    let setEpoch: (value: number | null) => void;
+    function StateProbe() {
+      setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
+      setEpoch = useSetRecoilState(store.activeGenerationCreatedAtByConvoId(CONVO_ID));
+      return null;
+    }
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -184,18 +191,31 @@ describe('useQueuedTurnReveal', () => {
       queryClient.setQueryData<TMessage[]>([QueryKeys.messages, CONVO_ID], messages);
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
-        <JotaiProvider store={jotaiStore}>{children}</JotaiProvider>
+        <RecoilRoot>
+          <JotaiProvider store={jotaiStore}>
+            <StateProbe />
+            {children}
+          </JotaiProvider>
+        </RecoilRoot>
       </QueryClientProvider>
     );
-    const rendered = renderHook(() => useQueuedTurnReveal(CONVO_ID, getMessages), { wrapper });
+    const rendered = renderHook(() => useQueuedTurnReveal(CONVO_ID), { wrapper });
     const current = () => jotaiStore.get(revealedQueuedTurnFamily(CONVO_ID));
-    return { ...rendered, queryClient, jotaiStore, getMessages, setMessages, current };
+    return {
+      ...rendered,
+      queryClient,
+      jotaiStore,
+      getMessages,
+      setMessages,
+      current,
+      attach: (epoch: number, submitting = true) => {
+        setEpoch(epoch);
+        setSubmitting(submitting);
+      },
+      setReceipts: (receipts: TAgentQueuedTurnReceipt[]) =>
+        queryClient.setQueryData(agentQueuedTurnsQueryKey(CONVO_ID), receipts),
+    };
   }
-
-  beforeEach(() => {
-    mockUseAgentQueuedTurns.mockReset();
-    mockUseAgentQueuedTurns.mockReturnValue({ data: undefined });
-  });
 
   it('records the queued turn as the next user turn without touching the message cache', () => {
     const { result, getMessages, current } = setup();
@@ -218,7 +238,6 @@ describe('useQueuedTurnReveal', () => {
         manualSkills: ['skill'],
       }),
     );
-    expect(mockUseAgentQueuedTurns).toHaveBeenCalledWith(CONVO_ID, false);
   });
 
   it('reveals once per boundary however often the drain re-observes it', () => {
@@ -247,17 +266,17 @@ describe('useQueuedTurnReveal', () => {
     expect(current()).toBeNull();
   });
 
-  it('reveals nothing when the turn already follows the response in history', () => {
+  it('keeps admission guarded when history already has the successor before attachment', () => {
     const { result, current } = setup([...history(), successor()]);
 
     act(() => {
       result.current(serverRow(), completedEnd());
     });
 
-    expect(current()).toBeNull();
+    expect(current()).not.toBeNull();
   });
 
-  it('ends once a turn follows the response, whichever path delivered it', async () => {
+  it('keeps admission guarded when history receives the successor before attachment', async () => {
     const { result, setMessages, current } = setup();
     act(() => {
       result.current(serverRow(), completedEnd());
@@ -268,7 +287,7 @@ describe('useQueuedTurnReveal', () => {
       setMessages([...history(), successor('someone-elses-turn')]);
     });
 
-    await waitFor(() => expect(current()).toBeNull());
+    expect(current()).not.toBeNull();
   });
 
   it('survives a history refetch that has not yet caught up with the admitted turn', async () => {
@@ -288,29 +307,102 @@ describe('useQueuedTurnReveal', () => {
   });
 
   it('ends on a cancelled, dead, or indeterminate receipt for the revealed request', async () => {
-    const { result, rerender, current } = setup();
+    const { result, setReceipts, current } = setup();
     act(() => {
       result.current(serverRow(), completedEnd());
     });
 
-    mockUseAgentQueuedTurns.mockReturnValue({ data: [receipt({ status: 'dead' })] });
-    rerender();
+    act(() => {
+      setReceipts([receipt({ status: 'dead' })]);
+    });
 
     await waitFor(() => expect(current()).toBeNull());
   });
 
   it('keeps the reveal through queued, claimed, and admitted receipts', async () => {
-    const { result, rerender, current } = setup();
+    const { result, setReceipts, current } = setup();
     act(() => {
       result.current(serverRow(), completedEnd());
     });
 
-    mockUseAgentQueuedTurns.mockReturnValue({ data: [receipt({ status: 'admitted' })] });
-    rerender();
+    act(() => {
+      setReceipts([receipt({ status: 'admitted' })]);
+    });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
     expect(current()).not.toBeNull();
+  });
+  it('hands the guard to a newer attached generation, never to the predecessor or a pending attach', () => {
+    const { result, attach, current } = setup();
+    act(() => {
+      result.current(serverRow(), completedEnd());
+    });
+    act(() => {
+      attach(41);
+    });
+    expect(current()).not.toBeNull();
+    act(() => {
+      attach(42, false);
+    });
+    expect(current()).not.toBeNull();
+    act(() => {
+      attach(42);
+    });
+    expect(current()).toBeNull();
+    act(() => {
+      result.current(serverRow(), completedEnd());
+    });
+    expect(current()).toBeNull();
+  });
+
+  it('settles a successor that completed inside the poll gap without trusting old inactive status', () => {
+    const { result, queryClient, current } = setup();
+    act(() => {
+      queryClient.setQueryData(streamStatusQueryKey(CONVO_ID), { active: false, createdAt: 41 });
+      result.current(serverRow(), completedEnd());
+    });
+    expect(current()).not.toBeNull();
+    act(() => {
+      queryClient.setQueryData(streamStatusQueryKey(CONVO_ID), {
+        active: false,
+        status: 'complete',
+        createdAt: 42,
+      });
+    });
+    expect(current()).toBeNull();
+    act(() => {
+      result.current(serverRow(), completedEnd());
+    });
+    expect(current()).toBeNull();
+  });
+
+  it('does not resurrect a cancelled head from a stale queue snapshot', () => {
+    const { result, setReceipts, current } = setup();
+    act(() => {
+      setReceipts([receipt({ status: 'cancelled' })]);
+    });
+    act(() => {
+      result.current(serverRow(), completedEnd());
+    });
+    expect(current()).toBeNull();
+    act(() => {
+      result.current(serverRow({ clientRequestId: 'next-request' }), completedEnd());
+    });
+    expect(current()?.clientRequestId).toBe('next-request');
+  });
+
+  it('does not register a message fetcher or replace history fetching during invalidation', async () => {
+    const { queryClient, getMessages, unmount } = setup();
+    const key = [QueryKeys.messages, CONVO_ID];
+    const fetchHistory = jest.fn(async () => [...history(), successor()]);
+    await queryClient.fetchQuery({ queryKey: key, queryFn: fetchHistory });
+    fetchHistory.mockClear();
+    await queryClient.invalidateQueries({ queryKey: key, refetchType: 'all' });
+    expect(fetchHistory).toHaveBeenCalledTimes(1);
+    expect(getMessages()).toHaveLength(3);
+    expect(queryClient.getQueryCache().find(key)?.getObserversCount()).toBe(0);
+    unmount();
   });
 });

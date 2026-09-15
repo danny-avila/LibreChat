@@ -1,12 +1,16 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useStore, useAtomValue } from 'jotai';
 import { QueryKeys } from 'librechat-data-provider';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage, TAgentQueuedTurnReceipt } from 'librechat-data-provider';
+import type { StreamStatusResponse } from '~/data-provider/SSE/queries';
 import type { QueuedMessage, RunEnd } from '~/store/families';
 import type { RevealedQueuedTurn } from '~/store/steer';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
+import { streamStatusQueryKey } from '~/data-provider/SSE/queries';
 import { revealedQueuedTurnFamily } from '~/store/steer';
-import { useAgentQueuedTurns } from '~/data-provider';
+import store from '~/store';
 
 const isAdmissible = (item: QueuedMessage): boolean =>
   item.server?.id != null &&
@@ -25,7 +29,11 @@ export const selectQueuedTurnReveal = (
   end: RunEnd,
   queue: QueuedMessage[],
 ): QueuedMessage | null => {
-  if (end.outcome !== 'completed' || end.responseMessageId == null) {
+  if (
+    end.outcome !== 'completed' ||
+    end.responseMessageId == null ||
+    end.generationCreatedAt == null
+  ) {
     return null;
   }
   return queue.find(isAdmissible) ?? null;
@@ -70,39 +78,56 @@ export const buildRevealedMessage = (
       reveal.manualSkills.length > 0 && { manualSkills: reveal.manualSkills }),
   }) as TMessage;
 
-/**
- * Shows a server-owned queued follow-up as the newest user turn the moment
- * its predecessor completes, instead of after the receipt poll, the active
- * job poll and the resume attach have each had their turn.
- *
- * The reveal is presentation intent, not a message: `PendingTurn` renders it
- * after the completed response while that response is the thread's tail, and
- * the composer, the generation controls and the chip read the same intent to
- * queue behind it. Nothing enters the message cache, so the server's own copy
- * of the turn needs no reconciliation: once anything parents on the response
- * (the admitted turn arriving through attach, sync or refetch, or another
- * client's turn) the intent ends. A cancelled, dead or indeterminate receipt
- * ends it too, and the chip regains its actions.
- */
+/** Presentation and admission have separate lifetimes: history replaces the
+ * drawn row, but sends stay queued until the successor attaches or terminates.
+ * Observe existing caches without registering a competing query function. */
 export default function useQueuedTurnReveal(
   conversationId: string | undefined,
-  getMessages: () => TMessage[] | undefined,
+  index: string | number = 0,
 ): (item: QueuedMessage, end: RunEnd) => void {
   const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const revealKey = conversationId ?? '';
   const reveal = useAtomValue(revealedQueuedTurnFamily(revealKey));
-  const { data: receipts } = useAgentQueuedTurns(revealKey, false);
-  const historyKey = [QueryKeys.messages, revealKey];
-  const selectSuccessorSeen = useCallback(
-    (messages: TMessage[]) => reveal != null && hasRevealSuccessor(messages, reveal),
-    [reveal],
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const activeEpoch = useRecoilValue(store.activeGenerationCreatedAtByConvoId(revealKey));
+  const isSettled = useCallback(
+    (intent: RevealedQueuedTurn) => {
+      const receipts = queryClient.getQueryData<TAgentQueuedTurnReceipt[]>(
+        agentQueuedTurnsQueryKey(revealKey),
+      );
+      const status = queryClient.getQueryData<StreamStatusResponse>(
+        streamStatusQueryKey(revealKey),
+      );
+      return (
+        (receipts != null && shouldRollbackReveal(receipts, intent)) ||
+        (intent.generationCreatedAt != null &&
+          ((isSubmitting && activeEpoch != null && activeEpoch > intent.generationCreatedAt) ||
+            (status?.active === false &&
+              (status.status === 'complete' ||
+                status.status === 'error' ||
+                status.status === 'aborted') &&
+              status.createdAt != null &&
+              status.createdAt > intent.generationCreatedAt)))
+      );
+    },
+    [queryClient, revealKey, isSubmitting, activeEpoch],
   );
-  const { data: successorSeen } = useQuery<TMessage[], unknown, boolean>(
-    historyKey,
-    async () => queryClient.getQueryData<TMessage[]>(historyKey) ?? [],
-    { enabled: false, select: selectSuccessorSeen },
+  const subscribe = useCallback(
+    (notify: () => void) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const key = event?.query.queryKey;
+        if (
+          key?.[1] === revealKey &&
+          (key[0] === QueryKeys.agentQueuedTurns || key[0] === 'streamStatus')
+        ) {
+          notify();
+        }
+      }),
+    [queryClient, revealKey],
   );
+  const getSnapshot = useCallback(() => reveal != null && isSettled(reveal), [reveal, isSettled]);
+  const settled = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const revealQueuedTurn = useCallback(
     (item: QueuedMessage, end: RunEnd) => {
@@ -110,8 +135,11 @@ export default function useQueuedTurnReveal(
       if (
         target == null ||
         target !== conversationId ||
+        end.outcome !== 'completed' ||
         end.responseMessageId == null ||
-        item.clientRequestId == null
+        end.generationCreatedAt == null ||
+        item.clientRequestId == null ||
+        !isAdmissible(item)
       ) {
         return;
       }
@@ -119,36 +147,29 @@ export default function useQueuedTurnReveal(
       if (jotaiStore.get(family) != null) {
         return;
       }
-      const parentMessageId = end.responseMessageId;
-      /** Admission can outrun the terminal signal: the turn is already in
-       *  history, so there is nothing left to anticipate. */
-      if ((getMessages() ?? []).some((message) => message.parentMessageId === parentMessageId)) {
-        return;
-      }
-      jotaiStore.set(family, {
+      const intent: RevealedQueuedTurn = {
         clientRequestId: item.clientRequestId,
-        parentMessageId,
+        parentMessageId: end.responseMessageId,
+        generationCreatedAt: end.generationCreatedAt,
         text: item.text,
         ...(item.files != null && item.files.length > 0 && { files: item.files }),
         ...(item.quotes != null && item.quotes.length > 0 && { quotes: item.quotes }),
         ...(item.manualSkills != null &&
           item.manualSkills.length > 0 && { manualSkills: item.manualSkills }),
         revealedAt: new Date().toISOString(),
-      });
+      };
+      if (!isSettled(intent)) {
+        jotaiStore.set(family, intent);
+      }
     },
-    [conversationId, getMessages, jotaiStore],
+    [conversationId, isSettled, jotaiStore],
   );
 
   useEffect(() => {
-    if (reveal == null || conversationId == null) {
-      return;
+    if (settled && jotaiStore.get(revealedQueuedTurnFamily(revealKey)) === reveal) {
+      jotaiStore.set(revealedQueuedTurnFamily(revealKey), null);
     }
-    const ended =
-      successorSeen === true || (Array.isArray(receipts) && shouldRollbackReveal(receipts, reveal));
-    if (ended) {
-      jotaiStore.set(revealedQueuedTurnFamily(conversationId), null);
-    }
-  }, [conversationId, jotaiStore, receipts, reveal, successorSeen]);
+  }, [jotaiStore, revealKey, reveal, settled]);
 
   return revealQueuedTurn;
 }
