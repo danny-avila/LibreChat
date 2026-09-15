@@ -82,6 +82,7 @@ import {
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { replaceBrowserUrl } from '~/utils/overlays';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
@@ -485,11 +486,7 @@ const replaceNewConversationUrl = (conversationId: string) => {
     return;
   }
 
-  window.history.replaceState(
-    window.history.state,
-    '',
-    `/c/${conversationId}${window.location.search}`,
-  );
+  replaceBrowserUrl(`/c/${conversationId}${window.location.search}`);
 };
 
 const shouldHydrateMessage = (message: TMessage) =>
