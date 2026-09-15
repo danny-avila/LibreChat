@@ -860,6 +860,28 @@ endpoints:
   #     #   claude-3.5-haiku:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
+  # openAI:
+  #   # (optional) Prompt caching on first-party OpenAI. The same three options are
+  #   # available under `azureOpenAI` and, as a global default, under `endpoints.all`.
+  #   # A gateway or `custom` OpenAI-compatible endpoint ignores them: it shares the
+  #   # request shape but not the caching contract.
+  #   #
+  #   # Send a deterministic `prompt_cache_key` derived from the stable instruction
+  #   # prefix, the tool schemas and the output schema. Requests that share a prefix
+  #   # then share one cache entry, instead of being split per user by the `user`
+  #   # field OpenAI otherwise routes cache lookups on. Changing an agent's
+  #   # instructions or tools yields a new key, so nothing needs invalidating.
+  #   # Enabled by default; set false to keep per-user cache routing.
+  #   promptCacheKey: true
+  #   # `prompt_cache_retention`. Omit for the provider's own in-memory lifetime;
+  #   # `24h` opts into extended retention and is billed for it.
+  #   # promptCacheRetention: 24h
+  #   # GPT-5.6 explicit cache breakpoints. Off by default: explicit mode replaces
+  #   # the implicit latest-message breakpoint, and the breakpoint currently lands on
+  #   # the whole system message rather than on its stable prefix, so turning this on
+  #   # can cache less than the default does. Requires a GPT-5.6-class model.
+  #   # promptCacheExplicit: false
+
   custom:
     # Anthropic-compatible Example (native `/v1/messages` API)
     # Set `provider: anthropic` to use the native Anthropic client instead of the
