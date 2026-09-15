@@ -2301,11 +2301,7 @@ class AgentClient extends BaseClient {
       conversationId: this.conversationId,
       userId: this.user ?? this.options.req.user?.id,
       config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
-      countTokens: (text) =>
-        countFormattedMessageTokens(
-          { role: 'user', content: [{ type: ContentTypes.TEXT, text }] },
-          this.getEncoding(),
-        ),
+      encoding: this.getEncoding(),
     });
     this.loadedHistoryRows = undefined;
 
@@ -4745,7 +4741,7 @@ class AgentClient extends BaseClient {
         block: this.retainedAnswers?.block,
         messages: initialMessages,
         indexTokenCountMap,
-        tokenCounter,
+        tokenCounter: this.retainedAnswers?.tokenCounter ?? tokenCounter,
       }));
 
       const memoryMessages =

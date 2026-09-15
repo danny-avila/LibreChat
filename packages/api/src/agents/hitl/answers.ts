@@ -1,13 +1,15 @@
 import { logger } from '@librechat/data-schemas';
-import { withMessageRole } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { withMessageRole, getTokenCountForMessage } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import type { TokenCounter } from '@librechat/agents';
+import type { EncodingName } from '~/utils/tokenizer';
+import { prependContextText, CLAUDE_TOKEN_CORRECTION } from '../client';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
-import { prependContextText } from '../client';
 import { getSafeErrorMetadata } from '~/utils';
+import Tokenizer from '~/utils/tokenizer';
 
 /** The projection a stored-row loader needs; nothing else is read. */
 export const RETAINED_ANSWER_ROW_FIELDS = 'messageId parentMessageId content';
@@ -289,35 +291,45 @@ export async function renderRetainedAnswers(
   if (sets.length === 0) {
     return undefined;
   }
-  let start = sets.length - 1;
-  let body = renderSet(sets[start]);
-  let block = RETAINED_ANSWERS_HEADER + SEPARATOR + body;
-  await measureTokens(block, countTokens);
-  let omitted = sets.reduce((count, set) => count + set.answers.length, 0);
-  omitted -= sets[start].answers.length;
-  const rendered = [body];
-  while (start > 0) {
-    const older = renderSet(sets[start - 1]);
-    const candidate = RETAINED_ANSWERS_HEADER + SEPARATOR + older + SEPARATOR + body;
-    if ((await measureTokens(candidate, countTokens)) > maxTokens) {
-      break;
+  const newestFirst: string[] = [];
+  const answerCounts = [0];
+  const totalAnswers = sets.reduce((total, set) => total + set.answers.length, 0);
+  const candidate = (count: number, note = false): string => {
+    while (newestFirst.length < count) {
+      const set = sets[sets.length - newestFirst.length - 1];
+      newestFirst.push(renderSet(set));
+      answerCounts.push(answerCounts[answerCounts.length - 1] + set.answers.length);
     }
-    body = older + SEPARATOR + body;
-    block = candidate;
-    rendered.push(older);
-    omitted -= sets[--start].answers.length;
+    return [
+      RETAINED_ANSWERS_HEADER,
+      ...(note ? [omittedNote(totalAnswers - answerCounts[count])] : []),
+      ...newestFirst.slice(0, count).reverse(),
+    ].join(SEPARATOR);
+  };
+  let low = 0;
+  let high = 1;
+  while ((await measureTokens(candidate(high), countTokens)) <= maxTokens) {
+    low = high;
+    if (high === sets.length) {
+      return candidate(high);
+    }
+    high = Math.min(sets.length, high * 2);
   }
-  if (start === 0) {
-    return block;
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if ((await measureTokens(candidate(middle), countTokens)) <= maxTokens) {
+      low = middle;
+    } else {
+      high = middle;
+    }
   }
+  let count = Math.max(1, low);
   while (true) {
-    block = [RETAINED_ANSWERS_HEADER, omittedNote(omitted), body].join(SEPARATOR);
-    if ((await measureTokens(block, countTokens)) <= maxTokens || rendered.length === 1) {
+    const block = candidate(count, count < sets.length);
+    if ((await measureTokens(block, countTokens)) <= maxTokens || count === 1) {
       return block;
     }
-    rendered.pop();
-    omitted += sets[start++].answers.length;
-    body = [...rendered].reverse().join(SEPARATOR);
+    count--;
   }
 }
 
@@ -442,13 +454,51 @@ export async function buildRetainedAnswersContext(
   }
 }
 
-/** The early admission estimate and the block are built together with one failure policy. */
+/**
+ * Exact counting is limited to retained context. The general prompt counter's
+ * 4 KiB byte-estimate shortcut would discard answers that fit the token budget.
+ * Initialize lazily so disabled retention and histories without answers cost no
+ * tokenizer load. Reuse this counter when applying the block to the final prompt.
+ */
+async function createRetainedAnswerCounter(encoding: EncodingName): Promise<TokenCounter> {
+  await Tokenizer.initEncoding(encoding);
+  return (message) => {
+    const count = getTokenCountForMessage(
+      message,
+      (text) => {
+        const tokens = Tokenizer.countExactTokens(text, encoding);
+        if (tokens == null) {
+          throw new Error('Retained-answer tokenizer unavailable');
+        }
+        return tokens;
+      },
+      encoding,
+    );
+    return encoding === 'claude' ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
+  };
+}
+
+/** The early admission count and the block share the final prompt's exact counter. */
 export async function prepareRetainedAnswers(
-  input: RetainedAnswersContextInput,
-): Promise<{ block?: string; tokenCount: number }> {
+  input: Omit<RetainedAnswersContextInput, 'countTokens'> & {
+    countTokens?: RetainedAnswerTokenCounter;
+    encoding?: EncodingName;
+  },
+): Promise<{ block?: string; tokenCount: number; tokenCounter?: TokenCounter }> {
   try {
-    const block = await buildRetainedAnswersContext(input);
-    return { block, tokenCount: block == null ? 0 : await measureTokens(block, input.countTokens) };
+    let tokenCounter: TokenCounter | undefined;
+    const countTokens =
+      input.countTokens ??
+      (async (text: string) => {
+        tokenCounter ??= await createRetainedAnswerCounter(input.encoding ?? 'o200k_base');
+        return tokenCounter(new HumanMessage(text));
+      });
+    const block = await buildContext({ ...input, countTokens });
+    return {
+      block,
+      tokenCount: block == null ? 0 : await measureTokens(block, countTokens),
+      tokenCounter,
+    };
   } catch (error) {
     logger.warn('[retainedAnswers] Block unavailable for this turn', getSafeErrorMetadata(error));
     return { tokenCount: 0 };

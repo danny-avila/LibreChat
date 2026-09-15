@@ -19,6 +19,11 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  prepareRetainedAnswers: (input) =>
+    jest.requireActual('@librechat/api').prepareRetainedAnswers({
+      ...input,
+      countTokens: (text) => mockCountFormattedMessageTokens({ role: 'user', content: text }),
+    }),
   createRun: (...args) => mockCreateRun(...args),
   countFormattedMessageTokens: (...args) => mockCountFormattedMessageTokens(...args),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),

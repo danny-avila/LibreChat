@@ -705,6 +705,41 @@ describe('applyRetainedAnswers', () => {
 });
 
 describe('retained answer lifecycle', () => {
+  test.each(['o200k_base', 'claude'] as const)(
+    'retains a block over 4 KiB that fits the actual %s token budget',
+    async (encoding) => {
+      const content = Array.from({ length: 100 }, (_, index) =>
+        askPart(
+          { question: `Question ${index}: which environment should receive the next deployment?` },
+          'Use staging and keep the existing configuration unchanged.',
+          `call-${index}`,
+        ),
+      );
+      const prepared = await prepareRetainedAnswers({
+        messages: [{ messageId: 'answer', parentMessageId: NO_PARENT, content }],
+        parentMessageId: 'answer',
+        config: { retainedAnswers: { maxTokens: 4096 } },
+        encoding,
+      });
+      expect(prepared.block?.length).toBeGreaterThan(4096);
+      expect(prepared.block).toContain('Question 0:');
+      expect(prepared.block).toContain('Question 99:');
+      expect(prepared.block).not.toContain('omitted');
+      expect(prepared.tokenCount).toBeLessThanOrEqual(4096);
+      const tokenCounter = prepared.tokenCounter;
+      if (!tokenCounter) throw new Error('Expected an exact counter');
+      const messages = [new HumanMessage('Continue.')];
+      const result = applyRetainedAnswers({
+        block: prepared.block,
+        messages,
+        indexTokenCountMap: { 0: tokenCounter(messages[0]) },
+        tokenCounter,
+      });
+      expect(result.indexTokenCountMap[0]).toBe(tokenCounter(result.messages[0]));
+      expect(result.indexTokenCountMap[0]).toBeLessThan(4200);
+    },
+  );
+
   test('carries durable resume stamps after reconstruction, summary slicing, and a second turn without duplication', async () => {
     const request = { questions: [{ id: 'env', question: 'Deploy where?' }] };
     const stamped = attachAskUserQuestionAnswers(
