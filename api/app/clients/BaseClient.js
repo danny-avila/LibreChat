@@ -1239,6 +1239,9 @@ class BaseClient {
     }
 
     const messages = (await db.getMessages({ conversationId, user: this.user })) ?? [];
+    /** A client that reads beyond the walk below (which stops at a checkpoint
+     *  summary) receives every row here; the rest keep nothing. */
+    this.onHistoryLoaded?.(messages);
 
     if (messages.length === 0) {
       return [];

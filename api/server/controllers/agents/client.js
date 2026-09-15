@@ -74,6 +74,11 @@ const {
   checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
+  prepareRetainedAnswers,
+  withRetainedAnswerTokenCounter,
+  applyRetainedAnswers,
+  prepareRetainedAnswerInvocationMessages,
+  resolveRetainedAnswersConfig,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -2189,6 +2194,7 @@ class AgentClient extends BaseClient {
         agents: this.eventActorAgentContextSources ?? agents,
         invokedSkills: skillManifest,
         approvalPolicy: agentsConfig?.toolApproval,
+        retainedAnswers: resolveRetainedAnswersConfig(agentsConfig?.askUserQuestion),
         memory,
         discoveredToolNames,
         checkpointerType: agentsConfig?.checkpointer?.type,
@@ -2251,6 +2257,12 @@ class AgentClient extends BaseClient {
     void this.publishRunContextMeta?.();
   }
 
+  /** Every row `loadHistory` read this turn, held only until the retained
+   *  answers are built: the walk it returns stops at a checkpoint summary. */
+  onHistoryLoaded(rows) {
+    this.loadedHistoryRows = rows;
+  }
+
   async loadHistory(conversationId, parentMessageId = null) {
     if (this.eventActorContinuation === 'warm') {
       logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
@@ -2277,6 +2289,26 @@ class AgentClient extends BaseClient {
       mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
       mapCondition: (message) => message.addedConvo === true,
     });
+    /**
+     * Answers the user gave to earlier `ask_user_question` calls. Read from the
+     * rows before `messages` is narrowed to `orderedMessages`; when those rows
+     * stop short of the branch root (the history read stopped at a checkpoint
+     * summary, or a warm event-actor turn holds only its new event message) the
+     * module completes the branch from the rows that read already fetched, or
+     * through the stored-row query when there was no read. Rendered here,
+     * applied after SDK summary slicing in chatCompletion.
+     */
+    const retainedAnswersPromise = prepareRetainedAnswers({
+      messages,
+      parentMessageId,
+      storedRows: this.loadedHistoryRows,
+      getMessages: db.getMessages,
+      conversationId: this.conversationId,
+      userId: this.user ?? this.options.req.user?.id,
+      config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
+      encoding: this.getEncoding(),
+    });
+    this.loadedHistoryRows = undefined;
 
     let payload;
     /** @type {number | undefined} */
@@ -2815,6 +2847,9 @@ class AgentClient extends BaseClient {
       earlySharedContextPromise,
       agentScopedContextPromise,
     ]);
+
+    this.retainedAnswers = await retainedAnswersPromise;
+    promptTokens += this.retainedAnswers.tokenCount;
 
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;
@@ -4527,7 +4562,10 @@ class AgentClient extends BaseClient {
         this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
         payload,
       );
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       if (this.eventActorContinuation === 'cold') {
@@ -4716,6 +4754,14 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memorySourceMessages = initialMessages;
+      ({ messages: initialMessages, indexTokenCountMap } = applyRetainedAnswers({
+        block: this.retainedAnswers?.block,
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      }));
+
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
@@ -4725,7 +4771,7 @@ class AgentClient extends BaseClient {
               skillPrimeResult?.skills,
               hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
-          : initialMessages;
+          : memorySourceMessages;
 
       /**
        * @param {BaseMessage[]} messages
@@ -4967,8 +5013,11 @@ class AgentClient extends BaseClient {
         /** The inherited tier must be on the job before any Stop can read it. */
         await this.publishRunContextMeta?.();
         try {
-          const invocationMessages =
-            this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
+          const invocationMessages = await prepareRetainedAnswerInvocationMessages(
+            messages,
+            this.eventActorContinuation === 'warm',
+            () => run.graphRunnable.getState(config),
+          );
           await run.processStream({ messages: invocationMessages }, config, {
             callbacks: {
               [Callback.TOOL_ERROR]: logToolError,
@@ -5312,7 +5361,10 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...seedContent);
       }
 
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
       this.compactionSemanticIndexSnapshot =
         restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([

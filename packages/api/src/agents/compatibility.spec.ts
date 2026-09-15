@@ -263,3 +263,28 @@ describe('event actor summary state', () => {
     );
   });
 });
+
+describe('retained-answer checkpoint compatibility', () => {
+  it('rebuilds warm state after enabling, disabling, changing the budget, or upgrading legacy context', () => {
+    const base = { agents: [{ id: 'agent-1' }] };
+    const enabled = createInitializedAgentContextFingerprint({
+      ...base,
+      retainedAnswers: { enabled: true, maxTokens: 4096 },
+    });
+    for (const retainedAnswers of [
+      undefined,
+      { enabled: false, maxTokens: 4096 },
+      { enabled: true, maxTokens: 1024 },
+    ]) {
+      expect(
+        createInitializedAgentContextFingerprint({ ...base, retainedAnswers }).digest,
+      ).not.toBe(enabled.digest);
+    }
+    expect(
+      createInitializedAgentContextFingerprint({
+        ...base,
+        retainedAnswers: { enabled: true, maxTokens: 4096 },
+      }).digest,
+    ).toBe(enabled.digest);
+  });
+});
