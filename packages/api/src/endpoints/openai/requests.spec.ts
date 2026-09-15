@@ -273,7 +273,7 @@ describe('prompt cache parameters', () => {
     options.promptCacheKey = buildPromptCacheKey({
       model: options.model,
       instructions,
-      toolDefinitions,
+      boundTools: toolDefinitions,
     });
     return {
       ...options,
@@ -350,7 +350,7 @@ describe('prompt cache parameters', () => {
       expect(bodies).toHaveLength(2);
       const [first, second] = bodies;
       expect(first.prompt_cache_key).toBe(
-        buildPromptCacheKey({ model: wireModel, instructions, toolDefinitions }),
+        buildPromptCacheKey({ model: wireModel, instructions, boundTools: toolDefinitions }),
       );
       expect(second.prompt_cache_key).toBe(first.prompt_cache_key);
       expect(first.prompt_cache_retention).toBe('24h');
