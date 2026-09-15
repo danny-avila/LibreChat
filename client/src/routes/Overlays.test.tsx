@@ -290,4 +290,71 @@ describe('mobile overlay history', () => {
       expect(window.history.state.usr).toEqual({ preserved: true });
     },
   );
+
+  it.each(['before opening', 'while open'])(
+    'keeps an overlay open when FINAL synchronizes a route mirrored %s',
+    async (when) => {
+      mount();
+      if (when === 'while open') await open();
+      fireEvent.click(screen.getByText('Promote URL'));
+      if (when === 'before opening') await open();
+      const length = window.history.length;
+      await act(async () => {
+        await router.navigate('/c/stream-123', { replace: true, state: { synchronized: true } });
+      });
+      expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/c/stream-123');
+      expect(window.history.length).toBe(length);
+      const key = router.state.location.key;
+      await back();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(window.location.pathname).toBe('/c/stream-123');
+      expect(window.location.search).toBe('');
+      expect(window.history.state.key).toBe(key);
+      expect(window.history.state.usr).toEqual({ synchronized: true });
+      await back();
+      await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
+    },
+  );
+
+  it('keeps nested overlays through FINAL and consumes explicit close without a dead Back step', async () => {
+    mount();
+    await open();
+    fireEvent.click(screen.getByText('Open nested'));
+    fireEvent.click(screen.getByText('Promote URL'));
+    await act(async () => {
+      await router.navigate('/c/stream-123', { replace: true });
+    });
+    expect(screen.getByRole('dialog', { name: 'inner' })).toBeInTheDocument();
+    await back();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'inner' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Close', { selector: 'button' }));
+    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
+    expect(window.location.pathname).toBe('/c/stream-123');
+    await back();
+    await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
+    await act(async () => {
+      window.history.forward();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/stream-123'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { pathname: '/c/stream-123', replace: false },
+    { pathname: '/c/elsewhere', replace: true },
+  ])('still dismisses on real navigation after mirroring: %o', async ({ pathname, replace }) => {
+    mount();
+    await open();
+    fireEvent.click(screen.getByText('Promote URL'));
+    await act(async () => {
+      await router.navigate(pathname, { replace });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(router.state.location.pathname).toBe(pathname);
+  });
 });

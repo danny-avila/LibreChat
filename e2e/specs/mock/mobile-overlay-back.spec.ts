@@ -11,6 +11,7 @@ import {
   replyText,
   requestJson,
   selectMockEndpoint,
+  sendMessage,
   sendMessageAndWaitForCompletion,
 } from './helpers';
 
@@ -148,7 +149,7 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
     await expect(artifact).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('closes child agent progress without leaving the parent conversation or losing activity', async ({
+  test('keeps a child control draft through first-turn FINAL, then Back closes only the panel', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -191,25 +192,42 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
       await page.getByRole('option', { name: parentName, exact: true }).click();
       await expect(form.getByLabel('Agent name')).toHaveValue(parentName);
       await form.getByRole('button', { name: 'Select Agent' }).click();
-      const response = await sendMessageAndWaitForCompletion(
+      await enterMobileChat(page);
+      const response = await sendMessage(
         page,
-        `E2E_SUBAGENT_ACTIVITY:${childIds.join(',')}:${label}`,
+        `E2E_SUBAGENT_ACTIVITY_FINAL:${childIds.join(',')}:${label}`,
       );
       expect(response.ok()).toBeTruthy();
-      await enterMobileChat(page);
-      const chatUrl = page.url();
+      await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}/);
+      const initialKey = await page.evaluate(() => history.state.key as string);
+      /** FINAL removes the new-chat query parameters from this same conversation. */
+      const { origin, pathname } = new URL(page.url());
+      const chatUrl = `${origin}${pathname}`;
       const parentReply = messagesView(page).getByText(
         `E2E detached subagents dispatched ${label}`,
-        { exact: true },
       );
-      await expect(parentReply).toBeVisible();
-      await page.getByRole('button', { name: 'Ran 2 agents', exact: true }).click();
+      await page.getByRole('button', { name: /(?:Running|Ran) 2 agents/ }).click();
       const cards = page.locator('[data-subagent-tool-call^="call_e2e_subagent_activity_"]');
       await expect(cards).toHaveCount(2);
       await cards.first().click();
 
       const panel = page.getByRole('dialog', { name: 'Child agent activity', exact: true });
+      const input = panel.getByRole('textbox', { name: 'Message input', exact: true });
+      const draft = `Unsent child control draft ${label}`;
+      await input.fill(draft);
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible();
+      expect(await page.evaluate(() => history.state.key as string)).toBe(initialKey);
       await expect(panel).toContainText('child-1-phase-10', { timeout: 30_000 });
+
+      /** The changed Router key proves FINAL synchronized /c/new, not just the URL mirror. */
+      await expect
+        .poll(() => page.evaluate(() => history.state.key as string), { timeout: 30_000 })
+        .not.toBe(initialKey);
+      await expect(panel).toBeVisible();
+      await expect(input).toHaveValue(draft);
+      await expect(parentReply).toContainText('chunk-159');
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden();
+      await expect(page).toHaveURL(chatUrl);
       await backClosesOverlay(page, panel, chatUrl);
       await expect(parentReply).toBeVisible();
       await expect(page.getByRole('textbox', { name: 'Message input', exact: true })).toBeVisible();

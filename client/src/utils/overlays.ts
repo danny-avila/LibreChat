@@ -1,5 +1,6 @@
 import { v4 } from 'uuid';
 import type { OverlayRegistration, RegisterOverlay } from '@librechat/client';
+import type { NavigationType } from 'react-router-dom';
 
 type Marker = { token: string; kind: 'base' | 'open' | 'closed' };
 type HistoryState = { idx?: number; librechatOverlay?: Marker } | null;
@@ -19,7 +20,7 @@ export function replaceBrowserUrl(url: string) {
 export function createOverlayHistory(browser: Window): {
   register: RegisterOverlay;
   listen: () => () => void;
-  navigated: () => void;
+  navigated: (action: NavigationType) => void;
 } {
   const layers = new Map<string, OverlayRegistration>();
   const snapshot = () => ({
@@ -31,6 +32,7 @@ export function createOverlayHistory(browser: Window): {
   let listening = false;
   let scheduled = false;
   let skipDirection: 1 | -1 | null = null;
+  let mirroredPath: string | null = null;
 
   const reconcile = () => {
     if (scheduled) return;
@@ -74,7 +76,7 @@ export function createOverlayHistory(browser: Window): {
       const { closing, url } = active;
       active = null;
       browser.history.replaceState(
-        { ...current.state, librechatOverlay: { ...marker, kind: 'closed' } },
+        { ...previous.state, librechatOverlay: { ...marker, kind: 'closed' } },
         '',
         url,
       );
@@ -112,6 +114,9 @@ export function createOverlayHistory(browser: Window): {
   };
 
   const mirrored = () => {
+    if (new URL(current.url).pathname !== browser.location.pathname) {
+      mirroredPath = browser.location.pathname;
+    }
     current = snapshot();
     if (active != null) active.url = current.url;
   };
@@ -138,9 +143,23 @@ export function createOverlayHistory(browser: Window): {
         browser.removeEventListener(URL_MIRRORED, mirrored);
       };
     },
-    navigated: () => {
+    navigated: (action) => {
+      const synchronizing = action === 'REPLACE' && mirroredPath === browser.location.pathname;
+      mirroredPath = null;
       current = snapshot();
       if (active == null || current.state?.librechatOverlay?.token === active.token) return;
+      /** FINAL catches Router up to the mirrored URL without leaving the conversation.
+       *  Keep the guard, but adopt Router's new state and canonical URL for its later POP. */
+      if (synchronizing) {
+        browser.history.replaceState(
+          { ...current.state, librechatOverlay: { token: active.token, kind: 'open' } },
+          '',
+          current.url,
+        );
+        active.url = current.url;
+        current = snapshot();
+        return;
+      }
       active = null;
       for (const layer of layers.values()) layer.onClose();
       reconcile();
