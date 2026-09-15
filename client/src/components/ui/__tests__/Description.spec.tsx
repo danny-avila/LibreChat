@@ -15,6 +15,16 @@ describe('Description', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
+  it('preserves safe block boundaries in rich descriptions', () => {
+    const { container } = render(
+      <Description description="<p>First</p><div>Second</div><ul><li>Third</li></ul>" />,
+    );
+
+    expect(container.querySelector('p')).toHaveTextContent('First');
+    expect(container.querySelector('div > div')).toHaveTextContent('Second');
+    expect(container.querySelector('li')).toHaveTextContent('Third');
+  });
+
   it('removes executable markup and unsafe URLs', () => {
     const { container } = render(
       <Description

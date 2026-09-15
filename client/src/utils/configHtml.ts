@@ -3,6 +3,13 @@ import DOMPurify from 'dompurify';
 export const CONFIG_HTML_INLINE_TAGS = ['a', 'strong', 'b', 'em', 'i', 'br', 'code'] as const;
 export const CONFIG_HTML_TEXT_TAGS = [...CONFIG_HTML_INLINE_TAGS, 'span'] as const;
 export const CONFIG_HTML_BLOCK_TAGS = [...CONFIG_HTML_TEXT_TAGS, 'p'] as const;
+export const CONFIG_HTML_RICH_TEXT_TAGS = [
+  ...CONFIG_HTML_BLOCK_TAGS,
+  'div',
+  'ul',
+  'ol',
+  'li',
+] as const;
 export const CONFIG_HTML_MEDIA_TAGS = [...CONFIG_HTML_TEXT_TAGS, 'img'] as const;
 export const CONFIG_HTML_LINK_ATTR = ['href', 'target', 'rel'] as const;
 export const CONFIG_HTML_CLASS_ATTR = [...CONFIG_HTML_LINK_ATTR, 'class'] as const;
@@ -51,13 +58,13 @@ export function createConfigHtmlTextSanitizer() {
     }
 
     const fragment = sanitizer.sanitize(html, {
-      ALLOWED_TAGS: ['br', 'p', 'div', 'li'],
+      ALLOWED_TAGS: [...CONFIG_HTML_RICH_TEXT_TAGS],
       ALLOWED_ATTR: [],
       ALLOW_DATA_ATTR: false,
       ALLOW_ARIA_ATTR: false,
       RETURN_DOM_FRAGMENT: true,
     });
-    for (const element of fragment.querySelectorAll('br, p, div, li')) {
+    for (const element of fragment.querySelectorAll('br, p, div, ul, ol, li')) {
       element.before(' ');
       element.after(' ');
     }

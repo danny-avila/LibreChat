@@ -4,13 +4,13 @@ import {
   CONFIG_HTML_LINK_ATTR,
   CONFIG_HTML_MEDIA_ATTR,
   CONFIG_HTML_MEDIA_TAGS,
-  CONFIG_HTML_TEXT_TAGS,
+  CONFIG_HTML_RICH_TEXT_TAGS,
   createConfigHtmlSanitizer,
   createConfigHtmlTextSanitizer,
 } from '~/utils/configHtml';
 
 const sanitizeDescription = createConfigHtmlSanitizer({
-  allowedTags: CONFIG_HTML_TEXT_TAGS,
+  allowedTags: CONFIG_HTML_RICH_TEXT_TAGS,
   allowedAttr: CONFIG_HTML_LINK_ATTR,
 });
 const sanitizeMediaDescription = createConfigHtmlSanitizer({
