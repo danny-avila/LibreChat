@@ -164,7 +164,7 @@ describe('CodeApprovalMenu', () => {
   });
 });
 
-test('remembers the pick as this browser\'s default for the next chat', async () => {
+test("remembers the pick as this browser's default for the next chat", async () => {
   localStorage.clear();
   mockUseCodeApprovalMode.mockReturnValue({
     available: true,

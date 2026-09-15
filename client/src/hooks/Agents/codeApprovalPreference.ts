@@ -3,10 +3,7 @@ import { CODE_APPROVAL_MODES, LocalStorageKeys } from 'librechat-data-provider';
 import type { CodeApprovalMode } from 'librechat-data-provider';
 import { createStorageAtom } from '~/store/jotai-utils';
 
-const preference = createStorageAtom<string | null>(
-  LocalStorageKeys.LAST_CODE_APPROVAL_MODE,
-  null,
-);
+const preference = createStorageAtom<string | null>(LocalStorageKeys.LAST_CODE_APPROVAL_MODE, null);
 
 function validMode(saved: string | null): CodeApprovalMode | undefined {
   return (CODE_APPROVAL_MODES as readonly string[]).includes(saved ?? '')
