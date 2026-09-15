@@ -11,6 +11,7 @@ import {
   skillFrontmatterValueSchema,
 } from '../skills/management';
 import { agentManagementListSchema, agentManagementErrorSchema } from '../agents/management';
+import { unauthorizedResponseSchema } from './errors';
 
 const TAG = 'Skills';
 const SECURITY = ['oidcBearer'];
@@ -46,6 +47,7 @@ export const skillComponentSchemas: Record<string, ZodTypeAny> = {
 
 const errorResponses = [
   { status: 400, description: 'Invalid request', schema: agentManagementErrorSchema },
+  { status: 401, description: 'Authentication failed', schema: unauthorizedResponseSchema },
   { status: 403, description: 'Permission denied', schema: agentManagementErrorSchema },
   { status: 404, description: 'Not found', schema: agentManagementErrorSchema },
 ];
