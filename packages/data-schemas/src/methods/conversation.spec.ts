@@ -1079,6 +1079,88 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('code environment persistence during ordinary saves', () => {
+    const mac = { environmentId: 'code-mac', workspaceId: 'primary' };
+    const vm = { environmentId: 'code-vm', workspaceId: 'primary' };
+    const userId = 'user123';
+    const unsetFields = { codeEnvironmentMode: 1, codeWorkspaces: 1 };
+
+    it.each([
+      { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+      { codeEnvironmentMode: 'without_attached' },
+    ])(
+      'preserves $codeEnvironmentMode through an approval pause and later saves',
+      async (decision) => {
+        const conversationId = uuidv4();
+        await saveConvo({ userId }, { conversationId, ...decision });
+
+        for (const title of ['Approval required', 'Resumed', 'Completed']) {
+          await saveConvo({ userId }, { conversationId, title }, { unsetFields });
+          const stored = await getConvo(userId, conversationId);
+          expect(stored?.codeEnvironmentMode).toBe(decision.codeEnvironmentMode);
+          expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
+          expect(stored?.title).toBe(title);
+        }
+      },
+    );
+
+    it('cannot overwrite an explicit move with a stale turn-start snapshot', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      await saveConvo({ userId }, { conversationId, ...decision });
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+
+      await saveConvo({ userId }, { conversationId, ...decision });
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([vm]);
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: null, codeWorkspaces: [] },
+      );
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('seeds imported decisions without letting repeated imports undo a move', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      const imported = { conversationId, user: userId, ...decision };
+      await methods.bulkSaveConvos([imported]);
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([mac]);
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+      await methods.bulkSaveConvos([imported]);
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it.each([{}, { codeWorkspaces: [mac] }])(
+      'preserves a legacy decision: %j',
+      async (decision) => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({ conversationId, user: userId, ...decision });
+        await saveConvo(
+          { userId },
+          { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [vm] },
+          { unsetFields },
+        );
+        const stored = await getConvo(userId, conversationId);
+        expect(stored?.codeEnvironmentMode).toBeUndefined();
+        expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
+      },
+    );
+  });
+
   describe('replaceConvoCodeEnvironmentDecision', () => {
     const anchor = new Date('2026-09-12T11:22:22.976Z');
     const mac = { environmentId: 'code-mac', workspaceId: 'primary' };

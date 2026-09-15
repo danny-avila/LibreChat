@@ -2181,6 +2181,15 @@ export function createConversationMethods(
       delete update.isTemporary;
       delete update.expiredAt;
       delete update.initial_agent_id;
+      /** Ordinary saves may seed a decision, but only an explicit move may replace it. */
+      const decisionOnInsert = {
+        ...(convo.codeEnvironmentMode != null && {
+          codeEnvironmentMode: convo.codeEnvironmentMode,
+        }),
+        ...(convo.codeWorkspaces != null && { codeWorkspaces: convo.codeWorkspaces }),
+      };
+      delete update.codeEnvironmentMode;
+      delete update.codeWorkspaces;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
@@ -2189,6 +2198,8 @@ export function createConversationMethods(
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
       delete unsetFields.initial_agent_id;
+      delete unsetFields.codeEnvironmentMode;
+      delete unsetFields.codeWorkspaces;
       stripActorCheckpointFields(unsetFields);
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
@@ -2318,6 +2329,7 @@ export function createConversationMethods(
           : createdAtOnInsert;
         operation.$setOnInsert = {
           initial_agent_id: initialAgentId,
+          ...decisionOnInsert,
           ...retentionOnInsert,
           ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
         };
@@ -2642,7 +2654,7 @@ export function createConversationMethods(
 
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
-        const sanitized = { ...convo };
+        const { codeEnvironmentMode, codeWorkspaces, ...sanitized } = convo;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
@@ -2676,7 +2688,11 @@ export function createConversationMethods(
             },
             update: {
               $set: sanitized,
-              $setOnInsert: { initial_agent_id: null },
+              $setOnInsert: {
+                initial_agent_id: null,
+                ...(codeEnvironmentMode != null && { codeEnvironmentMode }),
+                ...(codeWorkspaces != null && { codeWorkspaces }),
+              },
             },
             upsert: true,
             timestamps: false,
