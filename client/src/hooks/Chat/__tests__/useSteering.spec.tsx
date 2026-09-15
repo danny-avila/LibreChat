@@ -1,10 +1,13 @@
 import React from 'react';
+import { getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
 import useSteering, { mergeQueuedTurnFileMetadata } from '../useSteering';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -109,6 +112,14 @@ function setup(params: HookParams = {}, initialize?: (snapshot: MutableSnapshot)
   const rendered = renderHook(
     () =>
       useSteering({
+        consumeDraft: () => {
+          const id = params.conversationId ?? CONVO_ID;
+          const conversationDraftId =
+            id === Constants.NEW_CONVO ? getNewConversationDraftId(0) : id;
+          clearAllDrafts(
+            params.isSubmitting === false ? conversationDraftId : getPendingDraftId(0),
+          );
+        },
         index: 0,
         conversationId: CONVO_ID,
         conversation: agentsConversation,
@@ -135,6 +146,7 @@ function useQueue(convoId: string) {
 describe('useSteering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
     mockMessages = undefined;
     mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
@@ -302,6 +314,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -346,6 +359,70 @@ describe('useSteering', () => {
         expect.objectContaining({ text: 'wait for the epoch' }),
       ]);
       expect(result.current.queue[0].server).toBeUndefined();
+    });
+
+    it('persists another follow-up against the original queue lineage after its completion boundary advances', async () => {
+      const family = revealedQueuedTurnFamily(CONVO_ID);
+      getDefaultStore().set(family, {
+        clientRequestId: 'pending-first',
+        parentMessageId: 'completed-response',
+        generationCreatedAt: 42,
+        queueParentMessageId: 'original-queue-parent',
+        queuePredecessorCreatedAt: 41,
+        text: 'first',
+        revealedAt: new Date().toISOString(),
+      });
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        options.onSuccess({
+          ...input,
+          queuedTurnId: 'durable-second',
+          status: 'queued',
+          revision: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      });
+      const { result, unmount } = setup({ isSubmitting: false }, ({ set }) => {
+        set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted context']);
+        set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill']);
+      });
+      expect(result.current.duringRunActive).toBe(true);
+      expect(result.current.canSteer).toBe(false);
+      await act(async () => {
+        expect(result.current.submitDuringRun('second')).toBe(true);
+      });
+      expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentMessageId: 'original-queue-parent',
+          expectedPredecessorCreatedAt: 41,
+          text: 'second',
+          quotes: ['quoted context'],
+          manualSkills: ['skill'],
+        }),
+        expect.any(Object),
+      );
+      unmount();
+      getDefaultStore().set(family, null);
+      mockServerQueuedTurns = [
+        {
+          ...mockEnqueueQueuedTurn.mock.calls[0][0],
+          queuedTurnId: 'durable-second',
+          status: 'queued',
+          revision: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      const restored = setupServerQueue();
+      await waitFor(() =>
+        expect(restored.result.current.queue[0]).toMatchObject({
+          text: 'second',
+          quotes: ['quoted context'],
+          manualSkills: ['skill'],
+          server: { id: 'durable-second', status: 'queued' },
+        }),
+      );
     });
 
     it('enrolls one optimistic row with a stable request and visible branch identity', async () => {
@@ -904,6 +981,7 @@ describe('useSteering', () => {
         true,
         [clientRequestId],
         uncertainSince! + 60_000,
+        true,
       );
     });
 
@@ -931,6 +1009,15 @@ describe('useSteering', () => {
         expect(result.current.queue[0]).toMatchObject({
           server: { status: 'uncertain', reconciliationExpired: true },
         });
+        /** Held for manual recovery only: the projection owes it nothing more,
+         *  so the poll no longer stays alive on its account. */
+        expect(mockUseAgentQueuedTurns).toHaveBeenLastCalledWith(
+          CONVO_ID,
+          true,
+          [result.current.queue[0].clientRequestId],
+          expect.any(Number),
+          false,
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -1097,6 +1184,7 @@ describe('useSteering', () => {
       const { result } = renderHook(
         () => {
           useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -1301,6 +1389,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -1480,6 +1569,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         ({ convoId, isSubmitting }: { convoId: string; isSubmitting: boolean }) => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: convoId,
             conversation: agentsConversation,
@@ -2056,6 +2146,7 @@ describe('useSteering', () => {
       const { result, rerender } = renderHook(
         ({ conversationId }: { conversationId: string }) =>
           useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId,
             conversation: {
@@ -2116,6 +2207,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3077,6 +3169,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3279,6 +3372,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3838,6 +3932,45 @@ describe('useSteering', () => {
       expect(result.current.queueKey).toBe(CONVO_ID);
       expect(localStorage.getItem(pendingDraftKey)).toBeNull();
     });
+
+    it.each([false, true])(
+      'consumes the conversation draft only after a handoff submission is accepted (blocked=%s)',
+      async (filesLoading) => {
+        const key = `${LocalStorageKeys.TEXT_DRAFT}${CONVO_ID}`;
+        const unrelatedKey = `${LocalStorageKeys.TEXT_DRAFT}another-conversation`;
+        localStorage.setItem(key, 'ZHJhZnRlZCB0ZXh0');
+        localStorage.setItem(unrelatedKey, 'other draft');
+        getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), {
+          clientRequestId: 'pending',
+          parentMessageId: 'response',
+          generationCreatedAt: 41,
+          text: 'pending',
+          revealedAt: new Date().toISOString(),
+        });
+        const { result, unmount } = setup({ isSubmitting: false, filesLoading }, ({ set }) => {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        });
+        await act(async () => {
+          expect(result.current.submitDuringRun('drafted text')).toBe(!filesLoading);
+        });
+        expect(localStorage.getItem(key)).toBe(filesLoading ? 'ZHJhZnRlZCB0ZXh0' : null);
+        expect(localStorage.getItem(unrelatedKey)).toBe('other draft');
+        unmount();
+        getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
+      },
+    );
+
+    it.each([false, true])(
+      'delegates draft consumption to its owner only on acceptance (blocked=%s)',
+      (filesLoading) => {
+        const consumeDraft = jest.fn();
+        const { result } = setup({ filesLoading, consumeDraft });
+        act(() => {
+          expect(result.current.queueFromComposer('drafted text')).toBe(!filesLoading);
+        });
+        expect(consumeDraft).toHaveBeenCalledTimes(filesLoading ? 0 : 1);
+      },
+    );
 
     it('drops the pending draft when steering from the composer', () => {
       stageDraft();

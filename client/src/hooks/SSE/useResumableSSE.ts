@@ -501,6 +501,38 @@ const replaceNewConversationUrl = (conversationId: string) => {
 const shouldHydrateMessage = (message: TMessage) =>
   !hasConcreteConversationId(message.conversationId);
 
+/** Recovery must identify the response itself: regenerations share a user
+ * parent, and array order says nothing about which sibling just completed.
+ * A fresh-turn placeholder has no server response ID yet; only an unambiguous
+ * persisted child can stand in for it. */
+const completedResponseMessageId = (
+  messages: TMessage[] | undefined,
+  userMessageId: string | undefined,
+  responseMessageId: string | undefined,
+): string | undefined => {
+  if (messages == null || userMessageId == null) {
+    return undefined;
+  }
+  const target = responseMessageId?.replace(/_+$/, '');
+  const hasResponseIdentity = target != null && target !== userMessageId;
+  let candidate: string | undefined;
+  let ambiguous = false;
+  for (const message of messages) {
+    if (message.isCreatedByUser !== false || message.parentMessageId !== userMessageId) {
+      continue;
+    }
+    if (hasResponseIdentity) {
+      if (message.messageId === target) {
+        return message.messageId;
+      }
+      continue;
+    }
+    ambiguous ||= candidate != null;
+    candidate = message.messageId;
+  }
+  return hasResponseIdentity || ambiguous ? undefined : candidate;
+};
+
 const hydrateMessageConversationId = (message: TMessage, conversationId: string): TMessage =>
   shouldHydrateMessage(message) ? { ...message, conversationId } : message;
 
@@ -2086,6 +2118,9 @@ export default function useResumableSSE(
               startedAsNewConvo: runEndTarget.startedAsNewConvo,
               endedAt: Date.now(),
               generationCreatedAt,
+              ...(data.responseMessage?.messageId != null && {
+                responseMessageId: data.responseMessage.messageId,
+              }),
             });
             // Clear handler maps on stream completion to prevent memory leaks
             clearStepMaps();
@@ -2965,11 +3000,23 @@ export default function useResumableSSE(
         } else if (event.terminalStatus === 'error') {
           reconciliationOutcome = 'error';
         }
+        const reconciledResponseMessageId =
+          reconciliationOutcome === 'completed'
+            ? completedResponseMessageId(
+                persistedMessages,
+                userMessage?.messageId,
+                status?.resumeState?.responseMessageId ??
+                  currentSubmission.initialResponse?.messageId,
+              )
+            : undefined;
         setRunEnd({
           conversationId: reconciliationConvoId,
           outcome: reconciliationOutcome,
           endedAt: Date.now(),
           generationCreatedAt: status?.createdAt ?? generationCreatedAt,
+          ...(reconciledResponseMessageId != null && {
+            responseMessageId: reconciledResponseMessageId,
+          }),
         });
         setSubmission(null);
         setStreamId(null);
@@ -3657,11 +3704,23 @@ export default function useResumableSSE(
           } else if (status.status === 'aborted') {
             recoveryOutcome = 'aborted';
           }
+          const recoveredResponseMessageId =
+            recoveryOutcome === 'completed'
+              ? completedResponseMessageId(
+                  persistedMessages,
+                  userMessage?.messageId,
+                  status?.resumeState?.responseMessageId ??
+                    currentSubmission.initialResponse?.messageId,
+                )
+              : undefined;
           setRunEnd({
             conversationId: recoveryConvoId,
             outcome: recoveryOutcome,
             endedAt: Date.now(),
             generationCreatedAt: status.createdAt ?? generationCreatedAt,
+            ...(recoveredResponseMessageId != null && {
+              responseMessageId: recoveredResponseMessageId,
+            }),
           });
           setSubmission(null);
           setStreamId(null);

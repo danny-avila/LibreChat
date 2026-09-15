@@ -9,6 +9,8 @@ import type { ReactNode } from 'react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
@@ -976,13 +978,48 @@ describe('useResumeOnLoad', () => {
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
     });
 
+    it('retires a remounted reveal after fresh inactive status and restored successor history', async () => {
+      mockUseStreamStatus.mockReturnValue({ ...INACTIVE_STATUS, isSuccess: false });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [] });
+      const messages = [
+        buildUserMessage(CONVERSATION_ID),
+        { messageId: 'successor', parentMessageId: 'response' } as TMessage,
+      ];
+      const { rerender, jotaiStore, queryClient } = renderUseResumeOnLoad({ messages });
+      const family = revealedQueuedTurnFamily(CONVERSATION_ID);
+      act(() => {
+        queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], messages);
+        jotaiStore.set(family, {
+          clientRequestId: 'queued',
+          parentMessageId: 'response',
+          generationCreatedAt: 41,
+          text: 'queued',
+          revealedAt: new Date(Date.now() - 60_000).toISOString(),
+        });
+      });
+      mockUseStreamStatus.mockReturnValue({ ...INACTIVE_STATUS, dataUpdatedAt: Date.now() + 1 });
+      rerender();
+      expect(jotaiStore.get(family)).toBeNull();
+    });
+
     it('lets the owed state lapse once the receipt has gone quiet for the window', async () => {
       jest.useFakeTimers();
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
       mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
-      const { rerender } = renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      const { rerender, jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
       await act(async () => {
         await Promise.resolve();
+      });
+
+      const revealFamily = revealedQueuedTurnFamily(CONVERSATION_ID);
+      jotaiStore.set(revealFamily, {
+        clientRequestId: 'queued',
+        parentMessageId: 'response',
+        generationCreatedAt: 41,
+        text: 'queued',
+        revealedAt: new Date().toISOString(),
       });
 
       /** A long wait behind an unadmitted turn must not burn the window: the
@@ -992,6 +1029,7 @@ describe('useResumeOnLoad', () => {
       });
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
 
+      expect(jotaiStore.get(revealFamily)).not.toBeNull();
       mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
       rerender();
       await act(async () => {
@@ -1004,6 +1042,7 @@ describe('useResumeOnLoad', () => {
       });
       rerender();
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      expect(jotaiStore.get(revealFamily)).toBeNull();
       jest.useRealTimers();
     });
 
@@ -1262,6 +1301,47 @@ describe('useResumeOnLoad', () => {
       expect(historyRefetches()).toBe(2);
       nowSpy.mockRestore();
     });
+
+    it.each(['queued', 'claimed', 'admitted'])(
+      'retains off-screen admission ownership while a cached receipt is %s',
+      async (status) => {
+        jest.useFakeTimers();
+        mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+        mockUseAgentQueuedTurns.mockReturnValue({
+          data: [{ queuedTurnId: 'q1', status }],
+          dataUpdatedAt: 2,
+        });
+        const { rerender, queryClient, jotaiStore } = renderUseResumeOnLoad({
+          messages: [buildUserMessage(CONVERSATION_ID)],
+        });
+        const family = revealedQueuedTurnFamily(CONVERSATION_ID);
+        act(() => {
+          jotaiStore.set(family, {
+            clientRequestId: 'request',
+            parentMessageId: 'response',
+            generationCreatedAt: 41,
+            text: 'queued',
+            revealedAt: new Date().toISOString(),
+          });
+          queryClient.setQueryData(agentQueuedTurnsQueryKey(CONVERSATION_ID), [
+            { queuedTurnId: 'q1', status },
+          ]);
+        });
+        mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+        rerender({ conversationId: STALE_CONVERSATION_ID });
+        await act(async () => {
+          jest.advanceTimersByTime(30_001);
+        });
+        expect(jotaiStore.get(family)).not.toBeNull();
+        mockUseAgentQueuedTurns.mockReturnValue({
+          data: [{ queuedTurnId: 'q1', status }],
+          dataUpdatedAt: 4,
+        });
+        rerender({ conversationId: CONVERSATION_ID });
+        expect(jotaiStore.get(family)).not.toBeNull();
+        jest.useRealTimers();
+      },
+    );
 
     it('expires the owed state on an absolute window even while its conversation is off-screen', async () => {
       jest.useFakeTimers();
