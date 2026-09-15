@@ -188,6 +188,16 @@ describe('initializeClient — processAgent ACL gate', () => {
     const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
     const req = makeReq();
     req._isScheduledFire = true;
+    req._isAgentTrigger = true;
+    req.body.agent_id = PRIMARY_ID;
+    req.body.agentTrigger = {
+      version: 1,
+      event: {
+        type: 'schedule.occurrence',
+        occurredAt: 0,
+        source: { type: 'schedule', id: 'sched-1' },
+      },
+    };
     const signal = new AbortController().signal;
     mockInitializeAgent.mockImplementationOnce(async ({ loadTools, agent }) => {
       await loadTools({
@@ -211,7 +221,15 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(toolLoadParams.upstreamTokenProvider).toBeUndefined();
     const resolver = toolLoadParams.upstreamTokenProviderResolver;
     await expect(resolver({ signal })).resolves.toBe(upstreamTokenProvider);
-    expect(resolveUpstreamTokenProvider).toHaveBeenCalledWith(req.user, { signal });
+    expect(resolveUpstreamTokenProvider).toHaveBeenCalledWith(req.user, {
+      signal,
+      context: {
+        scheduleId: 'sched-1',
+        ownerId: req.user.id,
+        agentId: PRIMARY_ID,
+        invocationMode: 'delegated',
+      },
+    });
   });
 
   it('keeps interactive agent initialization independent of the host resolver', async () => {

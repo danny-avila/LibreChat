@@ -38,3 +38,39 @@ messages or OAuth URLs. Successful dispatch records also retain the server outco
 The schedule card shows failed servers and links to the selected agent for recovery.
 A pure pause remains available even when MCP validation fails. This change does not
 re-enable existing schedules automatically or repair credentials on the user's behalf.
+
+## Host token-provider context
+
+`createMCPPreflight` and `createInitializeClient` accept a
+`HostUpstreamTokenProviderResolver`. The default application does not install one.
+The host receives the persisted/authenticated user and these optional fields:
+
+```ts
+resolveUpstreamTokenProvider(user, {
+  signal,
+  context: { scheduleId, ownerId, tenantId, agentId, invocationMode: 'delegated' },
+  target: { mcpServer, scopes },
+});
+```
+
+Admission allocates the schedule ID before preflight and persists that same ID. Edits
+and dispatch use the existing schedule ID. Execution derives the context from the
+verified schedule trigger and authenticated owner, then captures it before tool loading.
+`agentId` identifies the root scheduled agent throughout child execution and handoffs.
+The existing resolver closure is passed through tool discovery, execution, and reconnects;
+it never goes into tool arguments or durable job payloads.
+
+Each OBO consumer supplies its server name and configured scopes after its existing trust
+check. A run shares in-flight lookups and successful providers only for identical server
+and scope pairs. Failed or empty lookups may retry; cancellation belongs to the owning run,
+so cancelling one child does not cancel a sibling's lookup.
+
+`tenantId` is absent in deployments without tenancy. `context` is absent for legacy callers
+that supply no schedule ID or verified trigger, and `target` is absent for legacy consumers.
+Existing callbacks may ignore the new fields. Hosts needing either field must reject its
+absence. Context describes execution; it is not a consent grant or permission to mint.
+Current schedules execute with their owner's authority, hence `delegated`. Dedicated agent
+authorization requires a separate implementation. Scopes are not an STS audience; audience
+mapping and authorization remain the host's responsibility.
+
+This interface adds no token store, STS exchange, consent API, or new MCP credential mode.
