@@ -66,6 +66,7 @@ describe('buildPromptCacheKey', () => {
     ['model', { model: 'gpt-5.6-terra' }],
     ['tool schemas', { boundTools: [searchTool] }],
     ['output schema', { responseSchema: { type: 'json_schema', name: 'answer' } }],
+    ['Responses output format', { responsesTextFormat: { type: 'json_schema', name: 'answer' } }],
   ])('retires the cache identity when the %s changes', (_label, change) => {
     expect(buildPromptCacheKey({ ...base, ...change })).not.toBe(buildPromptCacheKey(base));
   });
