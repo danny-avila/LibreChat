@@ -29,8 +29,11 @@ export type RevealedQueuedTurn = {
   clientRequestId: string;
   /** The drawing follows this response only while history has no successor. */
   parentMessageId: string;
-  /** Durable predecessor fence retained through the gap before attachment. */
+  /** Completion boundary, advanced as later queued turns are admitted. */
   generationCreatedAt?: number;
+  /** Immutable queue lineage, independent of the display/completion boundary. */
+  queueParentMessageId?: string;
+  queuePredecessorCreatedAt?: number;
   text: string;
   files?: TMessage['files'];
   quotes?: string[];

@@ -40,6 +40,7 @@ import {
   carriedSteerContext,
   clearAllDrafts,
   getPendingDraftId,
+  getNewConversationDraftId,
   insertQueuedOrigin,
   mergeRestagedQuotes,
 } from '~/utils';
@@ -975,12 +976,18 @@ export default function useSteering({
         if (trimmed.length === 0) {
           return;
         }
-        const parentMessageId = pendingReveal?.parentMessageId ?? liveMessageState?.parentMessageId;
+        const parentMessageId =
+          pendingReveal != null
+            ? pendingReveal.queueParentMessageId
+            : liveMessageState?.parentMessageId;
         const predecessorCreatedAt =
-          activeGenerationCreatedAt ?? pendingReveal?.generationCreatedAt;
+          pendingReveal != null
+            ? pendingReveal.queuePredecessorCreatedAt
+            : activeGenerationCreatedAt;
         /** FINAL clears the active epoch before attachment. The revealed
-         * boundary retains its durable fence so follow-ups survive reload;
-         * only initial startup without either epoch remains local. */
+         * intent retains the queue's original parent/epoch pair. Its display
+         * parent and advancing completion boundary are not queue lineage.
+         * Without an authoritative pair, retain the follow-up locally. */
         const serverOwned =
           serverQueueEnabled && parentMessageId != null && predecessorCreatedAt != null;
         const generatedClientRequestId = options?.clientRequestId == null;
@@ -1218,18 +1225,15 @@ export default function useSteering({
     [],
   );
 
-  /** Consumes the composer's autosaved draft once its text has been taken into
-   *  a steer or queued item. The composer clears via the form's `reset()`,
-   *  which is programmatic and never fires the `input` event `useAutoSave`
-   *  listens on — so the draft would outlive the submit. It is keyed under
-   *  this pane's pending draft key here (every caller is gated on
-   *  `duringRunActive`, which requires `isSubmitting` and rules out the
-   *  answer-mode draft key), and run end migrates a surviving pending draft
-   *  onto the conversation and restores it: resurfacing text the user already
-   *  sent. */
+  /** Programmatic form reset emits no input event. Consume the same key
+   * useAutoSave selected: the pane's pending draft during a live submission,
+   * or the conversation draft during the handoff after FINAL. */
   const takeComposerDraft = useCallback(() => {
-    clearAllDrafts(getPendingDraftId(index));
-  }, [index]);
+    const conversationDraftId =
+      conversationId === Constants.NEW_CONVO ? getNewConversationDraftId(index) : conversationId;
+    const draftId = isSubmitting ? getPendingDraftId(index) : conversationDraftId;
+    clearAllDrafts(draftId);
+  }, [index, isSubmitting, conversationId]);
 
   const removeQueued = useRecoilCallback(
     ({ set }) =>

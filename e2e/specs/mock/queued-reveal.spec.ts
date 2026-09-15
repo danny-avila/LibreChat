@@ -185,6 +185,11 @@ test.describe('server-queued follow-up reveal', () => {
         messageInput(page).press('Enter'),
       ]);
       expect(handoffEnqueue.ok()).toBeTruthy();
+      const originalQueue = enqueued.request().postDataJSON();
+      expect(handoffEnqueue.request().postDataJSON()).toMatchObject({
+        parentMessageId: originalQueue.parentMessageId,
+        expectedPredecessorCreatedAt: originalQueue.expectedPredecessorCreatedAt,
+      });
       await successor.release();
 
       /** Once the successor attaches, the shown row is the server's own turn:

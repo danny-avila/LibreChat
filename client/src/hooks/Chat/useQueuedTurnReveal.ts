@@ -91,7 +91,7 @@ export default function useQueuedTurnReveal(
   const reveal = useAtomValue(revealedQueuedTurnFamily(revealKey));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const activeEpoch = useRecoilValue(store.activeGenerationCreatedAtByConvoId(revealKey));
-  const isSettled = useCallback(
+  const readHandoff = useCallback(
     (intent: RevealedQueuedTurn) => {
       const receipts = queryClient.getQueryData<TAgentQueuedTurnReceipt[]>(
         agentQueuedTurnsQueryKey(revealKey),
@@ -99,17 +99,36 @@ export default function useQueuedTurnReveal(
       const status = queryClient.getQueryData<StreamStatusResponse>(
         streamStatusQueryKey(revealKey),
       );
-      return (
-        (receipts != null && shouldRollbackReveal(receipts, intent)) ||
-        (intent.generationCreatedAt != null &&
-          ((isSubmitting && activeEpoch != null && activeEpoch > intent.generationCreatedAt) ||
-            (status?.active === false &&
-              (status.status === 'complete' ||
-                status.status === 'error' ||
-                status.status === 'aborted') &&
-              status.createdAt != null &&
-              status.createdAt > intent.generationCreatedAt)))
-      );
+      let generationCreatedAt = intent.generationCreatedAt;
+      let waiting = false;
+      for (const receipt of receipts ?? []) {
+        const actionable =
+          (receipt.status === 'queued' || receipt.status === 'claimed') &&
+          receipt.failure?.code !== 'ADMISSION_INDETERMINATE';
+        waiting ||= actionable;
+        if (!actionable && receipt.status !== 'admitted') {
+          continue;
+        }
+        const boundary =
+          receipt.effectivePredecessorCreatedAt ?? receipt.expectedPredecessorCreatedAt;
+        if (boundary != null && (generationCreatedAt == null || boundary > generationCreatedAt)) {
+          generationCreatedAt = boundary;
+        }
+      }
+      return {
+        generationCreatedAt,
+        settled:
+          (receipts != null && shouldRollbackReveal(receipts, intent)) ||
+          (generationCreatedAt != null &&
+            ((isSubmitting && activeEpoch != null && activeEpoch > generationCreatedAt) ||
+              (!waiting &&
+                status?.active === false &&
+                (status.status === 'complete' ||
+                  status.status === 'error' ||
+                  status.status === 'aborted') &&
+                status.createdAt != null &&
+                status.createdAt > generationCreatedAt))),
+      };
     },
     [queryClient, revealKey, isSubmitting, activeEpoch],
   );
@@ -126,8 +145,15 @@ export default function useQueuedTurnReveal(
       }),
     [queryClient, revealKey],
   );
-  const getSnapshot = useCallback(() => reveal != null && isSettled(reveal), [reveal, isSettled]);
-  const settled = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  /** Only ownership facts trigger a render, not every receipt poll. Remember
+   * an admitted successor's effective boundary even after its receipt leaves
+   * the projection, so an earlier terminal cannot release a later handoff. */
+  const getSnapshot = useCallback(() => {
+    if (reveal == null) return '';
+    const handoff = readHandoff(reveal);
+    return `${handoff.generationCreatedAt ?? ''}:${handoff.settled}`;
+  }, [reveal, readHandoff]);
+  const handoffVersion = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const revealQueuedTurn = useCallback(
     (item: QueuedMessage, end: RunEnd) => {
@@ -151,6 +177,8 @@ export default function useQueuedTurnReveal(
         clientRequestId: item.clientRequestId,
         parentMessageId: end.responseMessageId,
         generationCreatedAt: end.generationCreatedAt,
+        queueParentMessageId: item.parentMessageId,
+        queuePredecessorCreatedAt: item.expectedPredecessorCreatedAt,
         text: item.text,
         ...(item.files != null && item.files.length > 0 && { files: item.files }),
         ...(item.quotes != null && item.quotes.length > 0 && { quotes: item.quotes }),
@@ -158,18 +186,24 @@ export default function useQueuedTurnReveal(
           item.manualSkills.length > 0 && { manualSkills: item.manualSkills }),
         revealedAt: new Date().toISOString(),
       };
-      if (!isSettled(intent)) {
-        jotaiStore.set(family, intent);
+      const handoff = readHandoff(intent);
+      if (!handoff.settled) {
+        jotaiStore.set(family, { ...intent, generationCreatedAt: handoff.generationCreatedAt });
       }
     },
-    [conversationId, isSettled, jotaiStore],
+    [conversationId, readHandoff, jotaiStore],
   );
 
   useEffect(() => {
-    if (settled && jotaiStore.get(revealedQueuedTurnFamily(revealKey)) === reveal) {
-      jotaiStore.set(revealedQueuedTurnFamily(revealKey), null);
+    const family = revealedQueuedTurnFamily(revealKey);
+    if (reveal == null || jotaiStore.get(family) !== reveal) return;
+    const handoff = readHandoff(reveal);
+    if (handoff.settled) {
+      jotaiStore.set(family, null);
+    } else if (handoff.generationCreatedAt !== reveal.generationCreatedAt) {
+      jotaiStore.set(family, { ...reveal, generationCreatedAt: handoff.generationCreatedAt });
     }
-  }, [jotaiStore, revealKey, reveal, settled]);
+  }, [jotaiStore, revealKey, reveal, readHandoff, handoffVersion]);
 
   return revealQueuedTurn;
 }

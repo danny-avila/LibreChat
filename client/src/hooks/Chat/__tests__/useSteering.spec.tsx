@@ -301,12 +301,14 @@ describe('useSteering', () => {
       expect(result.current.queue[0].server).toBeUndefined();
     });
 
-    it('persists another follow-up against the revealed boundary after FINAL clears the epoch', async () => {
+    it('persists another follow-up against the original queue lineage after its completion boundary advances', async () => {
       const family = revealedQueuedTurnFamily(CONVO_ID);
       getDefaultStore().set(family, {
         clientRequestId: 'pending-first',
         parentMessageId: 'completed-response',
-        generationCreatedAt: 41,
+        generationCreatedAt: 42,
+        queueParentMessageId: 'original-queue-parent',
+        queuePredecessorCreatedAt: 41,
         text: 'first',
         revealedAt: new Date().toISOString(),
       });
@@ -332,7 +334,7 @@ describe('useSteering', () => {
       });
       expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
         expect.objectContaining({
-          parentMessageId: 'completed-response',
+          parentMessageId: 'original-queue-parent',
           expectedPredecessorCreatedAt: 41,
           text: 'second',
           quotes: ['quoted context'],
@@ -3849,6 +3851,33 @@ describe('useSteering', () => {
       expect(result.current.queueKey).toBe(CONVO_ID);
       expect(localStorage.getItem(pendingDraftKey)).toBeNull();
     });
+
+    it.each([false, true])(
+      'consumes the conversation draft only after a handoff submission is accepted (blocked=%s)',
+      async (filesLoading) => {
+        const key = `${LocalStorageKeys.TEXT_DRAFT}${CONVO_ID}`;
+        const unrelatedKey = `${LocalStorageKeys.TEXT_DRAFT}another-conversation`;
+        localStorage.setItem(key, 'ZHJhZnRlZCB0ZXh0');
+        localStorage.setItem(unrelatedKey, 'other draft');
+        getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), {
+          clientRequestId: 'pending',
+          parentMessageId: 'response',
+          generationCreatedAt: 41,
+          text: 'pending',
+          revealedAt: new Date().toISOString(),
+        });
+        const { result, unmount } = setup({ isSubmitting: false, filesLoading }, ({ set }) => {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        });
+        await act(async () => {
+          expect(result.current.submitDuringRun('drafted text')).toBe(!filesLoading);
+        });
+        expect(localStorage.getItem(key)).toBe(filesLoading ? 'ZHJhZnRlZCB0ZXh0' : null);
+        expect(localStorage.getItem(unrelatedKey)).toBe('other draft');
+        unmount();
+        getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
+      },
+    );
 
     it('drops the pending draft when steering from the composer', () => {
       stageDraft();

@@ -25,6 +25,8 @@ const serverRow = (overrides: Partial<QueuedMessage> = {}): QueuedMessage => ({
   id: 'q-server',
   text: 'queued follow-up',
   createdAt: 10,
+  parentMessageId: 'original-queue-parent',
+  expectedPredecessorCreatedAt: 41,
   clientRequestId: 'client-request-1',
   server: { id: 'server-queue-1', status: 'queued', revision: 1 },
   ...overrides,
@@ -232,6 +234,8 @@ describe('useQueuedTurnReveal', () => {
       expect.objectContaining({
         clientRequestId: 'client-request-1',
         parentMessageId: RESPONSE_ID,
+        queueParentMessageId: 'original-queue-parent',
+        queuePredecessorCreatedAt: 41,
         text: 'queued follow-up',
         files: [{ file_id: 'f1' }],
         quotes: ['why'],
@@ -405,4 +409,49 @@ describe('useQueuedTurnReveal', () => {
     expect(queryClient.getQueryCache().find(key)?.getObserversCount()).toBe(0);
     unmount();
   });
+  it.each(['queued', 'claimed'] as const)(
+    'keeps the handoff through a %s sibling and its admission boundary',
+    (status) => {
+      const { result, current, queryClient, setReceipts } = setup();
+      act(() => {
+        result.current(serverRow(), completedEnd());
+        setReceipts([
+          receipt({ status: 'admitted', effectivePredecessorCreatedAt: 41 }),
+          receipt({ clientRequestId: 'second', status, expectedPredecessorCreatedAt: 41 }),
+        ]);
+        queryClient.setQueryData(streamStatusQueryKey(CONVO_ID), {
+          active: false,
+          status: 'complete',
+          createdAt: 42,
+        });
+      });
+      expect(current()).not.toBeNull();
+      act(() => {
+        setReceipts([
+          receipt({
+            clientRequestId: 'second',
+            status: 'admitted',
+            effectivePredecessorCreatedAt: 42,
+          }),
+        ]);
+      });
+      expect(current()).toMatchObject({
+        generationCreatedAt: 42,
+        queueParentMessageId: 'original-queue-parent',
+        queuePredecessorCreatedAt: 41,
+      });
+      act(() => {
+        setReceipts([]);
+      });
+      expect(current()).not.toBeNull();
+      act(() => {
+        queryClient.setQueryData(streamStatusQueryKey(CONVO_ID), {
+          active: false,
+          status: 'complete',
+          createdAt: 43,
+        });
+      });
+      expect(current()).toBeNull();
+    },
+  );
 });

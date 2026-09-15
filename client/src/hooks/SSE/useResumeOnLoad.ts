@@ -36,6 +36,7 @@ import {
 } from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import store from '~/store';
@@ -757,7 +758,13 @@ export default function useResumeOnLoad(
            *  off-screen conversation stale costs nothing until it is opened. */
           const revealFamily = revealedQueuedTurnFamily(owedConversationId);
           const pendingReveal = jotaiStore.get(revealFamily);
-          if (pendingReveal != null && Date.parse(pendingReveal.revealedAt) <= latch.quietSince!) {
+          if (
+            pendingReveal != null &&
+            Date.parse(pendingReveal.revealedAt) <= latch.quietSince! &&
+            !isQueuedTurnSuccessorOwed(
+              queryClient.getQueryData(agentQueuedTurnsQueryKey(owedConversationId)),
+            )
+          ) {
             jotaiStore.set(revealFamily, null);
           }
           queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, owedConversationId] });
@@ -919,11 +926,7 @@ export default function useResumeOnLoad(
         historyUpdatedAt != null &&
         streamStatusUpdatedAt >= historyUpdatedAt &&
         streamStatusUpdatedAt > Date.parse(pendingReveal.revealedAt) &&
-        !(queuedTurnReceipts ?? []).some(
-          (receipt) =>
-            receipt.clientRequestId === pendingReveal.clientRequestId &&
-            (receipt.status === 'queued' || receipt.status === 'claimed'),
-        ) &&
+        !isQueuedTurnSuccessorOwed(queuedTurnReceipts) &&
         (getMessages() ?? []).some(
           (message) => message.parentMessageId === pendingReveal.parentMessageId,
         )

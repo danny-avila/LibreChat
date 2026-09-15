@@ -499,23 +499,36 @@ const replaceNewConversationUrl = (conversationId: string) => {
 const shouldHydrateMessage = (message: TMessage) =>
   !hasConcreteConversationId(message.conversationId);
 
-/** The completed run's response, for a queued follow-up revealed off a terminal
- *  reached through reconciliation or recovery rather than the final frame:
- *  the persisted assistant row parented on the run's user message. */
+/** Recovery must identify the response itself: regenerations share a user
+ * parent, and array order says nothing about which sibling just completed.
+ * A fresh-turn placeholder has no server response ID yet; only an unambiguous
+ * persisted child can stand in for it. */
 const completedResponseMessageId = (
   messages: TMessage[] | undefined,
   userMessageId: string | undefined,
+  responseMessageId: string | undefined,
 ): string | undefined => {
   if (messages == null || userMessageId == null) {
     return undefined;
   }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message.isCreatedByUser !== true && message.parentMessageId === userMessageId) {
-      return message.messageId;
+  const target = responseMessageId?.replace(/_+$/, '');
+  const hasResponseIdentity = target != null && target !== userMessageId;
+  let candidate: string | undefined;
+  let ambiguous = false;
+  for (const message of messages) {
+    if (message.isCreatedByUser !== false || message.parentMessageId !== userMessageId) {
+      continue;
     }
+    if (hasResponseIdentity) {
+      if (message.messageId === target) {
+        return message.messageId;
+      }
+      continue;
+    }
+    ambiguous ||= candidate != null;
+    candidate = message.messageId;
   }
-  return undefined;
+  return hasResponseIdentity || ambiguous ? undefined : candidate;
 };
 
 const hydrateMessageConversationId = (message: TMessage, conversationId: string): TMessage =>
@@ -2979,7 +2992,12 @@ export default function useResumableSSE(
         }
         const reconciledResponseMessageId =
           reconciliationOutcome === 'completed'
-            ? completedResponseMessageId(persistedMessages, userMessage?.messageId)
+            ? completedResponseMessageId(
+                persistedMessages,
+                userMessage?.messageId,
+                status?.resumeState?.responseMessageId ??
+                  currentSubmission.initialResponse?.messageId,
+              )
             : undefined;
         setRunEnd({
           conversationId: reconciliationConvoId,
@@ -3678,7 +3696,12 @@ export default function useResumableSSE(
           }
           const recoveredResponseMessageId =
             recoveryOutcome === 'completed'
-              ? completedResponseMessageId(persistedMessages, userMessage?.messageId)
+              ? completedResponseMessageId(
+                  persistedMessages,
+                  userMessage?.messageId,
+                  status?.resumeState?.responseMessageId ??
+                    currentSubmission.initialResponse?.messageId,
+                )
               : undefined;
           setRunEnd({
             conversationId: recoveryConvoId,
