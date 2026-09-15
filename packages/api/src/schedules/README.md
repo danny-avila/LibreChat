@@ -57,6 +57,9 @@ Admission allocates the schedule ID before preflight and persists that same ID. 
 and dispatch use the existing schedule ID. Execution derives the context from the
 verified schedule trigger and authenticated owner, then captures it before tool loading.
 `agentId` identifies the root scheduled agent throughout child execution and handoffs.
+After an approval pause, the resume host restores the context from the saved job after
+validating ownership, tenancy, agent identity, and schedule liveness. A private request
+association carries this restored context; resume body fields cannot replace it.
 The existing resolver closure is passed through tool discovery, execution, and reconnects;
 it never goes into tool arguments or durable job payloads.
 

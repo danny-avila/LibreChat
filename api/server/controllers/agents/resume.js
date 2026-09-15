@@ -47,6 +47,7 @@ const {
   findAgentEventAppliedAction,
   assertCodeExecutionApprovalBinding,
   collectReachableAgents,
+  restoreScheduledTokenContext,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -1811,6 +1812,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
       });
+    restoreScheduledTokenContext(req, job.metadata);
     const result = await initializeClient({
       req,
       res,

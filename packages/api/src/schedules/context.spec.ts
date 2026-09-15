@@ -1,10 +1,11 @@
 import type { IUser } from '@librechat/data-schemas';
-import type { ScheduledTokenContext } from './mcp';
+import type { ScheduledTokenContext } from './context';
 import {
   bindUpstreamTokenProviderResolver,
   createScheduleUpstreamTokenProviderResolver,
 } from './mcp';
 import { createLazyOboUpstreamTokenProvider } from '../mcp/oauth/obo';
+import { restoreScheduledTokenContext } from './context';
 
 const user = { id: 'owner', tenantId: 'tenant' } as IUser;
 const context: ScheduledTokenContext = {
@@ -102,3 +103,56 @@ it('isolates provider caches between schedules and retries only the failed targe
   expect(resolve.mock.calls[1][1].context.scheduleId).toBe('second');
   expect(resolve.mock.calls[2][1].context.scheduleId).toBe('schedule');
 });
+
+it('restores a paused run from job identity without trusting resume body fields', async () => {
+  const req = {
+    user,
+    _isScheduledFire: true,
+    body: { scheduleId: 'spoofed', agent_id: 'spoofed' },
+  };
+  restoreScheduledTokenContext(req, {
+    userId: 'owner',
+    tenantId: 'tenant',
+    scheduleId: 'schedule',
+    agent_id: 'root-agent',
+  });
+  const resolve = jest.fn().mockResolvedValue(jest.fn());
+  await createScheduleUpstreamTokenProviderResolver(req, resolve)!({ target });
+  expect(resolve).toHaveBeenCalledWith(user, { signal: undefined, context, target });
+  expect(JSON.stringify(req)).not.toContain('root-agent');
+});
+
+it.each([{ userId: 'different' }, { tenantId: 'different' }])(
+  'rejects invalid restored identity %j',
+  (override) => {
+    expect(() =>
+      restoreScheduledTokenContext(
+        { user },
+        {
+          userId: 'owner',
+          tenantId: 'tenant',
+          scheduleId: 'schedule',
+          agent_id: 'root-agent',
+          ...override,
+        },
+      ),
+    ).toThrow('Scheduled job identity');
+  },
+);
+
+it.each([{ agent_id: undefined }, { tenantId: undefined }])(
+  'leaves legacy job context absent for %j',
+  async (override) => {
+    const req = { user, _isScheduledFire: true };
+    restoreScheduledTokenContext(req, {
+      userId: 'owner',
+      tenantId: 'tenant',
+      scheduleId: 'schedule',
+      agent_id: 'root-agent',
+      ...override,
+    });
+    const resolve = jest.fn().mockResolvedValue(jest.fn());
+    await createScheduleUpstreamTokenProviderResolver(req, resolve)!();
+    expect(resolve).toHaveBeenCalledWith(user, { signal: undefined });
+  },
+);

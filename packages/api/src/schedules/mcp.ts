@@ -31,6 +31,7 @@ import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types'
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
 import type { GetAppConfigOptions } from '../app/service';
+import type { ScheduledTokenContext } from './context';
 import type { ScheduleMCPPreflight } from './types';
 import {
   MCPAuthenticationRejectedError,
@@ -46,6 +47,7 @@ import {
 import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServersRegistry';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { isScheduleFireRequest, readScheduleFireContext } from './trigger';
+import { getRestoredScheduledTokenContext } from './context';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
 import { OboTokenResolutionError } from '../mcp/oauth/obo';
@@ -55,15 +57,6 @@ import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
 import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
-
-/** Root actor for an owner-authorized schedule, preserved across subagents and handoffs. */
-export interface ScheduledTokenContext {
-  readonly scheduleId: string;
-  readonly ownerId: string;
-  readonly tenantId?: string;
-  readonly agentId: string;
-  readonly invocationMode: 'delegated';
-}
 
 export type HostUpstreamTokenProviderResolver = (
   user: IUser,
@@ -118,6 +111,8 @@ export function createScheduleUpstreamTokenProviderResolver(
   signal?: AbortSignal,
 ): UpstreamTokenProviderResolver | undefined {
   if (!isScheduleFireRequest(req)) return undefined;
+  const restored = getRestoredScheduledTokenContext(req);
+  if (restored) return bindUpstreamTokenProviderResolver(req.user, resolve, signal, restored);
   const fire = readScheduleFireContext(req);
   const agentId = req.body?.agent_id;
   const context: ScheduledTokenContext | undefined =
