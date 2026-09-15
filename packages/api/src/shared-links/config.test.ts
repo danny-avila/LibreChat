@@ -141,4 +141,18 @@ describe('buildSharedLinkStartupPayload', () => {
 
     expect(payload).toEqual({ appTitle: 'LibreChat' });
   });
+
+  it('includes defaultLanguage so the share view can apply it', () => {
+    const payload = buildSharedLinkStartupPayload(
+      appConfig({
+        interfaceConfig: {
+          defaultLanguage: 'de-DE',
+          modelSelect: true,
+        },
+      }),
+      { APP_TITLE: 'Test Chat' },
+    );
+
+    expect(payload.interface).toEqual({ defaultLanguage: 'de-DE' });
+  });
 });
