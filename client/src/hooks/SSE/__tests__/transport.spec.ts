@@ -11,6 +11,8 @@ import { SSE } from 'sse.js';
 type XHRListener = (event: { currentTarget: FakeXHR }) => void;
 
 class FakeXHR {
+  static readonly HEADERS_RECEIVED = 2;
+  readyState = 0;
   status = 200;
   responseText = '';
   withCredentials = false;
@@ -24,6 +26,9 @@ class FakeXHR {
   open() {}
   setRequestHeader() {}
   send() {}
+  getAllResponseHeaders() {
+    return 'Content-Type: text/plain';
+  }
 
   abort() {
     this.aborted = true;
@@ -43,7 +48,12 @@ describe('sse.js transport contract', () => {
 
   beforeEach(() => {
     xhr = new FakeXHR();
-    global.XMLHttpRequest = jest.fn(() => xhr) as unknown as typeof XMLHttpRequest;
+    global.XMLHttpRequest = Object.assign(
+      jest.fn(() => xhr),
+      {
+        HEADERS_RECEIVED: FakeXHR.HEADERS_RECEIVED,
+      },
+    ) as unknown as typeof XMLHttpRequest;
   });
 
   afterEach(() => {
@@ -79,5 +89,21 @@ describe('sse.js transport contract', () => {
 
     expect(onAbort).toHaveBeenCalledTimes(1);
     expect(sse.readyState).toBe(SSE.CLOSED);
+  });
+
+  it('emits open before error even for unsuccessful HTTP responses', () => {
+    const sse = new SSE('/api/agents/chat/stream/convo-1', { method: 'GET' });
+    const events: string[] = [];
+    sse.addEventListener('open', (event: Event & { responseCode?: number }) => {
+      events.push(`open:${event.responseCode}`);
+    });
+    sse.addEventListener('error', (event: Event & { responseCode?: number }) => {
+      events.push(`error:${event.responseCode}`);
+    });
+    xhr.status = 503;
+    xhr.readyState = FakeXHR.HEADERS_RECEIVED;
+    xhr.emit('readystatechange');
+    xhr.emit('progress');
+    expect(events).toEqual(['open:503', 'error:503']);
   });
 });

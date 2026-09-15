@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useStore } from 'jotai';
@@ -23,6 +23,7 @@ import {
   ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
+  DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -871,6 +872,8 @@ export default function useResumableSSE(
    *  subscription; exactly one is registered at a time. */
   const stopForegroundReattachRef = useRef<(() => void) | null>(null);
   const reconnectAttemptRef = useRef(0);
+  /** HTTP success does not prove that terminal history was recovered. */
+  const terminalRecoveryAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
   /** Suppresses the normal close/cleanup idle transition while a stale
@@ -1302,6 +1305,14 @@ export default function useResumableSSE(
   );
 
   const { data: startupConfig } = useGetStartupConfig();
+  const terminalRecoveryMaxRetries =
+    startupConfig?.resumableStreams?.terminalRecoveryMaxRetries ??
+    DEFAULT_TERMINAL_RECOVERY_MAX_RETRIES;
+  const terminalRecoveryMaxRetriesRef = useRef(terminalRecoveryMaxRetries);
+  useLayoutEffect(() => {
+    /** Existing attachments and their recursive retries outlive this render. */
+    terminalRecoveryMaxRetriesRef.current = terminalRecoveryMaxRetries;
+  }, [terminalRecoveryMaxRetries]);
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
@@ -1422,6 +1433,8 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;
+      /** Pausing belongs to this attachment, even if a later config raises the budget. */
+      let terminalRecoveryPaused = false;
       /** This subscription must never be revived. Set by the terminal
        *  recoveries that do not ride a FINAL or served-error frame — the 404
        *  and retry-ceiling reconciles both leave the attachment pointing at a
@@ -1880,12 +1893,36 @@ export default function useResumableSSE(
         sse.close();
       };
 
-      let foregroundStatusCheckInFlight = false;
-      const reattachOnForeground = () => {
-        logger.log('ResumableSSE', 'Re-attaching stream on foreground');
-        /** Any backoff still pending targets this same attachment, so returning
-         *  to the app supersedes it rather than waiting the delay out; its
-         *  callback finds a superseded subscription and does nothing. */
+      /**
+       * A suspended page can lose its stream without the transport ever
+       * reporting it. When a mobile browser freezes the tab, an intermediary
+       * closes the response body underneath it, and XHR surfaces that as an
+       * ordinary load — sse.js dispatches nothing for a body that simply ends,
+       * so neither the error nor the abort recovery above ever runs. Nothing
+       * else re-reads the conversation while the pane stays mounted, which is
+       * why the response the run finished writing only appears after a reload.
+       *
+       * Some mobile WebViews leave the XHR marked OPEN even after the suspended
+       * request stopped delivering events. An active job does not prove that
+       * this attachment is healthy either. The epoch-fenced resume endpoint
+       * already adjudicates live, terminal and replaced generations; a status
+       * preflight only duplicates its snapshot and can fail before recovery starts.
+       */
+      const handleForegroundReattach = (event: Event) => {
+        if (
+          document.visibilityState !== 'visible' ||
+          ((event.type === 'online' || finalReceived) && !terminalRecoveryPaused) ||
+          subscriptionRetired ||
+          replacementHandoffRef.current ||
+          !isCurrentSubscription() ||
+          !submissionRef.current
+        ) {
+          return;
+        }
+
+        logger.log('ResumableSSE', 'Re-attaching stream on foreground or restored connectivity');
+        terminalRecoveryAttemptRef.current = 0;
+        /** Returning to the app supersedes this attachment's pending backoff. */
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
@@ -1901,88 +1938,23 @@ export default function useResumableSSE(
           lifecycleSignal,
         );
       };
-
-      /**
-       * A suspended page can lose its stream without the transport ever
-       * reporting it. When a mobile browser freezes the tab, an intermediary
-       * closes the response body underneath it, and XHR surfaces that as an
-       * ordinary load — sse.js dispatches nothing for a body that simply ends,
-       * so neither the error nor the abort recovery above ever runs. Nothing
-       * else re-reads the conversation while the pane stays mounted, which is
-       * why the response the run finished writing only appears after a reload.
-       *
-       * Some mobile WebViews leave the XHR marked OPEN even after the suspended
-       * request stopped delivering events. In that case the durable run status
-       * is the only authority that distinguishes a healthy live attachment from
-       * a terminal one holding stale partial content. A terminal status forces
-       * the same resume path as a closed transport; it returns the synthesized
-       * terminal frame or 404 that reconciles persisted messages.
-       */
-      const handleForegroundReattach = () => {
-        if (
-          document.visibilityState !== 'visible' ||
-          finalReceived ||
-          subscriptionRetired ||
-          replacementHandoffRef.current ||
-          !isCurrentSubscription() ||
-          !submissionRef.current
-        ) {
-          return;
-        }
-
-        if (sse.readyState === SSE.CLOSED) {
-          reattachOnForeground();
-          return;
-        }
-
-        if (foregroundStatusCheckInFlight) {
-          return;
-        }
-        foregroundStatusCheckInFlight = true;
-        const foregroundConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
-        void fetchStreamStatus(foregroundConvoId)
-          .then((status) => {
-            if (
-              status.active !== false ||
-              (status.createdAt != null &&
-                generationCreatedAt != null &&
-                status.createdAt !== generationCreatedAt) ||
-              !isCurrentSubscription() ||
-              finalReceived ||
-              subscriptionRetired ||
-              replacementHandoffRef.current ||
-              document.visibilityState !== 'visible'
-            ) {
-              return;
-            }
-            logger.log(
-              'ResumableSSE',
-              'Apparently open stream is terminal - reconciling on foreground',
-              { conversationId: foregroundConvoId, generationCreatedAt },
-            );
-            reattachOnForeground();
-          })
-          .catch((error) => {
-            if (!isCurrentSubscription()) {
-              return;
-            }
-            logger.warn('ResumableSSE', 'Could not verify stream on foreground', {
-              conversationId: foregroundConvoId,
-              generationCreatedAt,
-              error,
-            });
-          })
-          .finally(() => {
-            foregroundStatusCheckInFlight = false;
-          });
-      };
       stopForegroundReattachRef.current?.();
       document.addEventListener('visibilitychange', handleForegroundReattach);
-      stopForegroundReattachRef.current = () =>
+      window.addEventListener('online', handleForegroundReattach);
+      stopForegroundReattachRef.current = () => {
         document.removeEventListener('visibilitychange', handleForegroundReattach);
+        window.removeEventListener('online', handleForegroundReattach);
+      };
 
-      sse.addEventListener('open', () => {
-        if (!isCurrentSubscription()) {
+      sse.addEventListener('open', (e: MessageEvent) => {
+        /** sse.js emits open for HTTP error headers too, before its error event. */
+        const responseCode = (e as MessageEvent & { responseCode?: number }).responseCode;
+        if (
+          !isCurrentSubscription() ||
+          responseCode == null ||
+          responseCode < 200 ||
+          responseCode >= 300
+        ) {
           return;
         }
         logger.log('ResumableSSE', 'Stream connected');
@@ -2038,6 +2010,7 @@ export default function useResumableSSE(
               reconnectTimeoutRef.current = null;
             }
             reconnectAttemptRef.current = 0;
+            terminalRecoveryAttemptRef.current = 0;
             logger.log('ResumableSSE', 'Received FINAL event', {
               aborted: data.aborted,
               conversationId: data.conversation?.conversationId,
@@ -2687,9 +2660,25 @@ export default function useResumableSSE(
         closeStream();
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        const attempt = ++terminalRecoveryAttemptRef.current;
+        if (attempt > terminalRecoveryMaxRetriesRef.current) {
+          /** Preserve the unresolved run and accepted steers. Foreground or
+           * restored connectivity can retry without inventing a terminal outcome or polling. */
+          logger.warn('ResumableSSE', 'Terminal recovery paused until foreground or online', {
+            reason,
+          });
+          terminalRecoveryPaused = true;
+          return;
         }
         reconnectTimeoutRef.current = setTimeout(() => {
           if (isCurrentSubscription() && submissionRef.current) {
+            reconnectTimeoutRef.current = null;
+            if (attempt > terminalRecoveryMaxRetriesRef.current) {
+              terminalRecoveryPaused = true;
+              return;
+            }
             subscribeToStream(
               currentStreamId,
               submissionRef.current,
@@ -2699,7 +2688,7 @@ export default function useResumableSSE(
               lifecycleSignal,
             );
           }
-        }, 250);
+        }, getReconnectDelay(attempt));
       }
 
       async function authorizeTerminalTeardown(
@@ -2786,45 +2775,38 @@ export default function useResumableSSE(
           return;
         }
 
-        if (event.reconcileReason === 'generation_replaced') {
-          const handedOff = await handoffToReplacement(reconciliationConvoId);
+        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+        closeStream();
+        /** A synthesized frame belongs to its attachment, not necessarily the
+         * current epoch. Confirm terminal persistence before even reading history. */
+        let status: Awaited<ReturnType<typeof fetchStreamStatus>>;
+        try {
+          status = await fetchStreamStatus(reconciliationConvoId);
           if (!isCurrentSubscription()) {
             return;
           }
-          if (handedOff) {
+          if (await handoffToReplacement(reconciliationConvoId, status)) {
             return;
           }
-          // Replacement visibility can lag its notification by a round trip.
-          // Retry the stale epoch; the fenced HTTP endpoint will return the
-          // dedicated replacement response as soon as the new job is visible.
-          reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-          closeStream();
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, 250);
+          if (!supportsGenerationProtocolV2(status) || status.active !== false) {
+            retryFencedTerminalAttachment('synthesized status is not terminal');
+            return;
+          }
+        } catch {
+          retryFencedTerminalAttachment('synthesized terminal status unavailable');
+          return;
+        }
+        if (!isCurrentSubscription()) {
           return;
         }
 
-        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        closeStream();
         clearStepMaps();
         let persistedMessages: TMessage[] | undefined;
         const messageQueryKey = [QueryKeys.messages, reconciliationConvoId] as const;
         try {
-          /** Force a fetch through the already-registered messages query and
-           *  use its returned value. Merely awaiting invalidateQueries and
-           *  reading the cache can mistake stale pre-run history for a
-           *  successful reconciliation because React Query normally swallows
-           *  refetch errors. */
+          /** Cache-only selectors also register this key. Read persistence
+           * directly, then publish through the host only while we still own
+           * the subscription, including its first-turn `new` cache alias. */
           await queryClient.invalidateQueries({
             queryKey: messageQueryKey,
             refetchType: 'none',
@@ -2832,14 +2814,14 @@ export default function useResumableSSE(
           if (!isCurrentSubscription()) {
             return;
           }
-          const fetched = await queryClient.fetchQuery<TMessage[]>({
-            queryKey: messageQueryKey,
-          });
+          const fetched = await dataService.getMessagesByConvoId(reconciliationConvoId);
           if (!isCurrentSubscription()) {
             return;
           }
           if (Array.isArray(fetched)) {
             persistedMessages = fetched;
+            setMessages(fetched);
+            terminalRecoveryAttemptRef.current = 0;
           }
         } catch (error) {
           if (!isCurrentSubscription()) {
@@ -2849,6 +2831,8 @@ export default function useResumableSSE(
             conversationId: reconciliationConvoId,
             error,
           });
+          retryFencedTerminalAttachment('terminal history unavailable');
+          return;
         }
         try {
           await queryClient.invalidateQueries({
@@ -2874,73 +2858,6 @@ export default function useResumableSSE(
             conversationId: reconciliationConvoId,
             error,
           });
-        }
-
-        let status: Awaited<ReturnType<typeof fetchStreamStatus>> | undefined;
-        try {
-          status = await fetchStreamStatus(reconciliationConvoId);
-          if (!isCurrentSubscription()) {
-            return;
-          }
-        } catch (error) {
-          if (!isCurrentSubscription()) {
-            return;
-          }
-          logger.warn('ResumableSSE', 'Could not inspect synthesized terminal status', {
-            conversationId: reconciliationConvoId,
-            error,
-          });
-        }
-        if (status != null && !supportsGenerationProtocolV2(status)) {
-          /** A v2 control frame cannot be reconciled with a legacy status
-           * snapshot (for example during a rolling deploy). Preserve the
-           * attachment and retry the exact fenced generation. */
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, 250);
-          return;
-        }
-        if (
-          status?.active === true &&
-          status.createdAt != null &&
-          (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-        ) {
-          const handedOff = await handoffToReplacement(reconciliationConvoId, status);
-          if (!isCurrentSubscription()) {
-            return;
-          }
-          if (handedOff) {
-            return;
-          }
-        }
-        if (
-          status?.active === true &&
-          (generationCreatedAt == null || status.createdAt === generationCreatedAt)
-        ) {
-          // Durable state still calls this exact epoch active. Prefer another
-          // fenced resume over terminalizing on a racing synthesized frame.
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, 250);
-          return;
         }
 
         const authoritativeValues = [
@@ -3048,16 +2965,9 @@ export default function useResumableSSE(
 
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
-        if (responseCode === 409) {
-          const replacementConvoId =
-            currentSubmission.conversation?.conversationId ?? currentStreamId;
-          const handedOff = await handoffToReplacement(replacementConvoId);
-          if (!isCurrentSubscription()) {
-            return;
-          }
-          if (handedOff) {
-            return;
-          }
+        if (responseCode === 409 && generationProtocolVersion === GENERATION_PROTOCOL_VERSION) {
+          await reconcileGenerationLifecycle({ reconcileReason: 'generation_replaced' });
+          return;
         }
 
         // 404 → job completed & was cleaned up; messages are persisted in DB.
@@ -3083,43 +2993,8 @@ export default function useResumableSSE(
           });
           clearStepMaps();
           let persistedMessages: TMessage[] | undefined;
-          if (convoId) {
-            try {
-              const messageQueryKey = [QueryKeys.messages, convoId] as const;
-              await queryClient.invalidateQueries({
-                queryKey: messageQueryKey,
-                refetchType: 'none',
-              });
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              const fetched = await queryClient.fetchQuery<TMessage[]>({
-                queryKey: messageQueryKey,
-              });
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              if (Array.isArray(fetched)) {
-                persistedMessages = fetched;
-              }
-            } catch (error) {
-              if (!isCurrentSubscription()) {
-                return;
-              }
-              logger.warn('ResumableSSE', 'Could not reconcile persisted messages after 404', {
-                conversationId: convoId,
-                error,
-              });
-            }
-            queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
-          }
           const recoveryConvoId = convoId ?? currentStreamId;
-          const reconciledIds = new Set(
-            persistedMessages ? collectAppliedSteerIds(persistedMessages) : [],
-          );
-          if (persistedMessages) {
-            settleAppliedSteerParts(recoveryConvoId, persistedMessages);
-          }
+          const reconciledIds = new Set<string>();
 
           // The status replay is owner-gated and non-destructive; creating a
           // recovered follow-up consumes its exact source. Prefer these
@@ -3134,18 +3009,7 @@ export default function useResumableSSE(
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               !supportsGenerationProtocolV2(status)
             ) {
-              reconnectTimeoutRef.current = setTimeout(() => {
-                if (isCurrentSubscription() && submissionRef.current) {
-                  subscribeToStream(
-                    currentStreamId,
-                    submissionRef.current,
-                    true,
-                    generationCreatedAt,
-                    generationProtocolVersion,
-                    lifecycleSignal,
-                  );
-                }
-              }, 1_000);
+              retryFencedTerminalAttachment('expired stream status was unnegotiated');
               return;
             }
             if (
@@ -3226,6 +3090,50 @@ export default function useResumableSSE(
               }, 1_000);
               return;
             }
+            if (status.active !== false) {
+              retryFencedTerminalAttachment('expired stream status inconclusive');
+              return;
+            }
+            /** Read history AFTER the terminal status: a snapshot fetched before
+             * that persistence barrier can still be missing the final output. */
+            if (convoId) {
+              try {
+                const messageQueryKey = [QueryKeys.messages, convoId] as const;
+                await queryClient.invalidateQueries({
+                  queryKey: messageQueryKey,
+                  refetchType: 'none',
+                });
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                const fetched = await dataService.getMessagesByConvoId(convoId);
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                if (Array.isArray(fetched)) {
+                  persistedMessages = fetched;
+                }
+              } catch (error) {
+                if (!isCurrentSubscription()) {
+                  return;
+                }
+                logger.warn('ResumableSSE', 'Could not reconcile persisted messages after 404', {
+                  conversationId: convoId,
+                  error,
+                });
+                retryFencedTerminalAttachment('expired stream history unavailable');
+                return;
+              }
+              queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
+            }
+            if (persistedMessages) {
+              setMessages(persistedMessages);
+              terminalRecoveryAttemptRef.current = 0;
+              settleAppliedSteerParts(recoveryConvoId, persistedMessages);
+              for (const id of collectAppliedSteerIds(persistedMessages)) {
+                reconciledIds.add(id);
+              }
+            }
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
@@ -3254,6 +3162,8 @@ export default function useResumableSSE(
               conversationId: recoveryConvoId,
               error,
             });
+            retryFencedTerminalAttachment('expired stream status unavailable');
+            return;
           }
 
           removeActiveJob(currentStreamId);
@@ -3633,14 +3543,14 @@ export default function useResumableSSE(
             if (!isCurrentSubscription()) {
               return;
             }
-            const fetched = await queryClient.fetchQuery<TMessage[]>({
-              queryKey: messageQueryKey,
-            });
+            const fetched = await dataService.getMessagesByConvoId(recoveryConvoId);
             if (!isCurrentSubscription()) {
               return;
             }
             if (Array.isArray(fetched)) {
               persistedMessages = fetched;
+              setMessages(fetched);
+              terminalRecoveryAttemptRef.current = 0;
             }
           } catch (error) {
             if (!isCurrentSubscription()) {
@@ -3650,6 +3560,8 @@ export default function useResumableSSE(
               conversationId: recoveryConvoId,
               error,
             });
+            retryFencedTerminalAttachment('disconnected terminal history unavailable');
+            return;
           }
 
           const authoritativeValues = [
@@ -4092,6 +4004,7 @@ export default function useResumableSSE(
   );
 
   useEffect(() => {
+    terminalRecoveryAttemptRef.current = 0;
     if (!submission || Object.keys(submission).length === 0) {
       logger.log('ResumableSSE', 'No submission, cleaning up');
       // Clear reconnect timeout if submission is cleared
