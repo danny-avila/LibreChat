@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
-import { withMessageRole, getTokenCountForMessage } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
+import {
+  withMessageRole,
+  getTokenCountForMessage,
+  markTokenCounterCacheCompatible,
+} from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import type { TokenCounter } from '@librechat/agents';
@@ -460,22 +464,64 @@ export async function buildRetainedAnswersContext(
  * Initialize lazily so disabled retention and histories without answers cost no
  * tokenizer load. Reuse this counter when applying the block to the final prompt.
  */
+function countRetainedAnswerMessage(message: BaseMessage, encoding: EncodingName): number {
+  const count = getTokenCountForMessage(
+    message,
+    (text) => {
+      const tokens = Tokenizer.countExactTokens(text, encoding);
+      if (tokens == null) {
+        throw new Error('Retained-answer tokenizer unavailable');
+      }
+      return tokens;
+    },
+    encoding,
+  );
+  return encoding === 'claude' ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
+}
+
 async function createRetainedAnswerCounter(encoding: EncodingName): Promise<TokenCounter> {
   await Tokenizer.initEncoding(encoding);
-  return (message) => {
-    const count = getTokenCountForMessage(
-      message,
-      (text) => {
-        const tokens = Tokenizer.countExactTokens(text, encoding);
-        if (tokens == null) {
-          throw new Error('Retained-answer tokenizer unavailable');
-        }
-        return tokens;
-      },
-      encoding,
-    );
-    return encoding === 'claude' ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
-  };
+  return (message) => countRetainedAnswerMessage(message, encoding);
+}
+
+/**
+ * Wrap the initialized, cache-compatible run counter. Warm actors deliberately
+ * discard positional counts, and checkpoint resumes reconstruct the messages,
+ * so exact counting must follow the content through both paths. Matching the
+ * user-context header survives serialization without a new persistence format
+ * and remains a function of the SDK cache's content/role surface. All other
+ * messages retain the ordinary counter's oversized-input guard.
+ */
+export function withRetainedAnswerTokenCounter(
+  fallback: TokenCounter,
+  encoding: EncodingName,
+): TokenCounter {
+  return markTokenCounterCacheCompatible((message) => {
+    const content = message.content;
+    const retained =
+      message.getType() === 'human' &&
+      (typeof content === 'string'
+        ? content.includes(RETAINED_ANSWERS_HEADER)
+        : Array.isArray(content) &&
+          content.some(
+            (part) =>
+              part?.type === 'text' &&
+              typeof part.text === 'string' &&
+              part.text.includes(RETAINED_ANSWERS_HEADER),
+          ));
+    if (!retained) {
+      return fallback(message);
+    }
+    try {
+      return countRetainedAnswerMessage(message, encoding);
+    } catch (error) {
+      logger.warn(
+        '[retainedAnswers] Exact recount unavailable; using the run counter',
+        getSafeErrorMetadata(error),
+      );
+      return fallback(message);
+    }
+  });
 }
 
 /** The early admission count and the block share the final prompt's exact counter. */

@@ -5,6 +5,8 @@ import {
   AIMessage,
   ToolMessage,
   SystemMessage,
+  mapStoredMessagesToChatMessages,
+  mapChatMessagesToStoredMessages,
 } from '@librechat/agents/langchain/messages';
 import {
   applyRetainedAnswers,
@@ -16,6 +18,7 @@ import {
   resolveRetainedAnswersConfig,
   RETAINED_ANSWER_ROW_FIELDS,
   prepareRetainedAnswers,
+  withRetainedAnswerTokenCounter,
 } from './answers';
 import { countFormattedMessageTokens } from '../client';
 import { attachAskUserQuestionAnswers } from './resume';
@@ -705,6 +708,15 @@ describe('applyRetainedAnswers', () => {
 });
 
 describe('retained answer lifecycle', () => {
+  test('preserves the fallback counter for ordinary content with empty parts', () => {
+    const message = new HumanMessage({
+      content: [null as never, { type: 'text', text: 'ordinary' }],
+    });
+    const fallback = jest.fn(() => 12);
+    expect(withRetainedAnswerTokenCounter(fallback, 'o200k_base')(message)).toBe(12);
+    expect(fallback).toHaveBeenCalledWith(message);
+  });
+
   test.each(['o200k_base', 'claude'] as const)(
     'retains a block over 4 KiB that fits the actual %s token budget',
     async (encoding) => {
@@ -737,6 +749,18 @@ describe('retained answer lifecycle', () => {
       });
       expect(result.indexTokenCountMap[0]).toBe(tokenCounter(result.messages[0]));
       expect(result.indexTokenCountMap[0]).toBeLessThan(4200);
+      const fallback = jest.fn((message) => JSON.stringify(message.content).length);
+      const runtimeCounter = withRetainedAnswerTokenCounter(fallback, encoding);
+      const restored = mapStoredMessagesToChatMessages(
+        JSON.parse(JSON.stringify(mapChatMessagesToStoredMessages(result.messages))),
+      );
+      expect(runtimeCounter(restored[0])).toBe(result.indexTokenCountMap[0]);
+      expect(fallback).not.toHaveBeenCalled();
+      const ordinary = new HumanMessage('unrelated large input '.repeat(1000));
+      expect(runtimeCounter(ordinary)).toBe(JSON.stringify(ordinary.content).length);
+      const tool = new ToolMessage({ content: prepared.block ?? '', tool_call_id: 'call' });
+      expect(runtimeCounter(tool)).toBe(JSON.stringify(tool.content).length);
+      expect(fallback).toHaveBeenCalledTimes(2);
     },
   );
 

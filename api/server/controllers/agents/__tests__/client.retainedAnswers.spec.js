@@ -1,4 +1,5 @@
 const mockCreateRun = jest.fn();
+const mockRuntimeCounter = jest.fn((counter) => counter);
 const mockCountFormattedMessageTokens = jest.fn(
   (message) => JSON.stringify(message?.content ?? '').length,
 );
@@ -19,6 +20,7 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  withRetainedAnswerTokenCounter: (...args) => mockRuntimeCounter(...args),
   prepareRetainedAnswers: (input) =>
     jest.requireActual('@librechat/api').prepareRetainedAnswers({
       ...input,
@@ -244,35 +246,74 @@ describe('AgentClient retained answers', () => {
     expect(contentText(memoryMessages[memoryMessages.length - 1])).not.toContain(ANSWER_LINE);
   });
 
-  it('delivers the block through chatCompletion while memory receives the unmodified SDK transcript', async () => {
+  it.each(['cold', 'warm'])(
+    'delivers the block through %s chatCompletion while memory receives the unmodified SDK transcript',
+    async (continuation) => {
+      const client = makeClient();
+      client.processMemory = jest.fn();
+      client.runMemory = jest.fn().mockResolvedValue();
+      client.user = 'user-123';
+      getMessages.mockResolvedValue(compactedBranch());
+      const cut = await client.loadHistory('convo-123', 'u3');
+      const built = await client.buildMessages(cut, 'u3', {});
+      client.eventActorContinuation = continuation;
+      mockFormatAgentMessages.mockImplementationOnce(formatAgentMessages);
+      const processStream = jest.fn().mockResolvedValue();
+      mockCreateRun.mockResolvedValueOnce({
+        Graph: null,
+        processStream,
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      });
+
+      await client.chatCompletion({ payload: built.prompt });
+
+      expect(mockCreateRun).toHaveBeenCalledTimes(1);
+      const input = mockCreateRun.mock.calls[0][0];
+      expect(contentText(input.messages[input.messages.length - 1])).toContain(ANSWER_LINE);
+      expect(mockRuntimeCounter).toHaveBeenCalledTimes(1);
+      expect(input.tokenCounter).toBe(mockRuntimeCounter.mock.results[0].value);
+      if (continuation === 'warm') {
+        expect(input.indexTokenCountMap).toEqual({});
+        expect(input.tokenCounter(input.messages.at(-1))).toBeGreaterThan(built.tokenCountMap.u3);
+      } else {
+        expect(input.indexTokenCountMap[input.messages.length - 1]).toBeGreaterThan(
+          built.tokenCountMap.u3,
+        );
+      }
+      expect(client.runMemory).toHaveBeenCalledTimes(1);
+      expect(contentText(client.runMemory.mock.calls[0][0].at(-1))).not.toContain(ANSWER_LINE);
+      expect(client.memoryPayload).toBeNull();
+      expect(processStream).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('passes the retained-aware runtime counter to checkpoint resumes', async () => {
     const client = makeClient();
-    client.processMemory = jest.fn();
-    client.runMemory = jest.fn().mockResolvedValue();
-    client.user = 'user-123';
-    getMessages.mockResolvedValue(compactedBranch());
-    const cut = await client.loadHistory('convo-123', 'u3');
-    const built = await client.buildMessages(cut, 'u3', {});
-    mockFormatAgentMessages.mockImplementationOnce(formatAgentMessages);
-    const processStream = jest.fn().mockResolvedValue();
+    const job = await GenerationJobManager.createJob('convo-123', 'user-123', 'convo-123');
+    client.jobCreatedAt = job.createdAt;
+    const counter = jest.fn(() => 123);
+    mockRuntimeCounter.mockReturnValueOnce(counter);
+    const resume = jest.fn().mockResolvedValue();
     mockCreateRun.mockResolvedValueOnce({
       Graph: null,
-      processStream,
+      resume,
+      processStream: jest.fn().mockResolvedValue(),
       getCalibrationRatio: jest.fn(() => 0),
       getInterrupt: jest.fn(() => undefined),
     });
 
-    await client.chatCompletion({ payload: built.prompt });
+    await client.resumeCompletion({
+      resumeValue: { answer: 'staging' },
+      streamId: 'convo-123',
+      checkpointNamespace: 'retained-counter',
+    });
 
-    expect(mockCreateRun).toHaveBeenCalledTimes(1);
-    const input = mockCreateRun.mock.calls[0][0];
-    expect(contentText(input.messages[input.messages.length - 1])).toContain(ANSWER_LINE);
-    expect(input.indexTokenCountMap[input.messages.length - 1]).toBeGreaterThan(
-      built.tokenCountMap.u3,
+    expect(mockRuntimeCounter).toHaveBeenCalledTimes(1);
+    expect(mockCreateRun.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ messages: [], tokenCounter: counter }),
     );
-    expect(client.runMemory).toHaveBeenCalledTimes(1);
-    expect(contentText(client.runMemory.mock.calls[0][0].at(-1))).not.toContain(ANSWER_LINE);
-    expect(client.memoryPayload).toBeNull();
-    expect(processStream).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
   });
 
   it('reads nothing when the rows in memory already reach the branch root', async () => {

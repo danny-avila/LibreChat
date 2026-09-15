@@ -75,6 +75,7 @@ const {
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   prepareRetainedAnswers,
+  withRetainedAnswerTokenCounter,
   applyRetainedAnswers,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -4547,7 +4548,10 @@ class AgentClient extends BaseClient {
         this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
         payload,
       );
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       if (this.eventActorContinuation === 'cold') {
@@ -5340,7 +5344,10 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...seedContent);
       }
 
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
       this.compactionSemanticIndexSnapshot =
         restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([
