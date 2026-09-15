@@ -1,12 +1,14 @@
 import { z } from 'zod';
-import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './types/assistants';
+import type { TMessageContentParts } from './types/content';
+import type { AgentSubagentGraph } from './types/agents';
 import type { SearchResultData } from './types/web';
+import type { FunctionTool } from './types/tools';
 import type { TFile } from './types/files';
 import { CODE_ENVIRONMENT_MODES, CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
 import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
-import { Tools } from './types/assistants';
+import { Tools } from './types/tools';
 
 export const isUUID = z.string().uuid();
 

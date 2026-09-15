@@ -31,8 +31,8 @@ import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
-import { isActionTool } from './types/assistants';
 import { fileConfigSchema } from './file-config';
+import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';

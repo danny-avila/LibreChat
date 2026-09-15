@@ -15,8 +15,8 @@ import {
   isMediaSupportedProvider,
   isDocumentSupportedProvider,
 } from './schemas';
-import { EToolResources } from './types/assistants';
 import { normalizeEndpointName } from './utils';
+import { EToolResources } from './types/tools';
 
 /**
  * The native provider a custom endpoint declares, when it declares one. A custom endpoint
