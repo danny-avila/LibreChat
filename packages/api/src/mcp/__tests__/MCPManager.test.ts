@@ -2855,6 +2855,107 @@ describe('MCPManager', () => {
       expect(mockConnection.client.request).toHaveBeenCalled();
     });
 
+    it.each([undefined, new Error('owner stopped'), 'stopped'])(
+      'detaches a cancelled tool from an uncooperative OBO exchange (%s)',
+      async (reason) => {
+        const controller = new AbortController();
+        mockResolveOboToken.mockImplementationOnce(() => {
+          queueMicrotask(() => controller.abort(reason));
+          return new Promise(() => {});
+        });
+        mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+        (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+        await expect(
+          manager.callTool({
+            user: mockUser as IUser,
+            serverName,
+            toolName: 'test_tool',
+            provider: 'openai',
+            options: { signal: controller.signal },
+            oboTokenResolver: mockOboTokenResolver,
+            upstreamTokenProvider: mockUpstreamTokenProvider,
+            flowManager: mockFlowManager as unknown as Parameters<
+              typeof manager.callTool
+            >[0]['flowManager'],
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mockConnection.client.request).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lazily resolves the upstream provider for an OBO tool call', async () => {
+      mockResolveOboToken.mockImplementationOnce(async (_user, _config, _exchange, provider) => {
+        await provider();
+        return {
+          access_token: 'fresh-obo-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          expires_at: Date.now() + 3600_000,
+        };
+      });
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+      const upstreamTokenProviderResolver = jest.fn().mockResolvedValue(mockUpstreamTokenProvider);
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProviderResolver,
+      });
+
+      expect(upstreamTokenProviderResolver).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProviderResolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: { mcpServer: serverName, scopes: serverConfig.obo?.scopes },
+        }),
+      );
+      expect(mockResolveOboToken).toHaveBeenCalledWith(
+        mockUser,
+        serverConfig.obo,
+        mockOboTokenResolver,
+        expect.any(Function),
+        undefined,
+        false,
+      );
+    });
+
+    it('does not resolve an OBO provider for a non-OBO tool call', async () => {
+      const directConfig = {
+        type: 'streamable-http',
+        url: 'https://direct.example.com',
+        headers: { Authorization: 'Bearer static-token' },
+      } as t.ParsedServerConfig;
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(directConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+      const upstreamTokenProviderResolver = jest.fn();
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        serverConfig: directConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        upstreamTokenProviderResolver,
+      });
+
+      expect(upstreamTokenProviderResolver).not.toHaveBeenCalled();
+    });
+
     it('passes the OBO-cleaned config into runtime header processing', async () => {
       const mixedConfig = {
         ...serverConfig,

@@ -1,9 +1,12 @@
 import { useEffect, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useMarkFilesUsageMutation } from '~/data-provider';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -75,6 +78,7 @@ export default function useQueueDrain(
   index: string | number,
   activeConversationId: string | undefined,
   ask: TAskFunction,
+  revealQueuedTurn?: (item: QueuedMessage, end: RunEnd) => void,
 ) {
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(
@@ -97,6 +101,20 @@ export default function useQueueDrain(
     store.settledQueuedTurnReceiptsByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
+  /** The row the reveal would pick, and whether one is already revealed: a
+   *  revealed head that is cancelled or dies before admission leaves the
+   *  server-owned queue non-empty and its terminal evidence out of the
+   *  settled receipts, so nothing above re-runs the effect for the row the
+   *  backend moves on to. */
+  const revealedQueuedTurn = useAtomValue(
+    revealedQueuedTurnFamily(activeConversationId ?? Constants.NEW_CONVO),
+  );
+  const admissibleHeadId =
+    [...ownQueue, ...newConvoQueue].find(
+      (item) =>
+        item.server?.id != null &&
+        (item.server.status === 'queued' || item.server.status === 'claimed'),
+    )?.id ?? null;
 
   /* Deduped because the two subscriptions are the same atom before migration.
    * Keyed by id list so the effect re-runs when the held set changes, not
@@ -172,12 +190,16 @@ export default function useQueueDrain(
   // awaits may interleave with the reads.
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): {
-        next: QueuedMessage;
-        conversationId: string;
-        queuedMessageOrigin: QueuedMessageOrigin;
-        expectedPredecessorCreatedAt?: number;
-      } | null => {
+      ():
+        | {
+            kind: 'drain';
+            next: QueuedMessage;
+            conversationId: string;
+            queuedMessageOrigin: QueuedMessageOrigin;
+            expectedPredecessorCreatedAt?: number;
+          }
+        | { kind: 'reveal'; item: QueuedMessage; end: RunEnd }
+        | null => {
         let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         let fromParked = false;
         if (
@@ -305,8 +327,11 @@ export default function useQueueDrain(
           /** Keep the one-shot terminal signal until the authoritative snapshot
            * removes the server row. If it was admitted, its own later terminal
            * signal orders the remaining local queue; if it was cancelled/dead,
-           * this signal still lets the legacy successor make progress. */
-          return null;
+           * this signal still lets the legacy successor make progress. The
+           * head the server is about to admit can already be shown as the
+           * next user turn; the signal itself stays untouched. */
+          const reveal = selectQueuedTurnReveal(end, merged);
+          return reveal == null ? null : { kind: 'reveal', item: reveal, end };
         }
 
         // Consume only after server authority has yielded the boundary — a
@@ -324,6 +349,7 @@ export default function useQueueDrain(
         }
         return next
           ? {
+              kind: 'drain',
               next,
               conversationId,
               queuedMessageOrigin: {
@@ -363,6 +389,10 @@ export default function useQueueDrain(
     }
     const drained = drainNext();
     if (drained == null) {
+      return;
+    }
+    if (drained.kind === 'reveal') {
+      revealQueuedTurn?.(drained.item, drained.end);
       return;
     }
     const { next, conversationId, queuedMessageOrigin, expectedPredecessorCreatedAt } = drained;
@@ -414,6 +444,9 @@ export default function useQueueDrain(
     markFilesUsage,
     hasServerOwnedQueue,
     settledQueuedTurnReceipts,
+    revealedQueuedTurn,
+    admissibleHeadId,
+    revealQueuedTurn,
     ask,
   ]);
 }

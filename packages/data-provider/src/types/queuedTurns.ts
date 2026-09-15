@@ -18,6 +18,7 @@ export const agentQueuedTurnFileRefSchema = z.object({
   height: z.number().optional(),
   width: z.number().optional(),
   bytes: z.number().nonnegative().optional(),
+  llmDeliveryPath: z.enum(['provider', 'text', 'none']).optional(),
 });
 export type TAgentQueuedTurnFileRef = z.infer<typeof agentQueuedTurnFileRefSchema>;
 

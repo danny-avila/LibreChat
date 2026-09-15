@@ -35,6 +35,41 @@ export interface CodeWorkspaceDescriptor {
   name?: string;
   /** Omitted when every worker-level operation applies to this workspace. */
   operations?: CodeWorkspaceOperation[];
+  environment?: {
+    fingerprint: string;
+    repo?: string;
+    ref?: string;
+    actions: string[];
+  };
+}
+
+export function isCodeWorkspaceEnvironment(
+  value: unknown,
+): value is NonNullable<CodeWorkspaceDescriptor['environment']> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const environment = value as Record<string, unknown>;
+  return (
+    Object.keys(environment).every((key) =>
+      ['fingerprint', 'repo', 'ref', 'actions'].includes(key),
+    ) &&
+    typeof environment.fingerprint === 'string' &&
+    /^[a-f0-9]{64}$/.test(environment.fingerprint) &&
+    (environment.repo === undefined ||
+      (typeof environment.repo === 'string' &&
+        environment.repo.length <= 256 &&
+        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(environment.repo))) &&
+    (environment.ref === undefined ||
+      (typeof environment.ref === 'string' &&
+        environment.ref.trim().length > 0 &&
+        environment.ref.length <= 256 &&
+        !/[\0\r\n]/.test(environment.ref))) &&
+    Array.isArray(environment.actions) &&
+    environment.actions.length <= 32 &&
+    environment.actions.every(
+      (name) => typeof name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name),
+    ) &&
+    new Set(environment.actions).size === environment.actions.length
+  );
 }
 
 /** Conversation-owned selection, bound to the environment that advertised it. */

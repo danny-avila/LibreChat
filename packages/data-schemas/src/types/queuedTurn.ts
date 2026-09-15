@@ -20,6 +20,7 @@ export interface AgentQueuedTurnFileRef {
   type?: string;
   filepath?: string;
   filename?: string;
+  llmDeliveryPath?: 'provider' | 'text' | 'none';
   height?: number;
   width?: number;
   bytes?: number;

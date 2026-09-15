@@ -333,6 +333,28 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     });
   });
 
+  it('carries validated project metadata from the selected workspace', async () => {
+    const environment = {
+      fingerprint: 'a'.repeat(64),
+      repo: 'example/app',
+      ref: 'dev',
+      actions: ['typecheck'],
+    };
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      workspaceStatus([
+        { id: 'docs', environment },
+        { id: 'other', environment: { ...environment, actions: ['other'] } },
+      ]),
+    );
+    const resolved = await resolveCodeExecutionWorkspaceContext({
+      context,
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'docs' }],
+      environments,
+      getAppConfig,
+    });
+    expect(resolved.codeWorkspace?.environment).toEqual(environment);
+  });
+
   it('admits native workspace tools without enabling programmatic runtime execution', async () => {
     jest
       .spyOn(globalThis, 'fetch')

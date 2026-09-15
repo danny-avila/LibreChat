@@ -1,4 +1,6 @@
 import * as Ariakit from '@ariakit/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, Constants } from 'librechat-data-provider';
 import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import { Check, ChevronDown, FilePen, FileQuestionMark, FileTerminal } from 'lucide-react';
 import type { CodeApprovalMode, TConversation } from 'librechat-data-provider';
@@ -47,6 +49,7 @@ export default function CodeApprovalMenu({
   disabled: boolean;
 }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { available, modes, selected } = useCodeApprovalMode(conversation, addedConversation);
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
@@ -55,6 +58,11 @@ export default function CodeApprovalMenu({
     return null;
   }
 
+  /** Navigation and run recovery rebuild the conversation from its detail
+   *  cache, so the pick lands there too, seeding the record from the live
+   *  conversation when none exists yet (the resumable transport seeds the same
+   *  key optimistically). A chat that has no id yet keeps the pick in
+   *  conversation state alone until the run assigns one. */
   const selectMode = (mode: CodeApprovalMode) => {
     if (!modes.includes(mode)) {
       return;
@@ -62,6 +70,15 @@ export default function CodeApprovalMenu({
     setConversation((current) =>
       current == null ? current : { ...current, codeApprovalMode: mode },
     );
+    const record = conversation;
+    const conversationId = record?.conversationId;
+    if (record == null || conversationId == null || conversationId === Constants.NEW_CONVO) {
+      return;
+    }
+    queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (cached) => ({
+      ...(cached ?? record),
+      codeApprovalMode: mode,
+    }));
   };
 
   const SelectedIcon = modeOptions[selected].icon;

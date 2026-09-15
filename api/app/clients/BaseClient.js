@@ -9,6 +9,7 @@ const {
   sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
+  applyTurnDelivery,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   getTransactionsConfig,
@@ -21,6 +22,8 @@ const {
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
   withBalanceReservations,
+  findCheckpointSummaryPart,
+  getSummaryPartText,
 } = require('@librechat/api');
 const {
   Constants,
@@ -31,17 +34,14 @@ const {
   isCompactedLeaf,
   excludedKeys,
   EModelEndpoint,
-  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
   HITL_MESSAGE_FILTER_FIELDS,
-  getEndpointFileConfig,
   stripReasoningLabelMetadata,
-  resolveUploadLLMDeliveryPath,
-  isSpeechProviderConfigured,
+  resolveTurnLLMDeliveryPath,
   resolveUseResponsesApi,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -239,10 +239,6 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
-    /** @type {import('librechat-data-provider').FileConfig | undefined} */
-    this._mergedFileConfig;
-    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
-    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -829,9 +825,8 @@ class BaseClient {
     if (this.options.resendFiles !== false && this.authorizedHistoricalFiles == null) {
       const historicalFileState = collectModelBoundHistoricalFileIdState(modelBoundStoredMessages);
       this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
-      const files = await getOwnerHistoricalFiles(
-        historicalFileState.fileIds,
-        this.options.req?.user,
+      const files = this.resolveTurnAttachments(
+        await getOwnerHistoricalFiles(historicalFileState.fileIds, this.options.req?.user),
       );
       this.authorizedHistoricalFiles = new Map(
         files
@@ -1244,6 +1239,9 @@ class BaseClient {
     }
 
     const messages = (await db.getMessages({ conversationId, user: this.user })) ?? [];
+    /** A client that reads beyond the walk below (which stops at a checkpoint
+     *  summary) receives every row here; the rest keep nothing. */
+    this.onHistoryLoaded?.(messages);
 
     if (messages.length === 0) {
       return [];
@@ -1266,11 +1264,11 @@ class BaseClient {
           continue;
         }
 
-        const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+        const summaryBlock = findCheckpointSummaryPart(msg.content);
         if (summaryBlock) {
           this.previous_summary = {
             ...msg,
-            summary: BaseClient.getSummaryText(summaryBlock),
+            summary: getSummaryPartText(summaryBlock),
             summaryTokenCount: summaryBlock.tokenCount,
           };
           break;
@@ -1434,34 +1432,6 @@ class BaseClient {
     await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
-  /** Extracts text from a summary block (handles both legacy `text` field and new `content` array format). */
-  static getSummaryText(summaryBlock) {
-    if (Array.isArray(summaryBlock.content)) {
-      return summaryBlock.content.map((b) => b.text ?? '').join('');
-    }
-    if (typeof summaryBlock.content === 'string') {
-      return summaryBlock.content;
-    }
-    return summaryBlock.text ?? '';
-  }
-
-  /** Finds the last summary content block in a message's content array (last-summary-wins). */
-  static findSummaryContentBlock(message) {
-    if (!Array.isArray(message?.content)) {
-      return null;
-    }
-    let lastSummary = null;
-    for (const part of message.content) {
-      if (
-        part?.type === ContentTypes.SUMMARY &&
-        BaseClient.getSummaryText(part).trim().length > 0
-      ) {
-        lastSummary = part;
-      }
-    }
-    return lastSummary;
-  }
-
   /**
    * Iterate through messages, building an array based on the parentMessageId.
    *
@@ -1523,9 +1493,9 @@ class BaseClient {
       let resolved = message;
       let hasSummary = false;
       if (summary) {
-        const summaryBlock = BaseClient.findSummaryContentBlock(message);
+        const summaryBlock = findCheckpointSummaryPart(message.content);
         if (summaryBlock) {
-          const summaryText = BaseClient.getSummaryText(summaryBlock);
+          const summaryText = getSummaryPartText(summaryBlock);
           resolved = {
             ...message,
             role: 'system',
@@ -1806,8 +1776,8 @@ class BaseClient {
    * @param {MongoFile[]} attachments - Array of file attachments
    * @returns {Promise<void>}
    */
-  async addFileContextToMessage(message, attachments) {
-    const textAttachments = this.getTextContextAttachments(attachments);
+  async addFileContextToMessage(message, attachments, fileConsumers) {
+    const textAttachments = this.getTextContextAttachments(attachments, fileConsumers);
     const fileContext = await extractFileContext({
       attachments: textAttachments,
       req: this.options?.req,
@@ -1819,9 +1789,9 @@ class BaseClient {
     }
   }
 
-  getTextContextAttachments(attachments) {
+  getTextContextAttachments(attachments, fileConsumers) {
     return attachments.filter((file) => {
-      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      const deliveryPath = this.getAttachmentDeliveryPath(file, fileConsumers);
       /* Records predating delivery paths keep legacy extraction. Current routing is
        * authoritative for inferred uploads, so native provider bytes are not also
        * injected as extracted text after a provider handoff. */
@@ -1829,35 +1799,19 @@ class BaseClient {
     });
   }
 
-  /** Re-resolves an inferred upload route against the provider handling this turn. */
-  getAttachmentDeliveryPath(file) {
-    if (!this._mergedFileConfig) {
-      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      /* Agent file policy is configured under the endpoint it names, not the client
-       * family initialization may rewrite it to. */
-      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
-      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
-      this._endpointFileConfig = getEndpointFileConfig({
-        fileConfig: this._mergedFileConfig,
-        endpoint: this._deliveryEndpoint,
-        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
-      });
-    }
-
-    return file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
-      ? file.llmDeliveryPath
-      : resolveUploadLLMDeliveryPath({
-          /* Conversion changes the stored type, so use the type routing originally saw. */
-          mimeType: file.metadata?.routingMimeType ?? file.type,
-          endpointConfig: this._endpointFileConfig,
-          fileConfig: this._mergedFileConfig,
-          endpoint: this._deliveryEndpoint,
-          useResponsesApi: this.usesResponsesApi(),
-          sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
-        });
+  /** The turn's view of stored records, applied before admission at every load. */
+  resolveTurnAttachments(files, fileConsumers = this.options.agent?.fileConsumers) {
+    return applyTurnDelivery(files, {
+      routing: this.options.agent?.deliveryRouting,
+      consumers: fileConsumers,
+    });
   }
 
-  async processAttachments(message, attachments) {
+  getAttachmentDeliveryPath(file, fileConsumers = this.options.agent?.fileConsumers) {
+    return resolveTurnLLMDeliveryPath(this.options.agent?.deliveryRouting, file, fileConsumers);
+  }
+
+  async processAttachments(message, attachments, fileConsumers) {
     const categorizedAttachments = {
       images: [],
       videos: [],
@@ -1868,6 +1822,7 @@ class BaseClient {
     const allFiles = [];
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
+    const deliveryRouting = this.options.agent?.deliveryRouting;
 
     /* The stored path records what upload time inferred from the endpoint it saw, and this
      * turn may be running somewhere else: audio stored as `provider` under Google reaches
@@ -1881,7 +1836,7 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
-      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      const deliveryPath = this.getAttachmentDeliveryPath(file, fileConsumers);
       if (deliveryPath === 'text' || deliveryPath === 'none') {
         allFiles.push(file);
         continue;
@@ -1916,9 +1871,11 @@ class BaseClient {
         allFiles.push(file);
       } else if (
         file.type &&
-        this._mergedFileConfig &&
-        this._endpointFileConfig?.supportedMimeTypes &&
-        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
+        deliveryRouting?.endpointConfig.supportedMimeTypes &&
+        deliveryRouting.fileConfig.checkType(
+          file.type,
+          deliveryRouting.endpointConfig.supportedMimeTypes,
+        )
       ) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);
@@ -1980,9 +1937,8 @@ class BaseClient {
     const historicalFileState = collectModelBoundHistoricalFileIdState(_messages);
     this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
     const authorizedFilesById = new Map();
-    const files = await getOwnerHistoricalFiles(
-      historicalFileState.fileIds,
-      this.options.req?.user,
+    const files = this.resolveTurnAttachments(
+      await getOwnerHistoricalFiles(historicalFileState.fileIds, this.options.req?.user),
     );
     const nonSteerReplayFileIds = collectModelBoundHistoricalFileIdState(
       _messages.map((message) => ({

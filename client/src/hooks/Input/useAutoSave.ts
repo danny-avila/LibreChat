@@ -8,6 +8,7 @@ import type { ExtendedFile } from '~/common';
 import {
   applyPendingPastesToDraft,
   clearDraft,
+  clearAllDrafts,
   getDraft,
   getFilesDraft,
   getNewConversationDraftId,
@@ -208,6 +209,13 @@ export const useAutoSave = ({
    * which after a send put the just-sent attachment straight back as a chip. */
   const activeStorageId =
     currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
+  /** Only autosave knows whether a foreign tab kept this composer on the
+   * pending key. Submission consumes that actual key under its ownership guard. */
+  const consumeDraft = useCallback(() => {
+    if (activeStorageId) {
+      clearAllDrafts(activeStorageId);
+    }
+  }, [activeStorageId]);
   useEffect(() => {
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
@@ -456,4 +464,6 @@ export const useAutoSave = ({
       pendingPastes: existingDraft.pendingPastes,
     });
   }, [conversationId, saveDrafts, currentConversationId, fileIds, files]);
+
+  return consumeDraft;
 };

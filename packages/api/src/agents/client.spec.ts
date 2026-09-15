@@ -230,6 +230,22 @@ describe('prependFileContext', () => {
     ]);
   });
 
+  it('replaces array content instead of editing the array the stored row shares', () => {
+    const shared = [
+      { type: ContentTypes.TEXT, text: 'Answer this question.' },
+      { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,AAA' } },
+    ];
+    const message: FormattedMessageWithContent = { content: shared };
+    prependFileContext(message, 'Attached file text');
+    expect(shared[0]).toEqual({ type: ContentTypes.TEXT, text: 'Answer this question.' });
+    expect(message.content).not.toBe(shared);
+    if (!Array.isArray(message.content)) {
+      throw new Error('Expected array content');
+    }
+    expect(message.content[0].text).toBe('Attached file text\nAnswer this question.');
+    expect(message.content[1]).toBe(shared[1]);
+  });
+
   it('leaves content unchanged when file context is empty', () => {
     const message: FormattedMessageWithContent = { content: 'Answer this question.' };
 

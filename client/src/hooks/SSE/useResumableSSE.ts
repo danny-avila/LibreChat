@@ -68,6 +68,7 @@ import {
   markStreamStartFailedMetadata,
   findPendingActionMessageIndex,
   insertQueuedOrigin,
+  hydrateFileDeliveryMetadata,
 } from '~/utils';
 import {
   useGetUserBalance,
@@ -81,10 +82,14 @@ import {
   supportsGenerationProtocolV2,
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
-import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import useEventHandlers, {
+  buildCreatedInitialResponse,
+  keepLocalCodeApprovalMode,
+} from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useFileMapContext } from '~/Providers';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
 
@@ -497,6 +502,38 @@ const replaceNewConversationUrl = (conversationId: string) => {
 const shouldHydrateMessage = (message: TMessage) =>
   !hasConcreteConversationId(message.conversationId);
 
+/** Recovery must identify the response itself: regenerations share a user
+ * parent, and array order says nothing about which sibling just completed.
+ * A fresh-turn placeholder has no server response ID yet; only an unambiguous
+ * persisted child can stand in for it. */
+const completedResponseMessageId = (
+  messages: TMessage[] | undefined,
+  userMessageId: string | undefined,
+  responseMessageId: string | undefined,
+): string | undefined => {
+  if (messages == null || userMessageId == null) {
+    return undefined;
+  }
+  const target = responseMessageId?.replace(/_+$/, '');
+  const hasResponseIdentity = target != null && target !== userMessageId;
+  let candidate: string | undefined;
+  let ambiguous = false;
+  for (const message of messages) {
+    if (message.isCreatedByUser !== false || message.parentMessageId !== userMessageId) {
+      continue;
+    }
+    if (hasResponseIdentity) {
+      if (message.messageId === target) {
+        return message.messageId;
+      }
+      continue;
+    }
+    ambiguous ||= candidate != null;
+    candidate = message.messageId;
+  }
+  return hasResponseIdentity || ambiguous ? undefined : candidate;
+};
+
 const hydrateMessageConversationId = (message: TMessage, conversationId: string): TMessage =>
   shouldHydrateMessage(message) ? { ...message, conversationId } : message;
 
@@ -760,6 +797,9 @@ export default function useResumableSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
+  const fileMap = useFileMapContext();
+  const fileMapRef = useRef(fileMap);
+  fileMapRef.current = fileMap;
   const { setMessages, getMessages, setConversation, setIsSubmitting, newConversation } =
     chatHelpers;
 
@@ -1058,13 +1098,18 @@ export default function useResumableSSE(
               const keepLocalPreempt =
                 (localChip?.preemptRevision ?? 0) > (steer.preemptRevision ?? 0);
               const chipGenerationCreatedAt = generationCreatedAt ?? localChip?.generationCreatedAt;
+              const restoredFiles = hydrateFileDeliveryMetadata(
+                steer.files,
+                localChip?.files,
+                fileMapRef.current,
+              );
               return {
                 steerId: steer.steerId,
                 ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
                 text: steer.text,
                 status: 'pending' as const,
                 createdAt: steer.createdAt ?? Date.now(),
-                ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                ...(restoredFiles && restoredFiles.length > 0 && { files: restoredFiles }),
                 ...((keepLocalPreempt ? localChip?.preempt : steer.preempt) === true && {
                   preempt: true,
                 }),
@@ -2046,6 +2091,9 @@ export default function useResumableSSE(
               startedAsNewConvo: runEndTarget.startedAsNewConvo,
               endedAt: Date.now(),
               generationCreatedAt,
+              ...(data.responseMessage?.messageId != null && {
+                responseMessageId: data.responseMessage.messageId,
+              }),
             });
             // Clear handler maps on stream completion to prevent memory leaks
             clearStepMaps();
@@ -2869,11 +2917,23 @@ export default function useResumableSSE(
         } else if (event.terminalStatus === 'error') {
           reconciliationOutcome = 'error';
         }
+        const reconciledResponseMessageId =
+          reconciliationOutcome === 'completed'
+            ? completedResponseMessageId(
+                persistedMessages,
+                userMessage?.messageId,
+                status?.resumeState?.responseMessageId ??
+                  currentSubmission.initialResponse?.messageId,
+              )
+            : undefined;
         setRunEnd({
           conversationId: reconciliationConvoId,
           outcome: reconciliationOutcome,
           endedAt: Date.now(),
           generationCreatedAt: status?.createdAt ?? generationCreatedAt,
+          ...(reconciledResponseMessageId != null && {
+            responseMessageId: reconciledResponseMessageId,
+          }),
         });
         setSubmission(null);
         setStreamId(null);
@@ -3556,11 +3616,23 @@ export default function useResumableSSE(
           } else if (status.status === 'aborted') {
             recoveryOutcome = 'aborted';
           }
+          const recoveredResponseMessageId =
+            recoveryOutcome === 'completed'
+              ? completedResponseMessageId(
+                  persistedMessages,
+                  userMessage?.messageId,
+                  status?.resumeState?.responseMessageId ??
+                    currentSubmission.initialResponse?.messageId,
+                )
+              : undefined;
           setRunEnd({
             conversationId: recoveryConvoId,
             outcome: recoveryOutcome,
             endedAt: Date.now(),
             generationCreatedAt: status.createdAt ?? generationCreatedAt,
+            ...(recoveredResponseMessageId != null && {
+              responseMessageId: recoveredResponseMessageId,
+            }),
           });
           setSubmission(null);
           setStreamId(null);
@@ -4209,7 +4281,16 @@ export default function useResumableSSE(
                 replacementStart.conversationId,
               ]);
               if (authoritativeConversation?.conversationId === replacementStart.conversationId) {
-                setConversation?.(authoritativeConversation);
+                const localConversationId = isInitialNewConversation(submission)
+                  ? Constants.NEW_CONVO
+                  : replacementStart.conversationId;
+                setConversation?.((current) =>
+                  keepLocalCodeApprovalMode(
+                    authoritativeConversation,
+                    current,
+                    localConversationId,
+                  ),
+                );
               }
               queryClient.setQueryData(streamStatusQueryKey(replacementStart.conversationId), {
                 ...replacementStatus,
@@ -4307,12 +4388,30 @@ export default function useResumableSSE(
             }
 
             if (persistedConversation != null) {
+              /** The persisted copy carries the mode the settled turn started
+               *  with; a pick made while the start was pending is newer. The
+               *  live conversation still holds the new-chat id here because no
+               *  stream event ran for this turn. */
+              const settledCopy = persistedConversation;
+              const localConversationId = startedAsNewConvo
+                ? Constants.NEW_CONVO
+                : settledConversationId;
+              const conversationRecord = keepLocalCodeApprovalMode(
+                settledCopy,
+                queryClient.getQueryData<TConversation>([
+                  QueryKeys.conversation,
+                  settledConversationId,
+                ]),
+                settledConversationId,
+              );
               queryClient.setQueryData(
                 [QueryKeys.conversation, settledConversationId],
-                persistedConversation,
+                conversationRecord,
               );
-              upsertConvoInAllQueries(queryClient, persistedConversation);
-              setConversation?.(persistedConversation);
+              upsertConvoInAllQueries(queryClient, conversationRecord);
+              setConversation?.((current) =>
+                keepLocalCodeApprovalMode(settledCopy, current, localConversationId),
+              );
               if (startedAsNewConvo) {
                 replaceNewConversationUrl(settledConversationId);
               }

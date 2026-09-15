@@ -178,6 +178,7 @@ export async function resolveCodeExecutionWorkspaceContext({
     codeWorkspace: {
       ...selection,
       operations: [...(workspace.operations ?? status.operations)],
+      ...(workspace.environment ? { environment: workspace.environment } : {}),
     },
   };
 }

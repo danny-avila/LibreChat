@@ -1413,9 +1413,12 @@ describe('SubagentThreadTaskStore', () => {
     let ownerActive = true;
     const options = {
       isOwnerActive: async () => ownerActive,
-      leaseTtlMs: 60,
+      // Exercise owner cancellation, not lease expiry. Keep the lease beyond the
+      // drain deadline so slow CI database operations cannot bypass child startup
+      // or make the drain succeed without the worker releasing its lease.
+      leaseTtlMs: 30_000,
       leaseHeartbeatMs: 10,
-      ownerDrainTimeoutMs: 1_000,
+      ownerDrainTimeoutMs: 5_000,
       ownerDrainPollMs: 5,
     };
     const workerStore = new SubagentThreadTaskStore(methods, options);
