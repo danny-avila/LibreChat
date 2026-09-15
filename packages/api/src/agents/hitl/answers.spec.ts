@@ -20,8 +20,9 @@ import {
   prepareRetainedAnswers,
   withRetainedAnswerTokenCounter,
 } from './answers';
-import { countFormattedMessageTokens } from '../client';
+import { countFormattedMessageTokens, createCachedTokenCounter } from '../client';
 import { attachAskUserQuestionAnswers } from './resume';
+import Tokenizer from '~/utils/tokenizer';
 
 const mockWarn = jest.fn();
 jest.mock('@librechat/data-schemas', () => ({
@@ -622,6 +623,33 @@ describe('applyRetainedAnswers', () => {
     expect(formatted.messages).toHaveLength(1);
   });
 
+  test.each([
+    { isMeta: true, source: 'skill' },
+    { source: 'skill' },
+    { source: 'handoff' },
+    { source: 'hook' },
+    { source: 'system' },
+    { injected: true },
+    { role: 'system' },
+  ])('keeps retained user context outside synthetic messages: %j', (additional_kwargs) => {
+    const prime = new HumanMessage({ content: 'skill instructions', additional_kwargs });
+    const continuation = new AIMessage('unfinished');
+    for (const hasUser of [false, true]) {
+      const messages = hasUser
+        ? [new HumanMessage('continue'), prime, continuation]
+        : [prime, continuation];
+      const result = applyRetainedAnswers({ block, messages, tokenCounter });
+      expect(result.messages[0].getType()).toBe('human');
+      expect(result.messages[0].content).toContain(block);
+      expect(result.messages[0].additional_kwargs).toEqual({
+        librechat_retained_answers: block,
+      });
+      expect(result.messages[1]).toBe(prime);
+      expect(result.messages[2]).toBe(continuation);
+      expect(prime.content).toBe('skill instructions');
+    }
+  });
+
   test('keeps a legacy system summary first when adding context to a continuation', () => {
     const messages = [new SystemMessage('Summary'), new AIMessage('unfinished')];
     const result = applyRetainedAnswers({
@@ -708,6 +736,53 @@ describe('applyRetainedAnswers', () => {
 });
 
 describe('retained answer lifecycle', () => {
+  test('exact-counts only marked retained text across serialization and merged large content', async () => {
+    const prepared = await prepareRetainedAnswers({
+      messages: [
+        {
+          messageId: 'a',
+          parentMessageId: NO_PARENT,
+          content: [askPart({ question: 'Where?' }, 'staging')],
+        },
+      ],
+      parentMessageId: 'a',
+      config: undefined,
+    });
+    const fallback = jest.fn(await createCachedTokenCounter('o200k_base'));
+    const counter = withRetainedAnswerTokenCounter(fallback, 'o200k_base');
+    const large = 'large ordinary paste '.repeat(100000);
+    const exact = jest.spyOn(Tokenizer, 'countExactTokens');
+    try {
+      const applied = applyRetainedAnswers({
+        block: prepared.block,
+        messages: [new HumanMessage(large)],
+        tokenCounter: counter,
+      });
+      const restored = mapStoredMessagesToChatMessages(
+        JSON.parse(JSON.stringify(mapChatMessagesToStoredMessages(applied.messages))),
+      );
+      const originalCount = counter(restored[0]);
+      expect(originalCount).toBe(applied.indexTokenCountMap[0]);
+      expect(exact.mock.calls.every(([text]) => text.length < 4096)).toBe(true);
+      expect(counter(new HumanMessage(String(restored[0].content)))).toBe(
+        fallback(new HumanMessage(String(restored[0].content))),
+      );
+      const merged = new HumanMessage({
+        ...restored[0],
+        content: [
+          { type: 'text', text: 'merged prefix' },
+          { type: 'text', text: String(restored[0].content) },
+        ],
+      });
+      expect(counter(merged)).toBeGreaterThanOrEqual(originalCount);
+      expect(exact.mock.calls.every(([text]) => text.length < 4096)).toBe(true);
+      const changed = new HumanMessage({ ...restored[0], content: 'redacted content' });
+      expect(counter(changed)).toBe(fallback(changed));
+    } finally {
+      exact.mockRestore();
+    }
+  });
+
   test('preserves the fallback counter for ordinary content with empty parts', () => {
     const message = new HumanMessage({
       content: [null as never, { type: 'text', text: 'ordinary' }],
@@ -738,8 +813,8 @@ describe('retained answer lifecycle', () => {
       expect(prepared.block).toContain('Question 99:');
       expect(prepared.block).not.toContain('omitted');
       expect(prepared.tokenCount).toBeLessThanOrEqual(4096);
-      const tokenCounter = prepared.tokenCounter;
-      if (!tokenCounter) throw new Error('Expected an exact counter');
+      const fallback = jest.fn(await createCachedTokenCounter(encoding));
+      const tokenCounter = withRetainedAnswerTokenCounter(fallback, encoding);
       const messages = [new HumanMessage('Continue.')];
       const result = applyRetainedAnswers({
         block: prepared.block,
@@ -749,18 +824,15 @@ describe('retained answer lifecycle', () => {
       });
       expect(result.indexTokenCountMap[0]).toBe(tokenCounter(result.messages[0]));
       expect(result.indexTokenCountMap[0]).toBeLessThan(4200);
-      const fallback = jest.fn((message) => JSON.stringify(message.content).length);
       const runtimeCounter = withRetainedAnswerTokenCounter(fallback, encoding);
       const restored = mapStoredMessagesToChatMessages(
         JSON.parse(JSON.stringify(mapChatMessagesToStoredMessages(result.messages))),
       );
       expect(runtimeCounter(restored[0])).toBe(result.indexTokenCountMap[0]);
-      expect(fallback).not.toHaveBeenCalled();
       const ordinary = new HumanMessage('unrelated large input '.repeat(1000));
-      expect(runtimeCounter(ordinary)).toBe(JSON.stringify(ordinary.content).length);
+      expect(runtimeCounter(ordinary)).toBe(fallback(ordinary));
       const tool = new ToolMessage({ content: prepared.block ?? '', tool_call_id: 'call' });
-      expect(runtimeCounter(tool)).toBe(JSON.stringify(tool.content).length);
-      expect(fallback).toHaveBeenCalledTimes(2);
+      expect(runtimeCounter(tool)).toBe(fallback(tool));
     },
   );
 
@@ -802,7 +874,9 @@ describe('retained answer lifecycle', () => {
         ...original,
         tokenCounter: (message) => JSON.stringify(message.content).length,
       });
-      expect(JSON.stringify(result.messages).match(/Deploy where/g)).toHaveLength(1);
+      expect(
+        JSON.stringify(result.messages.map((message) => message.content)).match(/Deploy where/g),
+      ).toHaveLength(1);
       expect(original.messages).toHaveLength(1);
       expect(JSON.stringify(rows[2])).not.toContain('Deploy where');
     }

@@ -1,11 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { withMessageRole, getTokenCountForMessage } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
-import {
-  withMessageRole,
-  getTokenCountForMessage,
-  markTokenCounterCacheCompatible,
-} from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import type { TokenCounter } from '@librechat/agents';
@@ -485,35 +481,51 @@ async function createRetainedAnswerCounter(encoding: EncodingName): Promise<Toke
 }
 
 /**
- * Wrap the initialized, cache-compatible run counter. Warm actors deliberately
- * discard positional counts, and checkpoint resumes reconstruct the messages,
- * so exact counting must follow the content through both paths. Matching the
- * user-context header survives serialization without a new persistence format
- * and remains a function of the SDK cache's content/role surface. All other
- * messages retain the ordinary counter's oversized-input guard.
+ * The checkpoint carries the server-produced block separately from user text.
+ * Exact-count only that block; pasted/file context keeps the normal size guard.
+ * Do not mark this metadata-dependent counter content-cache-compatible: the SDK
+ * cache excludes additional_kwargs. The underlying tokenizer remains cached, and
+ * this closure retains only the most recently counted block across run recounts.
  */
 export function withRetainedAnswerTokenCounter(
   fallback: TokenCounter,
   encoding: EncodingName,
 ): TokenCounter {
-  return markTokenCounterCacheCompatible((message) => {
-    const content = message.content;
-    const retained =
-      message.getType() === 'human' &&
-      (typeof content === 'string'
-        ? content.includes(RETAINED_ANSWERS_HEADER)
-        : Array.isArray(content) &&
-          content.some(
-            (part) =>
-              part?.type === 'text' &&
-              typeof part.text === 'string' &&
-              part.text.includes(RETAINED_ANSWERS_HEADER),
-          ));
-    if (!retained) {
+  let lastBlock: string | undefined;
+  let lastCount = 0;
+  return (message) => {
+    const block = message.additional_kwargs.librechat_retained_answers;
+    if (message.getType() !== 'human' || typeof block !== 'string' || !block) {
       return fallback(message);
     }
+    let found = false;
+    const removeBlock = (text: string): string => {
+      const index = found ? -1 : text.indexOf(block);
+      if (index < 0) return text;
+      found = true;
+      return text.slice(0, index) + text.slice(index + block.length);
+    };
+    const content = message.content;
+    let remainder = content;
+    if (typeof content === 'string') {
+      remainder = removeBlock(content);
+    } else if (Array.isArray(content)) {
+      remainder = content.map((part) =>
+        part?.type === 'text' && typeof part.text === 'string'
+          ? { ...part, text: removeBlock(part.text) }
+          : part,
+      );
+    }
+    if (!found) return fallback(message);
     try {
-      return countRetainedAnswerMessage(message, encoding);
+      if (block !== lastBlock) {
+        // Subtract the empty human envelope: the fallback counts it once.
+        lastCount =
+          countRetainedAnswerMessage(new HumanMessage(block), encoding) -
+          countRetainedAnswerMessage(new HumanMessage(''), encoding);
+        lastBlock = block;
+      }
+      return fallback(new HumanMessage({ ...message, content: remainder })) + lastCount;
     } catch (error) {
       logger.warn(
         '[retainedAnswers] Exact recount unavailable; using the run counter',
@@ -521,7 +533,7 @@ export function withRetainedAnswerTokenCounter(
       );
       return fallback(message);
     }
-  });
+  };
 }
 
 /** The early admission count and the block share the final prompt's exact counter. */
@@ -577,14 +589,29 @@ export function applyRetainedAnswers({
   }
   try {
     let index = messages.length - 1;
-    while (index >= 0 && messages[index].getType() !== 'human') {
+    while (
+      index >= 0 &&
+      (messages[index].getType() !== 'human' ||
+        messages[index].additional_kwargs.isMeta === true ||
+        messages[index].additional_kwargs.injected === true ||
+        (messages[index].additional_kwargs.source != null &&
+          messages[index].additional_kwargs.source !== 'steer') ||
+        messages[index].additional_kwargs.role === 'system')
+    ) {
       index--;
     }
     const target = index < 0 ? undefined : messages[index];
     const content = { content: target?.content ?? '' };
     prependContextText(content, block, SEPARATOR);
     const updated = withMessageRole(
-      new HumanMessage({ ...target, content: target == null ? block : content.content }),
+      new HumanMessage({
+        ...target,
+        content: target == null ? block : content.content,
+        additional_kwargs: {
+          ...target?.additional_kwargs,
+          librechat_retained_answers: block,
+        },
+      }),
       'user',
     );
     const before = target == null ? 0 : tokenCounter(target);

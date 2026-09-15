@@ -4745,7 +4745,7 @@ class AgentClient extends BaseClient {
         block: this.retainedAnswers?.block,
         messages: initialMessages,
         indexTokenCountMap,
-        tokenCounter: this.retainedAnswers?.tokenCounter ?? tokenCounter,
+        tokenCounter,
       }));
 
       const memoryMessages =
