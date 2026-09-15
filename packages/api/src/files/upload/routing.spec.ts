@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { resolveUploadEndpoint, resolveEffectiveToolResource } from './routing';
@@ -41,6 +41,20 @@ describe('resolveUploadEndpoint', () => {
     expect(endpoint).toBe(EModelEndpoint.assistants);
     expect(getAgent).not.toHaveBeenCalled();
   });
+
+  it.each(['openAI', 'azureOpenAI', 'MyGateway'])(
+    'keeps the provider endpoint carried by an ephemeral conversation (%s)',
+    async (endpoint) => {
+      const getAgent = jest.fn().mockResolvedValue(null);
+      await expect(
+        resolveUploadEndpoint({
+          req,
+          metadata: { endpoint, agent_id: String(Constants.EPHEMERAL_AGENT_ID) },
+          getAgent,
+        }),
+      ).resolves.toBe(endpoint);
+    },
+  );
 
   it('leaves an upload naming no agent alone', async () => {
     const getAgent = jest.fn();

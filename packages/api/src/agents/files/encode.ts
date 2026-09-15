@@ -6,7 +6,12 @@ import {
   isBedrockDocumentType,
   resolveTurnLLMDeliveryPath,
 } from 'librechat-data-provider';
-import type { TFile, ImageDetail, TurnFileConsumers } from 'librechat-data-provider';
+import type {
+  TFile,
+  ImageDetail,
+  TurnDeliveryRouting,
+  TurnFileConsumers,
+} from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { TokenCountFn } from '~/utils/text';
@@ -17,7 +22,6 @@ import {
 } from '../attachments';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
-import { resolveAgentDeliveryRouting } from './delivery';
 import { countTokens } from '~/utils/tokenizer';
 
 type ContentBlock = Exclude<BaseMessage['content'], string>[number];
@@ -25,12 +29,12 @@ type ContentBlock = Exclude<BaseMessage['content'], string>[number];
 /** The already loaded child configuration; storage documents never cross this boundary. */
 export interface RunFileEncodingAgent {
   provider: string;
-  endpoint?: string | null;
   model?: string | null;
-  model_parameters?: { model?: string; useResponsesApi?: boolean };
+  model_parameters?: { model?: string };
   imageDetail?: ImageDetail;
   agentContextAttachments?: readonly TFile[];
-  /** File-reading tools this agent's turn runs; undefined when not known. */
+  /** How the child receives attachments, settled when its configuration was initialized. */
+  deliveryRouting: TurnDeliveryRouting;
   fileConsumers?: TurnFileConsumers;
 }
 
@@ -79,25 +83,26 @@ export function createRunFileMessageEncoder(
     if (!agent) {
       throw new Error('The target agent is not available for shared file delivery.');
     }
-    const routing = resolveAgentDeliveryRouting({ agent, config: deps.req.config });
-    const { endpoint, fileConfig, endpointConfig, useResponsesApi } = routing;
+    const { deliveryRouting } = agent;
+    const { endpoint, fileConfig, endpointConfig } = deliveryRouting;
     const params: RunFileEncodingParams = {
       provider: agent.provider,
       endpoint,
       model: agent.model_parameters?.model ?? agent.model ?? undefined,
-      useResponsesApi,
+      useResponsesApi: deliveryRouting.useResponsesApi,
       imageDetail: agent.imageDetail,
     };
 
-    /* Each receiving agent resolves against its own endpoint and its own tools, so a file this
-     * child cannot read with a tool falls back to its stored text for this child only. */
     const resolveDelivery = (file: TFile): TFile => {
-      const llmDeliveryPath = resolveTurnLLMDeliveryPath({
+      const llmDeliveryPath = resolveTurnLLMDeliveryPath(
+        deliveryRouting,
         file,
-        consumers: agent.fileConsumers,
-        ...routing,
-      });
-      return llmDeliveryPath === file.llmDeliveryPath ? file : { ...file, llmDeliveryPath };
+        agent.fileConsumers,
+      );
+      if (llmDeliveryPath == null || llmDeliveryPath === file.llmDeliveryPath) {
+        return file;
+      }
+      return { ...file, llmDeliveryPath };
     };
     const sharedFiles = files.map(resolveDelivery);
     const compatibleFiles = filterFilesByEndpointRuntimeConfig(deps.req.config, {

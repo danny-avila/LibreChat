@@ -1,5 +1,26 @@
-import type { TurnFileConsumers } from 'librechat-data-provider';
-import { applyTurnDelivery, resolveAgentDeliveryRouting } from './delivery';
+import type { TurnFileConsumers, TurnDeliveryFile } from 'librechat-data-provider';
+import {
+  applyTurnDelivery as materializeTurnDelivery,
+  resolveTurnDeliveryRouting,
+} from './delivery';
+
+function applyTurnDelivery<T extends TurnDeliveryFile>(
+  files: T[],
+  {
+    agent,
+    config,
+    consumers,
+  }: {
+    agent?: Parameters<typeof resolveTurnDeliveryRouting>[0]['agent'];
+    config?: Parameters<typeof resolveTurnDeliveryRouting>[0]['config'];
+    consumers?: TurnFileConsumers;
+  },
+) {
+  return materializeTurnDelivery(files, {
+    routing: agent ? resolveTurnDeliveryRouting({ agent, config }) : undefined,
+    consumers,
+  });
+}
 
 const config = {
   fileConfig: {
@@ -14,13 +35,13 @@ const config = {
 const noReader: TurnFileConsumers = { executeCode: false, fileSearch: false };
 const runsCode: TurnFileConsumers = { executeCode: true, fileSearch: false };
 
-describe('resolveAgentDeliveryRouting', () => {
+describe('resolveTurnDeliveryRouting', () => {
   it('routes under the endpoint an agent names before its provider', () => {
-    expect(resolveAgentDeliveryRouting({ agent: { provider: 'openAI' }, config }).endpoint).toBe(
+    expect(resolveTurnDeliveryRouting({ agent: { provider: 'openAI' }, config }).endpoint).toBe(
       'openAI',
     );
     expect(
-      resolveAgentDeliveryRouting({
+      resolveTurnDeliveryRouting({
         agent: { provider: 'openAI', endpoint: 'Azure Foundry' },
         config,
       }).endpoint,
@@ -35,9 +56,9 @@ describe('resolveAgentDeliveryRouting', () => {
       endpoints: {
         custom: [{ name: 'MyClaude', provider: 'anthropic' }],
       },
-    } as Parameters<typeof resolveAgentDeliveryRouting>[0]['config'];
+    } as Parameters<typeof resolveTurnDeliveryRouting>[0]['config'];
     const dialect = (agent: { provider: string; endpoint?: string }, routingConfig = declared) =>
-      resolveAgentDeliveryRouting({ agent, config: routingConfig }).endpointProvider;
+      resolveTurnDeliveryRouting({ agent, config: routingConfig }).endpointProvider;
 
     expect(dialect({ provider: 'MyClaude', endpoint: 'MyClaude' })).toBe('anthropic');
     expect(dialect({ provider: 'anthropic', endpoint: 'MyClaude' })).toBe('anthropic');
@@ -47,7 +68,7 @@ describe('resolveAgentDeliveryRouting', () => {
 
   it('carries the agent Responses API choice into routing', () => {
     expect(
-      resolveAgentDeliveryRouting({
+      resolveTurnDeliveryRouting({
         agent: { provider: 'openAI', model_parameters: { useResponsesApi: true } },
         config,
       }).useResponsesApi,
@@ -175,14 +196,16 @@ describe('applyTurnDelivery', () => {
     ]);
   });
 
-  it('keeps admitting a record this turn would leave out of the prompt', () => {
+  it('removes a record this turn leaves to tools from model admission', () => {
     /* Over-admitting cannot pass a limit; dropping a record the client still sends would. */
     const files = [{ ...csv, llmDeliveryPath: 'text' }];
 
-    expect(applyTurnDelivery(files, { agent, config, consumers: runsCode })).toBe(files);
+    expect(applyTurnDelivery(files, { agent, config, consumers: runsCode })).toEqual([
+      { ...csv, llmDeliveryPath: 'none' },
+    ]);
   });
 
-  it('keeps a provider record admitted when this turn would route it to text it never stored', () => {
+  it('materializes a final text route even without stored text', () => {
     const files = [{ ...pdf, metadata: { destinationChosen: false } }];
     const pdfToText = {
       fileConfig: {
@@ -192,7 +215,9 @@ describe('applyTurnDelivery', () => {
       },
     };
 
-    expect(applyTurnDelivery(files, { agent, config: pdfToText, consumers: noReader })).toBe(files);
+    expect(applyTurnDelivery(files, { agent, config: pdfToText, consumers: noReader })).toEqual(
+      files.map((file) => ({ ...file, llmDeliveryPath: 'text' })),
+    );
   });
 
   it('does not mark a destination the user chose', () => {

@@ -1,4 +1,8 @@
-import type { TurnFileConsumers } from './resolve-llm-delivery-path';
+import type {
+  TurnFileConsumers,
+  TurnDeliveryFile,
+  TurnDeliveryRouting,
+} from './resolve-llm-delivery-path';
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import type { EndpointFileConfig } from './types/files';
 import type { TEndpoint } from './config';
@@ -8,13 +12,24 @@ import {
   canToolResourceConsume,
   resolveUploadDestination,
   getCustomEndpointProvider,
-  resolveTurnLLMDeliveryPath,
+  resolveTurnLLMDeliveryPath as resolveStoredTurnPath,
   hasInferredLLMDeliveryPath,
   resolveDefaultLLMDeliveryPath,
   resolveUploadLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
 import { mergeFileConfig, supportedMimeTypes, getEndpointFileConfig } from './file-config';
+
+function resolveTurnLLMDeliveryPath({
+  file,
+  consumers,
+  ...routing
+}: {
+  file: TurnDeliveryFile;
+  consumers?: TurnFileConsumers;
+} & Partial<TurnDeliveryRouting>) {
+  return resolveStoredTurnPath(routing, file, consumers);
+}
 
 describe('resolveDefaultLLMDeliveryPath', () => {
   it('should return system default for images when no config provided', () => {

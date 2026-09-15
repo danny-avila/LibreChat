@@ -354,8 +354,8 @@ const matchesMimeList = (mimeType: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(mimeType));
 
 /**
- * The file-reading tools one agent's turn runs. Each flag is the deployment capability AND
- * the caller's role grant, the same verdict the tool loader enforces.
+ * The file-reading tools one agent's turn runs. Each flag requires deployment capability,
+ * the caller's role grant, and a reader in the final loaded tool set.
  */
 export interface TurnFileConsumers {
   executeCode: boolean;
@@ -368,6 +368,24 @@ export function hasTurnFileConsumer(mimeType: string, consumers: TurnFileConsume
     (consumers.executeCode && canToolResourceConsume(EToolResources.execute_code, mimeType)) ||
     (consumers.fileSearch && canToolResourceConsume(EToolResources.file_search, mimeType))
   );
+}
+
+/**
+ * The inputs that route every attachment for the agent running a turn. Initialization
+ * settles them once, after the provider swap and the Responses API decision, and every
+ * reader of a turn route consumes this value rather than deriving one from the agent.
+ */
+export interface TurnDeliveryRouting {
+  fileConfig: FileConfig;
+  endpointConfig: EndpointFileConfig;
+  /** The endpoint the file policy is configured under: a custom endpoint's own name, not
+   *  the client family initialization runs it as. */
+  endpoint: string;
+  /** The dialect a custom endpoint declares, which decides whether it receives OpenAI-format
+   *  media; undefined for a built-in or OpenAI-compatible endpoint. */
+  endpointProvider?: string;
+  useResponsesApi?: boolean;
+  sttConfigured: boolean;
 }
 
 /** The fields of an attachment record that decide its delivery on a turn. */
@@ -397,39 +415,18 @@ export function hasInferredLLMDeliveryPath(file: TurnDeliveryFile): boolean {
  * the file reaching nothing. Consumers left undefined are unknown and not judged, as in
  * {@link resolveUploadDestination}.
  */
-export function resolveTurnLLMDeliveryPath({
-  file,
-  consumers,
-  endpointConfig,
-  fileConfig,
-  endpoint,
-  endpointProvider,
-  useResponsesApi,
-  sttConfigured,
-}: {
-  file: TurnDeliveryFile;
-  consumers?: TurnFileConsumers;
-  endpointConfig?: EndpointFileConfig;
-  fileConfig?: FileConfig;
-  endpoint?: string;
-  endpointProvider?: string | null;
-  useResponsesApi?: boolean;
-  sttConfigured?: boolean;
-}): TDefaultLLMDeliveryPath | undefined {
-  if (!hasInferredLLMDeliveryPath(file)) {
+export function resolveTurnLLMDeliveryPath(
+  routing: Partial<TurnDeliveryRouting> | undefined,
+  file: TurnDeliveryFile,
+  consumers?: TurnFileConsumers,
+): TDefaultLLMDeliveryPath | undefined {
+  if (routing == null || !hasInferredLLMDeliveryPath(file)) {
     return isLLMDeliveryPath(file.llmDeliveryPath) ? file.llmDeliveryPath : undefined;
   }
+  const { endpointConfig } = routing;
   /* Conversion changes the stored type, so use the type routing originally saw. */
   const mimeType = file.metadata?.routingMimeType ?? file.type ?? '';
-  const path = resolveUploadLLMDeliveryPath({
-    mimeType,
-    endpointConfig,
-    fileConfig,
-    endpoint,
-    endpointProvider,
-    useResponsesApi,
-    sttConfigured,
-  });
+  const path = resolveUploadLLMDeliveryPath({ mimeType, ...routing });
   const hasFallbackText = typeof file.text === 'string' && file.text.length > 0;
   if (
     path === 'none' &&

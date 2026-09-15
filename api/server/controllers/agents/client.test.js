@@ -5471,6 +5471,9 @@ describe('AgentClient - titleConvo', () => {
         },
       };
       mockRes = {};
+      mockAgent.deliveryRouting = jest
+        .requireActual('@librechat/api')
+        .resolveTurnDeliveryRouting({ agent: mockAgent, config: mockReq.config });
 
       client = new AgentClient({
         req: mockReq,
