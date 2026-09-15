@@ -546,6 +546,43 @@ describe('resolveErrorTurn', () => {
     ]);
   });
 
+  it("keeps the streamed row's envelope when a server failure carries its own", () => {
+    const streamedAt = '2026-09-15T13:00:00.000Z';
+    const { errorResponse } = resolveErrorTurn({
+      data: {
+        conversationId: 'conversation-1',
+        messageId: 'user-1_',
+        isCreatedByUser: false,
+        sender: 'System',
+        model: null,
+        iconURL: null,
+        createdAt: '2026-09-15T13:05:00.000Z',
+        text: startFailureText,
+        metadata: { streamStartFailed: true },
+      } as unknown as TResData,
+      submission,
+      getMessages: () => [
+        userMessage,
+        { ...streamedResponse, iconURL: 'lia.png', createdAt: streamedAt, metadata: { seed: 1 } },
+      ],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse).toEqual(
+      expect.objectContaining({
+        sender: 'Lia',
+        model: 'agent_1',
+        iconURL: 'lia.png',
+        createdAt: streamedAt,
+        metadata: { seed: 1, streamStartFailed: true },
+      }),
+    );
+    expect(errorResponse.content?.at(-1)).toEqual({
+      type: ContentTypes.ERROR,
+      error: startFailureText,
+    });
+  });
+
   it('keeps the streamed parts under a failure the server addressed to the conversation', () => {
     const serverText = JSON.stringify({ type: 'invalid_request' });
     const data = {

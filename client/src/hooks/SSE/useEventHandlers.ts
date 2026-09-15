@@ -295,9 +295,15 @@ const createErrorMessage = ({
     'Error cancelling request';
   const streamedContent = getStreamedContent(latestMessage);
   if (latestMessage?.conversationId && latestMessage.messageId && streamedContent.length > 0) {
+    /** The row keeps the envelope it streamed under — author, model, icon, creation time — and
+     *  takes from the failure only what describes the failure: a server payload names `System`
+     *  as its sender and the schema dates a fresh envelope now, neither of which applies to a
+     *  response that is merely gaining a part. */
     const errorMessage: TMessage = {
       ...latestMessage,
-      ...errorMetadata,
+      ...(errorMetadata?.metadata != null
+        ? { metadata: { ...latestMessage.metadata, ...errorMetadata.metadata } }
+        : {}),
       error: undefined,
       text: '',
       content: appendErrorPart(streamedContent, errorText),
