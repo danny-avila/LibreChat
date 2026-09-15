@@ -7,7 +7,8 @@
   },
   "servers": [
     {
-      "url": "/api/agents/v1"
+      "url": "agents/v1",
+      "description": "Relative to where this document is served (`/api/openapi.json`), so it resolves under any deployment base path."
     }
   ],
   "paths": {
@@ -27,6 +28,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -252,6 +254,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -788,6 +791,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1023,6 +1027,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2477,7 +2482,9 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1,
+            "maxLength": 512
           }
         },
         "required": [
@@ -2487,7 +2494,8 @@
           "last_id",
           "has_more",
           "after"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AgentDeleted": {
         "type": "object",

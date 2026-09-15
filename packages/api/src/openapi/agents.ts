@@ -6,6 +6,7 @@ import {
   agentManagementUpdateSchema,
   agentManagementListSchema,
   agentManagementResponseSchema,
+  agentManagementListEnvelopeSchema,
   agentManagementDeleteResponseSchema,
   agentManagementErrorSchema,
 } from '../agents/management';
@@ -43,13 +44,14 @@ const agentCreateRequestSchema = withDocumentedEdges(agentManagementCreateSchema
 const agentUpdateRequestSchema = withDocumentedEdges(agentManagementUpdateSchema);
 const agentResponseSchema = withDocumentedEdges(agentManagementResponseSchema);
 
-const agentListResponseSchema = z.object({
-  object: z.literal('list'),
+/**
+ * Reuse the enforced list envelope; override only `data` with the documented-edge agent.
+ * The envelope is exported as `ZodType`, so reach `.extend` the same way `withDocumentedEdges` does.
+ */
+const agentListResponseSchema = (
+  agentManagementListEnvelopeSchema as unknown as z.AnyZodObject
+).extend({
   data: z.array(agentResponseSchema),
-  first_id: z.string().nullable(),
-  last_id: z.string().nullable(),
-  has_more: z.boolean(),
-  after: z.string().nullable(),
 });
 
 /** The file endpoints are not validated with Zod at runtime; these schemas describe their hand-built responses. */

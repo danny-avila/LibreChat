@@ -108,7 +108,10 @@ function buildOperation(contract: EndpointContract): Record<string, unknown> {
       content: contract.rawBody.content,
     };
   } else if (contract.body) {
-    operation.requestBody = { content: { 'application/json': { schema: contract.body } } };
+    operation.requestBody = {
+      required: true,
+      content: { 'application/json': { schema: contract.body } },
+    };
   }
   return operation;
 }

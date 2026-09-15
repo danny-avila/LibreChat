@@ -13,7 +13,13 @@ export function buildAgentsOpenApiDocument(): Record<string, unknown> {
       description:
         'The public agent and skill management endpoints of the LibreChat Agents API. This API is in beta and may change.',
     },
-    servers: [{ url: '/api/agents/v1' }],
+    servers: [
+      {
+        url: 'agents/v1',
+        description:
+          'Relative to where this document is served (`/api/openapi.json`), so it resolves under any deployment base path.',
+      },
+    ],
     securitySchemes,
     componentSchemas,
     contracts,
