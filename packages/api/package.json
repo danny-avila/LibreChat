@@ -45,6 +45,8 @@
     "b:clean": "bun run rimraf dist",
     "b:build": "bun run b:clean && bun run tsdown",
     "b:build:dev": "bun run b:clean && bun run tsdown",
+    "openapi:generate": "cross-env TS_NODE_PROJECT=tsconfig.openapi.json ts-node -r tsconfig-paths/register src/openapi/generate.ts --write",
+    "openapi:check": "cross-env TS_NODE_PROJECT=tsconfig.openapi.json ts-node -r tsconfig-paths/register src/openapi/generate.ts --check",
     "start:everything-sse": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/examples/everything/sse.ts",
     "start:everything": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/everything.ts",
     "start:filesystem": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/filesystem.ts",
@@ -97,7 +99,8 @@
     "typescript": "^5.9.3",
     "winston": "^3.17.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "yauzl": "^3.2.1"
+    "yauzl": "^3.2.1",
+    "zod-openapi": "^4.2.4"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
