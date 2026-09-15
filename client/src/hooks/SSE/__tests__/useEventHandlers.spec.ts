@@ -422,7 +422,9 @@ describe('resolveErrorTurn', () => {
     expect(errorResponse.metadata).toEqual({ streamStartFailed: true });
   });
 
-  it('drops holes and empty slots, keeping the identity every kept part streamed under', () => {
+  it('drops holes, keeps empty slots, and keeps the identity every part streamed under', () => {
+    const openedThink = { type: ContentTypes.THINK, think: '' };
+    const openedText = { type: ContentTypes.TEXT, text: '' };
     const { errorResponse } = resolveErrorTurn({
       data: startFailure,
       submission,
@@ -431,12 +433,12 @@ describe('resolveErrorTurn', () => {
         {
           ...initialResponse,
           content: [
-            { type: ContentTypes.THINK, think: '' },
+            openedThink,
             streamedParts[0],
             undefined,
             streamedParts[1],
             streamedParts[2],
-            { type: ContentTypes.TEXT, text: '' },
+            openedText,
           ],
         } as TMessage,
       ],
@@ -445,10 +447,33 @@ describe('resolveErrorTurn', () => {
 
     const content = errorResponse.content ?? [];
     expect(stripStreamedIndexStamps(content)).toEqual([
+      openedThink,
       ...streamedParts,
+      openedText,
       { type: ContentTypes.ERROR, error: startFailureText },
     ]);
-    expect(content.map((part, idx) => getPartKeyIndex(part, idx))).toEqual([1, 3, 4, 5]);
+    expect(content.map((part, idx) => getPartKeyIndex(part, idx))).toEqual([0, 1, 3, 4, 5, 6]);
+  });
+
+  it('keeps the comparison lanes when one side streamed before the failure', () => {
+    const lanes = [
+      { type: '', agentId: 'agent_a', groupId: 1 },
+      { type: ContentTypes.TEXT, text: 'From the added agent', agentId: 'agent_b', groupId: 1 },
+    ];
+    const { errorResponse } = resolveErrorTurn({
+      data: startFailure,
+      submission,
+      getMessages: () => [
+        userMessage,
+        { ...initialResponse, content: lanes } as unknown as TMessage,
+      ],
+      isNewConversationRoute: false,
+    });
+
+    expect(errorResponse.content).toEqual([
+      ...lanes,
+      { type: ContentTypes.ERROR, error: startFailureText },
+    ]);
   });
 
   it('is the whole row when a comparison run failed before either lane streamed', () => {

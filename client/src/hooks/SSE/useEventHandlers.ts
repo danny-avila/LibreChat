@@ -236,9 +236,11 @@ const CONNECTION_ERROR_TEXT = 'Error connecting to server, try refreshing the pa
 
 /**
  * The parts the in-flight response has streamed so far: the transcript's tail (a user row there
- * means no response was placed), without the holes an interrupted stream leaves and without the
- * slots that never received content — a comparison run's `type: ''` placeholders, a text or think
- * part opened before its first delta. The kept parts carry the render identity they streamed
+ * means no response was placed), without the holes an interrupted stream leaves. Whether anything
+ * streamed is judged without the slots that never received content — a comparison run's
+ * `type: ''` placeholders, a text or think part opened before its first delta — but once something
+ * did, those slots stay: a placeholder is what keeps a comparison lane's layout and attribution
+ * when only the other lane produced output. The parts carry the render identity they streamed
  * under, as the final path stamps it, so the settled row does not remount.
  */
 const getStreamedContent = (message?: TMessage): TMessageContentParts[] => {
@@ -246,10 +248,11 @@ const getStreamedContent = (message?: TMessage): TMessageContentParts[] => {
     return [];
   }
   const streamed = message.content ?? [];
-  const kept = streamed.filter(
-    (part): part is TMessageContentParts => part != null && !isEmptyContentPart(part),
-  );
-  return preserveStreamedContentIdentity(streamed, kept) ?? kept;
+  const parts = streamed.filter((part): part is TMessageContentParts => part != null);
+  if (!parts.some((part) => !isEmptyContentPart(part))) {
+    return [];
+  }
+  return preserveStreamedContentIdentity(streamed, parts) ?? parts;
 };
 
 /** Keys the appended failure past every key the kept parts render under, physical or stamped. */
