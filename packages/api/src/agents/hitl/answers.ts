@@ -623,14 +623,19 @@ export function applyRetainedAnswers({
     );
     // Place before the latest ordinary human turn, or after the system prefix
     // when only a summary/assistant continuation survives. Never split tool pairs.
-    let insertion = entries.findLastIndex(
-      ({ message }) =>
+    let insertion = entries.length - 1;
+    while (insertion >= 0) {
+      const { message } = entries[insertion];
+      if (
         message.getType() === 'human' &&
         message.additional_kwargs.isMeta !== true &&
         message.additional_kwargs.injected !== true &&
         message.additional_kwargs.source == null &&
-        message.additional_kwargs.role !== 'system',
-    );
+        message.additional_kwargs.role !== 'system'
+      )
+        break;
+      insertion--;
+    }
     if (insertion < 0) {
       insertion = 0;
       while (insertion < entries.length && entries[insertion].message.getType() === 'system')
@@ -657,7 +662,7 @@ export function selectRetainedAnswerInvocationMessages(
   warm: boolean,
 ): BaseMessage[] {
   if (!warm) return messages;
-  const latest = messages.at(-1);
+  const latest = messages[messages.length - 1];
   if (latest == null) return [];
   const retained = messages.find((message) => message.id === RETAINED_ANSWERS_MESSAGE_ID);
   return retained == null || retained === latest ? [latest] : [retained, latest];
