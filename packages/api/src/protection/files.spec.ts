@@ -15,6 +15,7 @@ import {
   hasActiveFilePolicy,
   omitResolvedCanonicalFileLocators,
   resolveCanonicalFileReferences,
+  resolveCanonicalFileReferenceUnits,
   UPLOAD_EXTRACTED_TEXT_PLANS,
   UninspectableFileError,
 } from './files';
@@ -2015,5 +2016,60 @@ describe('file content inspection policy', () => {
     });
 
     expect(getBlockedOpaqueFileField(filters, inspection.sanitizedInput)).toBe('extracted_text');
+  });
+});
+
+describe('canonical file inspection units', () => {
+  const filters: FiltersConfig = {
+    files: {
+      pii: {
+        fields: ['extracted_text'],
+        starterPatterns: [],
+        uninspectable: 'block',
+      },
+    },
+  };
+
+  it('retains a single oversized-unit rejection before owner lookup', async () => {
+    const getFiles = jest.fn(async () => [{ file_id: 'owned', text: 'safe' }]);
+    await expect(
+      resolveCanonicalFileReferenceUnits({
+        filters,
+        user: { id: 'owner' },
+        getFiles,
+        input: [
+          {
+            files: [{ file_id: 'owned' }],
+            content: Array.from({ length: 4200 }, () => ({ text: 'safe' })),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch array map or iterators while sanitizing units', async () => {
+    const units = [{ file_id: 'owned' }, { file_id: 'missing' }];
+    const map = jest.fn(() => []);
+    const iterator = jest.fn(() => {
+      throw new Error('iterator must not execute');
+    });
+    Object.defineProperty(units, 'map', { value: map });
+    Object.defineProperty(units, Symbol.iterator, { value: iterator });
+    const input = {
+      filters,
+      input: units,
+      user: { id: 'owner' },
+      getFiles: jest.fn(async () => [{ file_id: 'owned', text: 'safe' }]),
+    };
+    await expect(resolveCanonicalFileReferenceUnits(input)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+    });
+    units.pop();
+    await expect(resolveCanonicalFileReferenceUnits(input)).resolves.toMatchObject({
+      sanitizedInput: [{}],
+    });
+    expect(map).not.toHaveBeenCalled();
+    expect(iterator).not.toHaveBeenCalled();
   });
 });

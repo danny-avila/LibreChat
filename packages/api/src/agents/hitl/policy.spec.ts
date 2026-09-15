@@ -9,8 +9,10 @@ import {
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
   buildPendingAction,
+  isToolApprovalPayloadValid,
   toClientPendingAction,
   computeAgentRequestFingerprint,
+  computeLegacyAgentRequestFingerprint,
   captureResumeModelParameters,
   sanitizeResumeModelParameters,
   pickResumeContext,
@@ -309,6 +311,54 @@ describe('buildPendingAction', () => {
     expect(typeof action.createdAt).toBe('number');
   });
 
+  test('rejects duplicate tool-call ids before the approval is persisted', () => {
+    const duplicatePayload: Agents.ToolApprovalInterruptPayload = {
+      type: 'tool_approval',
+      action_requests: [
+        { name: 'shell', arguments: { command: 'rm marker' }, tool_call_id: 'duplicate' },
+        { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'duplicate' },
+      ],
+      review_configs: [
+        {
+          action_name: 'shell',
+          tool_call_id: 'duplicate',
+          allowed_decisions: ['approve', 'reject'],
+        },
+        {
+          action_name: 'shell',
+          tool_call_id: 'duplicate',
+          allowed_decisions: ['approve', 'reject'],
+        },
+      ],
+    };
+
+    expect(isToolApprovalPayloadValid(duplicatePayload)).toBe(false);
+    expect(() => buildPendingAction(duplicatePayload, ctx)).toThrow(
+      'Invalid tool approval payload',
+    );
+  });
+
+  test('rejects review policies that do not map one-to-one to the requested calls', () => {
+    const mismatchedPayload: Agents.ToolApprovalInterruptPayload = {
+      type: 'tool_approval',
+      action_requests: [
+        { name: 'read_file', arguments: { path: 'safe.txt' }, tool_call_id: 'call-1' },
+      ],
+      review_configs: [
+        {
+          action_name: 'read_file',
+          tool_call_id: 'call-2',
+          allowed_decisions: ['approve', 'reject'],
+        },
+      ],
+    };
+
+    expect(isToolApprovalPayloadValid(mismatchedPayload)).toBe(false);
+    expect(() => buildPendingAction(mismatchedPayload, ctx)).toThrow(
+      'Invalid tool approval payload',
+    );
+  });
+
   test('wraps an ask_user_question payload with the same envelope', () => {
     const askPayload: Agents.AskUserQuestionInterruptPayload = {
       type: 'ask_user_question',
@@ -379,6 +429,7 @@ describe('toClientPendingAction', () => {
       streamId: 'stream-1',
       conversationId: 'conv-1',
       requestFingerprint: 'fp-hash',
+      requestFingerprintV2: 'fp-v2-hash',
       resumeContext: {
         endpoint: 'agents',
         model_parameters: { temperature: 0.5 },
@@ -393,6 +444,7 @@ describe('toClientPendingAction', () => {
     expect(clientSafe).toBeDefined();
     expect(clientSafe?.resumeContext).toBeUndefined();
     expect(clientSafe?.requestFingerprint).toBeUndefined();
+    expect(clientSafe?.requestFingerprintV2).toBeUndefined();
     expect(clientSafe?.codeExecutionBinding).toBeUndefined();
     expect(clientSafe?.actionId).toBe(full.actionId);
     expect(clientSafe?.streamId).toBe('stream-1');
@@ -400,6 +452,7 @@ describe('toClientPendingAction', () => {
     // Non-mutating: the stored record keeps its replay state for the resume route.
     expect(full.resumeContext).toBeDefined();
     expect(full.requestFingerprint).toBe('fp-hash');
+    expect(full.requestFingerprintV2).toBe('fp-v2-hash');
     expect(full.codeExecutionBinding).toEqual({
       version: 1,
       targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
@@ -663,6 +716,9 @@ describe('computeAgentRequestFingerprint', () => {
       computeAgentRequestFingerprint({ ...base, codeApprovalMode: null }),
     );
     expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeEnvironmentMode: 'without_attached' }),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({
         ...base,
         codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
@@ -678,6 +734,25 @@ describe('computeAgentRequestFingerprint', () => {
         ...base,
         codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-b' }],
       }),
+    );
+  });
+
+  it('keeps a legacy-compatible digest while the current digest pins code environments', () => {
+    const base = { endpoint: 'agents', agent_id: 'agent-1' };
+    const withWorkspace = {
+      ...base,
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
+    };
+    const withAttachedWorkspace = { ...withWorkspace, codeEnvironmentMode: 'attached' as const };
+
+    expect(computeLegacyAgentRequestFingerprint(base)).not.toBe(
+      computeLegacyAgentRequestFingerprint(withAttachedWorkspace),
+    );
+    expect(computeLegacyAgentRequestFingerprint(withWorkspace)).toBe(
+      computeLegacyAgentRequestFingerprint(withAttachedWorkspace),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint(withAttachedWorkspace),
     );
   });
 
@@ -733,6 +808,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
       conversationId: 'c',
       decisions: [],
@@ -749,6 +825,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       manualSkills: ['code-reviewer'],
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
+      codeEnvironmentMode: 'attached',
       codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
     });
   });
@@ -786,6 +863,25 @@ describe('pickResumeContext / applyResumeContext', () => {
     };
     applyResumeContext(injected, { endpoint: 'agents' });
     expect('codeWorkspaces' in injected).toBe(false);
+  });
+
+  it('pins the code-environment decision across resume and removes a forged mode', () => {
+    const restored: Record<string, unknown> = {
+      conversationId: 'c',
+      codeEnvironmentMode: 'attached',
+    };
+    applyResumeContext(restored, {
+      endpoint: 'agents',
+      codeEnvironmentMode: 'without_attached',
+    });
+    expect(restored.codeEnvironmentMode).toBe('without_attached');
+
+    const injected: Record<string, unknown> = {
+      conversationId: 'c',
+      codeEnvironmentMode: 'attached',
+    };
+    applyResumeContext(injected, { endpoint: 'agents' });
+    expect('codeEnvironmentMode' in injected).toBe(false);
   });
 
   it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {

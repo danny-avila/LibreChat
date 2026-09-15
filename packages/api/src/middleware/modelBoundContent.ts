@@ -168,6 +168,7 @@ function getProviderPartSnapshotTraversalScopes(
 interface ProviderProjectionWorkBudget {
   remaining: number;
   overflowed: boolean;
+  parent?: ProviderProjectionWorkBudget;
 }
 
 interface ProviderProjectionWorkBudgets {
@@ -178,6 +179,35 @@ interface ProviderProjectionWorkBudgets {
   readonly provenance: ProviderProjectionWorkBudget;
   readonly storedState: ProviderProjectionWorkBudget;
   readonly nestedTraversal: VisitNestedStringsBudget;
+}
+
+/**
+ * JSON structure is bounded per message. Dynamic proxy arrays retain the
+ * shared work ceiling; their reads can execute arbitrary code. Either budget
+ * latches failures into the enclosing projection, including subsequent batches.
+ */
+function createMessageWorkBudget(
+  parent: ProviderProjectionWorkBudget,
+  candidate: unknown,
+  remaining = MAX_PROVIDER_PROJECTION_WORK,
+): ProviderProjectionWorkBudget {
+  if (isProxy(candidate)) {
+    return parent;
+  }
+  let overflowed = false;
+  return {
+    remaining,
+    parent,
+    get overflowed() {
+      return overflowed;
+    },
+    set overflowed(value: boolean) {
+      overflowed ||= value;
+      if (value && this.parent != null) {
+        this.parent.overflowed = true;
+      }
+    },
+  };
 }
 
 function captureProviderArrayLength(candidate: readonly unknown[]): number {
@@ -347,9 +377,10 @@ export function collectModelBoundHistoricalFileIdState(
         continue;
       }
       const contentCount = captureProviderArrayLength(contentCandidate);
+      const contentBudget = createMessageWorkBudget(budget, contentCandidate);
       let contentIndex = 0;
       for (; contentIndex < contentCount; contentIndex++) {
-        if (!consumeProviderProjectionWork(budget, 1)) {
+        if (!consumeProviderProjectionWork(contentBudget, 1)) {
           break;
         }
         const part = contentCandidate[contentIndex];
@@ -1049,7 +1080,7 @@ function normalizeProviderSourceMessageId(candidate: unknown): string | undefine
 
 function getProviderMessageProvenanceState(
   message: ModelBoundProviderMessage,
-  budget: ProviderProjectionWorkBudget,
+  parentBudget: ProviderProjectionWorkBudget,
 ): ModelBoundProviderProvenanceState {
   const candidate: unknown = message.additional_kwargs?.provenance;
   if (candidate == null) {
@@ -1064,6 +1095,11 @@ function getProviderMessageProvenanceState(
   if (version !== 1 || !Array.isArray(candidateParts)) {
     return { invalid: true };
   }
+  const budget = createMessageWorkBudget(
+    parentBudget,
+    candidateParts,
+    MAX_PROVIDER_PROVENANCE_PARSE_WORK,
+  );
   let candidatePartCount: number;
   try {
     candidatePartCount = captureProviderArrayLength(candidateParts);
@@ -1135,7 +1171,12 @@ function getProviderMessageProvenanceState(
       if (totalIndexRefs > MAX_PROVIDER_PROVENANCE_INDEX_REFS) {
         return { invalid: true };
       }
-      if (!consumeProviderProjectionWork(budget, candidateIndexCount)) {
+      if (
+        !consumeProviderProjectionWork(
+          isProxy(candidateSourceContentPartIndices) ? parentBudget : budget,
+          candidateIndexCount,
+        )
+      ) {
         return { invalid: true };
       }
       sourceContentPartIndices = new Set<number>();
@@ -1191,12 +1232,17 @@ function getProviderMessageProvenanceState(
 
 function getLegacyProviderLineage(
   message: ModelBoundProviderMessage,
-  budget: ProviderProjectionWorkBudget,
+  parentBudget: ProviderProjectionWorkBudget,
 ): LegacyProviderLineage {
   const sourceIds = new Set<string>();
   let invalid = false;
   let hasPluralLineage = false;
   const pluralCandidate: unknown = message.additional_kwargs?.sourceMessageIds;
+  const budget = createMessageWorkBudget(
+    parentBudget,
+    pluralCandidate,
+    MAX_PROVIDER_PROVENANCE_PARSE_WORK,
+  );
   if (pluralCandidate != null) {
     if (!Array.isArray(pluralCandidate)) {
       invalid = true;
@@ -1480,9 +1526,10 @@ function appendStoredMessageFileIds(
       return;
     }
     const contentCount = captureProviderArrayLength(contentCandidate);
+    const contentBudget = createMessageWorkBudget(budget, contentCandidate);
     let index = 0;
     for (; index < contentCount; index++) {
-      if (!consumeProviderProjectionWork(budget, 1)) {
+      if (!consumeProviderProjectionWork(contentBudget, 1)) {
         break;
       }
       const part = contentCandidate[index];
@@ -1549,6 +1596,7 @@ function snapshotModelBoundPartArray(
   try {
     if (isProxy(candidate)) {
       markProviderProjectionWorkOverflow(context.budget);
+      return snapshot;
     }
     const length = captureProviderArrayLength(candidate);
     let index = 0;
@@ -1873,9 +1921,11 @@ function snapshotProviderMessageEnvelope(
 
 function snapshotProviderMessageContent(
   message: ModelBoundProviderMessage,
-  budget: ProviderProjectionWorkBudget,
-  partSnapshotBudget: ProviderProjectionWorkBudget,
+  parentBudget: ProviderProjectionWorkBudget,
+  parentPartSnapshotBudget: ProviderProjectionWorkBudget,
 ): unknown {
+  const budget = createMessageWorkBudget(parentBudget, message.content);
+  const partSnapshotBudget = createMessageWorkBudget(parentPartSnapshotBudget, message.content);
   try {
     const messageContent = message.content;
     const messageText = messageContent == null ? message.text : undefined;
@@ -1970,7 +2020,7 @@ function projectProviderMessage(
 
 function projectStoredMessageForProvider(
   message: StoredModelBoundMessage,
-  budget: ProviderProjectionWorkBudget,
+  parentBudget: ProviderProjectionWorkBudget,
   partSnapshotBudget: ProviderProjectionWorkBudget,
   selectedContentPartIndices?: ReadonlySet<number>,
   attribution?: Extract<ProviderExactAttribution, 'user' | 'tool'>,
@@ -1979,6 +2029,7 @@ function projectStoredMessageForProvider(
   submittedPathsSnapshot?: readonly string[],
   submittedFieldPathsSnapshot?: readonly UserSubmittedMessageFieldPath[],
 ): StoredModelBoundMessage {
+  const budget = createMessageWorkBudget(parentBudget, message.content);
   const messageContentCandidate = message.content;
   const storedText = message.text;
   const rawFieldPathCandidate = message.userSubmittedMessageFieldPaths;
@@ -2178,6 +2229,7 @@ interface StoredProviderContributionState {
 }
 
 interface CachedStoredProviderState {
+  readonly provenanceBudget: ProviderProjectionWorkBudget;
   readonly messageSnapshot: StoredModelBoundMessage;
   readonly contentLength?: number;
   readonly contentParts: Map<number, unknown>;
@@ -2256,9 +2308,10 @@ function getStoredSubmittedPathState(
     return cachedState.explicitSubmittedPathState;
   }
   if (cachedState.wholeSubmittedPathState == null) {
+    const semanticBudget = createMessageWorkBudget(budget, cachedState.messageSnapshot.content);
     const semanticState = getUserSubmittedPathState(cachedState.messageSnapshot, {
       includeExplicitPaths: false,
-      budget,
+      budget: semanticBudget,
       capturedContent: cachedState.messageSnapshot.content,
       hasCapturedContent: true,
       capturedContentLength: cachedState.contentLength,
@@ -2340,8 +2393,9 @@ function getStoredProviderContributionState(
   let hasSelectedMaterial = selectedContentPartIndices == null;
   let hasSelectedSemanticPath = false;
   if (!hasSelectedMaterial && cachedState.contentLength != null) {
+    const selectionBudget = createMessageWorkBudget(budget, cachedState.messageSnapshot.content);
     for (const index of selectedContentPartIndices ?? []) {
-      if (!consumeProviderProjectionWork(budget, 1)) {
+      if (!consumeProviderProjectionWork(selectionBudget, 1)) {
         break;
       }
       const part = readCachedStoredContentPart(cachedState, index, budget);
@@ -2403,8 +2457,9 @@ function getSelectedRawStoredMessageFileIds(
       if (cachedState.contentLength != null) {
         const contentLength = cachedState.contentLength;
         const contentCount = Math.min(contentLength, MAX_PROVIDER_PROJECTION_WORK);
+        const contentBudget = createMessageWorkBudget(budget, cachedState.messageSnapshot.content);
         for (let index = 0; index < contentCount; index++) {
-          if (!consumeProviderProjectionWork(budget, 1)) {
+          if (!consumeProviderProjectionWork(contentBudget, 1)) {
             break;
           }
           const part = readCachedStoredContentPart(cachedState, index, budget);
@@ -2433,8 +2488,9 @@ function getSelectedRawStoredMessageFileIds(
     if (cachedState.contentLength == null) {
       return fileIds;
     }
+    const selectionBudget = createMessageWorkBudget(budget, cachedState.messageSnapshot.content);
     for (const index of selectedContentPartIndices) {
-      if (!consumeProviderProjectionWork(budget, 1)) {
+      if (!consumeProviderProjectionWork(selectionBudget, 1)) {
         break;
       }
       const part = readCachedStoredContentPart(cachedState, index, budget);
@@ -2523,13 +2579,24 @@ interface ModelBoundProviderContentIndex {
 function getCachedStoredProviderState(
   index: ModelBoundProviderContentIndex,
   message: StoredModelBoundMessage,
-  budget: ProviderProjectionWorkBudget,
-  partSnapshotBudget: ProviderProjectionWorkBudget,
+  parentBudget: ProviderProjectionWorkBudget,
+  parentPartSnapshotBudget: ProviderProjectionWorkBudget,
 ): CachedStoredProviderState {
   const cached = index.storedStateByMessage.get(message);
   if (cached != null) {
+    /** Cached snapshots outlive a model invocation; attach failures to the current budgets. */
+    cached.provenanceBudget.parent = parentBudget;
+    if (cached.provenanceBudget.overflowed) {
+      markProviderProjectionWorkOverflow(parentBudget);
+    }
+    cached.partSnapshotBudget.parent = parentPartSnapshotBudget;
+    if (cached.partSnapshotBudget.overflowed) {
+      markProviderProjectionWorkOverflow(parentPartSnapshotBudget);
+    }
     return cached;
   }
+  const budget = createMessageWorkBudget(parentBudget, undefined, MAX_PROVIDER_STORED_STATE_WORK);
+  const partSnapshotBudget = createMessageWorkBudget(parentPartSnapshotBudget, undefined);
   let messageSnapshot: StoredModelBoundMessage = {};
   try {
     messageSnapshot = {
@@ -2566,8 +2633,13 @@ function getCachedStoredProviderState(
     contentLength = -1;
   }
   const contentParts = new Map<number, unknown>();
+  const pathBudget =
+    isProxy(messageSnapshot.userSubmittedPaths) ||
+    isProxy(messageSnapshot.userSubmittedMessageFieldPaths)
+      ? parentBudget
+      : budget;
   const provenanceOptions = {
-    budget,
+    budget: pathBudget,
     capturedContent: messageSnapshot.content,
     hasCapturedContent: true,
     capturedContentLength: contentLength,
@@ -2582,10 +2654,11 @@ function getCachedStoredProviderState(
     messageSnapshot,
     provenanceOptions,
   );
-  if (explicitSubmittedPathState.overflowed) {
+  if (explicitSubmittedPathState.overflowed || pathBudget.overflowed) {
     markProviderProjectionWorkOverflow(budget);
   }
   const state: CachedStoredProviderState = {
+    provenanceBudget: budget,
     messageSnapshot,
     contentLength,
     contentParts,
@@ -2751,7 +2824,7 @@ function projectModelBoundProviderContent(
       projectStoredMessageForProvider(
         cachedState.messageSnapshot,
         projectionBudget,
-        partSnapshotBudget,
+        cachedState.partSnapshotBudget,
         undefined,
         undefined,
         cachedState.contentParts,
@@ -2848,7 +2921,7 @@ function projectModelBoundProviderContent(
               projectStoredMessageForProvider(
                 cachedState.messageSnapshot,
                 projectionBudget,
-                partSnapshotBudget,
+                cachedState.partSnapshotBudget,
                 contribution.selectedContentPartIndices,
                 exactAttribution,
                 cachedState.contentParts,
@@ -3552,6 +3625,18 @@ function inspectModelBoundContent(
     traversalErrors.push(error);
   };
   for (const message of input.storedMessages ?? []) {
+    /** Structural limits belong to the message; assembled-text allocations remain request-wide. */
+    const messageTraversalBudget: VisitNestedStringsBudget = {
+      visitedNodes: 0,
+      maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,
+      get materializedCharacters() {
+        return storedMessageTraversalBudget.materializedCharacters;
+      },
+      set materializedCharacters(value: number | undefined) {
+        storedMessageTraversalBudget.materializedCharacters = value;
+      },
+      maxMaterializedCharacters: storedMessageTraversalBudget.maxMaterializedCharacters,
+    };
     const submittedPathState = getUserSubmittedPathState(message);
     const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(message);
     const semanticUserSubmittedPaths = submittedMessageFieldState.entries.map(
@@ -3573,7 +3658,7 @@ function inspectModelBoundContent(
     let messageFragments: readonly TextContentFragment[];
     let traversalError: ContentTraversalLimitError | null = null;
     try {
-      messageFragments = extractStoredMessageContent(message, storedMessageTraversalBudget);
+      messageFragments = extractStoredMessageContent(message, messageTraversalBudget);
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
         throw error;
@@ -3599,7 +3684,7 @@ function inspectModelBoundContent(
         const exactMessageInspection = extractExactUserSubmittedMessageFragments(
           message,
           submittedMessageFieldState.entries,
-          storedMessageTraversalBudget,
+          messageTraversalBudget,
         );
         exactMessageFragments = exactMessageInspection.fragments;
         exactMessageTraversalError = exactMessageInspection.traversalError;
@@ -3692,7 +3777,7 @@ function inspectModelBoundContent(
           ) {
             const userSubmittedAssembledContext = createUserSubmittedAssembledContext(
               assembledText,
-              storedMessageTraversalBudget,
+              messageTraversalBudget,
             );
             if (userSubmittedAssembledContext.fragment != null) {
               inspectFragment(userSubmittedAssembledContext.fragment);

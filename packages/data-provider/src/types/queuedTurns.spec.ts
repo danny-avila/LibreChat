@@ -11,7 +11,7 @@ const request = {
   parentMessageId: 'message-1',
   clientRequestId: 'request-1',
   text: 'Continue with this context',
-  files: [{ file_id: 'file-1', filename: 'context.txt' }],
+  files: [{ file_id: 'file-1', filename: 'context.txt', llmDeliveryPath: 'text' }],
   quotes: ['quoted context'],
   manualSkills: ['research'],
   expectedPredecessorCreatedAt: 42,

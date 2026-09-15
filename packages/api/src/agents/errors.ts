@@ -3,9 +3,19 @@ import {
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
+import { isOwnedAbortError } from '~/utils/errors';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
+
+const FATAL_AGENT_INITIALIZATION_CODES = new Set(
+  [
+    AGENT_ATTACHMENT_LIMIT_EXCEEDED,
+    ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+  ].filter((code): code is string => typeof code === 'string'),
+);
 
 export function createStatefulCodeEnvironmentPolicyError(environment: string): Error {
   return Object.assign(
@@ -19,6 +29,7 @@ export function createStatefulCodeEnvironmentPolicyError(environment: string): E
 }
 
 export interface FatalAgentInitializationOptions {
+  signal?: AbortSignal;
   /**
    * Skill `allowed-tools` may add an MCP tool beyond the agent's configured
    * baseline. That union load is allowed to retry without the skill extras;
@@ -46,10 +57,8 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
-    code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
-    code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
-    code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||
-    code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE ||
+    isOwnedAbortError(error, options.signal) ||
+    FATAL_AGENT_INITIALIZATION_CODES.has(code as string) ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)
   );
 }
@@ -115,6 +124,14 @@ const GRAPH_RECURSION_LIMIT_CODE = 'GRAPH_RECURSION_LIMIT';
 /** Bounded `cause` walk: a graph error may be rethrown wrapped by an outer node. */
 const MAX_CAUSE_DEPTH = 4;
 
+function readErrorProperty(error: object, property: PropertyKey): unknown {
+  try {
+    return Reflect.get(error, property);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Whether `error` is the agent graph exhausting its per-turn step budget
  * (`recursionLimit`), as opposed to anything actually going wrong.
@@ -134,14 +151,13 @@ export function isStepLimitError(error: unknown): boolean {
     if (typeof current !== 'object') {
       return false;
     }
-    const candidate = current as { lc_error_code?: unknown; name?: unknown; cause?: unknown };
     if (
-      candidate.lc_error_code === GRAPH_RECURSION_LIMIT_CODE ||
-      candidate.name === 'GraphRecursionError'
+      readErrorProperty(current, 'lc_error_code') === GRAPH_RECURSION_LIMIT_CODE ||
+      readErrorProperty(current, 'name') === 'GraphRecursionError'
     ) {
       return true;
     }
-    current = candidate.cause;
+    current = readErrorProperty(current, 'cause');
   }
   return false;
 }

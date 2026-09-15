@@ -1,5 +1,6 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
+import { Constants } from 'librechat-data-provider';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { TMessage } from 'librechat-data-provider';
 import EditMessage from '../EditMessage';
@@ -326,8 +327,40 @@ describe('EditMessage', () => {
     expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
     expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+    /** The footer's status slot answers why the action it usually carries is gone. */
+    expect(screen.getByText('com_ui_rerun_needs_user_turn')).toBeInTheDocument();
 
     /** The shortcut cannot reach it either. */
+    const editor = screen.getByTestId('message-text-editor');
+    await user.click(editor);
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
+  });
+
+  /** The importer chains each saved message onto the previous one, so a thread whose
+   *  first human message was empty leaves its reply at the root: the rerun has no
+   *  parent in the thread at all, not merely a model one. Offering the action there
+   *  ran a submission that resolved no parent and returned without feedback. */
+  it('offers no rerun when the response has no parent turn in the thread', async () => {
+    const user = userEvent.setup();
+    const rootAnswer = {
+      messageId: 'assistant-3',
+      parentMessageId: Constants.NO_PARENT,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'An imported reply with nothing before it',
+    } as TMessage;
+    mockGetMessages.mockReturnValue([rootAnswer]);
+    const ask = jest.fn();
+    renderEditor({ ask, editedMessage: rootAnswer });
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+    expect(screen.getByText('com_ui_rerun_needs_user_turn')).toBeInTheDocument();
+
     const editor = screen.getByTestId('message-text-editor');
     await user.click(editor);
     await user.keyboard('{Control>}{Enter}{/Control}');

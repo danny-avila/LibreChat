@@ -8,6 +8,7 @@ import {
   ApprovalEvents,
   SteerEvents,
   parseTextParts,
+  hasToolCallErrorPrefix,
   reconcileContextUsageFromEvent,
 } from 'librechat-data-provider';
 import type {
@@ -126,7 +127,7 @@ function completedToolExecutionStatus(call: Agents.ToolCall): ToolExecutionStatu
   }
   const output = call.output;
   return typeof output === 'string' &&
-    (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(output) ||
+    (hasToolCallErrorPrefix(output) ||
       /^Error processing tool(?::|$)/i.test(output) ||
       /^Error:[\s\S]*\n Please fix your mistakes\.$/i.test(output))
     ? 'error'

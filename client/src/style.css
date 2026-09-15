@@ -219,6 +219,7 @@ html {
   --status-neutral: var(--gray-600);
   --status-neutral-subtle: var(--gray-100);
   --status-neutral-border: var(--gray-300);
+  --status-verified: 37 99 235;
   --text-on-status: var(--white);
 
   /* Categorical series scale — slot order is the CVD-safety mechanism */
@@ -338,6 +339,7 @@ html {
   --status-neutral: var(--gray-300);
   --status-neutral-subtle: var(--gray-800);
   --status-neutral-border: var(--gray-700);
+  --status-verified: 26 127 216;
   --text-on-status: var(--white);
 
   /* Categorical series scale — same hues, stepped for the dark surface */

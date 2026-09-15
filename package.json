@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.8-rc2",
+  "version": "v0.8.8-rc3",
   "description": "",
   "packageManager": "npm@11.13.0",
   "workspaces": [
@@ -36,6 +36,7 @@
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
     "reset-meili-sync": "node config/reset-meili-sync.js",
+    "create-error-convo": "node config/create-error-convo.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",

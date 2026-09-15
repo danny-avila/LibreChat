@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  Constants,
   ContentTypes,
   EModelEndpoint,
   type TConversation,
@@ -321,6 +322,32 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 
+  /** The failure branch of the same shape: a compaction that produced no summary
+   *  marks its error part, which is the only thing distinguishing it from a
+   *  response to the user message it hangs off. */
+  it('withholds rerun controls on a marked compaction failure hanging off a user message', () => {
+    const failedCompaction = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'Summarization failed', initiatedBy: 'user' }],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: failedCompaction,
+      isLast: true,
+      latestMessageId: failedCompaction.messageId,
+      thread: [userMessage, failedCompaction],
+    });
+
+    expect(container.querySelector(`#edit-${failedCompaction.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
   /** An ordinary turn that auto-summarized and was cancelled before its first
    *  answer token persists the same summary-only content, but it hangs off the
    *  user's message and is exactly the turn a user needs to rerun. */
@@ -383,6 +410,33 @@ describe('HoverButtons edit affordance', () => {
     });
 
     expect(container.querySelector(`#edit-${chainedReply.messageId}`)).not.toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** The same imported shape with the skipped human message first: the reply is
+   *  chained onto nothing, so the thread holds no parent at all. `regenerate` can
+   *  only log that when the button is pressed, so the row withholds it. */
+  it('withholds the rerun shapes on a model turn left at the root', () => {
+    const rootReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: Constants.NO_PARENT,
+      isCreatedByUser: false,
+      text: 'An imported reply with nothing before it',
+      finish_reason: 'length',
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: rootReply,
+      isLast: true,
+      latestMessageId: rootReply.messageId,
+      thread: [rootReply],
+    });
+
+    /** Its stored text is still saved directly, so the editor stays. */
+    expect(container.querySelector(`#edit-${rootReply.messageId}`)).not.toBeNull();
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });

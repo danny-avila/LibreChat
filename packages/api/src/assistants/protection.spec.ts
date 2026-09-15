@@ -78,6 +78,48 @@ describe('Assistants model-bound content preflight', () => {
     getFiles = jest.fn().mockResolvedValue([]);
   });
 
+  it('inspects long remote thread history with one owner-file lookup', async () => {
+    const { openai } = createOpenAI({
+      assistant: {},
+      firstPage: {
+        data: Array.from({ length: 58 }, (_, index) => ({
+          id: `history-${index}`,
+          role: 'user',
+          content: Array.from({ length: 80 }, () => ({
+            type: 'text',
+            text: { value: 'safe history' },
+          })),
+          file_ids: index === 57 ? ['owned-file'] : [],
+        })),
+        has_more: false,
+      },
+    });
+    getFiles.mockResolvedValue([{ file_id: 'owned-file', text: 'safe extraction' }]);
+    await expect(
+      preflightAssistantRunContent({
+        config: {
+          messageFilter: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-LEGACY' }],
+            },
+          },
+          filters: {
+            files: {
+              pii: { fields: ['extracted_text'], starterPatterns: [], uninspectable: 'block' },
+            },
+          },
+        },
+        openai,
+        user: { id: 'owner' },
+        assistantId: 'assistant',
+        threadId: 'thread',
+        getFiles,
+      }),
+    ).resolves.toEqual({});
+    expect(getFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('does not perform remote reads when no applicable policy is configured', async () => {
     const { openai, retrieve, list } = createOpenAI({});
 

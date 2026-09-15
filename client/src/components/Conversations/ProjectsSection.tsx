@@ -56,6 +56,17 @@ const iconButtonClassName = cn(
   'shrink-0',
 );
 
+/** The same control on a project row rather than beside the heading. The row
+ *  itself already fills on hover, so the variant's hover surface would leave
+ *  the button reading as a second, weaker hover on top of it. These take the
+ *  active fill instead — the same one the row's own selected state uses — both
+ *  under the pointer and while the menu they own is open. */
+const rowActionClassName = cn(
+  iconButtonClassName,
+  'hover:bg-surface-active hover:text-text-primary',
+);
+const rowActionOpenClassName = 'bg-surface-active text-text-primary';
+
 const noop = () => {};
 
 type ProjectChatsInlineProps = {
@@ -141,7 +152,7 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
           variant="ghost"
           size="sm"
           onClick={onShowAll}
-          className="ml-1 mt-0.5 h-auto rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-transparent hover:text-text-primary"
+          className="ml-1 mt-0.5 h-auto rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
         >
           {localize('com_ui_show_all')}
         </Button>
@@ -193,7 +204,12 @@ const ProjectItem = memo(
        * project it already belongs to still left the pinned list, and the rows
        * it crossed must not be saved in their shifted order. */
       hover: () => markExternalHover(),
-      drop: (item) => assignDropped(item, project._id),
+      /* The drop result is what the pinned list reads to tell a reorder from a
+       * filing action, so this hands back nothing rather than the assignment's
+       * promise. */
+      drop: (item) => {
+        void assignDropped(item, project._id);
+      },
       collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
     });
     dropRef(projectRowRef);
@@ -292,7 +308,10 @@ const ProjectItem = memo(
           </button>
           <div
             className={cn(
-              'absolute right-1 top-1/2 flex -translate-y-1/2 items-center',
+              /* The 4px between the two controls, and from the row's trailing
+                 edge, that a pinned chat keeps between its unpin badge and its
+                 overflow menu. */
+              'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1',
               isMenuOpen
                 ? 'opacity-100'
                 : [
@@ -308,7 +327,7 @@ const ProjectItem = memo(
                 <a
                   href={projectChatPath}
                   aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
-                  className={iconButtonClassName}
+                  className={rowActionClassName}
                   onClick={startChat}
                 >
                   <NewChatIcon className="h-4 w-4" />
@@ -327,7 +346,7 @@ const ProjectItem = memo(
               trigger={
                 <Ariakit.MenuButton
                   aria-label={localize('com_ui_more_options')}
-                  className={cn(iconButtonClassName, isMenuOpen && 'text-text-primary')}
+                  className={cn(rowActionClassName, isMenuOpen && rowActionOpenClassName)}
                 >
                   <Ellipsis className="h-4 w-4" aria-hidden="true" />
                 </Ariakit.MenuButton>
@@ -486,7 +505,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
             <button
               type="button"
               aria-label={localize('com_ui_all_projects')}
-              className={cn(iconButtonClassName, 'hover:bg-surface-hover')}
+              className={iconButtonClassName}
               onClick={openProjects}
             >
               <Folders className="h-4 w-4" aria-hidden="true" />
@@ -496,9 +515,8 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
       </div>
 
       <Collapse open={isExpanded}>
-        <div className="scrollbar-gutter-stable max-h-[42vh] overflow-y-auto pt-0.5">
-          {renderProjectsBody()}
-        </div>
+        {/* No scroll pane of its own: the sidebar scrolls as one surface. */}
+        <div className="pt-0.5">{renderProjectsBody()}</div>
       </Collapse>
 
       <ProjectCreateDialog

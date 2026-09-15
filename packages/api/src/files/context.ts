@@ -1,6 +1,5 @@
 import { logger } from '@librechat/data-schemas';
 import { FileSources, mergeFileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type { TokenCountFn } from '~/utils/text';
 import type { ServerRequest } from '~/types';
@@ -44,7 +43,10 @@ export async function extractFileContext({
   req,
   tokenCountFn,
 }: {
-  attachments: IMongoFile[];
+  attachments: readonly (Pick<TFile, 'text' | 'filename'> & {
+    source?: string;
+    llmDeliveryPath?: string;
+  })[];
   req?: ServerRequest;
   tokenCountFn: TokenCountFn;
 }): Promise<string | undefined> {

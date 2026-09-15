@@ -5,6 +5,9 @@ const {
   reportLocatorTraversalFailure,
   isEnabled,
   normalizeLimit,
+  normalizeSortDirection,
+  normalizeSortField,
+  CONVERSATION_SORT_FIELDS,
   openCheckpointDeletion,
   waitForGenerationPersistence,
   createArchiveAllHandler,
@@ -153,8 +156,11 @@ router.get('/', async (req, res) => {
   const pinned = isEnabled(req.query.pinned);
   const search =
     typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
-  const sortBy = req.query.sortBy || 'updatedAt';
-  const sortDirection = req.query.sortDirection || 'desc';
+  const sortBy = normalizeSortField(req.query.sortBy, {
+    fields: CONVERSATION_SORT_FIELDS,
+    fallback: 'updatedAt',
+  });
+  const sortDirection = normalizeSortDirection(req.query.sortDirection);
   const projectId = Array.isArray(req.query.projectId)
     ? req.query.projectId[0]
     : req.query.projectId;

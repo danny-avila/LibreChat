@@ -11,7 +11,12 @@ import type {
   OAuthStoredClientMetadata,
   OAuthClientSource,
 } from '~/mcp/oauth';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
@@ -36,9 +41,16 @@ import {
   isMCPTransportAuthenticationError,
   MCPAuthenticationRejectedError,
 } from './errors';
-import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
-import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import {
+  isOAuthServer,
+  waitUntilDeadline,
+  isClientRejectionMessage,
+  createDeadlineAbortSignal,
+} from './utils';
+import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
+import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
@@ -92,9 +104,13 @@ export class MCPConnectionFactory {
   protected readonly deadlineMs?: number;
   protected readonly onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
   protected readonly onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
+  protected readonly onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
+  protected readonly onOAuthCredentialsAdopted?: t.UserConnectionContext['onOAuthCredentialsAdopted'];
+  protected readonly onOAuthCredentialsInvalidated?: t.UserConnectionContext['onOAuthCredentialsInvalidated'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
+  protected upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
   protected readonly oboIdentityContext?: AuthIdentityContext;
   /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
   private oboRefreshError?: Error;
@@ -353,7 +369,20 @@ export class MCPConnectionFactory {
         );
       }
     } else if (this.useOAuth) {
-      oauthTokens = await this.getOAuthTokens();
+      /** The token flow is shared, and a refresh inside it may already be redeemed at the provider
+       *  while its rotation persists. Stop waiting when the budget ends rather than cancelling that
+       *  work, so the flow still stores the new tokens for the next caller, and hand the caller the
+       *  work that keeps running so it can account for it. */
+      const tokenLoad = this.getOAuthTokens();
+      const loaded = await waitUntilDeadline(tokenLoad, this.deadlineMs, this.signal);
+      if (!loaded.settled) {
+        this.onDiscoveryDetached?.(tokenLoad);
+        logger.debug(
+          `${this.logPrefix} [Discovery] Cancelled or out of budget while loading OAuth tokens; leaving the token flow to finish`,
+        );
+        return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+      }
+      oauthTokens = loaded.value;
     }
 
     let connection: MCPConnection | null = null;
@@ -581,6 +610,9 @@ export class MCPConnectionFactory {
     this.deadlineMs = options?.deadlineMs;
     this.onOAuthCredentialsChanged = options?.onOAuthCredentialsChanged;
     this.onOAuthCredentialsChanging = options?.onOAuthCredentialsChanging;
+    this.onDiscoveryDetached = options?.onDiscoveryDetached;
+    this.onOAuthCredentialsAdopted = options?.onOAuthCredentialsAdopted;
+    this.onOAuthCredentialsInvalidated = options?.onOAuthCredentialsInvalidated;
     this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
@@ -588,6 +620,7 @@ export class MCPConnectionFactory {
 
     this.user = options?.user;
     this.upstreamTokenProvider = options?.upstreamTokenProvider;
+    this.upstreamTokenProviderResolver = options?.upstreamTokenProviderResolver;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
@@ -617,6 +650,12 @@ export class MCPConnectionFactory {
       return null;
     }
 
+    if (!this.upstreamTokenProvider && this.upstreamTokenProviderResolver) {
+      this.upstreamTokenProvider = createLazyOboUpstreamTokenProvider(
+        this.upstreamTokenProviderResolver,
+        this.signal,
+      );
+    }
     if (!this.upstreamTokenProvider) {
       throw new Error(
         `${this.logPrefix} Internal: upstreamTokenProvider not plumbed for OBO connection. ` +
@@ -627,11 +666,14 @@ export class MCPConnectionFactory {
 
     if (this.oboTrustChecker) {
       const config = this.serverConfig as t.ParsedServerConfig;
-      const trusted = await this.oboTrustChecker({
-        source: config.source,
-        author: config.author,
-        dbId: config.dbId,
-      });
+      const trusted = await awaitOboOperation(
+        this.oboTrustChecker({
+          source: config.source,
+          author: config.author,
+          dbId: config.dbId,
+        }),
+        this.signal,
+      );
       if (!trusted) {
         logger.warn(
           `${this.logPrefix} OBO config not trusted (author lacks CONFIGURE_OBO permission); skipping OBO token exchange`,
@@ -641,13 +683,16 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return resolveOboToken(
-      this.user,
-      oboConfig,
-      this.oboTokenResolver,
-      this.upstreamTokenProvider,
-      this.oboIdentityContext,
-      forceRefresh,
+    return awaitOboOperation(
+      resolveOboToken(
+        this.user,
+        oboConfig,
+        this.oboTokenResolver,
+        this.upstreamTokenProvider,
+        this.oboIdentityContext,
+        forceRefresh,
+      ),
+      this.signal,
     );
   }
 
@@ -656,7 +701,7 @@ export class MCPConnectionFactory {
     return !!this.serverConfig.obo && !!this.oboTokenResolver && !!this.user;
   }
 
-  protected createOboConnectionError(error: OboTokenResolutionError): Error {
+  protected createOboConnectionError(error: OboTokenResolutionError): OboTokenResolutionError {
     let recoveryHint = 'Re-authenticate the user and retry.';
 
     if (error.retryable) {
@@ -665,8 +710,11 @@ export class MCPConnectionFactory {
       recoveryHint = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
     }
 
-    return new Error(
+    return new OboTokenResolutionError(
+      error.reason,
       `${error.userMessage} Unable to connect to OBO server "${this.serverName}". ${recoveryHint}`,
+      error.retryable,
+      error,
     );
   }
 
@@ -760,6 +808,7 @@ export class MCPConnectionFactory {
     this.oauthEnd = undefined;
     this.returnOnOAuth = false;
     this.upstreamTokenProvider = undefined;
+    this.upstreamTokenProviderResolver = undefined;
   }
 
   private getServerUrl(): string | undefined {
@@ -876,13 +925,15 @@ export class MCPConnectionFactory {
       .digest('base64url');
   }
 
-  /** Retrieves existing OAuth tokens from storage or returns null */
-  protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
-    if (!this.tokenMethods?.findToken) return null;
-
-    try {
-      const flowId = this.getTokenFlowId();
-      const tokens = await this.flowManager!.createFlowWithHandler(
+  /**
+   * Reads tokens through the shared `mcp_get_tokens` flow. A flow that disappears while this call
+   * waits on it was invalidated by a credential change, so the read runs once more against the
+   * changed storage instead of reporting the tokens missing and prompting for authorization again.
+   */
+  private async loadOAuthTokens(): Promise<MCPOAuthTokens | null> {
+    const flowId = this.getTokenFlowId();
+    const readTokens = () =>
+      this.flowManager!.createFlowWithHandler(
         flowId,
         'mcp_get_tokens',
         async () => {
@@ -904,6 +955,35 @@ export class MCPConnectionFactory {
         },
         this.signal,
       );
+
+    try {
+      return await readTokens();
+    } catch (error) {
+      if (!(error instanceof FlowStateNotFoundError)) {
+        throw error;
+      }
+      logger.info(
+        `${this.logPrefix} Token flow was invalidated while waiting on it; re-reading stored tokens`,
+      );
+      await this.onOAuthCredentialsInvalidated?.();
+      return await readTokens();
+    }
+  }
+
+  /** Tokens released by another party's authorization or refresh carry the generation it published. */
+  private async adoptPublishedCredentials(tokens: MCPOAuthTokens): Promise<void> {
+    if (!tokens.publication_generation) {
+      return;
+    }
+    await this.onOAuthCredentialsAdopted?.(tokens.publication_generation);
+  }
+
+  /** Retrieves existing OAuth tokens from storage or returns null */
+  protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
+    if (!this.tokenMethods?.findToken) return null;
+
+    try {
+      const tokens = await this.loadOAuthTokens();
 
       if (tokens) {
         const [isCurrentAccessToken, storedClient] = await this.runWithCapturedTenant(() =>
@@ -937,6 +1017,7 @@ export class MCPConnectionFactory {
           storedClient?.clientMetadata as Partial<OAuthStoredClientMetadata> | undefined,
           this.serverConfig.oauth,
         );
+        await this.adoptPublishedCredentials(tokens);
         logger.info(`${this.logPrefix} Loaded OAuth tokens`);
       }
       return tokens;
@@ -1151,8 +1232,8 @@ export class MCPConnectionFactory {
           });
     return async (freshTokens) => {
       if (publishPreparedMutation != null) {
-        await publishPreparedMutation();
-        await this.invalidateGetTokensFlow(freshTokens);
+        const publicationGeneration = await publishPreparedMutation();
+        await this.invalidateGetTokensFlow(freshTokens, publicationGeneration);
         return;
       }
       if (freshTokens != null) {
@@ -1169,7 +1250,10 @@ export class MCPConnectionFactory {
     };
   }
 
-  protected async invalidateGetTokensFlow(freshTokens?: MCPOAuthTokens): Promise<void> {
+  protected async invalidateGetTokensFlow(
+    freshTokens?: MCPOAuthTokens,
+    publicationGeneration?: string,
+  ): Promise<void> {
     if (!this.flowManager || !this.userId) {
       return;
     }
@@ -1180,7 +1264,13 @@ export class MCPConnectionFactory {
         return;
       }
       if (state.status === 'PENDING' && freshTokens) {
-        await this.flowManager.completeFlow(flowId, 'mcp_get_tokens', freshTokens);
+        await this.flowManager.completeFlow(
+          flowId,
+          'mcp_get_tokens',
+          publicationGeneration
+            ? { ...freshTokens, publication_generation: publicationGeneration }
+            : freshTokens,
+        );
         return;
       }
       if (state.status !== 'COMPLETED') {
@@ -1373,7 +1463,11 @@ export class MCPConnectionFactory {
         logger.info(`${this.logPrefix} OBO token re-exchanged; retrying connection`);
         connection.emit('oauthHandled');
       } catch (error) {
-        logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        if (isAbortError(error)) {
+          logger.debug(`${this.logPrefix} OBO token re-exchange cancelled`);
+        } else {
+          logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        }
         /**
          * `connectClient` rejects its handling promise with this error and then
          * rethrows the server's original 401, so a diagnosis like an unrefreshable
@@ -1399,6 +1493,11 @@ export class MCPConnectionFactory {
     }
     if (error instanceof Error) {
       return error;
+    }
+    if (isAbortError(error)) {
+      return Object.assign(new Error('The operation was aborted.', { cause: error }), {
+        name: 'AbortError',
+      });
     }
     return new Error(`OBO token re-exchange failed for "${this.serverName}".`);
   }
@@ -1664,6 +1763,7 @@ export class MCPConnectionFactory {
           );
 
           connection.setOAuthTokens(tokens);
+          await this.adoptPublishedCredentials(tokens);
           // Same rationale as the silent-refresh success path: invalidate the
           // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
           // freshly stored tokens rather than the just-rejected ones the

@@ -116,6 +116,8 @@ async function initializeMCPs() {
   try {
     const mcpManager = await createMCPManager(mcpServers || {}, {
       catalogRecoveryMaxStateEntries: appConfig?.mcpSettings?.catalogRecovery?.maxStateEntries,
+      catalogRecoveryMaxDetachedDiscoveries:
+        appConfig?.mcpSettings?.catalogRecovery?.maxDetachedDiscoveries,
     });
     startMCPAuthorizationFenceRetryWorker(invalidateCachedTools, {
       intervalMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryIntervalMs,

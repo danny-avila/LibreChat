@@ -89,6 +89,10 @@ export const defaultTheme: IThemeRGB = {
   'rgb-status-neutral': '66 66 66', // #424242 (gray-600)
   'rgb-status-neutral-subtle': '236 236 236', // #ececec (gray-100)
   'rgb-status-neutral-border': '205 205 205', // #cdcdcd (gray-300)
+  /** Verified mark. `blue-600` doubles as `status-info` here, and that is the
+   *  point: one blue for "this is informational/first-party", 5.17:1 under the
+   *  white label and 4.83:1 against the panel. */
+  'rgb-status-verified': '37 99 235', // #2563eb (blue-600)
   'rgb-text-on-status': '255 255 255', // #fff (white)
 
   // Brand colors

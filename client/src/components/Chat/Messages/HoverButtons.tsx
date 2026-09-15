@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Copy, Check } from 'lucide';
+import { useAtomValue } from 'jotai';
 import { useRecoilState } from 'recoil';
 import { findMessageById, isUserInitiatedCompaction } from 'librechat-data-provider';
 import {
@@ -14,6 +15,7 @@ import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { hasEditablePart } from './Content/editableParts';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -139,6 +141,7 @@ const HoverButtons = ({
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
   const { getMessages } = useOptionalMessagesOperations();
+  const pendingReveal = useAtomValue(revealedQueuedTurnFamily(conversation?.conversationId ?? ''));
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -152,22 +155,30 @@ const HoverButtons = ({
    *  indexed once for all its rows rather than scanned once per row, and the memo
    *  is keyed on the parent id: `getMessages` is a cache read, not a subscription,
    *  and a parent's authorship never changes. Outside the messages view (a search
-   *  row) the thread is unavailable and the answer stays unknown. */
+   *  row) the thread is unavailable and the answer stays unknown; with the thread
+   *  in hand a parent that does not resolve is absent — an imported reply the
+   *  lineage left at the root — and there is no turn to replay, which `regenerate`
+   *  can only log about once the button is pressed. */
   const parentIsUserMessage = useMemo(() => {
-    if (message.isCreatedByUser === true || message.parentMessageId == null) {
+    if (message.isCreatedByUser === true) {
       return undefined;
     }
-    const parent = findMessageById(getMessages(), message.parentMessageId);
-    return parent == null ? undefined : parent.isCreatedByUser === true;
+    const messages = getMessages();
+    if (messages == null) {
+      return undefined;
+    }
+    return findMessageById(messages, message.parentMessageId)?.isCreatedByUser === true;
   }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
 
   /** Resolved only if the row has nothing to replay, because the artifact check
    *  inside parses markdown. */
   const getHasEditablePart = useCallback(() => hasEditablePart(message), [message]);
 
+  /** A pending queued follow-up is a generation about to start: no rerun or
+   *  continuation may race it, exactly as while a run is submitting. */
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
-    isSubmitting,
+    isSubmitting: isSubmitting || pendingReveal != null,
     error: message.error,
     endpoint: endpoint ?? '',
     messageId: message.messageId,

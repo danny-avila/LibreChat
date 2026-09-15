@@ -1190,6 +1190,56 @@ export function allowHydratedFileReferences(
 export async function resolveCanonicalFileReferences<T>(
   input: CanonicalFileReferenceInspectionInput<T>,
 ): Promise<CanonicalFileReferenceInspection<T>> {
+  return resolveCanonicalReferences(
+    input,
+    () => getCanonicalFileReferenceIds(input.input),
+    (files) => omitResolvedCanonicalFileLocators(input.input, files, input),
+  );
+}
+
+/** Shares one owner-scoped lookup across independently bounded inspection units. */
+export async function resolveCanonicalFileReferenceUnits<T>(
+  input: CanonicalFileReferenceInspectionInput<readonly T[]>,
+): Promise<CanonicalFileReferenceInspection<readonly T[]>> {
+  const messages = input.input;
+  const context = { ...input, messageCount: 0 };
+  let messageCount = 0;
+  return resolveCanonicalReferences(
+    context,
+    () => {
+      messageCount = captureOpaqueArrayLength(messages);
+      context.messageCount = input.messageCount ?? messageCount;
+      const fileIds = new Set<string>();
+      let incomplete = false;
+      let fileRelevantIncomplete = false;
+      for (let index = 0; index < messageCount; index++) {
+        const references = getCanonicalFileReferenceIds(messages[index]);
+        incomplete ||= references.incomplete;
+        fileRelevantIncomplete ||= references.fileRelevantIncomplete;
+        for (const fileId of references.fileIds) {
+          if (fileIds.size >= MAX_OPAQUE_NODES && !fileIds.has(fileId)) {
+            throw new ContentTraversalLimitError();
+          }
+          fileIds.add(fileId);
+        }
+      }
+      return { fileIds, incomplete, fileRelevantIncomplete };
+    },
+    (files) => {
+      const sanitized: T[] = [];
+      for (let index = 0; index < messageCount; index++) {
+        sanitized.push(omitResolvedCanonicalFileLocators(messages[index], files, context));
+      }
+      return sanitized;
+    },
+  );
+}
+
+async function resolveCanonicalReferences<T>(
+  input: CanonicalFileReferenceInspectionInput<T>,
+  collectReferences: () => CanonicalReferenceTraversal,
+  sanitize: (files: ReadonlyMap<string, CanonicalFileInspectionFile>) => T,
+): Promise<CanonicalFileReferenceInspection<T>> {
   const filters = input.filters;
   if (!hasActiveFilePolicy(filters)) {
     return {
@@ -1201,7 +1251,7 @@ export async function resolveCanonicalFileReferences<T>(
 
   const trustedLiveFiles = snapshotCanonicalFiles(input.trustedLiveFiles);
 
-  const references = getCanonicalFileReferenceIds(input.input);
+  const references = collectReferences();
   if (references.incomplete) {
     const blockedField = getRequiredOpaqueFileField(filters);
     if (blockedField != null) {
@@ -1276,10 +1326,7 @@ export async function resolveCanonicalFileReferences<T>(
   let sanitizedInput = input.input;
   if (currentById.size > 0) {
     try {
-      sanitizedInput = omitResolvedCanonicalFileLocators(input.input, currentById, {
-        messageCount: input.messageCount,
-        onTraversalFailure: input.onTraversalFailure,
-      });
+      sanitizedInput = sanitize(currentById);
     } catch (error) {
       if (!(error instanceof ContentTraversalLimitError)) {
         throw error;

@@ -38,10 +38,12 @@ const FAVORITE_ROW_DRAG_TYPE = 'favorite-item';
  *  to a row would otherwise never meet the section's written hint, leaving the
  *  only non-pointer way to reorder undiscoverable. */
 const REORDER_SHORTCUTS = 'Alt+ArrowUp Alt+ArrowDown';
-/** A pinned row accepts both: favorites reorder here only, while a dragged
- *  conversation reorders here but can also be dropped on a project row or the
- *  Chats section to be filed or unfiled. */
+/** The whole section accepts both kinds: a drop anywhere on it pins a chat that
+ *  is not pinned yet, whichever row it happened to land on. */
 const PINNED_ROW_ACCEPTS = [CONVERSATION_DRAG_TYPE, FAVORITE_ROW_DRAG_TYPE];
+/** What a row answers a release with, so the drag can tell a reorder inside
+ *  this list from a drop that filed the chat somewhere else. */
+const PINNED_ROW_DROP_RESULT = { pinnedRowReorder: true } as const;
 
 const noop = () => {};
 
@@ -107,7 +109,18 @@ const DraggablePinnedRow = ({
   const ref = useRef<HTMLDivElement>(null);
   const hasHoverPointer = useMediaQuery('(hover: hover)');
   const [{ handlerId }, drop] = useDrop<PinnedRowDragItem, unknown, { handlerId: unknown }>({
-    accept: PINNED_ROW_ACCEPTS,
+    /* A row only takes a drag of its own kind, so a pinned chat never shifts a
+     * pinned agent or model out of the way — not even as a preview. The two
+     * groups are ordered independently, and the drag layer shows no
+     * displacement for a target that cannot receive it. */
+    accept: entry.kind === 'convo' ? CONVERSATION_DRAG_TYPE : FAVORITE_ROW_DRAG_TYPE,
+    /* A release on a row ends a reorder; it files nothing. The row has to stay
+     * droppable to get there — the HTML5 backend reports hover only for targets
+     * that could receive the drag, and the hover is what reorders — so it names
+     * itself in the drop result instead. Without that name, `end` below saw
+     * `monitor.didDrop()` and read the release as a filing action, discarding
+     * the arrangement: every pointer reorder snapped back on release. */
+    drop: () => PINNED_ROW_DROP_RESULT,
     collect(monitor) {
       return { handlerId: monitor.getHandlerId() };
     },
@@ -153,11 +166,14 @@ const DraggablePinnedRow = ({
         : { key: entry.key, conversationId: '', chatProjectId: null, pinned: false };
     },
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-    /* Rows carry no drop handler of their own, so an unhandled drop usually
-     * means a reorder. A refused external target also reports none, though, so
-     * the last thing under the pointer settles it. */
+    /* A drop the list itself answered is a reorder and keeps the arrangement.
+     * Anything else that handled it filed the chat — into a project, or back
+     * into Chats — and a refused external target reports no handler at all, so
+     * the last thing under the pointer settles that case. */
     end: (_item, monitor) => {
-      onDrop(monitor.didDrop() || endedOverExternalTarget());
+      const result = monitor.getDropResult() as { pinnedRowReorder?: boolean } | null;
+      const filedElsewhere = monitor.didDrop() && result?.pinnedRowReorder !== true;
+      onDrop(filedElsewhere || endedOverExternalTarget());
     },
   });
 
@@ -286,9 +302,10 @@ interface PinnedSectionProps {
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
- *  reorderable list: favorites and conversations interleave freely, the order
- *  persists per user, and the section opens with the same collapse motion as
- *  the Projects section above it. */
+ *  reorderable list, kept in two groups — favorites first, then chats — because
+ *  a row only reorders against its own kind. The order persists per user, and
+ *  the section opens with the same collapse motion as the Projects section
+ *  above it. */
 const PinnedSection = ({
   conversations,
   toggleNav,
@@ -400,7 +417,11 @@ const PinnedSection = ({
   }, [favoritesData.favorites, conversations]);
 
   /** Stored keys order the entries they still resolve to; the rest append in
-   *  natural order, so a stale order never hides an item. */
+   *  natural order, so a stale order never hides an item. Kinds stay grouped —
+   *  pinned agents and models first, then pinned chats — because neither kind
+   *  can be dragged through the other: an order saved before that rule, with
+   *  the two interleaved, would otherwise leave a row walled in by neighbours
+   *  it is not allowed to swap with. */
   const orderedEntries = useMemo<PinnedEntry[]>(() => {
     if (!storedOrder || storedOrder.length === 0) {
       return naturalEntries;
@@ -420,7 +441,10 @@ const PinnedSection = ({
         ordered.push(entry);
       }
     }
-    return ordered;
+    return [
+      ...ordered.filter((entry) => entry.kind === 'favorite'),
+      ...ordered.filter((entry) => entry.kind === 'convo'),
+    ];
   }, [storedOrder, naturalEntries]);
 
   /* The live list the drag mutates; keyed ordering only, so a refetch under a
@@ -477,11 +501,14 @@ const PinnedSection = ({
    * still holds, and releasing would save something no longer on screen. */
   const arrangementRef = useRef(0);
 
+  /** A move only ever swaps two rows of the same kind. Chats and favorites are
+   *  two independently ordered groups, so the position announced for the
+   *  keyboard path counts within the moved row's own group. */
   const moveEntry = useCallback((dragKey: string, hoverKey: string) => {
     const list = [...dragEntriesRef.current];
     const from = list.findIndex((entry) => entry.key === dragKey);
     const to = list.findIndex((entry) => entry.key === hoverKey);
-    if (from < 0 || to < 0 || from === to) {
+    if (from < 0 || to < 0 || from === to || list[from].kind !== list[to].kind) {
       return;
     }
     const [moved] = list.splice(from, 1);
@@ -494,7 +521,8 @@ const PinnedSection = ({
 
   /** Keyboard reorder: one step per keypress, persisted immediately, with the
    *  new position announced because nothing visual conveys it to a screen
-   *  reader. */
+   *  reader. A step that would leave the row's own group does nothing, matching
+   *  what the pointer can do. */
   const moveEntryBy = useCallback(
     (key: string, delta: number) => {
       if (!orderLoadedRef.current) {
@@ -503,17 +531,20 @@ const PinnedSection = ({
       const list = [...dragEntriesRef.current];
       const from = list.findIndex((entry) => entry.key === key);
       const to = from + delta;
-      if (from < 0 || to < 0 || to >= list.length) {
+      if (from < 0 || to < 0 || to >= list.length || list[from].kind !== list[to].kind) {
         return;
       }
+      const kind = list[from].kind;
       const [moved] = list.splice(from, 1);
       list.splice(to, 0, moved);
       dragEntriesRef.current = list;
       hasReorderedRef.current = true;
       arrangementRef.current += 1;
       setLiveEntries(list);
+      const group = list.filter((entry) => entry.kind === kind);
+      const position = group.findIndex((entry) => entry.key === key) + 1;
       setAnnouncement(
-        localize('com_ui_moved_to_position', { 0: `${to + 1}`, 1: `${list.length}` }),
+        localize('com_ui_moved_to_position', { 0: `${position}`, 1: `${group.length}` }),
       );
       commitOrderRef.current();
     },
@@ -705,10 +736,8 @@ const PinnedSection = ({
       </div>
 
       <Collapse open={isExpanded}>
-        {/* Projects above already claims up to 42vh; matching it here starved the
-            flex-growing Chats region on short viewports, so this keeps the
-            pre-existing budget. */}
-        <div className="scrollbar-gutter-stable max-h-[30vh] overflow-y-auto pt-0.5">
+        {/* No scroll pane of its own: the sidebar scrolls as one surface. */}
+        <div className="pt-0.5">
           {displayEntries.length === 0 && draggingConversation && (
             <div
               className={cn(

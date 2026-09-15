@@ -2370,6 +2370,42 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
+    it('400 when a persisted approval payload aliases two calls to the same id', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.action_requests = [
+        { tool_call_id: 'tc1', name: 'write', arguments: { value: 'hidden' } },
+        { tool_call_id: 'tc1', name: 'write', arguments: { value: 'visible' } },
+      ];
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', action_name: 'write', allowed_decisions: ['approve', 'reject'] },
+        { tool_call_id: 'tc1', action_name: 'write', allowed_decisions: ['approve', 'reject'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid tool approval payload/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('400 when the client submits duplicate decisions for one tool-call id', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(
+        approveBody({
+          decisions: [
+            { tool_call_id: 'tc1', decision: 'approve' },
+            { tool_call_id: 'tc1', decision: 'reject' },
+          ],
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid tool approval decisions/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('403 when a decision is not permitted by the tool policy', async () => {
       const job = makeToolApprovalJob();
       // Policy restricts tc1 to reject only; an `approve` must be refused.
@@ -2459,6 +2495,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
       await settled;
       await flush();
+    });
+
+    it('enforces the current fingerprint while retaining the rolling-deploy digest', async () => {
+      const { computeAgentRequestFingerprint, computeLegacyAgentRequestFingerprint } =
+        jest.requireActual('@librechat/api');
+      const pausedBody = {
+        endpoint: 'agents',
+        agent_id: AGENT_ID,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-a' }],
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.requestFingerprint =
+        computeLegacyAgentRequestFingerprint(pausedBody);
+      job.metadata.pendingAction.requestFingerprintV2 = computeAgentRequestFingerprint(pausedBody);
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(
+        approveBody({
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [{ environmentId: 'machine-a', workspaceId: 'project-b' }],
+        }),
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/different agent configuration/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
     it('403 when the resume sends a different promptPrefix than the paused config', async () => {

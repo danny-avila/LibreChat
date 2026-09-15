@@ -9,10 +9,10 @@ import {
   OboTokenResolutionError,
   ReauthenticationRequiredError,
 } from '~/mcp/oauth';
+import { PENDING_STALE_MS, FlowStateNotFoundError } from '~/flow/manager';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
 
@@ -569,6 +569,104 @@ describe('MCPConnectionFactory', () => {
       await MCPConnectionFactory.create(basicOptions, oauthOptions);
 
       expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalled();
+    });
+
+    describe('token flow invalidated while waiting', () => {
+      const tokenLoadingFactory = (
+        hooks: Pick<
+          t.UserConnectionContext,
+          'onOAuthCredentialsAdopted' | 'onOAuthCredentialsInvalidated'
+        > = {},
+      ) =>
+        new InspectableMCPConnectionFactory(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+            ...hooks,
+          },
+        );
+
+      it('re-reads stored tokens after the flow it waited on is invalidated by a credential change', async () => {
+        const storedTokens: MCPOAuthTokens = {
+          access_token: 'stored-after-change',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          credential_set_id: 'persisted-generation',
+        };
+        mockFlowManager.createFlowWithHandler
+          .mockRejectedValueOnce(new FlowStateNotFoundError('mcp_get_tokens'))
+          .mockResolvedValueOnce(storedTokens);
+        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+        const onOAuthCredentialsAdopted = jest.fn();
+
+        await expect(
+          tokenLoadingFactory({
+            onOAuthCredentialsInvalidated,
+            onOAuthCredentialsAdopted,
+          }).getOAuthTokensForTest(),
+        ).resolves.toEqual(storedTokens);
+
+        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
+        expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
+        expect(onOAuthCredentialsInvalidated.mock.invocationCallOrder[0]).toBeLessThan(
+          mockFlowManager.createFlowWithHandler.mock.invocationCallOrder[1],
+        );
+        expect(onOAuthCredentialsAdopted).not.toHaveBeenCalled();
+      });
+
+      it('reports the tokens missing when the re-read loses its flow as well', async () => {
+        mockFlowManager.createFlowWithHandler.mockRejectedValue(
+          new FlowStateNotFoundError('mcp_get_tokens'),
+        );
+        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+
+        await expect(
+          tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
+        ).resolves.toBeNull();
+
+        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
+        expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not re-read after a token load failure that is not a lost flow', async () => {
+        mockFlowManager.createFlowWithHandler.mockRejectedValue(
+          new Error('token store unavailable'),
+        );
+        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+
+        await expect(
+          tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
+        ).resolves.toBeNull();
+
+        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+        expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
+      });
+
+      it('adopts the generation carried by tokens another authorization released', async () => {
+        const releasedTokens: MCPOAuthTokens = {
+          access_token: 'released-by-callback',
+          token_type: 'Bearer',
+          obtained_at: 1_700_000_000_000,
+          credential_set_id: 'persisted-generation',
+          publication_generation: 'generation-b',
+        };
+        mockFlowManager.createFlowWithHandler.mockResolvedValue(releasedTokens);
+        const onOAuthCredentialsAdopted = jest.fn();
+
+        await expect(
+          tokenLoadingFactory({ onOAuthCredentialsAdopted }).getOAuthTokensForTest(),
+        ).resolves.toEqual(releasedTokens);
+
+        expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith('generation-b');
+      });
     });
 
     it('rejects a cached access token before it reaches a differently bound connection', async () => {
@@ -1938,6 +2036,82 @@ describe('MCPConnectionFactory', () => {
       // The cached `mcp_get_tokens` flow state is dropped so the next
       // `getOAuthTokens` call reads the freshly persisted tokens from storage.
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
+    });
+
+    it('completes a pending token flow with the generation its silent refresh published', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+      const staleCachedTokens: MCPOAuthTokens = {
+        access_token: 'stale-cached-access',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const freshlyRefreshedTokens: MCPOAuthTokens = {
+        access_token: 'freshly-refreshed-access',
+        refresh_token: 'refresh456',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type) =>
+        type === 'mcp_get_tokens' ? staleCachedTokens : null,
+      );
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING' as const,
+        type: 'mcp_get_tokens',
+        metadata: {},
+        createdAt: Date.now(),
+      });
+      mockMCPTokenStorage.forceRefreshTokens.mockImplementationOnce(async (params) => {
+        const commitRefresh = await params.onRefreshPreparing?.();
+        await commitRefresh?.(freshlyRefreshedTokens);
+        return freshlyRefreshedTokens;
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'test-server', serverConfig: sseConfig },
+          {
+            useOAuth: true as const,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            oauthStart: jest.fn(),
+            onOAuthCredentialsChanging: async () => async () => 'generation-b',
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+          },
+        );
+      } catch {
+        // Expected: the connection rejects until the refresh runs below
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith('flow123', 'mcp_get_tokens', {
+        ...freshlyRefreshedTokens,
+        publication_generation: 'generation-b',
+      });
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(freshlyRefreshedTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
     });
 
     it('should coalesce concurrent silent refresh attempts into a single redemption', async () => {
@@ -4701,6 +4875,156 @@ describe('MCPConnectionFactory', () => {
         expect(result.tools).toBeNull();
         expect(Date.now() - start).toBeLessThan(2000);
       });
+
+      describe('OAuth token loading', () => {
+        const oauthDiscoveryOptions = (bounds: {
+          deadlineMs?: number;
+          signal?: AbortSignal;
+          onDiscoveryDetached?: t.UserConnectionContext['onDiscoveryDetached'];
+        }) => ({
+          useOAuth: true as const,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          ...bounds,
+        });
+        const cancelledDiscovery = {
+          tools: null,
+          connection: null,
+          oauthRequired: false,
+          oauthUrl: null,
+        };
+        const refreshUnavailable = () => {
+          const error = new Error(
+            'OAuth token refresh is temporarily unavailable for "test-server"',
+          );
+          error.name = 'MCPTokenRefreshUnavailableError';
+          return error;
+        };
+        const deferTokenFlow = () => {
+          let resolve!: (tokens: MCPOAuthTokens | null) => void;
+          let reject!: (error: Error) => void;
+          const promise = new Promise<MCPOAuthTokens | null>((resolveFlow, rejectFlow) => {
+            resolve = resolveFlow;
+            reject = rejectFlow;
+          });
+          return { promise, resolve, reject };
+        };
+        type DeferredTokenFlow = ReturnType<typeof deferTokenFlow>;
+
+        it.each<
+          [string, (flow: DeferredTokenFlow) => void, PromiseSettledResult<unknown>['status']]
+        >([
+          [
+            'stores its tokens',
+            (flow) =>
+              flow.resolve({
+                access_token: 'late-access',
+                token_type: 'Bearer',
+                obtained_at: Date.now(),
+                credential_set_id: 'persisted-generation',
+              }),
+            'fulfilled',
+          ],
+          ['fails', (flow) => flow.reject(refreshUnavailable()), 'rejected'],
+        ])(
+          'stops waiting at the deadline for a stalled token flow that later %s, handing it off',
+          async (_outcome, finish, settlement) => {
+            const flow = deferTokenFlow();
+            const onDiscoveryDetached = jest.fn();
+            mockFlowManager.createFlowWithHandler.mockReturnValue(flow.promise);
+
+            const start = Date.now();
+            const result = await MCPConnectionFactory.discoverTools(
+              { serverName: 'test-server', serverConfig: mockServerConfig },
+              oauthDiscoveryOptions({ deadlineMs: Date.now() + 50, onDiscoveryDetached }),
+            );
+
+            expect(result).toEqual(cancelledDiscovery);
+            expect(Date.now() - start).toBeLessThan(2000);
+            expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+              expect.any(String),
+              'mcp_get_tokens',
+              expect.any(Function),
+              undefined,
+            );
+            expect(mockMCPConnection).not.toHaveBeenCalled();
+            expect(onDiscoveryDetached).toHaveBeenCalledTimes(1);
+            const [detachedWork] = onDiscoveryDetached.mock.calls[0] as [Promise<unknown>];
+
+            finish(flow);
+            await expect(Promise.allSettled([detachedWork])).resolves.toEqual([
+              expect.objectContaining({ status: settlement }),
+            ]);
+            expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
+            expect(mockMCPConnection).not.toHaveBeenCalled();
+          },
+        );
+
+        it('stops waiting for the token flow when the caller aborts, handing it off', async () => {
+          const controller = new AbortController();
+          const onDiscoveryDetached = jest.fn();
+          mockFlowManager.createFlowWithHandler.mockImplementation(() => {
+            setTimeout(() => controller.abort(), 20);
+            return new Promise<MCPOAuthTokens | null>(() => undefined);
+          });
+
+          const start = Date.now();
+          const result = await MCPConnectionFactory.discoverTools(
+            { serverName: 'test-server', serverConfig: mockServerConfig },
+            oauthDiscoveryOptions({ signal: controller.signal, onDiscoveryDetached }),
+          );
+
+          expect(result).toEqual(cancelledDiscovery);
+          expect(Date.now() - start).toBeLessThan(2000);
+          expect(mockMCPConnection).not.toHaveBeenCalled();
+          expect(onDiscoveryDetached).toHaveBeenCalledWith(expect.any(Promise));
+        });
+
+        it('still surfaces a token failure that lands inside the budget', async () => {
+          mockFlowManager.createFlowWithHandler.mockRejectedValue(refreshUnavailable());
+
+          await expect(
+            MCPConnectionFactory.discoverTools(
+              { serverName: 'test-server', serverConfig: mockServerConfig },
+              oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000 }),
+            ),
+          ).rejects.toThrow('OAuth token refresh is temporarily unavailable');
+          expect(mockMCPConnection).not.toHaveBeenCalled();
+        });
+
+        it('connects with tokens that load inside the budget', async () => {
+          const tokens: MCPOAuthTokens = {
+            access_token: 'fresh-access',
+            token_type: 'Bearer',
+            obtained_at: Date.now(),
+            credential_set_id: 'persisted-generation',
+          };
+          mockFlowManager.createFlowWithHandler.mockResolvedValue(tokens);
+          mockConnectionInstance.connect.mockResolvedValue(undefined);
+          mockConnectionInstance.isConnected.mockResolvedValue(true);
+          mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+            .fn()
+            .mockResolvedValue({ tools: mockTools, complete: true });
+
+          const onDiscoveryDetached = jest.fn();
+          const result = await MCPConnectionFactory.discoverTools(
+            { serverName: 'test-server', serverConfig: mockServerConfig },
+            oauthDiscoveryOptions({ deadlineMs: Date.now() + 5000, onDiscoveryDetached }),
+          );
+
+          expect(result.tools).toEqual(mockTools);
+          expect(mockMCPConnection).toHaveBeenCalledWith(
+            expect.objectContaining({ oauthTokens: tokens }),
+          );
+          expect(onDiscoveryDetached).not.toHaveBeenCalled();
+        });
+      });
     });
   });
 
@@ -4835,6 +5159,47 @@ describe('MCPConnectionFactory', () => {
       );
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(mockTokens);
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('adopts the generation carried by the tokens an interactive OAuth flow released', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const onOAuthCredentialsAdopted = jest.fn();
+      const oauthOptions = { ...makeOAuthOptions(), onOAuthCredentialsAdopted };
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+
+      const releasedTokens: MCPOAuthTokens = {
+        access_token: 'bq-token',
+        token_type: 'Bearer',
+        obtained_at: 1_700_000_000_000,
+        credential_set_id: 'bq-generation',
+        publication_generation: 'generation-b',
+      };
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-bq');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth?state=xyz',
+        flowId: 'flow-bq',
+        flowMetadata: {
+          serverName: 'bigquery',
+          userId: 'user123',
+          serverUrl: 'https://bigquery.googleapis.com/mcp',
+          state: 'state-xyz',
+          clientInfo: { client_id: 'bq-client' },
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(releasedTokens);
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await expect(
+        MCPConnectionFactory.create({ serverName: 'bigquery', serverConfig }, oauthOptions),
+      ).resolves.toBe(mockConnectionInstance);
+
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(releasedTokens);
+      expect(onOAuthCredentialsAdopted).toHaveBeenCalledWith('generation-b');
     });
 
     it('should trigger proactive OAuth when oauth is configured without requiresOAuth', async () => {
@@ -5186,6 +5551,165 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
+    it('resolves a provider lazily after the server is confirmed to use OBO', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      resolveOboToken.mockImplementationOnce(async (_user, _config, _exchange, provider) => {
+        await provider();
+        return {
+          access_token: 'connection-time-obo-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          expires_at: Date.now() + 3600_000,
+        };
+      });
+      const upstreamTokenProvider = jest.fn();
+      const upstreamTokenProviderResolver = jest.fn().mockResolvedValue(upstreamTokenProvider);
+      const oboTokenResolver = jest.fn();
+
+      await MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver,
+          upstreamTokenProviderResolver,
+        },
+      );
+
+      expect(upstreamTokenProviderResolver).toHaveBeenCalledTimes(1);
+      expect(resolveOboToken).toHaveBeenCalledWith(
+        mockUser,
+        oboServerConfig.obo,
+        oboTokenResolver,
+        expect.any(Function),
+        undefined,
+        false,
+      );
+    });
+
+    it.each([undefined, new Error('owner stopped'), 'stopped'])(
+      'detaches connection initialization from an uncooperative OBO exchange (%s)',
+      async (reason) => {
+        const controller = new AbortController();
+        const { resolveOboToken } = jest.requireMock('~/mcp/oauth');
+        resolveOboToken.mockImplementationOnce(() => {
+          queueMicrotask(() => controller.abort(reason));
+          return new Promise(() => {});
+        });
+        await expect(
+          MCPConnectionFactory.create(
+            { serverName: 'obo-srv', serverConfig: oboServerConfig },
+            {
+              useOAuth: true,
+              user: mockUser,
+              flowManager: mockFlowManager,
+              tokenMethods: {
+                findToken: jest.fn(),
+                createToken: jest.fn(),
+                updateToken: jest.fn(),
+                deleteTokens: jest.fn(),
+              },
+              signal: controller.signal,
+              oboTokenResolver: jest.fn(),
+              upstreamTokenProvider: jest.fn(),
+            },
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+      },
+    );
+
+    it.each([undefined, new Error('owner stopped during trust check'), 'stopped'])(
+      'detaches connection initialization from a pending OBO trust check (%s)',
+      async (reason) => {
+        const controller = new AbortController();
+        const oboTrustChecker = jest.fn().mockImplementation(
+          () =>
+            new Promise<boolean>(() => {
+              queueMicrotask(() => controller.abort(reason));
+            }),
+        );
+        const { resolveOboToken } = jest.requireMock('~/mcp/oauth');
+        resolveOboToken.mockClear();
+
+        await expect(
+          MCPConnectionFactory.create(
+            { serverName: 'obo-srv', serverConfig: oboServerConfig },
+            {
+              useOAuth: true,
+              user: mockUser,
+              flowManager: mockFlowManager,
+              tokenMethods: {
+                findToken: jest.fn(),
+                createToken: jest.fn(),
+                updateToken: jest.fn(),
+                deleteTokens: jest.fn(),
+              },
+              signal: controller.signal,
+              oboTokenResolver: jest.fn(),
+              upstreamTokenProvider: jest.fn(),
+              oboTrustChecker,
+            },
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(resolveOboToken).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not look up credentials for an untrusted OBO configuration', async () => {
+      const upstreamTokenProviderResolver = jest.fn();
+      const oboTrustChecker = jest.fn().mockResolvedValue(false);
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth');
+      resolveOboToken.mockClear();
+      await expect(
+        MCPConnectionFactory.create(
+          { serverName: 'obo-srv', serverConfig: oboServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+            oboTokenResolver: jest.fn(),
+            oboTrustChecker,
+            upstreamTokenProviderResolver,
+          },
+        ),
+      ).rejects.toThrow('OBO token exchange failed');
+      expect(oboTrustChecker).toHaveBeenCalled();
+      expect(upstreamTokenProviderResolver).not.toHaveBeenCalled();
+      expect(resolveOboToken).not.toHaveBeenCalled();
+    });
+
+    it('does not invoke the resolver for a non-OBO direct-bearer server', async () => {
+      const directBearerConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://direct.example.com',
+        headers: { Authorization: 'Bearer static-token' },
+      } as unknown as t.MCPOptions;
+      mockProcessMCPEnv.mockReturnValue(directBearerConfig);
+      const upstreamTokenProviderResolver = jest.fn();
+
+      await MCPConnectionFactory.create(
+        { serverName: 'direct-srv', serverConfig: directBearerConfig },
+        { user: mockUser, upstreamTokenProviderResolver },
+      );
+
+      expect(upstreamTokenProviderResolver).not.toHaveBeenCalled();
+    });
+
     it('throws an internal error when upstreamTokenProvider is omitted on an OBO connection', async () => {
       const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
         resolveOboToken: jest.Mock;
@@ -5212,6 +5736,52 @@ describe('MCPConnectionFactory', () => {
         ),
       ).rejects.toThrow(/upstreamTokenProvider not plumbed/);
       expect(resolveOboToken).not.toHaveBeenCalled();
+    });
+
+    it('preserves OBO resolution failure metadata at connection establishment', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      const OboError = OboTokenResolutionError as unknown as jest.Mock;
+      OboError.mockImplementation(
+        (reason: string, userMessage: string, retryable = false, cause?: unknown) => {
+          const error = new Error(userMessage);
+          Object.setPrototypeOf(error, OboError.prototype);
+          return Object.assign(error, {
+            name: 'OboTokenResolutionError',
+            reason,
+            retryable,
+            userMessage,
+            cause,
+          });
+        },
+      );
+      resolveOboToken.mockRejectedValueOnce(
+        new OboTokenResolutionError('session_refresh_failed', 'Sign-in expired.'),
+      );
+
+      await expect(
+        MCPConnectionFactory.create(
+          { serverName: 'obo-srv', serverConfig: oboServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+            oboTokenResolver: jest.fn(),
+            upstreamTokenProvider: jest.fn(),
+          },
+        ),
+      ).rejects.toMatchObject({
+        name: 'OboTokenResolutionError',
+        reason: 'session_refresh_failed',
+        retryable: false,
+      });
     });
   });
 
@@ -5307,6 +5877,18 @@ describe('MCPConnectionFactory', () => {
         expect.anything(),
       );
       expect(mockConnectionInstance.stopReconnecting).not.toHaveBeenCalled();
+    });
+
+    it('preserves a cancelled re-exchange without logging a sign-in failure', async () => {
+      const abort = new DOMException('Stopped', 'AbortError');
+      resolveOboToken.mockResolvedValueOnce(connectionTokens).mockRejectedValueOnce(abort);
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+        throw new Error('HTTP 401 Unauthorized');
+      });
+      await expect(createOboConnection()).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockLogger.error).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.stopReconnecting).toHaveBeenCalled();
     });
 
     it('retires the connection when the re-exchange fails', async () => {

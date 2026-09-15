@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { ParsedServerConfig } from '~/mcp/types';
+import type { ParsedServerConfig, UserConnectionContext } from '~/mcp/types';
 import type { MCPOAuthTokens } from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
@@ -23,10 +23,7 @@ export class OAuthReconnectionManager {
     serverName: string;
   }) => Promise<void>;
 
-  private readonly onOAuthCredentialsChanging?: (scope: {
-    userId: string;
-    serverName: string;
-  }) => Promise<() => Promise<void>>;
+  private readonly onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
 
   private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
@@ -42,10 +39,7 @@ export class OAuthReconnectionManager {
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
     onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
-    onOAuthCredentialsChanging?: (scope: {
-      userId: string;
-      serverName: string;
-    }) => Promise<() => Promise<void>>,
+    onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'],
   ): Promise<OAuthReconnectionManager> {
     if (OAuthReconnectionManager.instance != null) {
       throw new Error('OAuthReconnectionManager already initialized');
@@ -68,10 +62,7 @@ export class OAuthReconnectionManager {
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
     onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
-    onOAuthCredentialsChanging?: (scope: {
-      userId: string;
-      serverName: string;
-    }) => Promise<() => Promise<void>>,
+    onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'],
   ) {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;

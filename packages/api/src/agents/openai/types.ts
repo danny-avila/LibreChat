@@ -73,8 +73,6 @@ export interface ChatCompletionRequest {
   user?: string;
   /** Conversation ID (LibreChat extension) */
   conversation_id?: string;
-  /** Explicit registered workspaces for attached agents (LibreChat extension). */
-  code_workspaces?: import('librechat-data-provider').CodeWorkspaceSelection[];
   /** Parent message ID (LibreChat extension) */
   parent_message_id?: string;
 }

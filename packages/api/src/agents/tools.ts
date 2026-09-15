@@ -1,4 +1,5 @@
 import {
+  Tools,
   Constants,
   normalizeActionToolName,
   normalizeServerName,
@@ -11,7 +12,12 @@ import {
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
-import type { AgentToolOptions, CodeWorkspaceOperation, GraphEdge } from 'librechat-data-provider';
+import type {
+  AgentToolOptions,
+  CodeWorkspaceOperation,
+  CodeWorkspaceDescriptor,
+  GraphEdge,
+} from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
 import {
@@ -58,6 +64,30 @@ export function isCodeSessionToolName(
     name === SEARCH_WORKSPACE_TOOL_NAME ||
     name === LIST_WORKSPACE_FILES_TOOL_NAME ||
     hostFileAuthoringToolNames?.has(name) === true
+  );
+}
+
+/** Tools that consume shared code, search, or image resources need current file records. */
+export function isFileResourceToolName(name: string): boolean {
+  return (
+    isCodeFileToolName(name) ||
+    isCodeSessionToolName(name) ||
+    name === Tools.file_search ||
+    name === 'image_gen_oai' ||
+    name === 'image_edit_oai' ||
+    name === 'gemini_image_gen'
+  );
+}
+
+/** File-authoring artifacts opt in explicitly; other tool artifacts keep their normal delivery. */
+export function isCodeArtifactToolOutput(output: { name: string; artifact?: unknown }): boolean {
+  const artifact = output.artifact;
+  return (
+    isCodeSessionToolName(output.name) ||
+    (artifact != null &&
+      typeof artifact === 'object' &&
+      HOST_FILE_AUTHORING_ARTIFACT_KEY in artifact &&
+      artifact[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true)
   );
 }
 
@@ -381,6 +411,7 @@ export interface RegisterCodeExecutionToolsParams {
   workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
   /** Deployment ceiling advertised on attached Bash tool definitions. */
   workspaceCommandTimeoutMaxMs?: number;
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'];
   /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
@@ -891,6 +922,7 @@ function createBashToolDef(
   statefulSessions = false,
   workspaceTools = false,
   workspaceCommandTimeoutMaxMs?: number,
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'],
 ): LCTool {
   /* Passed as a variable (not an inline literal) so the extra
    * `statefulSessions` key stays assignable against pinned SDK versions
@@ -900,10 +932,10 @@ function createBashToolDef(
     name: BashExecutionToolDefinition.name,
     toolType: 'builtin',
     description: workspaceTools
-      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
+      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences, workspaceEnvironment)
       : buildBashExecutionToolDescription(descriptionOpts),
     parameters: (workspaceTools
-      ? buildAttachedWorkspaceBashSchema(workspaceCommandTimeoutMaxMs)
+      ? buildAttachedWorkspaceBashSchema(workspaceCommandTimeoutMaxMs, workspaceEnvironment)
       : BashExecutionToolDefinition.schema) as unknown as LCTool['parameters'],
   }) as LCTool;
 }
@@ -916,6 +948,7 @@ function buildBashToolDef(opts: {
   statefulSessions?: boolean;
   workspaceTools?: boolean;
   workspaceCommandTimeoutMaxMs?: number;
+  workspaceEnvironment?: CodeWorkspaceDescriptor['environment'];
 }): LCTool {
   /* Stateful defs are built on demand: the stateless pair covers the
    * default path, and per-run construction is negligible next to init. */
@@ -925,6 +958,7 @@ function buildBashToolDef(opts: {
       opts.statefulSessions === true,
       opts.workspaceTools === true,
       opts.workspaceCommandTimeoutMaxMs,
+      opts.workspaceEnvironment,
     );
   }
   return opts.enableToolOutputReferences
@@ -957,6 +991,7 @@ export function registerCodeExecutionTools(
     workspaceTools = false,
     workspaceOperations,
     workspaceCommandTimeoutMaxMs,
+    workspaceEnvironment,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
@@ -976,6 +1011,7 @@ export function registerCodeExecutionTools(
         statefulSessions,
         workspaceTools,
         workspaceCommandTimeoutMaxMs,
+        workspaceEnvironment,
       }),
     );
   }
