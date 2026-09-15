@@ -258,6 +258,29 @@ Multi-line imports count total character length across all lines. Consolidate va
   default appearance unless a redesign is explicitly requested. Test semantic-token use and, when
   extending theme capabilities, include a deliberately different reference theme to prove that
   components adapt without feature-specific overrides.
+- **The design rules are enforced by `npm run lint`.** `@shadcn/lint` is registered in
+  `eslint.config.mjs` for `client/src/**` and `packages/client/src/**`. It resolves
+  `@librechat/client` (and the `~/components/ui` re-exports) as the design system, reads each
+  primitive's `cva` variants, and reports a `className` that overrides what the primitive owns —
+  naming the variants, sizes and defining file to use instead. Five rules run at `error`:
+  `no-restyle` (layout and `icon-*` sizing allowed), `no-raw-colors`, `no-arbitrary-values`
+  (layout allowed), `no-inline-styles` (measured geometry allowed: width, height, inset,
+  transform, z-index) and `require-static-classes`. `no-unknown-classes` is not enabled: it needs
+  Tailwind v4 to ask whether a class generates CSS, and under tailwindcss 3.4 its fallback reports
+  every preset utility (`duration-theme-fast`, `rounded-theme-control`) as a typo.
+- **Contracts say what a caller owns; suppressions say what is owed.** A `no-restyle` contract in
+  `eslint.config.mjs` opens a category for one component because the caller legitimately owns it:
+  `Label`, `Description`, `DialogTitle` and `DialogDescription` take the caller's typography, and
+  `Skeleton` takes the silhouette and footprint of the content it stands in for. Color stays with
+  the theme in every case. Widen a contract when a whole category belongs to callers; do not widen
+  one to clear a single call site.
+- **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the 3,141
+  violations the tree carried when the rules landed, as a per-file, per-rule count. Adding a
+  violation to a file reports every violation of that rule in it, so raising a file's count is a
+  visible diff in that file — review it like any other change. `npm run lint:design:prune` drops
+  entries whose violations are gone (do this after fixing some); `npm run lint:design:suppress`
+  re-records the design rules, which is what a file move needs, since suppressions are keyed by
+  path. Neither command changes which rules run; both only rewrite the recorded counts.
 
 ### Data Management
 
@@ -328,6 +351,8 @@ Without it, OpenID JWT request burst caching can serve a stale `req.user` until 
 | `npm run frontend` | Build all compiled code sequentially (legacy fallback) |
 | `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
+| `npm run lint:design:prune` | Drop `eslint-suppressions.json` entries whose violations are fixed |
+| `npm run lint:design:suppress` | Re-record the design-rule backlog (needed after a file move) |
 
 - Node.js: v24.16.0
 - Database: MongoDB
