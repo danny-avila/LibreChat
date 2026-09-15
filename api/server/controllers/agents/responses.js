@@ -65,6 +65,87 @@ const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 /**
+ * Apply request-scoped Responses controls to an already-authorized agent.
+ *
+ * The Responses endpoint is a facade over the normal agent runner. Agent
+ * configuration remains the authority for which tools may execute; request
+ * tools can only narrow the initialized, authorized definitions. Model
+ * controls are copied into model_parameters so the provider adapter receives
+ * them at the same boundary as normal agent configuration.
+ */
+function applyResponseRequestOptions(agentConfig, request) {
+  const modelParameters = { ...(agentConfig.model_parameters ?? {}) };
+  const requestModelParameters = [
+    'reasoning',
+    'text',
+    'max_output_tokens',
+    'tool_choice',
+    'parallel_tool_calls',
+    'truncation',
+    'include',
+    'background',
+    'prompt_cache_options',
+    'context_management',
+    'conversation',
+    'temperature',
+    'top_p',
+  ];
+
+  for (const key of requestModelParameters) {
+    if (request[key] !== undefined) {
+      modelParameters[key] = request[key];
+    }
+  }
+
+  const instructions = [agentConfig.instructions, request.instructions]
+    .filter((value) => typeof value === 'string' && value.trim() !== '')
+    .join('\n');
+
+  return {
+    ...agentConfig,
+    model_parameters: modelParameters,
+    ...(instructions ? { instructions } : {}),
+  };
+}
+
+/**
+ * Restrict model-visible tools to the intersection of the caller's request
+ * and the tools authorized and initialized for the agent. This deliberately
+ * does not add request-defined schemas to the execution registry.
+ */
+function narrowResponseTools(agentConfig, requestedTools) {
+  if (!Array.isArray(requestedTools)) {
+    return agentConfig;
+  }
+
+  const requestedNames = new Set(
+    requestedTools
+      .map((tool) => {
+        if (typeof tool === 'string') {
+          return tool;
+        }
+        if (tool?.type === 'function') {
+          return tool.name ?? tool.function?.name;
+        }
+        return tool?.type;
+      })
+      .filter((name) => typeof name === 'string' && name.length > 0),
+  );
+
+  const getToolName = (tool) =>
+    tool?.name ?? tool?.function?.name ?? tool?.type ?? tool?.schema?.name;
+
+  const toolDefinitions = Array.isArray(agentConfig.toolDefinitions)
+    ? agentConfig.toolDefinitions.filter((tool) => requestedNames.has(getToolName(tool)))
+    : agentConfig.toolDefinitions;
+
+  return {
+    ...agentConfig,
+    ...(Array.isArray(agentConfig.toolDefinitions) && { toolDefinitions }),
+  };
+}
+
+/**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
  * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
@@ -426,6 +507,11 @@ const createResponse = async (req, res) => {
         manualSkills,
       },
       dbMethods,
+    );
+
+    Object.assign(
+      primaryConfig,
+      narrowResponseTools(applyResponseRequestOptions(primaryConfig, request), request.tools),
     );
 
     /**

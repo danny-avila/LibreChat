@@ -426,6 +426,45 @@ describe('createResponse controller', () => {
     });
   });
 
+  describe('request-scoped Responses controls', () => {
+    it('forwards model controls and instructions into the agent run', async () => {
+      const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Use the available tool',
+          stream: false,
+          instructions: 'Return a concise result.',
+          reasoning: { effort: 'low' },
+          text: { format: { type: 'json_object' } },
+          max_output_tokens: 300,
+          tool_choice: 'required',
+          parallel_tool_calls: false,
+          background: true,
+          prompt_cache_options: { ttl: '30m' },
+          context_management: [{ type: 'compaction', compact_threshold: 0.8 }],
+        },
+      });
+
+      await createResponse(req, res);
+
+      const runOptions = api.createRun.mock.calls[0][0];
+      expect(runOptions.agents[0]).toMatchObject({
+        instructions: 'Return a concise result.',
+        model_parameters: {
+          reasoning: { effort: 'low' },
+          text: { format: { type: 'json_object' } },
+          max_output_tokens: 300,
+          tool_choice: 'required',
+          parallel_tool_calls: false,
+          background: true,
+          prompt_cache_options: { ttl: '30m' },
+          context_management: [{ type: 'compaction', compact_threshold: 0.8 }],
+        },
+      });
+    });
+  });
+
   describe('collectedUsage population', () => {
     it('should collect usage from on_chat_model_end events', async () => {
       const api = require('@librechat/api');
