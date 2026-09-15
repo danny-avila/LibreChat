@@ -123,6 +123,7 @@ const flushRedisCache = async () => {
   const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
     port: process.env.REDIS_PORT || 6379,
+    family: 0,
   };
 
   if (process.env.REDIS_PASSWORD) {
@@ -142,6 +143,7 @@ const flushRedisCache = async () => {
     const redis = new Redis.Cluster(uris, {
       redisOptions: {
         password: process.env.REDIS_PASSWORD,
+        family: 0,
       },
     });
 
