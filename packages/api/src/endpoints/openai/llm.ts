@@ -958,20 +958,36 @@ export function getOpenAILLMConfig({
    * instructions and tool schemas, which are only assembled at run time.
    * `createRun` reads `promptCacheKeyEnabled` and fills in `promptCacheKey`.
    *
-   * `promptCacheExplicit` additionally requires a model that accepts the
-   * GPT-5.6 cache controls, because OpenAI rejects unknown body parameters
-   * outright rather than ignoring them.
+   * The marker is therefore withheld whenever an administrator has already
+   * settled the key here — pinned through `addParams`, or removed through
+   * `dropParams` — because `createRun` would otherwise synthesize over that
+   * decision. `dropParams` has to be read directly: it deletes
+   * `promptCacheKey` further down and never sees this separate marker.
    */
-  if (firstPartyEndpoint && promptCacheKeyEnabled !== false) {
+  const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
+  const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
+  if (
+    firstPartyEndpoint &&
+    promptCacheKeyEnabled !== false &&
+    !promptCacheKeyPinned &&
+    !promptCacheKeyDropped
+  ) {
     llmConfig.promptCacheKeyEnabled = true;
   }
   if (firstPartyEndpoint && promptCacheRetention != null) {
     llmConfig.promptCacheRetention = promptCacheRetention;
   }
+  /**
+   * Explicit cache controls additionally require a model that accepts them,
+   * because OpenAI rejects unknown body parameters outright rather than
+   * ignoring them. On Azure the visible model is an administrator-chosen
+   * alias, so the deployment it maps to is what identifies the served model.
+   */
   if (
     firstPartyEndpoint &&
     promptCacheExplicit === true &&
-    supportsExplicitPromptCache(llmConfig.model)
+    (supportsExplicitPromptCache(llmConfig.model) ||
+      supportsExplicitPromptCache(azure ? azure.azureOpenAIApiDeploymentName : undefined))
   ) {
     llmConfig.promptCacheExplicit = true;
   }

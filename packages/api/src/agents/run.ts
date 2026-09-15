@@ -1447,6 +1447,21 @@ function shapeSummarizationConfig(
     parameters = { ...parameters, modelKwargs: kwargs };
   }
 
+  /**
+   * A summarization request that reuses the agent's client options inherits the
+   * `prompt_cache_key` `createRun` synthesizes for the agent's stable
+   * instruction prefix — a prefix this request does not send, so leaving the
+   * key on would file unrelated prompts under one cache identity. Cleared only
+   * for the synthesized key: a key an administrator pinned through `addParams`
+   * is a deliberate endpoint-wide choice and stays.
+   */
+  const agentParameters = agent?.model_parameters as
+    | { promptCacheKeyEnabled?: boolean }
+    | undefined;
+  if (provider === fallbackProvider && agentParameters?.promptCacheKeyEnabled === true) {
+    parameters = { ...parameters, promptCacheKey: undefined };
+  }
+
   return {
     enabled:
       !targetUnavailable &&
@@ -2523,25 +2538,6 @@ export async function createRun({
       );
     }
 
-    /**
-     * Deterministic `prompt_cache_key`, first-party OpenAI and Azure only.
-     * `getOpenAILLMConfig` resolved whether the endpoint allows one; only here
-     * do the stable instruction prefix and the final tool schemas both exist,
-     * so only here can the value be built. It is keyed on prompt identity and
-     * never on the conversation, so two chats — and two users — that share a
-     * prefix reach one cache entry instead of each writing their own.
-     */
-    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & { response_format?: unknown };
-    if (cacheOptions.promptCacheKeyEnabled === true) {
-      cacheOptions.promptCacheKey = buildPromptCacheKey({
-        model: cacheOptions.model,
-        instructions: systemContent,
-        toolDefinitions,
-        responseSchema: cacheOptions.response_format,
-      });
-    }
-    delete cacheOptions.promptCacheKeyEnabled;
-
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     const agentInput: AgentInputs = {
       provider,
@@ -2571,6 +2567,31 @@ export async function createRun({
     if (runFilesActive && runFiles != null && (isSubagent || agent.subagents?.enabled === true)) {
       graphTools = [...(graphTools ?? []), ...createRunFileTools(runFiles, agent.id, signal)];
     }
+    /**
+     * Deterministic `prompt_cache_key`, first-party OpenAI and Azure only.
+     * `getOpenAILLMConfig` resolved whether the endpoint allows one and
+     * withholds the marker when an administrator already settled the key, so
+     * a configured value is never synthesized over.
+     *
+     * Built last, below the run-file tools, because the key names the prefix
+     * that is actually sent: the SDK binds schema-only definitions, graph
+     * tools and provider-native specs together, so all three have to be
+     * assembled before they can be hashed. Keyed on prompt identity and never
+     * on the conversation, so two chats — and two users — that share a prefix
+     * reach one cache entry instead of each writing their own. `llmConfig` is
+     * the object `agentInput.clientOptions` already holds.
+     */
+    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & { response_format?: unknown };
+    if (cacheOptions.promptCacheKeyEnabled === true && cacheOptions.promptCacheKey == null) {
+      cacheOptions.promptCacheKey = buildPromptCacheKey({
+        model: cacheOptions.model,
+        instructions: systemContent,
+        boundTools: [...toolDefinitions, ...(graphTools ?? []), ...(tools ?? [])],
+        responseSchema: cacheOptions.response_format,
+      });
+    }
+    delete cacheOptions.promptCacheKeyEnabled;
+
     if (graphTools) {
       /**
        * Typed structurally — not as `AgentInputs['graphTools']` — because the
