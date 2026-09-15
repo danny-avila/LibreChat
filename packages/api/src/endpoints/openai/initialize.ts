@@ -196,9 +196,18 @@ export async function initializeOpenAI(
     user: user?.id,
   };
 
+  /**
+   * Prompt-cache levers, resolved with the precedence the `streamRate` block
+   * below uses: the endpoint's own config first, then `endpoints.all`.
+   */
+  const cacheConfig = (isAzureOpenAI ? azureConfig || undefined : openAIConfig) ?? {};
+
   const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
     modelOptions,
+    promptCacheKeyEnabled: allConfig?.promptCacheKey ?? cacheConfig.promptCacheKey,
+    promptCacheRetention: allConfig?.promptCacheRetention ?? cacheConfig.promptCacheRetention,
+    promptCacheExplicit: allConfig?.promptCacheExplicit ?? cacheConfig.promptCacheExplicit,
   };
 
   const options: InitializeResultBase = getOpenAIConfig(apiKey, finalClientOptions, endpoint);

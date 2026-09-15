@@ -10,6 +10,12 @@ export type OpenAIParameters = z.infer<typeof openAISchema>;
 export type OpenAIModelOptions = Partial<OpenAIParameters>;
 
 /**
+ * `prompt_cache_retention`. `'in-memory'` is the provider default lifetime;
+ * `'24h'` opts into extended retention, which is billed differently.
+ */
+export type OpenAIPromptCacheRetention = 'in-memory' | '24h';
+
+/**
  * Configuration options for the getLLMConfig function
  */
 export interface OpenAIConfigOptions {
@@ -25,6 +31,10 @@ export interface OpenAIConfigOptions {
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  /** Endpoint-level prompt-cache levers, resolved from `librechat.yaml`. */
+  promptCacheKeyEnabled?: boolean;
+  promptCacheRetention?: OpenAIPromptCacheRetention;
+  promptCacheExplicit?: boolean;
   customParams?: Partial<TConfig['customParams']>;
 }
 
@@ -36,6 +46,13 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   includeReasoningContent?: boolean;
   promptCache?: boolean;
   promptCacheTtl?: '5m' | '1h';
+  /**
+   * Endpoint policy allows a deterministic `prompt_cache_key` on this request.
+   * `getOpenAILLMConfig` resolves the policy but cannot produce the key, which
+   * hashes stable instructions and tool schemas assembled later; `createRun`
+   * consumes this flag and sets `promptCacheKey`.
+   */
+  promptCacheKeyEnabled?: boolean;
   /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6

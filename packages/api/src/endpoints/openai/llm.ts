@@ -19,6 +19,7 @@ import {
   constructAzureChatBasePath,
   constructAzureInstanceBasePath,
 } from '~/utils/azure';
+import { supportsExplicitPromptCache } from './promptCache';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -55,6 +56,17 @@ export const knownOpenAIParams: Set<string> = new Set([
   'service_tier',
   'supportsStrictToolCalling',
   'useResponsesApi',
+  /**
+   * Prompt caching. These are LangChain constructor fields that serialize to
+   * `prompt_cache_key` / `prompt_cache_retention`, and the agents SDK field
+   * that emits `prompt_cache_options` plus the explicit breakpoints. They must
+   * route here rather than to `modelKwargs`: on Chat Completions the explicit
+   * fields are spread *after* `modelKwargs`, so a raw snake_case kwarg is
+   * overwritten with `undefined` and silently never reaches the wire.
+   */
+  'promptCacheKey',
+  'promptCacheRetention',
+  'promptCacheExplicit',
   'configuration',
   // Call-time Options
   'tools',
@@ -614,6 +626,9 @@ export function getOpenAILLMConfig({
   dropParams,
   defaultParams,
   useOpenRouter,
+  promptCacheKeyEnabled,
+  promptCacheRetention,
+  promptCacheExplicit,
   reasoningFormat = ReasoningParameterFormat.reasoningEffort,
   modelOptions: _modelOptions,
 }: {
@@ -627,6 +642,9 @@ export function getOpenAILLMConfig({
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
   reasoningFormat?: ReasoningParameterFormat;
+  promptCacheKeyEnabled?: boolean;
+  promptCacheRetention?: t.OpenAIPromptCacheRetention;
+  promptCacheExplicit?: boolean;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -928,6 +946,34 @@ export function getOpenAILLMConfig({
    */
   if (firstPartyEndpoint) {
     llmConfig.firstPartyEndpoint = true;
+  }
+
+  /**
+   * Prompt caching, first-party OpenAI and Azure only. A gateway or custom
+   * OpenAI-compatible endpoint shares the request shape but not the caching
+   * contract, so it keeps whatever it is configured with.
+   *
+   * `getOpenAILLMConfig` can decide *whether* a deterministic cache key is
+   * allowed, but not what it is: the key hashes the agent's stable
+   * instructions and tool schemas, which are only assembled at run time.
+   * `createRun` reads `promptCacheKeyEnabled` and fills in `promptCacheKey`.
+   *
+   * `promptCacheExplicit` additionally requires a model that accepts the
+   * GPT-5.6 cache controls, because OpenAI rejects unknown body parameters
+   * outright rather than ignoring them.
+   */
+  if (firstPartyEndpoint && promptCacheKeyEnabled !== false) {
+    llmConfig.promptCacheKeyEnabled = true;
+  }
+  if (firstPartyEndpoint && promptCacheRetention != null) {
+    llmConfig.promptCacheRetention = promptCacheRetention;
+  }
+  if (
+    firstPartyEndpoint &&
+    promptCacheExplicit === true &&
+    supportsExplicitPromptCache(llmConfig.model)
+  ) {
+    llmConfig.promptCacheExplicit = true;
   }
 
   if (!useOpenRouter) {

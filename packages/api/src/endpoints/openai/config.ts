@@ -202,6 +202,9 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      promptCacheKeyEnabled: options.promptCacheKeyEnabled,
+      promptCacheRetention: options.promptCacheRetention,
+      promptCacheExplicit: options.promptCacheExplicit,
       reasoningFormat: getReasoningFormat({
         customFormat: options.customParams?.reasoningFormat,
         isVercel: Boolean(isVercel),
