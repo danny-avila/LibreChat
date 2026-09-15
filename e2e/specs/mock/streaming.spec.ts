@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -22,6 +23,46 @@ test.describe('stream transport fidelity', () => {
   test.describe('terminal recovery', () => {
     /** Service workers can bypass Playwright's network fault injection. */
     test.use({ serviceWorkers: 'block' });
+
+    test('retires an unpersisted first turn with missing terminal history', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+      const conversationId = randomUUID();
+      /** Model admission followed by job loss before persistence. The real stream,
+       * status and history routes must handle the absent job and conversation. */
+      await page.route(
+        /\/api\/agents\/chat(?:\/[^/?]+)?$/,
+        (route) =>
+          route.fulfill({
+            status: 200,
+            json: {
+              conversationId,
+              streamId: conversationId,
+              generationCreatedAt: Date.now(),
+              generationProtocolVersion: 2,
+            },
+          }),
+        { times: 1 },
+      );
+      const missingHistory = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === `/api/messages/${conversationId}`,
+      );
+      await sendMessage(page, 'E2E_REPLY:unpersisted-first-turn');
+      expect((await missingHistory).status()).toBe(404);
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden();
+
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('online'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      const input = page.getByRole('textbox', { name: 'Message input' });
+      await input.fill('Keep this draft for a deliberate retry');
+      await expect(page.getByTestId('send-button')).toBeEnabled();
+      await expect(input).toHaveValue('Keep this draft for a deliberate retry');
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden();
+    });
+
     for (const existingConversation of [false, true]) {
       const scenario = existingConversation
         ? 'on reconnect after exhausting history retries'

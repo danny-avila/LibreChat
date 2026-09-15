@@ -4679,30 +4679,173 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('retries a failed 404 history reconciliation before retiring the subscription', async () => {
-    jest.useFakeTimers();
-    mockGetMessagesByConvoId.mockRejectedValueOnce(new Error('history unavailable'));
-    const submission = buildSubmission();
-    const chatHelpers = buildChatHelpers();
-    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
-    await flushMicrotasks();
-    await act(async () => {
-      getLastSSE()._emit('error', { responseCode: 404 });
-    });
-    await flushMicrotasks();
-    expect(mockSetRunEnd).not.toHaveBeenCalled();
-    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
-    const failedSSE = getLastSSE();
-    await advanceRetryTimer(1_000);
-    expect(getLastSSE()).not.toBe(failedSSE);
-    await act(async () => {
-      getLastSSE()._emit('error', { responseCode: 404 });
-    });
-    await flushMicrotasks();
-    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
-    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
-    unmount();
-  });
+  it.each([
+    ['network failure', new Error('history unavailable')],
+    ['HTTP 503', { response: { status: 503 } }],
+  ])(
+    'retries a failed 404 history reconciliation (%s) before retiring the subscription',
+    async (_label, error) => {
+      jest.useFakeTimers();
+      mockGetMessagesByConvoId.mockRejectedValueOnce(error);
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await flushMicrotasks();
+      expect(mockSetRunEnd).not.toHaveBeenCalled();
+      expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+      const failedSSE = getLastSSE();
+      await advanceRetryTimer(1_000);
+      expect(getLastSSE()).not.toBe(failedSSE);
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await flushMicrotasks();
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
+      expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+      unmount();
+    },
+  );
+
+  it.each([
+    ['http', CONV_ID],
+    ['frame', CONV_ID],
+    ['disconnect', CONV_ID],
+    ['http', Constants.NEW_CONVO],
+    ['frame', Constants.NEW_CONVO],
+    ['disconnect', Constants.NEW_CONVO],
+  ] as const)(
+    'retires missing terminal history via %s for %s without draining queued text',
+    async (kind, conversationId) => {
+      jest.useFakeTimers();
+      (request.post as jest.Mock).mockResolvedValue({
+        streamId: CONV_ID,
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      });
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        status: 'complete',
+        generationProtocolVersion: 2,
+      });
+      mockGetMessagesByConvoId.mockRejectedValue({ response: { status: 404 } });
+      const submission = buildSubmission({ conversation: { conversationId } });
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      chatHelpers.setMessages.mockClear();
+
+      if (kind === 'disconnect') {
+        for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+          await act(async () => getLastSSE()._emit('error', { responseCode: 0 }));
+          await advanceRetryTimer(delay);
+        }
+      }
+      await act(async () => {
+        if (kind === 'frame') {
+          getLastSSE()._emit('message', {
+            data: JSON.stringify({
+              final: true,
+              reconcile: true,
+              reconcileReason: 'terminal_payload_missing',
+              terminalStatus: 'complete',
+              generationCreatedAt: 1000,
+              generationProtocolVersion: 2,
+            }),
+          });
+        } else {
+          getLastSSE()._emit('error', { responseCode: kind === 'http' ? 404 : 0 });
+        }
+      });
+      await flushMicrotasks();
+
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(CONV_ID);
+      expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+      expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
+      expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+      expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+      expect(mockSetRunEnd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: CONV_ID,
+          outcome: kind === 'http' ? 'aborted' : 'error',
+        }),
+      );
+      const applyDrainUpdates = (armed: DrainAfterAbortState): DrainAfterAbortState => {
+        for (const [update] of mockSetDrainAfterAbort.mock.calls) {
+          armed = update(armed);
+        }
+        return armed;
+      };
+      expect(applyDrainUpdates({ conversationId: CONV_ID, generationCreatedAt: 1000 })).toBe(false);
+      if (conversationId === Constants.NEW_CONVO) {
+        expect(applyDrainUpdates({ conversationId, generationCreatedAt: 1000 })).toBe(false);
+      }
+      const newerArm = { conversationId: CONV_ID, generationCreatedAt: 2000 };
+      const foreignArm = { conversationId: 'other-conversation', generationCreatedAt: 1000 };
+      expect(applyDrainUpdates(newerArm)).toBe(newerArm);
+      expect(applyDrainUpdates(foreignArm)).toBe(foreignArm);
+      expect(mockSetDrainAfterAbort.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSetRunEnd.mock.invocationCallOrder[0],
+      );
+
+      const retiredSSE = getLastSSE();
+      await advanceRetryTimer(60_000);
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(getLastSSE()).toBe(retiredSSE);
+      expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
+      unmount();
+    },
+  );
+
+  it.each(['active', 'inconclusive', 'unavailable'])(
+    'keeps a synthesized missing-history recovery pending when status is %s',
+    async (state) => {
+      jest.useFakeTimers();
+      (request.post as jest.Mock).mockResolvedValue({
+        streamId: CONV_ID,
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      });
+      mockGetMessagesByConvoId.mockRejectedValue({ response: { status: 404 } });
+      if (state === 'unavailable') {
+        mockFetchStreamStatus.mockRejectedValue(new Error('status unavailable'));
+      } else {
+        mockFetchStreamStatus.mockResolvedValue({
+          active: state === 'active' ? true : undefined,
+          createdAt: 1000,
+          generationProtocolVersion: 2,
+        });
+      }
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            final: true,
+            reconcile: true,
+            reconcileReason: 'terminal_payload_missing',
+            generationCreatedAt: 1000,
+            generationProtocolVersion: 2,
+          }),
+        });
+      });
+      await flushMicrotasks();
+      expect(mockFetchStreamStatus).toHaveBeenCalled();
+      expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+      expect(mockSetRunEnd).not.toHaveBeenCalled();
+      expect(mockSetDrainAfterAbort).not.toHaveBeenCalled();
+      expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+      unmount();
+    },
+  );
 
   it.each([
     ['http', 'visibilitychange'],
