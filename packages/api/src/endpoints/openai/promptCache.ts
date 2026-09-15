@@ -40,8 +40,14 @@ export interface PromptCacheKeyInput {
    * of the prefix, so it is part of the key.
    */
   boundTools?: readonly unknown[];
-  /** Structured-output schema, which participates in the cached prefix. */
+  /**
+   * Structured-output schema, which participates in the cached prefix. Chat
+   * Completions carries it as `response_format`; the Responses API carries it
+   * as `text.format`. Both are hashed under their own name rather than
+   * collapsed, so neither API's schema can borrow the other's identity.
+   */
   responseSchema?: unknown;
+  responsesTextFormat?: unknown;
 }
 
 /**
@@ -92,6 +98,7 @@ export function buildPromptCacheKey(input: PromptCacheKeyInput): string {
       instructions: input.instructions ?? '',
       boundTools: (input.boundTools ?? []).map(toolCacheIdentity),
       responseSchema: input.responseSchema,
+      responsesTextFormat: input.responsesTextFormat,
     }),
   );
   const digest = createHash('sha256').update(canonical).digest('base64url');
