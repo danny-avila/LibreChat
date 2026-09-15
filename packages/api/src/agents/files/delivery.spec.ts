@@ -273,11 +273,12 @@ describe('resolveScopedTurnAttachments', () => {
 
   it('ignores unhydrated and no-longer-retained history and deduplicates shared prompt files', () => {
     const stale = { ...file, file_id: 'stale' };
+    const unhydrated = { file_id: 'unhydrated', text: 'untrusted' };
     expect(
       resolveScopedTurnAttachments({
         agents: [receiver],
         sharedConversationAgentIds: ['handoff'],
-        messages: [{ files: [{ file_id: 'unhydrated', text: 'untrusted' }, { file_id: 'csv' }] }],
+        messages: [{ files: [unhydrated, { file_id: 'csv' }] }],
         historicalFiles: new Map([
           [file.file_id, file],
           [stale.file_id, stale],
