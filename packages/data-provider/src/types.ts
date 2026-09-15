@@ -1,6 +1,7 @@
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TConversationTag,
+  TConversationTagCatalog,
   EModelEndpoint,
   TConversation,
   TSharedLink,
@@ -499,6 +500,7 @@ export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
 
 // type for getting conversation tags
 export type TConversationTagsResponse = TConversationTag[];
+export type TConversationTagCatalogResponse = TConversationTagCatalog[];
 // type for creating conversation tag
 export type TConversationTagRequest = Partial<
   Omit<TConversationTag, 'createdAt' | 'updatedAt' | 'count' | 'user'>
@@ -508,11 +510,12 @@ export type TConversationTagRequest = Partial<
 };
 
 export type TConversationTagResponse = TConversationTag;
+export type TConversationTagCatalogItemResponse = TConversationTagCatalog;
 
-export type TTagConversationRequest = {
-  tags: string[];
-  tag: string;
-};
+export type TTagConversationRequest = (
+  | { tags: string[]; tagIds?: never }
+  | { tagIds: string[]; tags?: never }
+) & { tag: string };
 
 export type TTagConversationResponse = string[];
 

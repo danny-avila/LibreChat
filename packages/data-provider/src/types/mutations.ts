@@ -435,6 +435,10 @@ export type UpdateConversationTagOptions = MutationOptions<
   types.TConversationTag,
   types.TConversationTagRequest
 >;
+export type UpdateConversationTagCatalogOptions = MutationOptions<
+  types.TConversationTagCatalog,
+  types.TConversationTagRequest
+>;
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
 
 export type AcceptTermsMutationOptions = MutationOptions<

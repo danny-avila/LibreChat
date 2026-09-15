@@ -62,7 +62,7 @@ describe('Convos Routes', () => {
     deleteToolCalls,
     deleteConvos,
     deleteMessages,
-    getConvo,
+    getConvoWithTags,
     saveConvo,
   } = require('~/models');
   const {
@@ -203,30 +203,30 @@ describe('Convos Routes', () => {
 
   describe('GET /:conversationId', () => {
     it('returns an ordinary owned conversation', async () => {
-      getConvo.mockResolvedValue({ conversationId: 'ordinary', title: 'Ordinary' });
+      getConvoWithTags.mockResolvedValue({ conversationId: 'ordinary', title: 'Ordinary' });
 
       const response = await request(app).get('/api/convos/ordinary');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ conversationId: 'ordinary', title: 'Ordinary' });
-      expect(getConvo).toHaveBeenCalledWith('test-user-123', 'ordinary');
+      expect(getConvoWithTags).toHaveBeenCalledWith('test-user-123', 'ordinary');
     });
 
     it('returns the same not-found response for an owned child thread', async () => {
-      getConvo.mockResolvedValue({
+      getConvoWithTags.mockResolvedValue({
         conversationId: 'child',
         subagentThread: { parentConversationId: 'parent' },
       });
 
       const childResponse = await request(app).get('/api/convos/child');
-      getConvo.mockResolvedValue(null);
+      getConvoWithTags.mockResolvedValue(null);
       const missingResponse = await request(app).get('/api/convos/missing');
 
       expect(childResponse.status).toBe(404);
       expect(childResponse.text).toBe('');
       expect(childResponse.status).toBe(missingResponse.status);
       expect(childResponse.text).toBe(missingResponse.text);
-      expect(getConvo).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
+      expect(getConvoWithTags).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
     });
   });
 
@@ -1771,6 +1771,30 @@ describe('Convos Routes', () => {
       expect(getConvosByCursor).toHaveBeenCalledWith(
         'test-user-123',
         expect.objectContaining({ search: undefined }),
+      );
+    });
+  });
+
+  describe('GET / bookmark ID validation', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    it.each(['not-an-id', '', ['0123456789abcdef01234567', 'bad']])(
+      'rejects malformed bookmark IDs: %j',
+      async (tagIds) => {
+        const response = await request(app).get('/api/convos').query({ tagIds });
+        expect(response.status).toBe(400);
+        expect(getConvosByCursor).not.toHaveBeenCalled();
+      },
+    );
+
+    it('passes valid repeated bookmark IDs to the model', async () => {
+      const tagIds = ['0123456789abcdef01234567', 'ABCDEF0123456789ABCDEF01'];
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+      const response = await request(app).get('/api/convos').query({ tagIds });
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ tagIds }),
       );
     });
   });

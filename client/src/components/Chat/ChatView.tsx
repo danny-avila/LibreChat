@@ -16,6 +16,7 @@ import {
   useQueueDrain,
   useQueuedTurnReveal,
   useLocalize,
+  useBookmarkSuccess,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ApprovalProvider from './Messages/Content/ApprovalContext';
@@ -96,6 +97,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     chatHelpers.conversation?.conversationId === conversationId
       ? chatHelpers.conversation
       : undefined;
+  const onTagsUpdated = useBookmarkSuccess(
+    activeConversation?.conversationId ?? '',
+    chatHelpers.setConversation,
+  );
   const activeSubagentThread = activeConversation?.subagentThread;
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
@@ -165,6 +170,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                 <TraceSurface conversationId={conversationId}>
                   <h1 className="sr-only">{pageHeading}</h1>
                   <Header
+                    conversation={activeConversation}
+                    onTagsUpdated={onTagsUpdated}
                     parentConversationId={parentConversationId}
                     readOnly={isSubagentThreadReadOnly}
                   />

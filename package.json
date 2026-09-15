@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "migrate:conversation-tags": "node config/migrate-conversation-tags.mts",
     "prepare": "node -e \"import('husky').then((h) => h.default()).catch(() => {})\"",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",

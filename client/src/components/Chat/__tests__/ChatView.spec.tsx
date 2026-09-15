@@ -27,6 +27,7 @@ jest.mock('~/data-provider', () => ({
  * up SSE, message trees, or full ChatRoute synchronization.
  */
 jest.mock('~/hooks', () => ({
+  useBookmarkSuccess: () => jest.fn(),
   useLocalize: () => (key: string) => (key === 'com_ui_new_chat' ? 'New chat' : key),
   useChatHelpers: () => ({ conversation: mockConversation() }),
   useAddedResponse: () => ({}),

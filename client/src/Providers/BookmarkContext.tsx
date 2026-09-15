@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTagCatalog } from 'librechat-data-provider';
 
-type TBookmarkContext = { bookmarks: TConversationTag[] };
+type TBookmarkContext = { bookmarks: TConversationTagCatalog[] };
 
 export const BookmarkContext = createContext<TBookmarkContext>({
   bookmarks: [],

@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { buildTree, QueryKeys } from 'librechat-data-provider';
+import { buildTree, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 import { ScreenshotLimitError, useScreenshot } from '~/hooks/ScreenshotContext';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
@@ -246,6 +246,15 @@ export default function useExportConversation({
   };
 
   const exportJSON = async () => {
+    let latest = conversation;
+    if (conversation?.conversationId) {
+      try {
+        latest =
+          (await dataService.getConversationById(conversation.conversationId)) ?? conversation;
+      } catch {
+        // Cached messages and options remain exportable when the server is unavailable.
+      }
+    }
     const data = {
       conversationId: conversation?.conversationId,
       endpoint: conversation?.endpoint,
@@ -253,10 +262,16 @@ export default function useExportConversation({
       exportAt: new Date().toTimeString(),
       branches: exportBranches,
       recursive: recursive,
+      options: { tags: latest?.tags ?? [] },
     };
 
     if (includeOptions === true) {
-      data['options'] = cleanupPreset({ preset: conversation as TPreset });
+      const portable = { ...latest };
+      delete portable.tagIds;
+      data['options'] = {
+        ...cleanupPreset({ preset: portable as TPreset }),
+        tags: latest?.tags ?? [],
+      };
     }
 
     const messages = await buildMessageTree({

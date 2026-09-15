@@ -1470,10 +1470,20 @@ export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());
 }
 
+export function getConversationTagCatalog(): Promise<t.TConversationTagCatalogResponse> {
+  return request.get(`${endpoints.conversationTags()}?includeCounts=false`);
+}
+
 export function createConversationTag(
   payload: t.TConversationTagRequest,
 ): Promise<t.TConversationTagResponse> {
   return request.post(endpoints.conversationTags(), payload);
+}
+
+export function createConversationTagCatalog(
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagCatalogItemResponse> {
+  return request.post(`${endpoints.conversationTags()}?includeCounts=false`, payload);
 }
 
 export function updateConversationTag(
@@ -1482,6 +1492,25 @@ export function updateConversationTag(
 ): Promise<t.TConversationTagResponse> {
   return request.put(endpoints.conversationTags(tag), payload);
 }
+export function updateConversationTagById(
+  id: string,
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.put(`${endpoints.conversationTags()}/id/${encodeURIComponent(id)}`, payload);
+}
+export function updateConversationTagCatalogById(
+  id: string,
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagCatalogItemResponse> {
+  return request.put(
+    `${endpoints.conversationTags()}/id/${encodeURIComponent(id)}?includeCounts=false`,
+    payload,
+  );
+}
+export function deleteConversationTagById(id: string): Promise<t.TConversationTagResponse> {
+  return request.delete(`${endpoints.conversationTags()}/id/${encodeURIComponent(id)}`);
+}
+
 export function deleteConversationTag(tag: string): Promise<t.TConversationTagResponse> {
   return request.delete(endpoints.conversationTags(tag));
 }

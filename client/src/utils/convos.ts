@@ -223,6 +223,7 @@ function conversationMatchesProjectQuery(
 
 function getConversationListQueryParams(queryKey: readonly unknown[]): {
   tags?: string[];
+  tagIds?: string[];
   search?: string;
   sortBy?: string;
   sortDirection?: string;
@@ -234,6 +235,7 @@ function getConversationListQueryParams(queryKey: readonly unknown[]): {
   }
   return params as {
     tags?: string[];
+    tagIds?: string[];
     search?: string;
     sortBy?: string;
     sortDirection?: string;
@@ -337,17 +339,24 @@ type ListInsertVerdict = 'insert' | 'skip' | 'refetch';
 
 function conversationInsertVerdict(
   queryKey: readonly unknown[],
-  conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'isArchived'>,
+  conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'tagIds' | 'isArchived'>,
 ): ListInsertVerdict {
   if (!conversationBelongsToListQuery(queryKey, conversation)) {
     return 'skip';
   }
-  const { tags } = getConversationListQueryParams(queryKey);
+  const { tags, tagIds } = getConversationListQueryParams(queryKey);
   if (Array.isArray(tags) && tags.length > 0) {
     const conversationTags = conversation.tags;
     if (!Array.isArray(conversationTags) || !tags.some((tag) => conversationTags.includes(tag))) {
       return 'skip';
     }
+  }
+  if (
+    Array.isArray(tagIds) &&
+    tagIds.length > 0 &&
+    (!Array.isArray(conversation.tagIds) || !tagIds.some((id) => conversation.tagIds?.includes(id)))
+  ) {
+    return 'skip';
   }
   return queryNeedsServerReconciliation(queryKey) ? 'refetch' : 'insert';
 }

@@ -57,7 +57,7 @@ const ConversationsSection = memo(() => {
       isArchived: isArchivedView ? true : undefined,
       sortBy: sort.field,
       sortDirection: sort.direction,
-      tags: tags.length === 0 ? undefined : tags,
+      tagIds: tags.length === 0 ? undefined : tags,
       search: search.debouncedQuery || undefined,
     },
     {

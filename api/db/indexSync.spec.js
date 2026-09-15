@@ -604,6 +604,28 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Conversation.cleanupExcludedMeiliIndex).not.toHaveBeenCalled();
   });
 
+  test('retries catalog orphan cleanup even when surviving Mongo rows are fully indexed', async () => {
+    const complete = { totalProcessed: 0, totalDocuments: 0, pendingCleanup: 0, isComplete: true };
+    Message.getSyncProgress.mockResolvedValue(complete);
+    Conversation.getSyncProgress.mockResolvedValue(complete);
+    const Tag = createMockModel('conversationtags');
+    Tag.getSyncProgress.mockResolvedValue(complete);
+    Tag.syncWithMeili
+      .mockRejectedValueOnce(new Error('catalog cleanup unavailable'))
+      .mockResolvedValue(undefined);
+    const currentMongoose = require('mongoose');
+    currentMongoose.models.ConversationTag = Tag;
+    try {
+      const indexSync = require('./indexSync');
+      await expect(indexSync()).rejects.toThrow('catalog cleanup unavailable');
+      await indexSync();
+      expect(Tag.syncWithMeili).toHaveBeenCalledTimes(2);
+      expect(Tag.getSyncProgress).not.toHaveBeenCalled();
+    } finally {
+      delete currentMongoose.models.ConversationTag;
+    }
+  });
+
   test('continues conversation cleanup when message cleanup fails transiently', async () => {
     const cleanupError = new Error('message cleanup timed out');
     Message.getSyncProgress.mockResolvedValue({

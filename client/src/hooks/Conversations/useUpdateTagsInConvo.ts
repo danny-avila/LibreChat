@@ -8,7 +8,7 @@ const useUpdateTagsInConvo = () => {
   const queryClient = useQueryClient();
 
   // Update the queryClient cache with the new tag when a new tag is added/removed to a conversation
-  const updateTagsInConversation = (conversationId: string, tags: string[]) => {
+  const updateTagsInConversation = (conversationId: string, tags: string[], tagIds?: string[]) => {
     // Update the tags for the current conversation
     const currentConvo = queryClient.getQueryData<t.TConversation>([
       QueryKeys.conversation,
@@ -21,9 +21,9 @@ const useUpdateTagsInConvo = () => {
     const updatedConvo = {
       ...currentConvo,
       tags,
+      ...(tagIds === undefined ? {} : { tagIds }),
     } as t.TConversation;
     queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
-
     for (const listKey of [QueryKeys.allConversations, QueryKeys.archivedConversations]) {
       const queries = queryClient.getQueryCache().findAll([listKey], { exact: false });
       for (const query of queries) {
@@ -39,7 +39,7 @@ const useUpdateTagsInConvo = () => {
                 ...page,
                 conversations: page.conversations.map((conversation) =>
                   conversation.conversationId === conversationId
-                    ? { ...conversation, tags: updatedConvo.tags }
+                    ? { ...conversation, tags: updatedConvo.tags, tagIds: updatedConvo.tagIds }
                     : conversation,
                 ),
               })),
@@ -56,16 +56,14 @@ const useUpdateTagsInConvo = () => {
   // update the tag to newTag in all conversations when a tag is updated to a newTag
   // The difference with updateTagsInConversation is that it adds or removes tags for a specific conversation,
   // whereas this function is for changing the title of a specific tag.
-  const replaceTagsInAllConversations = (tag: string, newTag: string) => {
+  const replaceTagsInAllConversations = (tag: string, newTag: string, tagId?: string) => {
     const conversationIdsWithTag = new Set<string>();
 
     for (const listKey of [QueryKeys.allConversations, QueryKeys.archivedConversations]) {
       const queries = queryClient.getQueryCache().findAll([listKey], { exact: false });
       for (const query of queries) {
         queryClient.setQueryData<InfiniteData<ConversationListResponse>>(query.queryKey, (data) => {
-          if (!data) {
-            return data;
-          }
+          if (!data) return data;
 
           return {
             ...data,
@@ -76,7 +74,7 @@ const useUpdateTagsInConvo = () => {
                 if (
                   conversation.conversationId &&
                   Array.isArray(conversationTags) &&
-                  conversationTags.includes(tag)
+                  (tagId ? conversation.tagIds?.includes(tagId) : conversationTags.includes(tag))
                 ) {
                   conversationIdsWithTag.add(conversation.conversationId);
                   return {

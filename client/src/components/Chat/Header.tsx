@@ -7,6 +7,7 @@ import {
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
+import type { BookmarkMenuProps } from '~/hooks/Chat/useBookmarkItems';
 import { OpenSidebar, PresetsMenu, NewChat, HeaderMenu } from './Menus';
 import { TemporaryChat, TemporaryChatIndicator } from './TemporaryChat';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
@@ -29,9 +30,11 @@ const defaultInterface = getConfigDefaults().interface;
  * would pop the row a frame late on every mount.
  */
 function Header({
+  conversation,
+  onTagsUpdated,
   parentConversationId,
   readOnly = false,
-}: {
+}: BookmarkMenuProps & {
   parentConversationId?: string;
   readOnly?: boolean;
 }) {
@@ -98,7 +101,11 @@ function Header({
         )}
         {hasAccessToBookmarks === true && (
           <div className="hidden items-center md:flex">
-            <BookmarkMenu />
+            <BookmarkMenu
+              key={conversation?.conversationId}
+              conversation={conversation}
+              onTagsUpdated={onTagsUpdated}
+            />
           </div>
         )}
         {hasAccessToMultiConvo === true && (
@@ -111,7 +118,14 @@ function Header({
       <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
         {hasAccessToTemporaryChat === true && <TemporaryChatIndicator />}
         {!isNewChat && <NewChat className="md:hidden" />}
-        <HeaderMenu startupConfig={startupConfig} trace={trace} className="md:hidden" />
+        <HeaderMenu
+          key={conversation?.conversationId}
+          conversation={conversation}
+          onTagsUpdated={onTagsUpdated}
+          startupConfig={startupConfig}
+          trace={trace}
+          className="md:hidden"
+        />
         <div className="hidden items-center gap-2 md:flex">
           {trace.show && <TraceButton onClick={trace.open} />}
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />

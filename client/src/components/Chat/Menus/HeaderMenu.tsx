@@ -5,6 +5,7 @@ import { DropdownPopup, TooltipAnchor, Button } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { Ellipsis, PlusCircle, HatGlasses, Check, ChartNoAxesGantt } from 'lucide-react';
 import type { TStartupConfig } from 'librechat-data-provider';
+import type { BookmarkMenuProps } from '~/hooks/Chat/useBookmarkItems';
 import type { TraceControl } from '~/components/Chat/Trace';
 import type * as t from '~/common';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
@@ -25,7 +26,9 @@ export default function HeaderMenu({
   startupConfig,
   trace,
   className,
-}: {
+  conversation,
+  onTagsUpdated,
+}: BookmarkMenuProps & {
   startupConfig?: TStartupConfig;
   /** Owned by the header, which also renders the desktop trace button from it. */
   trace?: TraceControl;
@@ -50,7 +53,11 @@ export default function HeaderMenu({
 
   const multiConvo = useMultiConvo();
   const temporary = useTemporaryChat();
-  const bookmarks = useBookmarkItems({ enabled: hasAccessToBookmarks === true });
+  const bookmarks = useBookmarkItems({
+    enabled: hasAccessToBookmarks === true,
+    conversation,
+    onTagsUpdated,
+  });
   const exportShare = useExportShare({
     isSharedButtonEnabled: startupConfig?.sharedLinksEnabled ?? false,
   });

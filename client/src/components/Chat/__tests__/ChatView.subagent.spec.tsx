@@ -28,6 +28,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
+  useBookmarkSuccess: () => jest.fn(),
   useAddedResponse: () => ({}),
   useResumeOnLoad: jest.fn(),
   useAdaptiveSSE: jest.fn(),

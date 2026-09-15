@@ -86,12 +86,12 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const { isArchived, sortBy, sortDirection, tags, search, projectId } = params;
+  const { isArchived, sortBy, sortDirection, tags, tagIds, search, projectId } = params;
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search, projectId },
+      { isArchived, sortBy, sortDirection, tags, tagIds, search, projectId },
     ],
     queryFn: async ({ pageParam }) => {
       const page = await dataService.listConversations({
@@ -99,6 +99,7 @@ export const useConversationsInfiniteQuery = (
         sortBy,
         sortDirection,
         tags,
+        tagIds,
         search,
         projectId,
         cursor: pageParam?.toString(),
@@ -247,6 +248,21 @@ export const useConversationTagsQuery = (
   return useQuery<t.TConversationTag[]>(
     [QueryKeys.conversationTags],
     () => dataService.getConversationTags(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useConversationTagCatalogQuery = (
+  config?: UseQueryOptions<t.TConversationTagCatalogResponse>,
+): QueryObserverResult<t.TConversationTagCatalogResponse> => {
+  return useQuery<t.TConversationTagCatalogResponse>(
+    [QueryKeys.conversationTagCatalog],
+    () => dataService.getConversationTagCatalog(),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

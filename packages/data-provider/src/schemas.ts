@@ -1164,6 +1164,7 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   /* DB */
   tags: z.array(z.string()).optional(),
+  tagIds: z.array(z.string()).optional(),
   chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1369,6 +1370,7 @@ export const tModelSpecPresetSchema = tPresetSchema
     user: true,
     messages: true,
     tags: true,
+    tagIds: true,
     file_ids: true,
     expiredAt: true,
     parentMessageId: true,
@@ -1442,6 +1444,7 @@ export const tConversationTagSchema = z.object({
   position: z.number(),
 });
 export type TConversationTag = z.infer<typeof tConversationTagSchema>;
+export type TConversationTagCatalog = Omit<TConversationTag, 'count'>;
 
 export const googleBaseSchema = tConversationSchema.pick({
   chatProjectId: true,

@@ -188,7 +188,7 @@ class ImportBatchBuilder {
    * @returns {Promise<void>} A promise that resolves when the batch is saved.
    * @throws {Error} If there is an error saving the batch.
    */
-  async saveBatch() {
+  async saveBatch({ tagSource = 'portable' } = {}) {
     const tenantId = getTenantId();
     assertConversationImportWriteSize({
       conversations: this.conversations,
@@ -219,7 +219,7 @@ class ImportBatchBuilder {
 
     try {
       await executeConversationImportWrites({
-        saveConversations: () => bulkSaveConvos(this.conversations),
+        saveConversations: () => bulkSaveConvos(this.conversations, { tagSource }),
         saveMessages: () => bulkSaveMessages(this.messages, true),
         updateTagCounts: () => bulkIncrementTagCounts(this.requestUserId, tags),
         deleteMessages: () => deleteImportedMessages(cleanupScope),

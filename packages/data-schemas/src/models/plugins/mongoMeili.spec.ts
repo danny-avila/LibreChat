@@ -1839,6 +1839,22 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockDeleteDocuments).not.toHaveBeenCalled();
     });
 
+    test('cleanupMeiliIndex compares ObjectId primary keys with their indexed strings', async () => {
+      const model = createConversationModel(mongoose) as unknown as SchemaWithMeiliMethods;
+      await model.deleteMany({});
+      const id = new mongoose.Types.ObjectId();
+      await model.collection.insertOne({
+        _id: id,
+        user: 'owner',
+        conversationId: 'tag-identity',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+      });
+      mockGetDocuments.mockResolvedValueOnce({ results: [{ _id: String(id) }] });
+      await model.cleanupMeiliIndex(mockIndex(), '_id', 100, 0);
+      expect(mockDeleteDocuments).not.toHaveBeenCalled();
+    });
+
     test('cleanupMeiliIndex handles empty MeiliSearch index', async () => {
       const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
 

@@ -28,7 +28,7 @@ import {
   sortFieldsFor,
   toggleChatFilterTagAtom,
 } from './chatFilters';
-import { useGetConversationTags } from '~/data-provider';
+import { useConversationTagCatalogQuery, useGetConversationTags } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -93,10 +93,31 @@ const BookmarkChoices = memo(() => {
   const localize = useLocalize();
   const tags = useAtomValue(chatFilterTagsAtom);
   const toggleTag = useSetAtom(toggleChatFilterTagAtom);
-  const { data } = useGetConversationTags();
+  const { data: catalog } = useConversationTagCatalogQuery();
+  const counts = useGetConversationTags({
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+  });
+  const countsCurrent = !counts.isFetching && !counts.isStale && !counts.isError;
+  const countsById = useMemo(
+    () =>
+      countsCurrent
+        ? new Map(counts.data?.map((bookmark) => [bookmark._id, bookmark.count]))
+        : undefined,
+    [counts.data, countsCurrent],
+  );
 
   /** A bookmark no chat carries filters the list down to nothing. */
-  const bookmarks = useMemo(() => data?.filter((tag) => tag.count > 0) ?? [], [data]);
+  const bookmarks = useMemo(
+    () =>
+      (countsCurrent
+        ? catalog?.filter((bookmark) => {
+            const count = countsById?.get(bookmark._id);
+            return count === undefined || count > 0;
+          })
+        : catalog) ?? [],
+    [catalog, countsById, countsCurrent],
+  );
 
   if (bookmarks.length === 0) {
     return (
@@ -112,14 +133,14 @@ const BookmarkChoices = memo(() => {
   return (
     <>
       {bookmarks.map((bookmark) => {
-        const checked = tags.includes(bookmark.tag);
+        const checked = tags.includes(bookmark._id);
         return (
           <Ariakit.MenuItem
-            key={bookmark.tag}
+            key={bookmark._id}
             role="menuitemcheckbox"
             aria-checked={checked}
             hideOnClick={false}
-            onClick={() => toggleTag(bookmark.tag)}
+            onClick={() => toggleTag(bookmark._id)}
             className={itemClassName}
           >
             <span className="shrink-0 text-text-secondary" aria-hidden="true">
@@ -130,9 +151,11 @@ const BookmarkChoices = memo(() => {
               )}
             </span>
             <span className="truncate">{bookmark.tag}</span>
-            <span className="ml-auto shrink-0 text-xs tabular-nums text-text-tertiary">
-              {bookmark.count}
-            </span>
+            {countsCurrent && (
+              <span className="ml-auto shrink-0 text-xs tabular-nums text-text-tertiary">
+                {countsById?.get(bookmark._id)}
+              </span>
+            )}
           </Ariakit.MenuItem>
         );
       })}
@@ -297,7 +320,7 @@ const ChatFilterMenu = () => {
               <Ariakit.MenuGroupLabel className={groupLabelClassName}>
                 {localize('com_ui_bookmarks')}
               </Ariakit.MenuGroupLabel>
-              <BookmarkChoices />
+              {isOpen && <BookmarkChoices />}
             </Ariakit.MenuGroup>
           </>
         )}

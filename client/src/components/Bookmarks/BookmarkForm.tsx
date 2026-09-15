@@ -3,7 +3,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Checkbox, FieldMessage, Label, TextareaAutosize, Input } from '@librechat/client';
-import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
+import type { TConversationTagCatalog, TConversationTagRequest } from 'librechat-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -11,7 +11,7 @@ import { cn, logger } from '~/utils';
 
 type TBookmarkFormProps = {
   tags?: string[];
-  bookmark?: TConversationTag;
+  bookmark?: TConversationTagCatalog;
   conversationId?: string;
   formRef: React.RefObject<HTMLFormElement>;
   mutation: ReturnType<typeof useConversationTagMutation>;
@@ -58,7 +58,7 @@ const BookmarkForm = ({
   /** Every source that could already hold the title, checked before the request is sent. */
   const isTagTaken = (value: string) => {
     const allTags =
-      queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      queryClient.getQueryData<TConversationTagCatalog[]>([QueryKeys.conversationTagCatalog]) ?? [];
 
     return (
       (tags ?? []).includes(value) ||
