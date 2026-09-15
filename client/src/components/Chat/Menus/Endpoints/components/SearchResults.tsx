@@ -1,13 +1,13 @@
 import React, { Fragment } from 'react';
 import { VisuallyHidden } from '@ariakit/react';
 import { CheckCircle2, EarthIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import { shouldRenderEndpointOption } from '../utils';
+import { getModelName, modelSearchNames, shouldRenderEndpointOption } from '../utils';
 import { cn, getSpecAgentAvatarURL } from '~/utils';
 import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
@@ -121,23 +121,11 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
             const models = endpoint.models ?? [];
             const filteredModels = endpointMatches
               ? models
-              : models.filter((model) => {
-                  let modelName = model.name;
-                  if (
-                    isAgentsEndpoint(endpoint.value) &&
-                    endpoint.agentNames &&
-                    endpoint.agentNames[model.name]
-                  ) {
-                    modelName = endpoint.agentNames[model.name];
-                  } else if (
-                    isAssistantsEndpoint(endpoint.value) &&
-                    endpoint.assistantNames &&
-                    endpoint.assistantNames[model.name]
-                  ) {
-                    modelName = endpoint.assistantNames[model.name];
-                  }
-                  return modelName.toLowerCase().includes(lowerQuery);
-                });
+              : models.filter((model) =>
+                  modelSearchNames(endpoint, model.name).some((name) =>
+                    name.toLowerCase().includes(lowerQuery),
+                  ),
+                );
 
             if (!filteredModels.length && !showMarketplace) {
               return null; // skip if no models match
@@ -162,23 +150,8 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 {filteredModels.map((model) => {
                   const modelId = model.name;
 
-                  let isGlobal = false;
-                  let modelName = modelId;
-                  if (
-                    isAgentsEndpoint(endpoint.value) &&
-                    endpoint.agentNames &&
-                    endpoint.agentNames[modelId]
-                  ) {
-                    modelName = endpoint.agentNames[modelId];
-                    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
-                    isGlobal = modelInfo?.isGlobal ?? false;
-                  } else if (
-                    isAssistantsEndpoint(endpoint.value) &&
-                    endpoint.assistantNames &&
-                    endpoint.assistantNames[modelId]
-                  ) {
-                    modelName = endpoint.assistantNames[modelId];
-                  }
+                  const modelName = getModelName(endpoint, modelId) ?? modelId;
+                  const isGlobal = isAgentsEndpoint(endpoint.value) && (model.isGlobal ?? false);
 
                   const isModelSelected =
                     !selectedSpec &&
