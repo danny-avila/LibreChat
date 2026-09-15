@@ -983,13 +983,21 @@ export function getOpenAILLMConfig({
    * ignoring them. On Azure the visible model is an administrator-chosen
    * alias, so the deployment it maps to is what identifies the served model.
    */
-  if (
-    firstPartyEndpoint &&
-    promptCacheExplicit === true &&
-    (supportsExplicitPromptCache(llmConfig.model) ||
-      supportsExplicitPromptCache(azure ? azure.azureOpenAIApiDeploymentName : undefined))
-  ) {
+  const explicitCacheSupported =
+    supportsExplicitPromptCache(llmConfig.model) ||
+    supportsExplicitPromptCache(azure ? azure.azureOpenAIApiDeploymentName : undefined);
+  if (firstPartyEndpoint && promptCacheExplicit === true && explicitCacheSupported) {
     llmConfig.promptCacheExplicit = true;
+  }
+  /**
+   * `promptCacheExplicit` is a known parameter, so `addParams` and
+   * `defaultParams` assign it directly and reach the wire without passing the
+   * gate above. Declining to set it is therefore not enough — on a surface
+   * whose contract we own, an unsupported model has to have it removed.
+   * A gateway keeps whatever it is configured with, as everywhere else here.
+   */
+  if (firstPartyEndpoint && !explicitCacheSupported && llmConfig.promptCacheExplicit === true) {
+    delete llmConfig.promptCacheExplicit;
   }
 
   if (!useOpenRouter) {
