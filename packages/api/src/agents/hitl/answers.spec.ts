@@ -1,5 +1,9 @@
-import { formatAgentMessages, messagesStateReducer } from '@librechat/agents';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
+import {
+  formatAgentMessages,
+  messagesStateReducer,
+  getMessagesWithinTokenLimit,
+} from '@librechat/agents';
 import {
   HumanMessage,
   AIMessage,
@@ -10,7 +14,7 @@ import {
 } from '@librechat/agents/langchain/messages';
 import {
   applyRetainedAnswers,
-  selectRetainedAnswerInvocationMessages,
+  prepareRetainedAnswerInvocationMessages,
   RETAINED_ANSWERS_MESSAGE_ID,
   buildRetainedAnswersContext,
   collectRetainedAnswers,
@@ -740,14 +744,18 @@ describe('applyRetainedAnswers', () => {
 });
 
 describe('retained answer lifecycle', () => {
-  test('replaces retained context over repeated serialized warm checkpoint turns', () => {
+  test('refreshes retained context at the newest position over repeated serialized warm checkpoint turns', async () => {
     let checkpoint: ReturnType<typeof messagesStateReducer> = [];
     const counter = (message: { content: unknown }) => String(message.content).length;
     for (let turn = 0; turn < 50; turn++) {
       const event = new HumanMessage({ id: `event-${turn}`, content: `event ${turn}` });
       const block = `answers for turn ${turn}`;
       const prepared = applyRetainedAnswers({ block, messages: [event], tokenCounter: counter });
-      const invocation = selectRetainedAnswerInvocationMessages(prepared.messages, turn > 0);
+      const invocation = await prepareRetainedAnswerInvocationMessages(
+        prepared.messages,
+        turn > 0,
+        async () => ({ values: { messages: checkpoint } }),
+      );
       checkpoint = messagesStateReducer(checkpoint, invocation);
       checkpoint = mapStoredMessagesToChatMessages(
         JSON.parse(JSON.stringify(mapChatMessagesToStoredMessages(checkpoint))),
@@ -755,10 +763,68 @@ describe('retained answer lifecycle', () => {
       const retained = checkpoint.filter((message) => message.id === RETAINED_ANSWERS_MESSAGE_ID);
       expect(retained).toHaveLength(1);
       expect(retained[0].content).toBe(block);
+      expect(checkpoint[checkpoint.length - 2]).toBe(retained[0]);
+      const pruned = getMessagesWithinTokenLimit({
+        messages: checkpoint,
+        maxContextTokens: counter(retained[0]) + counter(event) + 3,
+        indexTokenCountMap: Object.fromEntries(
+          checkpoint.map((message, index) => [index, counter(message)]),
+        ),
+        tokenCounter: counter,
+      });
+      expect(pruned.context.map((message) => message.content)).toContain(block);
+      if (turn > 1) expect(pruned.context.length).toBeLessThan(checkpoint.length);
       expect(checkpoint.filter((message) => message.id?.startsWith('event-'))).toHaveLength(
         turn + 1,
       );
     }
+  });
+
+  test('does not read cold/no-answer state and preserves warm state after read failure', async () => {
+    const event = new HumanMessage({ id: 'event', content: 'event' });
+    const read = jest.fn().mockRejectedValue(new Error('checkpoint unavailable'));
+    expect(await prepareRetainedAnswerInvocationMessages([event], false, read)).toEqual([event]);
+    expect(await prepareRetainedAnswerInvocationMessages([event], true, read)).toEqual([event]);
+    expect(read).not.toHaveBeenCalled();
+    const prepared = applyRetainedAnswers({
+      block: 'answers',
+      messages: [event],
+      tokenCounter: () => 10,
+    });
+    expect(await prepareRetainedAnswerInvocationMessages(prepared.messages, true, read)).toEqual([
+      event,
+    ]);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(
+      await prepareRetainedAnswerInvocationMessages(prepared.messages, true, async () => ({
+        values: {},
+      })),
+    ).toEqual([event]);
+  });
+
+  test('preserves checkpoint tool pairs and deduplicates a retried event during relocation', async () => {
+    const event = new HumanMessage({ id: 'event', content: 'event' });
+    const toolPair = [
+      new AIMessage({
+        id: 'call-message',
+        content: '',
+        tool_calls: [{ id: 'call', name: 'lookup', args: {} }],
+      }),
+      new ToolMessage({ id: 'result', content: 'result', tool_call_id: 'call' }),
+    ];
+    const prepared = applyRetainedAnswers({
+      block: 'answers',
+      messages: [event],
+      tokenCounter: () => 10,
+    });
+    const history = [...prepared.messages, ...toolPair];
+    const invocation = await prepareRetainedAnswerInvocationMessages(
+      prepared.messages,
+      true,
+      async () => ({ values: { messages: history } }),
+    );
+    expect(messagesStateReducer(history, invocation)).toEqual([...toolPair, ...prepared.messages]);
+    expect(history).toEqual([...prepared.messages, ...toolPair]);
   });
 
   test('rejects imported and caller-authored stamps while preserving exact HITL answer provenance', () => {

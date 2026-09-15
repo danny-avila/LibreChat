@@ -1,8 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { HumanMessage } from '@librechat/agents/langchain/messages';
-import { withMessageRole, getTokenCountForMessage } from '@librechat/agents';
+import { BaseMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import { Constants, ContentTypes, DEFAULT_RETAINED_ANSWER_TOKENS } from 'librechat-data-provider';
-import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import {
+  withMessageRole,
+  getTokenCountForMessage,
+  createRemoveAllMessage,
+} from '@librechat/agents';
 import type { TAskUserQuestionConfig } from 'librechat-data-provider';
 import type { TokenCounter } from '@librechat/agents';
 import type { EncodingName } from '~/utils/tokenizer';
@@ -15,7 +18,7 @@ import Tokenizer from '~/utils/tokenizer';
 export const RETAINED_ANSWER_ROW_FIELDS =
   'messageId parentMessageId content isCreatedByUser isUserSubmitted userSubmittedPaths userSubmittedMessageFieldPaths';
 
-/** Stable within one graph: the SDK reducer replaces this context on warm turns. */
+/** Identifies the one retained-context message when relocating warm checkpoint history. */
 export const RETAINED_ANSWERS_MESSAGE_ID = 'librechat:retained-answers';
 
 /** The fields the scan reads from a stored row or an in-memory message. */
@@ -480,7 +483,7 @@ export async function buildRetainedAnswersContext(
  * Exact counting is limited to retained context. The general prompt counter's
  * 4 KiB byte-estimate shortcut would discard answers that fit the token budget.
  * Initialize lazily so disabled retention and histories without answers cost no
- * tokenizer load. Reuse this counter when applying the block to the final prompt.
+ * tokenizer load. Runtime recounts use this same exact-counting implementation.
  */
 function countRetainedAnswerMessage(message: BaseMessage, encoding: EncodingName): number {
   const count = getTokenCountForMessage(
@@ -588,7 +591,7 @@ export async function prepareRetainedAnswers(
 /**
  * Apply after SDK summary slicing and replay. Keep a dedicated ordinary human
  * message so neither user text nor synthetic provenance is modified. Its stable
- * ID replaces the previous block in warm checkpoint state instead of accumulating
+ * ID lets warm invocation preparation relocate the block without accumulating
  * another copy. The caller's transcript remains unchanged for memory extraction.
  */
 export function applyRetainedAnswers({
@@ -656,14 +659,41 @@ export function applyRetainedAnswers({
   }
 }
 
-/** Warm invocations upsert the stable context as well as appending the new event. */
-export function selectRetainedAnswerInvocationMessages(
+/**
+ * Replace the message list from the exact warm checkpoint in one invocation.
+ * The SDK's ordinary ID replacement preserves the old position, so it cannot
+ * refresh recency. Its remove-all reducer command preserves the supplied
+ * transcript while moving retained context beside the new event. No checkpoint
+ * write occurs here, and cold/no-answer turns need no additional read.
+ */
+export async function prepareRetainedAnswerInvocationMessages(
   messages: BaseMessage[],
   warm: boolean,
-): BaseMessage[] {
+  readCheckpoint: () => Promise<{ values: unknown }>,
+): Promise<BaseMessage[]> {
   if (!warm) return messages;
   const latest = messages[messages.length - 1];
   if (latest == null) return [];
   const retained = messages.find((message) => message.id === RETAINED_ANSWERS_MESSAGE_ID);
-  return retained == null || retained === latest ? [latest] : [retained, latest];
+  if (retained == null || retained === latest) return [latest];
+  try {
+    const snapshot = await readCheckpoint();
+    const history = (snapshot.values as { messages?: unknown } | null)?.messages;
+    if (!Array.isArray(history) || !history.every(BaseMessage.isInstance)) {
+      throw new Error('Warm checkpoint messages unavailable');
+    }
+    return [
+      createRemoveAllMessage(),
+      ...history.filter(
+        (message) => message.id !== retained.id && (latest.id == null || message.id !== latest.id),
+      ),
+      retained,
+      latest,
+    ];
+  } catch (error) {
+    // Leave checkpoint state intact on read failure; never replace it with an
+    // incomplete transcript or fail the event solely for retained context.
+    logger.warn('[retainedAnswers] Warm context refresh unavailable', getSafeErrorMetadata(error));
+    return [latest];
+  }
 }

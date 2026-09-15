@@ -77,7 +77,7 @@ const {
   prepareRetainedAnswers,
   withRetainedAnswerTokenCounter,
   applyRetainedAnswers,
-  selectRetainedAnswerInvocationMessages,
+  prepareRetainedAnswerInvocationMessages,
   resolveRetainedAnswersConfig,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -5002,9 +5002,10 @@ class AgentClient extends BaseClient {
         /** The inherited tier must be on the job before any Stop can read it. */
         await this.publishRunContextMeta?.();
         try {
-          const invocationMessages = selectRetainedAnswerInvocationMessages(
+          const invocationMessages = await prepareRetainedAnswerInvocationMessages(
             messages,
             this.eventActorContinuation === 'warm',
+            () => run.graphRunnable.getState(config),
           );
           await run.processStream({ messages: invocationMessages }, config, {
             callbacks: {

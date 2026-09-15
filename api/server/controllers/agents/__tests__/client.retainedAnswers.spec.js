@@ -260,6 +260,7 @@ describe('AgentClient retained answers', () => {
       const processStream = jest.fn().mockResolvedValue();
       mockCreateRun.mockResolvedValueOnce({
         Graph: null,
+        graphRunnable: { getState: jest.fn().mockResolvedValue({ values: { messages: [] } }) },
         processStream,
         getCalibrationRatio: jest.fn(() => 0),
         getInterrupt: jest.fn(() => undefined),
