@@ -260,7 +260,7 @@ const ChatForm = memo(function ChatForm({
    *  collapsed batch is neither — it hands the composer back to the thread. */
   const composerReserved = answerMode.composerAnswers || answerMode.composerLocked;
 
-  useAutoSave({
+  const consumeDraft = useAutoSave({
     index,
     files,
     setFiles,
@@ -371,6 +371,7 @@ const ChatForm = memo(function ChatForm({
     [methods, setFiles, restoreComposerContext],
   );
   const steering = useSteering({
+    consumeDraft,
     index,
     conversationId,
     conversation,

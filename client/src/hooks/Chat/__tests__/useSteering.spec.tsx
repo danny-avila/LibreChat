@@ -5,6 +5,7 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } f
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
 import useSteering from '../useSteering';
@@ -106,6 +107,14 @@ function setup(params: HookParams = {}, initialize?: (snapshot: MutableSnapshot)
   const rendered = renderHook(
     () =>
       useSteering({
+        consumeDraft: () => {
+          const id = params.conversationId ?? CONVO_ID;
+          const conversationDraftId =
+            id === Constants.NEW_CONVO ? getNewConversationDraftId(0) : id;
+          clearAllDrafts(
+            params.isSubmitting === false ? conversationDraftId : getPendingDraftId(0),
+          );
+        },
         index: 0,
         conversationId: CONVO_ID,
         conversation: agentsConversation,
@@ -255,6 +264,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -1110,6 +1120,7 @@ describe('useSteering', () => {
       const { result } = renderHook(
         () => {
           useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -1314,6 +1325,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -1493,6 +1505,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         ({ convoId, isSubmitting }: { convoId: string; isSubmitting: boolean }) => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: convoId,
             conversation: agentsConversation,
@@ -2069,6 +2082,7 @@ describe('useSteering', () => {
       const { result, rerender } = renderHook(
         ({ conversationId }: { conversationId: string }) =>
           useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId,
             conversation: {
@@ -2129,6 +2143,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3090,6 +3105,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3292,6 +3308,7 @@ describe('useSteering', () => {
       const rendered = renderHook(
         () => ({
           steering: useSteering({
+            consumeDraft: jest.fn(),
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
@@ -3876,6 +3893,18 @@ describe('useSteering', () => {
         expect(localStorage.getItem(unrelatedKey)).toBe('other draft');
         unmount();
         getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
+      },
+    );
+
+    it.each([false, true])(
+      'delegates draft consumption to its owner only on acceptance (blocked=%s)',
+      (filesLoading) => {
+        const consumeDraft = jest.fn();
+        const { result } = setup({ filesLoading, consumeDraft });
+        act(() => {
+          expect(result.current.queueFromComposer('drafted text')).toBe(!filesLoading);
+        });
+        expect(consumeDraft).toHaveBeenCalledTimes(filesLoading ? 0 : 1);
       },
     );
 

@@ -38,9 +38,6 @@ import {
 import {
   appendAppliedSteerIds,
   carriedSteerContext,
-  clearAllDrafts,
-  getPendingDraftId,
-  getNewConversationDraftId,
   insertQueuedOrigin,
   mergeRestagedQuotes,
 } from '~/utils';
@@ -368,6 +365,8 @@ function reconcileServerQueuedTurns(
 }
 
 export interface UseSteeringParams {
+  /** Consume the actual storage key selected by the composer’s autosave owner. */
+  consumeDraft: () => void;
   index: number;
   conversationId: string;
   conversation: TConversation | null;
@@ -401,6 +400,7 @@ export interface UseSteeringParams {
  * (abort, then auto-send via the one-shot drain override).
  */
 export default function useSteering({
+  consumeDraft: takeComposerDraft,
   index,
   conversationId,
   conversation,
@@ -1224,16 +1224,6 @@ export default function useSteering({
       },
     [],
   );
-
-  /** Programmatic form reset emits no input event. Consume the same key
-   * useAutoSave selected: the pane's pending draft during a live submission,
-   * or the conversation draft during the handoff after FINAL. */
-  const takeComposerDraft = useCallback(() => {
-    const conversationDraftId =
-      conversationId === Constants.NEW_CONVO ? getNewConversationDraftId(index) : conversationId;
-    const draftId = isSubmitting ? getPendingDraftId(index) : conversationDraftId;
-    clearAllDrafts(draftId);
-  }, [index, isSubmitting, conversationId]);
 
   const removeQueued = useRecoilCallback(
     ({ set }) =>
