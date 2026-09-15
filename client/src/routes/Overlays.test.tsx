@@ -8,7 +8,14 @@ import Overlays from './Overlays';
 let mockIsMobile = true;
 jest.mock('@librechat/client', () => ({
   ...jest.requireActual('@librechat/client'),
-  useMediaQuery: () => mockIsMobile,
+  useMediaQuery: () =>
+    jest.requireActual('react').useSyncExternalStore(
+      (callback: () => void) => {
+        globalThis.window.addEventListener('resize', callback);
+        return () => globalThis.window.removeEventListener('resize', callback);
+      },
+      () => mockIsMobile,
+    ),
 }));
 
 function Windows({ initialOpen = false }: { initialOpen?: boolean }) {
@@ -64,8 +71,27 @@ function Windows({ initialOpen = false }: { initialOpen?: boolean }) {
   );
 }
 
-describe('mobile overlay history', () => {
+class MockCloseWatcher extends EventTarget {
+  static active = new Set<MockCloseWatcher>();
+
+  constructor() {
+    super();
+    MockCloseWatcher.active.add(this);
+  }
+
+  destroy() {
+    MockCloseWatcher.active.delete(this);
+  }
+
+  close() {
+    this.destroy();
+    this.dispatchEvent(new Event('close'));
+  }
+}
+
+describe('native mobile overlay dismissal', () => {
   let router: ReturnType<typeof createBrowserRouter>;
+  let navigation: EventTarget & { currentEntry: { index: number } };
 
   function mount(initialOpen = false) {
     window.history.replaceState({ key: 'before', idx: 0 }, '', '/before');
@@ -85,50 +111,80 @@ describe('mobile overlay history', () => {
 
   async function open() {
     fireEvent.click(screen.getByText('Open', { selector: 'button' }));
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('open'));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'outer' })).toBeVisible());
   }
 
-  async function back() {
+  function traverse({ forward = false, cancelable = true, sameDocument = true } = {}) {
+    navigation.currentEntry.index = window.history.state.idx;
+    const event = Object.assign(new Event('navigate', { cancelable }), {
+      navigationType: 'traverse',
+      destination: {
+        index: navigation.currentEntry.index + (forward ? 1 : -1),
+        sameDocument,
+      },
+    });
+    navigation.dispatchEvent(event);
+    return event;
+  }
+
+  async function back(options = {}) {
     await act(async () => {
-      window.history.back();
+      if (!traverse(options).defaultPrevented) window.history.back();
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
   }
 
+  async function forward() {
+    await act(async () => {
+      if (!traverse({ forward: true }).defaultPrevented) window.history.forward();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  }
+
+  async function nativeClose() {
+    await waitFor(() => expect(MockCloseWatcher.active.size).toBe(1));
+    act(() => [...MockCloseWatcher.active][0].close());
+  }
+
   beforeEach(() => {
     mockIsMobile = true;
+    MockCloseWatcher.active.clear();
+    navigation = Object.assign(new EventTarget(), { currentEntry: { index: 1 } });
+    Object.defineProperty(window, 'navigation', { configurable: true, value: navigation });
+    Object.defineProperty(window, 'CloseWatcher', { configurable: true, value: MockCloseWatcher });
   });
   afterEach(() => {
     router?.dispose();
   });
 
-  it('closes the overlay before navigating, preserving URL, draft and router state', async () => {
+  it('cancels supported Back without changing URL, draft, state or history length', async () => {
     mount();
+    const state = window.history.state;
+    const length = window.history.length;
     fireEvent.change(screen.getByLabelText('draft'), { target: { value: 'unsaved words' } });
     await open();
     await back();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
     expect(window.location.pathname).toBe('/c/chat');
-    expect(window.history.state.usr).toEqual({ preserved: true });
+    expect(window.history.state).toEqual(state);
+    expect(window.history.length).toBe(length);
     expect(screen.getByLabelText('draft')).toHaveValue('unsaved words');
     await back();
     await waitFor(() => expect(window.location.pathname).toBe('/before'));
   });
 
-  it('consumes the entry on explicit close without adding a dead back step', async () => {
+  it('closes explicitly without adding a dead Back step', async () => {
     mount();
     await open();
     fireEvent.click(screen.getByText('Close', { selector: 'button' }));
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
     await back();
     await waitFor(() => expect(window.location.pathname).toBe('/before'));
   });
 
-  it('closes nested windows one at a time with one guard entry', async () => {
+  it('closes nested windows one at a time without adding history', async () => {
     mount();
-    await open();
     const length = window.history.length;
+    await open();
     fireEvent.click(screen.getByText('Open nested'));
     await back();
     await waitFor(() =>
@@ -138,31 +194,36 @@ describe('mobile overlay history', () => {
     expect(window.history.length).toBe(length);
     await back();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
+    expect(window.history.length).toBe(length);
   });
 
-  it('orders initially open nested windows correctly under StrictMode', async () => {
+  it('uses one native watcher for initially open nested windows under StrictMode', async () => {
     mount(true);
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('open'));
-    await back();
+    await nativeClose();
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'inner' })).not.toBeInTheDocument(),
     );
     expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
+    await nativeClose();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(MockCloseWatcher.active.size).toBe(0));
   });
 
-  it('keeps a window that refuses dismissal and accepts a later close', async () => {
-    mount();
-    await open();
-    fireEvent.click(screen.getByText('Toggle refusal'));
-    await back();
-    expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('open'));
-    fireEvent.click(screen.getByText('Toggle refusal'));
-    await back();
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
-  });
+  it.each(['Back', 'native close'])(
+    'preserves controlled refusal of %s and accepts a later close',
+    async (method) => {
+      mount();
+      await open();
+      fireEvent.click(screen.getByText('Toggle refusal'));
+      const close = method === 'Back' ? back : nativeClose;
+      await close();
+      expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/c/chat');
+      fireEvent.click(screen.getByText('Toggle refusal'));
+      await close();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    },
+  );
 
   it('does not undo navigation issued in the same action as dismissal', async () => {
     mount();
@@ -174,16 +235,17 @@ describe('mobile overlay history', () => {
     expect(window.location.pathname).toBe('/c/chat');
   });
 
-  it('protects a window reopened while explicit-close traversal is pending', async () => {
+  it('protects a rapidly reopened window without scheduling a history traversal', async () => {
     mount();
+    const go = jest.spyOn(window.history, 'go');
+    const backSpy = jest.spyOn(window.history, 'back');
     await open();
     fireEvent.click(screen.getByText('Close', { selector: 'button' }));
     fireEvent.click(screen.getByText('Open', { selector: 'button' }));
-    await waitFor(() => expect(router.state.navigation.state).toBe('idle'));
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('open'));
-    await back();
+    await nativeClose();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
+    expect(go).not.toHaveBeenCalled();
+    expect(backSpy).not.toHaveBeenCalled();
   });
 
   it('does not add history or intercept navigation on desktop', async () => {
@@ -193,39 +255,70 @@ describe('mobile overlay history', () => {
     expect(window.history.state.key).toBe('chat');
     await back();
     await waitFor(() => expect(window.location.pathname).toBe('/before'));
+    expect(MockCloseWatcher.active.size).toBe(0);
+  });
+
+  it('preserves the open window and draft when crossing to desktop', async () => {
+    mount();
+    await open();
+    fireEvent.change(screen.getByLabelText('draft'), { target: { value: 'keep on resize' } });
+    await waitFor(() => expect(MockCloseWatcher.active.size).toBe(1));
+    act(() => {
+      mockIsMobile = false;
+      window.dispatchEvent(new Event('resize'));
+    });
+    await waitFor(() => expect(MockCloseWatcher.active.size).toBe(0));
+    expect(screen.getByRole('dialog', { name: 'outer' })).toBeVisible();
+    expect(screen.getByLabelText('draft')).toHaveValue('keep on resize');
+    expect(window.location.pathname).toBe('/c/chat');
+    act(() => {
+      mockIsMobile = true;
+      window.dispatchEvent(new Event('resize'));
+    });
+    await nativeClose();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('does not resurrect a dismissed window on Forward and protects a reopened one', async () => {
     mount();
     await open();
     await back();
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
-    await act(async () => {
-      await router.navigate(1);
-    });
+    await back();
+    await forward();
+    expect(window.location.pathname).toBe('/c/chat');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await open();
     await back();
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('skips an empty Forward entry when going Back again', async () => {
-    mount();
-    await open();
-    fireEvent.click(screen.getByText('Close', { selector: 'button' }));
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
-    await act(async () => {
-      await router.navigate(1);
-    });
     await back();
     await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
   });
 
-  it('does not reopen a window after a router remount and skips its abandoned base', async () => {
+  it.each(['explicit', 'Back', 'native close'])(
+    'preserves an existing Forward destination after %s dismissal',
+    async (method) => {
+      mount();
+      await act(async () => {
+        await router.navigate('/c/next');
+      });
+      await back();
+      await waitFor(() => expect(router.state.location.pathname).toBe('/c/chat'));
+      const length = window.history.length;
+      await open();
+      if (method === 'explicit') fireEvent.click(screen.getByText('Close', { selector: 'button' }));
+      else if (method === 'Back') await back();
+      else await nativeClose();
+      expect(window.history.length).toBe(length);
+      await forward();
+      await waitFor(() => expect(router.state.location.pathname).toBe('/c/next'));
+    },
+  );
+
+  it('does not reopen a window or leave ghost entries after a router remount', async () => {
     const view = mount();
     await open();
     view.unmount();
+    expect(MockCloseWatcher.active.size).toBe(0);
     router.dispose();
     router = createBrowserRouter([
       { element: <Overlays />, children: [{ path: '*', element: <Windows /> }] },
@@ -236,7 +329,7 @@ describe('mobile overlay history', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
   });
 
-  it('does not undo navigation while explicit-close traversal is pending', async () => {
+  it('does not undo navigation immediately following explicit close', async () => {
     mount();
     await open();
     fireEvent.click(screen.getByText('Close', { selector: 'button' }));
@@ -255,7 +348,7 @@ describe('mobile overlay history', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
   });
 
-  it('keeps Forward direction across consecutive abandoned REPLACE entries', async () => {
+  it('preserves Back and Forward across consecutive real REPLACEs', async () => {
     mount();
     for (const pathname of ['/c/next', '/c/third']) {
       await open();
@@ -266,10 +359,7 @@ describe('mobile overlay history', () => {
     }
     await back();
     await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
-    await act(async () => {
-      window.history.forward();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
+    await forward();
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/third'));
   });
 
@@ -283,7 +373,7 @@ describe('mobile overlay history', () => {
       expect(window.location.pathname).toBe('/c/stream-123');
       expect(router.state.location.pathname).toBe('/c/chat');
       await back();
-      await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(window.location.pathname).toBe('/c/stream-123');
       expect(window.location.search).toBe('?model=example');
       expect(router.state.location.pathname).toBe('/c/chat');
@@ -317,7 +407,7 @@ describe('mobile overlay history', () => {
     },
   );
 
-  it('keeps nested overlays through FINAL and consumes explicit close without a dead Back step', async () => {
+  it('keeps nested overlays through FINAL and closes explicitly without a dead Back step', async () => {
     mount();
     await open();
     fireEvent.click(screen.getByText('Open nested'));
@@ -332,14 +422,11 @@ describe('mobile overlay history', () => {
     );
     expect(screen.getByRole('dialog', { name: 'outer' })).toBeInTheDocument();
     fireEvent.click(screen.getByText('Close', { selector: 'button' }));
-    await waitFor(() => expect(window.history.state.librechatOverlay?.kind).toBe('closed'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(window.location.pathname).toBe('/c/stream-123');
     await back();
     await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
-    await act(async () => {
-      window.history.forward();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
+    await forward();
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/stream-123'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -356,5 +443,28 @@ describe('mobile overlay history', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(router.state.location.pathname).toBe(pathname);
+  });
+
+  it.each([{ cancelable: false }, { sameDocument: false }, { forward: true }])(
+    'does not intercept unsupported traversal: %o',
+    async (options) => {
+      mount();
+      await open();
+      const event = traverse(options);
+      expect(event.defaultPrevented).toBe(false);
+      expect(screen.getByRole('dialog', { name: 'outer' })).toBeVisible();
+    },
+  );
+
+  it('leaves normal Back available without native APIs', async () => {
+    Object.defineProperty(window, 'navigation', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'CloseWatcher', { configurable: true, value: undefined });
+    mount();
+    const length = window.history.length;
+    await open();
+    expect(window.history.length).toBe(length);
+    await back();
+    await waitFor(() => expect(router.state.location.pathname).toBe('/before'));
+    expect(MockCloseWatcher.active.size).toBe(0);
   });
 });

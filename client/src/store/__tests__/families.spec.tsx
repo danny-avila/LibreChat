@@ -161,12 +161,12 @@ describe('conversationByIndex URL mirroring', () => {
     expect(window.location.search).toContain('endpoint=openAI');
   });
 
-  it('preserves router and overlay metadata while mirroring a model edit', async () => {
+  it('preserves the complete history state while mirroring a model edit', async () => {
     const state = {
       key: 'chat-entry',
       idx: 3,
       usr: { draft: true },
-      librechatOverlay: { token: 'open-editor', kind: 'open' },
+      extra: { preserved: true },
     };
     window.history.replaceState(state, '', `/c/${Constants.NEW_CONVO}`);
     renderChat();

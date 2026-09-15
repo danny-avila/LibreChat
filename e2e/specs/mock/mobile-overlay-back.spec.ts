@@ -4,7 +4,6 @@ import type { AgentDetail } from './agents.helpers';
 import { cleanupAgent, openAgentBuilder, uniqueAgentName } from './agents.helpers';
 import {
   MOCK_ENDPOINTS,
-  NEW_CHAT_PATH,
   getAccessToken,
   messagesView,
   replyPrompt,
@@ -18,35 +17,54 @@ import {
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const DESKTOP_VIEWPORT = { width: 1280, height: 900 };
 
-function overlayToken(page: Page): Promise<string | null> {
+type NativeWatcher = EventTarget & { requestClose(): void; destroy(): void };
+type WatchedWindow = Window & {
+  CloseWatcher: new () => NativeWatcher;
+  overlayWatchers: Set<NativeWatcher>;
+};
+
+async function previousUrl(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const state = history.state as {
-      librechatOverlay?: { token: string; kind: string };
-    } | null;
-    return state?.librechatOverlay?.kind === 'open' ? state.librechatOverlay.token : null;
+    const { navigation } = window as Window & {
+      navigation: {
+        currentEntry: { index: number };
+        entries(): { index: number; url: string }[];
+      };
+    };
+    const previous = navigation
+      .entries()
+      .find((entry) => entry.index === navigation.currentEntry.index - 1);
+    if (!previous) throw new Error('The fixture must have a real previous history entry');
+    return previous.url;
   });
 }
 
 async function backClosesOverlay(page: Page, overlay: Locator, chatUrl: string): Promise<void> {
   await expect(overlay).toBeVisible();
-  await expect.poll(() => overlayToken(page)).toBeTruthy();
+  const historyBefore = await page.evaluate(() => ({
+    length: history.length,
+    state: history.state,
+  }));
   await page.evaluate(() => history.back());
   await expect(overlay).toBeHidden();
-  /** Wait for the close lifecycle to consume its entry, not just change the UI. */
-  await expect.poll(() => overlayToken(page)).toBeNull();
   await expect(page).toHaveURL(chatUrl);
+  expect(await page.evaluate(() => ({ length: history.length, state: history.state }))).toEqual(
+    historyBefore,
+  );
 }
 
 async function enterMobileChat(page: Page): Promise<void> {
   await page.setViewportSize(MOBILE_VIEWPORT);
   await expect(page.getByTestId('header-open-sidebar-button')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Message input', exact: true })).toBeVisible();
-  await expect.poll(() => overlayToken(page)).toBeNull();
 }
 
 async function prepareMockChat(page: Page, prompt: string): Promise<string> {
   await page.setViewportSize(DESKTOP_VIEWPORT);
-  await page.goto(NEW_CHAT_PATH);
+  /** Enter through a real SPA link so Back has a same-document destination. */
+  await page.goto('/search');
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new/);
   await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
   const response = await sendMessageAndWaitForCompletion(page, prompt);
   expect(response.ok()).toBeTruthy();
@@ -55,7 +73,7 @@ async function prepareMockChat(page: Page, prompt: string): Promise<string> {
   return page.url();
 }
 
-test.describe('mobile browser Back dismisses overlays before leaving chat', () => {
+test.describe('supported mobile Back dismisses overlays without changing history', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
   test('keeps the Agent instructions draft when Back closes the expanded editor', async ({
@@ -94,9 +112,7 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
   }) => {
     const label = 'mobile-settings-back';
     const chatUrl = await prepareMockChat(page, replyPrompt(label));
-    await page.goto('/search');
-    await page.goto(chatUrl);
-    await enterMobileChat(page);
+    const previous = await previousUrl(page);
     await page.getByTestId('header-open-sidebar-button').click();
     await page.getByTestId('nav-user').click();
     await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
@@ -105,7 +121,6 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
     const closeSettings = settings.getByRole('button', { name: 'Close Settings', exact: true });
     const list = settings.getByRole('tablist', { name: 'Settings', exact: true });
     await expect(list).toBeVisible();
-    await expect.poll(() => overlayToken(page)).toBeTruthy();
     await settings.getByRole('tab', { name: 'General', exact: true }).click();
     const detailBack = settings.getByRole('button', { name: 'Back', exact: true });
     await expect(detailBack).toBeVisible();
@@ -116,7 +131,6 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
     await expect(detailBack).toBeHidden();
     await expect(list).toBeVisible();
     await expect(closeSettings).toBeVisible();
-    await expect.poll(() => overlayToken(page)).toBeTruthy();
     await expect(page).toHaveURL(chatUrl);
 
     await backClosesOverlay(page, closeSettings, chatUrl);
@@ -124,7 +138,7 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
     await expect(messagesView(page).getByText(replyText(label), { exact: true })).toBeVisible();
     await expect(page).toHaveURL(chatUrl);
     await page.evaluate(() => history.back());
-    await expect(page).toHaveURL(/\/search$/);
+    await expect(page).toHaveURL(previous);
   });
 
   test('closes the Artifacts overlay and keeps the conversation and artifact available', async ({
@@ -158,7 +172,9 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
 
     try {
       await page.setViewportSize(DESKTOP_VIEWPORT);
-      await page.goto(NEW_CHAT_PATH);
+      await page.goto('/search');
+      await page.getByTestId('new-chat-button').click();
+      await expect(page).toHaveURL(/\/c\/new/);
       const token = await getAccessToken(page);
       const parentName = uniqueAgentName('E2E Back Parent');
       const childIds: string[] = [];
@@ -243,5 +259,109 @@ test.describe('mobile browser Back dismisses overlays before leaving chat', () =
         await cleanupAgent(page, agentId);
       }
     }
+  });
+
+  test('preserves Forward after explicit close and after Back, reopen, and dismissal', async ({
+    page,
+  }) => {
+    const chatUrl = await prepareMockChat(page, replyPrompt('forward-preserved'));
+    const previous = await previousUrl(page);
+    await page.getByTestId('header-new-chat-button').click();
+    await expect(page).toHaveURL(/\/c\/new/);
+    const nextUrl = page.url();
+    await page.goBack();
+    await expect(page).toHaveURL(chatUrl);
+    const length = await page.evaluate(() => history.length);
+
+    for (const explicit of [true, false]) {
+      await page.getByTestId('header-open-sidebar-button').click();
+      await page.getByTestId('nav-user').click();
+      await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+      const settings = page.getByRole('dialog');
+      const closeSettings = settings.getByRole('button', { name: 'Close Settings', exact: true });
+      await expect(closeSettings).toBeVisible();
+      if (explicit) {
+        await closeSettings.click();
+        await expect(closeSettings).toBeHidden();
+      } else {
+        await backClosesOverlay(page, closeSettings, chatUrl);
+      }
+      await page.getByTestId('close-sidebar-button').click();
+      expect(await page.evaluate(() => history.length)).toBe(length);
+      await page.goForward();
+      await expect(page).toHaveURL(nextUrl);
+      await page.goBack();
+      await expect(page).toHaveURL(chatUrl);
+    }
+    await page.goBack();
+    await expect(page).toHaveURL(previous);
+  });
+
+  test('native close requests dismiss one Settings layer at a time without history changes', async ({
+    page,
+  }) => {
+    /** Observe real native instances, rather than replacing their close-event behavior. */
+    await page.addInitScript(() => {
+      const browser = window as WatchedWindow;
+      const NativeCloseWatcher = browser.CloseWatcher;
+      browser.overlayWatchers = new Set();
+      browser.CloseWatcher = class extends NativeCloseWatcher {
+        constructor() {
+          super();
+          browser.overlayWatchers.add(this);
+          this.addEventListener('close', () => browser.overlayWatchers.delete(this));
+        }
+        destroy() {
+          browser.overlayWatchers.delete(this);
+          super.destroy();
+        }
+      };
+    });
+    const chatUrl = await prepareMockChat(page, replyPrompt('native-close'));
+    const historyBefore = await page.evaluate(() => ({
+      length: history.length,
+      state: history.state,
+    }));
+    await page.getByTestId('header-open-sidebar-button').click();
+    await page.getByTestId('nav-user').click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    const settings = page.getByRole('dialog');
+    await settings.getByRole('tab', { name: 'General', exact: true }).click();
+    await expect(settings.getByRole('tabpanel')).toBeVisible();
+    for (const detail of [true, false]) {
+      await expect
+        .poll(() => page.evaluate(() => (window as WatchedWindow).overlayWatchers.size))
+        .toBe(1);
+      await page.evaluate(() => [...(window as WatchedWindow).overlayWatchers][0].requestClose());
+      if (detail)
+        await expect(
+          settings.getByRole('tablist', { name: 'Settings', exact: true }),
+        ).toBeVisible();
+      else await expect(settings).toBeHidden();
+    }
+    await expect
+      .poll(() => page.evaluate(() => (window as WatchedWindow).overlayWatchers.size))
+      .toBe(0);
+    await expect(page).toHaveURL(chatUrl);
+    expect(await page.evaluate(() => ({ length: history.length, state: history.state }))).toEqual(
+      historyBefore,
+    );
+  });
+
+  test('leaves cross-document Back and Forward to the browser', async ({ page }) => {
+    const chatUrl = await prepareMockChat(page, replyPrompt('cross-document-back'));
+    await page.goto('/search');
+    await page.goto(chatUrl);
+    await enterMobileChat(page);
+    const length = await page.evaluate(() => history.length);
+    await page.getByTestId('header-open-sidebar-button').click();
+    await page.getByTestId('nav-user').click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Close Settings', exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/search$/);
+    await page.goForward();
+    await expect(page).toHaveURL(chatUrl);
+    expect(await page.evaluate(() => history.length)).toBe(length);
   });
 });
