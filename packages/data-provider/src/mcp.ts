@@ -109,6 +109,26 @@ const OAuthOptionsBaseSchema = z.object({
    * Ignored when `audience` itself is not configured.
    */
   forward_audience_on_refresh: z.boolean().optional(),
+  /**
+   * Whether to send the RFC 8707 `resource` parameter — taken from the MCP server's
+   * Protected Resource Metadata — on `/authorize` and on the token and refresh requests.
+   *
+   * Default: `true`. The MCP specification requires clients to send `resource` regardless
+   * of whether the authorization server supports it, and it is what binds the issued token
+   * to this MCP server as its audience.
+   *
+   * Set to `false` for authorization servers that reject the parameter outright. Microsoft
+   * Entra ID v2.0 rejects `resource` when combined with `scope` on `/authorize`
+   * (`AADSTS9010010`), failing the flow before the user reaches consent. Prefer `audience`
+   * when the provider wants a non-standard audience identifier rather than none at all.
+   *
+   * Opting out does not relax RFC 9728 §3.3 validation: Protected Resource Metadata is
+   * still discovered and still asserted to be bound to the MCP server URL. Only the
+   * outbound parameter is suppressed.
+   *
+   * Admin-only, like `audience`, and rejected from user-managed servers.
+   */
+  send_resource_parameter: z.boolean().optional(),
   /** OAuth revocation endpoint (optional - can be auto-discovered) */
   revocation_endpoint: z
     .string()
@@ -145,6 +165,7 @@ const userOAuthEndpointUrlSchema = z
 const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
   audience: true,
   forward_audience_on_refresh: true,
+  send_resource_parameter: true,
 })
   .extend({
     authorization_url: userOAuthEndpointUrlSchema.optional(),
@@ -153,6 +174,7 @@ const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
     revocation_endpoint: userOAuthEndpointUrlSchema.optional(),
     audience: z.never().optional(),
     forward_audience_on_refresh: z.never().optional(),
+    send_resource_parameter: z.never().optional(),
   })
   .superRefine(validateOAuthClientCredentials);
 

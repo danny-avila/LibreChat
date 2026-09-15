@@ -570,6 +570,166 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
   });
 
+  /**
+   * `oauth.send_resource_parameter: false` is the escape hatch for authorization servers
+   * that reject RFC 8707 `resource` outright — Microsoft Entra ID v2.0 answers
+   * `AADSTS9010010` when it arrives alongside `scope`. Opting out must suppress the
+   * parameter on every outbound request while leaving Protected Resource Metadata
+   * discovery and its RFC 9728 §3.3 binding assertion in place.
+   */
+  describe('RFC 8707 resource parameter opt-out', () => {
+    const entraConfig: MCPOptions['oauth'] = {
+      authorization_url: 'https://auth.example.com/oauth/authorize',
+      token_url: 'https://auth.example.com/oauth/token',
+      client_id: 'test-client-id',
+      client_secret: 'test-client-secret',
+      scope: 'api://test-client-id/access_as_user openid offline_access',
+    };
+    const protectedResourceMetadata = {
+      resource: mockServerUrl,
+      authorization_servers: ['https://auth.example.com'],
+    };
+
+    it('sends resource on the pre-configured path by default', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce(protectedResourceMetadata);
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        entraConfig,
+      );
+
+      expect(new URL(result.authorizationUrl).searchParams.get('resource')).toBe(mockServerUrl);
+      expect(result.flowMetadata.sendResourceParameter).toBe(true);
+    });
+
+    it('omits resource on the pre-configured path when opted out', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce(protectedResourceMetadata);
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        { ...entraConfig, send_resource_parameter: false },
+      );
+
+      expect(new URL(result.authorizationUrl).searchParams.has('resource')).toBe(false);
+      expect(result.flowMetadata.sendResourceParameter).toBe(false);
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
+    });
+
+    it('omits resource on the discovered path when opted out', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce(protectedResourceMetadata);
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'registered-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        { send_resource_parameter: false },
+      );
+
+      expect(new URL(result.authorizationUrl).searchParams.has('resource')).toBe(false);
+      expect(result.flowMetadata.sendResourceParameter).toBe(false);
+    });
+
+    it('omits resource from the authorization code exchange when the flow opted out', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: 123,
+          metadata: {
+            serverName: mockServerName,
+            userId: mockUserId,
+            serverUrl: mockServerUrl,
+            state: 'state-123',
+            codeVerifier: 'test-verifier',
+            clientInfo: { client_id: 'test-client-id' },
+            metadata: {},
+            resourceMetadata: protectedResourceMetadata,
+            sendResourceParameter: false,
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      mockExchangeAuthorization.mockResolvedValueOnce({
+        access_token: 'test-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+      );
+
+      expect(mockExchangeAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({ resource: undefined }),
+      );
+    });
+
+    it('omits resource from the refresh grant body when opted out', async () => {
+      const originalFetch = global.fetch;
+      const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+      global.fetch = mockFetch;
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'new-access-token', expires_in: 3600 }),
+      } as Response);
+
+      const refreshMetadata = {
+        serverName: mockServerName,
+        serverUrl: mockServerUrl,
+        clientInfo: { client_id: 'test-client-id', client_secret: 'test-client-secret' },
+        storedTokenEndpoint: 'https://auth.example.com/oauth/token',
+        storedAuthMethods: ['client_secret_post'],
+        resource: mockServerUrl,
+      };
+
+      try {
+        await MCPOAuthHandler.refreshOAuthTokens('refresh-token', refreshMetadata, {}, entraConfig);
+        const sent = mockFetch.mock.calls[0][1]?.body as URLSearchParams;
+        expect(sent.get('resource')).toBe(mockServerUrl);
+
+        mockFetch.mockClear();
+        await MCPOAuthHandler.refreshOAuthTokens(
+          'refresh-token',
+          refreshMetadata,
+          {},
+          {
+            ...entraConfig,
+            send_resource_parameter: false,
+          },
+        );
+        const opted = mockFetch.mock.calls[0][1]?.body as URLSearchParams;
+        expect(opted.has('resource')).toBe(false);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
   describe('Auto-discovered predefined clients', () => {
     it('should reject configured client_secret without client_id', async () => {
       await expect(
