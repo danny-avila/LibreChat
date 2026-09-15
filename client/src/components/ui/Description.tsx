@@ -18,9 +18,14 @@ const sanitizeMediaDescription = createConfigHtmlSanitizer({
   allowedAttr: CONFIG_HTML_MEDIA_ATTR,
 });
 const sanitizeDescriptionText = createConfigHtmlTextSanitizer();
+const descriptionHtmlTags = new Set<string>([
+  ...CONFIG_HTML_RICH_TEXT_TAGS,
+  ...CONFIG_HTML_MEDIA_TAGS,
+]);
 
 export function isHtmlDescription(description?: string | null): boolean {
-  return description?.trim().startsWith('<') ?? false;
+  const firstTag = description?.trim().match(/^<\s*\/?\s*([a-z][a-z0-9]*)\b/i)?.[1];
+  return firstTag ? descriptionHtmlTags.has(firstTag.toLowerCase()) : false;
 }
 
 export function getPlainDescription(description?: string | null): string {

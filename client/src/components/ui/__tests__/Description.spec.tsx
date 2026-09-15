@@ -72,4 +72,12 @@ describe('Description', () => {
 
     expect(screen.getByText('Use x < y safely')).toBeInTheDocument();
   });
+
+  it('preserves plain text that begins with an unsupported angle-bracketed term', () => {
+    const description = '<AI> assistant';
+    const { container } = render(<Description description={description} />);
+
+    expect(container).toHaveTextContent(description);
+    expect(getPlainDescription(description)).toBe(description);
+  });
 });
