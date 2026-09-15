@@ -135,10 +135,15 @@ jobs:
           # command into one shell string, and Linux rejects a single argv
           # string over 128 KiB (MAX_ARG_STRLEN) — past ~2,200 changed files
           # npx dies with exit 249 and no output.
+          # --pass-on-unpruned-suppressions: the @shadcn/lint design rules run at error
+          # against a recorded backlog in eslint-suppressions.json. Fixing one of those
+          # violations leaves its suppression unused, which otherwise fails the PR that
+          # fixed it; `npm run lint:design:prune` tightens the counts.
           node_modules/.bin/eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
             --no-warn-ignored \
             --max-warnings=0 \
+            --pass-on-unpruned-suppressions \
             -- "${CHANGED_FILES[@]}"
 
       # Run Prettier --check on the same set of changed files to catch
