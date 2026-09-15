@@ -13,6 +13,7 @@ import {
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
 import { cn } from '~/utils';
@@ -296,6 +297,7 @@ export default function ActivityPhaseGroup({
       <>
         <SearchVerticals attachments={attachments} />
         <AttachmentGroup attachments={attachments} />
+        <MCPAppViews attachments={attachments} />
       </>
     ) : null;
   if (!label) {

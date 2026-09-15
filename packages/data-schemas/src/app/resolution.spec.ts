@@ -69,6 +69,33 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(base, configs).filters).toEqual(base.filters);
   });
 
+  it('keeps MCP App sandbox limits at deployment scope', () => {
+    const base = {
+      mcpAppSandbox: {
+        url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+        maxSourcesPerDirective: 64,
+        maxSerializedLength: 8192,
+        maxAdmissionRequestsPerMinute: 480,
+      },
+    } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        {
+          mcpAppSandbox: {
+            url: 'https://user-sandbox.example.com/api/mcp/sandbox',
+            maxSourcesPerDirective: 128,
+            maxSerializedLength: 16384,
+            maxAdmissionRequestsPerMinute: 960,
+          },
+        },
+        10,
+        ['mcpAppSandbox.url', 'mcpAppSandbox.maxAdmissionRequestsPerMinute'],
+      ),
+    ];
+
+    expect(mergeConfigOverrides(base, configs).mcpAppSandbox).toEqual(base.mcpAppSandbox);
+  });
+
   it('applies tenant-wide Langfuse settings only from the base principal', () => {
     const configs = [
       fakeConfig(
