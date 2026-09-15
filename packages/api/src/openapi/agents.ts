@@ -10,7 +10,7 @@ import {
   agentManagementDeleteResponseSchema,
   agentManagementErrorSchema,
 } from '../agents/management';
-import { unauthorizedResponseSchema } from './errors';
+import { unauthorizedResponseSchema, accountDeletionResponseSchema } from './errors';
 
 const TAG = 'Agents';
 const SECURITY = ['oidcBearer'];
@@ -91,6 +91,11 @@ const errorResponses = [
   { status: 401, description: 'Authentication failed', schema: unauthorizedResponseSchema },
   { status: 403, description: 'Permission denied', schema: agentManagementErrorSchema },
   { status: 404, description: 'Not found', schema: agentManagementErrorSchema },
+  {
+    status: 409,
+    description: 'The bound account is being deleted',
+    schema: accountDeletionResponseSchema,
+  },
 ];
 
 export const agentContracts: EndpointContract[] = [
@@ -194,6 +199,11 @@ export const agentContracts: EndpointContract[] = [
     responses: [
       { status: 200, description: 'The uploaded file', schema: agentFileSchema },
       ...errorResponses,
+      {
+        status: 429,
+        description: 'Too many upload requests',
+        schema: agentManagementErrorSchema,
+      },
     ],
   },
   {

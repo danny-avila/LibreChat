@@ -11,7 +11,7 @@ import {
   skillFrontmatterValueSchema,
 } from '../skills/management';
 import { agentManagementListSchema, agentManagementErrorSchema } from '../agents/management';
-import { unauthorizedResponseSchema } from './errors';
+import { unauthorizedResponseSchema, accountDeletionResponseSchema } from './errors';
 
 const TAG = 'Skills';
 const SECURITY = ['oidcBearer'];
@@ -50,6 +50,11 @@ const errorResponses = [
   { status: 401, description: 'Authentication failed', schema: unauthorizedResponseSchema },
   { status: 403, description: 'Permission denied', schema: agentManagementErrorSchema },
   { status: 404, description: 'Not found', schema: agentManagementErrorSchema },
+  {
+    status: 409,
+    description: 'The bound account is being deleted',
+    schema: accountDeletionResponseSchema,
+  },
 ];
 
 export const skillContracts: EndpointContract[] = [
@@ -90,12 +95,13 @@ export const skillContracts: EndpointContract[] = [
     body: skillManagementUpdateSchema,
     responses: [
       { status: 200, description: 'The updated skill', schema: skillManagementResponseSchema },
+      ...errorResponses,
       {
         status: 409,
-        description: 'The skill changed since the provided expectedVersion',
-        schema: agentManagementErrorSchema,
+        description:
+          'The skill changed since the provided expectedVersion, or the bound account is being deleted',
+        schema: z.union([agentManagementErrorSchema, accountDeletionResponseSchema]),
       },
-      ...errorResponses,
     ],
   },
   {

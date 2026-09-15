@@ -1,4 +1,4 @@
-import { securitySchemes, componentSchemas, contracts } from './registry';
+import { securitySchemes, componentSchemas, componentSchemaOverrides, contracts } from './registry';
 import { buildOpenApiDocument } from './adapter';
 
 /** Stable document version, independent of the package version, so the artifact does not churn. */
@@ -22,6 +22,7 @@ export function buildAgentsOpenApiDocument(): Record<string, unknown> {
     ],
     securitySchemes,
     componentSchemas,
+    componentSchemaOverrides,
     contracts,
   });
 }

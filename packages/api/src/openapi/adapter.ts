@@ -51,6 +51,11 @@ export type OpenApiInput = {
   securitySchemes: Record<string, SecurityScheme>;
   /** Named schemas that become reusable `#/components/schemas` entries. */
   componentSchemas: Record<string, ZodTypeAny>;
+  /**
+   * Extra OpenAPI keywords merged into a generated component schema, keyed by component name.
+   * Use this for constraints the converter cannot express, such as an object-level `.refine()`.
+   */
+  componentSchemaOverrides?: Record<string, Record<string, unknown>>;
   contracts: EndpointContract[];
 };
 
@@ -116,6 +121,28 @@ function buildOperation(contract: EndpointContract): Record<string, unknown> {
   return operation;
 }
 
+/** Merge extra OpenAPI keywords into generated component schemas the converter built too loosely. */
+function applyComponentSchemaOverrides(
+  document: Record<string, unknown>,
+  overrides?: Record<string, Record<string, unknown>>,
+): void {
+  if (!overrides) {
+    return;
+  }
+  const components = document.components as
+    | { schemas?: Record<string, Record<string, unknown>> }
+    | undefined;
+  const schemas = components?.schemas;
+  if (!schemas) {
+    return;
+  }
+  for (const [name, extra] of Object.entries(overrides)) {
+    if (schemas[name]) {
+      Object.assign(schemas[name], extra);
+    }
+  }
+}
+
 export function buildOpenApiDocument(input: OpenApiInput): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const contract of input.contracts) {
@@ -132,5 +159,7 @@ export function buildOpenApiDocument(input: OpenApiInput): Record<string, unknow
     },
     paths,
   } as unknown as Parameters<typeof createDocument>[0];
-  return createDocument(spec) as unknown as Record<string, unknown>;
+  const document = createDocument(spec) as unknown as Record<string, unknown>;
+  applyComponentSchemaOverrides(document, input.componentSchemaOverrides);
+  return document;
 }

@@ -84,6 +84,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
+                }
+              }
+            }
           }
         }
       },
@@ -169,6 +179,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
+                }
+              }
+            }
           }
         }
       }
@@ -243,6 +263,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -331,6 +361,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
+                }
+              }
+            }
           }
         }
       },
@@ -403,6 +443,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -512,6 +562,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many upload requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -584,6 +654,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -670,6 +750,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -760,6 +850,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
+                }
+              }
+            }
           }
         }
       }
@@ -834,6 +934,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -924,11 +1034,18 @@
             }
           },
           "409": {
-            "description": "The skill changed since the provided expectedVersion",
+            "description": "The skill changed since the provided expectedVersion, or the bound account is being deleted",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AccountDeletionConflict"
+                    }
+                  ]
                 }
               }
             }
@@ -1006,6 +1123,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -1092,6 +1219,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -1186,6 +1323,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bound account is being deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionConflict"
                 }
               }
             }
@@ -2999,7 +3146,8 @@
         "required": [
           "expectedVersion"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "minProperties": 2
       },
       "SkillFile": {
         "type": "object",
@@ -3113,6 +3261,22 @@
         },
         "required": [
           "error"
+        ],
+        "additionalProperties": false
+      },
+      "AccountDeletionConflict": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
         ],
         "additionalProperties": false
       }
