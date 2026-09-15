@@ -1827,6 +1827,41 @@ export function anyAgentReplaysReasoningContent(
 }
 
 /**
+ * Stamps the deterministic `prompt_cache_key` onto one finished `AgentInputs`.
+ *
+ * `getOpenAILLMConfig` resolved whether the endpoint allows a key and withheld
+ * the marker when an administrator already settled one. The value can only be
+ * built here, and only once the input is final: the key names the prefix that
+ * is actually sent, and tools are still added and stripped after an input is
+ * first assembled — background-task tools are registered on the parent, and
+ * isolated children drop background and intent definitions they inherited.
+ * Hashing earlier would let two different wire prefixes share one identity.
+ *
+ * Keyed on prompt identity and never on the conversation, so two chats — and
+ * two users — that share a prefix reach one cache entry rather than each
+ * writing their own.
+ */
+function finalizePromptCacheKey(input: AgentInputs): void {
+  const options = input.clientOptions as
+    | (Partial<t.OAIClientOptions> & { response_format?: unknown; text?: { format?: unknown } })
+    | undefined;
+  if (options == null) {
+    return;
+  }
+  if (options.promptCacheKeyEnabled === true && options.promptCacheKey == null) {
+    const { graphTools } = input as AgentInputs & { graphTools?: GenericTool[] };
+    options.promptCacheKey = buildPromptCacheKey({
+      model: options.model,
+      instructions: input.instructions,
+      boundTools: [...(input.toolDefinitions ?? []), ...(graphTools ?? []), ...(input.tools ?? [])],
+      responseSchema: options.response_format,
+      responsesTextFormat: options.text?.format,
+    });
+  }
+  delete options.promptCacheKeyEnabled;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit eager children and inert lazy descriptors. Returns an empty array
  * when subagents are disabled or no spawn targets are available.
@@ -1865,6 +1900,7 @@ function buildIsolatedAgentInputs(
       child.intentToolNames,
     );
   }
+  finalizePromptCacheKey(childInputs);
   return childInputs;
 }
 
@@ -2567,35 +2603,6 @@ export async function createRun({
     if (runFilesActive && runFiles != null && (isSubagent || agent.subagents?.enabled === true)) {
       graphTools = [...(graphTools ?? []), ...createRunFileTools(runFiles, agent.id, signal)];
     }
-    /**
-     * Deterministic `prompt_cache_key`, first-party OpenAI and Azure only.
-     * `getOpenAILLMConfig` resolved whether the endpoint allows one and
-     * withholds the marker when an administrator already settled the key, so
-     * a configured value is never synthesized over.
-     *
-     * Built last, below the run-file tools, because the key names the prefix
-     * that is actually sent: the SDK binds schema-only definitions, graph
-     * tools and provider-native specs together, so all three have to be
-     * assembled before they can be hashed. Keyed on prompt identity and never
-     * on the conversation, so two chats — and two users — that share a prefix
-     * reach one cache entry instead of each writing their own. `llmConfig` is
-     * the object `agentInput.clientOptions` already holds.
-     */
-    const cacheOptions = llmConfig as Partial<t.OAIClientOptions> & {
-      response_format?: unknown;
-      text?: { format?: unknown };
-    };
-    if (cacheOptions.promptCacheKeyEnabled === true && cacheOptions.promptCacheKey == null) {
-      cacheOptions.promptCacheKey = buildPromptCacheKey({
-        model: cacheOptions.model,
-        instructions: systemContent,
-        boundTools: [...toolDefinitions, ...(graphTools ?? []), ...(tools ?? [])],
-        responseSchema: cacheOptions.response_format,
-        responsesTextFormat: cacheOptions.text?.format,
-      });
-    }
-    delete cacheOptions.promptCacheKeyEnabled;
-
     if (graphTools) {
       /**
        * Typed structurally — not as `AgentInputs['graphTools']` — because the
@@ -2683,6 +2690,8 @@ export async function createRun({
         ),
       }).toolDefinitions;
     }
+    /** Last, so the background-task tools registered just above are named. */
+    finalizePromptCacheKey(agentInput);
     agentInputs.push(agentInput);
   }
 

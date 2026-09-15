@@ -2015,6 +2015,23 @@ describe('prompt caching', () => {
     expect(supported.llmConfig.promptCacheExplicit).toBe(true);
   });
 
+  it.each(['addParams', 'defaultParams'] as const)(
+    'strips explicit cache controls an unsupported model received through %s',
+    (source) => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-4o' },
+        [source]: { promptCacheExplicit: true },
+      });
+
+      /** A known parameter reaches `llmConfig` directly, so the gate must
+       *  remove it rather than merely decline to add it. */
+      expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    },
+  );
+
   it('keeps explicit cache controls off unless asked for', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
