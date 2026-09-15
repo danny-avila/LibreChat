@@ -558,6 +558,18 @@ describe('MCP schemas', () => {
       expect(result.success).toBe(false);
     });
 
+    it('should reject send_resource_parameter from user-managed OAuth configuration', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          send_resource_parameter: false,
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
     it('should reject audience query parameters in user-managed OAuth authorization URLs', () => {
       const result = MCPServerUserInputSchema.safeParse({
         type: 'streamable-http',
@@ -748,6 +760,36 @@ describe('MCP schemas', () => {
       expect(result.success).toBe(true);
       if (result.success && result.data.oauth) {
         expect(result.data.oauth.forward_audience_on_refresh).toBe(false);
+      }
+    });
+
+    it('should accept send_resource_parameter = false (Entra opt-out)', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          send_resource_parameter: false,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.send_resource_parameter).toBe(false);
+      }
+    });
+
+    it('should treat send_resource_parameter as optional', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          client_id: 'client-id',
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.send_resource_parameter).toBeUndefined();
       }
     });
 

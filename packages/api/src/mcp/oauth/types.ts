@@ -106,6 +106,12 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   clientSource?: OAuthClientSource;
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
+  /**
+   * Whether the token exchange may send RFC 8707 `resource`, captured at flow initiation from
+   * `oauth.send_resource_parameter`. The callback has no server config, and a flow started
+   * before this field existed reads as `undefined`, which keeps the parameter.
+   */
+  sendResourceParameter?: boolean;
   authorizationUrl?: string;
   /** Custom headers for OAuth token exchange, persisted at flow initiation for the callback. */
   oauthHeaders?: Record<string, string>;
