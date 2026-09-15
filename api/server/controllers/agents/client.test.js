@@ -107,7 +107,7 @@ describe('AgentClient code approval persistence', () => {
       endpoint: EModelEndpoint.agents,
       agent: { id: 'attached-agent' },
       req: {
-        body: {},
+        body: { conversationId: 'convo-1' },
         _codeEnvironmentDecision: {
           mode: 'attached',
           codeWorkspaces: [{ environmentId: 'mac', workspaceId: 'primary' }],
@@ -135,7 +135,7 @@ describe('AgentClient code approval persistence', () => {
       endpoint: EModelEndpoint.agents,
       agent: { id: 'attached-agent' },
       req: {
-        body: {},
+        body: { conversationId: 'convo-1' },
         _codeEnvironmentDecision: { mode: 'attached', codeWorkspaces },
         resolvedConversation: { conversationId: 'convo-1', codeWorkspaces },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
