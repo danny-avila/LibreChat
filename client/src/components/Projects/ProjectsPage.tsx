@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { BKL_APP_TITLE } from '~/components/Bkl/brand';
 import {
+  AlertTriangle,
   ExternalLink,
   Folder,
   FolderOpen,
@@ -38,6 +39,7 @@ import {
 import type { ProjectDocument } from '~/data-provider/Projects';
 import { clearMessagesCache, cn } from '~/utils';
 import { stripDisplayExtension } from '~/utils/fileTypeIcon';
+import HarveySyncPanel from './HarveySyncPanel';
 
 /** 프로젝트(Vault류) 페이지 — 좌측 프로젝트 목록 + 우측 문서 테이블. */
 const ProjectsPage: React.FC = () => {
@@ -141,9 +143,8 @@ const ProjectsPage: React.FC = () => {
               )}
             </div>
 
-            {/* Harvey 연동 준비 안내 — 연동 오픈 시 제거 */}
             <p className="-mt-3 mb-6 text-xs leading-relaxed text-text-secondary">
-              Harvey(하비) 연동을 준비 중입니다. 프로젝트에 담은 문서는 연동 후 Harvey로 보낼 수
+              프로젝트에 담은 문서는 Harvey(하비) Vault로 보내 Harvey에서 이어서 검토할 수
               있습니다.
             </p>
 
@@ -292,7 +293,7 @@ const EmptyProjects: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
     <p className="max-w-md text-xs leading-relaxed text-text-secondary">
       채팅 답변의 출처 패널이나 문서 검색 결과에서 문서를 담아 프로젝트로 관리할 수 있습니다.
       <br />
-      Harvey(하비) 연동을 준비 중입니다 — 연동 후 담은 문서를 Harvey로 보낼 수 있습니다.
+      담은 문서는 Harvey(하비) Vault로 보낼 수 있습니다.
     </p>
     <Button type="button" size="sm" className="mt-2 gap-1.5" onClick={onCreate}>
       <Plus className="h-4 w-4" aria-hidden="true" />새 프로젝트 만들기
@@ -476,6 +477,8 @@ const ProjectDetailPanel: React.FC<{
         </Button>
       </div>
 
+      <HarveySyncPanel project={project} />
+
       {project.documents.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-4 py-14 text-center">
           <MessageSquareText
@@ -614,6 +617,14 @@ const ProjectDocRow: React.FC<{
           {stripDisplayExtension(doc.file_name) || doc.doc_id}
         </p>
         {doc.matter_uid && <p className="truncate text-xs text-text-tertiary">{doc.matter_uid}</p>}
+        {/* Harvey 전송에서 빠진 문서는 여기서 알려준다 — 상단 패널은 건수만 보여주므로
+            어느 문서가 문제인지 알 수 없다. */}
+        {doc.harvey_sync_error && !doc.harvey_file_id && (
+          <p className="flex items-center gap-1 truncate text-xs text-amber-600 dark:text-amber-500">
+            <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
+            Harvey 전송 실패: {doc.harvey_sync_error}
+          </p>
+        )}
       </div>
       <span className="hidden w-20 text-xs text-text-secondary sm:block">
         {doc.origin ? ORIGIN_LABEL[doc.origin] ?? doc.origin : ''}

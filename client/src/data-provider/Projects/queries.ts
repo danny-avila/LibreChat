@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 import type {
   AddDocumentsResult,
+  HarveySyncStarted,
   ProjectDetail,
   ProjectDocumentInput,
   ProjectSummary,
@@ -77,12 +78,22 @@ export function useProjects(): UseQueryResult<ProjectSummary[], Error> {
   });
 }
 
+/**
+ * Harvey 동기화가 도는 동안에는 상세를 폴링한다.
+ *
+ * 동기화는 202 로 즉시 반환하고 백그라운드에서 돌기 때문에 완료 시점을 알려주는
+ * 신호가 없다. 조직 합산 분당 10회 레이트 리밋 때문에 문서가 많으면 수 분이
+ * 걸리므로, 진행 중일 때만 5초 간격으로 다시 물어보고 끝나면 멈춘다.
+ */
+const HARVEY_POLL_MS = 5_000;
+
 export function useProject(projectId: string | null): UseQueryResult<ProjectDetail, Error> {
   return useQuery<ProjectDetail, Error>({
     queryKey: projectQueryKey(projectId ?? ''),
     queryFn: () => request<ProjectDetail>(`/${projectId}`),
     enabled: Boolean(projectId),
     retry: retryOnServerErrorOnly,
+    refetchInterval: (data) => (data?.harvey_sync_status === 'syncing' ? HARVEY_POLL_MS : false),
   });
 }
 
@@ -162,6 +173,26 @@ export function useRemoveProjectDocuments(): UseMutationResult<
         method: 'DELETE',
         body: { doc_ids: docIds },
       }),
+    onSuccess: (_data, { projectId }) => invalidate(projectId),
+  });
+}
+
+/**
+ * 프로젝트를 Harvey Vault 로 보낸다.
+ *
+ * 서버는 202 만 주고 실제 업로드는 백그라운드에서 돈다. 그래서 mutation 성공은
+ * "동기화가 끝났다"가 아니라 "시작됐다"는 뜻이고, 진행 상황은 useProject 의
+ * 폴링으로 따라간다.
+ */
+export function useHarveySync(): UseMutationResult<
+  HarveySyncStarted,
+  Error,
+  { projectId: string }
+> {
+  const invalidate = useInvalidateProjects();
+  return useMutation({
+    mutationFn: ({ projectId }) =>
+      request<HarveySyncStarted>(`/${projectId}/harvey-sync`, { method: 'POST' }),
     onSuccess: (_data, { projectId }) => invalidate(projectId),
   });
 }
