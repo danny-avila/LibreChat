@@ -111,7 +111,7 @@ const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
   TRUST_TENANT_HEADER: 'true',
-  OPENAI_API_KEY: 'user_provided',
+  OPENAI_API_KEY: 'e2e-mock-openai-key',
   OPENID_CLIENT_ID: '',
   OPENID_ISSUER: '',
   OPENID_AUTO_REDIRECT: 'false',

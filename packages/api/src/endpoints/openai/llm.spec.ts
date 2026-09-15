@@ -2027,7 +2027,7 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
   });
 
-  it('routes an administrator-supplied cache key to the client field, not modelKwargs', () => {
+  it('leaves an administrator-supplied cache key untouched by later synthesis', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
       streaming: true,
@@ -2039,6 +2039,8 @@ describe('prompt caching', () => {
     expect(result.llmConfig.promptCacheKey).toBe('tenant-fixed-key');
     expect(result.llmConfig.promptCacheRetention).toBe('24h');
     expect(result.llmConfig.modelKwargs).toBeUndefined();
+    /** `createRun` synthesizes only on this marker, so the pinned key survives. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
   });
 
   it('lets dropParams remove the cache controls it added', () => {
@@ -2055,6 +2057,34 @@ describe('prompt caching', () => {
 
     expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
     expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    /** Dropping the key must also withhold the marker, or `createRun` recreates it. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
+  it('honors explicit caching for an Azure alias whose deployment is a supported model', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-azure-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      azure: { ...azure, azureOpenAIApiDeploymentName: 'gpt-5-6' },
+      modelOptions: { model: 'production-chat' },
+      promptCacheExplicit: true,
+    });
+
+    expect(result.llmConfig.promptCacheExplicit).toBe(true);
+  });
+
+  it('withholds explicit caching when neither the alias nor its deployment is supported', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-azure-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      azure: { ...azure, azureOpenAIApiDeploymentName: 'gpt-4o-prod' },
+      modelOptions: { model: 'production-chat' },
+      promptCacheExplicit: true,
+    });
+
     expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
   });
 });
