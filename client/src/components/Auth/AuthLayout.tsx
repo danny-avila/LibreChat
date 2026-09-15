@@ -1,7 +1,8 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
-import { BKL_APP_TITLE, BKL_TAGLINE } from '~/components/Bkl/brand';
+import { BKL_TAGLINE } from '~/components/Bkl/brand';
+import PrismWordmark from '~/components/Bkl/PrismWordmark';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
@@ -40,7 +41,10 @@ function AuthLayout({
         <div className="mx-auto sm:max-w-sm">
           <ErrorMessage>
             {localize('com_auth_error_invalid_reset_token')}{' '}
-            <a className="font-semibold text-gray-800 hover:underline dark:text-gray-200" href="/forgot-password">
+            <a
+              className="font-semibold text-gray-800 hover:underline dark:text-gray-200"
+              href="/forgot-password"
+            >
               {localize('com_auth_click_here')}
             </a>{' '}
             {localize('com_auth_to_try_again')}
@@ -61,25 +65,13 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        {/* BKL Prism 로그인 락업. 법인 마크(teal 글자·투명 배경)는 그대로 두고
-            서비스명 Prism 만 스펙트럼으로 얹는다 — 브랜드 정의의 워드마크가
-            `BKL`(본문색) + `Prism`(그라디언트) 구성이라 로고가 앞의 BKL 을
-            대신한다. 아래 스펙트럼 선은 이름의 유래(백색광→스펙트럼)를
-            한 줄로 보여주는 유일한 장식이다. */}
+        {/* BKL Prism 로그인 락업 — 사이드바·헤더와 같은 텍스트 워드마크를 쓴다.
+            법인 마크 이미지를 'Prism' 글자 옆에 세웠을 때 로고의 글자 베이스라인이
+            이미지 경계와 달라 정렬이 눈에 띄게 어긋났다. 둘을 한 줄의 텍스트로
+            두면 베이스라인이 하나라 어긋날 여지가 없고, 표기도 다른 화면과 같아진다.
+            아래 스펙트럼 선은 이름의 유래(백색광→스펙트럼)를 보여주는 유일한 장식이다. */}
         <div className="mt-8 flex w-full flex-col items-center gap-3">
-          <div className="flex h-12 items-end gap-2.5">
-            <img
-              src="assets/bkl-logo-brand.png"
-              className="h-full w-auto object-contain"
-              alt={localize('com_ui_logo', { 0: BKL_APP_TITLE })}
-            />
-            <span
-              aria-hidden="true"
-              className="prism-spectrum-text pb-0.5 text-3xl font-semibold leading-none tracking-tight"
-            >
-              Prism
-            </span>
-          </div>
+          <PrismWordmark className="text-4xl font-semibold leading-none tracking-tight text-black dark:text-white" />
           <hr className="prism-rule w-40 max-w-[70vw]" aria-hidden="true" />
           <p className="text-sm text-text-secondary">{BKL_TAGLINE}</p>
         </div>
