@@ -17,6 +17,7 @@ type MockUploadMutationOptions = {
       filename: string;
       source: string;
       embedded: boolean;
+      llmDeliveryPath?: string;
       height?: number;
       width?: number;
     },
@@ -1563,6 +1564,45 @@ describe('useFileHandling', () => {
       });
 
       expect(onSuccess).toHaveBeenCalledWith(fileId);
+    });
+
+    it('keeps the upload delivery path on the completed attachment', async () => {
+      jest.useFakeTimers();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['hello'], 'notes.docx', {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          }),
+        ]);
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: uploadBody.get('file_id') as string,
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.docx',
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'notes.docx',
+            source: 'local',
+            embedded: false,
+            llmDeliveryPath: 'text',
+          },
+          uploadBody,
+        );
+        jest.runAllTimers();
+      });
+      jest.useRealTimers();
+
+      const [, completion] = mockUpdateFileById.mock.calls.at(-1) as [
+        string,
+        { llmDeliveryPath?: string },
+      ];
+      expect(completion.llmDeliveryPath).toBe('text');
     });
 
     it('resolves false when every file fails preprocessing', async () => {

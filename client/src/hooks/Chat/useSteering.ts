@@ -40,11 +40,13 @@ import {
   clearAllDrafts,
   getPendingDraftId,
   insertQueuedOrigin,
+  hydrateFileDeliveryMetadata,
   mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
 import { useSetFilesToDelete } from '~/hooks/Files';
+import { useFileMapContext } from '~/Providers';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
@@ -259,6 +261,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
         ...(file.type != null && { type: file.type }),
         ...(file.filepath != null && { filepath: file.filepath }),
         ...(file.filename != null && { filename: file.filename }),
+        ...(file.llmDeliveryPath != null && { llmDeliveryPath: file.llmDeliveryPath }),
         ...(file.height != null && { height: file.height }),
         ...(file.width != null && { width: file.width }),
         ...(file.bytes != null && { bytes: file.bytes }),
@@ -268,11 +271,14 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
   return refs.length > 0 ? refs : undefined;
 }
 
+export { hydrateFileDeliveryMetadata as mergeQueuedTurnFileMetadata } from '~/utils/files';
+
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
   settledByRequestId: ReadonlyMap<string, SettledQueuedTurnReceipt>,
   authoritativeSnapshot = true,
+  storedFiles?: Parameters<typeof hydrateFileDeliveryMetadata>[2],
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
     previous.flatMap((item) =>
@@ -305,6 +311,7 @@ function reconcileServerQueuedTurns(
     } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
       status = receipt.status;
     }
+    const files = hydrateFileDeliveryMetadata(receipt.files, optimistic?.files, storedFiles);
     return [
       {
         id: optimistic?.id ?? receipt.clientRequestId,
@@ -315,7 +322,7 @@ function reconcileServerQueuedTurns(
         ...(receipt.expectedPredecessorCreatedAt != null && {
           expectedPredecessorCreatedAt: receipt.expectedPredecessorCreatedAt,
         }),
-        ...(receipt.files != null && receipt.files.length > 0 && { files: receipt.files }),
+        ...(files != null && files.length > 0 && { files }),
         ...(receipt.quotes != null && receipt.quotes.length > 0 && { quotes: receipt.quotes }),
         ...(receipt.manualSkills != null &&
           receipt.manualSkills.length > 0 && {
@@ -411,6 +418,7 @@ export default function useSteering({
 }: UseSteeringParams) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const fileMap = useFileMapContext();
   const setFilesToDelete = useSetFilesToDelete();
   const convertSteersToQueued = useSteerConvert();
   /** `mutate` is a stable callback; the mutation result objects are fresh
@@ -525,11 +533,12 @@ export default function useSteering({
               receipts,
               terminalForReconciliation,
               source === 'snapshot',
+              fileMap,
             ),
           );
         }
       },
-    [queueKey],
+    [fileMap, queueKey],
   );
 
   const finishQueuedTurnEnqueue = useRecoilCallback(
@@ -1095,6 +1104,7 @@ export default function useSteering({
       // the attachment into the composer with its real name and size.
       filename: file.filename,
       bytes: file.size,
+      llmDeliveryPath: file.llmDeliveryPath,
     }));
     setFiles(new Map());
     setFilesToDelete({});

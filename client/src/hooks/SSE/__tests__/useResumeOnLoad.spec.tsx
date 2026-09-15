@@ -16,6 +16,11 @@ const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
 const mockUseAgentQueuedTurns = jest.fn();
 const mockExtendActiveJobsGrace = jest.fn();
+let mockFileMap: Record<string, { llmDeliveryPath?: 'provider' | 'text' | 'none' }> = {};
+
+jest.mock('~/Providers', () => ({
+  useFileMapContext: () => mockFileMap,
+}));
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
@@ -213,6 +218,7 @@ describe('useResumeOnLoad', () => {
     mockUseAgentQueuedTurns.mockReset();
     mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1 });
     mockExtendActiveJobsGrace.mockReset();
+    mockFileMap = {};
   });
 
   afterEach(() => {
