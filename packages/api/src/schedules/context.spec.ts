@@ -110,14 +110,14 @@ it('restores a paused run from job identity without trusting resume body fields'
     _isScheduledFire: true,
     body: { scheduleId: 'spoofed', agent_id: 'spoofed' },
   };
-  restoreScheduledTokenContext(req, {
+  const restored = restoreScheduledTokenContext(req, {
     userId: 'owner',
     tenantId: 'tenant',
     scheduleId: 'schedule',
     agent_id: 'root-agent',
   });
   const resolve = jest.fn().mockResolvedValue(jest.fn());
-  await createScheduleUpstreamTokenProviderResolver(req, resolve)!({ target });
+  await createScheduleUpstreamTokenProviderResolver(req, resolve, undefined, restored)!({ target });
   expect(resolve).toHaveBeenCalledWith(user, { signal: undefined, context, target });
   expect(JSON.stringify(req)).not.toContain('root-agent');
 });
@@ -144,7 +144,7 @@ it.each([{ agent_id: undefined }, { tenantId: undefined }])(
   'leaves legacy job context absent for %j',
   async (override) => {
     const req = { user, _isScheduledFire: true };
-    restoreScheduledTokenContext(req, {
+    const restored = restoreScheduledTokenContext(req, {
       userId: 'owner',
       tenantId: 'tenant',
       scheduleId: 'schedule',
@@ -152,7 +152,7 @@ it.each([{ agent_id: undefined }, { tenantId: undefined }])(
       ...override,
     });
     const resolve = jest.fn().mockResolvedValue(jest.fn());
-    await createScheduleUpstreamTokenProviderResolver(req, resolve)!();
+    await createScheduleUpstreamTokenProviderResolver(req, resolve, undefined, restored)!();
     expect(resolve).toHaveBeenCalledWith(user, { signal: undefined });
   },
 );

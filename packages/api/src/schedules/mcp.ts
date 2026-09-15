@@ -47,7 +47,6 @@ import {
 import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServersRegistry';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { isScheduleFireRequest, readScheduleFireContext } from './trigger';
-import { getRestoredScheduledTokenContext } from './context';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
 import { OboTokenResolutionError } from '../mcp/oauth/obo';
@@ -58,8 +57,17 @@ import { checkAccess } from '../middleware/access';
 import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
 
+export interface ScheduledTokenIdentity {
+  readonly id: string;
+  readonly tenantId?: string;
+  readonly role?: string;
+  readonly provider?: string;
+  readonly openidId?: string;
+  readonly openidIssuer?: string;
+}
+
 export type HostUpstreamTokenProviderResolver = (
-  user: IUser,
+  user: ScheduledTokenIdentity,
   options: {
     signal?: AbortSignal;
     context?: ScheduledTokenContext;
@@ -69,7 +77,7 @@ export type HostUpstreamTokenProviderResolver = (
 
 /** Bind a credential lookup to the trusted principal and owning run's cancellation. */
 export function bindUpstreamTokenProviderResolver(
-  user: IUser,
+  user: ScheduledTokenIdentity,
   resolve: HostUpstreamTokenProviderResolver | undefined,
   signal?: AbortSignal,
   context?: ScheduledTokenContext,
@@ -106,13 +114,14 @@ export function bindUpstreamTokenProviderResolver(
 }
 
 export function createScheduleUpstreamTokenProviderResolver(
-  req: Parameters<typeof isScheduleFireRequest>[0] & { user: IUser },
+  req: Parameters<typeof isScheduleFireRequest>[0] & { user: ScheduledTokenIdentity },
   resolve: HostUpstreamTokenProviderResolver | undefined,
   signal?: AbortSignal,
+  restoredContext?: ScheduledTokenContext,
 ): UpstreamTokenProviderResolver | undefined {
   if (!isScheduleFireRequest(req)) return undefined;
-  const restored = getRestoredScheduledTokenContext(req);
-  if (restored) return bindUpstreamTokenProviderResolver(req.user, resolve, signal, restored);
+  if (restoredContext)
+    return bindUpstreamTokenProviderResolver(req.user, resolve, signal, restoredContext);
   const fire = readScheduleFireContext(req);
   const agentId = req.body?.agent_id;
   const context: ScheduledTokenContext | undefined =

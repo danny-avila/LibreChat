@@ -1881,6 +1881,7 @@ function createInitializeClient(dependencies = {}) {
       params.req,
       dependencies.resolveUpstreamTokenProvider,
       params.signal,
+      params.scheduledTokenContext,
     );
     return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
   };

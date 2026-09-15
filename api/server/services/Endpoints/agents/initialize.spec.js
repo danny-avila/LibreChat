@@ -182,13 +182,13 @@ describe('initializeClient — processAgent ACL gate', () => {
     },
   });
 
-  it('defers host credential resolution during scheduled agent initialization', async () => {
+  it.each([false, true])('defers host credential resolution with restored=%s', async (restored) => {
     const upstreamTokenProvider = jest.fn();
     const resolveUpstreamTokenProvider = jest.fn().mockResolvedValue(upstreamTokenProvider);
     const hostInitializeClient = createInitializeClient({ resolveUpstreamTokenProvider });
     const req = makeReq();
     req._isScheduledFire = true;
-    req._isAgentTrigger = true;
+    req._isAgentTrigger = !restored;
     req.body.agent_id = PRIMARY_ID;
     req.body.agentTrigger = {
       version: 1,
@@ -213,6 +213,14 @@ describe('initializeClient — processAgent ACL gate', () => {
       req,
       res: {},
       signal,
+      scheduledTokenContext: restored
+        ? {
+            scheduleId: 'sched-1',
+            ownerId: req.user.id,
+            agentId: PRIMARY_ID,
+            invocationMode: 'delegated',
+          }
+        : undefined,
       endpointOption: makeEndpointOption(),
     });
 

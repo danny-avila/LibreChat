@@ -1812,8 +1812,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
       });
-    restoreScheduledTokenContext(req, job.metadata);
     const result = await initializeClient({
+      scheduledTokenContext: restoreScheduledTokenContext(req, job.metadata),
       req,
       res,
       endpointOption: req.body.endpointOption,

@@ -206,10 +206,7 @@ jest.mock('~/server/services/MCPRequestContext', () => ({
 
 // Import after mocks
 const ResumeAgentController = require('~/server/controllers/agents/resume');
-const {
-  captureCodeExecutionApprovalBinding,
-  getRestoredScheduledTokenContext,
-} = require('@librechat/api');
+const { captureCodeExecutionApprovalBinding } = require('@librechat/api');
 
 /** Drain the microtask + immediate queues so the post-ACK continuation settles. */
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -1278,7 +1275,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
 
       expect(capturedInit.isScheduledFire).toBe(true);
-      expect(getRestoredScheduledTokenContext(mockInitializeClient.mock.calls[0][0].req)).toEqual({
+      expect(mockInitializeClient.mock.calls[0][0].scheduledTokenContext).toEqual({
         scheduleId: 'schedule-1',
         ownerId: USER_ID,
         tenantId: TENANT_ID,
