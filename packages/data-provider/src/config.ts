@@ -749,6 +749,32 @@ export const baseEndpointSchema = z.object({
   reasoningLabelMaxPerRun: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
+  /**
+   * Prompt caching on first-party OpenAI and Azure OpenAI. Ignored elsewhere:
+   * a gateway or custom OpenAI-compatible endpoint shares the request shape
+   * but not the caching contract.
+   *
+   * `promptCacheKey` sends a deterministic `prompt_cache_key` derived from the
+   * stable instruction prefix, tool schemas and output schema, so requests
+   * sharing a prefix share a cache entry instead of being partitioned per user
+   * by the `user` field OpenAI otherwise routes on. Default enabled; set
+   * `false` to keep per-user routing.
+   */
+  promptCacheKey: z.boolean().optional(),
+  /**
+   * `prompt_cache_retention`. Omitted by default, which is the provider's own
+   * in-memory lifetime; `24h` opts into extended retention and is billed for
+   * it.
+   */
+  promptCacheRetention: z.union([z.literal('in-memory'), z.literal('24h')]).optional(),
+  /**
+   * GPT-5.6 explicit cache breakpoints (`prompt_cache_options`,
+   * `prompt_cache_breakpoint`). Off by default: explicit mode replaces the
+   * implicit latest-message breakpoint, and the breakpoint currently lands on
+   * the whole system message rather than on its stable prefix, so enabling it
+   * can cache less than the default. Requires a GPT-5.6-class model.
+   */
+  promptCacheExplicit: z.boolean().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
@@ -1614,6 +1640,9 @@ export const azureEndpointSchema = z
         reasoningLabelUpdateChars: true,
         reasoningLabelUpdateIntervalMs: true,
         reasoningLabelMaxPerRun: true,
+        promptCacheKey: true,
+        promptCacheRetention: true,
+        promptCacheExplicit: true,
       })
       .partial(),
   );

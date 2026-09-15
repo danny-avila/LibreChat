@@ -19,6 +19,7 @@ import {
   constructAzureChatBasePath,
   constructAzureInstanceBasePath,
 } from '~/utils/azure';
+import { supportsExplicitPromptCache } from './promptCache';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -55,6 +56,17 @@ export const knownOpenAIParams: Set<string> = new Set([
   'service_tier',
   'supportsStrictToolCalling',
   'useResponsesApi',
+  /**
+   * Prompt caching. These are LangChain constructor fields that serialize to
+   * `prompt_cache_key` / `prompt_cache_retention`, and the agents SDK field
+   * that emits `prompt_cache_options` plus the explicit breakpoints. They must
+   * route here rather than to `modelKwargs`: on Chat Completions the explicit
+   * fields are spread *after* `modelKwargs`, so a raw snake_case kwarg is
+   * overwritten with `undefined` and silently never reaches the wire.
+   */
+  'promptCacheKey',
+  'promptCacheRetention',
+  'promptCacheExplicit',
   'configuration',
   // Call-time Options
   'tools',
@@ -614,6 +626,9 @@ export function getOpenAILLMConfig({
   dropParams,
   defaultParams,
   useOpenRouter,
+  promptCacheKeyEnabled,
+  promptCacheRetention,
+  promptCacheExplicit,
   reasoningFormat = ReasoningParameterFormat.reasoningEffort,
   modelOptions: _modelOptions,
 }: {
@@ -627,6 +642,9 @@ export function getOpenAILLMConfig({
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
   reasoningFormat?: ReasoningParameterFormat;
+  promptCacheKeyEnabled?: boolean;
+  promptCacheRetention?: t.OpenAIPromptCacheRetention;
+  promptCacheExplicit?: boolean;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -930,6 +948,70 @@ export function getOpenAILLMConfig({
     llmConfig.firstPartyEndpoint = true;
   }
 
+  /**
+   * Prompt caching, first-party OpenAI and Azure only. A gateway or custom
+   * OpenAI-compatible endpoint shares the request shape but not the caching
+   * contract, so it keeps whatever it is configured with.
+   *
+   * `getOpenAILLMConfig` can decide *whether* a deterministic cache key is
+   * allowed, but not what it is: the key hashes the agent's stable
+   * instructions and tool schemas, which are only assembled at run time.
+   * `createRun` reads `promptCacheKeyEnabled` and fills in `promptCacheKey`.
+   *
+   * The marker is therefore withheld whenever an administrator has already
+   * settled the key here — pinned through `addParams`, or removed through
+   * `dropParams` — because `createRun` would otherwise synthesize over that
+   * decision. `dropParams` has to be read directly: it deletes
+   * `promptCacheKey` further down and never sees this separate marker.
+   */
+  const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
+  const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
+  if (
+    firstPartyEndpoint &&
+    promptCacheKeyEnabled !== false &&
+    !promptCacheKeyPinned &&
+    !promptCacheKeyDropped
+  ) {
+    llmConfig.promptCacheKeyEnabled = true;
+  }
+  if (firstPartyEndpoint && promptCacheRetention != null) {
+    llmConfig.promptCacheRetention = promptCacheRetention;
+  }
+  /**
+   * Explicit cache controls require a model that accepts them, because OpenAI
+   * rejects unknown body parameters outright rather than ignoring them. The
+   * decision is deferred to `applyExplicitPromptCache` below, once the wire
+   * identity is final: on Azure the served model is the deployment, and which
+   * deployment that is depends on `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` and the
+   * base URL, neither of which is resolved yet here.
+   */
+  const promptCacheExplicitDropped = dropParams?.includes('promptCacheExplicit') === true;
+  const applyExplicitPromptCache = (deploymentName?: string) => {
+    const supported =
+      supportsExplicitPromptCache(llmConfig.model) || supportsExplicitPromptCache(deploymentName);
+    if (
+      firstPartyEndpoint &&
+      promptCacheExplicit === true &&
+      supported &&
+      !promptCacheExplicitDropped
+    ) {
+      llmConfig.promptCacheExplicit = true;
+      return;
+    }
+    /**
+     * `promptCacheExplicit` is a known parameter, so `addParams` and
+     * `defaultParams` assign it directly and would otherwise reach the wire
+     * without passing this gate. Declining to set it is not enough — on a
+     * surface whose contract we own, an unsupported model has to have it
+     * removed. Running after the drop cascade, this also has to re-honor an
+     * explicit drop rather than reinstate what the cascade removed. A gateway
+     * keeps whatever it is configured with.
+     */
+    if (firstPartyEndpoint && (!supported || promptCacheExplicitDropped)) {
+      delete llmConfig.promptCacheExplicit;
+    }
+  };
+
   if (!useOpenRouter) {
     hasModelKwargs =
       applyReasoningConfig({
@@ -1027,6 +1109,7 @@ export function getOpenAILLMConfig({
   }
 
   if (!azure) {
+    applyExplicitPromptCache();
     llmConfig.apiKey = apiKey;
     return { llmConfig, tools };
   }
@@ -1039,6 +1122,7 @@ export function getOpenAILLMConfig({
     : azure.azureOpenAIApiDeploymentName ||
       getAzureDeploymentName(baseURL, azure) ||
       (firstPartyAstra || llmConfig.useResponsesApi ? model : undefined);
+  applyExplicitPromptCache(updatedAzure.azureOpenAIApiDeploymentName);
 
   if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
     llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;

@@ -114,6 +114,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
+import { buildPromptCacheKey } from '~/endpoints/openai/promptCache';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -1280,14 +1281,18 @@ function resolveSummarizationProvider(
     const provider = detectedProvider ?? overrideProvider;
     /**
      * On the agent's provider the SDK layers these over the agent's own client options, so this
-     * different endpoint replaces the agent's API mode, first-party declaration, reasoning and
-     * request kwargs (an Azure Astra agent's Responses routing, for one) instead of inheriting them.
+     * different endpoint replaces the agent's API mode, first-party declaration, reasoning,
+     * request kwargs (an Azure Astra agent's Responses routing, for one) and prompt-cache
+     * identity instead of inheriting them. The cache key in particular names the agent's stable
+     * prefix, which a summarization request does not send.
      */
     if (provider === target.agentProvider) {
       clientOverrides.useResponsesApi ??= false;
       clientOverrides.firstPartyEndpoint ??= false;
       clientOverrides.modelKwargs ??= {};
       clientOverrides.reasoning ??= undefined;
+      clientOverrides.promptCacheKey ??= undefined;
+      clientOverrides.promptCacheExplicit ??= false;
     }
     return { provider, clientOverrides };
   } catch (error) {
@@ -1440,6 +1445,28 @@ function shapeSummarizationConfig(
       ...kwargs
     } = effectiveKwargs;
     parameters = { ...parameters, modelKwargs: kwargs };
+  }
+
+  /**
+   * A summarization request that reuses the agent's client options inherits the
+   * `prompt_cache_key` `createRun` synthesizes for the agent's stable
+   * instruction prefix — a prefix this request does not send, so leaving the
+   * key on would file unrelated prompts under one cache identity.
+   *
+   * Only the inherited key is cleared. One the summarization config supplies
+   * itself, like one an administrator pins through `addParams`, is a
+   * deliberate choice about this request's own routing and survives; the merge
+   * above already establishes that explicit user parameters win.
+   */
+  const agentParameters = agent?.model_parameters as
+    | { promptCacheKeyEnabled?: boolean }
+    | undefined;
+  if (
+    provider === fallbackProvider &&
+    agentParameters?.promptCacheKeyEnabled === true &&
+    parameters?.promptCacheKey == null
+  ) {
+    parameters = { ...parameters, promptCacheKey: undefined };
   }
 
   return {
@@ -1807,6 +1834,66 @@ export function anyAgentReplaysReasoningContent(
 }
 
 /**
+ * Stamps the deterministic `prompt_cache_key` onto one finished `AgentInputs`.
+ *
+ * `getOpenAILLMConfig` resolved whether the endpoint allows a key and withheld
+ * the marker when an administrator already settled one. The value can only be
+ * built here, and only once the input is final: the key names the prefix that
+ * is actually sent, and tools are still added and stripped after an input is
+ * first assembled — background-task tools are registered on the parent, and
+ * isolated children drop background and intent definitions they inherited.
+ * Hashing earlier would let two different wire prefixes share one identity.
+ *
+ * Keyed on prompt identity and never on the conversation, so two chats — and
+ * two users — that share a prefix reach one cache entry rather than each
+ * writing their own.
+ */
+function finalizePromptCacheKey(input: AgentInputs): void {
+  const options = input.clientOptions as
+    | (Partial<t.OAIClientOptions> & {
+        response_format?: unknown;
+        text?: { format?: unknown };
+        modelKwargs?: { model?: unknown };
+      })
+    | undefined;
+  if (options == null) {
+    return;
+  }
+  if (options.promptCacheKeyEnabled === true && options.promptCacheKey == null) {
+    const { graphTools } = input as AgentInputs & { graphTools?: GenericTool[] };
+    /**
+     * Azure Astra keeps its visible identity in `model` and sends the
+     * deployment through the `modelKwargs` override, so the override is the
+     * wire model whenever it is present.
+     */
+    const wireModel =
+      typeof options.modelKwargs?.model === 'string' ? options.modelKwargs.model : options.model;
+    options.promptCacheKey = buildPromptCacheKey({
+      model: wireModel,
+      instructions: input.instructions,
+      boundTools: [
+        ...(input.toolDefinitions ?? []),
+        ...(graphTools ?? []),
+        ...(input.tools ?? []),
+        /**
+         * Delegation is a model-facing tool the SDK generates from these
+         * entries rather than one of the arrays above, so its presence and
+         * the targets it offers have to enter the identity here or enabling,
+         * disabling or retargeting subagents would not retire the key.
+         */
+        ...(input.subagentConfigs ?? []).map((config) => ({
+          name: `subagent:${config.name}`,
+          description: config.description,
+        })),
+      ],
+      responseSchema: options.response_format,
+      responsesTextFormat: options.text?.format,
+    });
+  }
+  delete options.promptCacheKeyEnabled;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit eager children and inert lazy descriptors. Returns an empty array
  * when subagents are disabled or no spawn targets are available.
@@ -1845,6 +1932,7 @@ function buildIsolatedAgentInputs(
       child.intentToolNames,
     );
   }
+  finalizePromptCacheKey(childInputs);
   return childInputs;
 }
 
@@ -1885,6 +1973,35 @@ function buildSubagentConfigs(
       stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
       agent.intentToolNames,
     );
+    const selfChildInputs: AgentInputs | undefined =
+      hasBackground || hasInjectedIntent
+        ? {
+            ...agentInput,
+            toolDefinitions: stripIntentFromToolDefinitions(
+              stripBackgroundFromToolDefinitions(
+                agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+              agent.intentToolNames,
+            ),
+            /** `registerBackgroundTaskTool` mutates the parent registry after
+             * configs are built. Detach its self-child snapshot so the host
+             * poll tool cannot appear there through that shared Map. */
+            toolRegistry:
+              detachedTasksEnabled && sanitizedToolRegistry != null
+                ? new Map(sanitizedToolRegistry)
+                : sanitizedToolRegistry,
+            /**
+             * Detach the client options too. A shallow spread shares the
+             * parent's object, so finalizing the parent's key would stamp this
+             * child with one naming the parent's unsanitized tools.
+             */
+            clientOptions: { ...agentInput.clientOptions },
+          }
+        : undefined;
+    if (selfChildInputs != null) {
+      finalizePromptCacheKey(selfChildInputs);
+    }
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -1892,27 +2009,7 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground || hasInjectedIntent
-        ? {
-            agentInputs: {
-              ...agentInput,
-              toolDefinitions: stripIntentFromToolDefinitions(
-                stripBackgroundFromToolDefinitions(
-                  agentInput.toolDefinitions,
-                  agent.backgroundToolNames,
-                ),
-                agent.intentToolNames,
-              ),
-              /** `registerBackgroundTaskTool` mutates the parent registry after
-               * configs are built. Detach its self-child snapshot so the host
-               * poll tool cannot appear there through that shared Map. */
-              toolRegistry:
-                detachedTasksEnabled && sanitizedToolRegistry != null
-                  ? new Map(sanitizedToolRegistry)
-                  : sanitizedToolRegistry,
-            },
-          }
-        : {}),
+      ...(selfChildInputs != null ? { agentInputs: selfChildInputs } : {}),
     });
   }
 
@@ -2634,6 +2731,8 @@ export async function createRun({
         ),
       }).toolDefinitions;
     }
+    /** Last, so the background-task tools registered just above are named. */
+    finalizePromptCacheKey(agentInput);
     agentInputs.push(agentInput);
   }
 

@@ -1462,7 +1462,11 @@ describe('Azure deployment alias', () => {
     const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
     const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
 
-    expect(summaryConfig.parameters).toBeUndefined();
+    /**
+     * The only override a plain self-summary carries: the agent's synthesized
+     * `prompt_cache_key` names an instruction prefix this request never sends.
+     */
+    expect(summaryConfig.parameters).toEqual({ promptCacheKey: undefined });
     expect(summaryRequestModel(mainClientOptions, summaryConfig)).toBe('production-deployment');
   });
 

@@ -1918,3 +1918,190 @@ describe('applyDefaultParams', () => {
     });
   });
 });
+
+describe('prompt caching', () => {
+  const azure: t.AzureOptions = {
+    azureOpenAIApiInstanceName: 'test-instance',
+    azureOpenAIApiDeploymentName: 'gpt-5-6',
+    azureOpenAIApiVersion: '2025-04-01-preview',
+    azureOpenAIApiKey: 'test-azure-key',
+  };
+
+  it.each([
+    {
+      surface: 'OpenAI',
+      options: { endpoint: EModelEndpoint.openAI },
+    },
+    {
+      surface: 'Azure OpenAI',
+      options: { endpoint: EModelEndpoint.azureOpenAI, azure },
+    },
+  ])('allows a cache key on first-party $surface by default', ({ options }) => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'gpt-5.6' },
+      ...options,
+    });
+
+    expect(result.llmConfig.promptCacheKeyEnabled).toBe(true);
+  });
+
+  it.each([
+    {
+      surface: 'OpenRouter',
+      options: { endpoint: EModelEndpoint.openAI, useOpenRouter: true },
+    },
+    {
+      surface: 'a custom endpoint',
+      options: { endpoint: 'my-gateway' },
+    },
+    {
+      surface: 'an OpenAI-shaped proxy',
+      options: { endpoint: EModelEndpoint.openAI, baseURL: 'https://gateway.example.com/v1' },
+    },
+    {
+      surface: 'an Azure-shaped proxy',
+      options: {
+        endpoint: EModelEndpoint.azureOpenAI,
+        azure,
+        baseURL: 'https://gateway.example.com/v1',
+      },
+    },
+  ])('leaves $surface untouched', ({ options }) => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheRetention: '24h',
+      promptCacheExplicit: true,
+      ...options,
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+  });
+
+  it('honors an administrator opting out of the cache key', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheKeyEnabled: false,
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
+  it('withholds explicit cache controls from models that reject them', () => {
+    const unsupported = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-4o' },
+      promptCacheExplicit: true,
+    });
+    const supported = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheExplicit: true,
+    });
+
+    expect(unsupported.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    expect(supported.llmConfig.promptCacheExplicit).toBe(true);
+  });
+
+  it.each(['addParams', 'defaultParams'] as const)(
+    'strips explicit cache controls an unsupported model received through %s',
+    (source) => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-4o' },
+        [source]: { promptCacheExplicit: true },
+      });
+
+      /** A known parameter reaches `llmConfig` directly, so the gate must
+       *  remove it rather than merely decline to add it. */
+      expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    },
+  );
+
+  it('keeps explicit cache controls off unless asked for', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+  });
+
+  it('leaves an administrator-supplied cache key untouched by later synthesis', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      addParams: { promptCacheKey: 'tenant-fixed-key', promptCacheRetention: '24h' },
+    });
+
+    expect(result.llmConfig.promptCacheKey).toBe('tenant-fixed-key');
+    expect(result.llmConfig.promptCacheRetention).toBe('24h');
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+    /** `createRun` synthesizes only on this marker, so the pinned key survives. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
+  it('lets dropParams remove the cache controls it added', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheRetention: '24h',
+      promptCacheExplicit: true,
+      addParams: { promptCacheKey: 'tenant-fixed-key' },
+      dropParams: ['promptCacheKey', 'promptCacheRetention', 'promptCacheExplicit'],
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    /** Dropping the key must also withhold the marker, or `createRun` recreates it. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
+  it('honors explicit caching for an Azure alias whose deployment is a supported model', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-azure-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      azure: { ...azure, azureOpenAIApiDeploymentName: 'gpt-5-6' },
+      modelOptions: { model: 'production-chat' },
+      promptCacheExplicit: true,
+    });
+
+    expect(result.llmConfig.promptCacheExplicit).toBe(true);
+  });
+
+  it('withholds explicit caching when neither the alias nor its deployment is supported', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-azure-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      azure: { ...azure, azureOpenAIApiDeploymentName: 'gpt-4o-prod' },
+      modelOptions: { model: 'production-chat' },
+      promptCacheExplicit: true,
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+  });
+});
