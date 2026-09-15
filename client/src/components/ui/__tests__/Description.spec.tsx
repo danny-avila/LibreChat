@@ -19,21 +19,33 @@ describe('Description', () => {
     const { container } = render(
       <Description
         description={
-          '<span onclick="alert(1)">Safe</span><a href="javascript:alert(1)">Link</a><img src="javascript:alert(1)" onerror="alert(1)"><script>alert(1)</script>'
+          '<span class="fixed inset-0" onclick="alert(1)">Safe</span><a class="fixed" href="javascript:alert(1)">Link</a><img src="https://tracker.example/pixel" onerror="alert(1)"><script>alert(1)</script>'
         }
       />,
     );
 
     expect(container.querySelector('script')).not.toBeInTheDocument();
     expect(container.querySelector('[onclick]')).not.toBeInTheDocument();
+    expect(container.querySelector('[class]')).not.toBeInTheDocument();
     expect(screen.getByText('Link')).not.toHaveAttribute('href');
-    expect(container.querySelector('img')).not.toHaveAttribute('src');
-    expect(container.querySelector('img')).not.toHaveAttribute('onerror');
+    expect(container.querySelector('img')).not.toBeInTheDocument();
+  });
+
+  it('retains sanitized media only when explicitly enabled', () => {
+    const { container } = render(
+      <Description
+        allowMedia
+        description={'<img class="brand" src="/assets/brand.svg" alt="Brand">'}
+      />,
+    );
+
+    expect(container.querySelector('img')).toHaveAttribute('src', '/assets/brand.svg');
+    expect(container.querySelector('img')).toHaveAttribute('class', 'brand');
   });
 
   it('renders HTML descriptions as inert plain text for previews', () => {
     const description =
-      '<span>Assistant for projects. <a href="https://example.com">Read &amp; learn</a></span>';
+      '<span>Assistant for projects.<br><a href="https://example.com">Read &amp; learn</a></span>';
     const { container } = render(
       <Description as="p" description={description} plainText aria-label="Description preview" />,
     );

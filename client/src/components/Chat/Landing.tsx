@@ -202,6 +202,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           )}
         </div>
         <Description
+          allowMedia
           description={description}
           className={
             descriptionIsHTML

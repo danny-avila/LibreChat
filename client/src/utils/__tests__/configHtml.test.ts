@@ -66,8 +66,8 @@ describe('configHtml', () => {
 
     expect(
       sanitizeText(
-        '<span onclick="alert(1)">Read <a href="javascript:alert(1)">A &amp; B</a></span><script>alert(1)</script>',
+        '<span onclick="alert(1)">Read<br><a href="javascript:alert(1)">A &amp; B</a></span><script>alert(1)</script><p>Next</p><div>Last</div>',
       ),
-    ).toBe('Read A & B');
+    ).toBe('Read A & B Next Last');
   });
 });

@@ -51,13 +51,17 @@ export function createConfigHtmlTextSanitizer() {
     }
 
     const fragment = sanitizer.sanitize(html, {
-      ALLOWED_TAGS: [],
+      ALLOWED_TAGS: ['br', 'p', 'div', 'li'],
       ALLOWED_ATTR: [],
       ALLOW_DATA_ATTR: false,
       ALLOW_ARIA_ATTR: false,
       RETURN_DOM_FRAGMENT: true,
     });
-    return fragment.textContent ?? '';
+    for (const element of fragment.querySelectorAll('br, p, div, li')) {
+      element.before(' ');
+      element.after(' ');
+    }
+    return (fragment.textContent ?? '').replace(/\s+/g, ' ').trim();
   };
 }
 

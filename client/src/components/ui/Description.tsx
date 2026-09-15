@@ -1,13 +1,19 @@
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import {
+  CONFIG_HTML_LINK_ATTR,
   CONFIG_HTML_MEDIA_ATTR,
   CONFIG_HTML_MEDIA_TAGS,
+  CONFIG_HTML_TEXT_TAGS,
   createConfigHtmlSanitizer,
   createConfigHtmlTextSanitizer,
 } from '~/utils/configHtml';
 
 const sanitizeDescription = createConfigHtmlSanitizer({
+  allowedTags: CONFIG_HTML_TEXT_TAGS,
+  allowedAttr: CONFIG_HTML_LINK_ATTR,
+});
+const sanitizeMediaDescription = createConfigHtmlSanitizer({
   allowedTags: CONFIG_HTML_MEDIA_TAGS,
   allowedAttr: CONFIG_HTML_MEDIA_ATTR,
 });
@@ -35,6 +41,7 @@ interface DescriptionProps {
   className?: string;
   description?: string | null;
   id?: string;
+  allowMedia?: boolean;
   plainText?: boolean;
 }
 
@@ -43,6 +50,7 @@ export default function Description({
   className,
   description,
   id,
+  allowMedia = false,
   plainText = false,
   'aria-label': ariaLabel,
 }: DescriptionProps): ReactElement | null {
@@ -52,8 +60,12 @@ export default function Description({
       return description ?? '';
     }
 
-    return plainText ? getPlainDescription(description) : sanitizeDescription(description);
-  }, [description, isHtml, plainText]);
+    if (plainText) {
+      return getPlainDescription(description);
+    }
+
+    return allowMedia ? sanitizeMediaDescription(description) : sanitizeDescription(description);
+  }, [allowMedia, description, isHtml, plainText]);
 
   if (!description) {
     return null;
