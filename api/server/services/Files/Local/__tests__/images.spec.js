@@ -1,3 +1,5 @@
+jest.mock('sharp', () => ({}));
+jest.mock('../../images/resize', () => ({ resizeImageBuffer: jest.fn() }));
 jest.mock('~/models', () => ({
   updateUser: jest.fn(),
   updateFile: jest.fn(async (doc) => doc),
