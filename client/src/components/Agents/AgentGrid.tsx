@@ -6,6 +6,7 @@ import type { ApiError } from './ErrorDisplay';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize, TranslationKeys } from '~/hooks';
 import VirtualizedAgentGrid from './VirtualizedAgentGrid';
+import { DEFAULT_SORT_OPTION } from './SortDropdown';
 import GridSkeleton from './GridSkeleton';
 import ErrorDisplay from './ErrorDisplay';
 
@@ -14,7 +15,7 @@ interface AgentGridProps {
   searchQuery: string;
   onSelectAgent?: (agent: t.Agent) => void;
   scrollElementRef: React.RefObject<HTMLElement>;
-  /** Sort mode applied to the marketplace list; server defaults to 'newest' when omitted. */
+  /** Sort mode applied to the marketplace list; falls back to `DEFAULT_SORT_OPTION`. */
   sort?: t.AgentSortOption;
   /** When 1, restrict the list to agents authored by the current user. */
   mine?: 0 | 1;
@@ -58,7 +59,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     /* Sent even when it is the picker's default: `GET /api/agents` answers a request that
        names no mode in most-recently-edited order, which is what the agent selector and
        the mention menu rely on, so the marketplace has to ask for creation order. */
-    params.sort = sort ?? 'newest';
+    params.sort = sort ?? DEFAULT_SORT_OPTION;
     if (mine === 1) {
       params.mine = mine;
     }
