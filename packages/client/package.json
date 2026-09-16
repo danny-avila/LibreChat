@@ -21,7 +21,7 @@
       }
     },
     "./tailwind-preset": "./tailwind.preset.cjs",
-    "./theme.css": "./dist/theme.css",
+    "./theme.css": "./dist/tokens.css",
     "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },
