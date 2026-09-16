@@ -4593,6 +4593,23 @@ describe('initializeAgent tool-routed text fallback', () => {
       metadata: { destinationChosen: false },
     }) as IMongoFile;
 
+  /** A tool serves a file only once it holds it, so these carry the evidence provisioning
+   *  writes: vectors for file search, a sandbox pointer for code execution. */
+  const embeddedCsv = () => ({ ...routedCsv(), embedded: true }) as IMongoFile;
+  const sandboxCsv = () =>
+    ({
+      ...routedCsv(),
+      metadata: {
+        destinationChosen: false,
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user_1',
+          storage_session_id: 'session_1',
+          file_id: 'sandbox_file_1',
+        },
+      },
+    }) as IMongoFile;
+
   async function initializeWith({
     tools,
     csv,
@@ -4701,11 +4718,22 @@ describe('initializeAgent tool-routed text fallback', () => {
     },
   );
 
-  it('keeps fallback out of the prompt when file search loads successfully', async () => {
-    const csv = routedCsv();
+  it('keeps fallback out of the prompt when file search loads and holds the file', async () => {
+    const csv = embeddedCsv();
     const { result } = await initializeWith({ tools: [EToolResources.file_search], csv });
     expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: true });
     expect(result.requestAttachments).toEqual([csv]);
+  });
+
+  it('delivers fallback text when file search runs but never received the file', async () => {
+    /* The plain-chat File Search toggle: the upload names no destination, so nothing files it
+     * under a tool resource and the vector store stays empty. Withholding the text for the
+     * toggle alone left the attachment readable by neither the model nor the tool. */
+    const csv = routedCsv();
+    const { result } = await initializeWith({ tools: [EToolResources.file_search], csv });
+    expect(result.fileConsumers).toEqual({ executeCode: false, fileSearch: true });
+    expect(result.requestAttachments).toEqual([{ ...csv, llmDeliveryPath: 'text' }]);
+    expect(csv.llmDeliveryPath).toBe('none');
   });
 
   it('falls back after file search soft-fails and admits the returned text copy', async () => {
@@ -4828,8 +4856,8 @@ describe('initializeAgent tool-routed text fallback', () => {
     );
   });
 
-  it('leaves the file to Run Code when the agent can run code', async () => {
-    const csv = routedCsv();
+  it('leaves the file to Run Code when the sandbox already holds it', async () => {
+    const csv = sandboxCsv();
 
     const { result, filterFilesByEndpointRuntimeConfig } = await initializeWith({
       tools: [EToolResources.execute_code],
