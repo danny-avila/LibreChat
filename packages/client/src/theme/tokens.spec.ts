@@ -1,14 +1,13 @@
-const v8 = require('v8');
-
-/** Tailwind's compiler clones its theme with `structuredClone`, which jsdom does not provide.
- *  V8 serialization is the same structured-clone algorithm Node's global uses. */
-globalThis.structuredClone ??= (value: unknown) => v8.deserialize(v8.serialize(value));
-
 import fs from 'fs';
 import path from 'path';
 import fsp from 'fs/promises';
 import { compile } from 'tailwindcss';
+import { deserialize, serialize } from 'v8';
 import { defaultTheme } from './themes/default';
+
+/** Tailwind's compiler clones its theme with `structuredClone`, which jsdom does not provide.
+ *  V8 serialization is the same structured-clone algorithm Node's global uses. */
+globalThis.structuredClone ??= <T>(value: T): T => deserialize(serialize(value)) as T;
 
 const tokensPath = path.resolve(__dirname, 'tokens.css');
 const tokens = fs.readFileSync(tokensPath, 'utf8');
@@ -30,7 +29,9 @@ async function generate(candidates: string[]) {
     base: __dirname,
     async loadModule(id: string, base: string) {
       const modulePath = id.startsWith('.') ? path.resolve(base, id) : require.resolve(id);
-      const loaded = require(modulePath);
+      /** Tailwind hands this callback whatever `@config`/`@plugin` names, so the specifier is
+       *  only known at runtime; a static import cannot express it. */
+      const loaded = (await import(modulePath)) as { default?: unknown };
       return { base: path.dirname(modulePath), module: loaded.default ?? loaded, path: modulePath };
     },
     async loadStylesheet(id: string, base: string) {
