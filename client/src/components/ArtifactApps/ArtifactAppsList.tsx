@@ -3,7 +3,6 @@ import { useSetAtom } from 'jotai';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Button, DropdownPopup, useMediaQuery, useToastContext } from '@librechat/client';
 import {
   Shapes,
   Lock,
@@ -15,16 +14,32 @@ import {
   PinOff,
   LayoutGrid,
   List,
+  Trash2,
 } from 'lucide-react';
-import type { TArtifactApp, ArtifactAppListScope } from 'librechat-data-provider';
+import {
+  Button,
+  DropdownPopup,
+  OGDialog,
+  OGDialogTemplate,
+  Spinner,
+  useMediaQuery,
+  useToastContext,
+} from '@librechat/client';
+import {
+  SystemRoles,
+  PermissionBits,
+  hasPermissions,
+  type TArtifactApp,
+  type ArtifactAppListScope,
+} from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
+import { useDeleteArtifactAppMutation, useListArtifactAppsQuery } from '~/data-provider';
 import ArtifactAppShareDialog, { useCanShareArtifactApp } from './Share';
 import ArtifactAppsAdminSettings from './ArtifactAppsAdminSettings';
 import { useAuthContext, useDebounce, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { artifactNavigationRequestAtom } from './navigation';
 import ArtifactAppsSearchBar from './ArtifactAppsSearchBar';
-import { useListArtifactAppsQuery } from '~/data-provider';
 import Thumbnail from './Thumbnail';
 import { cn } from '~/utils';
 
@@ -232,16 +247,25 @@ function ArtifactAppMenu({
   app,
   isPinned,
   onTogglePin,
+  onDeleted,
 }: {
   app: TArtifactApp;
   isPinned: boolean;
   onTogglePin: (artifactAppId: string) => void;
+  onDeleted: (artifactAppId: string) => void;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const canShare = useCanShareArtifactApp(app);
+  const canDelete =
+    app.createdBy === user?.id ||
+    user?.role === SystemRoles.ADMIN ||
+    hasPermissions(app.permissionBits ?? 0, PermissionBits.DELETE);
+  const deleteArtifact = useDeleteArtifactAppMutation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const copyLink = async () => {
     try {
@@ -277,6 +301,34 @@ function ArtifactAppMenu({
     });
   }
 
+  if (canDelete) {
+    items.push({ id: `artifact-delete-separator-${app.artifactAppId}`, separate: true });
+    items.push({
+      id: `artifact-delete-${app.artifactAppId}`,
+      label: localize('com_ui_delete'),
+      icon: <Trash2 className="size-4" />,
+      className:
+        'text-text-destructive hover:bg-destructive/10 hover:text-text-destructive focus:bg-destructive/10 focus:text-text-destructive',
+      onClick: () => setDeleteOpen(true),
+    });
+  }
+
+  const confirmDelete = () => {
+    if (deleteArtifact.isLoading) {
+      return;
+    }
+    deleteArtifact.mutate(app.artifactAppId, {
+      onSuccess: () => {
+        onDeleted(app.artifactAppId);
+        setDeleteOpen(false);
+        showToast({ status: 'success', message: localize('com_ui_artifact_delete_success') });
+      },
+      onError: () => {
+        showToast({ status: 'error', message: localize('com_ui_artifact_delete_error') });
+      },
+    });
+  };
+
   return (
     <>
       {shareOpen && (
@@ -290,6 +342,31 @@ function ArtifactAppMenu({
           }}
         />
       )}
+      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_artifact_delete')}
+          className="max-w-[450px]"
+          main={
+            <p className="text-left text-sm text-text-primary">
+              {localize('com_ui_artifact_delete_confirm', { 0: app.title })}
+            </p>
+          }
+          selection={
+            <Button
+              variant="destructive"
+              disabled={deleteArtifact.isLoading}
+              onClick={confirmDelete}
+            >
+              {deleteArtifact.isLoading ? (
+                <Spinner className="size-4" />
+              ) : (
+                localize('com_ui_delete')
+              )}
+            </Button>
+          }
+        />
+      </OGDialog>
       <DropdownPopup
         portal={true}
         menuId={`artifact-menu-${app.artifactAppId}`}
@@ -392,6 +469,18 @@ export default function ArtifactAppsList() {
       status: pinned ? 'info' : 'success',
       message: localize(pinned ? 'com_ui_unpinned' : 'com_ui_pinned'),
     });
+  };
+
+  const removeDeletedArtifactActivity = (artifactAppId: string) => {
+    const nextPinnedIds = new Set(pinnedArtifactIds);
+    nextPinnedIds.delete(artifactAppId);
+    writePinnedArtifactApps(activityStorageScope, nextPinnedIds);
+    setPinnedArtifactState({ scope: activityStorageScope, value: nextPinnedIds });
+
+    const nextViewedTimes = new Map(viewedArtifactTimes);
+    nextViewedTimes.delete(artifactAppId);
+    writeViewedArtifactApps(activityStorageScope, nextViewedTimes);
+    setViewedArtifactState({ scope: activityStorageScope, value: nextViewedTimes });
   };
 
   const changeViewMode = (nextViewMode: ArtifactAppsViewMode) => {
@@ -554,6 +643,7 @@ export default function ArtifactAppsList() {
                         app={app}
                         isPinned={isPinned}
                         onTogglePin={togglePinnedArtifact}
+                        onDeleted={removeDeletedArtifactActivity}
                       />
                     </div>
                   </div>
@@ -603,6 +693,7 @@ export default function ArtifactAppsList() {
                     app={app}
                     isPinned={isPinned}
                     onTogglePin={togglePinnedArtifact}
+                    onDeleted={removeDeletedArtifactActivity}
                   />
                 </div>
               </li>

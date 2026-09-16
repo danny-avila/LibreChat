@@ -215,7 +215,6 @@ export default function useArtifacts() {
     const resetState = () => {
       resetArtifacts();
       resetCurrentArtifactId();
-      prevConversationIdRef.current = conversationId;
       lastRunMessageIdRef.current = null;
       lastContentRef.current = null;
       hasEnclosedArtifactRef.current = false;
@@ -227,11 +226,6 @@ export default function useArtifacts() {
       resetState();
     }
     prevConversationIdRef.current = conversationId;
-    /** Resets artifacts when unmounting */
-    return () => {
-      logger.log('artifacts_visibility', 'Unmounting artifacts');
-      resetState();
-    };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
   /**

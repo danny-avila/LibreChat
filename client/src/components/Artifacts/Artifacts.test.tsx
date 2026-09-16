@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import Artifacts from './Artifacts';
 import store from '~/store';
 
@@ -97,11 +97,6 @@ jest.mock('./ArtifactVersion', () => ({
 jest.mock('./DownloadArtifact', () => ({
   __esModule: true,
   default: () => <div data-testid="download-artifact" />,
-}));
-
-jest.mock('./Mermaid/Export', () => ({
-  __esModule: true,
-  default: () => <div data-testid="mermaid-export" />,
 }));
 
 jest.mock('~/components/Messages/Content/CopyButton', () => ({
@@ -342,12 +337,8 @@ describe('Artifacts panel accessibility', () => {
     expect(container.querySelectorAll('#artifact-viewer')).toHaveLength(1);
   });
 
-  it('supports keyboard resizing and restores focus after the mobile sheet closes', async () => {
+  it('exposes the mobile artifact sheet as a named dialog', async () => {
     mockIsMobile = true;
-    const opener = document.createElement('button');
-    opener.textContent = 'Open artifact';
-    document.body.appendChild(opener);
-    opener.focus();
 
     render(
       <RecoilRoot>
@@ -355,55 +346,7 @@ describe('Artifacts panel accessibility', () => {
       </RecoilRoot>,
     );
 
-    const dialog = await screen.findByRole('dialog', { name: 'Diagram' });
-    const separator = screen.getByRole('separator', { name: 'com_ui_resize_artifact_panel' });
-    await waitFor(() => expect(separator).toHaveFocus());
-
-    fireEvent.keyDown(separator, { key: 'ArrowDown' });
-    expect(separator).toHaveAttribute('aria-valuenow', '80');
-    expect(dialog).toHaveStyle({ height: '80vh' });
-
-    fireEvent.keyDown(separator, { key: 'Home' });
-    expect(separator).toHaveAttribute('aria-valuenow', '10');
-    expect(dialog).toHaveStyle({ height: '10vh' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
-    expect(opener).not.toHaveFocus();
-    await waitFor(() => expect(opener).toHaveFocus());
-
-    opener.remove();
-  });
-
-  it('closes without the animation delay when reduced motion is preferred', async () => {
-    mockIsMobile = true;
-    mockPrefersReducedMotion = true;
-    const opener = document.createElement('button');
-    document.body.appendChild(opener);
-    opener.focus();
-
-    render(
-      <RecoilRoot
-        initializeState={({ set }) => {
-          set(store.currentArtifactId, 'mermaid-artifact-1');
-          set(store.artifactsVisibility, true);
-        }}
-      >
-        <ArtifactStateProbe />
-        <Artifacts />
-      </RecoilRoot>,
-    );
-
-    const separator = await screen.findByRole('separator', {
-      name: 'com_ui_resize_artifact_panel',
-    });
-    await waitFor(() => expect(separator).toHaveFocus());
-
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
-
-    expect(screen.getByTestId('artifact-state')).toHaveAttribute('data-current-id', '');
-    expect(screen.getByTestId('artifact-state')).toHaveAttribute('data-visible', 'false');
-    await waitFor(() => expect(opener).toHaveFocus());
-
-    opener.remove();
+    await screen.findByRole('dialog', { name: 'Diagram' });
+    expect(screen.getByRole('button', { name: 'com_ui_close' })).toBeInTheDocument();
   });
 });

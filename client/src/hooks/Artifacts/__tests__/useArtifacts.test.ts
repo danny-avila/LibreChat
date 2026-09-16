@@ -656,16 +656,17 @@ describe('useArtifacts', () => {
   });
 
   describe('cleanup on unmount', () => {
-    it('should reset artifacts when unmounting', () => {
+    it('should not mutate shared artifact state when the panel unmounts', () => {
       (useRecoilValue as jest.Mock).mockReturnValue({});
 
       const { unmount } = renderHook(() => useArtifacts());
 
+      jest.clearAllMocks();
+
       unmount();
 
-      expect(mockResetArtifacts).toHaveBeenCalled();
-      expect(mockResetCurrentArtifactId).toHaveBeenCalled();
-      expect(logger.log).toHaveBeenCalledWith('artifacts_visibility', 'Unmounting artifacts');
+      expect(mockResetArtifacts).not.toHaveBeenCalled();
+      expect(mockResetCurrentArtifactId).not.toHaveBeenCalled();
     });
   });
 

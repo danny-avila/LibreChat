@@ -8,6 +8,53 @@ const PREVIEW_REQUEST = 'librechat:artifact-preview:request';
 const PREVIEW_RESPONSE = 'librechat:artifact-preview:response';
 const PREVIEW_WIDTHS = [480, 400, 320, 240] as const;
 const TRANSPARENT_COLORS = new Set(['transparent', 'rgba(0, 0, 0, 0)', 'rgba(0,0,0,0)']);
+export const ARTIFACT_PREVIEW_MAX_SNAPSHOT_LENGTH = ARTIFACT_PREVIEW_MAX_URL_LENGTH * 4;
+const ARTIFACT_PREVIEW_FREEZE_CSS = `
+  *, *::before, *::after {
+    animation-delay: -100000s !important;
+    animation-duration: 0s !important;
+    animation-fill-mode: both !important;
+    animation-iteration-count: 1 !important;
+    animation-play-state: paused !important;
+    caret-color: transparent !important;
+    transition: none !important;
+  }
+`;
+
+interface ArtifactPreviewSnapshot {
+  serialized: string;
+  backgroundColor: string;
+}
+
+interface ArtifactPreviewDrawRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function sanitizeArtifactPreviewCss(value: string): string {
+  return value
+    .replace(/url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)/gi, 'none')
+    .replace(/@import\s+[^;]+;/gi, '');
+}
+
+export function getArtifactPreviewDrawRect(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+): ArtifactPreviewDrawRect {
+  const scale = Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  return {
+    x: 0,
+    y: 0,
+    width,
+    height,
+  };
+}
 
 function encodePreviewCanvas(source: HTMLCanvasElement, backgroundColor: string): string | null {
   for (const width of PREVIEW_WIDTHS) {
@@ -22,10 +69,8 @@ function encodePreviewCanvas(source: HTMLCanvasElement, backgroundColor: string)
 
     context.fillStyle = TRANSPARENT_COLORS.has(backgroundColor) ? '#ffffff' : backgroundColor;
     context.fillRect(0, 0, width, height);
-    const scale = Math.max(width / source.width, height / source.height);
-    const renderedWidth = source.width * scale;
-    const renderedHeight = source.height * scale;
-    context.drawImage(source, (width - renderedWidth) / 2, 0, renderedWidth, renderedHeight);
+    const drawRect = getArtifactPreviewDrawRect(source.width, source.height, width, height);
+    context.drawImage(source, drawRect.x, drawRect.y, drawRect.width, drawRect.height);
 
     for (const [mimeType, quality] of [
       ['image/webp', 0.7],
@@ -43,12 +88,86 @@ function encodePreviewCanvas(source: HTMLCanvasElement, backgroundColor: string)
   return null;
 }
 
-/** Runs inside the sandboxed artifact frame and returns a rasterized viewport to its parent. */
-function installArtifactPreviewBridge() {
+function loadPreviewImage(url: string, signal?: AbortSignal): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const finish = (result: HTMLImageElement | null) => {
+      image.onload = null;
+      image.onerror = null;
+      signal?.removeEventListener('abort', handleAbort);
+      resolve(result);
+    };
+    const handleAbort = () => finish(null);
+    image.onload = () => finish(image);
+    image.onerror = () => finish(null);
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    signal?.addEventListener('abort', handleAbort, { once: true });
+    image.src = url;
+  });
+}
+
+export function toArtifactPreviewSvgDataUrl(
+  snapshot: ArtifactPreviewSnapshot,
+  width: number,
+  height: number,
+): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%" x="0" y="0">${snapshot.serialized}</foreignObject></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function isBoundedArtifactPreviewSnapshot(
+  snapshot: Partial<ArtifactPreviewSnapshot> | undefined,
+): snapshot is ArtifactPreviewSnapshot {
+  return (
+    typeof snapshot?.serialized === 'string' &&
+    snapshot.serialized.length > 0 &&
+    snapshot.serialized.length <= ARTIFACT_PREVIEW_MAX_SNAPSHOT_LENGTH &&
+    typeof snapshot.backgroundColor === 'string'
+  );
+}
+
+async function rasterizeArtifactPreviewSnapshot(
+  snapshot: ArtifactPreviewSnapshot,
+  width: number,
+  height: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (
+    signal?.aborted ||
+    !width ||
+    !height ||
+    snapshot.serialized.length > ARTIFACT_PREVIEW_MAX_SNAPSHOT_LENGTH
+  ) {
+    return null;
+  }
+  const image = await loadPreviewImage(
+    toArtifactPreviewSvgDataUrl(snapshot, width, height),
+    signal,
+  );
+  if (!image || signal?.aborted) {
+    return null;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+  context.drawImage(image, 0, 0, width, height);
+  return encodePreviewCanvas(canvas, snapshot.backgroundColor);
+}
+
+/** Runs inside the sandboxed artifact frame and returns a sanitized DOM snapshot to its parent. */
+function installArtifactPreviewBridge(
+  sanitizeCss: (value: string) => string,
+  freezeCss: string,
+  maxSnapshotLength: number,
+  maxCanvasUrlLength: number,
+) {
   const requestType = 'librechat:artifact-preview:request';
   const responseType = 'librechat:artifact-preview:response';
-  const maximumLength = 75_000;
-  const previewWidths = [480, 400, 320, 240];
   const bridgeWindow = window as Window & { __libreChatArtifactPreviewBridge?: boolean };
   if (bridgeWindow.__libreChatArtifactPreviewBridge) {
     return;
@@ -79,15 +198,7 @@ function installArtifactPreviewBridge() {
       maximumTimer = window.setTimeout(done, 2_500);
     });
 
-  const loadImage = (url: string) =>
-    new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('Unable to rasterize artifact preview'));
-      image.src = url;
-    });
-
-  const capture = async (): Promise<string | null> => {
+  const capture = async (): Promise<ArtifactPreviewSnapshot> => {
     await waitForSettledDom();
     const width = Math.max(document.documentElement.clientWidth, window.innerWidth, 1);
     const height = Math.max(document.documentElement.clientHeight, window.innerHeight, 1);
@@ -96,17 +207,53 @@ function installArtifactPreviewBridge() {
     clone.style.width = `${width}px`;
     clone.style.height = `${height}px`;
     clone.style.overflow = 'hidden';
-    clone.querySelectorAll('script, iframe, video, audio, link').forEach((node) => node.remove());
+    clone
+      .querySelectorAll('script, iframe, video, audio, link, object, embed, source')
+      .forEach((node) => node.remove());
     clone.querySelectorAll('img').forEach((image) => {
       if (!/^data:image\/(?:png|jpeg|webp);base64,/i.test(image.getAttribute('src') ?? '')) {
         image.remove();
       }
     });
+    clone.querySelectorAll<HTMLElement>('[srcset], [poster]').forEach((element) => {
+      element.removeAttribute('srcset');
+      element.removeAttribute('poster');
+    });
+    clone.querySelectorAll<HTMLElement>('[href], [xlink\\:href]').forEach((element) => {
+      for (const attribute of ['href', 'xlink:href']) {
+        const value = element.getAttribute(attribute);
+        if (value && !value.startsWith('#')) {
+          element.removeAttribute(attribute);
+        }
+      }
+    });
+    clone.querySelectorAll('style').forEach((style) => {
+      style.textContent = sanitizeCss(style.textContent ?? '');
+    });
+    clone.querySelectorAll<HTMLElement>('[style]').forEach((element) => {
+      const style = element.getAttribute('style');
+      if (style) {
+        element.setAttribute('style', sanitizeCss(style));
+      }
+    });
+    const freezeStyle = document.createElement('style');
+    freezeStyle.textContent = freezeCss;
+    const cloneHead = clone.querySelector('head');
+    if (cloneHead) {
+      cloneHead.appendChild(freezeStyle);
+    } else {
+      clone.prepend(freezeStyle);
+    }
     const sourceCanvases = document.documentElement.querySelectorAll('canvas');
     clone.querySelectorAll('canvas').forEach((canvas, index) => {
       try {
+        const imageUrl = sourceCanvases[index]?.toDataURL('image/png') ?? '';
+        if (!imageUrl || imageUrl.length > maxCanvasUrlLength) {
+          canvas.remove();
+          return;
+        }
         const image = document.createElement('img');
-        image.src = sourceCanvases[index]?.toDataURL('image/png') ?? '';
+        image.src = imageUrl;
         image.alt = '';
         image.width = canvas.width;
         image.height = canvas.height;
@@ -117,54 +264,17 @@ function installArtifactPreviewBridge() {
     });
 
     const serialized = new XMLSerializer().serializeToString(clone);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
-    const objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-    try {
-      const image = await loadImage(objectUrl);
-      const computedBackground = getComputedStyle(document.body).backgroundColor;
-      const backgroundColor =
-        !computedBackground ||
-        computedBackground === 'transparent' ||
-        computedBackground === 'rgba(0, 0, 0, 0)'
-          ? '#ffffff'
-          : computedBackground;
-
-      for (const previewWidth of previewWidths) {
-        const previewHeight = Math.round((previewWidth * 2) / 3);
-        const canvas = document.createElement('canvas');
-        canvas.width = previewWidth;
-        canvas.height = previewHeight;
-        const context = canvas.getContext('2d');
-        if (!context) {
-          return null;
-        }
-        context.fillStyle = backgroundColor;
-        context.fillRect(0, 0, previewWidth, previewHeight);
-        const scale = Math.max(previewWidth / width, previewHeight / height);
-        const renderedWidth = width * scale;
-        const renderedHeight = height * scale;
-        context.drawImage(
-          image,
-          (previewWidth - renderedWidth) / 2,
-          0,
-          renderedWidth,
-          renderedHeight,
-        );
-
-        for (const [mimeType, quality] of [
-          ['image/webp', 0.7],
-          ['image/jpeg', 0.68],
-        ] as const) {
-          const imageUrl = canvas.toDataURL(mimeType, quality);
-          if (imageUrl.length <= maximumLength) {
-            return imageUrl;
-          }
-        }
-      }
-      return null;
-    } finally {
-      URL.revokeObjectURL(objectUrl);
+    if (serialized.length > maxSnapshotLength) {
+      throw new Error('snapshot_too_large');
     }
+    const computedBackground = getComputedStyle(document.body).backgroundColor;
+    const backgroundColor =
+      !computedBackground ||
+      computedBackground === 'transparent' ||
+      computedBackground === 'rgba(0, 0, 0, 0)'
+        ? '#ffffff'
+        : computedBackground;
+    return { serialized, backgroundColor };
   };
 
   window.addEventListener('message', (event) => {
@@ -177,9 +287,18 @@ function installArtifactPreviewBridge() {
     }
     pendingRequests.add(requestId);
     void capture()
-      .catch(() => null)
-      .then((imageUrl) => {
-        window.parent.postMessage({ type: responseType, requestId, imageUrl }, '*');
+      .then((snapshot) => {
+        window.parent.postMessage({ type: responseType, requestId, snapshot }, '*');
+      })
+      .catch((error: Error) => {
+        window.parent.postMessage(
+          {
+            type: responseType,
+            requestId,
+            failure: `${error.name || 'capture_failed'}: ${error.message || 'Unknown error'}`,
+          },
+          '*',
+        );
       })
       .finally(() => {
         pendingRequests.delete(requestId);
@@ -187,7 +306,7 @@ function installArtifactPreviewBridge() {
   });
 }
 
-export const ARTIFACT_PREVIEW_BRIDGE_SCRIPT = `;(${installArtifactPreviewBridge.toString()})();`;
+export const ARTIFACT_PREVIEW_BRIDGE_SCRIPT = `;(${installArtifactPreviewBridge.toString()})(${sanitizeArtifactPreviewCss.toString()},${JSON.stringify(ARTIFACT_PREVIEW_FREEZE_CSS)},${ARTIFACT_PREVIEW_MAX_SNAPSHOT_LENGTH},${ARTIFACT_PREVIEW_MAX_URL_LENGTH});`;
 
 function createRequestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -226,17 +345,47 @@ export function requestArtifactPreviewFromFrame(
       ) {
         return;
       }
+      if (typeof event.data.failure === 'string') {
+        console.warn(`[ArtifactPreview] Capture failed: ${event.data.failure}`);
+        finish(null);
+        return;
+      }
       const imageUrl = event.data.imageUrl;
-      finish(
-        typeof imageUrl === 'string' && isAllowedArtifactPreviewUrl(imageUrl) ? imageUrl : null,
-      );
+      if (typeof imageUrl === 'string') {
+        finish(isAllowedArtifactPreviewUrl(imageUrl) ? imageUrl : null);
+        return;
+      }
+      const snapshot = event.data.snapshot as Partial<ArtifactPreviewSnapshot> | undefined;
+      if (!isBoundedArtifactPreviewSnapshot(snapshot)) {
+        console.warn('[ArtifactPreview] Capture bridge returned an invalid snapshot');
+        finish(null);
+        return;
+      }
+      cleanup();
+      void rasterizeArtifactPreviewSnapshot(
+        {
+          serialized: snapshot.serialized,
+          backgroundColor: snapshot.backgroundColor,
+        },
+        Math.max(frame.clientWidth, 1),
+        Math.max(frame.clientHeight, 1),
+        signal,
+      )
+        .then(resolve)
+        .catch((error: Error) => {
+          console.warn(`[ArtifactPreview] Rasterization failed: ${error.name}`);
+          resolve(null);
+        });
     };
     const request = () => frameWindow.postMessage({ type: PREVIEW_REQUEST, requestId }, '*');
 
     window.addEventListener('message', handleMessage);
     signal?.addEventListener('abort', handleAbort, { once: true });
     retryTimer = window.setInterval(request, 300);
-    timeoutTimer = window.setTimeout(() => finish(null), timeoutMs);
+    timeoutTimer = window.setTimeout(() => {
+      console.warn('[ArtifactPreview] Capture bridge timed out');
+      finish(null);
+    }, timeoutMs);
     request();
   });
 }
