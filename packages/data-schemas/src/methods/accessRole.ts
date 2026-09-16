@@ -4,18 +4,6 @@ import type { IAccessRole } from '~/types';
 import { getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { RoleBits } from '~/common';
 
-/**
- * Matches the global default roles, which `seedDefaultRoles` writes without a
- * `tenantId`. Needed because the tenant-isolation plugin only ever adds a
- * positive `{ tenantId: T }` predicate, never one that also accepts the globals.
- *
- * Only tenant-scoped lookups consult it. Lookups with no tenant context — and
- * explicit system-context ones such as GitHub Skill Sync — keep their existing
- * behavior, so deployments that seed roles per tenant rather than globally are
- * unaffected.
- */
-const BASE_ROLE_FILTER = { tenantId: { $in: [null, undefined] } } as const;
-
 export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
   createRole: (roleData: Partial<IAccessRole>) => Promise<IAccessRole>;
   updateRole: (
@@ -57,29 +45,30 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
    * its result. Substitution by identifier is only total that way — a tenant copy
    * that changes a field the caller selects on, `resourceType` above all, still has
    * to displace the global row it overrides, and a query that narrowed both sides
-   * first would miss the copy and leave that row visible under its old type. Both
-   * reads are bounded to one tenant's roles plus the global defaults, so this is a
+   * first would miss the copy and leave that row visible under its old type. The
+   * read is bounded to one tenant's roles plus the global defaults, so this is a
    * few dozen small documents rather than a collection scan.
    *
    * The unique index on `(accessRoleId, tenantId)` makes the substitution unambiguous.
    */
   async function visibleTenantRoles(): Promise<IAccessRole[]> {
+    const tenantId = getTenantId();
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    const runQuery = (roleFilter: Record<string, unknown>) =>
-      AccessRole.find(roleFilter).lean<IAccessRole[]>().exec();
 
-    /** The callback must be async and the query awaited inside it: a sync callback
-     * returning a lazy Mongoose query would execute only once awaited outside, after
-     * `runAsSystem` had exited, and be re-scoped to the active tenant — leaving the
-     * base roles unmatched. */
-    const [base, scoped] = await Promise.all([
-      runAsSystem(async () => await runQuery(BASE_ROLE_FILTER)),
-      runQuery({}),
-    ]);
+    /** Capture the tenant before entering system context, and execute the bounded
+     * query inside it. MongoDB's null match includes absent tenantId fields. */
+    const roles = await runAsSystem(async () =>
+      AccessRole.find({ tenantId: { $in: [tenantId, null] } })
+        .lean<IAccessRole[]>()
+        .exec(),
+    );
 
-    const rolesById = new Map(base.map((role) => [String(role.accessRoleId), role]));
-    for (const role of scoped) {
-      rolesById.set(String(role.accessRoleId), role);
+    const rolesById = new Map<string, IAccessRole>();
+    for (const role of roles) {
+      const id = String(role.accessRoleId);
+      if (role.tenantId === tenantId || !rolesById.has(id)) {
+        rolesById.set(id, role);
+      }
     }
     return [...rolesById.values()];
   }
