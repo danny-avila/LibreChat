@@ -73,8 +73,8 @@ const escapeBelongsToPopup = (ownerDocument: Document): boolean => {
 };
 
 interface OGDialogProps extends DialogPrimitive.DialogProps {
-  triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
-  triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
+  triggerRef?: React.RefObject<HTMLElement | null>;
+  triggerRefs?: React.RefObject<HTMLElement | null>[];
 }
 
 const Dialog: React.ForwardRefExoticComponent<OGDialogProps & React.RefAttributes<HTMLDivElement>> =
@@ -137,7 +137,7 @@ export const DialogOverlay: React.ForwardRefExoticComponent<
       ref={ref}
       style={{ ...style, zIndex: overlayZIndex }}
       className={cn(
-        'fixed inset-0 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        'fixed inset-0 bg-surface-overlay/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         className,
       )}
       {...props}

@@ -19,6 +19,7 @@ import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
 
+
 function MessagesViewContent({
   messagesTree: _messagesTree,
   messages,
@@ -65,11 +66,10 @@ function MessagesViewContent({
   });
 
   /** The in-flight steer overlay floats above the composer over the bottom of
-   *  the thread (see `InFlightSteers`); reserve an equal band here so the
-   *  newest message rests above it and older ones scroll behind. */
+   *  the thread; reserve an equal band here so the newest message rests above
+   *  it and older ones scroll behind. */
   const overlayConversationId = conversationId ?? Constants.NEW_CONVO;
   const steerOverlayHeight = useAtomValue(steerOverlayHeightFamily(overlayConversationId));
-
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
@@ -88,15 +88,7 @@ function MessagesViewContent({
               overflowAnchor: mountWindow != null ? 'none' : undefined,
             }}
           >
-            <div
-              ref={contentRef}
-              className="flex flex-col pb-9 pt-14"
-              style={
-                steerOverlayHeight > 0
-                  ? { paddingBottom: `calc(2.25rem + ${steerOverlayHeight}px)` }
-                  : undefined
-              }
-            >
+            <div ref={contentRef} className="flex flex-col pb-9 pt-14">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
