@@ -1649,10 +1649,7 @@ function createLazySubagentConfig(
         false,
         onResolvedAgent,
       );
-      if (grandchildConfigs.length > 0) {
-        childInputs.subagentConfigs = grandchildConfigs;
-      }
-      return childInputs;
+      return sealSubagentInputs(childInputs, grandchildConfigs);
     },
   };
 }
@@ -1935,6 +1932,30 @@ function buildIsolatedAgentInputs(
       child.intentToolNames,
     );
   }
+  /**
+   * Deliberately not finalized here. The delegation tool a child advertises is
+   * generated from `subagentConfigs`, which only exist after recursing through
+   * this child, so its cache identity can only be sealed by the caller that
+   * attaches them — see `sealSubagentInputs`.
+   */
+  return childInputs;
+}
+
+/**
+ * Attaches a child's resolved descendants and seals its cache identity.
+ *
+ * Both the eager and the lazily resolved path build a child, recurse for its
+ * own spawn targets, then attach them; the key has to be computed after that
+ * attachment or the child would advertise a delegation tool its key does not
+ * describe.
+ */
+function sealSubagentInputs(
+  childInputs: AgentInputs,
+  descendants: SubagentConfigEntry[],
+): AgentInputs {
+  if (descendants.length > 0) {
+    childInputs.subagentConfigs = descendants;
+  }
   finalizePromptCacheKey(childInputs);
   return childInputs;
 }
@@ -2055,9 +2076,7 @@ function buildSubagentConfigs(
       detachedTasksEnabled,
       onResolvedAgent,
     );
-    if (grandchildConfigs.length > 0) {
-      childInputs.subagentConfigs = grandchildConfigs;
-    }
+    sealSubagentInputs(childInputs, grandchildConfigs);
     configs.push({
       type: child.id,
       name: child.name ?? child.id,
@@ -2105,9 +2124,16 @@ function buildSubagentConfigs(
       type: definition.type,
       name: definition.name,
       description: definition.description,
-      agents: memberConfigs.map(
-        (member) =>
+      /**
+       * A graph member delegates through the graph's edges rather than through
+       * a delegation tool of its own, so no descendants are attached and the
+       * input is final as soon as it is built.
+       */
+      agents: memberConfigs.map((member) =>
+        sealSubagentInputs(
           prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
+          [],
+        ),
       ),
       /**
        * The persisted API accepts `excludeResults: false` as the explicit
