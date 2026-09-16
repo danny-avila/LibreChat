@@ -827,6 +827,22 @@ describe('clearFilesDraft', () => {
     expect(getFilesDraft(newChatKey).tabId).toBe(getBrowserTabId());
   });
 
+  /** The reset empties the file map, and `useAutoSave`'s attachment effect then writes the draft
+   * with nothing in it. That write used to delete the record this helper had just re-stamped, so
+   * the preserved text sat unowned until the next keystroke and another live tab finishing a
+   * new-chat run could clear it as though nobody were holding it. */
+  it('keeps the claim through the empty-map write the reset triggers', () => {
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+    /** What the attachment effect writes once the composer's file map is empty. */
+    setFilesDraft(newChatKey, { fileIds: [], pastedTextIds: [], pendingPastes: {} });
+
+    expect(getFilesDraft(newChatKey).tabId).toBe(getBrowserTabId());
+    expect(getDraft(newChatKey)).toBe('half-written message');
+  });
+
   it('leaves no claim behind when there was no text to hold', () => {
     setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
 

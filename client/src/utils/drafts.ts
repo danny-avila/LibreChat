@@ -889,6 +889,17 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
     pendingPasteEntries.length === 0 &&
     (draft.pastedTextIds?.length ?? 0) === 0
   ) {
+    /** Nothing attached, but on a shared key this record is also the only thing saying whose text
+     * is stored there, and dropping it leaves that text unowned for another tab to clear.
+     * `useAutoSave` rewrites the draft with an empty file map on every reset and every composer
+     * mount, so a claim that did not survive this branch barely survived at all. The text itself
+     * is the condition, exactly as in `releaseComposerDraftTab`: with none, the claim is residue
+     * and the record still goes. */
+    const holdsText = (getLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) ?? '') !== '';
+    if (tabId != null && holdsText && isSharedComposerDraftId(id)) {
+      setLocalStorageItem(key, JSON.stringify({ fileIds: [], tabId }));
+      return;
+    }
     removeLocalStorageItem(key);
     return;
   }
@@ -1251,18 +1262,14 @@ export const getDraft = (id?: string): string | null =>
  * a typed message has no such resource behind it, and losing it is what made an unsaved chat the
  * one composer whose draft did not survive leaving and coming back.
  *
- * The tab claim is re-stamped rather than dropped with the record: on a shared key it is the only
- * thing that stops another tab's New Chat from clearing text this tab is still holding, and
- * `setFilesDraft` removes the whole stub once nothing is attached. */
+ * Written as an empty draft rather than a direct delete so the claim rule lives in one place:
+ * `setFilesDraft` keeps a shared key's stamp while text is stored under it and drops the record
+ * otherwise, which is also what the autosave write that follows this one has to do. */
 export const clearFilesDraft = (id: string): void => {
   if (!mayClearComposerDrafts(id)) {
     return;
   }
-  filesDraftCache = null;
-  removeLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
-  if (isSharedComposerDraftId(id) && (getDraft(id) ?? '') !== '') {
-    claimComposerDraftTab(id);
-  }
+  setFilesDraft(id, { fileIds: [], pendingPastes: {} });
 };
 
 /**
