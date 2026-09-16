@@ -240,7 +240,7 @@ describe('Artifacts panel accessibility', () => {
         title: 'Shared artifact',
       } as TArtifactApp,
       isDeleted: false,
-      isSyncing: false,
+      isSyncing: true,
     };
 
     render(
@@ -251,6 +251,7 @@ describe('Artifacts panel accessibility', () => {
 
     await screen.findByRole('region', { name: 'Diagram' });
     expect(screen.queryByRole('button', { name: 'artifact-share' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_artifact_syncing')).not.toBeInTheDocument();
   });
 
   it('stores a captured thumbnail on the generated artifact for automatic synchronization', async () => {

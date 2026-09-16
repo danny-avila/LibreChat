@@ -29,7 +29,7 @@ export default function useArtifactCatalogSync(artifact: Artifact | null | undef
     artifactEntry: isDeleted ? undefined : entryQuery.data?.app,
     isDeleted,
     restoreArtifact: syncRequest ? () => restoreMutation.mutateAsync(syncRequest) : undefined,
-    isSyncing: entryQuery.isLoading || restoreMutation.isLoading,
+    isSyncing: !!syncRequest && (entryQuery.isLoading || restoreMutation.isLoading),
     sourceKey,
   };
 }

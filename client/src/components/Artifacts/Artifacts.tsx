@@ -586,7 +586,7 @@ export default function Artifacts({ readOnly = false }: { readOnly?: boolean }) 
                 />
               )}
               <DownloadArtifact artifact={currentArtifact} />
-              {isSyncing && (
+              {!isSharedView && isSyncing && (
                 <span
                   className="flex h-9 w-9 items-center justify-center text-text-secondary"
                   aria-label={localize('com_ui_artifact_syncing')}
