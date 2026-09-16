@@ -627,6 +627,7 @@ export function getOpenAILLMConfig({
   defaultParams,
   useOpenRouter,
   promptCacheKeyEnabled,
+  promptCacheScope,
   promptCacheRetention,
   promptCacheExplicit,
   reasoningFormat = ReasoningParameterFormat.reasoningEffort,
@@ -643,6 +644,7 @@ export function getOpenAILLMConfig({
   useOpenRouter?: boolean;
   reasoningFormat?: ReasoningParameterFormat;
   promptCacheKeyEnabled?: boolean;
+  promptCacheScope?: t.OpenAIPromptCacheScope;
   promptCacheRetention?: t.OpenAIPromptCacheRetention;
   promptCacheExplicit?: boolean;
   azure?: false | t.AzureOptions;
@@ -963,6 +965,10 @@ export function getOpenAILLMConfig({
    * `dropParams` — because `createRun` would otherwise synthesize over that
    * decision. `dropParams` has to be read directly: it deletes
    * `promptCacheKey` further down and never sees this separate marker.
+   *
+   * The scope rides along with the marker: it only describes a key `createRun`
+   * is going to build, so carrying it when no key is coming would leave a
+   * setting on the request that nothing reads.
    */
   const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
   const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
@@ -973,6 +979,9 @@ export function getOpenAILLMConfig({
     !promptCacheKeyDropped
   ) {
     llmConfig.promptCacheKeyEnabled = true;
+    if (promptCacheScope != null) {
+      llmConfig.promptCacheScope = promptCacheScope;
+    }
   }
   if (firstPartyEndpoint && promptCacheRetention != null) {
     llmConfig.promptCacheRetention = promptCacheRetention;

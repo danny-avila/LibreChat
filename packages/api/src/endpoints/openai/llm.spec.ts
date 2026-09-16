@@ -1995,6 +1995,42 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
   });
 
+  it('defaults to per-user cache accounting by saying nothing', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScope');
+  });
+
+  it('carries an administrator opting into a shared cache entry', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheScope: 'shared',
+    });
+
+    expect(result.llmConfig.promptCacheScope).toBe('shared');
+  });
+
+  it('withholds the scope when no key is coming', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheKeyEnabled: false,
+      promptCacheScope: 'shared',
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScope');
+  });
+
   it('withholds explicit cache controls from models that reject them', () => {
     const unsupported = getOpenAILLMConfig({
       apiKey: 'test-api-key',

@@ -48,6 +48,13 @@ export interface PromptCacheKeyInput {
    */
   responseSchema?: unknown;
   responsesTextFormat?: unknown;
+  /**
+   * Cache-accounting partition. Two requests sharing a prefix but carrying
+   * different scopes get different keys, which is what keeps one user's cached
+   * prefix from being probed by another. Omitted only when an administrator
+   * opts into sharing a single entry across the whole organization.
+   */
+  scopeId?: string | null;
 }
 
 /**
@@ -84,11 +91,15 @@ function toolCacheIdentity(tool: unknown): unknown {
 /**
  * Deterministic `prompt_cache_key` for requests that share a stable prefix.
  *
- * OpenAI routes cache lookups by this key in place of `user`, so two users
- * running the same agent reach the same cached prefix instead of sitting in
- * per-user partitions. A real change to the instructions, tool schemas or
- * output schema produces a different digest and therefore a new cache
- * identity, with no explicit invalidation step.
+ * Before GPT-5.6 this key is a routing hint: requests carrying it are steered
+ * toward a machine already holding the matching prefix. From GPT-5.6 on OpenAI
+ * routes automatically and the key instead partitions cache accounting, which
+ * is also what prevents cache-hit probing between partitions.
+ *
+ * Either way the digest is derived, not registered: a real change to the
+ * instructions, tool schemas or output schema produces a new identity with no
+ * explicit invalidation step, so a stale prefix can never be reused under a key
+ * that no longer describes it.
  */
 export function buildPromptCacheKey(input: PromptCacheKeyInput): string {
   const canonical = JSON.stringify(
@@ -99,6 +110,11 @@ export function buildPromptCacheKey(input: PromptCacheKeyInput): string {
       boundTools: (input.boundTools ?? []).map(toolCacheIdentity),
       responseSchema: input.responseSchema,
       responsesTextFormat: input.responsesTextFormat,
+      /**
+       * Hashed with the prefix rather than appended to the key, so the user id
+       * an operator sees in OpenAI's cache accounting stays opaque.
+       */
+      scopeId: input.scopeId ?? null,
     }),
   );
   const digest = createHash('sha256').update(canonical).digest('base64url');

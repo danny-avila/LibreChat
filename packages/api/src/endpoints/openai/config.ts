@@ -203,6 +203,7 @@ export function getOpenAIConfig(
       modelOptions,
       useOpenRouter,
       promptCacheKeyEnabled: options.promptCacheKeyEnabled,
+      promptCacheScope: options.promptCacheScope,
       promptCacheRetention: options.promptCacheRetention,
       promptCacheExplicit: options.promptCacheExplicit,
       reasoningFormat: getReasoningFormat({

@@ -16,6 +16,13 @@ export type OpenAIModelOptions = Partial<OpenAIParameters>;
 export type OpenAIPromptCacheRetention = 'in-memory' | '24h';
 
 /**
+ * Partition a synthesized `prompt_cache_key` carries. `user` keeps each user's
+ * cache accounting separate, as the `user` field already does; `shared` lets
+ * one cached prefix serve every user running the same agent.
+ */
+export type OpenAIPromptCacheScope = 'user' | 'shared';
+
+/**
  * Configuration options for the getLLMConfig function
  */
 export interface OpenAIConfigOptions {
@@ -33,6 +40,7 @@ export interface OpenAIConfigOptions {
   dropParams?: string[];
   /** Endpoint-level prompt-cache levers, resolved from `librechat.yaml`. */
   promptCacheKeyEnabled?: boolean;
+  promptCacheScope?: OpenAIPromptCacheScope;
   promptCacheRetention?: OpenAIPromptCacheRetention;
   promptCacheExplicit?: boolean;
   customParams?: Partial<TConfig['customParams']>;
@@ -53,6 +61,11 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    * consumes this flag and sets `promptCacheKey`.
    */
   promptCacheKeyEnabled?: boolean;
+  /**
+   * Partition the synthesized key carries. Read by `createRun` alongside the
+   * flag above and, like it, removed before the request is sent.
+   */
+  promptCacheScope?: OpenAIPromptCacheScope;
   /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6
