@@ -6718,7 +6718,18 @@ describe('AgentClient - titleConvo', () => {
           ...makeUploadedFile('fallback-file', 'sales.csv', 'text/csv'),
           text: 'handoff fallback content',
           llmDeliveryPath: 'none',
-          metadata: { destinationChosen: false },
+          /* The primary agent runs code, and a tool serves a file only once it holds it, so the
+           * sandbox reference is what keeps the text out of the primary prompt while the handoff
+           * agent, which runs no reader at all, still receives it. */
+          metadata: {
+            destinationChosen: false,
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'session-1',
+              file_id: 'sandbox-fallback-file',
+            },
+          },
         };
         const { resolveTurnDeliveryRouting } = jest.requireActual('@librechat/api');
         client.options.req.config.fileConfig = {
