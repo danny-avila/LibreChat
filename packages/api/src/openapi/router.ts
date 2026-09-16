@@ -4,10 +4,12 @@ import express from 'express';
 import { logger, type AppConfig } from '@librechat/data-schemas';
 import type { Request, Response, Router } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
-import { getAppConfigOptionsFromUser } from '~/app/service';
 
 export interface OpenApiRouterDeps {
-  /** Resolves the effective app configuration for the requesting user. */
+  /**
+   * Resolves the app configuration. The docs gate reads the deployment-wide base config,
+   * so `openapi.enabled` comes from `librechat.yaml` and needs no per-request database read.
+   */
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   /** Absolute path to the bundled Swagger UI assets (from `swagger-ui-dist`). */
   swaggerAssetsPath: string;
@@ -59,9 +61,9 @@ export function createOpenApiRouter(deps: OpenApiRouterDeps): Router {
     return cachedSpec;
   }
 
-  async function isEnabled(req: Request): Promise<boolean> {
+  async function isEnabled(): Promise<boolean> {
     try {
-      const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(req.user));
+      const appConfig = await deps.getAppConfig({ baseOnly: true });
       return appConfig?.config?.openapi?.enabled === true;
     } catch (error) {
       logger.error('[openapi] Failed to read app config', error);
@@ -69,8 +71,8 @@ export function createOpenApiRouter(deps: OpenApiRouterDeps): Router {
     }
   }
 
-  router.get('/openapi.json', async (req: Request, res: Response): Promise<void> => {
-    if (!(await isEnabled(req))) {
+  router.get('/openapi.json', async (_req: Request, res: Response): Promise<void> => {
+    if (!(await isEnabled())) {
       res.status(404).json({ message: 'Not Found' });
       return;
     }
@@ -84,8 +86,8 @@ export function createOpenApiRouter(deps: OpenApiRouterDeps): Router {
 
   router.use('/docs/assets', express.static(deps.swaggerAssetsPath));
 
-  router.get('/docs', async (req: Request, res: Response): Promise<void> => {
-    if (!(await isEnabled(req))) {
+  router.get('/docs', async (_req: Request, res: Response): Promise<void> => {
+    if (!(await isEnabled())) {
       res.status(404).json({ message: 'Not Found' });
       return;
     }
