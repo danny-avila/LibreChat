@@ -142,6 +142,11 @@ function isSimpleRecord(record: TTraceRecord): boolean {
   return record.kind === 'generation' || record.kind === 'tool' || record.status === 'error';
 }
 
+/** The records others hang from: what the model called. A failed wrapper stays visible but holds nothing. */
+function isStepAnchor(record: TTraceRecord): boolean {
+  return record.kind === 'generation' || record.kind === 'tool';
+}
+
 function toNode(record: TTraceRecord): TraceNode | null {
   const start = Date.parse(record.startTime);
   if (!Number.isFinite(start)) {
@@ -234,7 +239,11 @@ function resolveViewTree(nodes: Map<string, TraceNode>, mode: TraceMode): void {
     if (!node.shown) {
       continue;
     }
-    node.viewParentId = nearestAncestor(nodes, node, (candidate) => candidate.shown);
+    node.viewParentId = nearestAncestor(
+      nodes,
+      node,
+      (candidate) => mode === 'full' || (candidate.shown && isStepAnchor(candidate.record)),
+    );
     if (node.viewParentId != null) {
       nodes.get(node.viewParentId)?.viewChildIds.push(id);
     }
@@ -252,7 +261,7 @@ function stepRoots(nodes: Map<string, TraceNode>): Map<string, string[]> {
     if (!isSimpleRecord(node.record)) {
       continue;
     }
-    const ancestor = nearestAncestor(nodes, node, (candidate) => isSimpleRecord(candidate.record));
+    const ancestor = nearestAncestor(nodes, node, (candidate) => isStepAnchor(candidate.record));
     if (ancestor != null) {
       continue;
     }
@@ -264,10 +273,12 @@ function stepRoots(nodes: Map<string, TraceNode>): Map<string, string[]> {
 }
 
 /**
- * Groups a turn's shown roots into steps: each model call starts one and the
- * tools that follow it belong to it, so a step reads as "the model decided,
- * then these ran". Roots before the first model call join the first step, and a
- * turn with no model call is one step. A title run's records form their own steps.
+ * Groups a turn's roots into steps: each model call starts one and the tools
+ * that follow it belong to it, so a step reads as "the model decided, then
+ * these ran". Tools before the first model call (a turn whose earlier records
+ * sit on an unloaded page) form a step of their own, as they do in the chat's
+ * own record of the response. Failed spans before any step join the first one,
+ * and a turn with nothing else is one step. A title run's records form their own.
  */
 function groupSteps(
   turn: TraceTurn,
@@ -287,14 +298,21 @@ function groupSteps(
   for (const [origin, roots] of rootsByOrigin) {
     roots.sort(compare);
     const groups: string[][] = [];
+    let leading: string[] = [];
     for (const id of roots) {
-      const isGeneration = nodes.get(id)?.record.kind === 'generation';
+      const kind = nodes.get(id)?.record.kind;
       const current = groups[groups.length - 1];
-      if (current == null || (isGeneration && current.some(isGenerationId(nodes)))) {
-        groups.push([id]);
+      if (kind === 'generation' || (kind === 'tool' && current == null)) {
+        groups.push([...leading, id]);
+        leading = [];
+      } else if (current == null) {
+        leading.push(id);
       } else {
         current.push(id);
       }
+    }
+    if (leading.length > 0) {
+      groups.push(leading);
     }
     groups.forEach((rootIds, index) => {
       const key = stepKey(turn.messageId, origin, index + 1);
@@ -807,6 +825,51 @@ export function panWindow(
   }
   const shift = (view.end - view.start) * PAN_STEP * direction;
   return clampWindow({ start: view.start + shift, end: view.end + shift }, bounds, minSpan);
+}
+
+/**
+ * Carries a window across a model change. On the time scale it is fitted to the
+ * records still loaded. On the sequence scale positions renumber when records
+ * arrive or leave, so the window follows the records it covered and clears when
+ * either edge is gone.
+ */
+export function rebaseWindow(
+  view: TraceWindow,
+  previous: TraceModel,
+  next: TraceModel,
+  scale: TraceScale,
+): TraceWindow | null {
+  const bounds = boundsOf(next, scale);
+  const minSpan = minimumSpan(bounds, scale);
+  if (scale === 'time') {
+    return fitWindow(view, bounds, minSpan);
+  }
+  const firstIndex = Math.floor(view.start);
+  const lastIndex = Math.ceil(view.end) - 1;
+  const first = recordAt(previous, firstIndex);
+  const last = recordAt(previous, lastIndex);
+  const nextFirst = first != null ? next.nodes.get(first.record.id) : undefined;
+  const nextLast = last != null ? next.nodes.get(last.record.id) : undefined;
+  if (nextFirst?.shown !== true || nextLast?.shown !== true) {
+    return null;
+  }
+  return clampWindow(
+    {
+      start: nextFirst.sequence + (view.start - firstIndex),
+      end: nextLast.sequence + (view.end - lastIndex),
+    },
+    bounds,
+    minSpan,
+  );
+}
+
+function recordAt(model: TraceModel, sequence: number): TraceNode | undefined {
+  for (const node of model.nodes.values()) {
+    if (node.shown && node.sequence === sequence) {
+      return node;
+    }
+  }
+  return undefined;
 }
 
 /** The narrowest zoom: one record on the sequence scale, a thousandth of the trace on time. */

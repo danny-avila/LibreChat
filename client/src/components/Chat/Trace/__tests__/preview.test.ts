@@ -228,6 +228,36 @@ describe('previewFor', () => {
     expect(nested.turns[0].steps).toBe(1);
   });
 
+  it('attaches a message stored as flat text to the last model call', () => {
+    const two = buildTraceModel([
+      record({ id: 'first', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({ id: 'last', kind: 'generation', startTime: at(200), endTime: at(300) }),
+    ]);
+    const flat = buildPreviews([message({ text: 'The final answer.' })]);
+
+    expect(previewFor(two.nodes.get('first') as never, two, flat)).toBeUndefined();
+    expect(previewFor(two.nodes.get('last') as never, two, flat)).toBe('The final answer.');
+  });
+
+  it('gives no preview to same-name calls that started in the same millisecond', () => {
+    const twins = buildTraceModel([
+      record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({ id: 'one', kind: 'tool', name: 'web_search', startTime: at(200), endTime: at(300) }),
+      record({ id: 'two', kind: 'tool', name: 'web_search', startTime: at(200), endTime: at(400) }),
+    ]);
+    const parallel = buildPreviews([
+      message({
+        content: [
+          { type: ContentTypes.TOOL_CALL, tool_call: { name: 'web_search', args: { q: 'a' } } },
+          { type: ContentTypes.TOOL_CALL, tool_call: { name: 'web_search', args: { q: 'b' } } },
+        ],
+      } as Partial<TMessage>),
+    ]);
+
+    expect(previewFor(twins.nodes.get('one') as never, twins, parallel)).toBeUndefined();
+    expect(previewFor(twins.nodes.get('two') as never, twins, parallel)).toBeUndefined();
+  });
+
   it('does not preview messages the user wrote', () => {
     expect(previews.has('user-1')).toBe(false);
   });

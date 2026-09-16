@@ -10,6 +10,12 @@ type ToolCallPreview = { name: string; args: string };
 /** What one model call of a response produced: the text it wrote and the tools it called. */
 export type StepPreview = { text: string; toolCalls: ToolCallPreview[] };
 
+/**
+ * A response's previews by model call. `fromText` marks a message stored with
+ * only its final text, which belongs to the last model call, not the first.
+ */
+export type MessagePreview = { steps: StepPreview[]; fromText: boolean };
+
 function compact(text: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
   return collapsed.length > PREVIEW_LENGTH
@@ -74,7 +80,7 @@ function runStepOf(call: ToolCallPart | undefined): string | undefined {
  * where a tool call is followed by reasoning or text, or by a tool call from
  * another run step (consecutive tool-only calls). Parallel calls share a step.
  */
-export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
+export function buildMessagePreview(message: TMessage | undefined): MessagePreview {
   const parts: TMessageContentParts[] = message?.content ?? [];
   const steps: StepPreview[] = [];
   let current: StepPreview | null = null;
@@ -113,9 +119,13 @@ export function buildStepPreviews(message: TMessage | undefined): StepPreview[] 
     step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
   if (steps.length === 0 && message?.text) {
-    steps.push({ text: compact(message.text), toolCalls: [] });
+    return { steps: [{ text: compact(message.text), toolCalls: [] }], fromText: true };
   }
-  return steps;
+  return { steps, fromText: false };
+}
+
+export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
+  return buildMessagePreview(message).steps;
 }
 
 /**
@@ -129,26 +139,45 @@ export function buildStepPreviews(message: TMessage | undefined): StepPreview[] 
 export function previewFor(
   node: TraceNode,
   model: TraceModel,
-  previewsByMessage: ReadonlyMap<string, StepPreview[]>,
+  previewsByMessage: ReadonlyMap<string, MessagePreview>,
 ): string | undefined {
   const { record } = node;
   if (record.origin === 'title' || (record.kind !== 'generation' && record.kind !== 'tool')) {
     return undefined;
   }
-  const previews = previewsByMessage.get(record.messageId);
+  const message = previewsByMessage.get(record.messageId);
   const step = node.stepKey != null ? model.steps.get(node.stepKey) : undefined;
-  if (previews == null || step == null || step.origin === 'title') {
+  if (message == null || step == null || step.origin === 'title') {
     return undefined;
   }
   if (!step.rootIds.includes(record.id)) {
     return undefined;
   }
-  const preview = previews[step.index - 1];
+  if (message.fromText) {
+    const turn = model.turns.find((candidate) => candidate.messageId === record.messageId);
+    const last = record.kind === 'generation' && turn != null && step.index === turn.steps;
+    return last ? message.steps[0]?.text || undefined : undefined;
+  }
+  const preview = message.steps[step.index - 1];
   if (!preview) {
     return undefined;
   }
   if (record.kind === 'generation') {
     return preview.text || undefined;
+  }
+  /** Same-name calls that started in the same millisecond have no reliable order to match by. */
+  const ambiguous = step.rootIds.some((id) => {
+    const other = model.nodes.get(id);
+    return (
+      other != null &&
+      other !== node &&
+      other.record.kind === 'tool' &&
+      other.record.name === record.name &&
+      other.start === node.start
+    );
+  });
+  if (ambiguous) {
+    return undefined;
   }
   const ordinal = toolOrdinal(node, model, step.rootIds);
   const match = preview.toolCalls.filter((call) => call.name === record.name)[ordinal];
@@ -173,13 +202,13 @@ function toolOrdinal(node: TraceNode, model: TraceModel, rootIds: string[]): num
 /** Previews for every response in a conversation, keyed by its message id. */
 export function buildPreviews(
   messages: readonly TMessage[] | undefined,
-): Map<string, StepPreview[]> {
-  const previews = new Map<string, StepPreview[]>();
+): Map<string, MessagePreview> {
+  const previews = new Map<string, MessagePreview>();
   for (const message of messages ?? []) {
     if (message.isCreatedByUser) {
       continue;
     }
-    previews.set(message.messageId, buildStepPreviews(message));
+    previews.set(message.messageId, buildMessagePreview(message));
   }
   return previews;
 }

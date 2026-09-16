@@ -35,10 +35,10 @@ import {
 import {
   boundsOf,
   ZOOM_STEP,
-  fitWindow,
   zoomWindow,
   flattenRows,
   minimumSpan,
+  rebaseWindow,
   buildTraceModel,
   collapsibleKeys,
 } from './model';
@@ -178,12 +178,18 @@ export default function Viewer({
     () => flattenRows(model, { collapsed, query: deferredQuery, window: view, scale, labelsFor }),
     [model, collapsed, deferredQuery, view, scale, labelsFor],
   );
-  /** A refresh or a settled run trims the cache to its newest page. An interval or a selection
-   *  on records that left with the older pages would hide every row, or reopen when they reload. */
+  /** A refresh or a settled run trims the cache to its newest page, an older page renumbers the
+   *  sequence, and a mode change hides records. A selection or interval on records no longer
+   *  listed would leave an inspector on nothing, or hide every row, so both follow the records. */
+  const previousModel = useRef(model);
   useEffect(() => {
-    setSelectedId((id) => (id != null && !model.nodes.has(id) ? null : id));
-    setView((current) => (current != null ? fitWindow(current, bounds, minSpan) : current));
-  }, [model, bounds, minSpan]);
+    const previous = previousModel.current;
+    previousModel.current = model;
+    setSelectedId((id) => (id != null && model.nodes.get(id)?.shown !== true ? null : id));
+    setView((current) =>
+      current != null ? rebaseWindow(current, previous, model, scale) : current,
+    );
+  }, [model, scale]);
   /** Positions mean something else on the other scale or with other records shown. */
   useEffect(() => {
     setView(null);

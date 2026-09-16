@@ -12,6 +12,7 @@ import {
   clampWindow,
   flattenRows,
   minimumSpan,
+  rebaseWindow,
   sequenceLane,
   buildTraceModel,
   collapsibleKeys,
@@ -333,7 +334,7 @@ describe('simple mode', () => {
     expect(failed.steps.get(step(1))?.errorCount).toBe(1);
   });
 
-  it('puts tools that ran before any model call, and a turn with no model call, in step 1', () => {
+  it('gives tools that ran before any model call their own step, and a turn with no model call one step', () => {
     const leading = buildTraceModel([
       record({ id: 'early', kind: 'tool', startTime: at(0), endTime: at(100) }),
       record({ id: 'llm', kind: 'generation', startTime: at(200), endTime: at(300) }),
@@ -342,12 +343,67 @@ describe('simple mode', () => {
     ]);
     const toolsOnly = buildTraceModel([record({ id: 'only', kind: 'tool' })]);
 
-    expect(leading.steps.get(step(1))?.rootIds).toEqual(['early', 'llm', 'late']);
-    expect([...(leading.steps.get(step(1))?.toolNames.keys() ?? [])]).toEqual(['early', 'late']);
-    expect(leading.steps.get(step(2))?.rootIds).toEqual(['llm-2']);
-    expect(leading.turns[0].steps).toBe(2);
+    expect(leading.steps.get(step(1))?.rootIds).toEqual(['early']);
+    expect(leading.steps.get(step(2))?.rootIds).toEqual(['llm', 'late']);
+    expect([...(leading.steps.get(step(2))?.toolNames.keys() ?? [])]).toEqual(['late']);
+    expect(leading.steps.get(step(3))?.rootIds).toEqual(['llm-2']);
+    expect(leading.turns[0].steps).toBe(3);
     expect(toolsOnly.turns[0].steps).toBe(1);
     expect(toolsOnly.steps.get(step(1))).toMatchObject({ generationId: null, rootIds: ['only'] });
+  });
+
+  it('keeps a failed wrapper visible without folding the model calls beneath it into one step', () => {
+    const failed = buildTraceModel([
+      record({ id: 'root', kind: 'agent', status: 'error', startTime: at(0), endTime: at(3000) }),
+      record({
+        id: 'llm-1',
+        parentId: 'root',
+        kind: 'generation',
+        startTime: at(100),
+        endTime: at(1000),
+      }),
+      record({
+        id: 'llm-2',
+        parentId: 'root',
+        kind: 'generation',
+        startTime: at(1500),
+        endTime: at(2500),
+      }),
+    ]);
+
+    expect(failed.turns[0].steps).toBe(2);
+    expect(failed.nodes.get('llm-1')?.viewParentId).toBeNull();
+    expect(rowKeys(flattenRows(failed, noFilter))).toEqual([
+      turnKey('response-1'),
+      step(1),
+      'root',
+      'llm-1',
+      step(2),
+      'llm-2',
+    ]);
+  });
+
+  it('carries a sequence window across a page that renumbers the records', () => {
+    const previous = buildTraceModel([
+      record({ id: 'a', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({ id: 'b', kind: 'generation', startTime: at(200), endTime: at(300) }),
+    ]);
+    const withOlder = buildTraceModel([
+      record({ id: 'z', kind: 'generation', startTime: at(-500), endTime: at(-400) }),
+      record({ id: 'a', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({ id: 'b', kind: 'generation', startTime: at(200), endTime: at(300) }),
+    ]);
+    const without = buildTraceModel([
+      record({ id: 'b', kind: 'generation', startTime: at(200), endTime: at(300) }),
+    ]);
+
+    expect(rebaseWindow({ start: 0, end: 1 }, previous, withOlder, 'sequence')).toEqual({
+      start: 1,
+      end: 2,
+    });
+    expect(rebaseWindow({ start: 0, end: 1 }, previous, without, 'sequence')).toBeNull();
+    const inTime = { start: BASE, end: BASE + 50 };
+    expect(rebaseWindow(inTime, previous, previous, 'time')).toBe(inTime);
   });
 
   it('numbers shown records in ledger order for the sequence scale', () => {

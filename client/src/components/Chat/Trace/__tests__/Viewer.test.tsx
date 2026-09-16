@@ -192,6 +192,55 @@ describe('Trace Viewer', () => {
     expect(stepRow(1)).toBeInTheDocument();
   });
 
+  it('clears a selection the simple mode no longer lists', async () => {
+    renderViewer();
+    await recordRow('llm');
+    await userEvent.click(toggle('com_ui_trace_all_spans'));
+    await userEvent.click(await recordRow('AgentGraph'));
+    expect(screen.getByTestId('trace-inspector')).toBeInTheDocument();
+
+    await userEvent.click(toggle('com_ui_trace_all_spans'));
+
+    await waitFor(() => expect(screen.queryByTestId('trace-inspector')).not.toBeInTheDocument());
+  });
+
+  it('keeps a focused record range on the same records when an older page renumbers them', async () => {
+    const newest = ['a', 'b', 'c'].map((suffix, index) =>
+      record({
+        id: `later-${suffix}`,
+        messageId: 'response-2',
+        traceId: 'trace-2',
+        name: `later-${suffix}`,
+        kind: 'generation',
+        startTime: at(10_000 + index * 1000),
+        endTime: at(10_500 + index * 1000),
+      }),
+    );
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation(async ({ cursor }) =>
+        cursor == null ? { records: newest, nextCursor: 'older' } : { records },
+      );
+    renderViewer();
+    await recordRow('later-b');
+    const overview = screen.getByTestId('trace-overview');
+    fireEvent.keyDown(overview, { key: '+' });
+    fireEvent.keyDown(overview, { key: '+' });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('treeitem', { name: recordName('later-a') }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('com_ui_trace_selection_records 2 2')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
+
+    expect(await screen.findByText('com_ui_trace_selection_records 4 4')).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: recordName('later-b') })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: recordName('llm') })).not.toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: recordName('later-a') })).not.toBeInTheDocument();
+  });
+
   it('previews what a step wrote and what a tool was asked, from the chat message', async () => {
     const { client } = renderViewer();
     await recordRow('llm');
