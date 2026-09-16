@@ -1,0 +1,10 @@
+/**
+ * The library's Tailwind entry: the preset's appearance roles plus the color tokens, which is
+ * the theme its own components are written against. The app has its own entry
+ * (client/src/style.css) and composes the same two pieces; this file exists so the package is
+ * self-describing — `npm run lint` resolves a theme for files in this workspace, and a consumer
+ * that wants the whole thing rather than the parts can import it.
+ */
+@import 'tailwindcss';
+@import './tokens.css';
+@config '../../tailwind.config.js';

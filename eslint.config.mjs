@@ -262,6 +262,58 @@ export default [
         },
       ],
       'shadcn/require-static-classes': 'error',
+      // Now answerable: the rule asks the installed Tailwind whether a class generates CSS, and
+      // the app is on v4. Classes declared in a stylesheet Tailwind reads are recognized on their
+      // own; these are the ones it cannot see — plain selectors in files loaded separately
+      // (style.css families, the library's component CSS) and classes a third party puts in the
+      // DOM. Everything outside this list that generates no CSS is reported, including the
+      // `token-`-prefixed names and `prose` variants that quietly render nothing today.
+      'shadcn/no-unknown-classes': [
+        'error',
+        {
+          allow: [
+            // client/src/style.css and the library's component CSS
+            'icon-*',
+            'hover-button',
+            'toast-root',
+            'alert-root',
+            'tooltip',
+            'spinner',
+            'popover-ui',
+            'select-item',
+            'assistant-item',
+            'animated-tab',
+            'animated-tab-list',
+            'animated-tab-panel',
+            'animated-panels',
+            'animate-popover',
+            'animate-popover-bottom',
+            'animate-pulse-slow',
+            'animate-gradient-x',
+            'animate-fadeIn',
+            'slow-pulse',
+            'hide-scrollbar',
+            'scrollbar-gutter-spacer',
+            'active',
+            // put in the DOM by a dependency, not by Tailwind
+            'lucide',
+            'lucide-*',
+            'language-*',
+            'i-heroicons-*',
+            'form-check-label',
+            // Markers a selector reads rather than Tailwind styling: each one is queried by a
+            // stylesheet, a component, or an e2e spec, so it carries no CSS of its own.
+            'popover',
+            'user-turn',
+            'agent-turn',
+            'final-completion',
+            'sibling-content-group',
+            'scroll-animation',
+            'hover-button-active',
+            'open',
+          ],
+        },
+      ],
     },
   },
   {
@@ -319,6 +371,7 @@ export default [
       'shadcn/no-arbitrary-values': 'off',
       'shadcn/no-inline-styles': 'off',
       'shadcn/require-static-classes': 'off',
+      'shadcn/no-unknown-classes': 'off',
     },
   },
   ...compat

@@ -1,4 +1,8 @@
 @import 'tailwindcss';
+/* Colors live in the component library, in CSS, so one file feeds this app, the published
+ * package and @shadcn/lint's token checking. Imported from source rather than from the built
+ * package so a lint or CI run needs no prior build. */
+@import '../../packages/client/src/theme/tokens.css';
 @config '../tailwind.config.cjs';
 
 /* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
@@ -6,7 +10,7 @@
  * change; drop one only as a deliberate design decision.
  *   - border-color: v3 used gray-200, v4 uses currentColor.
  *   - ::placeholder: v3 used gray-400, v4 uses currentColor at 50% opacity.
- * Both read the palette through `theme()` so they follow createTailwindColors() rather than
+ * Both read the palette through `theme()`, so they follow the tokens imported above rather than
  * pinning a hex here. `button { cursor: pointer }` below already covers v4's third change. */
 @layer base {
   *,

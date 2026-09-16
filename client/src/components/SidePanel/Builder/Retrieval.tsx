@@ -1,6 +1,5 @@
 import { useEffect, useMemo } from 'react';
 import { Capabilities } from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
@@ -10,8 +9,9 @@ import {
   HoverCardTrigger,
   CircleHelpIcon,
 } from '@librechat/client';
-import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
+import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { AssistantForm } from '~/common';
+import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
@@ -68,7 +68,7 @@ export default function Retrieval({
             <label
               id={Capabilities.retrieval}
               className={cn(
-                'form-check-label text-token-text-primary w-full select-none',
+                'form-check-label text-text-primary w-full select-none',
                 isDisabled ? 'cursor-no-drop opacity-50' : 'cursor-pointer',
               )}
               htmlFor={Capabilities.retrieval}

@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { IThemeRGB } from './types';
 import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
-import { createTailwindColors } from './utils/createTailwindColors';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 
@@ -315,12 +314,12 @@ describe('categorical series scale', () => {
     });
   });
 
-  it('exposes each slot as a Tailwind utility backed by its CSS variable', () => {
-    const colors = createTailwindColors();
+  it('exposes each slot as a Tailwind color backed by its CSS variable', () => {
+    const tokens = readFileSync(join(__dirname, 'tokens.css'), 'utf8');
 
     seriesTokens.forEach((token) => {
       const property = token.slice(4);
-      expect(colors[property]).toBe(`rgb(var(--${property}) / <alpha-value>)`);
+      expect(tokens).toContain(`--color-${property}: rgb(var(--${property}));`);
     });
   });
 });

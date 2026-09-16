@@ -41,7 +41,7 @@ const EditBadgesComponent = ({
             <Edit3 className="icon-md" aria-hidden="true" />
           </div>
         </span>
-        <span className="text-token-text-secondary line-clamp-3 flex-1 py-0.5 font-semibold">
+        <span className="text-text-secondary line-clamp-3 flex-1 py-0.5 font-semibold">
           {localize('com_ui_save_badge_changes')}
         </span>
         <div className="flex h-8 gap-2">

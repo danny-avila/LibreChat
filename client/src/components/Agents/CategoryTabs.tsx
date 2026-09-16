@@ -128,7 +128,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
         className={cn(
           'px-4',
           isSmallScreen
-            ? 'scrollbar-hide flex gap-2 overflow-x-auto scroll-smooth'
+            ? 'hide-scrollbar flex gap-2 overflow-x-auto scroll-smooth'
             : 'flex flex-wrap justify-center gap-1.5',
         )}
         role="tablist"
