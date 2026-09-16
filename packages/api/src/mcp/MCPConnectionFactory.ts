@@ -948,6 +948,7 @@ export class MCPConnectionFactory {
               deleteTokens: this.tokenMethods!.deleteTokens,
               refreshTokens: this.createRefreshTokensFunction(),
               singleFlightScope: this.getOAuthBindingDigest(),
+              refreshWaitTimeoutMs: this.serverConfig.oauthRefreshWaitTimeout,
               flowManager: this.flowManager,
               onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
               onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
@@ -1172,6 +1173,7 @@ export class MCPConnectionFactory {
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
           singleFlightScope,
+          refreshWaitTimeoutMs: this.serverConfig.oauthRefreshWaitTimeout,
           signal,
           /**
            * Drop any previously cached `mcp_get_tokens` result so the next

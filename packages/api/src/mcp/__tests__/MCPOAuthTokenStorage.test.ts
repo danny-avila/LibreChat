@@ -2267,7 +2267,7 @@ describe('MCPTokenStorage', () => {
           }),
         ).resolves.toMatchObject({ access_token: 'at-2' });
 
-        const flightLeaseId = getMCPOAuthRefreshFlightLeaseId('u1', 'flight-srv', undefined);
+        const flightLeaseId = getMCPOAuthRefreshFlightLeaseId('u1', 'flight-srv');
         expect(flightLeaseId).not.toBe(getMCPOAuthLeaseId('u1', 'flight-srv'));
         expect(flowManager.acquireLease).toHaveBeenCalledWith(
           flightLeaseId,
@@ -2347,24 +2347,114 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).toHaveBeenCalledTimes(1);
       });
 
-      it('redeems after the wait window when the holder never releases the flight', async () => {
-        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
-        try {
-          await seedRefreshableTokens('wedged-srv');
-          const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
-          const flowManager = flightManager(async () => false);
+      it('fails as retryable, never redeeming, when the holder keeps the flight', async () => {
+        await seedRefreshableTokens('wedged-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        const flowManager = flightManager(async () => false);
 
-          const refresh = MCPTokenStorage.forceRefreshTokens({
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
             ...refreshParams(refreshTokens, 'wedged-srv'),
             flowManager: flowManager as never,
-          });
-          await jest.advanceTimersByTimeAsync(MCPTokenStorage.REFRESH_FLIGHT_WAIT_MS + 200);
+            refreshWaitTimeoutMs: 400,
+          }),
+        ).rejects.toBeInstanceOf(MCPTokenRefreshUnavailableError);
 
-          await expect(refresh).resolves.toMatchObject({ access_token: 'at-2' });
-          expect(refreshTokens).toHaveBeenCalledTimes(1);
-        } finally {
-          jest.useRealTimers();
-        }
+        /** The point of the fence: no redemption raced the holder, and the credential survives. */
+        expect(refreshTokens).not.toHaveBeenCalled();
+        expect(
+          await store.findToken({
+            userId: 'u1',
+            type: 'mcp_oauth_refresh',
+            identifier: 'mcp:wedged-srv:refresh',
+          }),
+        ).toMatchObject({ token: 'enc:rt-1' });
+      });
+
+      it('keeps the held flight and redeems when the adoption read fails', async () => {
+        await seedRefreshableTokens('adopt-fail-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(6));
+        const release = jest.fn().mockResolvedValue(undefined);
+        let refreshReads = 0;
+        const findToken = (async (filter: { type?: string }) => {
+          /** The observed read succeeds; the read taken after acquiring the flight fails. */
+          if (filter.type === 'mcp_oauth_refresh' && ++refreshReads === 2) {
+            throw new Error('token storage unavailable');
+          }
+          return store.findToken(filter as never);
+        }) as typeof store.findToken;
+        let attempts = 0;
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (_id: string, options?: { expectedGeneration?: number }) =>
+            options?.expectedGeneration !== undefined || ++attempts > 1
+              ? { generation: 0, release }
+              : null,
+          ),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'adopt-fail-srv'),
+            findToken,
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-6' });
+
+        /** Redeemed under the flight rather than losing it, and it was not left to expire. */
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+        expect(release).toHaveBeenCalled();
+      });
+
+      it('serializes two OAuth binding scopes onto one stored credential', async () => {
+        await seedRefreshableTokens('rolling-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        const flightIds = new Set<string>();
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (id: string, options?: { expectedGeneration?: number }) => {
+            if (options?.expectedGeneration === undefined) {
+              flightIds.add(id);
+            }
+            return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+          }),
+        };
+        const refresh = (singleFlightScope: string) =>
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'rolling-srv'),
+            singleFlightScope,
+            flowManager: flowManager as never,
+          });
+
+        await Promise.all([refresh('binding-a'), refresh('binding-b')]);
+
+        /**
+         * Two process-local slots, so both redeem, but one distributed flight: a rolling config
+         * change moves the binding digest without moving the stored credential, and keying the
+         * flight by that digest would let the two versions redeem the same token concurrently.
+         */
+        expect(refreshTokens).toHaveBeenCalledTimes(2);
+        expect(flightIds.size).toBe(1);
+      });
+
+      it('clamps a configured wait into the window the stale abort allows', () => {
+        const resolve = (configured?: number) =>
+          (
+            MCPTokenStorage as unknown as {
+              resolveRefreshFlightWaitMs: (value?: number) => number;
+            }
+          ).resolveRefreshFlightWaitMs(configured);
+
+        expect(resolve()).toBe(MCPTokenStorage.DEFAULT_REFRESH_FLIGHT_WAIT_MS);
+        expect(resolve(0)).toBe(MCPTokenStorage.DEFAULT_REFRESH_FLIGHT_WAIT_MS);
+        expect(resolve(2_000)).toBe(2_000);
+        /** Above the ceiling the stale abort, not the operator's wait, would decide the outcome. */
+        expect(resolve(10 * MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS)).toBe(
+          MCPTokenStorage.MAX_REFRESH_FLIGHT_WAIT_MS,
+        );
+        expect(MCPTokenStorage.MAX_REFRESH_FLIGHT_WAIT_MS).toBe(
+          MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS / 2,
+        );
       });
     });
 

@@ -106,6 +106,8 @@ interface GetTokensParams {
   onRefreshPreparing?: () => Promise<(tokens?: MCPOAuthTokens) => Promise<void>>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
+  /** Per-server `oauthRefreshWaitTimeout`: how long to wait on another replica's redemption. */
+  refreshWaitTimeoutMs?: number;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
   flowManager?: Pick<FlowStateManager, 'getLeaseGeneration' | 'acquireLease'>;
 }
@@ -117,20 +119,25 @@ export const getMCPOAuthLeaseId = (
 ): string => JSON.stringify([tenantId ?? '', userId, serverName]);
 
 /**
- * Lease that serializes refresh-token redemption for one stored credential across
- * replicas. Deliberately a different key from `getMCPOAuthLeaseId`: that lease is the
- * teardown/persistence fence taken *inside* a redemption, so sharing one key would make a
- * redemption wait on a lease it already holds. The binding scope is part of the key for
- * the same reason it is part of the process-local single-flight key — two OAuth bindings
- * of one named server hold unrelated credentials.
+ * Lease that serializes refresh-token redemption for one stored credential across replicas.
+ *
+ * Keyed by what is stored — tenant, user, server name — and deliberately *not* by the caller's
+ * OAuth binding scope, even though the process-local single-flight key carries it. The refresh
+ * record lives at `mcp:<serverName>:refresh`, with no binding in its identifier, and
+ * `assertCredentialSetBinding` compares only `credential_set_id`, so a config change that moves the
+ * binding digest without invalidating the stored credential still permits refresh. Scoping this
+ * lease by that digest would then hand two replicas different locks over one stored token during a
+ * rolling config change, which is the concurrency the lease exists to remove. The scope stays where
+ * it decides which callers may share a returned result, not which redemptions may run at once.
+ *
+ * Distinct from `getMCPOAuthLeaseId`: that lease is the teardown/persistence fence taken *inside* a
+ * redemption, so one shared key would make a redemption wait on a lease it already holds.
  */
 export const getMCPOAuthRefreshFlightLeaseId = (
   userId: string,
   serverName: string,
-  singleFlightScope: string | undefined,
   tenantId: string | undefined = getTenantId(),
-): string =>
-  JSON.stringify(['refresh', tenantId ?? '', userId, serverName, singleFlightScope ?? '']);
+): string => JSON.stringify(['refresh', tenantId ?? '', userId, serverName]);
 
 /**
  * Reads the `exp` claim (RFC 7519 §4.1.4 / RFC 9068) from a JWT-format access
@@ -184,6 +191,16 @@ function cloneTokenMetadata(tokenData: IToken): Record<string, unknown> | Map<st
   return {};
 }
 
+/** Outcome of trying to take the cross-replica refresh flight (`beginRefreshFlight`). */
+interface MCPRefreshFlight {
+  /** Held flight; the caller redeems under it and releases it once the redemption settles. */
+  lease: FlowLease | null;
+  /** Tokens a peer rotated while this replica waited, adopted instead of redeeming again. */
+  adoptedTokens?: MCPOAuthTokens;
+  /** Teardown or the stale timer fired during the wait; the caller resolves null. */
+  aborted?: boolean;
+}
+
 export class MCPTokenStorage {
   /**
    * Process-local in-flight refresh-token redemptions, keyed by
@@ -216,25 +233,41 @@ export class MCPTokenStorage {
   static readonly INFLIGHT_REFRESH_STALE_MS = 60_000;
 
   /**
-   * How long a replica waits for a refresh flight another replica holds before falling
-   * back to redeeming without it. Comfortably longer than a healthy token-endpoint round
-   * trip and short enough to bound a request that is waiting on a peer which has died
-   * holding the flight: the lease outlives that pod by design (below), so the fallback is
-   * what keeps a dead replica from stalling every refresh for a minute. The fallback is
-   * exactly the unfenced redemption every release before this one performed.
-   */
-  static readonly REFRESH_FLIGHT_WAIT_MS = 10_000;
-
-  /**
-   * How long the flight lease is held. Equal to the stale window above so a redemption
-   * cannot outlive its own fence: the execution is aborted at that point, and the lease is
-   * released as soon as it settles. There is no renewal to get wrong, at the cost of
-   * making a pod that dies mid-redemption hold the flight for the remainder of the window.
+   * How long the cross-replica refresh flight is held, equal to the stale window above.
+   *
+   * That equality is the safety property the flight rests on: a redemption is aborted at exactly
+   * the moment its flight expires, so an expired flight can never belong to a redemption still able
+   * to reach the token endpoint. Acquiring an expired flight is therefore safe, which is what stops
+   * a replica that died mid-redemption from blocking refresh for longer than one window, with no
+   * renewal heartbeat to get wrong.
    */
   private static readonly REFRESH_FLIGHT_LEASE_MS = MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS;
 
-  /** Interval between attempts to take a refresh flight another replica holds. */
-  private static readonly REFRESH_FLIGHT_POLL_MS = 100;
+  /**
+   * How long a replica waits on a flight another replica holds before failing the attempt as
+   * retryable. Not a safety bound: the waiter never redeems unfenced, so this only trades latency
+   * against how long a caller blocks. A contended wait normally ends within a second, when the
+   * holder's rotation lands and is adopted; this governs the holder that died.
+   */
+  static readonly DEFAULT_REFRESH_FLIGHT_WAIT_MS = 15_000;
+
+  /**
+   * Ceiling for a configured wait: half the stale window, because the wait runs *inside* the
+   * redemption whose stale timer aborts it, and the other half is what remains to redeem once the
+   * flight is acquired. A larger value would hand the outcome to that abort instead of the wait.
+   */
+  static readonly MAX_REFRESH_FLIGHT_WAIT_MS = MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS / 2;
+
+  /** Interval between checks for a peer's rotation landing, or for its flight coming free. */
+  private static readonly REFRESH_FLIGHT_POLL_MS = 250;
+
+  /** Clamps a server's `oauthRefreshWaitTimeout` into the window the stale abort allows. */
+  private static resolveRefreshFlightWaitMs(configured?: number): number {
+    if (configured == null || !Number.isFinite(configured) || configured <= 0) {
+      return this.DEFAULT_REFRESH_FLIGHT_WAIT_MS;
+    }
+    return Math.min(configured, this.MAX_REFRESH_FLIGHT_WAIT_MS);
+  }
 
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
@@ -943,7 +976,7 @@ export class MCPTokenStorage {
         return null;
       }
       /** Serialize with the redemptions other replicas may be running for this credential. */
-      let flight: { lease: FlowLease | null; adoptedTokens?: MCPOAuthTokens } | null = null;
+      let flight: MCPRefreshFlight | null = null;
       if (flowManager) {
         try {
           flight = await this.beginRefreshFlight({
@@ -951,16 +984,30 @@ export class MCPTokenStorage {
             serverName,
             findToken: params.findToken,
             flowManager,
-            singleFlightScope,
+            waitMs: this.resolveRefreshFlightWaitMs(params.refreshWaitTimeoutMs),
             signal: executionController.signal,
             logPrefix,
           });
         } catch (flightError) {
-          /** A lease store that cannot answer must not cost the user their MCP connection. */
+          /**
+           * A flight still held by a live peer is reported as retryable and must propagate:
+           * falling through would redeem while that peer's redemption is in flight, which is the
+           * replay this fence exists to prevent. Any other failure means the lease store itself
+           * could not answer, and refusing every refresh during an infrastructure outage would
+           * cost more connections than the race it avoids, so that case degrades to the unfenced
+           * redemption every release before this one performed.
+           */
+          if (flightError instanceof MCPTokenRefreshUnavailableError) {
+            throw flightError;
+          }
           logger.warn(`${logPrefix} Could not take the cross-replica refresh flight`, {
             error: flightError,
           });
         }
+      }
+      if (flight?.aborted) {
+        logger.debug(`${logPrefix} Token refresh aborted while waiting for another replica`);
+        return null;
       }
       try {
         if (flight?.adoptedTokens) {
@@ -983,12 +1030,8 @@ export class MCPTokenStorage {
           leaseGeneration,
         });
       } finally {
-        try {
-          await flight?.lease?.release();
-        } catch (releaseError) {
-          logger.warn(`${logPrefix} Failed to release the OAuth refresh flight`, {
-            error: releaseError,
-          });
+        if (flight?.lease) {
+          await this.releaseRefreshFlight(flight.lease, logPrefix);
         }
       }
     })().finally(() => {
@@ -1061,7 +1104,7 @@ export class MCPTokenStorage {
     serverName,
     findToken,
     flowManager,
-    singleFlightScope,
+    waitMs,
     signal,
     logPrefix,
   }: {
@@ -1069,12 +1112,12 @@ export class MCPTokenStorage {
     serverName: string;
     findToken: GetTokensParams['findToken'];
     flowManager: NonNullable<GetTokensParams['flowManager']>;
-    singleFlightScope?: string;
+    waitMs: number;
     /** Internal stale-abort signal owned by `forceRefreshTokens`, also fired by teardown. */
     signal: AbortSignal;
     logPrefix: string;
-  }): Promise<{ lease: FlowLease | null; adoptedTokens?: MCPOAuthTokens }> {
-    const flightLeaseId = getMCPOAuthRefreshFlightLeaseId(userId, serverName, singleFlightScope);
+  }): Promise<MCPRefreshFlight> {
+    const flightLeaseId = getMCPOAuthRefreshFlightLeaseId(userId, serverName);
     const leaseMs = MCPTokenStorage.REFRESH_FLIGHT_LEASE_MS;
 
     /** Uncontended: nothing to adopt, and no extra storage read to pay for. */
@@ -1095,41 +1138,68 @@ export class MCPTokenStorage {
       findToken,
     });
     /**
-     * Polled rather than delegated to `acquireLease`'s own wait, so OAuth teardown — which
-     * aborts in-flight redemptions and then awaits them — is not left waiting on a peer's
-     * lease for the whole window.
+     * Polled rather than delegated to `acquireLease`'s own wait, for two reasons: OAuth teardown
+     * aborts in-flight redemptions and then awaits them, so it must not sit blocked on a peer's
+     * lease; and each attempt has to re-check for the peer's rotation, because acquiring the flight
+     * proves the peer released it, and a peer that released after rotating leaves nothing to redeem.
      */
-    const waitUntil = Date.now() + MCPTokenStorage.REFRESH_FLIGHT_WAIT_MS;
-    let lease: FlowLease | null = null;
-    while (!signal.aborted && Date.now() < waitUntil) {
-      await new Promise((resolve) => setTimeout(resolve, MCPTokenStorage.REFRESH_FLIGHT_POLL_MS));
-      lease = await flowManager.acquireLease(flightLeaseId, { leaseMs, waitMs: 0 });
+    const waitUntil = Date.now() + waitMs;
+    while (!signal.aborted) {
+      const lease = await flowManager.acquireLease(flightLeaseId, { leaseMs, waitMs: 0 });
       if (lease) {
-        break;
+        /**
+         * The flight is ours. Adoption is checked under it, because acquiring the flight is the
+         * only proof the peer finished. A failure here is not fatal and must not release the
+         * flight: adoption only avoids a redundant rotation, whereas holding the flight is what
+         * makes redeeming safe, so a storage error falls through to a fenced redemption that
+         * re-reads the credential itself.
+         */
+        let adoptedTokens: MCPOAuthTokens | null = null;
+        try {
+          adoptedTokens = await this.adoptRotatedTokens({
+            userId,
+            serverName,
+            findToken,
+            observedRefreshToken,
+            logPrefix,
+          });
+        } catch (adoptionError) {
+          logger.debug(`${logPrefix} Could not read the credential a peer may have rotated`, {
+            error: adoptionError,
+          });
+        }
+        if (!adoptedTokens) {
+          return { lease };
+        }
+        await this.releaseRefreshFlight(lease, logPrefix);
+        return { lease: null, adoptedTokens };
       }
+      if (Date.now() >= waitUntil) {
+        /**
+         * The holder outlived the wait. Redeeming now would race a redemption that may still reach
+         * the token endpoint, so the attempt fails as retryable instead of unfenced: `getTokens`
+         * callers defer connection recovery on this error, the stored credential is left intact,
+         * and a later attempt acquires the flight once the holder's own stale abort releases it.
+         */
+        throw new MCPTokenRefreshUnavailableError(
+          serverName,
+          new Error(`Another replica held the OAuth refresh flight for longer than ${waitMs}ms`),
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, MCPTokenStorage.REFRESH_FLIGHT_POLL_MS));
     }
-    if (signal.aborted) {
-      return { lease };
-    }
-    if (!lease) {
-      /**
-       * The peer outlived the window in which its own stale timer should have aborted it.
-       * Falling through to an unfenced redemption is what every release before this one
-       * did, and it keeps a wedged replica from locking a user out of their MCP server.
-       */
-      logger.warn(
-        `${logPrefix} Refresh flight still held after ${MCPTokenStorage.REFRESH_FLIGHT_WAIT_MS}ms; refreshing without it`,
-      );
-    }
+    return { lease: null, aborted: true };
+  }
 
-    const adoptedTokens = await this.adoptRotatedTokens({
-      userId,
-      serverName,
-      findToken,
-      observedRefreshToken,
-      logPrefix,
-    });
-    return adoptedTokens ? { lease, adoptedTokens } : { lease };
+  /** Releases a flight lease without letting a release failure mask the caller's outcome. */
+  private static async releaseRefreshFlight(lease: FlowLease, logPrefix: string): Promise<void> {
+    try {
+      await lease.release();
+    } catch (releaseError) {
+      logger.warn(`${logPrefix} Failed to release the OAuth refresh flight`, {
+        error: releaseError,
+      });
+    }
   }
 
   private static readRefreshTokenRecord({
@@ -1517,6 +1587,7 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     singleFlightScope,
+    refreshWaitTimeoutMs,
     flowManager,
     onRefreshSuccess,
     onRefreshPreparing,
@@ -1568,6 +1639,7 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           singleFlightScope,
+          refreshWaitTimeoutMs,
           flowManager,
           onRefreshSuccess,
           onRefreshPreparing,

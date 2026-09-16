@@ -186,6 +186,13 @@ const BaseOptionsSchema = z.object({
   sseReadTimeout: z.number().int().positive().optional(),
   initTimeout: z.number().int().nonnegative().optional(),
   /**
+   * How long (ms) a replica waits for another replica's in-flight OAuth refresh-token redemption
+   * before failing the attempt as retryable. Raise it for a slow token endpoint; lower it to fail
+   * faster. Default: 15_000. Clamped to 30_000, half the window after which a redemption aborts
+   * itself, because this wait runs inside the redemption that window governs.
+   */
+  oauthRefreshWaitTimeout: z.number().int().nonnegative().optional(),
+  /**
    * Whether the server is offered in chat.
    *
    * `false` hides it from the chat dropdown (MCPSelect) AND bars it from the
@@ -434,6 +441,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     timeout: true,
     sseReadTimeout: true,
     initTimeout: true,
+    oauthRefreshWaitTimeout: true,
     chatMenu: true,
     serverInstructions: true,
     requiresOAuth: true,
