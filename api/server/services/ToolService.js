@@ -1798,6 +1798,7 @@ async function loadAgentTools({
       agentId: agent.id,
       provider: agent.provider,
       agentToolOptions: agent.tool_options,
+      gitIdentity: agent.git_identity,
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
@@ -2242,6 +2243,14 @@ async function loadToolsForExecution({
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
+          ...(codeExecutionContext.environmentType === 'attached'
+            ? {
+                workspaceId: codeExecutionContext.codeWorkspace?.workspaceId,
+                runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+                  codeExecutionContext.codeEnvironmentConfigSchema,
+                ),
+              }
+            : {}),
         };
         const ptcTool =
           codeExecutionContext.environmentType === 'attached'
