@@ -3275,6 +3275,7 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].text).toBe('Just a question');
       expect(userSave[0].quotes).toBeUndefined();
+      expect(userSave[0].reasoningOverride).toBeUndefined();
     });
 
     test('persists only a validated request-scoped reasoning override on the user turn', async () => {
@@ -3304,6 +3305,32 @@ describe('BaseClient', () => {
         ([message]) => message.isCreatedByUser === true,
       );
       expect(userSave[0].reasoningOverride).toBeUndefined();
+    });
+
+    test('does not add a request-scoped reasoning override to a rerun turn', async () => {
+      const rerunClient = initializeFakeClient(apiKey, options, [
+        ...messageHistory,
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          text: 'Previous response',
+          messageId: 'response-0',
+          parentMessageId: '3',
+        },
+      ]);
+      rerunClient.options.req = {
+        body: { reasoningOverride: { key: 'reasoning_effort', value: 'high' } },
+      };
+
+      const result = await rerunClient.handleStartMethods('Rerun this', {
+        conversationId: 'conversation-1',
+        parentMessageId: '3',
+        responseMessageId: 'response-0',
+        isEdited: true,
+        isContinued: true,
+      });
+
+      expect(result.userMessage.reasoningOverride).toBeUndefined();
     });
   });
 
@@ -4021,6 +4048,9 @@ describe('BaseClient compaction turns', () => {
   });
 
   test('presents the leaf as the user message and never re-saves it', async () => {
+    CompactClient.options.req = {
+      body: { reasoningOverride: { key: 'reasoning_effort', value: 'high' } },
+    };
     const result = await CompactClient.handleStartMethods('', {
       conversationId: 'convo-compact',
       parentMessageId: 'a1',
