@@ -3714,7 +3714,8 @@
         "properties": {
           "content": {
             "type": "string",
-            "maxLength": 1048576
+            "maxLength": 1048576,
+            "description": "The file content. The accepted maximum is 1 MiB (1,048,576 bytes) of UTF-8-encoded content. The limit is measured in bytes, not characters, so non-ASCII content reaches it at fewer characters."
           }
         },
         "required": [
