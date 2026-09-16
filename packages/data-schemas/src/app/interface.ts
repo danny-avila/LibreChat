@@ -44,6 +44,8 @@ export async function loadDefaultInterface({
     contextCost: interfaceConfig?.contextCost ?? defaults.contextCost,
     feedback: interfaceConfig?.feedback ?? defaults.feedback,
     currency: interfaceConfig?.currency ?? defaults.currency,
+    steerArmConfirmationTimeoutMs:
+      interfaceConfig?.steerArmConfirmationTimeoutMs ?? defaults.steerArmConfirmationTimeoutMs,
 
     // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
