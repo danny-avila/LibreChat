@@ -84,7 +84,27 @@ export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined
 export type UpdateAgentFn = (params: { id: string; avatar: AgentAvatar }) => Promise<unknown>;
 
 export type AvatarRefreshCache = {
+  get: (key: string) => Promise<unknown>;
   set: (key: string, value: AvatarRefreshCacheEntry, ttl: number) => Promise<unknown>;
+};
+
+/* Every page for one user starts from the snapshot its request read before the list
+   query, so merging into that snapshot would let whichever page finishes last drop the
+   coverage and refreshed URLs the others added, and the next response would repeat their
+   S3 work. Re-reading here narrows the overlap to the gap between this read and the
+   write, instead of spanning the whole refresh. A failed read leaves the caller's
+   snapshot in place, which is the behaviour this had before. */
+const readLatestRefreshEntry = async (
+  cache: AvatarRefreshCache,
+  refreshKey: string,
+  snapshot: unknown,
+): Promise<unknown> => {
+  try {
+    return (await cache.get(refreshKey)) ?? snapshot;
+  } catch (err) {
+    logger.error('[resolveAvatarRefresh] Error re-reading the avatar refresh cache: %o', err);
+    return snapshot;
+  }
 };
 
 export type ResolveAvatarRefreshParams = {
@@ -163,8 +183,9 @@ export const resolveAvatarRefresh = async ({
       refreshS3Url,
       updateAgent,
     });
+    const latestEntry = await readLatestRefreshEntry(cache, refreshKey, cachedRefreshEntry);
     const refreshEntry = mergeAvatarRefreshCacheEntry(
-      cachedRefreshEntry,
+      latestEntry,
       { urlCache, coveredIds },
       cacheTtl,
     );
