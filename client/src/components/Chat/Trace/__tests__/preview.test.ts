@@ -327,6 +327,35 @@ describe('buildPreviewIndex', () => {
     expect(buildPreviewIndex(two, parallel).size).toBe(0);
   });
 
+  it('never marks the surviving text of a failed or unfinished run as final', () => {
+    const two = buildTraceModel([
+      record({ id: 'first', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({
+        id: 'last',
+        kind: 'generation',
+        status: 'error',
+        startTime: at(200),
+        endTime: at(300),
+      }),
+    ]);
+    const failed = buildPreviews([
+      message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Started well.' },
+          { type: ContentTypes.ERROR, text: 'Generation failed' },
+        ],
+      } as Partial<TMessage>),
+    ]);
+    const unfinished = buildPreviews([
+      message({ unfinished: true, content: [{ type: ContentTypes.TEXT, text: 'Started well.' }] }),
+    ]);
+
+    expect(buildPreviewIndex(two, failed).get('first')).toBe('Started well.');
+    expect(buildPreviewIndex(two, failed).get('last')).toBeUndefined();
+    expect(buildPreviewIndex(two, unfinished).get('first')).toBe('Started well.');
+    expect(buildPreviewIndex(two, unfinished).get('last')).toBeUndefined();
+  });
+
   it('recognizes a handoff whose new agent starts by reasoning', () => {
     const handoff = buildStepPreviews(
       message({

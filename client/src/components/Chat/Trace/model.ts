@@ -249,10 +249,36 @@ function nearestAncestor(
   return null;
 }
 
-/** Hangs every shown record from its nearest shown ancestor; the full mode shows them all. */
-function resolveViewTree(nodes: Map<string, TraceNode>, mode: TraceMode): void {
+/**
+ * Whether the simple mode lists a record. A turn that has no model call, tool or
+ * failure yet (a run still starting, or cancelled early) lists its wrappers
+ * instead, so the ledger can show that something is running rather than nothing.
+ */
+function isListed(node: TraceNode, turnsWithWork: ReadonlySet<string>): boolean {
+  return (
+    isSimpleRecord(node.record) ||
+    (node.parentId == null && !turnsWithWork.has(node.record.messageId))
+  );
+}
+
+function turnsWithSimpleRecords(nodes: Map<string, TraceNode>): Set<string> {
+  const turns = new Set<string>();
   for (const node of nodes.values()) {
-    node.shown = mode === 'full' || isSimpleRecord(node.record);
+    if (isSimpleRecord(node.record)) {
+      turns.add(node.record.messageId);
+    }
+  }
+  return turns;
+}
+
+/** Hangs every shown record from its nearest shown ancestor; the full mode shows them all. */
+function resolveViewTree(
+  nodes: Map<string, TraceNode>,
+  mode: TraceMode,
+  turnsWithWork: ReadonlySet<string>,
+): void {
+  for (const node of nodes.values()) {
+    node.shown = mode === 'full' || isListed(node, turnsWithWork);
   }
   for (const [id, node] of nodes) {
     if (!node.shown) {
@@ -274,10 +300,13 @@ function resolveViewTree(nodes: Map<string, TraceNode>, mode: TraceMode): void {
  * span is rolled up, whichever mode is active: steps are defined by these in
  * both modes, so a turn's step count reads the same however it is listed.
  */
-function stepRoots(nodes: Map<string, TraceNode>): Map<string, string[]> {
+function stepRoots(
+  nodes: Map<string, TraceNode>,
+  turnsWithWork: ReadonlySet<string>,
+): Map<string, string[]> {
   const roots = new Map<string, string[]>();
   for (const [id, node] of nodes) {
-    if (!isSimpleRecord(node.record)) {
+    if (!isListed(node, turnsWithWork)) {
       continue;
     }
     const ancestor = nearestAncestor(nodes, node, (candidate) => isStepAnchor(candidate.record));
@@ -315,17 +344,22 @@ function groupSteps(
   }
 
   /** The wrapper a root sits under, one level below the turn's structural root: concurrent
-   *  agents run in separate wrappers, so a tool joins the model call of its own lane. */
+   *  agents run in separate wrappers, so a tool joins the model call of its own lane. Records
+   *  directly under that root, or with no parent at all, share one lane. */
   const laneOf = (id: string): string => {
-    let current = id;
-    let below = id;
+    const parentId = nodes.get(id)?.parentId ?? null;
+    if (parentId == null) {
+      return '';
+    }
+    let child = id;
+    let parent: string = parentId;
     for (;;) {
-      const parentId = nodes.get(current)?.parentId;
-      if (parentId == null) {
-        return below;
+      const above = nodes.get(parent)?.parentId ?? null;
+      if (above == null) {
+        return child === id ? parent : child;
       }
-      below = current;
-      current = parentId;
+      child = parent;
+      parent = above;
     }
   };
 
@@ -338,7 +372,8 @@ function groupSteps(
       const kind = nodes.get(id)?.record.kind;
       const lane = laneOf(id);
       const current = groups[groups.length - 1];
-      if (kind === 'generation' || (kind === 'tool' && current == null)) {
+      /** A tool whose lane has no model call loaded yet (an older page holds it) leads its own step. */
+      if (kind === 'generation' || (kind === 'tool' && !latestByLane.has(lane))) {
         const group = { rootIds: [...leading, id], lane };
         groups.push(group);
         latestByLane.set(lane, group);
@@ -451,8 +486,9 @@ export function buildTraceModel(
   }
 
   resolveParents(nodes);
-  resolveViewTree(nodes, mode);
-  const rootsByTurn = stepRoots(nodes);
+  const turnsWithWork = turnsWithSimpleRecords(nodes);
+  resolveViewTree(nodes, mode, turnsWithWork);
+  const rootsByTurn = stepRoots(nodes, turnsWithWork);
 
   const turnsByMessage = new Map<string, TraceTurn>();
   const summary: TraceSummary = { ...EMPTY_SUMMARY };

@@ -156,7 +156,13 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   if (steps.length === 0 && message?.text && message.error !== true) {
     return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true, parallel };
   }
-  const finalOnly = steps.length === 1 && steps[0].toolCalls.length === 0 && steps[0].text !== '';
+  /** A run that failed or never finished kept its early text, not a final answer. */
+  const endedEarly =
+    message?.error === true ||
+    message?.unfinished === true ||
+    parts.some((part) => part?.type === ContentTypes.ERROR);
+  const finalOnly =
+    !endedEarly && steps.length === 1 && steps[0].toolCalls.length === 0 && steps[0].text !== '';
   return { steps, finalOnly, parallel };
 }
 

@@ -490,6 +490,58 @@ describe('simple mode', () => {
     expect(lanes.steps.get(step('llm-b'))?.rootIds).toEqual(['llm-b', 'tool-b']);
   });
 
+  it('keeps a tool whose lane has no loaded model call in a step of its own lane', () => {
+    const paged = buildTraceModel([
+      record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(10_000) }),
+      record({ id: 'lane-a', parentId: 'root', startTime: at(0), endTime: at(5000) }),
+      record({ id: 'lane-b', parentId: 'root', startTime: at(0), endTime: at(5000) }),
+      record({
+        id: 'llm-a',
+        parentId: 'lane-a',
+        kind: 'generation',
+        startTime: at(100),
+        endTime: at(1000),
+      }),
+      record({
+        id: 'tool-b',
+        parentId: 'lane-b',
+        kind: 'tool',
+        startTime: at(1300),
+        endTime: at(2100),
+      }),
+    ]);
+
+    expect(paged.steps.get(step('llm-a'))?.rootIds).toEqual(['llm-a']);
+    expect(paged.steps.get(step('tool-b'))?.rootIds).toEqual(['tool-b']);
+  });
+
+  it('lists the wrappers of a turn that has no model call, tool or failure yet', () => {
+    const starting = buildTraceModel([
+      record({
+        id: 'root',
+        kind: 'agent',
+        status: 'running',
+        startTime: at(0),
+        endTime: undefined,
+      }),
+      record({
+        id: 'chain',
+        parentId: 'root',
+        status: 'running',
+        startTime: at(0),
+        endTime: undefined,
+      }),
+    ]);
+
+    expect(starting.nodes.get('root')?.shown).toBe(true);
+    expect(starting.nodes.get('chain')?.shown).toBe(false);
+    expect(rowKeys(flattenRows(starting, noFilter))).toEqual([
+      turnKey('response-1'),
+      step('root'),
+      'root',
+    ]);
+  });
+
   it('keeps a step key stable when an older page adds an earlier model call', () => {
     const newest = buildTraceModel([
       record({ id: 'llm-2', kind: 'generation', startTime: at(4000), endTime: at(5000) }),
