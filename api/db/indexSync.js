@@ -1,20 +1,15 @@
 const mongoose = require('mongoose');
 const { MeiliSearch, MeiliSearchTimeOutError } = require('meilisearch');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
 const {
   isEnabled,
-  FlowStateManager,
-  evalKeyvRedisScript,
   MEILI_HTTP_REQUEST_TIMEOUT_MS,
   MEILI_INDEX_SYNC_INTERVAL_MS,
   MEILI_INDEX_SYNC_LEASE_MS,
   MEILI_INDEX_SYNC_REFRESH_MS,
-  MEILI_INDEX_SYNC_TIMEOUT_MS,
   runDistributedJob,
   waitForMeiliTask,
 } = require('@librechat/api');
-const { getLogStores } = require('~/cache');
 const {
   batchResetMeiliFlags,
   getMeiliRebuildState,
@@ -30,6 +25,7 @@ const defaultSyncThreshold = 1000;
 const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
   ? parseInt(process.env.MEILI_SYNC_THRESHOLD, 10)
   : defaultSyncThreshold;
+const indexSyncCancellationGraceMs = MEILI_HTTP_REQUEST_TIMEOUT_MS * 2 + 5_000;
 
 const throwIfAborted = (signal) => {
   if (signal?.aborted) {
@@ -106,6 +102,7 @@ async function deleteDocumentsWithoutUserField(index, indexName, primaryKey, sig
           deletion.taskUid,
           `${indexName} cleanup`,
           (error) => error instanceof MeiliSearchTimeOutError,
+          { signal },
         );
         throwIfAborted(signal);
         deletedCount += idsToDelete.length;
@@ -168,6 +165,7 @@ async function ensureFilterableAttributes(client, rebuildStates, signal) {
           settingsTask.taskUid,
           'messages settings',
           (error) => error instanceof MeiliSearchTimeOutError,
+          { signal },
         );
         throwIfAborted(signal);
         logger.info('[indexSync] Messages index configured for user filtering');
@@ -220,6 +218,7 @@ async function ensureFilterableAttributes(client, rebuildStates, signal) {
           settingsTask.taskUid,
           'convos settings',
           (error) => error instanceof MeiliSearchTimeOutError,
+          { signal },
         );
         throwIfAborted(signal);
         logger.info('[indexSync] Convos index configured for user filtering');
@@ -311,6 +310,7 @@ async function rebuildMissingIndex(client, indexName, primaryKey, signal) {
     {
       isTaskSuccessful: (task) =>
         task.status === 'succeeded' || task.error?.code === 'index_already_exists',
+      signal,
     },
   );
   throwIfAborted(signal);
@@ -325,18 +325,19 @@ async function rebuildMissingIndex(client, indexName, primaryKey, signal) {
     settingsTask.taskUid,
     `${indexName} settings`,
     (error) => error instanceof MeiliSearchTimeOutError,
+    { signal },
   );
   throwIfAborted(signal);
 }
 
 /**
  * Performs the actual sync operations for messages and conversations
- * @param {FlowStateManager} flowManager - Flow state manager instance
- * @param {string} flowId - Flow identifier
- * @param {string} flowType - Flow type
  * @param {{quiet?: boolean, signal?: AbortSignal}} options - Reconciliation options
  */
-async function performSync(flowManager, flowId, flowType, options = {}) {
+async function performSync(options = {}) {
+  if (!options.quiet) {
+    logger.info('[indexSync] Starting index synchronization check...');
+  }
   const logProgress = options.quiet ? logger.debug.bind(logger) : logger.info.bind(logger);
   try {
     if (indexingDisabled === true) {
@@ -534,51 +535,7 @@ async function performSync(flowManager, flowId, flowType, options = {}) {
       throw messageSyncError;
     }
 
-    return { messagesSync, convosSync };
-  } finally {
-    if (indexingDisabled === true) {
-      logger.info('[indexSync] Indexing is disabled, skipping cleanup...');
-    } else if (flowManager && flowId && flowType) {
-      try {
-        await flowManager.deleteFlow(flowId, flowType);
-        logger.debug('[indexSync] Flow state cleaned up');
-      } catch (cleanupErr) {
-        logger.debug('[indexSync] Could not clean up flow state:', cleanupErr.message);
-      }
-    }
-  }
-}
-
-/**
- * Main index sync function that uses FlowStateManager to prevent concurrent execution
- */
-async function runIndexSync(options = {}) {
-  if (!options.quiet) {
-    logger.info('[indexSync] Starting index synchronization check...');
-  }
-
-  // Get or create FlowStateManager instance
-  const flowsCache = getLogStores(CacheKeys.FLOWS);
-  if (!flowsCache) {
-    logger.warn('[indexSync] Flows cache not available, falling back to direct sync');
-    return await performSync(null, null, null, options);
-  }
-
-  const flowManager = new FlowStateManager(flowsCache, {
-    ttl: 60000 * 10, // 10 minutes TTL for sync operations
-    redisScriptExecutor: evalKeyvRedisScript,
-  });
-
-  // Use a unique flow ID for the sync operation
-  const flowId = 'meili-index-sync';
-  const flowType = 'MEILI_SYNC';
-
-  try {
-    // This will only execute the handler if no other instance is running the sync
-    const result = await flowManager.createFlowWithHandler(flowId, flowType, () =>
-      performSync(flowManager, flowId, flowType, options),
-    );
-
+    const result = { messagesSync, convosSync };
     if (result.messagesSync || result.convosSync) {
       logger.info('[indexSync] Sync completed successfully');
     } else {
@@ -587,12 +544,9 @@ async function runIndexSync(options = {}) {
 
     return result;
   } catch (err) {
-    if (err.message.includes('flow already exists')) {
-      const log = options.quiet ? logger.debug.bind(logger) : logger.info.bind(logger);
-      log('[indexSync] Sync already running on another instance');
-      return;
+    if (options.signal?.aborted) {
+      throw err;
     }
-
     if (err.message.includes('Meilisearch not configured')) {
       logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
@@ -611,12 +565,13 @@ async function indexSync(options = {}) {
   return runDistributedJob(
     jobs,
     'meili-index-sync',
-    (signal) => runIndexSync({ ...options, signal }),
+    (signal) => performSync({ ...options, signal }),
     {
       completionTtlMs: MEILI_INDEX_SYNC_INTERVAL_MS,
+      cancellationGraceMs: indexSyncCancellationGraceMs,
       leaseMs: MEILI_INDEX_SYNC_LEASE_MS,
+      onLeaseLost: () => process.exit(1),
       refreshMs: MEILI_INDEX_SYNC_REFRESH_MS,
-      timeoutMs: MEILI_INDEX_SYNC_TIMEOUT_MS,
       signal: options.signal,
     },
   );

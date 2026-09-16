@@ -123,6 +123,7 @@ describe('runDistributedJob', () => {
 
     await expect(followerRun).rejects.toThrow('stop follower');
     expect(followerHandler).not.toHaveBeenCalled();
+    expect(options.onLeaseLost).not.toHaveBeenCalled();
     releaseOwner.resolve();
     await expect(ownerRun).resolves.toBe('owner');
   });
@@ -363,7 +364,7 @@ describe('runDistributedJob', () => {
     ).rejects.toThrow('ownership operation "acquire" exceeded 50ms');
 
     expect(handler).not.toHaveBeenCalled();
-    expect(onLeaseLost).toHaveBeenCalledTimes(1);
+    expect(onLeaseLost).not.toHaveBeenCalled();
   });
 
   test('bounds a stuck renewal without releasing the lease', async () => {
@@ -434,6 +435,7 @@ describe('runDistributedJob', () => {
       runDistributedJob(collection, 'invalid-timing', async () => undefined, {
         leaseMs: 10_000,
         refreshMs: 5000,
+        onLeaseLost: jest.fn(),
       }),
     ).rejects.toThrow('Invalid distributed job timing');
 

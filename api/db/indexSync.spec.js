@@ -32,7 +32,6 @@ const mockCompleteMeiliRebuild = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockRunDistributedJob = jest.fn();
 const mockWaitForMeiliTask = jest.fn();
-const mockGetLogStores = jest.fn();
 
 // Create mock models that will be reused
 const createMockModel = (collectionName) => ({
@@ -70,14 +69,8 @@ jest.mock('@librechat/api', () => ({
   MEILI_INDEX_SYNC_INTERVAL_MS: 60_000,
   MEILI_INDEX_SYNC_LEASE_MS: 180_000,
   MEILI_INDEX_SYNC_REFRESH_MS: 60_000,
-  MEILI_INDEX_SYNC_TIMEOUT_MS: 600_000,
   runDistributedJob: mockRunDistributedJob,
   waitForMeiliTask: mockWaitForMeiliTask,
-  FlowStateManager: jest.fn(),
-}));
-
-jest.mock('~/cache', () => ({
-  getLogStores: mockGetLogStores,
 }));
 
 // Set environment before module load
@@ -189,11 +182,10 @@ describe('performSync() - syncThreshold logic', () => {
     const indexSync = require('./indexSync');
     await indexSync();
 
-    expect(mockGetLogStores).not.toHaveBeenCalled();
     expect(mockMeiliHealth).not.toHaveBeenCalled();
   });
 
-  test('configures a finite HTTP timeout and distributed job deadline', async () => {
+  test('configures a finite HTTP timeout and renewable distributed job lease', async () => {
     Message.getSyncProgress.mockResolvedValue({
       totalProcessed: 0,
       totalDocuments: 0,
@@ -218,19 +210,18 @@ describe('performSync() - syncThreshold logic', () => {
       'meili-index-sync',
       expect.any(Function),
       expect.objectContaining({
+        cancellationGraceMs: 25_000,
         completionTtlMs: 60_000,
         leaseMs: 180_000,
+        onLeaseLost: expect.any(Function),
         refreshMs: 60_000,
-        timeoutMs: 600_000,
       }),
     );
+    expect(mockRunDistributedJob.mock.calls[0][3]).not.toHaveProperty('timeoutMs');
   });
 
   test('propagates synchronization failures to the distributed job coordinator', async () => {
-    const createFlowWithHandler = jest.fn().mockRejectedValue(new Error('sync failed'));
-    const { FlowStateManager } = require('@librechat/api');
-    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
-    mockGetLogStores.mockReturnValueOnce({});
+    Message.getSyncProgress.mockRejectedValueOnce(new Error('sync failed'));
 
     const indexSync = require('./indexSync');
 
@@ -250,6 +241,13 @@ describe('performSync() - syncThreshold logic', () => {
 
     await expect(indexSync()).rejects.toThrow('messages settings task 17 ended with failed');
     expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+    expect(mockWaitForMeiliTask).toHaveBeenCalledWith(
+      expect.anything(),
+      17,
+      'messages settings',
+      expect.any(Function),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   test('propagates failed orphan-deletion tasks to the distributed job coordinator', async () => {
@@ -455,21 +453,6 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Message.syncWithMeili).not.toHaveBeenCalled();
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
     expect(mockLogger.info).not.toHaveBeenCalled();
-  });
-
-  test('propagates a missing FlowState without starting index sync', async () => {
-    const createFlowWithHandler = jest
-      .fn()
-      .mockRejectedValue(new Error('Flow state not found after retry'));
-    const { FlowStateManager } = require('@librechat/api');
-    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
-    mockGetLogStores.mockReturnValueOnce({});
-
-    const indexSync = require('./indexSync');
-
-    await expect(indexSync()).rejects.toThrow('Flow state not found after retry');
-    expect(Message.syncWithMeili).not.toHaveBeenCalled();
-    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
   });
 
   test('triggers sync when unindexed messages exceed syncThreshold', async () => {
@@ -1161,5 +1144,6 @@ describe('performSync() - syncThreshold logic', () => {
       '[indexSync] Message reconciliation failed; continuing with conversations:',
       cancellationError,
     );
+    expect(mockLogger.error).not.toHaveBeenCalledWith('[indexSync] error', cancellationError);
   });
 });

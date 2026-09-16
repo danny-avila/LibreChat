@@ -18,7 +18,7 @@ interface DistributedJobOptions {
   completionTtlMs?: number;
   failureTtlMs?: number;
   pollMs?: number;
-  onLeaseLost?: () => void;
+  onLeaseLost: () => void;
   signal?: AbortSignal;
   timeoutMs?: number;
   cancellationGraceMs?: number;
@@ -226,15 +226,16 @@ async function tryAcquire(
  * limit on the total job duration.
  *
  * Cancellation first asks the handler to stop and keeps renewing its lease until
- * the handler confirms settlement. If handler or ownership-operation settlement
- * cannot be confirmed within the deadline, the owner fail-stops without making
- * the lease acquirable; this prevents stale work from overlapping a new owner.
+ * the handler confirms settlement. After ownership is acquired, an owner that
+ * cannot confirm handler or ownership-operation settlement fail-stops without
+ * making the lease acquirable; this prevents stale work from overlapping a new
+ * owner. Acquisition failures never start the handler and can safely be retried.
  */
 export async function runDistributedJob<T>(
   collection: Collection<JobState>,
   jobId: string,
   handler: (signal: AbortSignal) => Promise<T>,
-  options: DistributedJobOptions = {},
+  options: DistributedJobOptions,
 ): Promise<T | undefined> {
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const refreshMs = options.refreshMs ?? DEFAULT_REFRESH_MS;
@@ -275,11 +276,7 @@ export async function runDistributedJob<T>(
     );
   }
 
-  const onLeaseLost =
-    options.onLeaseLost ??
-    (() => {
-      process.exit(1);
-    });
+  const { onLeaseLost } = options;
   const owner = crypto.randomUUID();
   const startedAt = Date.now();
   const deadlineAt = timeoutMs == null ? undefined : startedAt + timeoutMs;
@@ -319,12 +316,6 @@ export async function runDistributedJob<T>(
     );
   }
 
-  const failStopBeforeOwnership = (error: unknown): never => {
-    logger.error(`[DistributedJob] Could not safely determine ownership for ${jobId}`, error);
-    onLeaseLost();
-    throw error;
-  };
-
   let acquiredExpiry: Date | undefined;
   try {
     if (controller.signal.aborted) {
@@ -342,7 +333,10 @@ export async function runDistributedJob<T>(
           controller.signal,
         );
       } catch (error) {
-        return failStopBeforeOwnership(error);
+        if (!controller.signal.aborted) {
+          logger.error(`[DistributedJob] Could not acquire ${jobId}`, error);
+        }
+        throw error;
       }
       if (acquiredExpiry != null) {
         break;
@@ -358,8 +352,8 @@ export async function runDistributedJob<T>(
           controller.signal,
         );
       } catch (error) {
-        if (error instanceof OwnershipOperationTimeoutError || controller.signal.aborted) {
-          return failStopBeforeOwnership(error);
+        if (!controller.signal.aborted) {
+          logger.error(`[DistributedJob] Could not inspect ${jobId}`, error);
         }
         throw error;
       }
