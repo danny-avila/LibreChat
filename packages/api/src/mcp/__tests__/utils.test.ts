@@ -14,6 +14,7 @@ import {
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
   getMCPRequestScope,
+  toCatalogConnectionConfig,
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
@@ -994,6 +995,102 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('operator requestHeaders', () => {
+  const config = {
+    type: 'streamable-http',
+    url: 'https://mcp.example.com/mcp',
+    source: 'yaml',
+    headers: { Authorization: 'Bearer static-token' },
+    requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+  } as ParsedServerConfig;
+
+  it('leaves the catalog unscoped while the runtime stays request-scoped', () => {
+    expect(getMCPRequestScope(config)).toEqual({
+      requestScoped: true,
+      requiredBodyFields: ['conversationId'],
+    });
+    expect(requiresEphemeralUserConnection(config)).toBe(true);
+
+    const catalogConfig = toCatalogConnectionConfig(config);
+    expect(getMCPRequestScope(catalogConfig)).toEqual({
+      requestScoped: false,
+      requiredBodyFields: [],
+    });
+    expect(requiresEphemeralUserConnection(catalogConfig)).toBe(false);
+    expect(getMissingRuntimeBodyPlaceholderFields(catalogConfig)).toEqual([]);
+  });
+
+  it('still blocks the catalog for a body placeholder discovery itself sends', () => {
+    const urlScoped = toCatalogConnectionConfig({
+      ...config,
+      url: 'https://mcp.example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+    } as ParsedServerConfig);
+
+    expect(getMCPRequestScope(urlScoped).requiredBodyFields).toEqual(['messageId']);
+    expect(getMissingRuntimeBodyPlaceholderFields(urlScoped)).toEqual(['messageId']);
+  });
+
+  it('fails closed when the runtime value the request headers need is absent', () => {
+    expect(getMissingRuntimeBodyPlaceholderFields(config, { messageId: 'msg-1' })).toEqual([
+      'conversationId',
+    ]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config, { conversationId: '  ' })).toEqual([
+      'conversationId',
+    ]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config, { conversationId: 'conv-1' })).toEqual(
+      [],
+    );
+  });
+
+  it('does not resolve requestHeaders placeholders for untrusted configs', () => {
+    for (const untrusted of [
+      { ...config, source: 'user' as const, dbId: 'server-123' },
+      { ...config, source: 'plugin' as const },
+    ]) {
+      expect(getMCPRequestScope(untrusted).requestScoped).toBe(false);
+      expect(requiresEphemeralUserConnection(untrusted)).toBe(false);
+      expect(getMissingRuntimeBodyPlaceholderFields(untrusted)).toEqual([]);
+    }
+  });
+
+  it('never returns either header map to a client', () => {
+    const redacted = redactServerSecrets(config, { canEdit: true });
+
+    expect(redacted).not.toHaveProperty('requestHeaders');
+    expect(redacted).not.toHaveProperty('headers');
+    expect(redacted.requestScoped).toBe(true);
+  });
+});
+
+describe('toCatalogConnectionConfig', () => {
+  it('strips the chat-only map a discovery connection cannot resolve', () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer static-token' },
+      requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    } as ParsedServerConfig;
+
+    const catalogConfig = toCatalogConnectionConfig(config);
+
+    expect(catalogConfig).not.toHaveProperty('requestHeaders');
+    expect((catalogConfig as { headers?: Record<string, string> }).headers).toEqual({
+      Authorization: 'Bearer static-token',
+    });
+    expect(config).toHaveProperty('requestHeaders');
+  });
+
+  it('returns the same reference when there is nothing to strip', () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer static-token' },
+    } as ParsedServerConfig;
+
+    expect(toCatalogConnectionConfig(config)).toBe(config);
   });
 });
 

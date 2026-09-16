@@ -1189,6 +1189,85 @@ describe('processMCPEnv', () => {
     });
   });
 
+  it('should resolve body placeholders in requestHeaders', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      headers: { 'X-User-Id': '{{LIBRECHAT_USER_ID}}' },
+      requestHeaders: {
+        'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Static': 'static-value',
+      },
+    };
+
+    const result = processMCPEnv({ options, user, body: { conversationId: 'conv-1' } });
+
+    expect('headers' in result! && result.headers).toEqual({
+      'X-User-Id': 'user-123',
+      'X-Conversation-Id': 'conv-1',
+      'X-Static': 'static-value',
+    });
+    expect(result).not.toHaveProperty('requestHeaders');
+  });
+
+  it('should let requestHeaders win over headers on a duplicate name', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      headers: { 'X-Conversation-Id': 'from-headers', 'X-Keep': 'kept' },
+      requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    };
+
+    const result = processMCPEnv({ options, body: { conversationId: 'conv-1' } });
+
+    expect('headers' in result! && result.headers).toEqual({
+      'X-Conversation-Id': 'conv-1',
+      'X-Keep': 'kept',
+    });
+  });
+
+  it('should keep plugin-sourced requestHeaders verbatim and unmerged', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const options = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      source: 'plugin',
+      headers: { 'X-Keep': 'kept' },
+      requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    } as MCPOptions & { source: string };
+
+    const result = processMCPEnv({ options, user, body: { conversationId: 'conv-1' } });
+
+    expect('headers' in result! && result.headers).toEqual({ 'X-Keep': 'kept' });
+    expect((result as { requestHeaders?: Record<string, string> }).requestHeaders).toEqual({
+      'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+    });
+  });
+
+  it('should NOT resolve requestHeaders placeholders when dbSourced', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      requestHeaders: {
+        'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    };
+
+    const result = processMCPEnv({
+      options,
+      user,
+      body: { conversationId: 'conv-1' },
+      dbSourced: true,
+    });
+
+    expect('headers' in result! && result.headers).toEqual({
+      'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+    });
+    expect(result).not.toHaveProperty('requestHeaders');
+  });
+
   it('should process user field placeholders in all fields', () => {
     const user = createTestUser({
       id: 'user-123',

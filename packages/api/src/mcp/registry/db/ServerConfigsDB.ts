@@ -58,6 +58,26 @@ function sanitizeCredentialPlaceholders(
   return sanitized;
 }
 
+/**
+ * Sanitizes every header map a shared config carries. `requestHeaders` is
+ * included because it reaches the upstream server exactly like `headers` does:
+ * left unsanitized, a user-managed config could name a privileged placeholder
+ * there and have the runtime resolve it at chat time.
+ */
+function sanitizeConfigHeaderMaps(config: ParsedServerConfig): {
+  headers?: Record<string, string>;
+  requestHeaders?: Record<string, string>;
+} {
+  const carrier = config as ParsedServerConfig & {
+    headers?: Record<string, string>;
+    requestHeaders?: Record<string, string>;
+  };
+  return {
+    headers: sanitizeCredentialPlaceholders(carrier.headers),
+    requestHeaders: sanitizeCredentialPlaceholders(carrier.requestHeaders),
+  };
+}
+
 function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
   if (!url) {
     return url;
@@ -296,9 +316,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const sanitizedConfig = sanitizeUserManagedOAuthConfig({
       ...config,
-      headers: sanitizeCredentialPlaceholders(
-        (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
-      ),
+      ...sanitizeConfigHeaderMaps(config),
     } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
@@ -345,9 +363,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
       ...config,
-      headers: sanitizeCredentialPlaceholders(
-        (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
-      ),
+      ...sanitizeConfigHeaderMaps(config),
     } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */

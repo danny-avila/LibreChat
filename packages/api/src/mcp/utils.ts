@@ -7,7 +7,7 @@ import {
   normalizeMCPToolKey,
   buildServerNameAliases,
 } from 'librechat-data-provider';
-import type { AgentToolOptions } from 'librechat-data-provider';
+import type { AgentToolOptions, MCPOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
@@ -227,6 +227,8 @@ type UserScopedConnectionConfig = Pick<
   >;
   env?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
+  /** Operator-configured headers sent only on chat-time connections. */
+  requestHeaders?: Record<string, string | undefined>;
   oauth?: PlaceholderValue;
   oauth_headers?: Record<string, string | undefined>;
   url?: string;
@@ -240,6 +242,10 @@ function placeholderBearingFields(config: UserScopedConnectionConfig): Placehold
     config.headers,
     config.oauth,
     config.oauth_headers,
+    /** Chat-only, so it makes a connection request-scoped like any other field.
+     *  A CATALOG connection never carries it: `toCatalogConnectionConfig`
+     *  removes it first, which is what leaves discovery unscoped. */
+    config.requestHeaders,
     config.url,
   ];
 }
@@ -372,6 +378,24 @@ export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPReque
 
   const fields = Array.from(requiredBodyFields);
   return { requestScoped: fields.length > 0, requiredBodyFields: fields };
+}
+
+/**
+ * Strips the operator's chat-only `requestHeaders` for a catalog (discovery)
+ * connection. Discovery has no conversation or message to resolve a
+ * `{{LIBRECHAT_BODY_*}}` placeholder against, so sending the map at all would
+ * either leak a literal placeholder upstream or resolve it to an empty value.
+ *
+ * Returns the same reference when there is nothing to strip.
+ */
+export function toCatalogConnectionConfig<T extends MCPOptions>(config: T): T {
+  const carrier = config as T & { requestHeaders?: Record<string, string> };
+  if (carrier.requestHeaders == null) {
+    return config;
+  }
+  const catalogConfig = { ...carrier };
+  delete catalogConfig.requestHeaders;
+  return catalogConfig;
 }
 
 export function getRuntimeBodyPlaceholderFields(

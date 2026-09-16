@@ -490,6 +490,36 @@ export function processMCPEnv(params: {
     newObj.headers = processedHeaders;
   }
 
+  /**
+   * Chat-only headers, resolved exactly like `headers` (body placeholders
+   * included) so the connection factory can merge them over `headers` for a
+   * chat-time connection. A discovery config never reaches here with the field
+   * set: `toCatalogConnectionConfig` strips it first.
+   */
+  if ('requestHeaders' in newObj && newObj.requestHeaders) {
+    const processedRequestHeaders: Record<string, string> = {};
+    for (const [key, originalValue] of Object.entries(newObj.requestHeaders)) {
+      processedRequestHeaders[key] = processSingleValue({
+        user,
+        body,
+        dbSourced,
+        originalValue,
+        customUserVars,
+        isHeader: true,
+      });
+    }
+    /** Merged into `headers` at the single point every runtime path resolves
+     *  through, then removed so no transport reads the map twice. The request
+     *  map wins on a duplicate name. A discovery config never arrives with the
+     *  field set: `toCatalogConnectionConfig` strips it first. */
+    const carrier = newObj as MCPOptions & {
+      headers?: Record<string, string>;
+      requestHeaders?: Record<string, string>;
+    };
+    carrier.headers = { ...carrier.headers, ...processedRequestHeaders };
+    delete carrier.requestHeaders;
+  }
+
   // Process OAuth headers if they exist; sent on OAuth discovery/token requests
   if ('oauth_headers' in newObj && newObj.oauth_headers) {
     const processedOAuthHeaders: Record<string, string> = {};

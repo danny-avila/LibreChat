@@ -32,6 +32,13 @@ import {
   resolveOboToken,
 } from '~/mcp/oauth';
 import {
+  isOAuthServer,
+  waitUntilDeadline,
+  isClientRejectionMessage,
+  createDeadlineAbortSignal,
+  toCatalogConnectionConfig,
+} from './utils';
+import {
   isDirectOpenIDBearerRecoveryEnabled,
   resolveDirectOpenIDBearerConfig,
   usesDirectOpenIDBearerRecovery,
@@ -41,12 +48,6 @@ import {
   isMCPTransportAuthenticationError,
   MCPAuthenticationRejectedError,
 } from './errors';
-import {
-  isOAuthServer,
-  waitUntilDeadline,
-  isClientRejectionMessage,
-  createDeadlineAbortSignal,
-} from './utils';
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
@@ -233,7 +234,14 @@ export class MCPConnectionFactory {
         : undefined);
     const discover = async (candidate: t.BasicConnectionOptions): Promise<ToolDiscoveryResult> => {
       const prepared = await this.prepareBasicConnectionOptions(
-        { ...candidate, directBearerSourceConfig },
+        {
+          ...candidate,
+          /** Applied to every discovery attempt, not just the first: a config
+           *  refreshed for direct-bearer recovery comes from the untouched
+           *  definition and would otherwise carry the chat-only map back in. */
+          serverConfig: toCatalogConnectionConfig(candidate.serverConfig),
+          directBearerSourceConfig,
+        },
         options,
       );
       if (options != null && 'useOAuth' in options) {

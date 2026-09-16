@@ -18,6 +18,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  toCatalogConnectionConfig,
   createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
@@ -444,8 +445,12 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
+    /** Discovery sends no `requestHeaders`, so only the body values the catalog
+     *  connection itself needs can block it. A server whose body placeholders
+     *  live solely in `requestHeaders` still lists its tools. */
+    const catalogConfig = toCatalogConnectionConfig(serverConfig);
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
-      serverConfig,
+      catalogConfig,
       args.requestBody,
     );
     if (missingBodyFields.length > 0) {
@@ -458,7 +463,7 @@ export class MCPManager extends UserConnectionManager {
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
-      config: serverConfig,
+      config: catalogConfig,
       user,
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
@@ -473,7 +478,7 @@ export class MCPManager extends UserConnectionManager {
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig,
+      serverConfig: catalogConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
