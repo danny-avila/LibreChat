@@ -1,25 +1,26 @@
 import { z } from 'zod';
 
 /**
- * The management auth middleware sends `{ error: 'Unauthorized' }` on a 401.
- * This is a different, flatter shape from `agentManagementErrorSchema`, so it needs its own schema.
+ * The flat `{ error }` envelope the auth middleware sends for 401 (`{ error: 'Unauthorized' }`)
+ * and for its own 500 (`{ error: 'Internal server error' }`). One field, distinct from the nested
+ * `agentManagementErrorSchema`.
  */
-export const unauthorizedResponseSchema: z.ZodType<{ error: string }> = z
+export const errorMessageResponseSchema: z.ZodType<{ error: string }> = z
   .object({ error: z.string() })
   .strict();
 
 /**
  * When the bound account is being deleted, the auth middleware sends 409 with a flat
- * `{ error, code: 'ACCOUNT_DELETION_IN_PROGRESS' }` body. This is a third shape, distinct from
- * both `agentManagementErrorSchema` (nested) and the 401 body, so it needs its own schema.
+ * `{ error, code: 'ACCOUNT_DELETION_IN_PROGRESS' }` body. The code is a fixed discriminator.
  */
-export const accountDeletionResponseSchema: z.ZodType<{ error: string; code: string }> = z
-  .object({ error: z.string(), code: z.string() })
-  .strict();
+export const accountDeletionResponseSchema: z.ZodType<{
+  error: string;
+  code: 'ACCOUNT_DELETION_IN_PROGRESS';
+}> = z.object({ error: z.string(), code: z.literal('ACCOUNT_DELETION_IN_PROGRESS') }).strict();
 
 /**
  * The ban middleware (403) and the default file-upload limiter (429) send a flat `{ message }`
- * body. This is a fourth error shape, distinct from the nested, one-field, and two-field shapes.
+ * body, distinct from the other error shapes.
  */
 export const messageResponseSchema: z.ZodType<{ message: string }> = z
   .object({ message: z.string() })

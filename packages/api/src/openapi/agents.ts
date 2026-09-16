@@ -11,7 +11,7 @@ import {
   agentManagementErrorSchema,
 } from '../agents/management';
 import {
-  unauthorizedResponseSchema,
+  errorMessageResponseSchema,
   accountDeletionResponseSchema,
   messageResponseSchema,
 } from './errors';
@@ -92,7 +92,7 @@ export const agentComponentSchemas: Record<string, ZodTypeAny> = {
 
 const errorResponses = [
   { status: 400, description: 'Invalid request', schema: agentManagementErrorSchema },
-  { status: 401, description: 'Authentication failed', schema: unauthorizedResponseSchema },
+  { status: 401, description: 'Authentication failed', schema: errorMessageResponseSchema },
   {
     status: 403,
     description: 'Permission denied, or the caller is banned',
@@ -104,7 +104,11 @@ const errorResponses = [
     description: 'The bound account is being deleted',
     schema: accountDeletionResponseSchema,
   },
-  { status: 500, description: 'Internal server error', schema: agentManagementErrorSchema },
+  {
+    status: 500,
+    description: 'Internal server error',
+    schema: z.union([agentManagementErrorSchema, errorMessageResponseSchema]),
+  },
 ];
 
 export const agentContracts: EndpointContract[] = [

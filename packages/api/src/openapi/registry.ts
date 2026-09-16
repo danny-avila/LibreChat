@@ -1,7 +1,7 @@
 import type { ZodTypeAny } from 'zod';
 import type { EndpointContract, SecurityScheme } from './adapter';
 import {
-  unauthorizedResponseSchema,
+  errorMessageResponseSchema,
   accountDeletionResponseSchema,
   messageResponseSchema,
 } from './errors';
@@ -21,7 +21,7 @@ export const securitySchemes: Record<string, SecurityScheme> = {
 export const componentSchemas: Record<string, ZodTypeAny> = {
   ...agentComponentSchemas,
   ...skillComponentSchemas,
-  UnauthorizedError: unauthorizedResponseSchema,
+  ErrorMessage: errorMessageResponseSchema,
   AccountDeletionConflict: accountDeletionResponseSchema,
   MessageError: messageResponseSchema,
 };
