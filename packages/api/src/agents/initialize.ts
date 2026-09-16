@@ -113,7 +113,6 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
-import { loadRepositoryInstructions } from '../code/instructions';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
@@ -2267,10 +2266,11 @@ export async function initializeAgent(
   }
 
   const repositoryInstructionBlock = repositoryInstructionSource
-    ? await loadRepositoryInstructions({
+    ? await repositoryInstructionSource.load({
         ...repositoryInstructionSource,
         mode: agent.repositoryInstructions,
         signal: params.signal,
+        timeoutMs: appConfig?.endpoints?.agents?.repositoryInstructions?.timeoutMs,
         assertContent: (content) =>
           assertModelBoundContent({
             filters: appConfig?.filters,

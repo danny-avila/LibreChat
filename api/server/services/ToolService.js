@@ -50,6 +50,7 @@ const {
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
   createRepositoryInstructionSource,
+  createRepositoryInstructionLoader,
   resolveAttachedWorkspaceCommandTimeoutMax,
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
@@ -106,6 +107,7 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
+const repositoryInstructionLoader = createRepositoryInstructionLoader();
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
@@ -1563,6 +1565,7 @@ async function loadToolDefinitionsWrapper({
     oauthActionToolNames,
     codeExecutionContext: resolvedCodeExecutionContext,
     repositoryInstructionSource: createRepositoryInstructionSource({
+      load: repositoryInstructionLoader,
       enabled: codeExecutionEnabled,
       context: resolvedCodeExecutionContext,
       principalId: JSON.stringify([getTenantId(), req.user.id]),
@@ -1765,6 +1768,7 @@ async function loadAgentTools({
   });
 
   const repositoryInstructionSource = createRepositoryInstructionSource({
+    load: repositoryInstructionLoader,
     enabled: codeExecutionEnabled,
     context: codeExecutionContext,
     principalId: JSON.stringify([getTenantId(), req.user.id]),

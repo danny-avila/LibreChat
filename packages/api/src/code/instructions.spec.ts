@@ -51,6 +51,15 @@ describe('repository instruction loading', () => {
       const pending = load(args);
       await jest.advanceTimersByTimeAsync(2000);
       expect(await pending).toBeUndefined();
+      let settled = false;
+      const slower = load({ ...args, timeoutMs: 5000 }).then((result) => {
+        settled = true;
+        return result;
+      });
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(3000);
+      expect(await slower).toBeUndefined();
       expect(
         await load({
           ...args,

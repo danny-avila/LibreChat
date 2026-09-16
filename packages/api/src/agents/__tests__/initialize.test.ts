@@ -34,6 +34,7 @@ jest.mock('@librechat/agents', () => ({
 
 import { Providers } from '@librechat/agents';
 import { createHash } from 'node:crypto';
+import { createRepositoryInstructionLoader } from '../../code/instructions';
 import {
   Tools,
   Constants,
@@ -313,6 +314,7 @@ describe('initializeAgent — execution context', () => {
       loadTools.mockResolvedValue({
         toolDefinitions: [],
         repositoryInstructionSource: {
+          load: createRepositoryInstructionLoader(),
           enabled: true,
           principalId: `test-${mode}`,
           context: {
