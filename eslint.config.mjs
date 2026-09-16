@@ -263,8 +263,10 @@ export default [
       // the app is on v4. Classes declared in a stylesheet Tailwind reads are recognized on their
       // own; these are the ones it cannot see — plain selectors in files loaded separately
       // (style.css families, the library's component CSS) and classes a third party puts in the
-      // DOM. Everything outside this list that generates no CSS is reported, including the
-      // `token-`-prefixed names and `prose` variants that quietly render nothing today.
+      // DOM. Everything outside this list that generates no CSS is reported: the `prose` variants
+      // that quietly render nothing today, and the `token-`-prefixed names, which were painting
+      // through plain rules in `client/src/style.css` that this change removes in favour of the
+      // tokens themselves rather than adding six more names here.
       'shadcn/no-unknown-classes': [
         'error',
         {

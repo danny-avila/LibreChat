@@ -587,19 +587,6 @@ html.high-contrast.dark .btn-neutral:hover {
   background-color: rgb(var(--surface-hover));
 }
 
-.text-token-text-primary {
-  color: #171717;
-  color: rgb(var(--text-primary));
-}
-.text-token-text-secondary {
-  color: #565869;
-  color: rgb(var(--text-secondary));
-}
-.text-token-text-tertiary {
-  color: #8e8ea0;
-  color: rgb(var(--text-tertiary));
-}
-
 .icon-sm {
   stroke-width: 2;
   height: 1rem;
@@ -628,19 +615,6 @@ html.high-contrast.dark .btn-neutral:hover {
   stroke-width: 1.5;
   height: 2rem;
   width: 2rem;
-}
-.border-token-border-light {
-  border-color: #ececf1;
-  border-color: rgb(var(--border-light) / var(--border-light-alpha, 1));
-}
-
-.border-token-border-medium {
-  border-color: #d9d9e3;
-  border-color: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
-}
-
-.bg-token-surface-secondary {
-  background-color: rgb(var(--surface-secondary));
 }
 
 /* Forced-colors overrides the inline `background-color: currentColor` a masked
