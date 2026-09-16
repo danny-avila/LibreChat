@@ -5,7 +5,6 @@ const {
   createToolSearch,
   createBashExecutionTool,
   Constants: AgentConstants,
-  createBashProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -50,7 +49,7 @@ const {
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
   resolveAttachedWorkspaceCommandTimeoutMax,
-  createGitIdentityProgrammaticBashTool,
+  createContextProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
   resolveRunFileCodeExecutionContext,
@@ -2234,28 +2233,15 @@ async function loadToolsForExecution({
        * library so PTC calls share the same managed auth context.
        */
       for (const name of ptcToolNames) {
-        const ptcOptions = {
-          authHeaders: () =>
+        const ptcTool = createContextProgrammaticBashTool(
+          () =>
             codeExecutionAuthHeaders(
               (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
               codeExecutionContext,
             ),
-          baseUrl: codeExecutionContext.baseUrl,
-          executionProfile: codeExecutionContext.executionProfile,
-          runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
-          ...(codeExecutionContext.environmentType === 'attached'
-            ? {
-                workspaceId: codeExecutionContext.codeWorkspace?.workspaceId,
-                runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
-                  codeExecutionContext.codeEnvironmentConfigSchema,
-                ),
-              }
-            : {}),
-        };
-        const ptcTool =
-          codeExecutionContext.environmentType === 'attached'
-            ? createGitIdentityProgrammaticBashTool(ptcOptions, agent?.git_identity)
-            : createBashProgrammaticToolCallingTool(ptcOptions);
+          codeExecutionContext,
+          agent?.git_identity,
+        );
         ptcTool.name = name;
         allLoadedTools.push(ptcTool);
       }

@@ -338,8 +338,10 @@ export async function getCodeBridgeWorkerStatus({
       };
       if (
         Array.isArray(capabilities.workspaceTools.programmaticLanguages) &&
-        capabilities.workspaceTools.programmaticLanguages.length === 1 &&
-        capabilities.workspaceTools.programmaticLanguages[0] === 'bash'
+        capabilities.workspaceTools.programmaticLanguages.every(
+          (language) => typeof language === 'string',
+        ) &&
+        capabilities.workspaceTools.programmaticLanguages.includes('bash')
       ) {
         workspaceStatus.programmaticLanguages = ['bash'];
       }

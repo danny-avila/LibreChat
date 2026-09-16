@@ -23,11 +23,8 @@ import type {
 import type { AgentGitIdentity, AgentToolOptions } from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
 import type { CodeCapabilityConfigLoader } from '~/code/capabilities';
-import {
-  createGitIdentityProgrammaticBashTool,
-  resolveAttachedWorkspaceCommandTimeoutMax,
-} from '~/code/command';
 import { supportsProgrammaticCodeExecution } from '~/code/capabilities';
+import { createContextProgrammaticBashTool } from '~/code/command';
 import { sanitizeGeminiSchema } from '~/mcp/zod';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
@@ -465,27 +462,10 @@ export async function buildToolClassification(
   }
 
   try {
-    const profileParams = codeExecutionContext
-      ? {
-          baseUrl: codeExecutionContext.baseUrl,
-          executionProfile: codeExecutionContext.executionProfile,
-          runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
-          ...(codeExecutionContext.environmentType === 'attached'
-            ? {
-                workspaceId: codeExecutionContext.codeWorkspace?.workspaceId,
-                runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
-                  codeExecutionContext.codeEnvironmentConfigSchema,
-                ),
-              }
-            : {}),
-        }
-      : {};
-    const ptcTool = createGitIdentityProgrammaticBashTool(
-      {
-        authHeaders,
-        ...profileParams,
-      },
-      codeExecutionContext?.environmentType === 'attached' ? params.gitIdentity : undefined,
+    const ptcTool = createContextProgrammaticBashTool(
+      authHeaders,
+      codeExecutionContext,
+      params.gitIdentity,
     );
     if (!definitionsOnly) additionalTools.push(ptcTool);
 
