@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TraceModel, TraceNode } from './model';
+import type { TraceModel } from './model';
 
 const PREVIEW_LENGTH = 160;
 const ELLIPSIS = '…';
@@ -15,7 +15,12 @@ export type StepPreview = { text: string; toolCalls: ToolCallPreview[] };
  * only its final text (stored as flat text, or with intermediate output
  * filtered out), which belongs to the last model call, not the first.
  */
-export type MessagePreview = { steps: StepPreview[]; finalOnly: boolean };
+export type MessagePreview = {
+  steps: StepPreview[];
+  finalOnly: boolean;
+  /** Agents ran in parallel lanes, whose output cannot be told apart by order. */
+  parallel: boolean;
+};
 
 function compact(text: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
@@ -87,17 +92,31 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   let current: StepPreview | null = null;
   let afterToolCall = false;
   let lastRunStep: string | undefined;
+  let roundAgent: string | undefined;
+  let parallel = false;
   const begin = () => {
     current = { text: '', toolCalls: [] };
     steps.push(current);
     afterToolCall = false;
     return current;
   };
+  /** A handoff: output from another agent is that agent's own model call. */
+  const handoff = (part: TMessageContentParts): boolean => {
+    if (part.groupId != null) {
+      parallel = true;
+    }
+    const agentId = part.agentId;
+    const changed = agentId != null && roundAgent != null && agentId !== roundAgent;
+    roundAgent = agentId ?? roundAgent;
+    return changed && current != null;
+  };
   for (const part of parts) {
     if (part.type === ContentTypes.TOOL_CALL) {
       const runStep = runStepOf(part.tool_call);
+      const handedOff = handoff(part);
       const nextRound =
-        afterToolCall && runStep != null && lastRunStep != null && runStep !== lastRunStep;
+        handedOff ||
+        (afterToolCall && runStep != null && lastRunStep != null && runStep !== lastRunStep);
       const step = current == null || nextRound ? begin() : current;
       const call = callOf(part.tool_call);
       if (call != null) {
@@ -116,15 +135,16 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     if (part.type !== ContentTypes.TEXT) {
       continue;
     }
-    const step = current == null || afterToolCall ? begin() : current;
+    const handedOff = handoff(part);
+    const step = current == null || afterToolCall || handedOff ? begin() : current;
     step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
   /** A failed turn's row stores the failure as its text; the model never wrote it. */
   if (steps.length === 0 && message?.text && message.error !== true) {
-    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true };
+    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true, parallel };
   }
   const finalOnly = steps.length === 1 && steps[0].toolCalls.length === 0 && steps[0].text !== '';
-  return { steps, finalOnly };
+  return { steps, finalOnly, parallel };
 }
 
 export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
@@ -132,74 +152,84 @@ export function buildStepPreviews(message: TMessage | undefined): StepPreview[] 
 }
 
 /**
- * The one-line preview a ledger row shows beside a record's name, taken from the
- * chat's own message rather than from the tracing backend: the text a model call
- * wrote, or the arguments a tool was called with. Only a step's own roots have
- * one: the message describes the response's calls, not what ran inside a tool
- * (a subagent's model calls, a tool's nested calls). Tool records are matched
- * to the message's tool calls by name, in the order they ran within their step.
+ * The one-line preview each ledger row shows beside its record's name, taken
+ * from the chat's own message rather than from the tracing backend: the text a
+ * model call wrote, or the arguments a tool was called with. Built once per
+ * model in one pass over every step, so search and rendering never rescan a
+ * step per row. Only a step's own roots have a preview: the message describes
+ * the response's calls, not what ran inside a tool (a subagent's model calls, a
+ * tool's nested calls). Tool records are matched to the message's tool calls by
+ * name, in the order they ran within their step; same-name calls that started in
+ * the same millisecond have no reliable order and get none. The turn a page
+ * boundary splits (`partialMessageId`) gets none until its earlier steps load.
  */
-export function previewFor(
-  node: TraceNode,
+export function buildPreviewIndex(
   model: TraceModel,
   previewsByMessage: ReadonlyMap<string, MessagePreview>,
-): string | undefined {
-  const { record } = node;
-  if (record.origin === 'title' || (record.kind !== 'generation' && record.kind !== 'tool')) {
-    return undefined;
-  }
-  const message = previewsByMessage.get(record.messageId);
-  const step = node.stepKey != null ? model.steps.get(node.stepKey) : undefined;
-  if (message == null || step == null || step.origin === 'title') {
-    return undefined;
-  }
-  if (!step.rootIds.includes(record.id)) {
-    return undefined;
-  }
-  if (message.finalOnly) {
-    const turn = model.turns.find((candidate) => candidate.messageId === record.messageId);
-    const last = record.kind === 'generation' && turn != null && step.index === turn.steps;
-    return last ? message.steps[0]?.text || undefined : undefined;
-  }
-  const preview = message.steps[step.index - 1];
-  if (!preview) {
-    return undefined;
-  }
-  if (record.kind === 'generation') {
-    return preview.text || undefined;
-  }
-  /** Same-name calls that started in the same millisecond have no reliable order to match by. */
-  const ambiguous = step.rootIds.some((id) => {
-    const other = model.nodes.get(id);
-    return (
-      other != null &&
-      other !== node &&
-      other.record.kind === 'tool' &&
-      other.record.name === record.name &&
-      other.start === node.start
-    );
-  });
-  if (ambiguous) {
-    return undefined;
-  }
-  const ordinal = toolOrdinal(node, model, step.rootIds);
-  const match = preview.toolCalls.filter((call) => call.name === record.name)[ordinal];
-  return match?.args || undefined;
-}
-
-/** How many earlier root tool records of the same name the step holds. */
-function toolOrdinal(node: TraceNode, model: TraceModel, rootIds: string[]): number {
-  let ordinal = 0;
-  for (const id of rootIds) {
-    const current = model.nodes.get(id);
-    if (current === node) {
-      break;
+  partialMessageId?: string,
+): Map<string, string> {
+  const index = new Map<string, string>();
+  const stepsByTurn = new Map(model.turns.map((turn) => [turn.messageId, turn.steps]));
+  for (const step of model.steps.values()) {
+    const message = previewsByMessage.get(step.messageId);
+    if (
+      message == null ||
+      message.parallel ||
+      step.origin === 'title' ||
+      step.messageId === partialMessageId
+    ) {
+      continue;
     }
-    if (current?.record.kind === 'tool' && current.record.name === node.record.name) {
-      ordinal++;
+    if (message.finalOnly) {
+      const text = message.steps[0]?.text;
+      if (step.index === stepsByTurn.get(step.messageId) && step.generationId != null && text) {
+        index.set(step.generationId, text);
+      }
+      continue;
+    }
+    const round = message.steps[step.index - 1];
+    if (!round) {
+      continue;
+    }
+    const callsByName = new Map<string, string[]>();
+    for (const call of round.toolCalls) {
+      callsByName.set(call.name, [...(callsByName.get(call.name) ?? []), call.args]);
+    }
+    const startsByName = new Map<string, Map<number, number>>();
+    const roots = step.rootIds.flatMap((id) => {
+      const node = model.nodes.get(id);
+      return node != null ? [node] : [];
+    });
+    for (const node of roots) {
+      if (node.record.kind !== 'tool') {
+        continue;
+      }
+      const starts = startsByName.get(node.record.name) ?? new Map<number, number>();
+      starts.set(node.start, (starts.get(node.start) ?? 0) + 1);
+      startsByName.set(node.record.name, starts);
+    }
+    const ordinals = new Map<string, number>();
+    for (const node of roots) {
+      const { record } = node;
+      if (record.kind === 'generation') {
+        if (round.text) {
+          index.set(record.id, round.text);
+        }
+        continue;
+      }
+      if (record.kind !== 'tool') {
+        continue;
+      }
+      const ordinal = ordinals.get(record.name) ?? 0;
+      ordinals.set(record.name, ordinal + 1);
+      const ambiguous = (startsByName.get(record.name)?.get(node.start) ?? 0) > 1;
+      const args = callsByName.get(record.name)?.[ordinal];
+      if (!ambiguous && args) {
+        index.set(record.id, args);
+      }
     }
   }
-  return ordinal;
+  return index;
 }
 
 /** Previews for every response in a conversation, keyed by its message id. */

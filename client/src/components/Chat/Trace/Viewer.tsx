@@ -42,9 +42,9 @@ import {
   buildTraceModel,
   collapsibleKeys,
 } from './model';
+import { buildPreviews, buildPreviewIndex } from './preview';
 import { traceModeAtom, traceScaleAtom } from './store';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
-import { buildPreviews, previewFor } from './preview';
 import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import Inspector from './Inspector';
@@ -162,10 +162,13 @@ export default function Viewer({
    *  its rounds cannot be numbered against the message until they are. */
   const partialMessageId =
     recordsQuery.hasNextPage === true ? model.turns[0]?.messageId : undefined;
-  const previewOf = useCallback(
-    (node: TraceNode) =>
-      node.record.messageId === partialMessageId ? undefined : previewFor(node, model, previews),
+  const previewIndex = useMemo(
+    () => buildPreviewIndex(model, previews, partialMessageId),
     [model, previews, partialMessageId],
+  );
+  const previewOf = useCallback(
+    (node: TraceNode) => previewIndex.get(node.record.id),
+    [previewIndex],
   );
   const labelsFor = useCallback(
     (record: TTraceRecord) => {

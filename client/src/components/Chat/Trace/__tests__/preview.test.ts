@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TTraceRecord } from 'librechat-data-provider';
-import { buildPreviews, buildStepPreviews, previewFor } from '../preview';
+import { buildPreviews, buildStepPreviews, buildPreviewIndex } from '../preview';
 import { buildTraceModel } from '../model';
 
 const BASE = Date.UTC(2026, 8, 12, 11, 30, 0);
@@ -123,7 +123,7 @@ describe('buildStepPreviews', () => {
   });
 });
 
-describe('previewFor', () => {
+describe('buildPreviewIndex', () => {
   const model = buildTraceModel([
     record({ id: 'llm-1', kind: 'generation', name: 'llm', startTime: at(0), endTime: at(1000) }),
     record({
@@ -162,7 +162,7 @@ describe('previewFor', () => {
     message({ messageId: 'user-1', isCreatedByUser: true, text: 'Weather?' }),
     response,
   ]);
-  const preview = (id: string) => previewFor(model.nodes.get(id) as never, model, previews);
+  const preview = (id: string) => buildPreviewIndex(model, previews).get(id);
 
   it('pairs each step with the text it wrote and each tool with the arguments it was given', () => {
     expect(preview('llm-1')).toBe('Let me check the weather for you.');
@@ -174,13 +174,13 @@ describe('previewFor', () => {
 
   it('shows nothing for a title run, a record without a message, or a step the message lacks', () => {
     expect(preview('title')).toBeUndefined();
-    expect(previewFor(model.nodes.get('llm-1') as never, model, new Map())).toBeUndefined();
+    expect(buildPreviewIndex(model, new Map()).get('llm-1')).toBeUndefined();
     const extra = buildTraceModel([
       record({ id: 'a', kind: 'generation', startTime: at(0), endTime: at(1) }),
       record({ id: 'b', kind: 'generation', startTime: at(2), endTime: at(3) }),
       record({ id: 'c', kind: 'generation', startTime: at(4), endTime: at(5) }),
     ]);
-    expect(previewFor(extra.nodes.get('c') as never, extra, previews)).toBeUndefined();
+    expect(buildPreviewIndex(extra, previews).get('c')).toBeUndefined();
   });
 
   it('leaves what ran inside a tool, such as a subagent model call, without a preview', () => {
@@ -218,8 +218,7 @@ describe('previewFor', () => {
         ],
       } as Partial<TMessage>),
     ]);
-    const nestedPreview = (id: string) =>
-      previewFor(nested.nodes.get(id) as never, nested, delegating);
+    const nestedPreview = (id: string) => buildPreviewIndex(nested, delegating).get(id);
 
     expect(nestedPreview('llm')).toBe('Delegating.');
     expect(nestedPreview('agent')).toBe('task: x');
@@ -238,12 +237,10 @@ describe('previewFor', () => {
       message({ content: [{ type: ContentTypes.TEXT, text: 'Only the answer survived.' }] }),
     ]);
 
-    expect(previewFor(two.nodes.get('first') as never, two, flat)).toBeUndefined();
-    expect(previewFor(two.nodes.get('last') as never, two, flat)).toBe('The final answer.');
-    expect(previewFor(two.nodes.get('first') as never, two, filtered)).toBeUndefined();
-    expect(previewFor(two.nodes.get('last') as never, two, filtered)).toBe(
-      'Only the answer survived.',
-    );
+    expect(buildPreviewIndex(two, flat).get('first')).toBeUndefined();
+    expect(buildPreviewIndex(two, flat).get('last')).toBe('The final answer.');
+    expect(buildPreviewIndex(two, filtered).get('first')).toBeUndefined();
+    expect(buildPreviewIndex(two, filtered).get('last')).toBe('Only the answer survived.');
   });
 
   it('gives no preview to same-name calls that started in the same millisecond', () => {
@@ -261,8 +258,8 @@ describe('previewFor', () => {
       } as Partial<TMessage>),
     ]);
 
-    expect(previewFor(twins.nodes.get('one') as never, twins, parallel)).toBeUndefined();
-    expect(previewFor(twins.nodes.get('two') as never, twins, parallel)).toBeUndefined();
+    expect(buildPreviewIndex(twins, parallel).get('one')).toBeUndefined();
+    expect(buildPreviewIndex(twins, parallel).get('two')).toBeUndefined();
   });
 
   it("never treats a failed turn's error text as model output", () => {
@@ -272,7 +269,44 @@ describe('previewFor', () => {
     const failed = buildPreviews([message({ text: 'Generation failed', error: true })]);
 
     expect(buildStepPreviews(message({ text: 'Generation failed', error: true }))).toEqual([]);
-    expect(previewFor(one.nodes.get('llm') as never, one, failed)).toBeUndefined();
+    expect(buildPreviewIndex(one, failed).get('llm')).toBeUndefined();
+  });
+
+  it('splits a handoff to another agent into its own round and withholds parallel lanes', () => {
+    const two = buildTraceModel([
+      record({ id: 'first', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({ id: 'last', kind: 'generation', startTime: at(200), endTime: at(300) }),
+    ]);
+    const handoff = buildPreviews([
+      message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Agent A says.', agentId: 'agent-a' },
+          { type: ContentTypes.TEXT, text: 'Agent B says.', agentId: 'agent-b' },
+        ],
+      } as Partial<TMessage>),
+    ]);
+    const parallel = buildPreviews([
+      message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Lane one.', agentId: 'agent-a', groupId: 1 },
+          { type: ContentTypes.TEXT, text: 'Lane two.', agentId: 'agent-b', groupId: 1 },
+        ],
+      } as Partial<TMessage>),
+    ]);
+
+    expect(buildPreviewIndex(two, handoff).get('first')).toBe('Agent A says.');
+    expect(buildPreviewIndex(two, handoff).get('last')).toBe('Agent B says.');
+    expect(buildPreviewIndex(two, parallel).size).toBe(0);
+  });
+
+  it('withholds previews for the turn a page boundary splits', () => {
+    const one = buildTraceModel([
+      record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),
+    ]);
+    const answer = buildPreviews([message({ text: 'Answer.' })]);
+
+    expect(buildPreviewIndex(one, answer).get('llm')).toBe('Answer.');
+    expect(buildPreviewIndex(one, answer, 'response-1').get('llm')).toBeUndefined();
   });
 
   it('does not preview messages the user wrote', () => {
