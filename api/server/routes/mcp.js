@@ -181,22 +181,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
-    const configServers = await resolveConfigServers(req);
-    /**
-     * The stored URL was built with or without RFC 8707 `resource`. Replaying it after the
-     * operator changed `send_resource_parameter` would redirect the user straight back to
-     * the request they reconfigured away from, so fall through and build a fresh one.
-     */
-    const replayMatchesConfig = MCPOAuthHandler.matchesResourceParameterDecision(
-      flowState.metadata,
-      configServers?.[serverName]?.oauth,
-    );
-
-    if (
-      typeof storedAuthorizationUrl === 'string' &&
-      storedAuthorizationUrl.length > 0 &&
-      replayMatchesConfig
-    ) {
+    if (typeof storedAuthorizationUrl === 'string' && storedAuthorizationUrl.length > 0) {
       logger.debug('[MCP OAuth] Reusing stored authorization URL', {
         serverName,
         userId,
@@ -206,19 +191,12 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.redirect(storedAuthorizationUrl);
     }
 
-    if (!replayMatchesConfig) {
-      logger.debug('[MCP OAuth] Pending flow predates a send_resource_parameter change', {
-        serverName,
-        userId,
-        flowId,
-      });
-    }
-
     if (!serverUrl || !oauthConfig) {
       logger.error('[MCP OAuth] Missing server URL or OAuth config in flow state');
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
+    const configServers = await resolveConfigServers(req);
     const oauthHeaders = await getOAuthHeaders(serverName, userId, configServers);
     const registry = getMCPServersRegistry();
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({

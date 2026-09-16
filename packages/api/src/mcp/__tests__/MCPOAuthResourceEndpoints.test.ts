@@ -1,21 +1,17 @@
 /**
- * Covers the two places a suppressed RFC 8707 `resource` could still reach the provider:
+ * Covers a suppressed RFC 8707 `resource` that could still reach the provider through an
+ * endpoint URL which already carries it: the MCP SDK uses `token_endpoint` verbatim and the
+ * refresh paths post to the resolved token URL as-is, so gating only the parameters
+ * LibreChat *adds* leaves an inherited one in place.
  *
- *   1. An endpoint URL that already carries `resource`. The MCP SDK uses `token_endpoint`
- *      verbatim and the refresh paths post to the resolved token URL as-is, so gating only
- *      the parameters LibreChat *adds* leaves an inherited one in place.
- *   2. A pending flow replayed after the operator changed the option, which hands back the
- *      authorization request they just reconfigured away from.
- *
- * The refresh case is verified against a real recorded request line rather than a mock, so
- * it asserts what the authorization server would actually receive.
+ * Verified against a real recorded request line rather than a mock, so it asserts what the
+ * authorization server would actually receive.
  */
 
 import * as net from 'net';
 import * as http from 'http';
 import type { Socket } from 'net';
 import { MCPOAuthHandler } from '~/mcp/oauth';
-import { getReplayablePendingMCPOAuthStartFromFlow } from '~/mcp/oauth/pending';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -142,47 +138,5 @@ describe('MCP OAuth resource inherited from endpoint URLs', () => {
     } finally {
       await close();
     }
-  });
-});
-
-describe('pending OAuth replay after a send_resource_parameter change', () => {
-  const pendingFlow = (sendResourceParameter?: boolean) => ({
-    status: 'PENDING' as const,
-    createdAt: Date.now(),
-    metadata: {
-      serverName: 'entra-server',
-      userId: 'user-1',
-      serverUrl: 'https://example.test/mcp',
-      state: 'abc',
-      authorizationUrl:
-        'https://login.microsoftonline.test/authorize?resource=https%3A%2F%2Fexample.test%2Fmcp',
-      ...(sendResourceParameter !== undefined && { sendResourceParameter }),
-    },
-  });
-
-  it('replays a pending flow when no config is supplied for validation', () => {
-    // Callers without the server's config keep the previous behavior rather than
-    // guessing; validation is opt-in.
-    expect(getReplayablePendingMCPOAuthStartFromFlow(pendingFlow())).toBeDefined();
-  });
-
-  it('replays a pending flow whose decision still matches live config', () => {
-    expect(
-      getReplayablePendingMCPOAuthStartFromFlow(pendingFlow(), Date.now(), { oauth: {} }),
-    ).toBeDefined();
-  });
-
-  it('refuses to replay a flow built with resource after the opt-out', () => {
-    expect(
-      getReplayablePendingMCPOAuthStartFromFlow(pendingFlow(), Date.now(), {
-        oauth: { send_resource_parameter: false },
-      }),
-    ).toBeUndefined();
-  });
-
-  it('refuses to replay an opted-out flow after the opt-out is withdrawn', () => {
-    expect(
-      getReplayablePendingMCPOAuthStartFromFlow(pendingFlow(false), Date.now(), { oauth: {} }),
-    ).toBeUndefined();
   });
 });
