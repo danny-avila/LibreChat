@@ -1,4 +1,6 @@
 export const MEILI_INDEX_SYNC_INTERVAL_MS = 60_000;
+export const MEILI_INDEX_SYNC_REFRESH_MS = 60_000;
+export const MEILI_INDEX_SYNC_LEASE_MS: number = MEILI_INDEX_SYNC_REFRESH_MS * 3;
 
 type IndexSyncReason = 'startup' | 'periodic';
 

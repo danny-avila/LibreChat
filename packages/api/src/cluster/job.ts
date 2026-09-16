@@ -219,6 +219,12 @@ async function tryAcquire(
 /**
  * Runs one logical job across replicas under a renewable MongoDB lease.
  *
+ * The caller supplies a durable collection shared by every replica rather than
+ * cache-backed FlowState storage, which may be Redis or process-local memory.
+ * Each successful renewal moves `expiresAt` forward from the current time, so
+ * it acts as the owner's heartbeat-derived stale deadline rather than a fixed
+ * limit on the total job duration.
+ *
  * Cancellation first asks the handler to stop and keeps renewing its lease until
  * the handler confirms settlement. If handler or ownership-operation settlement
  * cannot be confirmed within the deadline, the owner fail-stops without making

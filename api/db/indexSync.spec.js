@@ -68,6 +68,8 @@ jest.mock('@librechat/api', () => ({
   isEnabled: mockIsEnabled,
   MEILI_HTTP_REQUEST_TIMEOUT_MS: 10_000,
   MEILI_INDEX_SYNC_INTERVAL_MS: 60_000,
+  MEILI_INDEX_SYNC_LEASE_MS: 180_000,
+  MEILI_INDEX_SYNC_REFRESH_MS: 60_000,
   MEILI_INDEX_SYNC_TIMEOUT_MS: 600_000,
   runDistributedJob: mockRunDistributedJob,
   waitForMeiliTask: mockWaitForMeiliTask,
@@ -217,6 +219,8 @@ describe('performSync() - syncThreshold logic', () => {
       expect.any(Function),
       expect.objectContaining({
         completionTtlMs: 60_000,
+        leaseMs: 180_000,
+        refreshMs: 60_000,
         timeoutMs: 600_000,
       }),
     );

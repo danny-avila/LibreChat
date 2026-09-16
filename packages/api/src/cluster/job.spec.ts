@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { Collection, Document } from 'mongodb';
+import type { Collection, Document, WithId } from 'mongodb';
 import { runDistributedJob } from './job';
 
 interface JobState extends Document {
@@ -72,6 +72,83 @@ describe('runDistributedJob', () => {
     await expect(Promise.all([ownerRun, followerRun])).resolves.toEqual(['owner', undefined]);
     expect(ownerHandler).toHaveBeenCalledTimes(1);
     expect(followerHandler).not.toHaveBeenCalled();
+  });
+
+  test('renews the heartbeat deadline while the owner remains healthy', async () => {
+    const ownerStarted = createDeferred<void>();
+    const releaseOwner = createDeferred<void>();
+    const ownerHandler = jest.fn(async () => {
+      ownerStarted.resolve();
+      await releaseOwner.promise;
+      return 'owner';
+    });
+    const options = {
+      leaseMs: 6000,
+      refreshMs: 50,
+      pollMs: 5,
+      onLeaseLost: jest.fn(),
+    };
+    const ownerRun = runDistributedJob(collection, 'renewed-job', ownerHandler, options);
+    await ownerStarted.promise;
+    const initialState = await collection.findOne({ _id: 'renewed-job' });
+    if (initialState == null) {
+      throw new Error('Expected the owner to create a distributed job state');
+    }
+    let renewedState: WithId<JobState> | null = initialState;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      renewedState = await collection.findOne({ _id: 'renewed-job' });
+      if (
+        renewedState != null &&
+        renewedState.expiresAt.getTime() > initialState.expiresAt.getTime()
+      ) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(renewedState).toMatchObject({
+      owner: initialState.owner,
+      status: 'running',
+    });
+    expect(renewedState?.expiresAt.getTime()).toBeGreaterThan(initialState.expiresAt.getTime());
+
+    const followerController = new AbortController();
+    const followerHandler = jest.fn(async () => 'follower');
+    const followerRun = runDistributedJob(collection, 'renewed-job', followerHandler, {
+      ...options,
+      signal: followerController.signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    followerController.abort(new Error('stop follower'));
+
+    await expect(followerRun).rejects.toThrow('stop follower');
+    expect(followerHandler).not.toHaveBeenCalled();
+    releaseOwner.resolve();
+    await expect(ownerRun).resolves.toBe('owner');
+  });
+
+  test('takes over after a missed heartbeat reaches its stale deadline', async () => {
+    const expiresAt = new Date(Date.now() + 50);
+    await collection.insertOne({
+      _id: 'missed-heartbeat',
+      status: 'running',
+      owner: 'stopped-owner',
+      expiresAt,
+      updatedAt: new Date(),
+    });
+    const handler = jest.fn(async () => 'recovered');
+
+    await expect(
+      runDistributedJob(collection, 'missed-heartbeat', handler, {
+        leaseMs: 6000,
+        refreshMs: 50,
+        pollMs: 5,
+        onLeaseLost: jest.fn(),
+      }),
+    ).resolves.toBe('recovered');
+
+    expect(Date.now()).toBeGreaterThanOrEqual(expiresAt.getTime());
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   test('takes over an expired lease', async () => {

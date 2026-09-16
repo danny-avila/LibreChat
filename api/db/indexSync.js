@@ -8,6 +8,8 @@ const {
   evalKeyvRedisScript,
   MEILI_HTTP_REQUEST_TIMEOUT_MS,
   MEILI_INDEX_SYNC_INTERVAL_MS,
+  MEILI_INDEX_SYNC_LEASE_MS,
+  MEILI_INDEX_SYNC_REFRESH_MS,
   MEILI_INDEX_SYNC_TIMEOUT_MS,
   runDistributedJob,
   waitForMeiliTask,
@@ -612,6 +614,8 @@ async function indexSync(options = {}) {
     (signal) => runIndexSync({ ...options, signal }),
     {
       completionTtlMs: MEILI_INDEX_SYNC_INTERVAL_MS,
+      leaseMs: MEILI_INDEX_SYNC_LEASE_MS,
+      refreshMs: MEILI_INDEX_SYNC_REFRESH_MS,
       timeoutMs: MEILI_INDEX_SYNC_TIMEOUT_MS,
       signal: options.signal,
     },
