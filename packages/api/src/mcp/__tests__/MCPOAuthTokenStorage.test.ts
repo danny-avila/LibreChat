@@ -2508,6 +2508,101 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).not.toHaveBeenCalled();
       });
 
+      it('adopts a rotation that landed before its first acquisition attempt', async () => {
+        await seedRefreshableTokens('first-acquire-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(9));
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (_id: string, options?: { expectedGeneration?: number }) => {
+            if (options?.expectedGeneration === undefined) {
+              /** The peer rotated and released before this replica ever contended. */
+              await peerRotates('first-acquire-srv', 4);
+            }
+            return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+          }),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'first-acquire-srv'),
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-4' });
+
+        /**
+         * An acquisition that succeeds first try says nothing about which credential is stored: it
+         * proves only that no peer holds the flight now, not that none held it a moment ago.
+         */
+        expect(refreshTokens).not.toHaveBeenCalled();
+      });
+
+      it('keeps the fence when the pre-flight observation read fails', async () => {
+        await seedRefreshableTokens('observe-fail-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        let refreshReads = 0;
+        const findToken = (async (filter: { type?: string }) => {
+          if (filter.type === 'mcp_oauth_refresh' && ++refreshReads === 1) {
+            throw new Error('token storage unavailable');
+          }
+          return store.findToken(filter as never);
+        }) as typeof store.findToken;
+        const flightIds: string[] = [];
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (id: string, options?: { expectedGeneration?: number }) => {
+            if (options?.expectedGeneration === undefined) {
+              flightIds.push(id);
+            }
+            return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+          }),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'observe-fail-srv'),
+            findToken,
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-2' });
+
+        /**
+         * Losing the observation costs adoption and nothing else. Redeeming without the flight
+         * because a read failed is the concurrency the flight exists to remove, so only the lease
+         * store failing may reach the unfenced fallback.
+         */
+        expect(flightIds).toHaveLength(1);
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
+      it('reuses the refresh record getTokens already loaded', async () => {
+        await seedRefreshableTokens('reuse-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        let refreshReads = 0;
+        const findToken = (async (filter: { type?: string }) => {
+          if (filter.type === 'mcp_oauth_refresh') {
+            refreshReads += 1;
+          }
+          return store.findToken(filter as never);
+        }) as typeof store.findToken;
+        const flowManager = flightManager(async () => true);
+
+        await expect(
+          MCPTokenStorage.getTokens({
+            ...refreshParams(refreshTokens, 'reuse-srv'),
+            findToken,
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-2' });
+
+        /**
+         * Two reads: the probe `getTokens` takes to decide a refresh is needed, reused as the
+         * flight's observation baseline, and one under the flight that both proves rotation and
+         * supplies the credential redeemed. This path is on the latency budget CI measures, so a
+         * third read of the same record is a regression rather than a detail.
+         */
+        expect(refreshReads).toBe(2);
+      });
+
       it('clamps a configured wait into the window the stale abort allows', () => {
         const resolve = (configured?: number) =>
           (

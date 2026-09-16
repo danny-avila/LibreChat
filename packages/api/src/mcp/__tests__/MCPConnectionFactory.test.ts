@@ -1970,6 +1970,65 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
     });
 
+    it('defers instead of prompting when another replica holds the refresh', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = { serverName: 'test-server', serverConfig: sseConfig };
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      /** Named rather than constructed, because these errors cross the built package boundary. */
+      const contended = new Error(
+        'OAuth token refresh is temporarily unavailable for "test-server"',
+      );
+      contended.name = 'MCPTokenRefreshUnavailableError';
+      mockMCPTokenStorage.forceRefreshTokens.mockRejectedValueOnce(contended);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      /**
+       * A peer redeeming this credential is not a reason to ask the user to authorize the server
+       * again: its rotation is about to land and the next request adopts it. Prompting here is the
+       * outcome the cross-replica flight exists to prevent, so the connection defers instead.
+       */
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthFailed', contended);
+    });
+
     it('should bypass any flow cache on silent refresh and invalidate mcp_get_tokens cache (regression for stale cached token reuse)', async () => {
       // Reproduces the cache-collision flagged by Codex on PR #13369: when an
       // earlier `getOAuthTokens` call cached its (now server-rejected) tokens

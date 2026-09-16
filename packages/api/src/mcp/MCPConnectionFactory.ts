@@ -1116,7 +1116,7 @@ export class MCPConnectionFactory {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let abortGraceTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const refreshPromise = this.runSilentRefresh(abortController.signal, bindingDigest);
-    const promise = new Promise<MCPOAuthTokens | null>((resolve) => {
+    const promise = new Promise<MCPOAuthTokens | null>((resolve, reject) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
         abortGraceTimeoutId = setTimeout(
@@ -1129,7 +1129,12 @@ export class MCPConnectionFactory {
         resolve(null);
       }, timeoutMs);
 
-      refreshPromise.then(resolve, () => {
+      refreshPromise.then(resolve, (error: unknown) => {
+        /** Every joiner waits on this same contended credential, so they share the retry. */
+        if (MCPConnectionFactory.isRefreshUnavailable(error)) {
+          reject(error);
+          return;
+        }
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
         );
@@ -1197,6 +1202,16 @@ export class MCPConnectionFactory {
       }
       return tokens;
     } catch (error) {
+      /**
+       * Contention with another replica's redemption is retryable and must not read as a failed
+       * refresh. Collapsing it to null sends this path to interactive OAuth, so a peer that merely
+       * held the credential slightly too long would prompt the user to authorize the server again,
+       * which is the outcome the cross-replica flight exists to prevent. The next request retries
+       * once the peer releases, by which time its rotated credential is there to be adopted.
+       */
+      if (MCPConnectionFactory.isRefreshUnavailable(error)) {
+        throw error;
+      }
       if (error instanceof ReauthenticationRequiredError) {
         logger.info(
           `${this.logPrefix} Reauthentication required; falling back to interactive OAuth`,
@@ -1215,6 +1230,21 @@ export class MCPConnectionFactory {
    * entries are deleted; PENDING entries are completed with fresh tokens so
    * concurrent waiters do not fail or later publish server-rejected tokens.
    */
+  /**
+   * True for a refresh another party may still complete — a peer replica holding the flight, or a
+   * provider that was briefly unavailable — as opposed to one that needs the user.
+   *
+   * Matched by name as well as by identity because these errors cross the built package boundary
+   * into `/api`, where `instanceof` against this module's class does not hold. `loadOAuthTokens`
+   * matches both for the same reason.
+   */
+  private static isRefreshUnavailable(error: unknown): boolean {
+    return (
+      error instanceof MCPTokenRefreshUnavailableError ||
+      (error instanceof Error && error.name === 'MCPTokenRefreshUnavailableError')
+    );
+  }
+
   /**
    * A credential this replica adopted was rotated, persisted and announced by a peer, so only this
    * replica's own view is behind: its cached token flow still holds the credential the peer
@@ -1585,7 +1615,26 @@ export class MCPConnectionFactory {
       if (!isRequestRecovery || recoveryPhase === 'silent-refresh') {
         recoveryPhase = 'interactive';
         if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
-          const refreshedTokens = await this.attemptSilentTokenRefresh();
+          let refreshedTokens: MCPOAuthTokens | null;
+          try {
+            refreshedTokens = await this.attemptSilentTokenRefresh();
+          } catch (error) {
+            if (!MCPConnectionFactory.isRefreshUnavailable(error)) {
+              throw error;
+            }
+            /**
+             * Another replica is redeeming this credential. Falling through would start a
+             * replacement authorization while that redemption is still live, asking the user to
+             * approve a server whose credential is about to be valid. Failing the connection
+             * defers to the next request instead, matching how the stored-token path reports the
+             * same error, and mirroring the teardown gate below in choosing not to prompt.
+             */
+            logger.info(
+              `${this.logPrefix} Another replica is rotating this credential; deferring recovery`,
+            );
+            connection.emit('oauthFailed', error);
+            return;
+          }
           if (refreshedTokens) {
             connection.setOAuthTokens(refreshedTokens);
             connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
