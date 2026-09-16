@@ -65,7 +65,9 @@ describe('LibreChat Tailwind preset', () => {
       }),
     );
 
-    expect(variants.coarse).toBe('@media (pointer: coarse)');
+    /** `any-pointer`, not `pointer`: the floor has to apply to a 2-in-1's
+     *  touchscreen while its trackpad is the primary device and reports `fine`. */
+    expect(variants.touch).toBe('@media (any-pointer: coarse)');
     expect(variants['high-contrast']).toBe('html.high-contrast &');
   });
 

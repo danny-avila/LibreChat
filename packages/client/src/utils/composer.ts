@@ -24,7 +24,7 @@ export const composerSurfaceShadow = {
  * into the same position and must be indistinguishable in everything but the
  * icon they carry.
  *
- * On a coarse pointer it is the row's one 44px target. `size-theme-control` is
+ * Wherever touch is reachable it is the row's one 44px target. `size-theme-control` is
  * 36px, which a thumb aimed at the bottom corner of a phone clips or misses
  * outright, and below `sm` the composer surface runs to the viewport floor by
  * design, so the target has to grow upward instead of gaining a band of padding
@@ -34,7 +34,7 @@ export const composerSurfaceShadow = {
 export const composerSubmitClasses = (): string =>
   cn(
     'flex items-center justify-center',
-    'size-theme-control coarse:size-theme-control-touch',
+    'size-theme-control touch:size-theme-control-touch',
     'rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary',
     'outline-offset-4 transition-all duration-theme-normal',
     'disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',

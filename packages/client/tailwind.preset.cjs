@@ -15,7 +15,7 @@ module.exports = {
         /**
          * The comfortable tap target (2.75rem / 44px), held against the theme's
          * own control height with `max()` so a theme that already draws larger
-         * controls is never shrunk on a phone. Pair it with `coarse:`.
+         * controls is never shrunk on a phone. Pair it with `touch:`.
          */
         'theme-control-touch': 'max(var(--theme-control-height, 2.25rem), 2.75rem)',
       },
@@ -56,12 +56,20 @@ module.exports = {
       addVariant('high-contrast', 'html.high-contrast &');
 
       /**
-       * Touch input: `@media (pointer: coarse)`, the tap-target floor a mouse
-       * does not need. The client already branches on this exact query in JS
-       * (`useFocusChatEffect`, the composer's own focus guard), so styling and
-       * behavior answer to one definition of "this is a finger".
+       * Touch is reachable at all — `any-pointer`, deliberately not `pointer`.
+       * `pointer` describes only the PRIMARY pointing device, so a 2-in-1 driven
+       * by its trackpad reports `fine` with its touchscreen right there, and a
+       * tap-target floor written against `(pointer: coarse)` would never reach
+       * the finger it exists for.
+       *
+       * Not the query `useFocusChatEffect` and the composer's focus guard branch
+       * on, though it looks like it: those ask "would focusing raise an on-screen
+       * keyboard over the thread", which is a question about the primary input and
+       * must keep answering `fine` for the trackpad user on that same 2-in-1. A
+       * tap target asks the other question — whether a finger can reach the
+       * control at all — so the two queries differ on purpose.
        */
-      addVariant('coarse', '@media (pointer: coarse)');
+      addVariant('touch', '@media (any-pointer: coarse)');
     },
   ],
 };

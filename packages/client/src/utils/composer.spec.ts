@@ -19,10 +19,10 @@ describe('composerSubmitClasses', () => {
     expect(classes).toContain('p-theme-compact');
   });
 
-  it('floors the tap target on a coarse pointer and centers the icon', () => {
+  it('floors the tap target wherever touch is reachable, and centers the icon', () => {
     const classes = composerSubmitClasses();
 
-    expect(classes).toContain('coarse:size-theme-control-touch');
+    expect(classes).toContain('touch:size-theme-control-touch');
     expect(classes).toContain('items-center');
     expect(classes).toContain('justify-center');
   });
