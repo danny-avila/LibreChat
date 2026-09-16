@@ -35,11 +35,12 @@ import store from '~/store';
 const MAX_BLUR_AMOUNT = 32;
 const MAX_BACKDROP_OPACITY = 0.3;
 
-export default function Artifacts() {
+export default function Artifacts({ readOnly = false }: { readOnly?: boolean }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { isMutating } = useMutationState();
-  const { isSharedConvo } = useShareContext();
+  const { isSharedConvo, shareId } = useShareContext();
+  const isSharedView = readOnly || isSharedConvo === true || Boolean(shareId);
   const isMobile = useMediaQuery('(max-width: 868px)');
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const previewRef = useRef<SandpackPreviewRef>();
@@ -143,7 +144,7 @@ export default function Artifacts() {
     setCurrentArtifactId,
   } = useArtifacts();
   const { artifactEntry, isDeleted, restoreArtifact, isSyncing } = useArtifactCatalogSync(
-    isSharedConvo ? null : currentArtifact,
+    isSharedView ? null : currentArtifact,
   );
 
   const restoreArtifactTriggerFocus = useCallback(() => {
@@ -609,13 +610,13 @@ export default function Artifacts() {
                   <Spinner size={16} />
                 </span>
               )}
-              {!isSharedConvo && artifactEntry && (
+              {!isSharedView && artifactEntry && (
                 <ArtifactAppShareDialog
                   app={artifactEntry}
                   buttonClassName="border-0 bg-transparent hover:bg-surface-hover"
                 />
               )}
-              {!isSharedConvo && isDeleted && restoreArtifact && (
+              {!isSharedView && isDeleted && restoreArtifact && (
                 <TooltipAnchor
                   description={localize('com_ui_artifact_restore')}
                   render={
@@ -653,7 +654,7 @@ export default function Artifacts() {
               <ArtifactTabs
                 artifact={currentArtifact}
                 previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
-                isSharedConvo={isSharedConvo}
+                isSharedConvo={isSharedView}
                 onMermaidExportReady={handleMermaidExportReady}
               />
             </div>
