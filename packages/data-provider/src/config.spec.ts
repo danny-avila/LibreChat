@@ -1341,6 +1341,7 @@ describe('artifact app operational configuration', () => {
       maxScanBatches: 10,
       syncLockLeaseMs: 5000,
       clientSyncSettleDelayMs: 500,
+      clientPreviewCaptureTimeoutMs: 5000,
     });
   });
 
@@ -1370,6 +1371,7 @@ describe('artifact app operational configuration', () => {
     { scanBatchSize: 0 },
     { aclBatchSize: 101 },
     { syncLockLeaseMs: 999 },
+    { clientPreviewCaptureTimeoutMs: 499 },
     { clientSyncRetryBaseDelayMs: 60_001 },
   ])('rejects out-of-range overrides: %o', (artifactApps) => {
     expect(configSchema.safeParse({ version: '1.3.5', artifactApps }).success).toBe(false);

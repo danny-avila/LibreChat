@@ -467,6 +467,7 @@ actions:
 #   syncLockRetryAttempts: 100
 #   syncWriteRetryAttempts: 3
 #   clientSyncSettleDelayMs: 500
+#   clientPreviewCaptureTimeoutMs: 5000
 #   clientSyncRetryBaseDelayMs: 1000
 #   clientSyncRetryMaxDelayMs: 30000
 

@@ -55,6 +55,11 @@ describe('ensureArtifactAppIndexes', () => {
           'tenantId_1_artifactVersionId_1',
         ]),
     ).toBe(true);
+    expect(
+      await mongoose.connection
+        .db!.collection('artifactsourcetombstones')
+        .indexExists(['tenantId_1_createdBy_1_conversationId_1']),
+    ).toBe(true);
   });
 
   test('rejects startup when existing data violates a required unique index', async () => {

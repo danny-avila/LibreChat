@@ -31,6 +31,28 @@ export interface IArtifactAppSourceMetadata {
   originalArtifactId?: string;
   /** Stable identity within a conversation, independent of the rendering message. */
   sourceKey?: string;
+  /**
+   * Durable tombstone written when the source conversation is deleted. Sync uses this
+   * to refuse recreating a link to a conversation that no longer exists.
+   */
+  detachedConversationId?: string;
+}
+
+/**
+ * Conversation-scoped admission tombstone, stored independently of ArtifactApp so a
+ * first registration cannot insert a live source after deletion has already committed.
+ */
+export interface IArtifactSourceTombstone extends Document<Types.ObjectId> {
+  createdBy: string;
+  conversationId: string;
+  tenantId?: string;
+  createdAt: Date;
+}
+
+export interface IArtifactPreview {
+  type: 'image';
+  imageUrl: string;
+  alt?: string;
 }
 
 export interface IArtifactAppSyncLock {
@@ -53,7 +75,8 @@ export interface ArtifactAppListOptions {
 }
 
 export interface ArtifactAppListEntry {
-  app: ArtifactAppRecord;
+  /** Internal resource id used for ACL resolution; display fields are hydrated after access. */
+  id: string;
   cursor: string;
 }
 
@@ -95,6 +118,7 @@ interface ArtifactAppFields {
 
   toolPolicy: IArtifactAppToolPolicy;
   marketplace: IArtifactAppMarketplace;
+  preview?: IArtifactPreview;
   sourceMetadata?: IArtifactAppSourceMetadata;
   review?: IArtifactAppReview;
 
@@ -149,6 +173,7 @@ interface ArtifactVersionFields {
   sourceSnapshot: string;
 
   runtimeConfig: IArtifactVersionRuntimeConfig;
+  preview?: IArtifactPreview;
   integrity: IArtifactVersionIntegrity;
 
   createdBy: string;
@@ -200,6 +225,7 @@ export interface CreateArtifactVersionInput {
   artifactType: ArtifactRuntimeType;
   sourceSnapshot: string;
   runtimeConfig?: IArtifactVersionRuntimeConfig;
+  preview?: IArtifactPreview;
   versionLabel?: string;
   changelog?: string;
   createdBy: string;

@@ -37,6 +37,7 @@ import type {
   TArtifactVersionSummary,
   ArtifactRuntimeType,
   ArtifactRuntimeConfig,
+  ArtifactPreview,
   ArtifactAppsConfig,
 } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -51,11 +52,14 @@ export interface ArtifactAppHandlersDeps {
   createArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<ArtifactAppWithVersion>;
   syncArtifactAppWithVersion: (
     input: CreateArtifactAppInput,
-    options?: Partial<ArtifactAppSyncOptions>,
+    options?: Partial<ArtifactAppSyncOptions> & {
+      assertSourceAvailable?: () => Promise<void>;
+    },
   ) => Promise<SyncArtifactAppResult>;
   getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
   getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
   listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
+  getArtifactAppsByIds: (ids: string[]) => Promise<ArtifactAppRecord[]>;
   updateArtifactApp: (
     query: ArtifactAppQuery,
     update: ArtifactAppUpdate,
@@ -94,6 +98,10 @@ export interface ArtifactAppHandlersDeps {
   removeAllPermissions: (params: { resourceType: string; resourceId: string }) => Promise<unknown>;
   hasResourceManagementCapability?: (user: NonNullable<ServerRequest['user']>) => Promise<boolean>;
   recordAuditEntry: (input: RecordAuditEntryInput) => Promise<void>;
+  sourceConversationExists?: (params: {
+    userId: string;
+    conversationId: string;
+  }) => Promise<boolean>;
   getConfig?: (req: ServerRequest) => Partial<ArtifactAppsConfig> | undefined;
 }
 
@@ -105,7 +113,11 @@ function toIsoOptional(value: Date | undefined): string | undefined {
   return value ? value.toISOString() : undefined;
 }
 
-function serializeApp(app: ArtifactAppRecord, viewerId: string): TArtifactApp {
+function serializeApp(
+  app: ArtifactAppRecord,
+  viewerId: string,
+  permissionBits?: number,
+): TArtifactApp {
   return {
     id: app.id,
     artifactAppId: app.artifactAppId,
@@ -136,6 +148,7 @@ function serializeApp(app: ArtifactAppRecord, viewerId: string): TArtifactApp {
       riskClass: app.marketplace.riskClass,
       costClass: app.marketplace.costClass,
     },
+    preview: app.preview,
     sourceMetadata:
       app.createdBy === viewerId && app.sourceMetadata
         ? {
@@ -158,6 +171,7 @@ function serializeApp(app: ArtifactAppRecord, viewerId: string): TArtifactApp {
     createdAt: toIso(app.createdAt),
     updatedAt: toIso(app.updatedAt),
     archivedAt: toIsoOptional(app.archivedAt),
+    ...(permissionBits !== undefined ? { permissionBits } : {}),
   };
 }
 
@@ -177,6 +191,7 @@ function serializeVersion(version: ArtifactVersionRecord): TArtifactVersion {
       entryPoint: runtimeConfig.entryPoint,
       renderMode: runtimeConfig.renderMode,
     },
+    preview: version.preview,
     integrity: {
       sourceHash: version.integrity.sourceHash,
       schemaVersion: version.integrity.schemaVersion,
@@ -200,6 +215,7 @@ function serializeVersionSummary(version: ArtifactVersionSummaryRecord): TArtifa
     versionLabel: version.versionLabel,
     changelog: version.changelog,
     artifactType: version.artifactType,
+    preview: version.preview,
     createdBy: version.createdBy,
     createdAt: toIso(version.createdAt),
     publication: {
@@ -245,6 +261,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     getArtifactAppByAppId,
     getArtifactAppBySource,
     listArtifactApps,
+    getArtifactAppsByIds,
     updateArtifactApp,
     deleteArtifactApp,
     prepareArtifactAppDeletion,
@@ -259,6 +276,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     removeAllPermissions,
     hasResourceManagementCapability,
     recordAuditEntry,
+    sourceConversationExists,
     getConfig,
   } = deps;
 
@@ -282,7 +300,14 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   }
 
   function toVersionInput(
-    artifact: { type: ArtifactRuntimeType; content: string; runtimeConfig?: ArtifactRuntimeConfig },
+    artifact: {
+      type: ArtifactRuntimeType;
+      content: string;
+      title?: string;
+      language?: string;
+      runtimeConfig?: ArtifactRuntimeConfig;
+      preview?: ArtifactPreview;
+    },
     label: string | undefined,
     changelog: string | undefined,
     createdBy: string,
@@ -291,6 +316,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       artifactType: artifact.type,
       sourceSnapshot: artifact.content,
       runtimeConfig: artifact.runtimeConfig,
+      preview: artifact.preview,
       versionLabel: label,
       changelog,
       createdBy,
@@ -386,6 +412,18 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
 
       const userId = user.id as string;
       const data = parsed.data;
+      const assertSourceAvailable = async () => {
+        if (
+          sourceConversationExists &&
+          !(await sourceConversationExists({
+            userId,
+            conversationId: data.source.conversationId,
+          }))
+        ) {
+          throw new ArtifactAppDeletedError();
+        }
+      };
+      await assertSourceAvailable();
       const config = artifactAppsConfigSchema.parse(getConfig?.(req));
       const result = await syncArtifactAppWithVersion(
         {
@@ -397,7 +435,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           sourceMetadata: data.source,
           version: toVersionInput(data.artifact, undefined, undefined, userId),
         },
-        config,
+        { ...config, assertSourceAvailable },
       );
 
       try {
@@ -469,6 +507,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         ownership.excludeCreatedBy = userId;
       }
       const accessibleEntries: ArtifactAppListEntry[] = [];
+      const permissionById = new Map<string, number>();
       let exhausted = false;
 
       for (
@@ -505,12 +544,13 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
             userId,
             role: user.role,
             resourceType: ResourceType.ARTIFACT_APP,
-            resourceIds: aclEntries.map(({ app }) => app.id),
+            resourceIds: aclEntries.map(({ id }) => id),
           });
           for (const entry of aclEntries) {
-            const permissionBits = permissions.get(entry.app.id) ?? 0;
+            const permissionBits = permissions.get(entry.id) ?? 0;
             if ((permissionBits & PermissionBits.VIEW) === PermissionBits.VIEW) {
               accessibleEntries.push(entry);
+              permissionById.set(entry.id, permissionBits);
               if (accessibleEntries.length > parsed.data.limit) {
                 break;
               }
@@ -526,6 +566,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       }
 
       const entries = accessibleEntries.slice(0, parsed.data.limit);
+      const apps = await getArtifactAppsByIds(entries.map(({ id }) => id));
       const hasMore = accessibleEntries.length > parsed.data.limit || !exhausted;
       let after: string | null = null;
       if (hasMore) {
@@ -535,7 +576,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
             : (scanCursor ?? null);
       }
       return res.status(200).json({
-        apps: entries.map(({ app }) => serializeApp(app, userId)),
+        apps: apps.map((app) => serializeApp(app, userId, permissionById.get(app.id) ?? 0)),
         has_more: hasMore,
         after,
       });

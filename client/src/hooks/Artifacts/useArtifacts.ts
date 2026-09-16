@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
 import { getArtifactSourceKey } from '~/utils/artifactCatalog';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { useArtifactsContext } from '~/Providers';
@@ -146,7 +148,7 @@ export default function useArtifacts() {
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
-  const artifactNavigationRequest = useRecoilValue(store.artifactNavigationRequest);
+  const artifactNavigationRequest = useAtomValue(artifactNavigationRequestAtom);
   const pendingRequest =
     artifactNavigationRequest?.conversationId === conversationId ? artifactNavigationRequest : null;
   const requestedParams = new URLSearchParams(window.location.search);

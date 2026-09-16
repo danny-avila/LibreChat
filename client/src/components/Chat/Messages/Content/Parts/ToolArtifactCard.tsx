@@ -1,4 +1,5 @@
 import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
+import { useSetAtom } from 'jotai';
 import { Download } from 'lucide-react';
 import {
   useRecoilCallback,
@@ -9,6 +10,7 @@ import {
 } from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
@@ -78,7 +80,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
-  const resetArtifactNavigationRequest = useResetRecoilState(store.artifactNavigationRequest);
+  const setArtifactNavigationRequest = useSetAtom(artifactNavigationRequestAtom);
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
@@ -201,7 +203,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   });
 
   const handleOpen = () => {
-    resetArtifactNavigationRequest();
+    setArtifactNavigationRequest(null);
     if (isSelected) {
       resetCurrentArtifactId();
       setVisible(false);

@@ -5,8 +5,11 @@ import Artifacts from './Artifacts';
 import store from '~/store';
 
 const mockUseArtifacts = jest.fn();
+const mockCaptureArtifactPreview = jest.fn<Promise<string | null>, []>();
 let mockIsMobile = false;
 let mockPrefersReducedMotion = false;
+const pngPreview =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 jest.mock('@librechat/client', () => ({
   ...jest.requireActual('@librechat/client'),
@@ -17,6 +20,23 @@ jest.mock('@librechat/client', () => ({
 jest.mock('~/Providers', () => ({
   useMutationState: () => ({ isMutating: false }),
   useShareContext: () => ({ isSharedConvo: false }),
+}));
+
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: () => ({
+    data: {
+      artifactApps: { clientSyncSettleDelayMs: 0, clientPreviewCaptureTimeoutMs: 100 },
+    },
+  }),
+}));
+
+jest.mock('~/utils/artifactPreviewCapture', () => ({
+  captureArtifactPreview: () => mockCaptureArtifactPreview(),
+  toArtifactPreview: (imageUrl: string, alt?: string) => ({
+    type: 'image',
+    imageUrl,
+    ...(alt ? { alt } : {}),
+  }),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -92,11 +112,13 @@ jest.mock('~/components/Messages/Content/CopyButton', () => ({
 const ArtifactStateProbe = () => {
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const isVisible = useRecoilValue(store.artifactsVisibility);
+  const artifacts = useRecoilValue(store.artifactsState);
   return (
     <output
       data-testid="artifact-state"
       data-current-id={currentArtifactId ?? ''}
       data-visible={isVisible}
+      data-preview={artifacts?.['html-artifact-1']?.preview?.imageUrl ?? ''}
     />
   );
 };
@@ -105,6 +127,7 @@ describe('Artifacts panel accessibility', () => {
   beforeEach(() => {
     mockIsMobile = false;
     mockPrefersReducedMotion = false;
+    mockCaptureArtifactPreview.mockReset().mockResolvedValue(null);
     mockUseArtifacts.mockReturnValue({
       activeTab: 'code',
       setActiveTab: jest.fn(),
@@ -183,6 +206,41 @@ describe('Artifacts panel accessibility', () => {
 
     await screen.findByRole('region', { name: 'Page' });
     expect(screen.getByRole('button', { name: 'com_ui_refresh' })).toBeInTheDocument();
+  });
+
+  it('stores a captured thumbnail on the generated artifact for automatic synchronization', async () => {
+    const currentArtifact = {
+      id: 'html-artifact-1',
+      type: 'text/html',
+      title: 'Page',
+      content: '<h1>Hi</h1>',
+      lastUpdateTime: 1,
+    };
+    mockUseArtifacts.mockReturnValue({
+      activeTab: 'preview',
+      setActiveTab: jest.fn(),
+      currentIndex: 0,
+      currentArtifact,
+      orderedArtifactIds: ['html-artifact-1'],
+      setCurrentArtifactId: jest.fn(),
+    });
+    mockCaptureArtifactPreview.mockResolvedValue(pngPreview);
+
+    render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.artifactsState, { 'html-artifact-1': currentArtifact });
+        }}
+      >
+        <ArtifactStateProbe />
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    await waitFor(() => expect(mockCaptureArtifactPreview).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId('artifact-state')).toHaveAttribute('data-preview', pngPreview),
+    );
   });
 
   it('keeps the resizable layout ID distinct from the controlled Artifact region', async () => {

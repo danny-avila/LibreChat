@@ -1,3 +1,5 @@
+import type { ArtifactPreview } from 'librechat-data-provider';
+
 export interface CodeBlock {
   id: string;
   language: string;
@@ -30,6 +32,7 @@ export interface Artifact {
   content?: string;
   title?: string;
   type?: string;
+  preview?: ArtifactPreview;
   download?: ArtifactDownload;
 }
 

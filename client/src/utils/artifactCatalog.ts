@@ -74,6 +74,7 @@ export function toArtifactSyncRequest(
       content: artifact.content as string,
       title: generatedTitle || undefined,
       language: artifact.language,
+      preview: artifact.preview,
     },
     source: {
       conversationId,

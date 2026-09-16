@@ -13,6 +13,7 @@ interface PublicSharingToggleProps {
   publicRole?: AccessRoleIds;
   onPublicToggle: (isPublic: boolean) => void;
   onPublicRoleChange: (role: AccessRoleIds) => void;
+  allowRoleSelection?: boolean;
   resourceType?: ResourceType;
   className?: string;
 }
@@ -42,6 +43,7 @@ export default function PublicSharingToggle({
   publicRole,
   onPublicToggle,
   onPublicRoleChange,
+  allowRoleSelection = true,
   resourceType = ResourceType.AGENT,
   className,
 }: PublicSharingToggleProps) {
@@ -94,29 +96,31 @@ export default function PublicSharingToggle({
         </div>
       </div>
 
-      <Collapse open={isPublic} overflowVisibleWhenOpen className="pt-4">
-        <div className="flex items-center justify-between bg-transparent">
-          <div className="flex items-center gap-3">
-            <div className="text-status-info">
-              <Shield className="size-5" />
+      {allowRoleSelection && (
+        <Collapse open={isPublic} overflowVisibleWhenOpen className="pt-4">
+          <div className="flex items-center justify-between bg-transparent">
+            <div className="flex items-center gap-3">
+              <div className="text-status-info">
+                <Shield className="size-5" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="permission-level" className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_everyone_permission_level')}
+                </Label>
+              </div>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <Label htmlFor="permission-level" className="text-sm font-medium text-text-primary">
-                {localize('com_ui_everyone_permission_level')}
-              </Label>
+            <div className="relative z-50">
+              <AccessRolesPicker
+                id="permission-level"
+                ariaLabel={localize('com_ui_everyone_permission_level')}
+                resourceType={resourceType}
+                selectedRoleId={publicRole}
+                onRoleChange={onPublicRoleChange}
+              />
             </div>
           </div>
-          <div className="relative z-50">
-            <AccessRolesPicker
-              id="permission-level"
-              ariaLabel={localize('com_ui_everyone_permission_level')}
-              resourceType={resourceType}
-              selectedRoleId={publicRole}
-              onRoleChange={onPublicRoleChange}
-            />
-          </div>
-        </div>
-      </Collapse>
+        </Collapse>
+      )}
     </div>
   );
 }

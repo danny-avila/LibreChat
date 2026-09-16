@@ -50,6 +50,7 @@ export const DEFAULT_ARTIFACT_APPS_CONFIG = {
   syncLockRetryAttempts: 100,
   syncWriteRetryAttempts: 3,
   clientSyncSettleDelayMs: 500,
+  clientPreviewCaptureTimeoutMs: 5_000,
   clientSyncRetryBaseDelayMs: 1_000,
   clientSyncRetryMaxDelayMs: 30_000,
 } as const;
@@ -85,6 +86,11 @@ export const artifactAppsConfigSchema = z
       0,
       60_000,
       DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs,
+    ),
+    clientPreviewCaptureTimeoutMs: boundedInteger(
+      500,
+      30_000,
+      DEFAULT_ARTIFACT_APPS_CONFIG.clientPreviewCaptureTimeoutMs,
     ),
     clientSyncRetryBaseDelayMs: boundedInteger(
       100,
@@ -157,6 +163,63 @@ export const artifactRuntimeConfigSchema = z.object({
 });
 export type ArtifactRuntimeConfig = z.infer<typeof artifactRuntimeConfigSchema>;
 
+export const ARTIFACT_PREVIEW_MAX_URL_LENGTH = 75_000;
+
+const artifactPreviewDataUrlPattern =
+  /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i;
+
+/** Artifact catalog previews must be self-contained and must not initiate network requests. */
+export function isAllowedArtifactPreviewUrl(imageUrl: string): boolean {
+  if (imageUrl.length > ARTIFACT_PREVIEW_MAX_URL_LENGTH) {
+    return false;
+  }
+
+  const match = artifactPreviewDataUrlPattern.exec(imageUrl);
+  if (!match || match[2].length % 4 !== 0) {
+    return false;
+  }
+
+  try {
+    const binary = globalThis.atob(match[2]);
+    const mimeType = match[1].toLowerCase();
+    if (mimeType === 'png') {
+      return (
+        binary.length >= 8 &&
+        binary.charCodeAt(0) === 0x89 &&
+        binary.slice(1, 4) === 'PNG' &&
+        binary.charCodeAt(4) === 0x0d &&
+        binary.charCodeAt(5) === 0x0a &&
+        binary.charCodeAt(6) === 0x1a &&
+        binary.charCodeAt(7) === 0x0a
+      );
+    }
+    if (mimeType === 'jpeg') {
+      return (
+        binary.length >= 3 &&
+        binary.charCodeAt(0) === 0xff &&
+        binary.charCodeAt(1) === 0xd8 &&
+        binary.charCodeAt(2) === 0xff
+      );
+    }
+    return binary.length >= 12 && binary.slice(0, 4) === 'RIFF' && binary.slice(8, 12) === 'WEBP';
+  } catch {
+    return false;
+  }
+}
+
+export const artifactPreviewSchema = z.object({
+  type: z.literal('image'),
+  imageUrl: z
+    .string()
+    .max(ARTIFACT_PREVIEW_MAX_URL_LENGTH)
+    .refine(
+      isAllowedArtifactPreviewUrl,
+      'Artifact preview must be a base64 PNG, JPEG, or WebP image',
+    ),
+  alt: z.string().max(500).optional(),
+});
+export type ArtifactPreview = z.infer<typeof artifactPreviewSchema>;
+
 // ===== REQUEST SCHEMAS =====
 
 /** The already-extracted artifact payload sent from the client at publish time. */
@@ -166,6 +229,7 @@ export const artifactSnapshotInputSchema = z.object({
   title: z.string().optional(),
   language: z.string().optional(),
   runtimeConfig: artifactRuntimeConfigSchema.optional(),
+  preview: artifactPreviewSchema.optional(),
 });
 export type ArtifactSnapshotInput = z.infer<typeof artifactSnapshotInputSchema>;
 
@@ -253,6 +317,7 @@ export interface TArtifactApp {
   allowAnonymousView: boolean;
   toolPolicy: ArtifactToolPolicy;
   marketplace: ArtifactMarketplace;
+  preview?: ArtifactPreview;
   sourceMetadata?: ArtifactSourceMetadata;
   review?: {
     submittedAt?: string;
@@ -265,6 +330,8 @@ export interface TArtifactApp {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
+  /** Effective ACL bits for the current viewer. Present on catalog list items. */
+  permissionBits?: number;
 }
 
 export interface TArtifactVersion {
@@ -277,6 +344,7 @@ export interface TArtifactVersion {
   artifactType: ArtifactRuntimeType;
   sourceSnapshot: string;
   runtimeConfig: ArtifactRuntimeConfig;
+  preview?: ArtifactPreview;
   integrity: {
     sourceHash: string;
     schemaVersion: number;

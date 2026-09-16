@@ -1,6 +1,9 @@
+import { createElement } from 'react';
+import { Provider, createStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { renderHook, act } from '@testing-library/react';
 import type { Artifact } from '~/common';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
 
 /** Mock dependencies */
 jest.mock('~/Providers', () => ({
@@ -20,7 +23,6 @@ jest.mock('~/store', () => ({
     artifactsState: { key: 'artifactsState' },
     currentArtifactId: { key: 'currentArtifactId' },
     artifactsVisibility: { key: 'artifactsVisibility' },
-    artifactNavigationRequest: { key: 'artifactNavigationRequest' },
   },
 }));
 
@@ -212,16 +214,17 @@ describe('useArtifacts', () => {
           lastUpdateTime: 2000,
         }),
       };
-      (useRecoilValue as jest.Mock).mockImplementation(({ key }: { key: string }) =>
-        key === 'artifactNavigationRequest'
-          ? {
-              conversationId: 'conv-1',
-              sourceKey: 'artifact:v1:identifier:revenue-chart',
-            }
-          : artifacts,
-      );
+      (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
 
-      renderHook(() => useArtifacts());
+      const jotaiStore = createStore();
+      jotaiStore.set(artifactNavigationRequestAtom, {
+        conversationId: 'conv-1',
+        sourceKey: 'artifact:v1:identifier:revenue-chart',
+      });
+
+      renderHook(() => useArtifacts(), {
+        wrapper: ({ children }) => createElement(Provider, { store: jotaiStore }, children),
+      });
 
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
       expect(mockSetArtifactsVisible).toHaveBeenCalledWith(true);

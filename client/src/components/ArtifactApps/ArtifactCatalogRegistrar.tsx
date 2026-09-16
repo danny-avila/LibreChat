@@ -33,6 +33,9 @@ export default function ArtifactCatalogRegistrar() {
   const syncSettleDelayMs =
     startupConfig?.artifactApps?.clientSyncSettleDelayMs ??
     DEFAULT_ARTIFACT_APPS_CONFIG.clientSyncSettleDelayMs;
+  const previewCaptureTimeoutMs =
+    startupConfig?.artifactApps?.clientPreviewCaptureTimeoutMs ??
+    DEFAULT_ARTIFACT_APPS_CONFIG.clientPreviewCaptureTimeoutMs;
   const canCreate = useHasAccess({
     permissionType: PermissionTypes.ARTIFACTS,
     permission: Permissions.CREATE,
@@ -111,7 +114,11 @@ export default function ArtifactCatalogRegistrar() {
         continue;
       }
       observedSignaturesRef.current.set(syncKey, signature);
-      void enqueueArtifactSync(user.id, request, signature, syncSettleDelayMs).catch((error) => {
+      const delayMs =
+        !request.artifact.preview && request.artifact.type !== 'code'
+          ? syncSettleDelayMs + previewCaptureTimeoutMs
+          : syncSettleDelayMs;
+      void enqueueArtifactSync(user.id, request, signature, delayMs).catch((error) => {
         if (observedSignaturesRef.current.get(syncKey) === signature) {
           observedSignaturesRef.current.delete(syncKey);
         }
@@ -124,6 +131,7 @@ export default function ArtifactCatalogRegistrar() {
     conversationId,
     isSubmitting,
     latestMessageId,
+    previewCaptureTimeoutMs,
     syncSettleDelayMs,
     user?.id,
   ]);

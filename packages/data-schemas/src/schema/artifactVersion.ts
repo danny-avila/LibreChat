@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { isAllowedArtifactPreviewUrl } from 'librechat-data-provider';
 import type { Query, UpdateQuery } from 'mongoose';
 import type { IArtifactVersion } from '~/types';
 
@@ -15,6 +16,23 @@ const integritySchema = new Schema(
   {
     sourceHash: { type: String, required: true },
     schemaVersion: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
+const artifactPreviewSchema = new Schema(
+  {
+    type: { type: String, enum: ['image'], required: true },
+    imageUrl: {
+      type: String,
+      required: true,
+      maxlength: 75_000,
+      validate: {
+        validator: isAllowedArtifactPreviewUrl,
+        message: 'Artifact preview must be a base64 PNG, JPEG, or WebP image',
+      },
+    },
+    alt: { type: String, maxlength: 500 },
   },
   { _id: false },
 );
@@ -79,6 +97,10 @@ const artifactVersionSchema: Schema<IArtifactVersion> = new Schema<IArtifactVers
       type: runtimeConfigSchema,
       default: () => ({}),
     },
+    preview: {
+      type: artifactPreviewSchema,
+      default: undefined,
+    },
     integrity: {
       type: integritySchema,
       required: true,
@@ -101,6 +123,7 @@ const snapshotFields = [
   'sourceSnapshot',
   'artifactType',
   'runtimeConfig',
+  'preview',
   'integrity',
   'versionNumber',
   'artifactAppId',

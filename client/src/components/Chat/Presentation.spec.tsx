@@ -1,9 +1,11 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
 import Presentation from './Presentation';
 
 const mockUseRecoilValue = jest.fn();
+const mockUseAtomValue = jest.fn((_atom?: unknown): unknown => null);
 let mockArtifactNavigationRequest: {
   conversationId: string;
   sourceKey: string;
@@ -16,7 +18,7 @@ jest.mock('recoil', () => ({
 
 jest.mock('jotai', () => ({
   ...jest.requireActual('jotai'),
-  useAtomValue: () => null,
+  useAtomValue: (atom: unknown) => mockUseAtomValue(atom),
   useSetAtom: () => jest.fn(),
 }));
 
@@ -26,7 +28,6 @@ jest.mock('~/store', () => ({
     artifactsState: { key: 'artifactsState' },
     artifactsVisibility: { key: 'artifactsVisibility' },
     currentArtifactId: { key: 'currentArtifactId' },
-    artifactNavigationRequest: { key: 'artifactNavigationRequest' },
     conversationIdByIndex: () => ({ key: 'conversationId' }),
     effectiveEndpointByIndex: () => ({ key: 'conversationEndpoint' }),
     conversationAgentIdByIndex: () => ({ key: 'conversationAgentId' }),
@@ -81,7 +82,10 @@ describe('Presentation artifact catalog navigation', () => {
       if (key === 'artifactsVisibility') {
         return true;
       }
-      if (key === 'artifactNavigationRequest') {
+      return null;
+    });
+    mockUseAtomValue.mockImplementation((atom) => {
+      if (atom === artifactNavigationRequestAtom) {
         return mockArtifactNavigationRequest;
       }
       return null;

@@ -18,7 +18,10 @@ let ArtifactApp: mongoose.Model<IArtifactApp>;
 let ArtifactVersion: mongoose.Model<IArtifactVersion>;
 let methods: ArtifactAppMethods;
 
-function input(content = 'initial'): CreateArtifactAppInput {
+function input(
+  content = 'initial',
+  preview?: CreateArtifactAppInput['version']['preview'],
+): CreateArtifactAppInput {
   return {
     createdBy: 'user-1',
     title: 'Chart',
@@ -28,7 +31,7 @@ function input(content = 'initial'): CreateArtifactAppInput {
       messageId: `message-${content}`,
       sourceKey: 'artifact:v1:identifier:chart',
     },
-    version: { artifactType: 'html', sourceSnapshot: content, createdBy: 'user-1' },
+    version: { artifactType: 'html', sourceSnapshot: content, createdBy: 'user-1', preview },
   };
 }
 
@@ -95,6 +98,52 @@ test('concurrent identical updates deduplicate against the committed winner', as
   );
   expect(results.filter(({ versionCreated }) => versionCreated)).toHaveLength(1);
   await expectConsistentHistory(2);
+});
+
+test('same-content sync keeps the app preview aligned with its active version', async () => {
+  const originalPreview = {
+    type: 'image' as const,
+    imageUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    alt: 'Original preview',
+  };
+  const replacementPreview = {
+    type: 'image' as const,
+    imageUrl: 'data:image/webp;base64,UklGRgQAAABXRUJQ',
+    alt: 'Replacement preview',
+  };
+  const first = await methods.syncArtifactAppWithVersion(input('initial', originalPreview));
+  const second = await methods.syncArtifactAppWithVersion(input('initial', replacementPreview));
+  const persistedApp = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId })
+    .lean()
+    .orFail();
+
+  expect(second.versionCreated).toBe(false);
+  expect(second.app.preview).toEqual(originalPreview);
+  expect(second.version.preview).toEqual(originalPreview);
+  expect(persistedApp.preview).toEqual(originalPreview);
+});
+
+test('same-content sync transaction backfills a missing preview', async () => {
+  const preview = {
+    type: 'image' as const,
+    imageUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    alt: 'Captured preview',
+  };
+  const first = await methods.syncArtifactAppWithVersion(input());
+  const second = await methods.syncArtifactAppWithVersion(input('initial', preview));
+  const [persistedApp, persistedVersion] = await Promise.all([
+    ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId }).lean().orFail(),
+    ArtifactVersion.findOne({ artifactAppId: first.app.artifactAppId }).lean().orFail(),
+  ]);
+
+  expect(second.versionCreated).toBe(false);
+  expect(second.app.preview).toEqual(preview);
+  expect(second.version.preview).toEqual(preview);
+  expect(persistedApp.preview).toEqual(preview);
+  expect(persistedVersion.preview).toEqual(preview);
+  expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(1);
 });
 
 test.each([11000, 112])(
