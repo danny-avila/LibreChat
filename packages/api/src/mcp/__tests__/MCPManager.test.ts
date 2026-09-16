@@ -3315,6 +3315,13 @@ describe('MCPManager', () => {
           ...serverConfig,
           headers: undefined,
           [headerMap]: serverConfig.headers,
+          ...(headerMap === 'requestHeaders' && {
+            apiKey: {
+              source: 'admin' as const,
+              authorization_type: 'bearer' as const,
+              key: 'catalog-key',
+            },
+          }),
         };
         const rejection = Object.assign(new Error('HTTP 401 Unauthorized'), { status: 401 });
         const connection = {
@@ -4773,6 +4780,13 @@ describe('MCPManager', () => {
           type: 'streamable-http',
           url: 'https://mcp.example.com/mcp',
           source: 'yaml',
+          ...(headerMap === 'requestHeaders' && {
+            apiKey: {
+              source: 'admin' as const,
+              authorization_type: 'bearer' as const,
+              key: 'catalog-key',
+            },
+          }),
           [headerMap]: {
             Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
             'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',

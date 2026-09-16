@@ -12,6 +12,7 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
+import { isAdminApiKeyOverridden } from './headers';
 import { isEnabled } from '~/utils/common';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -216,7 +217,7 @@ type UserScopedConnectionConfig = Pick<
 > & {
   /** Loosened like the fields below: raw (pre-inspection) configs carry
    *  optional API-key fields, and the gating predicates only inspect them. */
-  apiKey?: { key?: string; source?: 'user' | 'admin' } | null;
+  apiKey?: Partial<NonNullable<ParsedServerConfig['apiKey']>> | null;
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -250,7 +251,7 @@ function mergeHeaderMaps<T extends string | undefined>(
 
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
   return [
-    config.apiKey?.key,
+    isAdminApiKeyOverridden(config.apiKey, config.requestHeaders) ? undefined : config.apiKey?.key,
     config.args,
     config.env,
     config.requestHeaders == null
@@ -419,6 +420,10 @@ export function applyRequestHeaders<T extends MCPOptions>(config: T): T {
     ...carrier,
     headers: mergeHeaderMaps(carrier.headers, carrier.requestHeaders),
   };
+  if (carrier.apiKey && isAdminApiKeyOverridden(carrier.apiKey, carrier.requestHeaders)) {
+    /** Keep the explicit auth mode, but disarm its lower-priority header injection. */
+    merged.apiKey = { ...carrier.apiKey, key: undefined };
+  }
   delete merged.requestHeaders;
   return merged;
 }

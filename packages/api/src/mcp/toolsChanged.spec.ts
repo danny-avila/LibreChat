@@ -94,6 +94,22 @@ describe('MCP tools-changed dispatch', () => {
     ).not.toBe(generation);
   });
 
+  it('rotates the declared identity when a chat override of the catalog API key changes', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      source: 'yaml',
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: 'catalog' },
+      requestHeaders: { Authorization: 'Bearer chat-one' },
+    };
+    expect(getMCPAppToolsPublicationGeneration(config)).not.toBe(
+      getMCPAppToolsPublicationGeneration({
+        ...config,
+        requestHeaders: { Authorization: 'Bearer chat-two' },
+      }),
+    );
+  });
+
   it('includes request-header environment changes without mutating the declaration', () => {
     const variable = 'MCP_REQUEST_HEADER_GENERATION_TEST';
     const original = process.env[variable];

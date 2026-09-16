@@ -503,6 +503,74 @@ describe('operator requestHeaders integration', () => {
     expect(conversationIdsSeen()).toEqual(new Set(['fixed']));
   });
 
+  it.each([
+    {
+      mode: 'bearer' as const,
+      name: 'Authorization',
+      chatName: 'Authorization',
+      catalog: 'Bearer catalog-key',
+    },
+    {
+      mode: 'bearer' as const,
+      name: 'Authorization',
+      chatName: 'authorization',
+      catalog: 'Bearer catalog-key',
+    },
+    {
+      mode: 'basic' as const,
+      name: 'Authorization',
+      chatName: 'AUTHORIZATION',
+      catalog: 'Basic catalog-key',
+    },
+    { mode: 'custom' as const, name: 'X-Api-Key', chatName: 'x-api-key', catalog: 'catalog-key' },
+    {
+      mode: 'custom' as const,
+      name: 'X-Custom-Key',
+      chatName: 'x-custom-key',
+      catalog: 'catalog-key',
+    },
+  ])(
+    'uses the $mode catalog key only in discovery when chat overrides $chatName',
+    async ({ mode, name, chatName, catalog }) => {
+      const config: ParsedServerConfig = {
+        ...createRequestHeadersConfig(server.url),
+        type: 'streamable-http',
+        url: server.url,
+        apiKey: {
+          source: 'admin',
+          authorization_type: mode,
+          key: 'catalog-key',
+          ...(mode === 'custom' && name !== 'X-Api-Key' ? { custom_header: name } : {}),
+        },
+        requestHeaders: {
+          [chatName]: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+      jest.spyOn(MCPServersRegistry.getInstance(), 'getServerConfig').mockResolvedValue(config);
+      await manager.discoverServerTools({ serverName, user });
+      const discoveryHeaders = server.observedHeaders();
+      expect(discoveryHeaders.length).toBeGreaterThan(0);
+      expect(discoveryHeaders.every((headers) => headers[name.toLowerCase()] === catalog)).toBe(
+        true,
+      );
+      await manager.callTool({
+        user,
+        serverName,
+        serverConfig: config,
+        toolName: 'echo',
+        provider: 'openai',
+        toolArguments: { value: 'chat-credential' },
+        requestBody: { conversationId: 'chat-key' },
+        requestScopedConnections: createContext(),
+        flowManager,
+      });
+      const chatHeaders = server.observedHeaders().slice(discoveryHeaders.length);
+      expect(chatHeaders.length).toBeGreaterThan(0);
+      expect(chatHeaders.every((headers) => headers[name.toLowerCase()] === 'chat-key')).toBe(true);
+      expect(server.toolCallCount()).toBe(1);
+    },
+  );
+
   it('fails closed when a runtime value the request headers need is missing', async () => {
     await expect(
       callEchoWithBody({

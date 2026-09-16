@@ -1114,6 +1114,31 @@ describe('operator requestHeaders', () => {
     ).toBe(false);
   });
 
+  it('drops a shadowed API-key body requirement while preserving discovery authentication', () => {
+    const declared: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      source: 'yaml',
+      apiKey: {
+        source: 'admin',
+        authorization_type: 'bearer',
+        key: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+      requestHeaders: { authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    };
+    const runtime = applyRequestHeaders(declared);
+    expect(getMissingRuntimeBodyPlaceholderFields(declared)).toEqual([]);
+    expect(usesDirectOpenIDBearerRecovery(runtime)).toBe(true);
+    expect(runtime.apiKey?.key).toBeUndefined();
+    expect(declared.apiKey?.key).toBe('{{LIBRECHAT_BODY_CONVERSATIONID}}');
+    expect(getMissingRuntimeBodyPlaceholderFields(toCatalogConnectionConfig(declared))).toEqual([
+      'conversationId',
+    ]);
+    expect(applyRequestHeaders(runtime)).toBe(runtime);
+    const unshadowed = applyRequestHeaders({ ...declared, requestHeaders: { 'X-Trace': 'trace' } });
+    expect(unshadowed.apiKey).toBe(declared.apiKey);
+  });
+
   it('never returns either header map to a client', () => {
     const redacted = redactServerSecrets(config, { canEdit: true });
 

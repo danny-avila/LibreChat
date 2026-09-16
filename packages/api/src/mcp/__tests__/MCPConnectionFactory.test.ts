@@ -396,6 +396,7 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http',
         url: 'https://api.example.com/mcp',
         source: 'yaml',
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'catalog-key' },
         headers: { 'X-Workspace': 'workspace-1', Authorization: 'Bearer stale' },
         requestHeaders: { authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
