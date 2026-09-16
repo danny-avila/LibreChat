@@ -1,6 +1,6 @@
 import { useContext, useCallback } from 'react';
 import Cookies from 'js-cookie';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { ThemeContext } from '@librechat/client';
 import type { ComponentType } from 'react';
 import type { TranslationKeys } from '~/hooks';
@@ -33,7 +33,7 @@ export function ThemeSetting() {
 }
 
 export function LangSetting() {
-  const [langcode, setLangcode] = useRecoilState(store.lang);
+  const [langcode, setLangcode] = useAtom(store.lang);
   const onChange = useCallback(
     (value: string) => {
       const userLang =

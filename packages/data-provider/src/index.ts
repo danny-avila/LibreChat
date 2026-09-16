@@ -4,6 +4,7 @@ export * from './bedrock';
 export * from './balance';
 export * from './config';
 export * from './footer';
+export * from './locales';
 export * from './langchain';
 export * from './filters';
 export * from './file-config';

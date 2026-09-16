@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import type { SPPickerConfig } from '~/components/SidePanel/Agents/config';
 import { useLocalize, useAuthContext } from '~/hooks';
@@ -30,7 +30,7 @@ export default function useSharePointPicker({
   disabled = false,
   maxSelectionCount = 10,
 }: UseSharePointPickerProps): UseSharePointPickerReturn {
-  const [langcode] = useRecoilState(store.lang);
+  const [langcode] = useAtom(store.lang);
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const localize = useLocalize();

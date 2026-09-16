@@ -215,6 +215,82 @@ export function normalizeLocale(locale?: string | null): SupportedLocale {
   return localeByLowercase[base] ?? localeAliases[base] ?? 'en';
 }
 
+/**
+ * Ordered options for the language selector. `value` is what the selector stores
+ * and matches on exactly (region-qualified where the UI offers a region, e.g.
+ * `de-DE`); `labelKey` is the localization key for its label. Single source of
+ * truth for both `LangSelector` and `toSelectorLocale`.
+ */
+export const languageOptions = [
+  { value: 'auto', labelKey: 'com_nav_lang_auto' },
+  { value: 'en-US', labelKey: 'com_nav_lang_english' },
+  { value: 'zh-Hans', labelKey: 'com_nav_lang_chinese' },
+  { value: 'zh-Hant', labelKey: 'com_nav_lang_traditional_chinese' },
+  { value: 'ar-EG', labelKey: 'com_nav_lang_arabic' },
+  { value: 'bs', labelKey: 'com_nav_lang_bosnian' },
+  { value: 'da-DK', labelKey: 'com_nav_lang_danish' },
+  { value: 'de-DE', labelKey: 'com_nav_lang_german' },
+  { value: 'es-ES', labelKey: 'com_nav_lang_spanish' },
+  { value: 'ca-ES', labelKey: 'com_nav_lang_catalan' },
+  { value: 'et-EE', labelKey: 'com_nav_lang_estonian' },
+  { value: 'fa-IR', labelKey: 'com_nav_lang_persian' },
+  { value: 'fr-FR', labelKey: 'com_nav_lang_french' },
+  { value: 'he-HE', labelKey: 'com_nav_lang_hebrew' },
+  { value: 'hu-HU', labelKey: 'com_nav_lang_hungarian' },
+  { value: 'hy-AM', labelKey: 'com_nav_lang_armenian' },
+  { value: 'is', labelKey: 'com_nav_lang_icelandic' },
+  { value: 'it-IT', labelKey: 'com_nav_lang_italian' },
+  { value: 'nb', labelKey: 'com_nav_lang_norwegian_bokmal' },
+  { value: 'nn', labelKey: 'com_nav_lang_norwegian_nynorsk' },
+  { value: 'pl-PL', labelKey: 'com_nav_lang_polish' },
+  { value: 'pt-BR', labelKey: 'com_nav_lang_brazilian_portuguese' },
+  { value: 'pt-PT', labelKey: 'com_nav_lang_portuguese' },
+  { value: 'ru-RU', labelKey: 'com_nav_lang_russian' },
+  { value: 'sk', labelKey: 'com_nav_lang_slovak' },
+  { value: 'ja-JP', labelKey: 'com_nav_lang_japanese' },
+  { value: 'ka-GE', labelKey: 'com_nav_lang_georgian' },
+  { value: 'cs-CZ', labelKey: 'com_nav_lang_czech' },
+  { value: 'sv-SE', labelKey: 'com_nav_lang_swedish' },
+  { value: 'ko-KR', labelKey: 'com_nav_lang_korean' },
+  { value: 'lt-LT', labelKey: 'com_nav_lang_lithuanian' },
+  { value: 'lv-LV', labelKey: 'com_nav_lang_latvian' },
+  { value: 'vi-VN', labelKey: 'com_nav_lang_vietnamese' },
+  { value: 'th-TH', labelKey: 'com_nav_lang_thai' },
+  { value: 'tr-TR', labelKey: 'com_nav_lang_turkish' },
+  { value: 'ug', labelKey: 'com_nav_lang_uyghur' },
+  { value: 'nl-NL', labelKey: 'com_nav_lang_dutch' },
+  { value: 'id-ID', labelKey: 'com_nav_lang_indonesia' },
+  { value: 'fi-FI', labelKey: 'com_nav_lang_finnish' },
+  { value: 'sl', labelKey: 'com_nav_lang_slovenian' },
+  { value: 'bo', labelKey: 'com_nav_lang_tibetan' },
+  { value: 'uk-UA', labelKey: 'com_nav_lang_ukrainian' },
+] as const;
+
+const selectorByCanonical = languageOptions.reduce<Record<string, string>>((acc, { value }) => {
+  if (value === 'auto') {
+    return acc;
+  }
+  const canonical = normalizeLocale(value);
+  if (!(canonical in acc)) {
+    acc[canonical] = value;
+  }
+  return acc;
+}, {});
+
+/**
+ * Maps a locale to the value the language selector uses for it, so a canonical
+ * default such as `de` resolves to the selector's `de-DE` and shows as selected
+ * instead of leaving the control blank. Falls back to the normalized canonical
+ * when the selector offers no region variant (e.g. `bs`); `'auto'` is unchanged.
+ */
+export function toSelectorLocale(locale?: string | null): string {
+  if (locale === 'auto') {
+    return 'auto';
+  }
+  const canonical = normalizeLocale(locale);
+  return selectorByCanonical[canonical] ?? canonical;
+}
+
 export function detectInitialLanguage() {
   const cookieLang = readCookie('lang');
   const storedLang = readStoredLanguage();
