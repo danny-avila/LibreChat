@@ -2714,6 +2714,71 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).not.toHaveBeenCalled();
       });
 
+      it.each([false, true])(
+        'adopts a credential newer than the rejected connection before its snapshot (contended: %s)',
+        async (contended) => {
+          const serverName = `already-stored-${contended}`;
+          await seedRefreshableTokens(serverName);
+          await MCPTokenStorage.storeTokens({
+            ...refreshParams(jest.fn(), serverName),
+            tokens: rotatedTokens(3),
+            clientInfo: { client_id: 'cid', client_secret: 'secret' },
+            metadata: storedBindingMetadata,
+            expectedCredentialSetId: credentialSetId,
+          });
+          let attempts = 0;
+          const flowManager = flightManager(async () => !contended || ++attempts > 1);
+          const refreshTokens = jest.fn();
+          await expect(
+            MCPTokenStorage.forceRefreshTokens({
+              ...refreshParams(refreshTokens, serverName),
+              flowManager,
+              rejectedCredentialSetId: credentialSetId,
+            }),
+          ).resolves.toMatchObject({ access_token: 'at-3', refresh_token: 'rt-3' });
+          expect(refreshTokens).not.toHaveBeenCalled();
+        },
+      );
+
+      it('does not coalesce adoption with a caller that rejected the adopted generation', async () => {
+        const serverName = 'different-rejected-generations';
+        await seedRefreshableTokens(serverName);
+        const current = await MCPTokenStorage.storeTokens({
+          ...refreshParams(jest.fn(), serverName),
+          tokens: rotatedTokens(3),
+          clientInfo: { client_id: 'cid', client_secret: 'secret' },
+          metadata: storedBindingMetadata,
+          expectedCredentialSetId: credentialSetId,
+        });
+        const flowManager = new FlowStateManager(
+          new Keyv({ serialize: JSON.stringify, deserialize: JSON.parse }),
+          { ttl: 30000, ci: true },
+        );
+        let finishAdoption!: () => void;
+        const onTokensAdopted = jest.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              finishAdoption = resolve;
+            }),
+        );
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(4));
+        const params = { ...refreshParams(refreshTokens, serverName), flowManager };
+        const adopter = MCPTokenStorage.forceRefreshTokens({
+          ...params,
+          rejectedCredentialSetId: credentialSetId,
+          onTokensAdopted,
+        });
+        await waitFor(() => onTokensAdopted.mock.calls.length === 1);
+        const rejectedCurrent = MCPTokenStorage.forceRefreshTokens({
+          ...params,
+          rejectedCredentialSetId: current.credential_set_id,
+        });
+        finishAdoption();
+        await expect(adopter).resolves.toMatchObject({ access_token: 'at-3' });
+        await expect(rejectedCurrent).resolves.toMatchObject({ access_token: 'at-4' });
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
       it('reuses the refresh record getTokens already loaded', async () => {
         await seedRefreshableTokens('reuse-srv');
         const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));

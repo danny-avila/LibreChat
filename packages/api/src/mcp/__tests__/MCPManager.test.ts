@@ -5749,6 +5749,29 @@ describe('MCPManager', () => {
       }
     });
 
+    it('lets an ephemeral flow owner carry the peer generation to persistent waiters', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('peer-generation');
+      let captured: string | void;
+      const { serverConfig, flowManager } = adoptingOAuthServer(async (options) => {
+        captured = await options.onOAuthCredentialsInvalidated?.();
+      });
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          flowManager,
+          serverConfig,
+          ephemeralConnection: true,
+        });
+        expect(captured!).toBe('peer-generation');
+      } finally {
+        generationSpy.mockRestore();
+      }
+    });
+
     it('re-captures the generation before re-reading credentials a change invalidated', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')

@@ -120,6 +120,8 @@ interface GetTokensParams {
    * the repository's latency budget already counts.
    */
   existingRefreshToken?: IToken | null;
+  /** Credential actually rejected by the resource server, before any peer storage reads. */
+  rejectedCredentialSetId?: string;
   /** Per-server `oauthRefreshWaitTimeout`: how long to wait on another replica's redemption. */
   refreshWaitTimeoutMs?: number;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
@@ -963,6 +965,7 @@ export class MCPTokenStorage {
       userId,
       serverName,
       singleFlightScope ?? '',
+      params.rejectedCredentialSetId ?? '',
     ]);
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
@@ -1014,6 +1017,7 @@ export class MCPTokenStorage {
             flowManager,
             existingRefreshToken: params.existingRefreshToken,
             existingAccessToken: params.existingAccessToken,
+            rejectedCredentialSetId: params.rejectedCredentialSetId,
             waitMs: this.resolveRefreshFlightWaitMs(params.refreshWaitTimeoutMs),
             signal: executionController.signal,
             logPrefix,
@@ -1142,6 +1146,7 @@ export class MCPTokenStorage {
     flowManager,
     existingRefreshToken,
     existingAccessToken,
+    rejectedCredentialSetId,
     waitMs,
     signal,
     logPrefix,
@@ -1152,6 +1157,7 @@ export class MCPTokenStorage {
     flowManager: NonNullable<GetTokensParams['flowManager']>;
     existingRefreshToken?: IToken | null;
     existingAccessToken?: IToken | null;
+    rejectedCredentialSetId?: string;
     waitMs: number;
     /** Internal stale-abort signal owned by `forceRefreshTokens`, also fired by teardown. */
     signal: AbortSignal;
@@ -1205,6 +1211,7 @@ export class MCPTokenStorage {
           lease,
           observedRefreshToken,
           existingAccessToken,
+          rejectedCredentialSetId,
           logPrefix,
         });
       }
@@ -1249,6 +1256,7 @@ export class MCPTokenStorage {
     lease,
     observedRefreshToken,
     existingAccessToken,
+    rejectedCredentialSetId,
     logPrefix,
   }: {
     userId: string;
@@ -1257,6 +1265,7 @@ export class MCPTokenStorage {
     lease: FlowLease;
     observedRefreshToken: IToken | null;
     existingAccessToken?: IToken | null;
+    rejectedCredentialSetId?: string;
     logPrefix: string;
   }): Promise<MCPRefreshFlight> {
     let leasedRefreshToken: IToken | null;
@@ -1275,6 +1284,7 @@ export class MCPTokenStorage {
         findToken,
         observedRefreshToken,
         existingAccessToken,
+        rejectedCredentialSetId,
         leasedRefreshToken,
       });
     } catch (adoptionError) {
@@ -1331,6 +1341,7 @@ export class MCPTokenStorage {
     findToken,
     observedRefreshToken,
     existingAccessToken,
+    rejectedCredentialSetId,
     leasedRefreshToken,
   }: {
     userId: string;
@@ -1339,6 +1350,7 @@ export class MCPTokenStorage {
     /** The credential as this replica saw it before contending for the flight. */
     observedRefreshToken: IToken | null;
     existingAccessToken?: IToken | null;
+    rejectedCredentialSetId?: string;
     /** The credential as stored once the flight was held. */
     leasedRefreshToken: IToken | null;
   }): Promise<MCPOAuthTokens | null> {
@@ -1346,6 +1358,8 @@ export class MCPTokenStorage {
       return null;
     }
     const rotated =
+      (rejectedCredentialSetId != null &&
+        rejectedCredentialSetId !== getCredentialSetId(leasedRefreshToken)) ||
       leasedRefreshToken.token !== observedRefreshToken.token ||
       getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(observedRefreshToken) ||
       (existingAccessToken != null &&

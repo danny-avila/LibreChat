@@ -829,12 +829,10 @@ export abstract class UserConnectionManager {
               }
             };
       const recaptureCredentialGeneration: t.UserConnectionContext['onOAuthCredentialsInvalidated'] =
-        ephemeralConnection
-          ? undefined
-          : async () => {
-              credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
-              return credentialGeneration;
-            };
+        async () => {
+          credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
+          return credentialGeneration;
+        };
 
       const useOAuth = usesDirectOpenIDBearerRecovery(config)
         ? false

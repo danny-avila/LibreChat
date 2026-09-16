@@ -162,6 +162,7 @@ describe('MCPConnectionFactory', () => {
       connect: jest.fn(),
       isConnected: jest.fn(),
       setOAuthTokens: jest.fn(),
+      getOAuthCredentialSetId: jest.fn().mockReturnValue('rejected-generation'),
       setAuthorizationHeader: jest.fn(),
       stopReconnecting: jest.fn(),
       on: jest.fn().mockReturnValue(mockConnectionInstance),
@@ -2226,6 +2227,9 @@ describe('MCPConnectionFactory', () => {
       await handler({ serverUrl: 'https://api.example.com' });
       await handler({ serverUrl: 'https://api.example.com' });
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ rejectedCredentialSetId: 'rejected-generation' }),
+      );
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tokens);
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
@@ -5023,6 +5027,7 @@ describe('MCPConnectionFactory', () => {
             }),
             isConnected: jest.fn().mockResolvedValue(false),
             setOAuthTokens: jest.fn(),
+            getOAuthCredentialSetId: jest.fn().mockReturnValue('rejected-generation'),
             on: jest.fn(),
             once: jest.fn(),
             off: jest.fn(),
@@ -5134,6 +5139,7 @@ describe('MCPConnectionFactory', () => {
             }),
             isConnected: jest.fn().mockResolvedValue(false),
             setOAuthTokens: jest.fn(),
+            getOAuthCredentialSetId: jest.fn().mockReturnValue('rejected-generation'),
             on: jest.fn(),
             once: jest.fn(),
             off: jest.fn(),

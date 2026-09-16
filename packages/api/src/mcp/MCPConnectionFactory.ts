@@ -1119,7 +1119,9 @@ export class MCPConnectionFactory {
    * in-flight promise means every fresh 401 after settlement triggers a
    * fresh redemption.
    */
-  protected async attemptSilentTokenRefresh(): Promise<MCPOAuthTokens | null> {
+  protected async attemptSilentTokenRefresh(
+    rejectedCredentialSetId?: string,
+  ): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken) {
       return null;
     }
@@ -1127,7 +1129,13 @@ export class MCPConnectionFactory {
     // Scope the lock by tenant and OAuth binding so neither another tenant nor a
     // same-name server whose URL/client configuration changed can join the refresh.
     const bindingDigest = this.getOAuthBindingDigest();
-    const lockKey = `${this.tenantId ?? ''}:${this.userId ?? ''}:${this.serverName}:${bindingDigest}`;
+    const lockKey = JSON.stringify([
+      this.tenantId ?? '',
+      this.userId ?? '',
+      this.serverName,
+      bindingDigest,
+      rejectedCredentialSetId ?? '',
+    ]);
     const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
     if (inflight) {
       logger.debug(`${this.logPrefix} Joining in-flight silent refresh attempt`);
@@ -1138,7 +1146,11 @@ export class MCPConnectionFactory {
     const abortController = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let abortGraceTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    const refreshPromise = this.runSilentRefresh(abortController.signal, bindingDigest);
+    const refreshPromise = this.runSilentRefresh(
+      abortController.signal,
+      bindingDigest,
+      rejectedCredentialSetId,
+    );
     const promise = new Promise<MCPOAuthTokens | null>((resolve, reject) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
@@ -1195,6 +1207,7 @@ export class MCPConnectionFactory {
   private async runSilentRefresh(
     signal: AbortSignal,
     singleFlightScope: string,
+    rejectedCredentialSetId?: string,
   ): Promise<MCPOAuthTokens | null> {
     try {
       const tokens = await this.runWithCapturedTenant(async () =>
@@ -1207,6 +1220,7 @@ export class MCPConnectionFactory {
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
           singleFlightScope,
+          rejectedCredentialSetId,
           refreshWaitTimeoutMs: this.serverConfig.oauthRefreshWaitTimeout,
           signal,
           /**
@@ -1627,6 +1641,7 @@ export class MCPConnectionFactory {
         return;
       }
 
+      const rejectedCredentialSetId = connection.getOAuthCredentialSetId();
       const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
       let oauthLeaseGeneration: number | null;
       try {
@@ -1651,7 +1666,7 @@ export class MCPConnectionFactory {
         if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
           let refreshedTokens: MCPOAuthTokens | null;
           try {
-            refreshedTokens = await this.attemptSilentTokenRefresh();
+            refreshedTokens = await this.attemptSilentTokenRefresh(rejectedCredentialSetId);
           } catch (error) {
             if (!MCPConnectionFactory.isRefreshUnavailable(error)) {
               throw error;

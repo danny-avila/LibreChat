@@ -2841,6 +2841,11 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
+  /** Identifies the credential rejected by the resource server without exposing its bearer. */
+  public getOAuthCredentialSetId(): string | undefined {
+    return this.oauthTokens?.credential_set_id;
+  }
+
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
     this.oauthTokens = tokens;
   }
