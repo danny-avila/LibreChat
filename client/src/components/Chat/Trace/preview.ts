@@ -212,7 +212,12 @@ export function buildPreviewIndex(
     }
     const callsByName = new Map<string, string[]>();
     for (const call of round.toolCalls) {
-      callsByName.set(call.name, [...(callsByName.get(call.name) ?? []), call.args]);
+      const bucket = callsByName.get(call.name);
+      if (bucket == null) {
+        callsByName.set(call.name, [call.args]);
+      } else {
+        bucket.push(call.args);
+      }
     }
     const startsByName = new Map<string, Map<number, number>>();
     const roots = step.rootIds.flatMap((id) => {
