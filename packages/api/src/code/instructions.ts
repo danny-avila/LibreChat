@@ -137,4 +137,5 @@ export function createRepositoryInstructionLoader() {
 }
 
 /** Shared bounded cache across all agent initialization ingresses. */
-export const loadRepositoryInstructions = createRepositoryInstructionLoader();
+export const loadRepositoryInstructions: ReturnType<typeof createRepositoryInstructionLoader> =
+  createRepositoryInstructionLoader();
