@@ -2989,6 +2989,12 @@ export const configSchema = z.object({
       message: 'At least one `endpoints` field must be provided.',
     })
     .optional(),
+  /** Serve the OpenAPI spec and docs for the public Agents API. Off by default. */
+  openapi: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 /**
