@@ -257,6 +257,21 @@ describe('balance initialization', () => {
     expect(outOfBalance).toBe(false);
   });
 
+  it.each([
+    ['all of its credits are held by in-flight requests', 100, true],
+    ['part of its credits are free', 50, false],
+  ])('pre-skips a record only when %s', async (_case, reservedCredits, outOfBalance) => {
+    const { service } = serviceWithBalance({
+      tokenCredits: 100,
+      reservedCredits,
+      autoRefillEnabled: false,
+    });
+
+    await expect(service.engineDeps.isOutOfBalance({ id: 'user-1' } as never)).resolves.toBe(
+      outOfBalance,
+    );
+  });
+
   /**
    * A stale record whose credit is already set but whose refill config drifted still syncs
    * that config, and the sync must not widen into a credit write.

@@ -3,6 +3,7 @@ export * from './admin';
 export * from './error';
 export * from './email';
 export * from './notFound';
+export * from './origin';
 export * from './balance';
 export * from './json';
 export * from './capabilities';

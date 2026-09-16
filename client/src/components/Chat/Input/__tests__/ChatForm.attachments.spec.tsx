@@ -11,9 +11,9 @@ import { QueryKeys, FileSources, EModelEndpoint } from 'librechat-data-provider'
 import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
+import ChatForm, { toRestoredComposerFile } from '../ChatForm';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
-import ChatForm from '../ChatForm';
 import store from '~/store';
 
 const mockUpload = jest.fn();
@@ -110,7 +110,12 @@ function Harness() {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <Profiler id="composer" onRender={() => (commits += 1)}>
-          <ChatForm index={0} />
+          <ChatForm
+            index={0}
+            isLandingPage={false}
+            footerBelow={false}
+            centerFormOnLanding={false}
+          />
         </Profiler>
       </ChatContext.Provider>
     </ChatFormProvider>
@@ -171,6 +176,23 @@ describe('ChatForm attachments', () => {
     mockUpload.mockImplementation((body: FormData) =>
       Promise.resolve({ ...uploadResponse, temp_file_id: body.get('file_id') as string }),
     );
+  });
+
+  test('preserves extracted-text delivery when restoring a queued attachment', () => {
+    expect(
+      toRestoredComposerFile({
+        file_id: 'stored-doc',
+        filename: 'report.docx',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        llmDeliveryPath: 'text',
+      }),
+    ).toMatchObject({
+      file_id: 'stored-doc',
+      filename: 'report.docx',
+      progress: 1,
+      attached: true,
+      llmDeliveryPath: 'text',
+    });
   });
 
   test('re-enables send once an attachment finishes uploading', async () => {

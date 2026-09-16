@@ -3,7 +3,8 @@ import { publishMCPAuthorizationMutation } from './catalog/recovery';
 
 export interface MCPAuthorizationPublicationDeps {
   invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-  clearLocalRecovery?: (userId: string, serverName: string) => void;
+  /** Receives the generation the publication wrote, when it reports one. */
+  clearLocalRecovery?: (userId: string, serverName: string, generation?: string) => void;
   persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
   clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
@@ -134,11 +135,14 @@ export interface PersistMCPAuthorizationTransactionDeps<TTokens>
   inactiveServerError: () => Error;
 }
 
-/** Writes a durable intent now and returns the exact publication that clears only that intent. */
+/**
+ * Writes a durable intent now and returns the exact publication that clears only that intent.
+ * The publication reports the generation it wrote so its own caller can adopt it.
+ */
 export async function prepareMCPAuthorizationMutation(
   scope: MCPRecoveryGenerationScope,
   deps: MCPAuthorizationPublicationDeps,
-): Promise<() => Promise<void>> {
+): Promise<() => Promise<string | undefined>> {
   const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
   return () =>
     publishMCPAuthorizationMutation(scope, {
@@ -148,8 +152,12 @@ export async function prepareMCPAuthorizationMutation(
     });
 }
 
-/** Owns the OAuth authorization transaction while the token store's rollback journal is live. */
-export async function persistMCPAuthorizationTransaction<TTokens>(
+/**
+ * Owns the OAuth authorization transaction while the token store's rollback journal is live. The
+ * tokens released to the authorization flow, to pending token waiters, and to the caller carry the
+ * generation the publication wrote, so a connection built on them leases under that generation.
+ */
+export async function persistMCPAuthorizationTransaction<TTokens extends object>(
   params: PersistMCPAuthorizationTransactionParams<TTokens>,
   deps: PersistMCPAuthorizationTransactionDeps<TTokens>,
 ): Promise<TTokens> {
@@ -157,20 +165,26 @@ export async function persistMCPAuthorizationTransaction<TTokens>(
     throw deps.inactiveServerError();
   }
   const publishPreparedMutation = await prepareMCPAuthorizationMutation(params.scope, deps);
-  return params.persistTokens(params.tokens, async (committedTokens) => {
+  let releasedTokens: TTokens | undefined;
+  const storedTokens = await params.persistTokens(params.tokens, async (committedTokens) => {
     if (!(await deps.ensureServerActive())) {
       throw deps.inactiveServerError();
     }
-    await publishPreparedMutation();
+    const publicationGeneration = await publishPreparedMutation();
+    releasedTokens =
+      publicationGeneration == null
+        ? committedTokens
+        : { ...committedTokens, publication_generation: publicationGeneration };
     await completeMCPAuthorizationWithTokenWaiters(
       {
         flowIds: params.flowIds,
-        tokens: committedTokens,
+        tokens: releasedTokens,
         completeAuthorization: params.completeAuthorization,
       },
       deps,
     );
   });
+  return releasedTokens ?? storedTokens;
 }
 
 /**

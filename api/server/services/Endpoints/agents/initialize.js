@@ -3,6 +3,7 @@ const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   resolveSender,
   resolveRunConversation,
+  resolveConversationCodeEnvironmentDecision,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
@@ -23,11 +24,23 @@ const {
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  optsOutOfAttachedCodeEnvironment,
+  isImplicitStatefulCodeRouteAvailable,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
   createLazyAgentHistoryResolver,
   resolveToolRoleGrants,
+  createChatRunFileBindings,
+  createAxiosInstance,
+  getCodeApiAuthHeaders,
+  getCodeExecutionBaseUrl,
+  getAuthorizedRunFileSnapshot,
+  encodeAndFormatDocuments,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  extractFileContext,
+  createScheduleUpstreamTokenProviderResolver,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -38,6 +51,7 @@ const {
   AgentCapabilities,
   normalizeServerName,
   Tools,
+  VisionModes,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
@@ -86,6 +100,10 @@ const {
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
+const { determineFileType } = require('~/server/utils');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -106,6 +124,8 @@ function createToolLoader(
   streamId = null,
   definitionsOnly = false,
   jobCreatedAt,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 ) {
   /**
    * @param {object} params
@@ -147,9 +167,11 @@ function createToolLoader(
         codeExecutionContext,
         definitionsOnly,
         accessibleMcpServerNames,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -168,8 +190,10 @@ function createToolLoader(
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
  * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  */
-const initializeClient = async ({
+const initializeClientWithProvider = async ({
   req,
   res,
   signal,
@@ -178,6 +202,8 @@ const initializeClient = async ({
   checkpointNamespace,
   foregroundRunId,
   requestBody,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -192,7 +218,7 @@ const initializeClient = async ({
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
-  const runtimeRequestBody = requestBody ?? req.body;
+  let runtimeRequestBody = requestBody ?? req.body;
   const conversationId = runtimeRequestBody?.conversationId;
   const requestConversationPromise = resolveRunConversation({
     request: req,
@@ -346,6 +372,7 @@ const initializeClient = async ({
    * }>}
    */
   const agentToolContexts = new Map();
+  let runFileBindings;
   const resolveMcpServerName = (toolName, agentId) => {
     if (typeof toolName !== 'string' || typeof agentId !== 'string') {
       return undefined;
@@ -400,7 +427,7 @@ const initializeClient = async ({
     if (trustedContext?.codeExecutionContext) {
       callbackMetadata.codeExecutionContext = trustedContext.codeExecutionContext;
     }
-    return artifactToolEndCallback(data, callbackMetadata);
+    return runFileBindings.deliverToolEnd(artifactToolEndCallback, data, callbackMetadata);
   };
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
@@ -413,8 +440,15 @@ const initializeClient = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
-    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection, runSignal) => {
-      const ctx = agentToolContexts.get(agentId) ?? {};
+    loadTools: async (
+      toolNames,
+      agentId,
+      _configurable,
+      callerCapabilityProjection,
+      runSignal,
+      executionContext,
+    ) => {
+      const ctx = runFileBindings.getContext(agentId, executionContext) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
 
@@ -427,6 +461,10 @@ const initializeClient = async ({
         requestBody: runtimeRequestBody,
         toolNames,
         agent: ctx.agent,
+        runFileCodeExecutionContext: runFileBindings.getCodeExecutionContext(
+          agentId,
+          executionContext,
+        ),
         toolRegistry: ctx.toolRegistry,
         callerCapabilityProjection,
         backgroundToolNames: ctx.backgroundToolNames,
@@ -434,6 +472,8 @@ const initializeClient = async ({
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
         accessibleMcpServerNames: ctx.accessibleMcpServerNames,
@@ -558,6 +598,25 @@ const initializeClient = async ({
   ]);
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
+  const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+    conversationId,
+    requestedMode: runtimeRequestBody?.codeEnvironmentMode,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    conversation: requestConversation,
+  });
+  /** Trusted, normalized pair used by every persistence path, including init failures. */
+  req._codeEnvironmentDecision = codeEnvironmentDecision;
+  runtimeRequestBody = {
+    ...runtimeRequestBody,
+    codeEnvironmentMode: codeEnvironmentDecision.mode,
+    codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
+  };
+  req.body.codeEnvironmentMode = codeEnvironmentDecision.mode;
+  if (codeEnvironmentDecision.codeWorkspaces == null) {
+    delete req.body.codeWorkspaces;
+  } else {
+    req.body.codeWorkspaces = codeEnvironmentDecision.codeWorkspaces;
+  }
   delete endpointOption.agent;
 
   /** The deployment switch AND the role grant. `initializeAgent` rebuilds
@@ -576,7 +635,16 @@ const initializeClient = async ({
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(req, res, signal, streamId, true, jobCreatedAt);
+  const loadTools = createToolLoader(
+    req,
+    res,
+    signal,
+    streamId,
+    true,
+    jobCreatedAt,
+    upstreamTokenProvider,
+    upstreamTokenProviderResolver,
+  );
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string | undefined} */
@@ -664,6 +732,7 @@ const initializeClient = async ({
       skillStates,
       defaultActiveOnShare,
       manualSkills,
+      signal,
     },
     {
       getFiles: db.getFiles,
@@ -686,6 +755,7 @@ const initializeClient = async ({
       checkSessionsAlive,
       loadCodeApiKey,
       updateFile: db.updateFile,
+      getRoleByName: db.getRoleByName,
     },
   );
 
@@ -711,6 +781,7 @@ const initializeClient = async ({
     {
       req,
       res,
+      signal,
       primaryConfig,
       agent_ids: primaryConfig.agent_ids,
       endpointOption,
@@ -776,6 +847,7 @@ const initializeClient = async ({
         checkSessionsAlive,
         loadCodeApiKey,
         updateFile: db.updateFile,
+        getRoleByName: db.getRoleByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -834,6 +906,7 @@ const initializeClient = async ({
     toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
+    signal,
   });
 
   if (updatedMCPAuthMap) {
@@ -1006,8 +1079,21 @@ const initializeClient = async ({
   });
 
   const toLazySubagentMetadata = async (agent) => {
+    const configuredCodeEnvironments =
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+      agent,
+      runtimeRequestBody,
+      configuredCodeEnvironments,
+      isImplicitStatefulCodeRouteAvailable(
+        process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+        process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+      ),
+    );
     const lazyCodeEnvAvailable =
-      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true;
+      codeEnvAvailable === true &&
+      agent.tools?.includes(Tools.execute_code) === true &&
+      !attachedEnvironmentOptOut;
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       lazyCodeEnvAvailable &&
@@ -1020,23 +1106,17 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
-    const configuredCodeEnvironments =
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
-    const hasConfiguredCodeEnvironment =
-      agent.code_environment_id != null ||
-      configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const baseCodeExecutionContext =
-      lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
-        ? resolveCodeExecutionContext({
-            statefulSessions: statefulCodeSessions,
-            environment: statefulCodeEnvironment,
-            environmentId: agent.code_environment_id,
-            environments: configuredCodeEnvironments,
-            userId,
-            agentId: agent.id,
-            conversationId,
-          })
-        : undefined;
+    const baseCodeExecutionContext = lazyCodeEnvAvailable
+      ? resolveCodeExecutionContext({
+          statefulSessions: statefulCodeSessions,
+          environment: statefulCodeEnvironment,
+          environmentId: agent.code_environment_id,
+          environments: configuredCodeEnvironments,
+          userId,
+          agentId: agent.id,
+          conversationId,
+        })
+      : undefined;
     const codeExecutionContext = baseCodeExecutionContext
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,
@@ -1103,7 +1183,7 @@ const initializeClient = async ({
     try {
       return await loading;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error loading subagent metadata ${agentId}:`, error);
@@ -1191,8 +1271,22 @@ const initializeClient = async ({
           req,
           res,
           agent,
-          loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
+          loadTools: createToolLoader(
+            req,
+            res,
+            context.signal,
+            streamId,
+            true,
+            jobCreatedAt,
+            upstreamTokenProvider,
+            upstreamTokenProviderResolver,
+          ),
           requestFiles,
+          authorizedRunFiles: getAuthorizedRunFileSnapshot({
+            policy: appConfig.endpoints?.agents?.fileSharing,
+            agent: primaryConfig,
+            files: primaryConfig.currentRequestAttachments,
+          }),
           conversationId,
           parentMessageId,
           requestBody: runtimeRequestBody,
@@ -1215,6 +1309,7 @@ const initializeClient = async ({
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,
+          signal: context.signal,
         },
         {
           getFiles: db.getFiles,
@@ -1237,6 +1332,7 @@ const initializeClient = async ({
           checkSessionsAlive,
           loadCodeApiKey,
           updateFile: db.updateFile,
+          getRoleByName: db.getRoleByName,
         },
       ),
       context.signal,
@@ -1398,7 +1494,7 @@ const initializeClient = async ({
       graphMemberConfigsById.set(memberId, config);
       return config;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error initializing graph member ${memberId}:`, error);
@@ -1648,6 +1744,54 @@ const initializeClient = async ({
         }
       : null;
 
+  runFileBindings = createChatRunFileBindings({
+    req,
+    contexts: agentToolContexts,
+    createdAt: jobCreatedAt,
+    requestFiles,
+    audit: (event) => logger.info('[agents:run-files]', event),
+    getInputs: () => primaryConfig.currentRequestAttachments,
+    loadFiles: (fileIds) => db.getRunFileCandidates(fileIds, req.user.tenantId),
+    filterFiles: filterFilesByAgentAccess,
+    listPublications: db.listRunArtifacts,
+    provisioning: {
+      provisionToCodeEnv,
+      provisionToVectorDB,
+      updateFile: db.updateFile,
+      updateCodeEnvRef: db.updateFileCodeEnvRef,
+      addEmbeddedEntity: db.addFileEmbeddedEntity,
+    },
+    fileMethods: {
+      claimRunArtifactFile: db.claimRunArtifactFile,
+      publishRunArtifactFile: db.publishRunArtifactFile,
+      findRunArtifactFile: db.findRunArtifactFile,
+    },
+    processCodeOutput,
+    snapshotAdapter: {
+      request: createAxiosInstance(),
+      getAuthHeaders: getCodeApiAuthHeaders,
+      getBaseURL: getCodeExecutionBaseUrl,
+      determineFileType,
+    },
+    finalize: runPreviewFinalize,
+    getStrategyFunctions,
+    artifactPromises,
+    emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
+    encoder: {
+      getAgent: (agentId) => agentToolContexts.get(agentId)?.fileEncodingAgent,
+      encodeImages: (request, files, params) =>
+        encodeAndFormat(request, files, params, VisionModes.agents),
+      encodeDocuments: encodeAndFormatDocuments,
+      encodeAudios: encodeAndFormatAudios,
+      encodeVideos: encodeAndFormatVideos,
+      extractText: extractFileContext,
+    },
+  });
+  toolExecuteOptions.runFiles = runFileBindings.session;
+  toolExecuteOptions.provisionFiles = runFileBindings.wrapProvision(
+    toolExecuteOptions.provisionFiles,
+  );
+
   const eventHandlers = getDefaultHandlers({
     res,
     contentParts,
@@ -1697,6 +1841,7 @@ const initializeClient = async ({
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
     subagentAggregatorsByToolCallId,
     subagentTasks,
+    runFiles: runFileBindings.session,
     /** Resolved endpoint token/pricing config so spending and cost reflect
      *  configured rates for custom-endpoint agents instead of defaults. */
     endpointTokenConfig: primaryConfig.endpointTokenConfig,
@@ -1722,4 +1867,26 @@ const initializeClient = async ({
   return { client, userMCPAuthMap };
 };
 
-module.exports = { initializeClient };
+/**
+ * Creates an agent initializer whose host may resolve renewable credentials at
+ * the execution boundary. The resolver returns a provider closure rather than
+ * token material so refresh remains owned by the host integration.
+ *
+ * @param {object} [dependencies]
+ * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [dependencies.resolveUpstreamTokenProvider]
+ */
+function createInitializeClient(dependencies = {}) {
+  return async (params) => {
+    const upstreamTokenProviderResolver = createScheduleUpstreamTokenProviderResolver(
+      params.req,
+      dependencies.resolveUpstreamTokenProvider,
+      params.signal,
+      params.scheduledTokenContext,
+    );
+    return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
+  };
+}
+
+const initializeClient = createInitializeClient();
+
+module.exports = { createInitializeClient, initializeClient };

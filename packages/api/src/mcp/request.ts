@@ -15,16 +15,19 @@ export function createMCPRuntimeRequestBody({
   messageId,
   conversationId,
   parentMessageId,
+  codeEnvironmentMode,
   codeWorkspaces,
 }: {
   messageId: string;
   conversationId: string;
   parentMessageId?: string | null;
+  codeEnvironmentMode?: MCPRuntimeRequestBody['codeEnvironmentMode'];
   codeWorkspaces?: MCPRuntimeRequestBody['codeWorkspaces'];
 }): MCPRuntimeRequestBody {
   return {
     messageId,
     conversationId,
+    ...(codeEnvironmentMode !== undefined && { codeEnvironmentMode }),
     ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? Constants.NO_PARENT,

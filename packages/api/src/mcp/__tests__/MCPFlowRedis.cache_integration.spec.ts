@@ -125,6 +125,61 @@ describe('MCP OAuth flow state across Redis-backed instances', () => {
     );
   });
 
+  it('runs one handler when two pods replace the same failed non-retained flow', async () => {
+    const flowId = createFlowId();
+    const type = 'mcp_get_tokens';
+    try {
+      await expect(
+        podA.createFlowWithHandler(flowId, type, async () => {
+          throw new Error('earlier attempt failed');
+        }),
+      ).rejects.toThrow('earlier attempt failed');
+      const first = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 'first';
+      });
+      const second = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 'second';
+      });
+
+      const results = await Promise.all([
+        podA.createFlowWithHandler(flowId, type, first),
+        podB.createFlowWithHandler(flowId, type, second),
+      ]);
+
+      expect(new Set(results).size).toBe(1);
+      expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
+    } finally {
+      await podA.deleteFlow(flowId, type);
+    }
+  }, 15000);
+
+  it('runs one handler when two pods create the same absent flow', async () => {
+    const flowId = createFlowId();
+    const type = 'mcp_get_tokens';
+    try {
+      const first = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 'first';
+      });
+      const second = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 'second';
+      });
+
+      const results = await Promise.all([
+        podA.createFlowWithHandler(flowId, type, first),
+        podB.createFlowWithHandler(flowId, type, second),
+      ]);
+
+      expect(new Set(results).size).toBe(1);
+      expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
+    } finally {
+      await podA.deleteFlow(flowId, type);
+    }
+  }, 15000);
+
   it('settles a fresher result over a failure from the same attempt across pods', async () => {
     const flowId = createFlowId();
     await podA.initFlow(flowId, FLOW_TYPE, { state: 'observed-state' });

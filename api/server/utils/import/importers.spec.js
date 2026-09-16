@@ -966,12 +966,15 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
-  it('drops server-private context meta from imported messages', async () => {
+  it('drops server-private context meta and trace sampling from imported messages', async () => {
     const message = {
       messageId: 'message-1',
       parentMessageId: Constants.NO_PARENT,
       text: 'Imported response',
       isCreatedByUser: false,
+      langfuseSampled: true,
+      langfuseDestinationIds: ['forged-destination'],
+      langfuseRunId: 'someone-elses-run',
       contextMeta: {
         calibrationRatio: 1,
         encoding: 'claude',
@@ -990,6 +993,9 @@ describe('importLibreChatConvo', () => {
     await importer(jsonData, 'user-123', () => importBatchBuilder);
 
     expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
+    expect(importBatchBuilder.messages[0].langfuseSampled).toBe(false);
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseDestinationIds');
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseRunId');
     expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
   });
 
@@ -1586,6 +1592,26 @@ describe('processAssistantMessage', () => {
       const originalCitation = messageText.slice(citation.start_ix, citation.end_ix);
       expect(result).not.toContain(originalCitation);
     });
+  });
+
+  test('should link tens of thousands of citations in one message', () => {
+    const count = 40000;
+    const marker = '【†】';
+    const span = `${'word '.repeat(19)}${marker}`;
+    const citations = Array.from({ length: count }, (_, index) => ({
+      start_ix: (index + 1) * span.length - marker.length,
+      end_ix: (index + 1) * span.length,
+      metadata: { type: 'webpage', title: 'Source', url: 'https://example.com' },
+    }));
+
+    const text = span.repeat(count);
+    const startedAt = performance.now();
+    const result = processAssistantMessage({ metadata: { citations } }, text);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1000);
+    expect(result).not.toContain(marker);
+    expect(result.split(' ([Source](https://example.com))')).toHaveLength(count + 1);
   });
 
   test('should handle potential ReDoS attack payloads', () => {

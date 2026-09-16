@@ -326,6 +326,8 @@ export type Metadata = Record<string, string>;
 
 /** Open Responses API Request */
 export interface ResponseRequest {
+  /** Immutable attached-environment choice (LibreChat extension). */
+  code_environment_mode?: import('librechat-data-provider').CodeEnvironmentMode;
   /** Explicit registered workspaces for attached agents (LibreChat extension). */
   code_workspaces?: import('librechat-data-provider').CodeWorkspaceSelection[];
   /** Model/agent ID to use */

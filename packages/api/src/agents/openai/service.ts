@@ -1,3 +1,4 @@
+import type { LocatorTraversalReporter } from '../../protection/diagnostics';
 /**
  * OpenAI-compatible chat completions service for agents.
  *
@@ -19,7 +20,6 @@
  * ```
  */
 import { nanoid } from 'nanoid';
-import { isCodeWorkspaceSelections } from 'librechat-data-provider';
 import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
@@ -85,6 +85,7 @@ import { createSafeUser } from '~/utils';
  * Dependencies for the chat completion service
  */
 export interface ChatCompletionDependencies {
+  readonly onTraversalFailure?: LocatorTraversalReporter;
   /** Get agent by ID */
   getAgent: (params: { id: string }) => Promise<Agent | null>;
   /** Initialize agent for use */
@@ -186,6 +187,8 @@ interface InitializedAgent {
 interface InitializeAgentParams {
   req: Request;
   res: ServerResponse;
+  /** Cancellation signal owned by this chat-completion request. */
+  signal?: CoreInitializeAgentParams['signal'];
   agent: Agent;
   conversationId?: string | null;
   parentMessageId?: string | null;
@@ -211,6 +214,12 @@ interface InitializeAgentParams {
    * that priming unconditional.
    */
   fileSearchAvailable?: boolean;
+  /**
+   * Resolves the `WEB_SEARCH` role grant. `initializeAgent` calls it only when an
+   * agent's built provider config turns native web search on, and strips that
+   * search when it resolves `false`.
+   */
+  resolveWebSearchGrant?: () => Promise<boolean>;
   /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
@@ -536,13 +545,11 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
     return { valid: false, error: 'conversation_id must be a string' };
   }
-  if (
-    request.code_workspaces !== undefined &&
-    !isCodeWorkspaceSelections(request.code_workspaces)
-  ) {
+  if (request.code_environment_mode !== undefined || request.code_workspaces !== undefined) {
     return {
       valid: false,
-      error: 'code_workspaces must contain unique environment/workspace selections',
+      error:
+        'code_environment_mode and code_workspaces are not supported by this service because it cannot enforce a persisted conversation decision',
     };
   }
 
@@ -653,7 +660,6 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
-    codeWorkspaces: request.code_workspaces,
     parentMessageId: mcpParentMessageId,
   });
   const created = Math.floor(Date.now() / 1000);
@@ -711,6 +717,14 @@ export async function createAgentChatCompletion(
       capabilityAllowsFileSearch === true && deps.getRoleByName != null
         ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
         : capabilityAllowsFileSearch;
+    /** Wired whenever the embedder supplies `getRoleByName`, independent of
+     *  `appConfig`: provider-native web search is a model parameter with no
+     *  capability of its own, so the role grant is its only gate. */
+    const { getRoleByName } = deps;
+    const resolveWebSearchGrant =
+      getRoleByName != null
+        ? async () => (await resolveToolRoleGrants({ req, getRoleByName })).webSearch
+        : undefined;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -760,10 +774,12 @@ export async function createAgentChatCompletion(
       isInitialAgent: true,
       codeEnvAvailable,
       fileSearchAvailable,
+      resolveWebSearchGrant,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
       toolIntentsAvailable,
+      signal: abortController.signal,
     });
 
     const modelBoundAgents = collectReachableAgents([initializedAgent]);
@@ -776,6 +792,7 @@ export async function createAgentChatCompletion(
       );
     }
     assertModelBoundContent({
+      onTraversalFailure: deps.onTraversalFailure,
       filters,
       legacyPii,
       submittedMessages,

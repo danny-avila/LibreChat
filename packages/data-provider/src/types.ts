@@ -12,17 +12,24 @@ import type {
 } from './schemas';
 import type {
   CodeWorkspaceDescriptor,
+  CodeEnvironmentMode,
   CodeWorkspaceOperation,
   CodeWorkspaceSelection,
 } from './code/workspace';
-import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
-import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  TAgentsEndpoint,
+} from './config';
+import type { StatefulCodeEnvironment } from './stateful-code';
 import type { CodeApprovalMode } from './code/approval';
+import type { EToolResources } from './types/tools';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { ProviderId } from './providers';
+import type { Agent } from './types/agents';
 
 export * from './schemas';
 export * from './types/subagents';
@@ -157,6 +164,8 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Conversation-scoped preference for code tool approval behavior. */
     codeApprovalMode?: CodeApprovalMode;
+    /** Immutable conversation choice for attached code execution. */
+    codeEnvironmentMode?: CodeEnvironmentMode;
     /** Conversation-selected workspaces, with at most one binding per environment. */
     codeWorkspaces?: CodeWorkspaceSelection[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
@@ -240,6 +249,8 @@ export type TSubmission = {
   manualSkills?: string[];
   /** Conversation-scoped preference for code tool approval behavior. */
   codeApprovalMode?: CodeApprovalMode;
+  /** Immutable conversation choice for attached code execution. */
+  codeEnvironmentMode?: CodeEnvironmentMode;
   /** Conversation-selected workspaces, with at most one binding per environment. */
   codeWorkspaces?: CodeWorkspaceSelection[];
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
@@ -466,6 +477,9 @@ export type TPinConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
   langfuseSessionUrl?: string;
+  /** Whether the link was published with a configured sender label; withholds the
+   * model on hover. */
+  hasConfiguredSender?: boolean;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -600,6 +614,20 @@ export type TCodeEnvironmentStatusResponse = {
   workspaces?: CodeWorkspaceDescriptor[];
 };
 
+/** Moves a sealed attached decision onto the environments a conversation's agents now use. */
+export type TCodeEnvironmentMoveRequest = {
+  conversationId: string;
+  /** The persisted selections being replaced; a mismatch rejects the move as stale. */
+  from: CodeWorkspaceSelection[];
+  to: CodeWorkspaceSelection[];
+};
+
+export type TCodeEnvironmentMoveResponse = {
+  conversationId: string;
+  codeEnvironmentMode: 'attached';
+  codeWorkspaces: CodeWorkspaceSelection[];
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;
@@ -632,6 +660,7 @@ export type TConfig = {
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
+  fileSharing?: TAgentsEndpoint['fileSharing'];
   /** Concurrent Code API uploads allowed per route and authenticated principal. */
   codeApiUploadConcurrency?: number;
   /** Milliseconds one operation may spend waiting on Code API rate limits. */
@@ -1051,4 +1080,6 @@ export type TLangfuseConnectionTestResponse =
 
 export type TLangfuseSessionLinkResponse = {
   url: string | null;
+  /** Opaque identity of the project `url` opens, so a caller can tell whether it holds what it showed. */
+  destinationId?: string;
 };

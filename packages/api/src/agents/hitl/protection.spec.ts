@@ -3,6 +3,11 @@ import type {
   ResumeContentProtectionDependencies,
   ResumeRuntimeContentProtectionDependencies,
 } from './protection';
+import {
+  assertAgentAttachmentLimits,
+  AgentAttachmentLimitError,
+  isModelBoundAttachmentFile,
+} from '../attachments';
 import { assertResumeContentAllowed, assertResumeRuntimeContentAllowed } from './protection';
 
 const user = {
@@ -41,6 +46,40 @@ function createInput(appConfig: unknown): AssertResumeRuntimeContentAllowedInput
 }
 
 describe('assertResumeRuntimeContentAllowed', () => {
+  it('reports locator failures from restored HITL content through its dependencies', async () => {
+    const onTraversalFailure = jest.fn();
+    const dependencies = { ...createDependencies(), onTraversalFailure };
+    dependencies.getFiles.mockResolvedValue([{ file_id: 'owned', filename: 'safe.txt' }]);
+    const input = createInput({
+      filters: { files: { pii: { fields: ['name'], starterPatterns: ['sk_prefix'] } } },
+    });
+    await expect(
+      assertResumeRuntimeContentAllowed(
+        {
+          ...input,
+          storedMessages: [
+            {
+              messageId: 'source-message',
+              isCreatedByUser: true,
+              role: 'user',
+              files: [{ file_id: 'owned' }],
+              content: Array.from({ length: 4200 }, () => ({ type: 'text', text: 'safe' })),
+            },
+          ],
+        },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(onTraversalFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'omit_resolved_file_locators',
+        reason: 'array_length',
+        messageCount: 1,
+        resolvedFileCount: 1,
+      }),
+    );
+  });
+
   it.each([
     { filters: { prompts: { pii: {} } } },
     {
@@ -64,6 +103,48 @@ describe('assertResumeRuntimeContentAllowed', () => {
       expect(dependencies.getFiles).not.toHaveBeenCalled();
     },
   );
+
+  it('charges retained fallback text after settings change, using owner-hydrated records', async () => {
+    const dependencies = createDependencies();
+    dependencies.getAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'human', additional_kwargs: { sourceMessageId: 'source-message' } }],
+          },
+        },
+      }),
+    });
+    dependencies.getMessages.mockResolvedValue([
+      { messageId: 'source-message', files: [{ file_id: 'fallback-file' }] },
+    ]);
+    const storedFile = {
+      file_id: 'fallback-file',
+      filename: 'sales.csv',
+      type: 'text/csv',
+      source: 'local',
+      bytes: 20,
+      text: 'region,total',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: false },
+    };
+    dependencies.getFiles.mockResolvedValue([storedFile]);
+    const input = {
+      ...createInput({ fileConfig: { textFallbackWithoutTools: false } }),
+      isTemporary: false,
+    };
+    const projection = await assertResumeRuntimeContentAllowed(input, dependencies);
+    expect(projection.checkpointFiles).toEqual([{ ...storedFile, llmDeliveryPath: 'text' }]);
+    expect(storedFile.llmDeliveryPath).toBe('none');
+    expect(() =>
+      assertAgentAttachmentLimits({
+        attachments: projection.checkpointFiles.filter(isModelBoundAttachmentFile),
+        fileConfig: { fileContextCharLimit: 3 },
+        endpoint: 'openAI',
+      }),
+    ).toThrow(AgentAttachmentLimitError);
+    expect(dependencies.getFiles).toHaveBeenCalledTimes(1);
+  });
 
   it('hydrates checkpoint-bound files when content filters are inactive', async () => {
     const dependencies = createDependencies();

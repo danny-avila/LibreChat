@@ -391,6 +391,23 @@ describe('stateful code approval target binding', () => {
     ).not.toEqual(binding(original));
   });
 
+  it('requires new approval when an environment action definition changes', () => {
+    const original = context();
+    original.codeWorkspace!.environment = { fingerprint: 'a'.repeat(64), actions: ['typecheck'] };
+    const expected = captureCodeExecutionApprovalBinding([
+      { id: 'a', codeExecutionContext: original },
+    ]);
+    const updated = context({
+      codeWorkspace: {
+        ...original.codeWorkspace!,
+        environment: { fingerprint: 'b'.repeat(64), actions: ['typecheck'] },
+      },
+    });
+    expect(() =>
+      assertCodeExecutionApprovalBinding(expected, [{ id: 'a', codeExecutionContext: updated }]),
+    ).toThrow('changed while this action awaited approval');
+  });
+
   it('captures only opaque, canonical identities for stateful targets', () => {
     const binding = captureCodeExecutionApprovalBinding([
       {

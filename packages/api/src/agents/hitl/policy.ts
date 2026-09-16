@@ -315,6 +315,42 @@ export function buildToolApprovalPayload(
   };
 }
 
+/** Require one uniquely identified review policy for every paused tool call. */
+export function isToolApprovalPayloadValid(payload: Agents.ToolApprovalInterruptPayload): boolean {
+  if (payload.action_requests.length !== payload.review_configs.length) {
+    return false;
+  }
+
+  const requestedIds = new Set<string>();
+  for (const request of payload.action_requests) {
+    if (
+      typeof request.tool_call_id !== 'string' ||
+      request.tool_call_id.length === 0 ||
+      requestedIds.has(request.tool_call_id)
+    ) {
+      return false;
+    }
+    requestedIds.add(request.tool_call_id);
+  }
+
+  const reviewedIds = new Set<string>();
+  for (const config of payload.review_configs) {
+    if (
+      typeof config.tool_call_id !== 'string' ||
+      config.tool_call_id.length === 0 ||
+      reviewedIds.has(config.tool_call_id)
+    ) {
+      return false;
+    }
+    if (!requestedIds.has(config.tool_call_id)) {
+      return false;
+    }
+    reviewedIds.add(config.tool_call_id);
+  }
+
+  return true;
+}
+
 /** Build an ask-user-question interrupt payload. */
 export function buildAskUserQuestionPayload(
   question: Agents.AskUserQuestionRequest,
@@ -344,6 +380,8 @@ export interface PendingActionContext {
   threadId?: string;
   /** Fingerprint of the graph-determining request fields; see {@link computeAgentRequestFingerprint}. */
   requestFingerprint?: string;
+  /** Current fingerprint; the legacy field remains populated for rolling-deploy compatibility. */
+  requestFingerprintV2?: string;
   /** Graph-determining fields to replay on resume; see {@link RESUME_CONTEXT_KEYS}. */
   resumeContext?: Record<string, unknown>;
   /** Opaque server-only binding to the stateful code targets selected at pause time. */
@@ -361,6 +399,7 @@ export interface AgentRequestFingerprintFields {
   promptPrefix?: string | null;
   ephemeralAgent?: Record<string, unknown> | null;
   codeApprovalMode?: string | null;
+  codeEnvironmentMode?: string | null;
   codeWorkspaces?: unknown;
 }
 
@@ -400,6 +439,7 @@ export const RESUME_CONTEXT_KEYS = [
   'promptPrefix',
   'ephemeralAgent',
   'codeApprovalMode',
+  'codeEnvironmentMode',
   // The selected attached workspace determines the code tools' execution root and
   // operation ceiling. Pin it across every pause type so a reload or crafted resume
   // cannot rebuild the graph against a different directory.
@@ -741,6 +781,35 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
       ? { codeApprovalMode: fields.codeApprovalMode ?? null }
       : {}),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeEnvironmentMode')
+      ? { codeEnvironmentMode: fields.codeEnvironmentMode ?? null }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspaces')
+      ? { codeWorkspaces: fields.codeWorkspaces ?? null }
+      : {}),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+/**
+ * Fingerprint understood by replicas predating conversation-owned code environments.
+ * Writers retain it in `requestFingerprint` while also storing the stricter current
+ * fingerprint, allowing either replica generation to resume safely during a rollout.
+ */
+export function computeLegacyAgentRequestFingerprint(
+  fields: AgentRequestFingerprintFields,
+): string {
+  const canonical = JSON.stringify({
+    endpoint: fields.endpoint ?? null,
+    endpointType: fields.endpointType ?? null,
+    agent_id: fields.agent_id ?? null,
+    model: fields.model ?? null,
+    spec: fields.spec ?? null,
+    promptPrefix: fields.promptPrefix ?? null,
+    ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
+      ? { codeApprovalMode: fields.codeApprovalMode ?? null }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspaces')
       ? { codeWorkspaces: fields.codeWorkspaces ?? null }
       : {}),
@@ -759,6 +828,9 @@ export function buildPendingAction(
   payload: Agents.HumanInterruptPayload,
   ctx: PendingActionContext,
 ): Agents.PendingAction {
+  if (payload.type === 'tool_approval' && !isToolApprovalPayloadValid(payload)) {
+    throw new Error('Invalid tool approval payload');
+  }
   const createdAt = Date.now();
   const ttlExpiresAt = typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined;
   let absoluteExpiresAt: number | undefined;
@@ -791,6 +863,7 @@ export function buildPendingAction(
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,
+    requestFingerprintV2: ctx.requestFingerprintV2,
     resumeContext: ctx.resumeContext,
     codeExecutionBinding: ctx.codeExecutionBinding,
   };
@@ -811,6 +884,7 @@ export function toClientPendingAction(
   }
   const {
     requestFingerprint: _requestFingerprint,
+    requestFingerprintV2: _requestFingerprintV2,
     resumeContext: _resumeContext,
     codeExecutionBinding: _codeExecutionBinding,
     ...clientSafe

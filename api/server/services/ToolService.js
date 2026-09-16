@@ -12,6 +12,7 @@ const {
   getToolkitKey,
   getUserMCPAuthMap,
   createAuthIdentityContext,
+  selectMCPUpstreamTokenProvider,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -32,6 +33,7 @@ const {
   inspectContentWithTraversal,
   ContentFilterError,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   extractToolArgumentContent,
   contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
@@ -51,6 +53,7 @@ const {
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
+  resolveRunFileCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
@@ -149,6 +152,7 @@ const getActiveToolResources = (toolResources, tools) => {
 const toolCapabilityGates = {
   [Tools.file_search]: AgentCapabilities.file_search,
   [Tools.execute_code]: AgentCapabilities.execute_code,
+  [Tools.web_search]: AgentCapabilities.web_search,
 };
 
 /**
@@ -183,6 +187,7 @@ const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
     Array.isArray(resource?.files) ? resource.files : [],
   );
   assertModelBoundContent({
+    onTraversalFailure: reportLocatorTraversalFailure,
     filters,
     agents: [{ tool_resources: activeResources }],
     files,
@@ -200,6 +205,7 @@ const withoutEncryptedActionSecrets = (action) => {
 const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
   if (filters != null) {
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters,
       actions: actions.map(withoutEncryptedActionSecrets),
     });
@@ -220,7 +226,11 @@ const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
     })),
   );
   if (filters != null) {
-    assertModelBoundContent({ filters, actions: decryptedActions });
+    assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
+      filters,
+      actions: decryptedActions,
+    });
   }
   return decryptedActions;
 };
@@ -774,6 +784,8 @@ const isBuiltInTool = (toolName) =>
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @param {AbortSignal} [params.signal] - Effective run cancellation signal
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -794,6 +806,8 @@ async function loadToolDefinitionsWrapper({
   codeExecutionContext,
   accessibleMcpServerNames,
   signal,
+  upstreamTokenProvider: suppliedUpstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -857,7 +871,7 @@ async function loadToolDefinitionsWrapper({
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
-      return checkCapability(AgentCapabilities.web_search);
+      return checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -979,22 +993,21 @@ async function loadToolDefinitionsWrapper({
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const requestScopedConnections = getMCPRequestContext(req, res);
-  /**
-   * Build the OBO upstream-token closure once at this request boundary and pass
-   * the function into MCP handling, so `reinitMCPServer` never receives the raw
-   * Express request. `res` is forwarded so a rotated refresh token can be
-   * mirrored to the `refreshToken` cookie when the response is still writable.
-   */
   const oboIdentityContext = createAuthIdentityContext({
     user: req.user,
     tenantId: getTenantId(),
   });
-  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
-    req,
-    res,
-    user: req.user,
-    identityContext: oboIdentityContext,
-    tokenPreference: 'access_token',
+  const upstreamTokenProvider = selectMCPUpstreamTokenProvider({
+    upstreamTokenProvider: suppliedUpstreamTokenProvider,
+    upstreamTokenProviderResolver,
+    createSessionProvider: () =>
+      createOpenIDSessionTokenProvider({
+        req,
+        res,
+        user: req.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }),
   });
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
@@ -1173,6 +1186,7 @@ async function loadToolDefinitionsWrapper({
     };
 
     const result = await reinitMCPServer({
+      signal,
       user: req.user,
       oauthStart,
       flowManager,
@@ -1182,6 +1196,7 @@ async function loadToolDefinitionsWrapper({
       requestBody: runtimeRequestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
@@ -1202,6 +1217,7 @@ async function loadToolDefinitionsWrapper({
       }
     };
     const result = await reinitMCPServer({
+      signal,
       user: req.user,
       forceNew: true,
       oauthStart,
@@ -1212,6 +1228,7 @@ async function loadToolDefinitionsWrapper({
       requestBody: runtimeRequestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       oboIdentityContext,
       recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
@@ -1352,6 +1369,7 @@ async function loadToolDefinitionsWrapper({
         }
 
         const result = await reinitMCPServer({
+          signal,
           user: req.user,
           serverName,
           configServers,
@@ -1363,6 +1381,7 @@ async function loadToolDefinitionsWrapper({
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
@@ -1373,16 +1392,19 @@ async function loadToolDefinitionsWrapper({
           return { serverName, success: true };
         }
         return { serverName, success: false };
-      } catch {
+      } catch (error) {
+        if (isFatalAgentInitializationError(error, { signal })) {
+          throw error;
+        }
         logger.debug('[Tool Definitions] MCP OAuth wait failed for one server');
         return { serverName, success: false };
       }
     });
 
-    const results = await Promise.allSettled(oauthWaitPromises);
+    const results = await Promise.all(oauthWaitPromises);
     const successfulServers = results
-      .filter((r) => r.status === 'fulfilled' && r.value.success)
-      .map((r) => r.value.serverName);
+      .filter((result) => result.success)
+      .map((result) => result.serverName);
 
     if (successfulServers.length > 0) {
       logger.info(
@@ -1468,7 +1490,7 @@ async function loadToolDefinitionsWrapper({
         primedCodeFiles = files;
       }
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(
@@ -1558,6 +1580,8 @@ async function loadToolDefinitionsWrapper({
  * @param {boolean} [params.definitionsOnly=true] - When true, returns only serializable
  *   tool definitions without creating full tool instances. Use for event-driven mode
  *   where tools are loaded on-demand during execution.
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  */
 async function loadAgentTools({
   req,
@@ -1573,6 +1597,8 @@ async function loadAgentTools({
   definitionsOnly = true,
   codeExecutionContext: providedCodeExecutionContext,
   accessibleMcpServerNames,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) {
   if (definitionsOnly) {
     try {
@@ -1588,10 +1614,12 @@ async function loadAgentTools({
         codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
         signal,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
       });
     } catch (error) {
       if (
-        isFatalAgentInitializationError(error) ||
+        isFatalAgentInitializationError(error, { signal }) ||
         isContentFilterError(error) ||
         !agent.tools?.some(isExpectedMCPTool)
       ) {
@@ -1643,7 +1671,7 @@ async function loadAgentTools({
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
-      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      includesWebSearch = checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
       return includesWebSearch;
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1750,6 +1778,8 @@ async function loadAgentTools({
       returnMetadata: true,
       mcpPermissionContext,
       requestScopedConnections: getMCPRequestContext(req, res),
+      upstreamTokenProvider,
+      upstreamTokenProviderResolver,
       codeExecutionContext,
       [Tools.web_search]: webSearchCallbacks,
     },
@@ -2014,6 +2044,8 @@ async function loadAgentTools({
  * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections] - Run-scoped MCP connections
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
@@ -2037,12 +2069,15 @@ async function loadToolsForExecution({
   mcpAvailableTools,
   requestScopedConnections,
   userMCPAuthMap,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
   tool_resources,
   streamId = null,
   jobCreatedAt,
   conversationId,
   actionsEnabled,
   accessibleMcpServerNames,
+  runFileCodeExecutionContext,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -2141,6 +2176,10 @@ async function loadToolsForExecution({
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
+  Object.assign(
+    codeExecutionContext,
+    resolveRunFileCodeExecutionContext(codeExecutionContext, runFileCodeExecutionContext),
+  );
   configurable.codeExecutionContext = codeExecutionContext;
 
   const isPTC =
@@ -2241,6 +2280,7 @@ async function loadToolsForExecution({
               authHeaders,
               baseUrl: codeExecutionContext.baseUrl,
               workspaceId: codeExecutionContext.codeWorkspace.workspaceId,
+              environment: codeExecutionContext.codeWorkspace.environment,
               gitIdentity: agent?.git_identity,
               maxTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
                 codeExecutionContext.codeEnvironmentConfigSchema,
@@ -2341,6 +2381,8 @@ async function loadToolsForExecution({
          *  turn already advertised. */
         accessibleMcpServerNames,
         requestScopedConnections: mcpRequestScopedConnections,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,

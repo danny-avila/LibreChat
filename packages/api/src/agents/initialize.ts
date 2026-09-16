@@ -21,14 +21,16 @@ import type {
   TEndpointOption,
   ReasoningResponseKey,
   StatefulCodeEnvironment,
+  TurnDeliveryRouting,
   ImageDetail,
   TFile,
   Agent,
   TUser,
+  TurnFileConsumers,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
-import type { Response as ServerResponse } from 'express';
+import type { Request, Response as ServerResponse } from 'express';
 import type {
   TFileUpdate,
   ProvisionState,
@@ -56,6 +58,7 @@ import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/t
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
+import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { AgentExecutionContext } from './runtime';
 import {
@@ -67,6 +70,12 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
+import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeEnvironmentConfig,
+  type CodeExecutionContext,
+} from './execution';
 import {
   getContentTraversalFragments,
   isContentTraversalProtected,
@@ -92,11 +101,6 @@ import {
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
 import {
-  normalizeStatefulCodeEnvironment,
-  resolveCodeExecutionContext,
-  type CodeExecutionContext,
-} from './execution';
-import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
@@ -105,14 +109,18 @@ import { createConfiguredContentInspector, inspectContent } from '../protection/
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
 import { resolveAttachedWorkspaceCommandTimeoutMax } from '~/code/command';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
+import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
+import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
+import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
@@ -356,6 +364,123 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+/**
+ * Whether a provider-built tool is that provider's own web search.
+ *
+ * Each provider spells it differently — OpenAI `{ type: 'web_search' }`, Anthropic
+ * `{ type: 'web_search_20250305', name: 'web_search' }`, Google `{ googleSearch: {} }` —
+ * and the tool is already built by the time it reaches here, so the shape is what
+ * identifies it rather than the parameter that asked for it.
+ */
+function isProviderWebSearchTool(tool: unknown): boolean {
+  if (tool == null || typeof tool !== 'object') {
+    return false;
+  }
+  if (hasGoogleSearchTool(tool)) {
+    return true;
+  }
+  if (getToolName(tool) === Tools.web_search) {
+    return true;
+  }
+  const { type } = tool as { type?: unknown };
+  return typeof type === 'string' && type.startsWith(Tools.web_search);
+}
+
+/**
+ * Removes OpenRouter's web-search plugin from a built LLM config.
+ *
+ * OpenRouter does not receive web search as a tool — `getOpenAIConfig` encodes it
+ * as `modelKwargs.plugins: [{ id: 'web' }]` and pushes no tool at all — so the
+ * provider-tool filter has nothing to strip on that path and the plugin would
+ * still reach the provider for a role that was denied.
+ */
+function stripWebSearchPlugin(llmConfig: Record<string, unknown>): number {
+  const modelKwargs = llmConfig.modelKwargs as { plugins?: unknown } | undefined;
+  if (modelKwargs == null || !Array.isArray(modelKwargs.plugins)) {
+    return 0;
+  }
+  const plugins = modelKwargs.plugins as Array<{ id?: unknown }>;
+  const remaining = plugins.filter((plugin) => !isWebSearchPlugin(plugin));
+  const removed = plugins.length - remaining.length;
+  if (removed === 0) {
+    return 0;
+  }
+  if (remaining.length > 0) {
+    modelKwargs.plugins = remaining;
+  } else {
+    delete modelKwargs.plugins;
+  }
+  return removed;
+}
+
+function isWebSearchPlugin(plugin: unknown): boolean {
+  return (plugin as { id?: unknown } | null)?.id === 'web';
+}
+
+/**
+ * Whether a built provider config turns native web search on, as a tool or as
+ * OpenRouter's plugin.
+ *
+ * Read from the builder's output rather than from `model_parameters.web_search`:
+ * the parameter is one of several inputs — an endpoint's `defaultParams`,
+ * `customParams` defaults and `addParams` all reach the same switch, and
+ * `addParams` is applied last — so the output is the only place every route
+ * has already converged.
+ */
+function hasProviderWebSearch(
+  tools: unknown[] | undefined,
+  llmConfig: Record<string, unknown>,
+): boolean {
+  if (tools?.some(isProviderWebSearchTool) === true) {
+    return true;
+  }
+  const plugins = (llmConfig.modelKwargs as { plugins?: unknown } | undefined)?.plugins;
+  return Array.isArray(plugins) && plugins.some(isWebSearchPlugin);
+}
+
+/**
+ * Resolves the `WEB_SEARCH` grant for provider-native search.
+ *
+ * A caller-supplied resolver wins, so a route that memoizes grants on its own
+ * request — and reaches here with `runtime` and no `req` — joins that read
+ * instead of issuing another. Without one, the grant is resolved for `user`
+ * through `db.getRoleByName`; with neither there is no role to consult.
+ *
+ * Fails closed: a resolver that throws denies.
+ */
+async function resolveWebSearchGrant({
+  req,
+  user,
+  resolve,
+  getRoleByName,
+}: {
+  req?: Request;
+  user?: CheckAccessParams['user'] | null;
+  resolve?: () => Promise<boolean>;
+  getRoleByName?: CheckAccessParams['getRoleByName'];
+}): Promise<boolean> {
+  try {
+    if (resolve != null) {
+      return await resolve();
+    }
+    if (getRoleByName == null) {
+      return true;
+    }
+    const grants = await resolveToolRoleGrants({
+      req,
+      user,
+      getRoleByName,
+      context: 'initializeAgent',
+    });
+    return grants.webSearch;
+  } catch {
+    logger.error(
+      `[initializeAgent][User: ${user?.id}] Failed to resolve the WEB_SEARCH grant; denying provider-native web search`,
+    );
+    return false;
+  }
+}
+
 function normalizeGoogleModelName(model: string): string {
   const normalized = model.trim().toLowerCase();
   return normalized.split('/').pop() ?? normalized;
@@ -427,20 +552,30 @@ function resolveProviderToolConflicts({
   provider,
   tools,
   toolDefinitions,
+  webSearchDenied = false,
 }: {
   provider?: string;
   tools?: unknown[];
   toolDefinitions?: LCTool[];
+  /**
+   * Whether the build turned native web search on for a role that denies
+   * `WEB_SEARCH.USE`. The built tool is stripped, which holds however the build
+   * was asked for it.
+   */
+  webSearchDenied?: boolean;
 }): unknown[] | undefined {
   if (!tools?.length) {
     return tools;
   }
 
-  if (!hasToolDefinition(toolDefinitions, Tools.web_search)) {
+  if (!webSearchDenied && !hasToolDefinition(toolDefinitions, Tools.web_search)) {
     return tools;
   }
 
   const shouldRemoveTool = (tool: unknown): boolean => {
+    if (webSearchDenied) {
+      return isProviderWebSearchTool(tool);
+    }
     if (provider === Providers.ANTHROPIC) {
       return getToolName(tool) === Tools.web_search;
     }
@@ -461,7 +596,9 @@ function resolveProviderToolConflicts({
 
   if (removed > 0) {
     logger.debug(
-      `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
+      webSearchDenied
+        ? `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); role denies WEB_SEARCH.`
+        : `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
     );
   }
 
@@ -472,13 +609,19 @@ function resolveProviderToolConflicts({
  * Extended agent type with additional fields needed after initialization
  */
 export type InitializedAgent = Agent & {
+  /** Request-resolved Azure identity for self-summarization; never persisted on the agent. */
+  azureOptions?: InitializeResultBase['azureOptions'];
   tools: GenericTool[];
   /** @deprecated use requestAttachments or agentContextAttachments based on sharing semantics. */
   attachments: IMongoFile[];
-  /** Files attached to the current user message/run and safe to share across run agents. */
+  /** Message files admitted for this agent, including historical files when resend is enabled. */
   requestAttachments: IMongoFile[];
+  /** Only hydrated attachments from the current request; excludes history and agent setup files. */
+  currentRequestAttachments: TFile[];
   /** Files attached to this agent's permanent context via tool_resources. */
   agentContextAttachments: IMongoFile[];
+  /** File-reading tools this turn runs, which decide when a tool-routed file falls back to text. */
+  fileConsumers?: TurnFileConsumers;
   toolContextMap: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
@@ -489,6 +632,8 @@ export type InitializedAgent = Agent & {
   /** Detail level LibreChat encodes image content blocks with, from the agent's
    * model parameters. Absent when the agent does not configure one. */
   imageDetail?: ImageDetail;
+  /** How this agent receives its attachments this turn, settled once every routing input is final. */
+  deliveryRouting: TurnDeliveryRouting;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
@@ -631,11 +776,32 @@ export type InitializedAgent = Agent & {
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
 
+/** Returns true when a conversation-level choice disables an attached environment. */
+export function optsOutOfAttachedCodeEnvironment(
+  agent: Agent,
+  requestBody: RequestBody | undefined,
+  environments: readonly CodeEnvironmentConfig[] | undefined,
+  implicitStatefulRouteAvailable = false,
+): boolean {
+  if (requestBody?.codeEnvironmentMode !== 'without_attached') return false;
+  const configured = agent.code_environment_id
+    ? environments?.find(({ id }) => id === agent.code_environment_id)
+    : environments?.find(({ default: isDefault }) => isDefault === true);
+  return (
+    agent.stateful_code_sessions === true &&
+    (configured?.type === 'attached' ||
+      (configured == null &&
+        (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
+  );
+}
+
 /**
  * Parameters for initializing an agent
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
  */
 export interface InitializeAgentParams {
+  /** Cancellation signal owned by the run performing initialization. */
+  signal?: AbortSignal;
   /** Explicit transport-free execution state. */
   runtime?: AgentExecutionContext;
   /** Request-backed compatibility adapter for callers not yet migrated. */
@@ -652,6 +818,8 @@ export interface InitializeAgentParams {
   requestBody?: RequestBody;
   /** Request files */
   requestFiles?: IMongoFile[];
+  /** Host-authorized, hydrated inputs for an isolated execution. Suppresses parent history reads. */
+  authorizedRunFiles?: readonly TFile[];
   /** Function to load agent tools */
   loadTools?: (params: {
     provider: string;
@@ -714,6 +882,16 @@ export interface InitializeAgentParams {
    * resolved the grant keeps its current behavior.
    */
   fileSearchAvailable?: boolean;
+  /**
+   * Resolves this caller's `WEB_SEARCH` role grant for provider-native web search.
+   * Called only when the built provider config turns native search on, so an
+   * agent without it costs no role read. Callers that reach `initializeAgent`
+   * with `runtime` and no `req` — the OpenAI-compatible and Responses routes,
+   * and the embedder surface in `agents/openai/service.ts` — pass one that joins
+   * the grants their request already memoizes. Absent, the grant is resolved
+   * from `db.getRoleByName`.
+   */
+  resolveWebSearchGrant?: () => Promise<boolean>;
   /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
@@ -851,6 +1029,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Optional: persist file metadata updates after provisioning */
   updateFile?: (data: TFileUpdate) => Promise<unknown>;
+  /** Resolves a role by name for the tool role-permission grants. Optional: when
+   *  absent the role half of the web-search gate is not applied. */
+  getRoleByName?: CheckAccessParams['getRoleByName'];
 }
 
 /**
@@ -873,6 +1054,7 @@ export async function initializeAgent(
     agent,
     loadTools,
     requestFiles = [],
+    authorizedRunFiles,
     conversationId,
     endpointOption,
     parentMessageId,
@@ -1091,7 +1273,7 @@ export async function initializeAgent(
     );
   }
 
-  let currentFiles: IMongoFile[] | undefined;
+  let currentFiles: Array<IMongoFile | TFile> | undefined;
 
   const _modelOptions = structuredClone(
     Object.assign(
@@ -1108,11 +1290,105 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /** Settle the provider and its client options before any attachment is judged. The file
+   * policy reads the endpoint's own name, but the route each attachment takes also depends on
+   * the backing client and on the Responses API decision `getOptions` makes, and nothing
+   * between here and tool loading feeds either. */
+  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
+    provider,
+    appConfig,
+  });
+  if (overrideProvider !== agent.provider) {
+    agent.provider = overrideProvider;
+  }
+
+  const finalModelOptions = {
+    ...modelOptions,
+    model: agent.model,
+  };
+
+  const options: InitializeResultBase = await getOptions({
+    runtime: {
+      appConfig,
+      user,
+      requestBody: runtime.requestBody,
+    },
+    endpoint: provider,
+    model_parameters: finalModelOptions,
+    db,
+  });
+
+  const llmConfig = options.llmConfig as Record<string, unknown>;
+  const webSearchDenied =
+    hasProviderWebSearch(options.tools, llmConfig) &&
+    !(await resolveWebSearchGrant({
+      req: params.req as Request | undefined,
+      user,
+      resolve: params.resolveWebSearchGrant,
+      getRoleByName: db.getRoleByName,
+    }));
+  if (webSearchDenied && stripWebSearchPlugin(llmConfig) > 0) {
+    logger.debug(
+      `[initializeAgent] Removed the OpenRouter web search plugin; role denies WEB_SEARCH.`,
+    );
+  }
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
+  const maxOutputTokens = optionalChainWithEmptyCheck(
+    llmConfig?.maxOutputTokens as number | undefined,
+    llmConfig?.maxTokens as number | undefined,
+    0,
+  );
+  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+    maxContextTokens,
+    getModelMaxTokens(
+      tokensModel ?? '',
+      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
+      options.endpointTokenConfig,
+    ),
+    DEFAULT_MAX_CONTEXT_TOKENS,
+  );
+
+  if (
+    agent.endpoint === EModelEndpoint.azureOpenAI &&
+    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
+  ) {
+    agent.provider = Providers.OPENAI;
+  }
+
+  if (options.provider != null) {
+    agent.provider = options.provider;
+  }
+
+  const deliveryRouting = resolveTurnDeliveryRouting({
+    agent: {
+      provider: agent.provider,
+      endpoint: agent.endpoint,
+      model_parameters: {
+        useResponsesApi:
+          typeof llmConfig.useResponsesApi === 'boolean' ? llmConfig.useResponsesApi : undefined,
+      },
+    },
+    config: appConfig,
+  });
+
   /** Resolve the per-agent Code API route before resource/tool priming. A
    * stateful agent must perform freshness checks and recovery uploads against
    * the same isolated deployment its eventual `/exec` request will use. */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const configuredCodeEnvironments =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+  const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+    agent,
+    requestBody,
+    configuredCodeEnvironments,
+    isImplicitStatefulCodeRouteAvailable(
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION,
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
+    ),
+  );
+  const effectiveCodeEnvAvailable =
+    params.codeEnvAvailable === true && agentRequestsCodeExec && !attachedEnvironmentOptOut;
   const effectiveStatefulSessions =
     effectiveCodeEnvAvailable &&
     params.statefulSessionsAvailable === true &&
@@ -1131,7 +1407,7 @@ export async function initializeAgent(
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,
     environmentId: agent.code_environment_id,
-    environments: appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments,
+    environments: configuredCodeEnvironments,
     userId: requestFileOwnerId,
     agentId: agent.id,
     conversationId,
@@ -1164,9 +1440,14 @@ export async function initializeAgent(
   }
   const toolResourceSet = resolveResendToolResources({
     tools: resourceToolNames,
-    codeEnvAvailable: params.codeEnvAvailable === true,
+    codeEnvAvailable: params.codeEnvAvailable === true && !attachedEnvironmentOptOut,
     fileSearchAvailable: params.fileSearchAvailable,
   });
+  let runtimeToolResources = agent.tool_resources;
+  if (attachedEnvironmentOptOut && runtimeToolResources != null) {
+    runtimeToolResources = { ...runtimeToolResources };
+    delete runtimeToolResources[EToolResources.execute_code];
+  }
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -1180,9 +1461,17 @@ export async function initializeAgent(
    * that lookup runs whichever way the setting is configured. */
   const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
   const wantsSearchFiles = toolResourceSet.has(EToolResources.file_search);
+  const fileConsumers: TurnFileConsumers = {
+    executeCode: wantsCodeFiles,
+    fileSearch: wantsSearchFiles,
+  };
   const wantsProvisioning = wantsCodeFiles || wantsSearchFiles;
 
-  if (conversationId != null && (resendFiles || wantsProvisioning)) {
+  if (
+    authorizedRunFiles === undefined &&
+    conversationId != null &&
+    (resendFiles || wantsProvisioning)
+  ) {
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
@@ -1317,7 +1606,7 @@ export async function initializeAgent(
   const snapshotFileIds = [...requestFileIds, ...toolFileIds, ...deferredProvisionFileIds];
   let requestUsageFiles: IMongoFile[] = [];
   let toolUsageFiles: IMongoFile[] = [];
-  if (requestFileOwnerScope && snapshotFileIds.length > 0) {
+  if (authorizedRunFiles === undefined && requestFileOwnerScope && snapshotFileIds.length > 0) {
     const hydratedFiles =
       ((await db.getFiles(
         {
@@ -1345,8 +1634,26 @@ export async function initializeAgent(
       .map((fileId) => hydratedFilesById.get(fileId))
       .filter((file): file is IMongoFile => file != null);
   }
-  if (requestFiles.length > 0 || toolFileIds.length > 0) {
+  if (authorizedRunFiles !== undefined) {
+    for (const file of authorizedRunFiles) {
+      if (
+        file.user !== requestFileOwnerId ||
+        (file.tenantId ?? null) !== (user?.tenantId ?? null)
+      ) {
+        throw new Error('Run file inputs do not match the authenticated owner');
+      }
+    }
+    currentFiles = authorizedRunFiles.map((file) => structuredClone(file));
+  } else if (requestFiles.length > 0 || toolFileIds.length > 0) {
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
+  }
+  if (currentFiles?.length) {
+    /* Before any check reads the route: endpoint filtering, model-bound limits and content
+     * inspection below all have to judge each file by the route this turn delivers it by. */
+    currentFiles = applyTurnDelivery(currentFiles, {
+      routing: deliveryRouting,
+      consumers: fileConsumers,
+    });
   }
 
   let endpointFileType: EModelEndpoint | undefined;
@@ -1363,7 +1670,9 @@ export async function initializeAgent(
       skipTotalSizeLimit: true,
       preserveTextSources: true,
     });
-    const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+    const requestUsageFileIds = new Set(
+      (authorizedRunFiles ?? requestUsageFiles).map((file) => file.file_id),
+    );
     assertAgentAttachmentLimits({
       attachments: currentFiles.filter(
         (file) => requestUsageFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
@@ -1467,8 +1776,8 @@ export async function initializeAgent(
     attachments: currentFiles
       ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
       : undefined,
-    tool_resources: agent.tool_resources,
-    requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    tool_resources: runtimeToolResources,
+    requestFileSet: new Set((authorizedRunFiles ?? requestFiles).map((file) => file.file_id)),
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
@@ -1612,7 +1921,12 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
-    if (isFatalAgentInitializationError(err, { allowExpectedMCPFallback: true })) {
+    if (
+      isFatalAgentInitializationError(err, {
+        signal: params.signal,
+        allowExpectedMCPFallback: true,
+      })
+    ) {
       throw err;
     }
     if (extraAllowedToolNames.length > 0) {
@@ -1705,59 +2019,6 @@ export async function initializeAgent(
     }
   }
 
-  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
-    provider,
-    appConfig,
-  });
-  if (overrideProvider !== agent.provider) {
-    agent.provider = overrideProvider;
-  }
-
-  const finalModelOptions = {
-    ...modelOptions,
-    model: agent.model,
-  };
-
-  const options: InitializeResultBase = await getOptions({
-    runtime: {
-      appConfig,
-      user,
-      requestBody: runtime.requestBody,
-    },
-    endpoint: provider,
-    model_parameters: finalModelOptions,
-    db,
-  });
-
-  const llmConfig = options.llmConfig as Record<string, unknown>;
-  const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : (llmConfig?.model as string);
-  const maxOutputTokens = optionalChainWithEmptyCheck(
-    llmConfig?.maxOutputTokens as number | undefined,
-    llmConfig?.maxTokens as number | undefined,
-    0,
-  );
-  const agentMaxContextTokens = optionalChainWithEmptyCheck(
-    maxContextTokens,
-    getModelMaxTokens(
-      tokensModel ?? '',
-      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
-      options.endpointTokenConfig,
-    ),
-    DEFAULT_MAX_CONTEXT_TOKENS,
-  );
-
-  if (
-    agent.endpoint === EModelEndpoint.azureOpenAI &&
-    (llmConfig?.azureOpenAIApiInstanceName as string | undefined) == null
-  ) {
-    agent.provider = Providers.OPENAI;
-  }
-
-  if (options.provider != null) {
-    agent.provider = options.provider;
-  }
-
   /**
    * Unify code-execution tools around `bash_tool` + `read_file` when the
    * agent explicitly lists `execute_code` in its tools and the admin
@@ -1813,6 +2074,7 @@ export async function initializeAgent(
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
       workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
+      workspaceEnvironment: trustedCodeExecutionContext.codeWorkspace?.environment,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -1947,6 +2209,7 @@ export async function initializeAgent(
     provider: agent.provider,
     tools: options.tools,
     toolDefinitions,
+    webSearchDenied,
   });
   const hasProviderTools = (providerTools?.length ?? 0) > 0;
 
@@ -2029,6 +2292,8 @@ export async function initializeAgent(
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
       userId: user?.id,
+      workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
+      workspaceEnvironment: trustedCodeExecutionContext.codeWorkspace?.environment,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
       maxCatalogSkills: getMaxCatalogSkills(runtime),
@@ -2102,9 +2367,66 @@ export async function initializeAgent(
   const toMongoFiles = (files: Array<TFile | undefined> | undefined): IMongoFile[] =>
     (files ?? []).filter((a): a is TFile => a != null).map((a) => a as unknown as IMongoFile);
 
-  const finalAttachments: IMongoFile[] = toMongoFiles(primedAttachments);
-  const requestAttachments: IMongoFile[] = toMongoFiles(primedRequestAttachments);
-  const agentContextAttachments: IMongoFile[] = toMongoFiles(primedAgentContextAttachments);
+  const loadedFileToolNames = new Set([
+    ...(structuredTools ?? []).map((tool) => tool.name),
+    ...(toolDefinitions ?? []).map((tool) => tool.name),
+  ]);
+  const finalFileConsumers: TurnFileConsumers = {
+    executeCode:
+      wantsCodeFiles &&
+      (loadedFileToolNames.has(Tools.execute_code) ||
+        (loadedFileToolNames.has('bash_tool') && loadedFileToolNames.has('read_file'))),
+    fileSearch: wantsSearchFiles && loadedFileToolNames.has(Tools.file_search),
+  };
+  const consumersChanged =
+    fileConsumers.executeCode !== finalFileConsumers.executeCode ||
+    fileConsumers.fileSearch !== finalFileConsumers.fileSearch;
+  Object.assign(fileConsumers, finalFileConsumers);
+  const finalizeAttachments = (files: Array<TFile | undefined> | undefined): IMongoFile[] => {
+    const hydrated = toMongoFiles(files);
+    return consumersChanged
+      ? applyTurnDelivery(hydrated, { routing: deliveryRouting, consumers: fileConsumers })
+      : hydrated;
+  };
+  const finalAttachments = finalizeAttachments(primedAttachments);
+  const finalRequestAttachments = consumersChanged
+    ? applyTurnDelivery(
+        (primedRequestAttachments ?? []).filter((file): file is TFile => file != null),
+        {
+          routing: deliveryRouting,
+          consumers: fileConsumers,
+        },
+      )
+    : primedRequestAttachments;
+  const requestAttachments = toMongoFiles(finalRequestAttachments);
+  const agentContextAttachments = finalizeAttachments(primedAgentContextAttachments);
+  if (consumersChanged) {
+    /* A loader may drop a reader, including a skill extra on retry. Newly model-bound text
+     * must pass admission before it can escape initialization, just like initial fallback. */
+    const admissionFileIds = new Set(
+      (authorizedRunFiles ?? requestUsageFiles).map((file) => file.file_id),
+    );
+    assertAgentAttachmentLimits({
+      attachments: requestAttachments.filter(
+        (file) => admissionFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
+      ),
+      fileConfig: appConfig?.fileConfig,
+      endpoint: agent.endpoint ?? '',
+      endpointType: endpointFileType,
+    });
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      files: [...finalAttachments, ...requestAttachments, ...agentContextAttachments],
+    });
+  }
+  const currentRequestFileIds = new Set(requestFileIds);
+  const currentRequestAttachments: TFile[] = (finalRequestAttachments ?? [])
+    .filter((file): file is TFile => file != null && currentRequestFileIds.has(file.file_id))
+    .map((file) => ({
+      ...file,
+      user: String(file.user),
+      ...(file._id == null ? {} : { _id: String(file._id) }),
+    }));
 
   const compatibilityAttachments =
     finalAttachments.length > 0
@@ -2131,8 +2453,10 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
+    azureOptions: options.azureOptions,
     resendFiles,
     imageDetail,
+    deliveryRouting,
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,
@@ -2165,7 +2489,9 @@ export async function initializeAgent(
     alwaysApplySkillPrimes,
     attachments: compatibilityAttachments,
     requestAttachments,
+    currentRequestAttachments,
     agentContextAttachments,
+    fileConsumers,
     toolContextMap: toolContextMap ?? {},
     dynamicToolContextMap: dynamicToolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

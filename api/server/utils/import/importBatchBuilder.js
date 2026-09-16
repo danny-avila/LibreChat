@@ -3,6 +3,7 @@ const {
   assertConversationImportWriteSize,
   assertModelBoundContent,
   assertConversationImportContentAllowed,
+  reportLocatorTraversalFailure,
   executeConversationImportWrites,
 } = require('@librechat/api');
 const {
@@ -56,6 +57,7 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters, legac
 async function assertConversationContentAllowed(filters, snapshot, resolutionContext = {}) {
   return assertConversationImportContentAllowed(filters, snapshot, {
     ...resolutionContext,
+    onTraversalFailure: reportLocatorTraversalFailure,
     assertModelBoundContent,
   });
 }

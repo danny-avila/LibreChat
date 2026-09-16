@@ -285,6 +285,12 @@ export interface ConversationMethods {
     conversationId: string,
     pinned: boolean,
   ): Promise<IConversation | null>;
+  replaceConvoCodeEnvironmentDecision(params: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }): Promise<IConversation | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
     user: string,
@@ -2175,6 +2181,15 @@ export function createConversationMethods(
       delete update.isTemporary;
       delete update.expiredAt;
       delete update.initial_agent_id;
+      /** Ordinary saves may seed a decision, but only an explicit move may replace it. */
+      const decisionOnInsert = {
+        ...(convo.codeEnvironmentMode != null && {
+          codeEnvironmentMode: convo.codeEnvironmentMode,
+        }),
+        ...(convo.codeWorkspaces != null && { codeWorkspaces: convo.codeWorkspaces }),
+      };
+      delete update.codeEnvironmentMode;
+      delete update.codeWorkspaces;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
@@ -2183,6 +2198,8 @@ export function createConversationMethods(
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
       delete unsetFields.initial_agent_id;
+      delete unsetFields.codeEnvironmentMode;
+      delete unsetFields.codeWorkspaces;
       stripActorCheckpointFields(unsetFields);
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
@@ -2312,6 +2329,7 @@ export function createConversationMethods(
           : createdAtOnInsert;
         operation.$setOnInsert = {
           initial_agent_id: initialAgentId,
+          ...decisionOnInsert,
           ...retentionOnInsert,
           ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
         };
@@ -2532,6 +2550,41 @@ export function createConversationMethods(
   }
 
   /**
+   * Compare-and-swap for an owner's explicit move of an attached code-environment decision.
+   * The filter repeats the stored decision being replaced, so a writer that changed it first
+   * leaves this update unmatched rather than overwritten. A missing and a null mode both
+   * describe a legacy decision inferred from its selections.
+   */
+  async function replaceConvoCodeEnvironmentDecision({
+    user,
+    conversationId,
+    expected,
+    codeWorkspaces,
+  }: {
+    user: string;
+    conversationId: string;
+    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+  }) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        {
+          conversationId,
+          user,
+          codeEnvironmentMode: expected.codeEnvironmentMode ?? { $in: [null] },
+          codeWorkspaces: expected.codeWorkspaces ?? { $in: [null] },
+        },
+        { $set: { codeEnvironmentMode: 'attached', codeWorkspaces } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[replaceConvoCodeEnvironmentDecision] Error moving code environment', error);
+      throw new Error('Error moving code environment');
+    }
+  }
+
+  /**
    * Saves multiple conversations in bulk.
    */
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
@@ -2601,7 +2654,7 @@ export function createConversationMethods(
 
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
-        const sanitized = { ...convo };
+        const { codeEnvironmentMode, codeWorkspaces, ...sanitized } = convo;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
@@ -2635,7 +2688,11 @@ export function createConversationMethods(
             },
             update: {
               $set: sanitized,
-              $setOnInsert: { initial_agent_id: null },
+              $setOnInsert: {
+                initial_agent_id: null,
+                ...(codeEnvironmentMode != null && { codeEnvironmentMode }),
+                ...(codeWorkspaces != null && { codeWorkspaces }),
+              },
             },
             upsert: true,
             timestamps: false,
@@ -2896,8 +2953,11 @@ export function createConversationMethods(
       sortObj._id = sortOrder;
 
       const convos = await Conversation.find(query)
+        /* `isArchived` rides along so a row can offer archive or restore from its own state:
+           the sidebar lists archived and unarchived chats in the same session, and the
+           active list also carries the unarchived pins beside them. */
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
+          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -3345,6 +3405,7 @@ export function createConversationMethods(
     deleteNullOrEmptyConversations,
     saveConvo,
     setConvoPinned,
+    replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,
     getConvosQueried,

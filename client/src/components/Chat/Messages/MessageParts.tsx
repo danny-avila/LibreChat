@@ -9,9 +9,10 @@ import {
   areMessageRowPropsEqual,
   getHeaderPrefixForScreenReader,
 } from '~/utils';
-import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
+import { useLocalize, useAttachments, useMessageHelpers, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
+import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
+import { getHeaderHoverLabel } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -45,6 +46,7 @@ function MessageParts(props: TMessageProps) {
     copyToClipboard,
     getCanCopy,
     regenerateMessage,
+    hasConfiguredSender,
   } = useMessageHelpers(props, searchResults);
 
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -112,7 +114,8 @@ function MessageParts(props: TMessageProps) {
           id={messageId ?? ''}
           icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
           label={name}
-          hoverLabel={getHeaderModelName(
+          hoverLabel={getHeaderHoverLabel(
+            hasConfiguredSender,
             agent?.model,
             assistant?.model,
             message.model,
@@ -166,24 +169,26 @@ function MessageParts(props: TMessageProps) {
             </SubRow>
           }
         >
-          <ContentParts
-            edit={edit}
-            isLast={isLast}
-            enterEdit={enterEdit}
-            siblingIdx={siblingIdx}
-            attachments={attachments}
-            isSubmitting={isSubmitting}
-            searchResults={searchResults}
-            manualSkills={message.manualSkills}
-            messageId={message.messageId}
-            authorHeader={authorHeader}
-            setSiblingIdx={setSiblingIdx}
-            isCreatedByUser={message.isCreatedByUser}
-            conversationId={conversation?.conversationId}
-            showThinking={showThinking}
-            isLatestMessage={messageId === latestMessageId}
-            content={message.content as Array<TMessageContentParts | undefined>}
-          />
+          <ErrorSourceProvider message={message}>
+            <ContentParts
+              edit={edit}
+              isLast={isLast}
+              enterEdit={enterEdit}
+              siblingIdx={siblingIdx}
+              attachments={attachments}
+              isSubmitting={isSubmitting}
+              searchResults={searchResults}
+              manualSkills={message.manualSkills}
+              messageId={message.messageId}
+              authorHeader={authorHeader}
+              setSiblingIdx={setSiblingIdx}
+              isCreatedByUser={message.isCreatedByUser}
+              conversationId={conversation?.conversationId}
+              showThinking={showThinking}
+              isLatestMessage={messageId === latestMessageId}
+              content={message.content as Array<TMessageContentParts | undefined>}
+            />
+          </ErrorSourceProvider>
         </MessageRow>
       </div>
     </div>

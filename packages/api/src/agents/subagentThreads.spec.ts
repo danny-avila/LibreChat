@@ -1413,9 +1413,12 @@ describe('SubagentThreadTaskStore', () => {
     let ownerActive = true;
     const options = {
       isOwnerActive: async () => ownerActive,
-      leaseTtlMs: 60,
+      // Exercise owner cancellation, not lease expiry. Keep the lease beyond the
+      // drain deadline so slow CI database operations cannot bypass child startup
+      // or make the drain succeed without the worker releasing its lease.
+      leaseTtlMs: 30_000,
       leaseHeartbeatMs: 10,
-      ownerDrainTimeoutMs: 1_000,
+      ownerDrainTimeoutMs: 5_000,
       ownerDrainPollMs: 5,
     };
     const workerStore = new SubagentThreadTaskStore(methods, options);
@@ -4278,12 +4281,16 @@ describe('SubagentThreadTaskStore', () => {
     );
     const taskId = requireAccepted(started).task.taskId;
     const threadId = requireThreadId(started);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if ((await methods.getConvo(userId, threadId)) != null) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
     expect(await methods.getConvo(userId, threadId)).not.toBeNull();
 
     const accepted = await ownerStore.controlTask(

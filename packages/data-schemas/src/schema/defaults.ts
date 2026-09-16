@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { CODE_APPROVAL_MODES } from 'librechat-data-provider';
+import { CODE_APPROVAL_MODES, CODE_ENVIRONMENT_MODES } from 'librechat-data-provider';
 
 // @ts-ignore
 export const conversationPreset: {
@@ -118,6 +118,10 @@ export const conversationPreset: {
     type: StringConstructor;
   };
   codeApprovalMode: {
+    type: StringConstructor;
+    enum: string[];
+  };
+  codeEnvironmentMode: {
     type: StringConstructor;
     enum: string[];
   };
@@ -315,6 +319,10 @@ export const conversationPreset: {
   codeApprovalMode: {
     type: String,
     enum: [...CODE_APPROVAL_MODES],
+  },
+  codeEnvironmentMode: {
+    type: String,
+    enum: [...CODE_ENVIRONMENT_MODES],
   },
   codeWorkspaces: {
     type: [

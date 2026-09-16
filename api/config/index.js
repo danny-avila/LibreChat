@@ -44,6 +44,7 @@ function getActionFlowStateManager(flowsCache) {
   if (!actionFlowManager) {
     actionFlowManager = new FlowStateManager(flowsCache, {
       ttl: Time.ONE_MINUTE * 3,
+      redisScriptExecutor: evalKeyvRedisScript,
     });
   }
   return actionFlowManager;
