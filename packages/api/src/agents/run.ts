@@ -1879,10 +1879,17 @@ function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unkn
          * entries rather than one of the arrays above, so its presence and
          * the targets it offers have to enter the identity here or enabling,
          * disabling or retargeting subagents would not retire the key.
+         *
+         * `type` is the value the generated tool accepts as `subagent_type`,
+         * so it belongs here too: swapping a child for a different agent that
+         * happens to share a display name changes the accepted enum. The
+         * remaining fields — `agentInputs`, `maxTurns`, `allowNested` — govern
+         * execution and never reach the model.
          */
         ...(input.subagentConfigs ?? []).map((config) => ({
           name: `subagent:${config.name}`,
           description: config.description,
+          subagentType: config.type,
         })),
       ],
       responseSchema: options.response_format,
