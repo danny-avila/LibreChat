@@ -4,6 +4,7 @@ import {
   applyPendingPastesToDraft,
   clearAllDrafts,
   clearComposerDrafts,
+  clearFilesDraft,
   decodeBase64,
   encodeBase64,
   resolvePendingPasteInsertStart,
@@ -793,6 +794,73 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
 
     expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(stamped);
+  });
+});
+
+describe('clearFilesDraft', () => {
+  const newChatKey = getNewConversationDraftId();
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('discards the attachments and keeps the text', () => {
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).fileIds).toEqual([]);
+    expect(getDraft(newChatKey)).toBe('half-written message');
+  });
+
+  it('keeps this tab claim on the text it left behind', () => {
+    /** `setFilesDraft` drops the whole record once nothing is attached, and that record is the
+     * only ownership stamp the shared text draft has: without it another tab's New Chat would be
+     * free to clear text this tab is still holding. */
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).tabId).toBe(getBrowserTabId());
+  });
+
+  /** The reset empties the file map, and `useAutoSave`'s attachment effect then writes the draft
+   * with nothing in it. That write used to delete the record this helper had just re-stamped, so
+   * the preserved text sat unowned until the next keystroke and another live tab finishing a
+   * new-chat run could clear it as though nobody were holding it. */
+  it('keeps the claim through the empty-map write the reset triggers', () => {
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+    /** What the attachment effect writes once the composer's file map is empty. */
+    setFilesDraft(newChatKey, { fileIds: [], pastedTextIds: [], pendingPastes: {} });
+
+    expect(getFilesDraft(newChatKey).tabId).toBe(getBrowserTabId());
+    expect(getDraft(newChatKey)).toBe('half-written message');
+  });
+
+  it('leaves no claim behind when there was no text to hold', () => {
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${newChatKey}`)).toBeNull();
+  });
+
+  it('refuses a record another live tab owns', () => {
+    markTabLive('other-tab');
+    localStorage.setItem(
+      `${LocalStorageKeys.FILES_DRAFT}${newChatKey}`,
+      JSON.stringify({ fileIds: ['other-tab-file'], tabId: 'other-tab' }),
+    );
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).fileIds).toEqual(['other-tab-file']);
   });
 });
 

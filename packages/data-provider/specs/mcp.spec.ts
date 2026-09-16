@@ -586,6 +586,20 @@ describe('MCP schemas', () => {
       expect(result.success).toBe(false);
     });
 
+    it('should reject the RFC 8707 resource opt-out from user-managed OAuth configuration', () => {
+      // Stripping it silently would save the server while discarding the requested
+      // opt-out, so the flow would keep sending `resource` with nothing telling the user.
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          send_resource_parameter: false,
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
     it('should continue accepting non-audience OAuth fields from user-managed configuration', () => {
       const result = MCPServerUserInputSchema.safeParse({
         type: 'streamable-http',
@@ -733,6 +747,39 @@ describe('MCP schemas', () => {
       });
 
       expect(result.success).toBe(false);
+    });
+
+    it('should accept send_resource_parameter = false (Entra opt-out) from admin config', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize',
+          token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+          client_id: 'app-id',
+          client_secret: 'secret',
+          scope: 'api://app-id/access_as_user openid offline_access',
+          send_resource_parameter: false,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.send_resource_parameter).toBe(false);
+      }
+    });
+
+    it('should default send_resource_parameter to undefined when omitted', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: { client_id: 'app-id' },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.send_resource_parameter).toBeUndefined();
+      }
     });
 
     it('should accept forward_audience_on_refresh = false (Cognito opt-out)', () => {

@@ -33,6 +33,7 @@ export type CodeEnvironmentMode = (typeof CODE_ENVIRONMENT_MODES)[number];
 export interface CodeWorkspaceDescriptor {
   id: string;
   name?: string;
+  instructions?: RepositoryInstructionDescriptor[];
   /** Omitted when every worker-level operation applies to this workspace. */
   operations?: CodeWorkspaceOperation[];
   environment?: {
@@ -41,6 +42,32 @@ export interface CodeWorkspaceDescriptor {
     ref?: string;
     actions: string[];
   };
+}
+
+export type RepositoryInstructionMode = 'prefer' | 'defer' | 'off';
+export interface RepositoryInstructionDescriptor {
+  path: 'AGENTS.md' | 'CLAUDE.md';
+  bytes: number;
+  sha256: string;
+  truncated: boolean;
+}
+export function isRepositoryInstructionDescriptor(
+  value: unknown,
+): value is RepositoryInstructionDescriptor {
+  if (value == null || typeof value !== 'object') return false;
+  const descriptor = value as Record<string, unknown>;
+  return (
+    Object.keys(descriptor).every((key) =>
+      ['path', 'bytes', 'sha256', 'truncated'].includes(key),
+    ) &&
+    (descriptor.path === 'AGENTS.md' || descriptor.path === 'CLAUDE.md') &&
+    Number.isSafeInteger(descriptor.bytes) &&
+    Number(descriptor.bytes) >= 0 &&
+    Number(descriptor.bytes) <= 32768 &&
+    typeof descriptor.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(descriptor.sha256) &&
+    typeof descriptor.truncated === 'boolean'
+  );
 }
 
 export function isCodeWorkspaceEnvironment(

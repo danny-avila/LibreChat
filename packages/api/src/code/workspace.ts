@@ -98,6 +98,7 @@ export interface WorkspaceReadRequest {
   path: string;
   startLine?: number;
   maxLines?: number;
+  instructionSha256?: string;
 }
 
 export interface WorkspaceSearchRequest {
@@ -257,12 +258,27 @@ export class WorkspaceToolHttpError extends Error {
     public readonly upstreamBodyTruncated = false,
   ) {
     super(
-      `Workspace tool request ${reason}` +
+      (reason === 'rejected' &&
+      isWorkspaceAdmissionTimeout(upstreamStatus, upstreamBody, upstreamBodyTruncated)
+        ? 'Workspace capacity was unavailable before the queue deadline. The operation was not started. Wait for active work to finish or select an independent workspace on a machine with available capacity.'
+        : `Workspace tool request ${reason}`) +
         (upstreamStatus == null ? '' : ` (upstreamStatus: ${upstreamStatus})`) +
         (upstreamBody ? `; upstreamBody: ${JSON.stringify(upstreamBody)}` : '') +
         (upstreamBodyTruncated ? ' [body truncated or incomplete]' : ''),
     );
     this.name = 'WorkspaceToolHttpError';
+  }
+}
+
+function isWorkspaceAdmissionTimeout(status?: number, body?: string, truncated = false): boolean {
+  if (status !== 503 || !body || truncated || body.length > MAX_ERROR_BODY_BYTES) {
+    return false;
+  }
+  try {
+    const parsed: { code?: string } | null = JSON.parse(body);
+    return parsed?.code === 'WORKSPACE_QUEUE_TIMEOUT';
+  } catch {
+    return false;
   }
 }
 
@@ -447,6 +463,14 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        /^[a-f0-9]{64}$/.test(request.instructionSha256) &&
+        (request.path === 'AGENTS.md' || request.path === 'CLAUDE.md') &&
+        request.startLine === undefined &&
+        request.maxLines === undefined
+      );
+    }
     return (
       isSafePath(request.path) &&
       (request.startLine == null ||
@@ -518,6 +542,18 @@ function isValidResult(
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        hasOnlyKeys(value, READ_RESULT_KEYS) &&
+        value.path === request.path &&
+        typeof value.content === 'string' &&
+        Buffer.byteLength(value.content) <= 32768 &&
+        value.startLine === 1 &&
+        value.endLine === value.content.split('\n').length &&
+        typeof value.truncated === 'boolean' &&
+        value.nextStartLine === undefined
+      );
+    }
     const startLine = request.startLine ?? 1;
     const maxLines = request.maxLines ?? 200;
     const content = typeof value.content === 'string' ? value.content : null;

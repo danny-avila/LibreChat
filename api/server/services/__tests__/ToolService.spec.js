@@ -3307,8 +3307,8 @@ describe('ToolService - Action Capability Gating', () => {
               (tool) => tool.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
             ),
           ).toBe(supported);
-          expect(mockGetAppConfig).not.toHaveBeenCalled();
-          expect(fetchSpy).not.toHaveBeenCalled();
+          expect(mockGetAppConfig).toHaveBeenCalledTimes(1);
+          expect(fetchSpy).toHaveBeenCalledTimes(1);
         } finally {
           fetchSpy.mockRestore();
           delete process.env.TEST_PTC_DEPLOYMENT_TOKEN;

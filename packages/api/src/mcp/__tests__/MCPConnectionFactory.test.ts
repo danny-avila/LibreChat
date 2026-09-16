@@ -190,6 +190,13 @@ describe('MCPConnectionFactory', () => {
           : undefined,
     );
     mockMCPOAuthHandler.assertStoredClientBinding.mockImplementation(() => undefined);
+    /**
+     * Automock returns `undefined` for a boolean predicate, which would read as
+     * "the flow's RFC 8707 decision no longer matches the config" and retire every
+     * pending flow. Default it to matching, the way the real implementation does when
+     * neither the flow nor the config opts out.
+     */
+    mockMCPOAuthHandler.matchesResourceParameterDecision.mockReturnValue(true);
     mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValue(true);
     mockMCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
       clientInfo: { client_id: 'persisted-client' },
@@ -891,6 +898,93 @@ describe('MCPConnectionFactory', () => {
         access_token: 'generation-a-access',
         credential_set_id: 'credential-set-a',
       });
+    });
+
+    it('replaces a recent PENDING OAuth flow whose resource-parameter decision changed', async () => {
+      /**
+       * An operator sets `send_resource_parameter: false` to repair a failing Entra
+       * login. The pending flow's authorization URL still carries `resource`, so
+       * replaying it would reissue the request that just failed. The stored client
+       * binding is unchanged here, so the resource-parameter check is the only thing
+       * that can retire the flow.
+       */
+      const currentConfig = {
+        type: 'sse' as const,
+        url: 'https://server-a.example.com/mcp',
+        initTimeout: 5000,
+        oauth: { send_resource_parameter: false },
+      } as t.SSEOptions;
+      const staleMetadata = {
+        serverName: 'test-server',
+        userId: 'user123',
+        serverUrl: 'https://server-a.example.com/mcp',
+        state: 'stale-state',
+        authorizationUrl:
+          'https://auth.example.com/old-authorize?resource=https%3A%2F%2Fserver-a.example.com%2Fmcp',
+        clientInfo: { client_id: 'dynamic-client' },
+        clientSource: 'dynamic' as const,
+        metadata: {
+          authorization_endpoint: 'https://auth.example.com/authorize',
+          token_endpoint: 'https://auth.example.com/token',
+        },
+      };
+      const freshTokens: MCPOAuthTokens = {
+        access_token: 'fresh-access-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const oauthStart = jest.fn();
+
+      mockProcessMCPEnv.mockReturnValue(currentConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPOAuthHandler.matchesResourceParameterDecision.mockReturnValue(false);
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        type: 'mcp_oauth',
+        metadata: staleMetadata,
+        createdAt: Date.now(),
+      });
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com/fresh-authorize',
+        flowId: 'fresh-flow',
+        flowMetadata: {
+          ...staleMetadata,
+          state: 'fresh-state',
+          authorizationUrl: 'https://auth.example.com/fresh-authorize',
+          sendResourceParameter: false,
+        },
+      });
+      mockFlowManager.createFlow.mockResolvedValue(freshTokens);
+
+      const factory = new InspectableMCPConnectionFactory(
+        { serverName: 'test-server', serverConfig: currentConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          oauthStart,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+
+      const result = await factory.handleOAuthRequiredForTest();
+
+      expect(mockMCPOAuthHandler.matchesResourceParameterDecision).toHaveBeenCalledWith(
+        expect.objectContaining({ state: 'stale-state' }),
+        currentConfig.oauth,
+      );
+      expect(result?.tokens).toEqual(freshTokens);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+      expect(oauthStart).toHaveBeenCalledWith('https://auth.example.com/fresh-authorize');
+      expect(oauthStart).not.toHaveBeenCalledWith(
+        expect.stringContaining('resource='),
+        expect.anything(),
+      );
     });
 
     it.each(['PENDING', 'COMPLETED'] as const)(

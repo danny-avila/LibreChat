@@ -46,6 +46,47 @@ describe('programmatic Bash Git identity', () => {
       await once(server, 'close');
     }
   });
+
+  test('pins a selected project on the real SDK no-tools route', async () => {
+    const received: { url?: string; workspace?: string | string[]; code: string }[] = [];
+    const server = createServer(async (req, res) => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      received.push({
+        url: req.url,
+        workspace: req.headers['x-librechat-code-workspace-id'],
+        code: JSON.parse(body).code,
+      });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'completed', stdout: 'done', stderr: '', files: [] }));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    try {
+      const bashTool = createGitIdentityProgrammaticBashTool(
+        {
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+          workspaceId: 'project-a',
+          authHeaders: () => ({}),
+        },
+        { name: 'Lia', email: 'lia@example.com' },
+      );
+      const invocationConfig = { tags: [], toolCall: { toolDefs: [] } };
+      await bashTool.func(
+        { code: 'printf done', tool_manifest: [], workspaceId: 'forged-project' },
+        undefined,
+        invocationConfig,
+      );
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ url: '/v1/exec/programmatic', workspace: 'project-a' });
+      expect(received[0].code).toContain("GIT_AUTHOR_NAME='Lia'");
+      expect(bashTool.description).toContain('selected persistent workspace');
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
 });
 
 function commandResponse(overrides: Record<string, unknown> = {}): Response {
