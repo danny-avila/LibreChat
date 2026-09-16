@@ -13,6 +13,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
+const { stripCacheBust } = require('./paths');
 
 /**
  * Saves a file to a specified output path with a new filename.
@@ -231,8 +232,8 @@ const deleteLocalFile = async (req, file) => {
   const appConfig = req.config;
   const { publicPath, uploads } = appConfig.paths;
 
-  /** Filepath stripped of query parameters (e.g., ?manual=true) */
-  const cleanFilepath = file.filepath.split('?')[0];
+  /** Filepath stripped of query parameters (e.g., ?manual=true, ?v=<timestamp>) */
+  const cleanFilepath = stripCacheBust(file.filepath);
 
   await deleteRagFile({ userId: req.user.id, file });
 
@@ -321,12 +322,14 @@ async function uploadLocalFile({ req, file, file_id }) {
  * Retrieves a readable stream for a file from local storage.
  *
  * @param {ServerRequest} req - The request object from Express
- * @param {string} filepath - The filepath.
+ * @param {string} requestedFilepath - The filepath, which may carry a cache-busting query string.
  * @returns {ReadableStream} A readable stream of the file.
  */
-async function getLocalFileStream(req, filepath) {
+async function getLocalFileStream(req, requestedFilepath) {
   try {
     const appConfig = req.config;
+    /** Reused code outputs persist a `?v=<timestamp>` suffix that no file on disk carries */
+    const filepath = stripCacheBust(requestedFilepath);
     if (filepath.includes('/uploads/')) {
       const basePath = filepath.split('/uploads/')[1];
 
