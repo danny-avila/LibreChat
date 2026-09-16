@@ -61,38 +61,56 @@ function callOf(call: ToolCallPart | undefined): ToolCallPreview | null {
   return null;
 }
 
+/** The run step a persisted tool call belongs to; parallel calls of one round share it. */
+function runStepOf(call: ToolCallPart | undefined): string | undefined {
+  return call != null && 'stepId' in call && typeof call.stepId === 'string'
+    ? call.stepId
+    : undefined;
+}
+
 /**
  * Splits a response's content into what each model call produced. A model call
- * writes text and requests tools; the next call begins where a tool call is
- * followed by more text, so those boundaries separate the steps.
+ * may reason, write text and request tools, in that order, so a new call begins
+ * where a tool call is followed by reasoning or text, or by a tool call from
+ * another run step (consecutive tool-only calls). Parallel calls share a step.
  */
 export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
   const parts: TMessageContentParts[] = message?.content ?? [];
   const steps: StepPreview[] = [];
   let current: StepPreview | null = null;
   let afterToolCall = false;
+  let lastRunStep: string | undefined;
+  const begin = () => {
+    current = { text: '', toolCalls: [] };
+    steps.push(current);
+    afterToolCall = false;
+    return current;
+  };
   for (const part of parts) {
     if (part.type === ContentTypes.TOOL_CALL) {
-      if (current == null) {
-        current = { text: '', toolCalls: [] };
-        steps.push(current);
-      }
+      const runStep = runStepOf(part.tool_call);
+      const nextRound =
+        afterToolCall && runStep != null && lastRunStep != null && runStep !== lastRunStep;
+      const step = current == null || nextRound ? begin() : current;
       const call = callOf(part.tool_call);
       if (call != null) {
-        current.toolCalls.push(call);
+        step.toolCalls.push(call);
       }
       afterToolCall = true;
+      lastRunStep = runStep ?? lastRunStep;
+      continue;
+    }
+    if (part.type === ContentTypes.THINK) {
+      if (afterToolCall) {
+        begin();
+      }
       continue;
     }
     if (part.type !== ContentTypes.TEXT) {
       continue;
     }
-    if (current == null || afterToolCall) {
-      current = { text: '', toolCalls: [] };
-      steps.push(current);
-      afterToolCall = false;
-    }
-    current.text = compact(`${current.text} ${textOf(part.text)}`);
+    const step = current == null || afterToolCall ? begin() : current;
+    step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
   if (steps.length === 0 && message?.text) {
     steps.push({ text: compact(message.text), toolCalls: [] });
@@ -103,8 +121,10 @@ export function buildStepPreviews(message: TMessage | undefined): StepPreview[] 
 /**
  * The one-line preview a ledger row shows beside a record's name, taken from the
  * chat's own message rather than from the tracing backend: the text a model call
- * wrote, or the arguments a tool was called with. Tool records are matched to
- * the message's tool calls by name, in the order they ran within their step.
+ * wrote, or the arguments a tool was called with. Only a step's own roots have
+ * one: the message describes the response's calls, not what ran inside a tool
+ * (a subagent's model calls, a tool's nested calls). Tool records are matched
+ * to the message's tool calls by name, in the order they ran within their step.
  */
 export function previewFor(
   node: TraceNode,
@@ -120,6 +140,9 @@ export function previewFor(
   if (previews == null || step == null || step.origin === 'title') {
     return undefined;
   }
+  if (!step.rootIds.includes(record.id)) {
+    return undefined;
+  }
   const preview = previews[step.index - 1];
   if (!preview) {
     return undefined;
@@ -132,23 +155,16 @@ export function previewFor(
   return match?.args || undefined;
 }
 
-/** How many earlier tool records of the same name the step holds, in ledger order. */
+/** How many earlier root tool records of the same name the step holds. */
 function toolOrdinal(node: TraceNode, model: TraceModel, rootIds: string[]): number {
   let ordinal = 0;
-  const stack = [...rootIds].reverse();
-  while (stack.length > 0) {
-    const current = model.nodes.get(stack.pop() ?? '');
-    if (!current) {
-      continue;
-    }
+  for (const id of rootIds) {
+    const current = model.nodes.get(id);
     if (current === node) {
-      return ordinal;
+      break;
     }
-    if (current.record.kind === 'tool' && current.record.name === node.record.name) {
+    if (current?.record.kind === 'tool' && current.record.name === node.record.name) {
       ordinal++;
-    }
-    for (let i = current.viewChildIds.length - 1; i >= 0; i--) {
-      stack.push(current.viewChildIds[i]);
     }
   }
   return ordinal;

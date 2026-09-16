@@ -70,6 +70,50 @@ describe('buildStepPreviews', () => {
     ]);
   });
 
+  it('separates consecutive tool-only rounds by run step and keeps parallel calls together', () => {
+    const rounds = message({
+      content: [
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'ls', args: {}, stepId: 'step-a' } },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { name: 'cat', args: { path: 'a' }, stepId: 'step-a' },
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { name: 'cat', args: { path: 'b' }, stepId: 'step-b' },
+        },
+        { type: ContentTypes.TEXT, text: 'Both read.' },
+      ],
+    } as Partial<TMessage>);
+
+    expect(buildStepPreviews(rounds)).toEqual([
+      {
+        text: '',
+        toolCalls: [
+          { name: 'ls', args: '' },
+          { name: 'cat', args: 'path: a' },
+        ],
+      },
+      { text: '', toolCalls: [{ name: 'cat', args: 'path: b' }] },
+      { text: 'Both read.', toolCalls: [] },
+    ]);
+  });
+
+  it('starts the next round at reasoning that follows a tool call', () => {
+    const rounds = message({
+      content: [
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'ls', args: {} } },
+        { type: ContentTypes.THINK, think: 'One more file.' },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'cat', args: { path: 'a' } } },
+      ],
+    } as Partial<TMessage>);
+
+    expect(buildStepPreviews(rounds)).toEqual([
+      { text: '', toolCalls: [{ name: 'ls', args: '' }] },
+      { text: '', toolCalls: [{ name: 'cat', args: 'path: a' }] },
+    ]);
+  });
+
   it('falls back to the message text and bounds long previews', () => {
     const long = 'word '.repeat(100);
     expect(buildStepPreviews(message({ text: long }))).toEqual([
@@ -137,6 +181,51 @@ describe('previewFor', () => {
       record({ id: 'c', kind: 'generation', startTime: at(4), endTime: at(5) }),
     ]);
     expect(previewFor(extra.nodes.get('c') as never, extra, previews)).toBeUndefined();
+  });
+
+  it('leaves what ran inside a tool, such as a subagent model call, without a preview', () => {
+    const nested = buildTraceModel([
+      record({ id: 'llm', kind: 'generation', name: 'llm', startTime: at(0), endTime: at(100) }),
+      record({
+        id: 'agent',
+        kind: 'tool',
+        name: 'run_agent',
+        startTime: at(200),
+        endTime: at(900),
+      }),
+      record({
+        id: 'inner-llm',
+        parentId: 'agent',
+        kind: 'generation',
+        name: 'llm',
+        startTime: at(300),
+        endTime: at(500),
+      }),
+      record({
+        id: 'inner-tool',
+        parentId: 'agent',
+        kind: 'tool',
+        name: 'run_agent',
+        startTime: at(600),
+        endTime: at(800),
+      }),
+    ]);
+    const delegating = buildPreviews([
+      message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Delegating.' },
+          { type: ContentTypes.TOOL_CALL, tool_call: { name: 'run_agent', args: { task: 'x' } } },
+        ],
+      } as Partial<TMessage>),
+    ]);
+    const nestedPreview = (id: string) =>
+      previewFor(nested.nodes.get(id) as never, nested, delegating);
+
+    expect(nestedPreview('llm')).toBe('Delegating.');
+    expect(nestedPreview('agent')).toBe('task: x');
+    expect(nestedPreview('inner-llm')).toBeUndefined();
+    expect(nestedPreview('inner-tool')).toBeUndefined();
+    expect(nested.turns[0].steps).toBe(1);
   });
 
   it('does not preview messages the user wrote', () => {
