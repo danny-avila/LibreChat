@@ -2128,3 +2128,35 @@ describe('recoverMCPServerCatalogs — discovery that outlives its budget', () =
     expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Discovery for closing'));
   });
 });
+
+it('recovers a catalog without loading an unused shadowed user API key', async () => {
+  const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+  const loadUserMCPAuthMap = jest.fn().mockResolvedValue({});
+  await recoverMCPServerCatalogs(
+    {
+      user,
+      servers: [
+        {
+          serverName: 'shadowed',
+          serverConfig: {
+            type: 'streamable-http',
+            url: 'https://shadowed.example.com/mcp',
+            apiKey: { source: 'user', authorization_type: 'basic' },
+            headers: { Authorization: 'Basic {{MCP_API_KEY}}' },
+            requestHeaders: { authorization: 'Bearer request-secret' },
+            customUserVars: { MCP_API_KEY: { title: 'API Key', description: 'Generated key' } },
+          },
+        },
+      ],
+    },
+    {
+      loadUserMCPAuthMap,
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue({}),
+      getRecoveryGeneration: jest.fn().mockResolvedValue('generation-1'),
+      recoveryTracker,
+    },
+  );
+  expect(loadUserMCPAuthMap).not.toHaveBeenCalled();
+  expect(discoverServerTools).toHaveBeenCalledTimes(1);
+});

@@ -1574,3 +1574,47 @@ describe('waitUntilDeadline', () => {
     await new Promise((resolve) => setImmediate(resolve));
   });
 });
+
+describe('shadowed generated user API keys', () => {
+  const config: ParsedServerConfig = {
+    type: 'streamable-http',
+    url: 'https://mcp.example.test/mcp',
+    apiKey: { source: 'user', authorization_type: 'bearer' },
+    headers: { Authorization: 'Bearer {{MCP_API_KEY}}' },
+    requestHeaders: { authorization: 'Bearer request-secret' },
+    customUserVars: { MCP_API_KEY: { title: 'API Key', description: 'Generated key' } },
+  };
+
+  it('removes only the unused generated requirement and preserves the declaration', () => {
+    expect(hasCustomUserVars(config)).toBe(false);
+    expect(getMissingCustomUserVars(config)).toEqual([]);
+    const effective = applyRequestHeaders(config);
+    expect(effective.customUserVars).toEqual({});
+    expect(getMissingCustomUserVars(effective)).toEqual([]);
+    expect(applyRequestHeaders(effective)).toBe(effective);
+    expect(getMissingCustomUserVars(toCatalogConnectionConfig(config))).toEqual(['MCP_API_KEY']);
+    expect(config.customUserVars).toHaveProperty('MCP_API_KEY');
+  });
+
+  it.each([
+    { requestHeaders: { authorization: 'Bearer {{MCP_API_KEY}}' } },
+    { headers: { Authorization: 'Bearer {{MCP_API_KEY}}', 'X-Key': '{{MCP_API_KEY}}' } },
+    { url: 'https://mcp.example.test/{{MCP_API_KEY}}' },
+    { oauth_headers: { 'X-Key': '{{MCP_API_KEY}}' } },
+    { requestHeaders: { 'X-Unrelated': 'value' } },
+  ])('retains a key referenced by the effective configuration: %j', (fields) => {
+    expect(getMissingCustomUserVars({ ...config, ...fields })).toEqual(['MCP_API_KEY']);
+  });
+
+  it('retains explicitly declared variables', () => {
+    const declared = {
+      ...config,
+      customUserVars: {
+        ...config.customUserVars,
+        REGION: { title: 'Region', description: 'Required region' },
+      },
+    };
+    expect(getMissingCustomUserVars(declared)).toEqual(['REGION']);
+    expect(hasCustomUserVars(declared)).toBe(true);
+  });
+});

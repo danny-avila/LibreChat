@@ -12,7 +12,7 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
-import { isAdminApiKeyOverridden } from './headers';
+import { isApiKeyHeaderOverridden } from './headers';
 import { isEnabled } from '~/utils/common';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -251,7 +251,7 @@ function mergeHeaderMaps<T extends string | undefined>(
 
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
   return [
-    isAdminApiKeyOverridden(config.apiKey, config.requestHeaders) ? undefined : config.apiKey?.key,
+    isApiKeyHeaderOverridden(config.apiKey, config.requestHeaders) ? undefined : config.apiKey?.key,
     config.args,
     config.env,
     config.requestHeaders == null
@@ -291,11 +291,22 @@ export function requiresOAuthMachinery(config: ParsedServerConfig): boolean {
   return isOAuthServer(config) || config.obo != null;
 }
 
-/** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
-export function hasCustomUserVars(
-  config: Pick<UserScopedConnectionConfig, 'customUserVars'>,
-): boolean {
-  return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+/** Required chat credentials, retaining explicit variables and any still-used generated key. */
+function requiredCustomUserVars(config: UserScopedConnectionConfig): string[] {
+  const keys = Object.keys(config.customUserVars ?? {});
+  if (
+    config.apiKey?.source !== 'user' ||
+    !isApiKeyHeaderOverridden(config.apiKey, config.requestHeaders) ||
+    placeholderBearingFields(config).some((value) => hasPlaceholder(value, /\{\{MCP_API_KEY\}\}/))
+  ) {
+    return keys;
+  }
+  return keys.filter((key) => key !== 'MCP_API_KEY');
+}
+
+/** Checks the effective chat requirements, without weakening catalog-only credentials. */
+export function hasCustomUserVars(config: UserScopedConnectionConfig): boolean {
+  return requiredCustomUserVars(config).length > 0;
 }
 
 function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
@@ -420,9 +431,15 @@ export function applyRequestHeaders<T extends MCPOptions>(config: T): T {
     ...carrier,
     headers: mergeHeaderMaps(carrier.headers, carrier.requestHeaders),
   };
-  if (carrier.apiKey && isAdminApiKeyOverridden(carrier.apiKey, carrier.requestHeaders)) {
+  if (carrier.apiKey && isApiKeyHeaderOverridden(carrier.apiKey, carrier.requestHeaders)) {
     /** Keep the explicit auth mode, but disarm its lower-priority header injection. */
     merged.apiKey = { ...carrier.apiKey, key: undefined };
+  }
+  if (carrier.customUserVars) {
+    const required = new Set(requiredCustomUserVars(carrier));
+    merged.customUserVars = Object.fromEntries(
+      Object.entries(carrier.customUserVars).filter(([key]) => required.has(key)),
+    );
   }
   delete merged.requestHeaders;
   return merged;
@@ -642,13 +659,13 @@ export function canBackfillSharedServerInstructions(config: UserScopedConnection
  * otherwise every tool call fails authentication. See issue #10969.
  */
 export function getMissingCustomUserVars(
-  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  config: UserScopedConnectionConfig,
   providedVars?: Record<string, string> | null,
 ): string[] {
   if (!hasCustomUserVars(config)) {
     return [];
   }
-  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+  return requiredCustomUserVars(config).filter((key) => {
     const value = providedVars?.[key];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
