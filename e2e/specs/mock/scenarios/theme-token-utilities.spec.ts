@@ -67,12 +67,18 @@ async function paintedColor(
 /** The account menu is the shortest path to an element the rename touched. */
 async function openAccountMenu(page: Page): Promise<Locator> {
   await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+  // Wait for the shell before asking where the account button is: probing visibility on a
+  // page that has not rendered reports the desktop sidebar as absent, and the mobile-only
+  // header toggle is then waited on forever.
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+    timeout: 30000,
+  });
   const trigger = page.getByTestId('nav-user');
-  if (!(await trigger.isVisible().catch(() => false))) {
+  if (!(await trigger.isVisible())) {
     // Below `md` the sidebar is a drawer, so the account button is behind the header toggle.
-    await page.getByTestId('header-open-sidebar-button').click();
+    await page.getByTestId('header-open-sidebar-button').click({ timeout: 15000 });
   }
-  await expect(trigger).toBeVisible({ timeout: 30000 });
+  await expect(trigger).toBeVisible({ timeout: 15000 });
   await trigger.click();
   const email = page.getByRole('note').filter({ hasText: getE2EUser().email }).first();
   await expect(email).toBeVisible({ timeout: 15000 });
