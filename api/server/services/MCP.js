@@ -42,6 +42,7 @@ const {
   isOAuthServer,
   isAbortError,
   isDirectOpenIDBearerRecoveryEnabled,
+  resolveDirectOpenIDBearerConfig,
   OpenIDReauthRequiredError,
   MCPAuthenticationRefreshError,
   MCPAuthenticationRejectedError,
@@ -507,6 +508,30 @@ async function resolveAllMcpConfigs(userId, user) {
 }
 
 /**
+ * Resolves the live session bearer for the early domain gate. The gate renders
+ * placeholders with the request-time user snapshot, which a stale OpenID access
+ * token poisons (`OpenIDReauthRequiredError`) before the connection path's
+ * recovery hook ever runs; resolving first refreshes the session token instead.
+ * Only the validation copy is resolved, `serverConfig` keeps its placeholder,
+ * so downstream direct-bearer recovery stays enabled.
+ * @param {Object} params
+ * @param {import('@librechat/api').ParsedServerConfig} params.serverConfig
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {AbortSignal} [params.signal]
+ * @returns {Promise<import('@librechat/api').ParsedServerConfig>}
+ */
+async function resolveEarlyValidationConfig({ serverConfig, upstreamTokenProvider, signal }) {
+  if (upstreamTokenProvider == null || !isDirectOpenIDBearerRecoveryEnabled(serverConfig)) {
+    return serverConfig;
+  }
+  return await resolveDirectOpenIDBearerConfig({
+    signal,
+    config: serverConfig,
+    upstreamTokenProvider,
+  });
+}
+
+/**
  * Best-effort early gate; the authoritative check is
  * `assertResolvedRuntimeConfigAllowed` in `@librechat/api`, whose resolution
  * this must mirror. Graph placeholders resolve later (async), so a URL still
@@ -899,7 +924,11 @@ async function createMCPTools({
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
-      serverConfig,
+      serverConfig: await resolveEarlyValidationConfig({
+        serverConfig,
+        upstreamTokenProvider,
+        signal,
+      }),
       user,
       requestBody,
       userMCPAuthMap,
@@ -1072,7 +1101,11 @@ async function createMCPTool({
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
-      serverConfig,
+      serverConfig: await resolveEarlyValidationConfig({
+        serverConfig,
+        upstreamTokenProvider,
+        signal,
+      }),
       user,
       requestBody,
       userMCPAuthMap,
