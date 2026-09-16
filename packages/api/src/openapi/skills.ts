@@ -10,8 +10,12 @@ import {
   skillFileUpdateSchema,
   skillFrontmatterValueSchema,
 } from '../skills/management';
+import {
+  unauthorizedResponseSchema,
+  accountDeletionResponseSchema,
+  messageResponseSchema,
+} from './errors';
 import { agentManagementListSchema, agentManagementErrorSchema } from '../agents/management';
-import { unauthorizedResponseSchema, accountDeletionResponseSchema } from './errors';
 
 const TAG = 'Skills';
 const SECURITY = ['oidcBearer'];
@@ -48,13 +52,18 @@ export const skillComponentSchemas: Record<string, ZodTypeAny> = {
 const errorResponses = [
   { status: 400, description: 'Invalid request', schema: agentManagementErrorSchema },
   { status: 401, description: 'Authentication failed', schema: unauthorizedResponseSchema },
-  { status: 403, description: 'Permission denied', schema: agentManagementErrorSchema },
+  {
+    status: 403,
+    description: 'Permission denied, or the caller is banned',
+    schema: z.union([agentManagementErrorSchema, messageResponseSchema]),
+  },
   { status: 404, description: 'Not found', schema: agentManagementErrorSchema },
   {
     status: 409,
     description: 'The bound account is being deleted',
     schema: accountDeletionResponseSchema,
   },
+  { status: 500, description: 'Internal server error', schema: agentManagementErrorSchema },
 ];
 
 export const skillContracts: EndpointContract[] = [
@@ -148,6 +157,7 @@ export const skillContracts: EndpointContract[] = [
     responses: [
       { status: 200, description: 'The file was written', schema: skillFileUpdatedSchema },
       ...errorResponses,
+      { status: 429, description: 'Too many file-write requests', schema: messageResponseSchema },
     ],
   },
 ];

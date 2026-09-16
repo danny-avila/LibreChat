@@ -16,3 +16,11 @@ export const unauthorizedResponseSchema: z.ZodType<{ error: string }> = z
 export const accountDeletionResponseSchema: z.ZodType<{ error: string; code: string }> = z
   .object({ error: z.string(), code: z.string() })
   .strict();
+
+/**
+ * The ban middleware (403) and the default file-upload limiter (429) send a flat `{ message }`
+ * body. This is a fourth error shape, distinct from the nested, one-field, and two-field shapes.
+ */
+export const messageResponseSchema: z.ZodType<{ message: string }> = z
+  .object({ message: z.string() })
+  .strict();
