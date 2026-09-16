@@ -572,9 +572,28 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
 }
 
 /** Whether a server can share one operator-owned connection across all users. */
+/**
+ * Whether the config declares chat-only headers. Guards against a truthy `{}`
+ * the way `hasCustomUserVars` does.
+ */
+function hasChatOnlyHeaders(config: UserScopedConnectionConfig): boolean {
+  return !!config.requestHeaders && Object.keys(config.requestHeaders).length > 0;
+}
+
 export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
   return (
-    config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
+    config.startup !== false &&
+    !isUserSourced(config) &&
+    !requiresUserScopedConnection(config) &&
+    /**
+     * One session cannot serve both sides of `requestHeaders`: an app-shared
+     * connection's own `initialize` and `tools/list` are catalog requests that
+     * must omit them, while its chat tool calls must send them. Placeholder
+     * values are already excluded through `requiresUserScopedConnection`; STATIC
+     * values reach here, and sharing would bake chat-only headers into the
+     * startup handshake every later catalog read reuses.
+     */
+    !hasChatOnlyHeaders(config)
   );
 }
 

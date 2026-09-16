@@ -8,6 +8,7 @@ import {
   redactAllServerSecrets,
   redactServerSecrets,
   requiresUserScopedConnection,
+  canUseAppConnection,
   isInvalidClientMessage,
   isClientRejectionMessage,
   getMissingCustomUserVars,
@@ -1056,6 +1057,28 @@ describe('operator requestHeaders', () => {
       expect(requiresEphemeralUserConnection(untrusted)).toBe(false);
       expect(getMissingRuntimeBodyPlaceholderFields(untrusted)).toEqual([]);
     }
+  });
+
+  it('keeps a server with chat-only headers off the shared app connection', () => {
+    const shareable = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      source: 'yaml',
+    } as ParsedServerConfig;
+
+    expect(canUseAppConnection(shareable)).toBe(true);
+    /** Static values too: the shared connection's own handshake is catalog work. */
+    expect(
+      canUseAppConnection({
+        ...shareable,
+        requestHeaders: { 'X-Workspace': 'workspace-1' },
+      } as ParsedServerConfig),
+    ).toBe(false);
+    expect(canUseAppConnection(config)).toBe(false);
+    /** An empty map declares nothing, so it must not cost the server its sharing. */
+    expect(canUseAppConnection({ ...shareable, requestHeaders: {} } as ParsedServerConfig)).toBe(
+      true,
+    );
   });
 
   it('never returns either header map to a client', () => {
