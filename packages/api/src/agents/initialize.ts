@@ -861,6 +861,7 @@ export interface InitializeAgentParams {
     primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
     /** Live workspace binding resolved by the execution-side loader. */
     codeExecutionContext?: CodeExecutionContext;
+    repositoryInstructionBlock?: string;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -1964,6 +1965,7 @@ export async function initializeAgent(
     tools: structuredTools,
     primedCodeFiles,
     codeExecutionContext: loadedCodeExecutionContext,
+    repositoryInstructionBlock,
   } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
@@ -1979,6 +1981,7 @@ export async function initializeAgent(
     oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
     codeExecutionContext: undefined,
+    repositoryInstructionBlock: undefined,
   };
   const trustedCodeExecutionContext = loadedCodeExecutionContext ?? codeExecutionContext;
   const attachedWorkspaceOperations =
@@ -2259,6 +2262,12 @@ export async function initializeAgent(
     } else {
       agent.instructions = resolvedInstructions;
     }
+  }
+
+  if (repositoryInstructionBlock) {
+    agent.instructions = [agent.instructions, repositoryInstructionBlock]
+      .filter(Boolean)
+      .join('\n\n');
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {

@@ -287,6 +287,30 @@ describe('initializeAgent — execution context', () => {
     jest.clearAllMocks();
   });
 
+  it('places loaded repository instructions after agent instructions in the stable block', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Agent conventions';
+    loadTools.mockResolvedValue({
+      tools: [],
+      toolDefinitions: [],
+      repositoryInstructionBlock: 'Repository conventions',
+    });
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([agent.provider]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    expect(result.instructions).toBe('Agent conventions\n\nRepository conventions');
+    expect(result.additional_instructions ?? '').not.toContain('Repository conventions');
+  });
+
   it('carries request-resolved Azure identity to the run without changing persisted agent fields', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: EModelEndpoint.azureOpenAI,

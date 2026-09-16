@@ -4,6 +4,7 @@ import {
   CODE_WORKSPACE_MAX_COUNT,
   CODE_WORKSPACE_OPERATIONS,
   isCodeWorkspaceEnvironment,
+  isRepositoryInstructionDescriptor,
 } from 'librechat-data-provider';
 import type { CodeWorkspaceDescriptor, CodeWorkspaceOperation } from 'librechat-data-provider';
 
@@ -185,11 +186,20 @@ function validWorkspaceCapabilities(value: unknown): value is {
     const workspace = value as Record<string, unknown>;
     if (
       Object.keys(workspace).some(
-        (key) => key !== 'id' && key !== 'name' && key !== 'operations' && key !== 'environment',
+        (key) =>
+          key !== 'id' &&
+          key !== 'name' &&
+          key !== 'operations' &&
+          key !== 'environment' &&
+          key !== 'instructions',
       ) ||
       typeof workspace.id !== 'string' ||
       !CODE_WORKSPACE_ID_PATTERN.test(workspace.id) ||
       ids.has(workspace.id) ||
+      (workspace.instructions !== undefined &&
+        (!Array.isArray(workspace.instructions) ||
+          workspace.instructions.length > 1 ||
+          !workspace.instructions.every(isRepositoryInstructionDescriptor))) ||
       (workspace.environment !== undefined && !isCodeWorkspaceEnvironment(workspace.environment)) ||
       (workspace.name !== undefined &&
         (typeof workspace.name !== 'string' ||
