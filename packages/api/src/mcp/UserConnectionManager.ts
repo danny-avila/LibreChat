@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type * as t from './types';
 import {
+  applyRequestHeaders,
   canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
@@ -1079,12 +1080,16 @@ export abstract class UserConnectionManager {
     requestBody?: t.UserMCPConnectionOptions['requestBody'];
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
-    const dbSourced = isUserSourced(config);
+    /** Mirrors the factory's entry-point normalization; without it this
+     *  validation pass would inspect a different header map than the one the
+     *  connection ends up sending. */
+    const runtimeConfig = applyRequestHeaders(config);
+    const dbSourced = isUserSourced(runtimeConfig);
     /** Plugin-authored placeholders must never resolve against the user's Graph token. */
     const graphProcessedConfig =
-      dbSourced || isPluginSourced(config)
-        ? config
-        : await preProcessGraphTokens(config, {
+      dbSourced || isPluginSourced(runtimeConfig)
+        ? runtimeConfig
+        : await preProcessGraphTokens(runtimeConfig, {
             user,
             graphTokenResolver,
             scopes: process.env.GRAPH_API_SCOPES,

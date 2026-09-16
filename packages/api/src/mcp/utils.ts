@@ -388,6 +388,42 @@ export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPReque
  *
  * Returns the same reference when there is nothing to strip.
  */
+/**
+ * Folds the operator's chat-only `requestHeaders` into `headers`, so everything
+ * downstream — direct-bearer detection, Graph preprocessing, `processMCPEnv`,
+ * the transports — keeps reading ONE header map and never has to learn about a
+ * second one. Called at the entry of each resolution pipeline, before any
+ * consumer inspects the config.
+ *
+ * HTTP header names are case-insensitive, so a base `Authorization` is dropped
+ * when the request map declares `authorization`: keeping both would let Undici
+ * join the values (`old, new`) instead of letting `requestHeaders` win.
+ *
+ * The field is consumed as it merges, making this idempotent for a config that
+ * passes through twice (checkout joiners, direct-bearer recovery).
+ */
+export function applyRequestHeaders<T extends MCPOptions>(config: T): T {
+  const carrier = config as T & {
+    headers?: Record<string, string>;
+    requestHeaders?: Record<string, string>;
+  };
+  if (carrier.requestHeaders == null) {
+    return config;
+  }
+
+  const overridden = new Set(Object.keys(carrier.requestHeaders).map((name) => name.toLowerCase()));
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(carrier.headers ?? {})) {
+    if (!overridden.has(name.toLowerCase())) {
+      headers[name] = value;
+    }
+  }
+
+  const merged = { ...carrier, headers: { ...headers, ...carrier.requestHeaders } };
+  delete merged.requestHeaders;
+  return merged;
+}
+
 export function toCatalogConnectionConfig<T extends MCPOptions>(config: T): T {
   const carrier = config as T & { requestHeaders?: Record<string, string> };
   if (carrier.requestHeaders == null) {

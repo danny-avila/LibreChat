@@ -194,6 +194,31 @@ describe('MCPServerInspector', () => {
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
 
+    it('should still probe at startup when body placeholders live only in requestHeaders', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: { 'X-Workspace': 'workspace-1' },
+        requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      };
+
+      const tempMockConnection = createMockConnection('test_server');
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(tempMockConnection);
+
+      await MCPServerInspector.inspect('test_server', rawConfig);
+
+      /** The chat-only map must neither block the probe nor reach it. */
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      const probeConfig = (MCPConnectionFactory.create as jest.Mock).mock.calls[0][0].serverConfig;
+      expect(probeConfig.headers).toEqual({ 'X-Workspace': 'workspace-1' });
+      expect(probeConfig).not.toHaveProperty('requestHeaders');
+    });
+
     it('should skip OAuth detection when trusted URL needs runtime user context', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'streamable-http',

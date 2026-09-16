@@ -389,6 +389,41 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
+    it('should merge requestHeaders before Graph pre-processing, overriding by case', async () => {
+      const graphTokenResolver = jest.fn();
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+        headers: { 'X-Workspace': 'workspace-1', Authorization: 'Bearer stale' },
+        requestHeaders: { authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      mockPreProcessGraphTokens.mockImplementation(async (config) => config as t.MCPOptions);
+      mockProcessMCPEnv.mockImplementation(
+        ({ options }: { options: t.MCPOptions }) => options as t.MCPOptions,
+      );
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(
+        { serverName: 'test-server', serverConfig },
+        { user: mockUser, graphTokenResolver },
+      );
+
+      /** The preprocessor only inspects `headers`, so the chat-only map has to be
+       *  folded in before it runs — and the base `Authorization` must be gone,
+       *  since keeping both spellings would let Undici join the two values. */
+      const preprocessed = mockPreProcessGraphTokens.mock.calls[0][0] as {
+        headers?: Record<string, string>;
+        requestHeaders?: Record<string, string>;
+      };
+      expect(preprocessed.headers).toEqual({
+        'X-Workspace': 'workspace-1',
+        authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+      });
+      expect(preprocessed).not.toHaveProperty('requestHeaders');
+    });
+
     it('should pre-process Graph placeholders before connection config resolution', async () => {
       const graphTokenResolver = jest.fn();
       const serverConfig: t.MCPOptions = {

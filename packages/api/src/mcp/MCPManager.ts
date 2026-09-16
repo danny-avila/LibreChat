@@ -19,6 +19,7 @@ import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
   toCatalogConnectionConfig,
+  applyRequestHeaders,
   createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
@@ -1251,7 +1252,12 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const registry = MCPServersRegistry.getInstance();
-        const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
+        const declaredConfig =
+          providedConfig ?? (await registry.getServerConfig(serverName, userId));
+        /** Folded in before scope detection, Graph preprocessing and
+         *  direct-bearer resolution, so this pipeline sees the same single
+         *  header map the factory does. */
+        const rawConfig = declaredConfig && applyRequestHeaders(declaredConfig);
         if (!rawConfig) {
           throw new McpError(
             ErrorCode.InvalidRequest,

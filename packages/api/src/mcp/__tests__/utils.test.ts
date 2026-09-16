@@ -15,6 +15,7 @@ import {
   hasRuntimeUrlPlaceholders,
   getMCPRequestScope,
   toCatalogConnectionConfig,
+  applyRequestHeaders,
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
@@ -26,6 +27,7 @@ import {
   filterChatSelectableMCPServers,
   waitUntilDeadline,
 } from '~/mcp/utils';
+import { usesDirectOpenIDBearerRecovery } from '~/mcp/openid';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {
@@ -1091,6 +1093,75 @@ describe('toCatalogConnectionConfig', () => {
     } as ParsedServerConfig;
 
     expect(toCatalogConnectionConfig(config)).toBe(config);
+  });
+});
+
+describe('applyRequestHeaders', () => {
+  it('merges the request map over headers', () => {
+    const merged = applyRequestHeaders({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer static', 'X-Keep': 'kept' },
+      requestHeaders: { 'X-Trace-Id': '{{LIBRECHAT_BODY_MESSAGEID}}' },
+    } as ParsedServerConfig) as { headers?: Record<string, string> };
+
+    expect(merged.headers).toEqual({
+      Authorization: 'Bearer static',
+      'X-Keep': 'kept',
+      'X-Trace-Id': '{{LIBRECHAT_BODY_MESSAGEID}}',
+    });
+    expect(merged).not.toHaveProperty('requestHeaders');
+  });
+
+  it('overrides a duplicate name regardless of casing', () => {
+    const merged = applyRequestHeaders({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer stale', 'X-Trace-Id': 'stale-trace' },
+      requestHeaders: { authorization: 'Bearer fresh', 'x-trace-id': 'fresh-trace' },
+    } as ParsedServerConfig) as { headers?: Record<string, string> };
+
+    /** Both spellings surviving would let Undici join them into `stale, fresh`. */
+    expect(merged.headers).toEqual({
+      authorization: 'Bearer fresh',
+      'x-trace-id': 'fresh-trace',
+    });
+  });
+
+  it('is idempotent, so a config reused across connections cannot merge twice', () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { 'X-Trace-Id': 'stale' },
+      requestHeaders: { 'X-Trace-Id': 'fresh' },
+    } as ParsedServerConfig;
+
+    const once = applyRequestHeaders(config);
+    const twice = applyRequestHeaders(once);
+
+    expect(twice).toBe(once);
+    expect((twice as { headers?: Record<string, string> }).headers).toEqual({
+      'X-Trace-Id': 'fresh',
+    });
+  });
+
+  it('returns the same reference when there is nothing to merge', () => {
+    const config = { type: 'stdio', command: 'node', args: ['server.js'] } as ParsedServerConfig;
+
+    expect(applyRequestHeaders(config)).toBe(config);
+  });
+
+  it('brings a request-header Authorization under direct-bearer recovery', () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      source: 'yaml',
+      requiresOAuth: false,
+      requestHeaders: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    } as ParsedServerConfig;
+
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+    expect(usesDirectOpenIDBearerRecovery(applyRequestHeaders(config))).toBe(true);
   });
 });
 

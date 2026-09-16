@@ -34,6 +34,7 @@ import {
 import {
   isOAuthServer,
   waitUntilDeadline,
+  applyRequestHeaders,
   isClientRejectionMessage,
   createDeadlineAbortSignal,
   toCatalogConnectionConfig,
@@ -154,11 +155,19 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const directBearerRecoveryState = basic.directBearerRecoveryState ?? { attempted: false };
+    /** Chat-time entry point: the operator's `requestHeaders` join `headers`
+     *  here, ahead of direct-bearer detection and Graph preprocessing, so an
+     *  `Authorization` or `{{LIBRECHAT_GRAPH_*}}` template declared there gets
+     *  exactly the handling it would get in `headers`. */
+    const runtime: t.BasicConnectionOptions = {
+      ...basic,
+      serverConfig: applyRequestHeaders(basic.serverConfig),
+    };
+    const directBearerRecoveryState = runtime.directBearerRecoveryState ?? { attempted: false };
     const directBearerSourceConfig =
-      basic.directBearerSourceConfig ??
-      (isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)
-        ? (basic.serverConfig as t.ParsedServerConfig)
+      runtime.directBearerSourceConfig ??
+      (isDirectOpenIDBearerRecoveryEnabled(runtime.serverConfig)
+        ? (runtime.serverConfig as t.ParsedServerConfig)
         : undefined);
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
       const prepared = await this.prepareBasicConnectionOptions(
@@ -172,11 +181,11 @@ export class MCPConnectionFactory {
       return factory.createConnection();
     };
     if (!directBearerSourceConfig) {
-      return create(basic);
+      return create(runtime);
     }
 
     try {
-      return await create(basic);
+      return await create(runtime);
     } catch (error) {
       if (!isMCPTransportAuthenticationError(error) || this.isRequestCancelled(oauth)) {
         throw error;
@@ -193,7 +202,7 @@ export class MCPConnectionFactory {
       });
       directBearerRecoveryState.resolvedConfig = refreshedConfig;
       try {
-        return await create({ ...basic, serverConfig: refreshedConfig });
+        return await create({ ...runtime, serverConfig: refreshedConfig });
       } catch (refreshedError) {
         if (isMCPTransportAuthenticationError(refreshedError)) {
           throw new MCPAuthenticationRejectedError(basic.serverName, false, refreshedError);
