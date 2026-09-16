@@ -117,6 +117,7 @@ import {
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
+import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
 import { resolveDownloadPath } from '~/storage/path';
@@ -124,7 +125,6 @@ import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 import { instrumentPtcToolMap } from './ptc';
-import { toolValidationFeedback } from './validationFeedback';
 import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {

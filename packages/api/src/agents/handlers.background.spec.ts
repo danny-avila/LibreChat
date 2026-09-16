@@ -117,7 +117,8 @@ describe('createToolExecuteHandler — background tool calls', () => {
       metadata: { thread_id: 'exec_convo', run_id: 'invalid-background-run' },
     });
     const handle = JSON.parse(dispatch.content);
-    expect(handle.status_check).toEqual({
+    const statusCheck = JSON.parse(handle.message.split('Status request: ')[1]);
+    expect(statusCheck).toEqual({
       name: CHECK_BACKGROUND_TASK_NAME,
       arguments: { background_task_id: handle.background_task_id },
     });
@@ -126,8 +127,8 @@ describe('createToolExecuteHandler — background tool calls', () => {
       toolCalls: [
         {
           id: 'poll-invalid-background-bash',
-          name: handle.status_check.name,
-          args: handle.status_check.arguments,
+          name: statusCheck.name,
+          args: statusCheck.arguments,
         },
       ],
       agentId: 'agent_parent_1',
