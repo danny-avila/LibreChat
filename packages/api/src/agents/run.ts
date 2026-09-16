@@ -24,6 +24,7 @@ import type {
   StreamPreemption,
   LCToolRegistry,
   SubagentConfig,
+  GraphEdge,
   SubagentResolveContext,
   SubagentConfigEntry,
   HookCallback,
@@ -1846,7 +1847,7 @@ export function anyAgentReplaysReasoningContent(
  * which is what keeps today's per-user cache accounting — and the probing
  * boundary it provides — intact by default.
  */
-function finalizePromptCacheKey(input: AgentInputs): void {
+function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unknown[]): void {
   const options = input.clientOptions as
     | (Partial<t.OAIClientOptions> & {
         response_format?: unknown;
@@ -1886,11 +1887,35 @@ function finalizePromptCacheKey(input: AgentInputs): void {
       ],
       responseSchema: options.response_format,
       responsesTextFormat: options.text?.format,
+      handoffEdges,
       scopeId: options.promptCacheScope === 'shared' ? null : options.user,
     });
   }
   delete options.promptCacheKeyEnabled;
   delete options.promptCacheScope;
+}
+
+/**
+ * Projects one outgoing handoff edge onto what the model actually sees of it.
+ *
+ * The SDK turns each edge into an `lc_transfer_to_*` tool, so the target, the
+ * description and the input parameter's name and description are all part of
+ * the wire prefix. `condition` is deliberately absent: it routes inside the
+ * graph and never reaches the model.
+ */
+function handoffEdgeIdentity(edge: GraphEdge): unknown {
+  return {
+    to: edge.to,
+    ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
+    ...(edge.edgeType != null ? { edgeType: edge.edgeType } : {}),
+    ...(edge.promptKey != null ? { promptKey: edge.promptKey } : {}),
+    /**
+     * A string prompt becomes the handoff parameter's description and is
+     * hashed verbatim; a function one is resolved per turn, so only its
+     * presence — which is what decides whether the parameter exists — counts.
+     */
+    prompt: typeof edge.prompt === 'string' ? edge.prompt : edge.prompt != null,
+  };
 }
 
 /**
@@ -2728,6 +2753,11 @@ export async function createRun({
     }
     enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds, false, false);
   }
+  /**
+   * The run's handoff edges, which live on the first agent and become
+   * `lc_transfer_to_*` tools on whichever agent they leave from.
+   */
+  const runEdges = agents[0].edges ?? [];
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
     if (summarizeOnly && agent === agents[0]) {
@@ -2760,8 +2790,17 @@ export async function createRun({
         ),
       }).toolDefinitions;
     }
-    /** Last, so the background-task tools registered just above are named. */
-    finalizePromptCacheKey(agentInput);
+    /**
+     * Last, so the background-task tools registered just above are named, and
+     * carrying this agent's own outgoing handoff edges — the tools the graph
+     * generates for it are as much of its prefix as its own tool arrays.
+     */
+    finalizePromptCacheKey(
+      agentInput,
+      runEdges
+        .filter((edge) => (Array.isArray(edge.from) ? edge.from : [edge.from]).includes(agent.id))
+        .map(handoffEdgeIdentity),
+    );
     agentInputs.push(agentInput);
   }
 

@@ -101,6 +101,38 @@ describe('buildPromptCacheKey', () => {
     );
   });
 
+  it.each([
+    ['defer_loading', { defer_loading: true }],
+    ['allowed_callers', { allowed_callers: ['code_execution'] }],
+  ])('retires the key when a definition\u2019s %s changes', (_label, classification) => {
+    const reclassified = {
+      ...base,
+      boundTools: [{ ...searchTool, ...classification }, calculatorTool],
+    };
+
+    expect(buildPromptCacheKey(reclassified)).not.toBe(buildPromptCacheKey(base));
+  });
+
+  describe('handoff edges', () => {
+    const edge = { from: 'supervisor', to: 'researcher', description: 'Hand off research' };
+
+    it('separates an agent that can hand off from one that cannot', () => {
+      expect(buildPromptCacheKey({ ...base, handoffEdges: [edge] })).not.toBe(
+        buildPromptCacheKey(base),
+      );
+    });
+
+    it.each([
+      ['target', { to: 'writer' }],
+      ['description', { description: 'Hand off drafting' }],
+      ['input parameter name', { promptKey: 'brief' }],
+    ])('retires the key when an edge\u2019s %s changes', (_label, change) => {
+      expect(buildPromptCacheKey({ ...base, handoffEdges: [{ ...edge, ...change }] })).not.toBe(
+        buildPromptCacheKey({ ...base, handoffEdges: [edge] }),
+      );
+    });
+  });
+
   describe('cache-accounting scope', () => {
     it('separates two users running the same agent', () => {
       expect(buildPromptCacheKey({ ...base, scopeId: 'user-a' })).not.toBe(

@@ -49,6 +49,13 @@ export interface PromptCacheKeyInput {
   responseSchema?: unknown;
   responsesTextFormat?: unknown;
   /**
+   * Outgoing handoff edges, which the SDK turns into model-facing
+   * `lc_transfer_to_*` tools. They arrive on the graph rather than in
+   * `boundTools`, so adding, removing or retargeting one changes the wire tool
+   * prefix without touching any of the tool arrays.
+   */
+  handoffEdges?: readonly unknown[];
+  /**
    * Cache-accounting partition. Two requests sharing a prefix but carrying
    * different scopes get different keys, which is what keeps one user's cached
    * prefix from being probed by another. Omitted only when an administrator
@@ -60,32 +67,30 @@ export interface PromptCacheKeyInput {
 /**
  * Projects one bound tool onto the identity that reaches the wire.
  *
- * A schema-only definition carries JSON Schema in `parameters` and is hashed
- * whole. A runtime instance carries a Zod object instead, which is neither
- * stable JSON nor safe to walk — it is identified by name and description, so
- * a schema change to one of those ships with the code change that causes it
- * and is covered by {@link PROMPT_CACHE_KEY_VERSION}. A provider-native spec
- * such as `{ type: 'web_search' }` has no name and is already plain JSON.
+ * A schema-only definition is plain JSON and is hashed whole, because fields
+ * beyond the schema decide how the tool is exposed: `defer_loading` withholds
+ * it from the binding until tool search finds it, and `allowed_callers` can
+ * keep it off the model's direct surface entirely. An allowlist of name,
+ * description and parameters would let those flip without retiring the key.
+ *
+ * A runtime instance carries a Zod schema instead, which `canonicalize`
+ * refuses to walk, so it is identified by name and description — a schema
+ * change there ships with the code change that causes it and is covered by
+ * {@link PROMPT_CACHE_KEY_VERSION}.
  */
 function toolCacheIdentity(tool: unknown): unknown {
   if (tool == null || typeof tool !== 'object') {
     return tool;
   }
-  const candidate = tool as { name?: unknown; description?: unknown; parameters?: unknown };
-  if (typeof candidate.name !== 'string') {
-    return tool;
+  try {
+    return canonicalize(tool);
+  } catch {
+    const candidate = tool as { name?: unknown; description?: unknown };
+    return {
+      name: typeof candidate.name === 'string' ? candidate.name : null,
+      ...(typeof candidate.description === 'string' ? { description: candidate.description } : {}),
+    };
   }
-  const parameters = candidate.parameters;
-  const isJsonSchema =
-    parameters != null &&
-    typeof parameters === 'object' &&
-    !Array.isArray(parameters) &&
-    Object.getPrototypeOf(parameters) === Object.prototype;
-  return {
-    name: candidate.name,
-    ...(typeof candidate.description === 'string' ? { description: candidate.description } : {}),
-    ...(isJsonSchema ? { parameters } : {}),
-  };
 }
 
 /**
@@ -110,6 +115,7 @@ export function buildPromptCacheKey(input: PromptCacheKeyInput): string {
       boundTools: (input.boundTools ?? []).map(toolCacheIdentity),
       responseSchema: input.responseSchema,
       responsesTextFormat: input.responsesTextFormat,
+      handoffEdges: (input.handoffEdges ?? []).map(toolCacheIdentity),
       /**
        * Hashed with the prefix rather than appended to the key, so the user id
        * an operator sees in OpenAI's cache accounting stays opaque.
