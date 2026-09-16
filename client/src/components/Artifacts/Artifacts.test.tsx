@@ -112,6 +112,11 @@ jest.mock('./DownloadArtifact', () => ({
   default: () => <div data-testid="download-artifact" />,
 }));
 
+jest.mock('./Mermaid/Export', () => ({
+  __esModule: true,
+  default: () => <div data-testid="mermaid-export" />,
+}));
+
 jest.mock('~/components/Messages/Content/CopyButton', () => ({
   __esModule: true,
   default: () => null,
