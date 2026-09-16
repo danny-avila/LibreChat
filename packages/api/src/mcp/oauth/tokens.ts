@@ -213,8 +213,7 @@ interface MCPRefreshFlight {
   adoptedTokens?: MCPOAuthTokens;
   /**
    * The refresh record read under the flight, handed to the redemption so one read serves both
-   * rotation detection and the credential submitted. Undefined when that read failed, which leaves
-   * the redemption to read for itself.
+   * rotation detection and the credential submitted. Absent when no flight manager is supplied.
    */
   leasedRefreshToken?: IToken | null;
   /** Teardown or the stale timer fired during the wait; the caller resolves null. */
@@ -1285,8 +1284,7 @@ export class MCPTokenStorage {
     if (!adoptedTokens) {
       return { lease, leasedRefreshToken };
     }
-    await this.releaseRefreshFlight(lease, logPrefix);
-    return { lease: null, adoptedTokens };
+    return { lease, adoptedTokens };
   }
 
   /** Releases a flight lease without letting a release failure mask the caller's outcome. */
@@ -1517,8 +1515,8 @@ export class MCPTokenStorage {
             }
           }
         }
-      } catch {
-        logger.debug(`${logPrefix} No client info found`);
+      } catch (error) {
+        throw new MCPTokenStorageUnavailableError(serverName, error);
       }
 
       if (

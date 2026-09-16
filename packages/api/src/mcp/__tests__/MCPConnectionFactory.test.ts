@@ -703,18 +703,76 @@ describe('MCPConnectionFactory', () => {
         expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
       });
 
-      it('does not re-read after a token load failure that is not a lost flow', async () => {
-        mockFlowManager.createFlowWithHandler.mockRejectedValue(
-          new Error('token store unavailable'),
+      it.each(['Error', 'TimeoutError', 'ReplyError', 'SyntaxError'])(
+        'defers a %s token-flow failure without prompting',
+        async (name) => {
+          mockFlowManager.createFlowWithHandler.mockRejectedValue(
+            Object.assign(new Error('token store unavailable'), { name }),
+          );
+          const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+
+          await expect(
+            tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
+          ).rejects.toMatchObject({ name: 'MCPTokenStorageUnavailableError' });
+
+          expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+          expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['TimeoutError', 'ReplyError', 'SyntaxError'])(
+        'defers a %s from the token-flow retry',
+        async (name) => {
+          mockFlowManager.createFlowWithHandler
+            .mockRejectedValueOnce(new FlowStateNotFoundError('mcp_get_tokens'))
+            .mockRejectedValueOnce(Object.assign(new Error('cache unavailable'), { name }));
+          await expect(tokenLoadingFactory().getOAuthTokensForTest()).rejects.toMatchObject({
+            name: 'MCPTokenStorageUnavailableError',
+          });
+          expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
+        },
+      );
+
+      it('preserves serialized reauthentication as an explicit interactive outcome', async () => {
+        mockFlowManager.createFlowWithHandler.mockRejectedValueOnce(
+          Object.assign(new Error('credentials missing'), {
+            name: 'ReauthenticationRequiredError',
+          }),
         );
-        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+        await expect(tokenLoadingFactory().getOAuthTokensForTest()).resolves.toBeNull();
+      });
 
-        await expect(
-          tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
-        ).rejects.toMatchObject({ name: 'MCPTokenStorageUnavailableError' });
+      it('invalidates a stale flow token and defers the next storage read', async () => {
+        mockFlowManager.createFlowWithHandler.mockResolvedValueOnce({
+          access_token: 'stale',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        });
+        mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValueOnce(false);
+        mockFlowManager.getFlowState.mockResolvedValueOnce({
+          type: 'mcp_get_tokens',
+          status: 'COMPLETED',
+          metadata: {},
+          createdAt: Date.now(),
+        });
+        await expect(tokenLoadingFactory().getOAuthTokensForTest()).rejects.toMatchObject({
+          name: 'MCPTokenStorageUnavailableError',
+        });
+        expect(mockFlowManager.deleteFlow).toHaveBeenCalled();
+      });
 
-        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
-        expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
+      it('defers a failed client metadata verification read', async () => {
+        mockFlowManager.createFlowWithHandler.mockResolvedValueOnce({
+          access_token: 'stored',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        });
+        mockMCPTokenStorage.getClientInfoAndMetadata.mockRejectedValueOnce(
+          new SyntaxError('cache unavailable'),
+        );
+        await expect(tokenLoadingFactory().getOAuthTokensForTest()).rejects.toMatchObject({
+          name: 'MCPTokenStorageUnavailableError',
+        });
       });
 
       it('adopts the generation carried by tokens another authorization released', async () => {

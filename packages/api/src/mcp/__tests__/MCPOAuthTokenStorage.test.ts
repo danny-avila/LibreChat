@@ -2349,6 +2349,36 @@ describe('MCPTokenStorage', () => {
         expect(onRefreshSuccess).not.toHaveBeenCalled();
       });
 
+      it('holds the flight through adoption publication and releases it when the callback fails', async () => {
+        const serverName = 'adoption-publication';
+        await seedRefreshableTokens(serverName);
+        const keyv = new Keyv({ serialize: JSON.stringify, deserialize: JSON.parse });
+        const flowManager = new FlowStateManager(keyv, { ttl: 30000, ci: true });
+        const leaseId = getMCPOAuthRefreshFlightLeaseId('u1', serverName);
+        const acquire = flowManager.acquireLease.bind(flowManager);
+        jest.spyOn(flowManager, 'acquireLease').mockImplementation(async (id, options) => {
+          if (id === leaseId) await peerRotates(serverName, 3);
+          return acquire(id, options);
+        });
+        const onTokensAdopted = jest.fn(async () => {
+          expect(await acquire(leaseId, { waitMs: 0 })).toBeNull();
+          throw new Error('publication storage unavailable');
+        });
+        const refreshTokens = jest.fn();
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, serverName),
+            flowManager,
+            onTokensAdopted,
+          }),
+        ).rejects.toBeInstanceOf(MCPTokenRefreshUnavailableError);
+        expect(onTokensAdopted).toHaveBeenCalledTimes(1);
+        expect(refreshTokens).not.toHaveBeenCalled();
+        const successor = await acquire(leaseId, { waitMs: 0 });
+        expect(successor).not.toBeNull();
+        await successor?.release();
+      });
+
       it('still redeems when the credential is unchanged after waiting for the flight', async () => {
         await seedRefreshableTokens('unchanged-srv');
         const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(4));
@@ -2664,6 +2694,24 @@ describe('MCPTokenStorage', () => {
           }),
         ).resolves.toMatchObject({ access_token: 'at-2' });
         expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
+      it('defers a failed client metadata read before provider redemption', async () => {
+        const serverName = 'client-read-failure';
+        await seedRefreshableTokens(serverName);
+        const refreshTokens = jest.fn();
+        const findToken: typeof store.findToken = async (filter) => {
+          if (filter.type === 'mcp_oauth_client') throw new Error('database unavailable');
+          return store.findToken(filter);
+        };
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, serverName),
+            findToken,
+            flowManager: flightManager(async () => true),
+          }),
+        ).rejects.toBeInstanceOf(MCPTokenRefreshUnavailableError);
+        expect(refreshTokens).not.toHaveBeenCalled();
       });
 
       it('reuses the refresh record getTokens already loaded', async () => {

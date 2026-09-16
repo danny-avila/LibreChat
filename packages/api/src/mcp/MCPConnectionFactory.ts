@@ -963,7 +963,10 @@ export class MCPConnectionFactory {
       return await readTokens();
     } catch (error) {
       if (!(error instanceof FlowStateNotFoundError)) {
-        if (error instanceof Error && error.name !== 'Error') {
+        if (
+          MCPConnectionFactory.isRefreshUnavailable(error) ||
+          MCPConnectionFactory.isReauthenticationRequired(error)
+        ) {
           throw error;
         }
         // Legacy flow records and cache failures carry no typed outcome. Retry storage first.
@@ -977,9 +980,8 @@ export class MCPConnectionFactory {
         return await readTokens();
       } catch (retryError) {
         if (
-          retryError instanceof Error &&
-          retryError.name !== 'Error' &&
-          !(retryError instanceof FlowStateNotFoundError)
+          MCPConnectionFactory.isRefreshUnavailable(retryError) ||
+          MCPConnectionFactory.isReauthenticationRequired(retryError)
         ) {
           throw retryError;
         }
@@ -1018,10 +1020,16 @@ export class MCPConnectionFactory {
               serverName: this.serverName,
               findToken: this.tokenMethods!.findToken!,
             }),
-          ]),
+          ]).catch((error: unknown) => {
+            throw new MCPTokenStorageUnavailableError(this.serverName, error);
+          }),
         );
         if (!isCurrentAccessToken) {
-          throw new Error(`${this.logPrefix} Cached OAuth access token is stale`);
+          await this.invalidateGetTokensFlow();
+          throw new MCPTokenStorageUnavailableError(
+            this.serverName,
+            new Error('Cached OAuth access token is stale'),
+          );
         }
         MCPTokenStorage.assertCredentialSetBinding(
           this.serverName,
@@ -1040,7 +1048,7 @@ export class MCPConnectionFactory {
       }
       return tokens;
     } catch (error) {
-      if (error instanceof ReauthenticationRequiredError) {
+      if (MCPConnectionFactory.isReauthenticationRequired(error)) {
         logger.info(`${this.logPrefix} Reauthentication required; triggering OAuth flow`);
         return null;
       }
@@ -1245,19 +1253,14 @@ export class MCPConnectionFactory {
     }
   }
 
-  /**
-   * Clears stale token-fetch cache after fresh credentials are known. COMPLETED
-   * entries are deleted; PENDING entries are completed with fresh tokens so
-   * concurrent waiters do not fail or later publish server-rejected tokens.
-   */
-  /**
-   * True for a refresh another party may still complete — a peer replica holding the flight, or a
-   * provider that was briefly unavailable — as opposed to one that needs the user.
-   *
-   * Matched by name as well as by identity because these errors cross the built package boundary
-   * into `/api`, where `instanceof` against this module's class does not hold. `loadOAuthTokens`
-   * matches both for the same reason.
-   */
+  /** Flow serialization preserves domain names, not class identity. */
+  private static isReauthenticationRequired(error: unknown): boolean {
+    return (
+      error instanceof ReauthenticationRequiredError ||
+      (error instanceof Error && error.name === 'ReauthenticationRequiredError')
+    );
+  }
+
   private static isRefreshUnavailable(error: unknown): boolean {
     return (
       error instanceof MCPTokenRefreshUnavailableError ||
