@@ -424,8 +424,8 @@ packages/client/src/theme/
 │   └── index.ts            # Theme exports
 ├── utils/
 │   ├── applyTheme.ts       # Apply CSS variables
-│   ├── tailwindConfig.ts   # Tailwind helpers
-│   └── createTailwindColors.js
+│   └── tailwindConfig.ts   # Tailwind helpers
+├── tokens.css              # Tailwind color tokens (published as @librechat/client/theme.css)
 ├── README.md               # This documentation
 └── index.ts               # Main exports
 ```

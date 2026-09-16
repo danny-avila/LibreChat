@@ -105,7 +105,7 @@ function RequestPasswordReset() {
               },
             })}
             aria-invalid={!!errors.email}
-            className="webkit-dark-styles transition-color peer border-border-light bg-surface-primary text-text-primary focus:border-accent-primary h-auto w-full rounded-2xl border px-3.5 pt-3 pb-2.5 duration-200 focus:outline-hidden"
+            className="webkit-dark-styles peer border-border-light bg-surface-primary text-text-primary focus:border-accent-primary h-auto w-full rounded-2xl border px-3.5 pt-3 pb-2.5 transition-colors duration-200 focus:outline-hidden"
             placeholder=" "
           />
           <label

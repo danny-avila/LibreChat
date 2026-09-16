@@ -106,7 +106,7 @@
     "e2e:report": "npx playwright show-report e2e/playwright-report",
     "lint:fix": "eslint . --fix",
     "lint": "eslint .",
-    "lint:design:suppress": "eslint --no-warn-ignored --suppress-rule shadcn/no-restyle --suppress-rule shadcn/no-raw-colors --suppress-rule shadcn/no-arbitrary-values --suppress-rule shadcn/no-inline-styles --suppress-rule shadcn/require-static-classes client/src packages/client/src",
+    "lint:design:suppress": "eslint --no-warn-ignored --suppress-rule shadcn/no-restyle --suppress-rule shadcn/no-raw-colors --suppress-rule shadcn/no-arbitrary-values --suppress-rule shadcn/no-inline-styles --suppress-rule shadcn/require-static-classes --suppress-rule shadcn/no-unknown-classes client/src packages/client/src",
     "lint:design:prune": "eslint --no-warn-ignored --prune-suppressions client/src packages/client/src",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
