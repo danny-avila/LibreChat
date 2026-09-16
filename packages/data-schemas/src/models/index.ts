@@ -1,5 +1,7 @@
 import { createAgentQueuedTurnModel, createAgentQueuedTurnSequenceModel } from './queuedTurn';
+import { createQuestionnaireDismissalModel } from './questionnaireDismissal';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
+import { createQuestionnaireResponseModel } from './questionnaireResponse';
 import { createScheduleModel, createScheduleRunModel } from './schedule';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
 import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
@@ -10,6 +12,7 @@ import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
 import { createAgentCategoryModel } from './agentCategory';
+import { createQuestionnaireModel } from './questionnaire';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
@@ -66,6 +69,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Assistant: ReturnType<typeof createAssistantModel>;
   File: ReturnType<typeof createFileModel>;
   Banner: ReturnType<typeof createBannerModel>;
+  Questionnaire: ReturnType<typeof createQuestionnaireModel>;
+  QuestionnaireResponse: ReturnType<typeof createQuestionnaireResponseModel>;
+  QuestionnaireDismissal: ReturnType<typeof createQuestionnaireDismissalModel>;
   Key: ReturnType<typeof createKeyModel>;
   PluginAuth: ReturnType<typeof createPluginAuthModel>;
   Transaction: ReturnType<typeof createTransactionModel>;
@@ -115,6 +121,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
+    Questionnaire: createQuestionnaireModel(mongoose),
+    QuestionnaireResponse: createQuestionnaireResponseModel(mongoose),
+    QuestionnaireDismissal: createQuestionnaireDismissalModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),
     Transaction: createTransactionModel(mongoose),
