@@ -114,6 +114,16 @@ describe('buildStepPreviews', () => {
     ]);
   });
 
+  it('skips the holes a streaming message leaves in its content', () => {
+    const sparse = new Array<TMessage['content'] extends (infer P)[] | undefined ? P : never>(3);
+    sparse[0] = { type: ContentTypes.TEXT, text: 'Streaming' };
+    sparse[2] = { type: ContentTypes.TEXT, text: 'still.' };
+
+    expect(buildStepPreviews(message({ content: sparse } as Partial<TMessage>))).toEqual([
+      { text: 'Streaming still.', toolCalls: [] },
+    ]);
+  });
+
   it('falls back to the message text and bounds long previews', () => {
     const long = 'word '.repeat(100);
     expect(buildStepPreviews(message({ text: long }))).toEqual([

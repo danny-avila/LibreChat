@@ -111,6 +111,10 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     return changed && current != null;
   };
   for (const part of parts) {
+    /** A streaming message writes parts at provider indexes, so the array can hold holes. */
+    if (part == null) {
+      continue;
+    }
     if (part.type === ContentTypes.TOOL_CALL) {
       const runStep = runStepOf(part.tool_call);
       const handedOff = handoff(part);
