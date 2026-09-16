@@ -38,7 +38,7 @@ import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 import Action from './Action';
 
-const labelClass = 'mb-2 text-token-text-primary block font-medium';
+const labelClass = 'mb-2 text-text-primary block font-medium';
 const inputClass = cn(
   defaultTextProps,
   'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800 rounded-xl mb-2',
@@ -445,7 +445,7 @@ export default function AssistantPanel({
           <div className="mb-6">
             <label className={labelClass}>
               {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
-              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? '+ ' : ''}
               ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
             </label>
             <div className="space-y-2">
@@ -467,7 +467,7 @@ export default function AssistantPanel({
                   <button
                     type="button"
                     onClick={() => setShowToolDialog(true)}
-                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                    className="btn btn-neutral border-border-light relative h-8 w-full rounded-lg font-medium"
                   >
                     <div className="flex w-full items-center justify-center gap-2">
                       {localize('com_assistants_add_tools')}
@@ -487,7 +487,7 @@ export default function AssistantPanel({
                       }
                       setActivePanel(Panel.actions);
                     }}
-                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                    className="btn btn-neutral border-border-light relative h-8 w-full rounded-lg font-medium"
                   >
                     <div className="flex w-full items-center justify-center gap-2">
                       {localize('com_assistants_add_actions')}

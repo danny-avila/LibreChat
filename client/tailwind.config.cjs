@@ -1,7 +1,6 @@
 // const { fontFamily } = require('tailwindcss/defaultTheme');
-const {
-  createTailwindColors,
-} = require('../packages/client/src/theme/utils/createTailwindColors.js');
+// Colors are not here: they are declared in
+// packages/client/src/theme/tokens.css, which src/style.css imports.
 const libreChatTailwindPreset = require('../packages/client/tailwind.preset.cjs');
 
 /** @type {import('tailwindcss').Config} */
@@ -119,7 +118,6 @@ module.exports = {
         'refresh-link-spin': 'refresh-link-spin 650ms cubic-bezier(0.42, 0, 0.58, 1)',
         'reset-spin': 'reset-spin 500ms cubic-bezier(0.22, 1, 0.36, 1)',
       },
-      colors: createTailwindColors(),
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',

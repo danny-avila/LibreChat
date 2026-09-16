@@ -181,7 +181,7 @@ function MentionContent({
 
   return (
     <div className="absolute bottom-28 z-10 w-full space-y-2">
-      <div className="popover border-token-border-light bg-surface-secondary rounded-2xl border p-2 shadow-lg">
+      <div className="popover border-border-light bg-surface-secondary rounded-2xl border p-2 shadow-lg">
         <Input
           ref={initInputRef}
           placeholder={localize(placeholder)}

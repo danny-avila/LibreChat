@@ -10,7 +10,7 @@ import { ROW_GLYPH_SLOT } from './rows';
 import { useLocalize } from '~/hooks';
 
 const wrapperClass =
-  'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
+  'progress-text-wrapper text-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
 
 /** `right-0` and `max-w-full` cap the absolutely-positioned line at the message
  *  column; the label span truncates itself, so overflow stays visible for the
@@ -55,7 +55,7 @@ export default function ProgressText({
 }: {
   /**
    * The card's settled state, resolved once by the caller via
-   * `resolveToolCallPhase`. Replaces the former `error` + `errorSuffix`
+   * `resolveToolCallPhase`. Replaces the former `error`+ `errorSuffix`
    * pair, which encoded three terminal states in two booleans — `error`
    * meant cancelled, a present `errorSuffix` meant failed, and every
    * consumer had to reconstruct the distinction. That shape is what let a
@@ -127,11 +127,11 @@ export default function ProgressText({
             essentially all of the shrink and ellipsizes instead of pushing
             the line past the message column. */}
         {subtitle && (
-          <span className="min-w-0 shrink-[100] truncate font-normal text-text-secondary">
+          <span className="text-text-secondary min-w-0 shrink-[100] truncate font-normal">
             {subtitle}
           </span>
         )}
-        {errorSuffix && <span className="font-normal text-status-error">· {errorSuffix}</span>}
+        {errorSuffix && <span className="text-status-error font-normal">· {errorSuffix}</span>}
         {duration && (
           <>
             {/* The compact form is the readable one on screen but a poor
@@ -140,7 +140,7 @@ export default function ProgressText({
                 Both live inside the button, so its accessible name carries
                 the duration — this is not an `aria-live` region and does not
                 re-announce. */}
-            <span className="font-normal text-text-secondary" aria-hidden="true">
+            <span className="text-text-secondary font-normal" aria-hidden="true">
               · {localize(duration.key, duration.values)}
             </span>
             <span className="sr-only">

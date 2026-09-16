@@ -49,7 +49,7 @@ export default function AppendDateCheckbox({ control, setValue }: AppendDateChec
             <label
               id="append-date-label"
               htmlFor="append_current_datetime"
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className="form-check-label text-text-primary w-full cursor-pointer"
             >
               {localize('com_assistants_append_date')}
             </label>

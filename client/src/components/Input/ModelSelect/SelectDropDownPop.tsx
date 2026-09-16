@@ -68,7 +68,7 @@ function SelectDropDownPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'pointer-cursor border-border-light bg-surface-secondary relative flex flex-col rounded-lg border py-2 pr-10 pl-3 text-left focus:ring-0 focus:ring-offset-0 sm:text-sm',
+                'border-border-light bg-surface-secondary relative flex cursor-pointer flex-col rounded-lg border py-2 pr-10 pl-3 text-left focus:ring-0 focus:ring-offset-0 sm:text-sm',
                 'hover:bg-surface-hover data-[state=open]:bg-surface-hover',
                 'max-w-[215px] min-w-[200px] sm:max-w-full sm:min-w-full',
               )}

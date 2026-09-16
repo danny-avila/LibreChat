@@ -169,7 +169,7 @@ export default function BashCall({
             )}
           >
             {command && (
-              <div className="bg-surface-tertiary relative dark:bg-gray-950">
+              <div className="bg-surface-tertiary relative dark:bg-gray-900">
                 <CopyButton
                   iconOnly
                   isCopied={isCopied}
