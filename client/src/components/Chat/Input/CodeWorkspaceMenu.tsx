@@ -95,6 +95,7 @@ function EnvironmentWorkspaces({
   isSelected: (workspaceId: string) => boolean;
   onSelect: (selection: CodeWorkspaceSelection) => void;
 }) {
+  const localize = useLocalize();
   return (
     <div>
       <Ariakit.MenuHeading render={<div />} className={headingClasses}>
@@ -122,6 +123,18 @@ function EnvironmentWorkspaces({
               </div>
               {descriptor.name && (
                 <p className="truncate text-xs text-text-secondary">{descriptor.id}</p>
+              )}
+              {descriptor.instructions !== undefined && (
+                <p className="truncate text-xs text-text-secondary">
+                  {descriptor.instructions.length === 0
+                    ? localize('com_ui_repository_instructions_none')
+                    : descriptor.instructions
+                        .map(
+                          (file) =>
+                            `${file.path} · ${(file.bytes / 1024).toFixed(1)} KB${file.truncated ? ` · ${localize('com_ui_repository_instructions_truncated')}` : ''}`,
+                        )
+                        .join(', ')}
+                </p>
               )}
               {(descriptor.environment?.repo || descriptor.environment?.ref) && (
                 <p className="truncate text-xs text-text-secondary">

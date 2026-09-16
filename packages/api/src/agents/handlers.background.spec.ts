@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
+import { tool as structuredTool } from '@librechat/agents/langchain/tools';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { ToolExecuteOptions } from './handlers';
@@ -90,6 +91,54 @@ const runBatch = async (
 };
 
 describe('createToolExecuteHandler — background tool calls', () => {
+  it('hands off an explicit polling call and preserves validation feedback in its result', async () => {
+    const execute = jest.fn(async () => 'executed');
+    const bash = structuredTool(execute, {
+      name: 'build_project',
+      description: 'Starts commands',
+      schema: {
+        type: 'object',
+        required: ['command'],
+        properties: { command: { type: 'string' } },
+      },
+    });
+    const handler = createToolExecuteHandler({ loadTools: async () => ({ loadedTools: [bash] }) });
+    const configurable = buildConfig(['build_project']);
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'invalid-background-bash',
+          name: 'build_project',
+          args: { background_task_id: 'secret-task', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable,
+      metadata: { thread_id: 'exec_convo', run_id: 'invalid-background-run' },
+    });
+    const handle = JSON.parse(dispatch.content);
+    const statusCheck = JSON.parse(handle.message.split('Status request: ')[1]);
+    expect(statusCheck).toEqual({
+      name: CHECK_BACKGROUND_TASK_NAME,
+      arguments: { background_task_id: handle.background_task_id },
+    });
+    await flushMicrotasks();
+    const [poll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'poll-invalid-background-bash',
+          name: statusCheck.name,
+          args: statusCheck.arguments,
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable,
+      metadata: { thread_id: 'exec_convo', run_id: 'invalid-background-run' },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(poll.content).toContain('Missing required fields: command');
+    expect(poll.content).not.toContain('secret-task');
+  });
   it('pre-registers an ordinary completion before invoke and persists its terminal receipt', async () => {
     const events: string[] = [];
     const retire = jest.fn(async () => true);
