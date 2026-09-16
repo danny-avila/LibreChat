@@ -385,6 +385,13 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
   /**
+   * Headers resolved from the live chat request and merged over `headers`.
+   * Omitted during catalog discovery, which has no request context, so a
+   * `{{LIBRECHAT_BODY_*}}` placeholder here does not block tool listing.
+   * On a duplicate header name the resolved `requestHeaders` value wins.
+   */
+  requestHeaders: z.record(z.string(), z.string()).optional(),
+  /**
    * On-Behalf-Of (OBO) token exchange configuration.
    * When configured, LibreChat exchanges the logged-in user's federated access token
    * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
@@ -412,6 +419,13 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * Headers resolved from the live chat request and merged over `headers`.
+   * Omitted during catalog discovery, which has no request context, so a
+   * `{{LIBRECHAT_BODY_*}}` placeholder here does not block tool listing.
+   * On a duplicate header name the resolved `requestHeaders` value wins.
+   */
+  requestHeaders: z.record(z.string(), z.string()).optional(),
   /**
    * On-Behalf-Of (OBO) token exchange configuration.
    * When configured, LibreChat exchanges the logged-in user's federated access token

@@ -12,6 +12,7 @@ import {
 import { PENDING_STALE_MS, FlowStateNotFoundError } from '~/flow/manager';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPAuthenticationRejectedError } from '~/mcp/errors';
+import { getMCPServerGeneration } from '~/mcp/oauth/cleanup';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
@@ -394,6 +395,42 @@ describe('MCPConnectionFactory', () => {
         ephemeralConnection: false,
       });
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should merge requestHeaders before Graph pre-processing, overriding by case', async () => {
+      const graphTokenResolver = jest.fn();
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'catalog-key' },
+        headers: { 'X-Workspace': 'workspace-1', Authorization: 'Bearer stale' },
+        requestHeaders: { authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      mockPreProcessGraphTokens.mockImplementation(async (config) => config as t.MCPOptions);
+      mockProcessMCPEnv.mockImplementation(
+        ({ options }: { options: t.MCPOptions }) => options as t.MCPOptions,
+      );
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(
+        { serverName: 'test-server', serverConfig },
+        { user: mockUser, graphTokenResolver },
+      );
+
+      /** The preprocessor only inspects `headers`, so the chat-only map has to be
+       *  folded in before it runs — and the base `Authorization` must be gone,
+       *  since keeping both spellings would let Undici join the two values. */
+      const preprocessed = mockPreProcessGraphTokens.mock.calls[0][0] as {
+        headers?: Record<string, string>;
+        requestHeaders?: Record<string, string>;
+      };
+      expect(preprocessed.headers).toEqual({
+        'X-Workspace': 'workspace-1',
+        authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+      });
+      expect(preprocessed).not.toHaveProperty('requestHeaders');
     });
 
     it('should pre-process Graph placeholders before connection config resolution', async () => {
@@ -4286,6 +4323,43 @@ describe('MCPConnectionFactory', () => {
         expect.stringContaining('OAuth required, stopping connection attempts'),
       );
     });
+  });
+
+  describe('declared identity across connection transformations', () => {
+    it.each(['create', 'discoverTools'] as const)(
+      '%s retains the callback identity while transforming only wire headers',
+      async (entry) => {
+        const declared: t.ParsedServerConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          source: 'yaml',
+          headers: { 'X-Workspace': 'catalog' },
+          requestHeaders: { 'X-Workspace': 'chat' },
+        };
+        let definition: t.MCPOptions | undefined;
+        let wireConfig: t.MCPOptions | undefined;
+        class IdentityFactory extends MCPConnectionFactory {
+          protected async createConnection(): Promise<MCPConnection> {
+            definition = this.serverDefinition;
+            wireConfig = this.serverConfig;
+            return mockConnectionInstance;
+          }
+
+          protected async discoverToolsInternal() {
+            await this.createConnection();
+            return { tools: [], connection: null, oauthRequired: false, oauthUrl: null };
+          }
+        }
+        mockProcessMCPEnv.mockImplementation(({ options }) => options);
+        await IdentityFactory[entry]({ serverName: 'identity', serverConfig: declared });
+        expect(definition).toBe(declared);
+        expect(getMCPServerGeneration(definition!)).toBe(getMCPServerGeneration(declared));
+        expect(wireConfig).not.toHaveProperty('requestHeaders');
+        expect(wireConfig).toMatchObject({
+          headers: { 'X-Workspace': entry === 'create' ? 'chat' : 'catalog' },
+        });
+      },
+    );
   });
 
   describe('discoverTools static method', () => {

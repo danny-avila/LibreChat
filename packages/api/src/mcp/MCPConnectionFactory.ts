@@ -32,6 +32,14 @@ import {
   resolveOboToken,
 } from '~/mcp/oauth';
 import {
+  isOAuthServer,
+  waitUntilDeadline,
+  applyRequestHeaders,
+  isClientRejectionMessage,
+  createDeadlineAbortSignal,
+  toCatalogConnectionConfig,
+} from './utils';
+import {
   isDirectOpenIDBearerRecoveryEnabled,
   resolveDirectOpenIDBearerConfig,
   usesDirectOpenIDBearerRecovery,
@@ -41,12 +49,6 @@ import {
   isMCPTransportAuthenticationError,
   MCPAuthenticationRejectedError,
 } from './errors';
-import {
-  isOAuthServer,
-  waitUntilDeadline,
-  isClientRejectionMessage,
-  createDeadlineAbortSignal,
-} from './utils';
 import { PENDING_STALE_MS, FlowStateNotFoundError, normalizeExpiresAt } from '~/flow/manager';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { preProcessGraphTokens } from '~/utils/graph';
@@ -153,11 +155,20 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const directBearerRecoveryState = basic.directBearerRecoveryState ?? { attempted: false };
+    /** Chat-time entry point: the operator's `requestHeaders` join `headers`
+     *  here, ahead of direct-bearer detection and Graph preprocessing, so an
+     *  `Authorization` or `{{LIBRECHAT_GRAPH_*}}` template declared there gets
+     *  exactly the handling it would get in `headers`. */
+    const runtime: t.BasicConnectionOptions = {
+      ...basic,
+      serverConfig: applyRequestHeaders(basic.serverConfig),
+      serverDefinition: basic.serverDefinition ?? basic.serverConfig,
+    };
+    const directBearerRecoveryState = runtime.directBearerRecoveryState ?? { attempted: false };
     const directBearerSourceConfig =
-      basic.directBearerSourceConfig ??
-      (isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)
-        ? (basic.serverConfig as t.ParsedServerConfig)
+      runtime.directBearerSourceConfig ??
+      (isDirectOpenIDBearerRecoveryEnabled(runtime.serverConfig)
+        ? (runtime.serverConfig as t.ParsedServerConfig)
         : undefined);
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
       const prepared = await this.prepareBasicConnectionOptions(
@@ -171,11 +182,11 @@ export class MCPConnectionFactory {
       return factory.createConnection();
     };
     if (!directBearerSourceConfig) {
-      return create(basic);
+      return create(runtime);
     }
 
     try {
-      return await create(basic);
+      return await create(runtime);
     } catch (error) {
       if (!isMCPTransportAuthenticationError(error) || this.isRequestCancelled(oauth)) {
         throw error;
@@ -192,7 +203,7 @@ export class MCPConnectionFactory {
       });
       directBearerRecoveryState.resolvedConfig = refreshedConfig;
       try {
-        return await create({ ...basic, serverConfig: refreshedConfig });
+        return await create({ ...runtime, serverConfig: refreshedConfig });
       } catch (refreshedError) {
         if (isMCPTransportAuthenticationError(refreshedError)) {
           throw new MCPAuthenticationRejectedError(basic.serverName, false, refreshedError);
@@ -233,7 +244,15 @@ export class MCPConnectionFactory {
         : undefined);
     const discover = async (candidate: t.BasicConnectionOptions): Promise<ToolDiscoveryResult> => {
       const prepared = await this.prepareBasicConnectionOptions(
-        { ...candidate, directBearerSourceConfig },
+        {
+          ...candidate,
+          /** Applied to every discovery attempt, not just the first: a config
+           *  refreshed for direct-bearer recovery comes from the untouched
+           *  definition and would otherwise carry the chat-only map back in. */
+          serverConfig: toCatalogConnectionConfig(candidate.serverConfig),
+          serverDefinition: basic.serverDefinition ?? basic.serverConfig,
+          directBearerSourceConfig,
+        },
         options,
       );
       if (options != null && 'useOAuth' in options) {

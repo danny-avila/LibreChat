@@ -815,6 +815,47 @@ describe('MCP schemas', () => {
   });
 });
 
+describe('requestHeaders', () => {
+  it('accepts the operator map on remote transports', () => {
+    const result = StreamableHTTPOptionsSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { Authorization: 'Bearer token' },
+      requestHeaders: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requestHeaders).toEqual({
+        'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      });
+      expect(result.data.headers).toEqual({ Authorization: 'Bearer token' });
+    }
+  });
+
+  it('rejects non-string header values', () => {
+    const result = StreamableHTTPOptionsSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      requestHeaders: { 'X-Conversation-Id': 42 },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('is optional, leaving existing configurations unchanged', () => {
+    const result = StreamableHTTPOptionsSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requestHeaders).toBeUndefined();
+    }
+  });
+});
+
 describe('MCP_USER_INPUT_FIELDS', () => {
   it('includes the expected user-input fields and excludes server-managed ones', () => {
     // Sanity check on the schema-derived field set. This is the comparison
@@ -831,6 +872,7 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     expect(MCP_USER_INPUT_FIELDS.has('obo')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('proxy')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('headers')).toBe(true);
+    expect(MCP_USER_INPUT_FIELDS.has('requestHeaders')).toBe(true);
 
     // Server-managed fields should NOT be in this set — they're stripped by
     // omitServerManagedFields() before MCPServerUserInputSchema is built.

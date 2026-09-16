@@ -106,6 +106,7 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'stderr',
   'url',
   'headers',
+  'requestHeaders',
   'proxy',
   'requiresOAuth',
   'apiKey',
