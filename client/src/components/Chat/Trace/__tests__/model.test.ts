@@ -1,12 +1,18 @@
 import type { TTraceRecord } from 'librechat-data-provider';
+import type { TraceFilter } from '../model';
 import {
+  spanOf,
+  stepKey,
   turnKey,
+  boundsOf,
   panWindow,
   fitWindow,
   zoomWindow,
   assignLanes,
   clampWindow,
   flattenRows,
+  minimumSpan,
+  sequenceLane,
   buildTraceModel,
   collapsibleKeys,
 } from '../model';
@@ -28,28 +34,101 @@ function record(overrides: Partial<TTraceRecord> & Pick<TTraceRecord, 'id'>): TT
   };
 }
 
-const noFilter = { collapsed: new Set<string>(), query: '', window: null };
+const noFilter: TraceFilter = {
+  collapsed: new Set<string>(),
+  query: '',
+  window: null,
+  scale: 'time',
+};
 const rowKeys = (rows: ReturnType<typeof flattenRows>) => rows.map((row) => row.key);
+const step = (index: number, messageId = 'response-1') => stepKey(messageId, 'run', index);
+
+/** An agent turn as the SDK exports it: an agent span holding model calls, tools, and chain spans. */
+const agentTurn: TTraceRecord[] = [
+  record({ id: 'root', kind: 'agent', name: 'AgentGraph', startTime: at(0), endTime: at(10_000) }),
+  record({ id: 'chain', parentId: 'root', name: 'chain', startTime: at(0), endTime: at(9000) }),
+  record({
+    id: 'llm-1',
+    parentId: 'chain',
+    kind: 'generation',
+    name: 'llm',
+    model: 'gpt-5',
+    startTime: at(100),
+    endTime: at(2000),
+  }),
+  record({ id: 'dispatch', parentId: 'chain', name: 'tool-dispatch', startTime: at(2100) }),
+  record({
+    id: 'search-1',
+    parentId: 'dispatch',
+    kind: 'tool',
+    name: 'web_search',
+    startTime: at(2200),
+    endTime: at(3000),
+  }),
+  record({
+    id: 'fetch',
+    parentId: 'search-1',
+    name: 'fetch',
+    startTime: at(2300),
+    endTime: at(2900),
+  }),
+  record({
+    id: 'search-2',
+    parentId: 'dispatch',
+    kind: 'tool',
+    name: 'web_search',
+    startTime: at(3100),
+    endTime: at(3500),
+  }),
+  record({ id: 'checkpoint', parentId: 'chain', name: 'checkpoint', startTime: at(3600) }),
+  record({
+    id: 'llm-2',
+    parentId: 'chain',
+    kind: 'generation',
+    name: 'llm',
+    model: 'gpt-5',
+    startTime: at(4000),
+    endTime: at(9000),
+  }),
+  record({
+    id: 'title-llm',
+    traceId: 'trace-title',
+    kind: 'generation',
+    name: 'llm',
+    origin: 'title',
+    startTime: at(9500),
+    endTime: at(10_000),
+  }),
+];
 
 describe('buildTraceModel', () => {
   it('nests records under their parents and orders turns and siblings by start', () => {
-    const model = buildTraceModel([
-      record({
-        id: 'late-turn-root',
-        messageId: 'response-2',
-        startTime: at(5000),
-        endTime: at(6000),
-      }),
-      record({ id: 'tool', parentId: 'root', kind: 'tool', startTime: at(600), endTime: at(900) }),
-      record({
-        id: 'llm',
-        parentId: 'root',
-        kind: 'generation',
-        startTime: at(100),
-        endTime: at(500),
-      }),
-      record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(1000) }),
-    ]);
+    const model = buildTraceModel(
+      [
+        record({
+          id: 'late-turn-root',
+          messageId: 'response-2',
+          startTime: at(5000),
+          endTime: at(6000),
+        }),
+        record({
+          id: 'tool',
+          parentId: 'root',
+          kind: 'tool',
+          startTime: at(600),
+          endTime: at(900),
+        }),
+        record({
+          id: 'llm',
+          parentId: 'root',
+          kind: 'generation',
+          startTime: at(100),
+          endTime: at(500),
+        }),
+        record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(1000) }),
+      ],
+      'full',
+    );
 
     expect(model.turns.map((turn) => turn.messageId)).toEqual(['response-1', 'response-2']);
     expect(model.nodes.get('root')?.childIds).toEqual(['llm', 'tool']);
@@ -65,13 +144,16 @@ describe('buildTraceModel', () => {
   });
 
   it('keeps records with a missing, cross-turn or cyclic parent as roots instead of dropping them', () => {
-    const model = buildTraceModel([
-      record({ id: 'orphan', parentId: 'not-loaded' }),
-      record({ id: 'other-turn', messageId: 'response-2', parentId: 'orphan' }),
-      record({ id: 'a', parentId: 'b', startTime: at(10) }),
-      record({ id: 'b', parentId: 'a', startTime: at(20) }),
-      record({ id: 'self', parentId: 'self', startTime: at(30) }),
-    ]);
+    const model = buildTraceModel(
+      [
+        record({ id: 'orphan', parentId: 'not-loaded' }),
+        record({ id: 'other-turn', messageId: 'response-2', parentId: 'orphan' }),
+        record({ id: 'a', parentId: 'b', startTime: at(10) }),
+        record({ id: 'b', parentId: 'a', startTime: at(20) }),
+        record({ id: 'self', parentId: 'self', startTime: at(30) }),
+      ],
+      'full',
+    );
 
     const keys = rowKeys(flattenRows(model, noFilter));
     expect(new Set(keys)).toEqual(
@@ -188,33 +270,192 @@ describe('buildTraceModel', () => {
   });
 });
 
+describe('simple mode', () => {
+  const model = buildTraceModel(agentTurn);
+
+  it('lists only model calls and tools, each hung from its nearest listed ancestor', () => {
+    const shown = [...model.nodes.values()].filter((node) => node.shown).map((n) => n.record.id);
+    expect(shown.sort()).toEqual(['llm-1', 'llm-2', 'search-1', 'search-2', 'title-llm']);
+    expect(model.nodes.get('search-1')?.viewParentId).toBeNull();
+    expect(model.nodes.get('fetch')?.shown).toBe(false);
+    expect(model.nodes.get('llm-1')?.depth).toBe(0);
+  });
+
+  it('starts a step at each model call and gives it the tools that ran after it', () => {
+    const turn = model.turns[0];
+    expect(turn.steps).toBe(2);
+    expect(turn.stepKeys).toEqual([step(1), step(2), stepKey('response-1', 'title', 1)]);
+    expect(model.steps.get(step(1))).toMatchObject({
+      index: 1,
+      origin: 'run',
+      generationId: 'llm-1',
+      rootIds: ['llm-1', 'search-1', 'search-2'],
+      start: BASE + 100,
+      end: BASE + 3500,
+      recordCount: 3,
+      toolCalls: 2,
+    });
+    expect([...(model.steps.get(step(1))?.toolNames ?? [])]).toEqual([['web_search', 2]]);
+    expect(model.steps.get(step(2))).toMatchObject({ generationId: 'llm-2', rootIds: ['llm-2'] });
+    expect(model.steps.get(stepKey('response-1', 'title', 1))).toMatchObject({
+      origin: 'title',
+      rootIds: ['title-llm'],
+    });
+  });
+
+  it('keeps a failed span visible so an error is never hidden by the roll-up', () => {
+    const failed = buildTraceModel([
+      record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(3000) }),
+      record({
+        id: 'llm',
+        parentId: 'root',
+        kind: 'generation',
+        startTime: at(0),
+        endTime: at(1000),
+      }),
+      record({
+        id: 'dispatch',
+        parentId: 'root',
+        name: 'tool-dispatch',
+        status: 'error',
+        statusMessage: 'Host tool execution failed',
+        startTime: at(1500),
+        endTime: at(1600),
+      }),
+    ]);
+
+    expect(rowKeys(flattenRows(failed, noFilter))).toEqual([
+      turnKey('response-1'),
+      step(1),
+      'llm',
+      'dispatch',
+    ]);
+    expect(failed.steps.get(step(1))?.errorCount).toBe(1);
+  });
+
+  it('puts tools that ran before any model call, and a turn with no model call, in step 1', () => {
+    const leading = buildTraceModel([
+      record({ id: 'early', kind: 'tool', startTime: at(0), endTime: at(100) }),
+      record({ id: 'llm', kind: 'generation', startTime: at(200), endTime: at(300) }),
+      record({ id: 'late', kind: 'tool', startTime: at(400), endTime: at(500) }),
+      record({ id: 'llm-2', kind: 'generation', startTime: at(600), endTime: at(700) }),
+    ]);
+    const toolsOnly = buildTraceModel([record({ id: 'only', kind: 'tool' })]);
+
+    expect(leading.steps.get(step(1))?.rootIds).toEqual(['early', 'llm', 'late']);
+    expect([...(leading.steps.get(step(1))?.toolNames.keys() ?? [])]).toEqual(['early', 'late']);
+    expect(leading.steps.get(step(2))?.rootIds).toEqual(['llm-2']);
+    expect(leading.turns[0].steps).toBe(2);
+    expect(toolsOnly.turns[0].steps).toBe(1);
+    expect(toolsOnly.steps.get(step(1))).toMatchObject({ generationId: null, rootIds: ['only'] });
+  });
+
+  it('numbers shown records in ledger order for the sequence scale', () => {
+    const order = ['llm-1', 'search-1', 'search-2', 'llm-2', 'title-llm'];
+    expect(order.map((id) => model.nodes.get(id)?.sequence)).toEqual([0, 1, 2, 3, 4]);
+    expect(model.count).toBe(5);
+    expect(model.steps.get(step(1))?.sequence).toEqual({ start: 0, end: 3 });
+    expect(model.turns[0].sequence).toEqual({ start: 0, end: 5 });
+    expect(spanOf(model.nodes.get('search-2') as never, 'sequence')).toEqual({ start: 2, end: 3 });
+    expect(boundsOf(model, 'sequence')).toEqual({ start: 0, end: 5 });
+    expect(boundsOf(model, 'time')).toEqual({ start: BASE, end: BASE + 10_000 });
+  });
+
+  it('lays rows out as turn, steps, then records', () => {
+    const rows = flattenRows(model, noFilter);
+    expect(rows.map((row) => [row.key, row.level])).toEqual([
+      [turnKey('response-1'), 1],
+      [step(1), 2],
+      ['llm-1', 3],
+      ['search-1', 3],
+      ['search-2', 3],
+      [step(2), 2],
+      ['llm-2', 3],
+      [stepKey('response-1', 'title', 1), 2],
+      ['title-llm', 3],
+    ]);
+    expect(rows[1]).toMatchObject({ type: 'step', position: 1, setSize: 3 });
+    expect(rows[2]).toMatchObject({ type: 'record', position: 1, setSize: 3 });
+  });
+
+  it('folds a step and a turn, and offers steps as collapsible keys', () => {
+    expect(rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set([step(1)]) }))).toEqual([
+      turnKey('response-1'),
+      step(1),
+      step(2),
+      'llm-2',
+      stepKey('response-1', 'title', 1),
+      'title-llm',
+    ]);
+    expect(
+      rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set([turnKey('response-1')]) })),
+    ).toEqual([turnKey('response-1')]);
+    expect(new Set(collapsibleKeys(model))).toEqual(
+      new Set([turnKey('response-1'), step(1), step(2), stepKey('response-1', 'title', 1)]),
+    );
+  });
+
+  it('focuses the ledger on a record range on the sequence scale', () => {
+    const rows = flattenRows(model, {
+      ...noFilter,
+      scale: 'sequence',
+      window: { start: 1, end: 3 },
+    });
+
+    expect(rowKeys(rows)).toEqual([turnKey('response-1'), step(1), 'search-1', 'search-2']);
+  });
+
+  it('shows every span again in full mode', () => {
+    const full = buildTraceModel(agentTurn, 'full');
+    expect(rowKeys(flattenRows(full, noFilter))).toEqual([
+      turnKey('response-1'),
+      'root',
+      'chain',
+      'llm-1',
+      'dispatch',
+      'search-1',
+      'fetch',
+      'search-2',
+      'checkpoint',
+      'llm-2',
+      'title-llm',
+    ]);
+    expect(full.nodes.get('fetch')?.depth).toBe(4);
+    expect(full.turns[0].steps).toBe(2);
+    expect(full.count).toBe(10);
+  });
+});
+
 describe('flattenRows', () => {
-  const model = buildTraceModel([
-    record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(10_000) }),
-    record({
-      id: 'llm',
-      parentId: 'root',
-      kind: 'generation',
-      model: 'gpt-5',
-      startTime: at(0),
-      endTime: at(2000),
-    }),
-    record({
-      id: 'tool',
-      parentId: 'root',
-      kind: 'tool',
-      name: 'web_search',
-      startTime: at(5000),
-      endTime: at(6000),
-    }),
-    record({
-      id: 'nested',
-      parentId: 'tool',
-      name: 'fetch',
-      startTime: at(5100),
-      endTime: at(5900),
-    }),
-  ]);
+  const model = buildTraceModel(
+    [
+      record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(10_000) }),
+      record({
+        id: 'llm',
+        parentId: 'root',
+        kind: 'generation',
+        model: 'gpt-5',
+        startTime: at(0),
+        endTime: at(2000),
+      }),
+      record({
+        id: 'tool',
+        parentId: 'root',
+        kind: 'tool',
+        name: 'web_search',
+        startTime: at(5000),
+        endTime: at(6000),
+      }),
+      record({
+        id: 'nested',
+        parentId: 'tool',
+        name: 'fetch',
+        startTime: at(5100),
+        endTime: at(5900),
+      }),
+    ],
+    'full',
+  );
 
   it('places each row among its visible siblings rather than the whole list', () => {
     const placements = flattenRows(model, noFilter).map(({ key, position, setSize }) => [
@@ -249,9 +490,9 @@ describe('flattenRows', () => {
 
   it('keeps search matches and their ancestors, even inside collapsed parents', () => {
     const rows = flattenRows(model, {
+      ...noFilter,
       collapsed: new Set(['root', 'tool']),
       query: 'FETCH',
-      window: null,
     });
 
     expect(rowKeys(rows)).toEqual([turnKey('response-1'), 'root', 'tool', 'nested']);
@@ -299,7 +540,7 @@ describe('flattenRows', () => {
   });
 });
 
-describe('time windows', () => {
+describe('windows', () => {
   const bounds = { start: BASE, end: BASE + 10_000 };
 
   it('clamps a window inside the trace and clears it when it covers everything', () => {
@@ -334,21 +575,47 @@ describe('time windows', () => {
       end: BASE + 1900,
     });
   });
+
+  it('never zooms below one record on the sequence scale', () => {
+    const records = { start: 0, end: 8 };
+    expect(minimumSpan(records, 'sequence')).toBe(1);
+    expect(minimumSpan(bounds, 'time')).toBe(10);
+    expect(zoomWindow(records, { start: 3, end: 4 }, 0.5, 3.5, 1)).toEqual({ start: 3, end: 4 });
+  });
 });
 
-describe('assignLanes', () => {
+describe('lanes', () => {
   it('reuses a lane once its record ends and caps the lane count', () => {
-    const model = buildTraceModel([
-      record({ id: 'a', startTime: at(0), endTime: at(1000) }),
-      record({ id: 'b', startTime: at(500), endTime: at(1500) }),
-      record({ id: 'c', startTime: at(1000), endTime: at(2000) }),
-      record({ id: 'd', startTime: at(1200), endTime: at(1300) }),
-    ]);
+    const model = buildTraceModel(
+      [
+        record({ id: 'a', startTime: at(0), endTime: at(1000) }),
+        record({ id: 'b', startTime: at(500), endTime: at(1500) }),
+        record({ id: 'c', startTime: at(1000), endTime: at(2000) }),
+        record({ id: 'd', startTime: at(1200), endTime: at(1300) }),
+      ],
+      'full',
+    );
 
     const lanes = assignLanes(model, 2);
     expect(lanes.get('a')).toBe(0);
     expect(lanes.get('b')).toBe(1);
     expect(lanes.get('c')).toBe(0);
     expect(lanes.get('d')).toBe(1);
+  });
+
+  it('packs only the records the mode shows', () => {
+    const model = buildTraceModel([
+      record({ id: 'span', startTime: at(0), endTime: at(1000) }),
+      record({ id: 'llm', kind: 'generation', startTime: at(500), endTime: at(1500) }),
+    ]);
+
+    expect(assignLanes(model, 2).get('llm')).toBe(0);
+    expect(assignLanes(model, 2).has('span')).toBe(false);
+  });
+
+  it('separates kinds on the sequence scale', () => {
+    expect(sequenceLane(record({ id: 'g', kind: 'generation' }))).toBe(0);
+    expect(sequenceLane(record({ id: 't', kind: 'tool' }))).toBe(1);
+    expect(sequenceLane(record({ id: 'e', kind: 'event' }))).toBe(2);
   });
 });

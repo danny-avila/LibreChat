@@ -1,10 +1,13 @@
 import { useId, useRef, useMemo, useState, useEffect, useCallback, useDeferredValue } from 'react';
 import axios from 'axios';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, resolveTraceViewerConfig } from 'librechat-data-provider';
+import { useAtom } from 'jotai';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService, resolveTraceViewerConfig } from 'librechat-data-provider';
 import { Button, Spinner, EmptyState, FilterInput, buttonVariants } from '@librechat/client';
 import {
   X,
+  Clock,
+  Layers,
   ZoomIn,
   ZoomOut,
   RefreshCw,
@@ -14,10 +17,15 @@ import {
   TriangleAlert,
   ChartNoAxesGantt,
 } from 'lucide-react';
-import type { TTraceRecord, TTraceErrorCode, TTraceErrorResponse } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TTraceRecord,
+  TTraceErrorCode,
+  TTraceErrorResponse,
+} from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
+import type { TraceNode, TraceWindow } from './model';
 import type { TranslationKeys } from '~/hooks';
-import type { TraceWindow } from './model';
 import {
   keepNewestTracePage,
   useGetStartupConfig,
@@ -25,14 +33,18 @@ import {
   useConversationTraceRecordsQuery,
 } from '~/data-provider';
 import {
+  boundsOf,
   ZOOM_STEP,
   fitWindow,
   zoomWindow,
   flattenRows,
+  minimumSpan,
   buildTraceModel,
   collapsibleKeys,
 } from './model';
+import { traceModeAtom, traceScaleAtom } from './store';
 import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
+import { buildPreviews, previewFor } from './preview';
 import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import Inspector from './Inspector';
@@ -49,6 +61,8 @@ const ERROR_MESSAGES: Partial<Record<TTraceErrorCode, TranslationKeys>> = {
   unauthorized: 'com_ui_trace_error_unauthorized',
   unsupported: 'com_ui_trace_error_unsupported',
 };
+
+const PRESSED = 'bg-surface-active-alt';
 
 function errorCodeOf(error: unknown): TTraceErrorCode | undefined {
   return axios.isAxiosError<TTraceErrorResponse>(error)
@@ -90,19 +104,20 @@ export default function Viewer({
     conversationId,
     startupConfig?.langfuseConnectionAccess === true,
   );
+  /** The chat's own messages, already loaded underneath the trace; they are only read, never fetched here. */
+  const { data: messages } = useQuery<TMessage[]>(
+    [QueryKeys.messages, conversationId],
+    () => dataService.getMessagesByConvoId(conversationId),
+    { enabled: false },
+  );
 
+  const [mode, setMode] = useAtom(traceModeAtom);
+  const [scale, setScale] = useAtom(traceScaleAtom);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState('');
   const [view, setView] = useState<TraceWindow | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastRead, setLastRead] = useState<'refresh' | 'older'>('refresh');
-  const labelsFor = useCallback(
-    (record: TTraceRecord) => [
-      localize(KIND_APPEARANCE[record.kind].label),
-      localize(STATUS_LABEL[record.status]),
-    ],
-    [localize],
-  );
   /** Rereads only the newest page; older pages cannot change and reload on demand. */
   const refresh = useCallback(() => {
     setLastRead('refresh');
@@ -139,16 +154,53 @@ export default function Viewer({
     pages.every((page) => page.sourceId === langfuseSession.destinationId)
       ? langfuseSession.url
       : undefined;
-  const model = useMemo(() => buildTraceModel(records), [records]);
+  const model = useMemo(() => buildTraceModel(records, mode), [records, mode]);
+  const bounds = useMemo(() => boundsOf(model, scale), [model, scale]);
+  const minSpan = minimumSpan(bounds, scale);
+  const previews = useMemo(() => buildPreviews(messages), [messages]);
+  const previewOf = useCallback(
+    (node: TraceNode) => previewFor(node, model, previews),
+    [model, previews],
+  );
+  const labelsFor = useCallback(
+    (record: TTraceRecord) => {
+      const node = model.nodes.get(record.id);
+      const preview = node != null ? previewOf(node) : undefined;
+      return [
+        localize(KIND_APPEARANCE[record.kind].label),
+        localize(STATUS_LABEL[record.status]),
+        ...(preview != null ? [preview] : []),
+      ];
+    },
+    [localize, model, previewOf],
+  );
   const rows = useMemo(
-    () => flattenRows(model, { collapsed, query: deferredQuery, window: view, labelsFor }),
-    [model, collapsed, deferredQuery, view, labelsFor],
+    () => flattenRows(model, { collapsed, query: deferredQuery, window: view, scale, labelsFor }),
+    [model, collapsed, deferredQuery, view, scale, labelsFor],
   );
   /** A refresh or a settled run trims the cache to its newest page. An interval or a selection
    *  on records that left with the older pages would hide every row, or reopen when they reload. */
   useEffect(() => {
     setSelectedId((id) => (id != null && !model.nodes.has(id) ? null : id));
-    setView((current) => (current != null ? fitWindow(current, model) : current));
+    setView((current) => (current != null ? fitWindow(current, bounds, minSpan) : current));
+  }, [model, bounds, minSpan]);
+  /** Positions mean something else on the other scale or with other records shown. */
+  useEffect(() => {
+    setView(null);
+  }, [scale, mode]);
+  /** Older responses arrive folded to their summary; the newest one opens, since it is what the user just ran. */
+  const seenTurns = useRef(new Set<string>());
+  useEffect(() => {
+    const newest = model.turns[model.turns.length - 1]?.key;
+    const fold = model.turns
+      .filter((turn) => !seenTurns.current.has(turn.key) && turn.key !== newest)
+      .map((turn) => turn.key);
+    for (const turn of model.turns) {
+      seenTurns.current.add(turn.key);
+    }
+    if (fold.length > 0) {
+      setCollapsed((current) => new Set([...current, ...fold]));
+    }
   }, [model]);
   const selectedNode = selectedId != null ? model.nodes.get(selectedId) : undefined;
   const selectedTurnStart =
@@ -218,6 +270,22 @@ export default function Viewer({
     </Button>
   );
 
+  const selectionText = () => {
+    if (view == null) {
+      return null;
+    }
+    if (scale === 'sequence') {
+      return localize('com_ui_trace_selection_records', {
+        0: String(Math.floor(view.start) + 1),
+        1: String(Math.ceil(view.end)),
+      });
+    }
+    return localize('com_ui_trace_selection', {
+      0: format.duration(view.start - model.start),
+      1: format.duration(view.end - model.start),
+    });
+  };
+
   const renderBody = () => {
     if (recordsQuery.isLoading) {
       return (
@@ -275,7 +343,7 @@ export default function Viewer({
               </p>
             )}
           </div>
-          <Timeline model={model} view={view} onViewChange={setView} />
+          <Timeline model={model} scale={scale} view={view} onViewChange={setView} />
           <div className="flex flex-wrap items-center gap-2">
             <FilterInput
               inputId={searchId}
@@ -309,13 +377,34 @@ export default function Viewer({
               <ChevronsDownUp className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">{localize('com_ui_trace_collapse_all')}</span>
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={localize('com_ui_trace_scale_duration')}
+              aria-pressed={scale === 'time'}
+              title={localize('com_ui_trace_scale_duration_description')}
+              className={cn(scale === 'time' && PRESSED)}
+              onClick={() => setScale(scale === 'time' ? 'sequence' : 'time')}
+            >
+              <Clock className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">{localize('com_ui_trace_scale_duration')}</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={localize('com_ui_trace_all_spans')}
+              aria-pressed={mode === 'full'}
+              title={localize('com_ui_trace_all_spans_description')}
+              className={cn(mode === 'full' && PRESSED)}
+              onClick={() => setMode(mode === 'full' ? 'simple' : 'full')}
+            >
+              <Layers className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">{localize('com_ui_trace_all_spans')}</span>
+            </Button>
             <div className="ml-auto flex items-center gap-1">
               {view != null && (
                 <span className="text-xs tabular-nums text-text-secondary" aria-live="polite">
-                  {localize('com_ui_trace_selection', {
-                    0: format.duration(view.start - model.start),
-                    1: format.duration(view.end - model.start),
-                  })}
+                  {selectionText()}
                 </span>
               )}
               <Button
@@ -323,7 +412,7 @@ export default function Viewer({
                 variant="ghost"
                 aria-label={localize('com_ui_zoom_out')}
                 disabled={view == null}
-                onClick={() => setView(zoomWindow(model, view, 1 / ZOOM_STEP))}
+                onClick={() => setView(zoomWindow(bounds, view, 1 / ZOOM_STEP, undefined, minSpan))}
               >
                 <ZoomOut className="size-4" aria-hidden="true" />
               </Button>
@@ -331,7 +420,7 @@ export default function Viewer({
                 size="icon-sm"
                 variant="ghost"
                 aria-label={localize('com_ui_zoom_in')}
-                onClick={() => setView(zoomWindow(model, view, ZOOM_STEP))}
+                onClick={() => setView(zoomWindow(bounds, view, ZOOM_STEP, undefined, minSpan))}
               >
                 <ZoomIn className="size-4" aria-hidden="true" />
               </Button>
@@ -353,9 +442,11 @@ export default function Viewer({
               <Ledger
                 rows={rows}
                 model={model}
+                scale={scale}
                 view={view}
                 selectedId={selectedId}
                 treeRef={treeRef}
+                previewFor={previewOf}
                 onSelect={setSelectedId}
                 onToggle={toggle}
               />
