@@ -42,7 +42,7 @@ export function getMCPAppToolsPublicationGeneration(config: ParsedServerConfig):
     const requestConfig = processMCPEnv({
       options: { ...config, headers: config.requestHeaders },
     });
-    if ('headers' in requestConfig) {
+    if ('headers' in requestConfig && 'requestHeaders' in runtimeConfig) {
       runtimeConfig = { ...runtimeConfig, requestHeaders: requestConfig.headers };
     }
   }
