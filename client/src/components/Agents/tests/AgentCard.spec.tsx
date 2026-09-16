@@ -65,6 +65,26 @@ describe('AgentCard', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('strips markup from a rich description so the blurb stays text', () => {
+    render(
+      <AgentCard
+        agent={{
+          ...agent,
+          support_contact: undefined,
+          description:
+            '<span>Assistant for projects. <a href="https://example.com">Read the guide</a></span>',
+        }}
+        onSelect={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Assistant for projects. Read the guide')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Read the guide' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: agent.name as string })).toHaveAccessibleDescription(
+      'Assistant for projects. Read the guide',
+    );
+  });
+
   it('selects the agent exactly once on click', async () => {
     const user = userEvent.setup();
     const onSelect = jest.fn();

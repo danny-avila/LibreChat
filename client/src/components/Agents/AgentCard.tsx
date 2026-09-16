@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react';
 import type t from 'librechat-data-provider';
 import { agentMorphId, CARD_HANDOFF_VARIANTS, MORPH_CLOSE_TRANSITION } from './morph';
 import AgentContact, { resolveAgentContact } from './AgentContact';
+import { getPlainDescription } from '~/components/ui/Description';
 import { cn, renderAgentAvatar } from '~/utils';
 import AgentCategoryBadge from './Category';
 import { useLocalize } from '~/hooks';
@@ -61,7 +62,11 @@ const AgentCard = memo(
     const titleId = `${id}-title`;
     const descriptionId = `${id}-description`;
     const name = agent.name?.trim() || localize('com_ui_agent');
-    const description = agent.description?.trim() || localize('com_agents_description_empty');
+    /* Stripped rather than rendered: a card is a blurb, and the word morph measures
+       text nodes, so markup here would neither clamp nor travel. The dialog renders
+       the same copy with its links and images intact. */
+    const description =
+      getPlainDescription(agent.description).trim() || localize('com_agents_description_empty');
     /* Only fields the dialog also renders take part in the morph, so an absent
        category or contact never hands over an empty box. `layoutAnchor: false`
        keeps them resolving against the viewport rather than against whichever

@@ -204,6 +204,21 @@ describe('AgentDetailContent', () => {
     expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
   });
 
+  it('renders a rich description as sanitized markup with safe links', () => {
+    renderDetail({
+      ...baseAgent,
+      description:
+        '<span onclick="alert(1)">Assistant. <a href="https://example.com">Read the guide</a><script>alert(1)</script></span>',
+    });
+
+    const link = screen.getByRole('link', { name: 'Read the guide' });
+    expect(link).toHaveAttribute('href', 'https://example.com');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(document.querySelector('[onclick]')).not.toBeInTheDocument();
+    expect(document.querySelector('script')).not.toBeInTheDocument();
+  });
+
   it('renders the morphed copy word by word without reading it twice', () => {
     const description = 'Compare sources quickly.';
     renderDetail({ ...baseAgent, description }, '/app', 'open');
