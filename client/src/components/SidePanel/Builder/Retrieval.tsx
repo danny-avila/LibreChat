@@ -28,15 +28,6 @@ export default function Retrieval({
   const methods = useFormContext<AssistantForm>();
   const { control, setValue, getValues } = methods;
   const model = useWatch({ control, name: 'model' });
-  const assistant = useWatch({ control, name: 'assistant' });
-
-  const vectorStores = useMemo(() => {
-    if (typeof assistant === 'string') {
-      return [];
-    }
-    return assistant.tool_resources?.file_search;
-  }, [assistant]);
-
   const isDisabled = useMemo(() => !retrievalModels.has(model), [model, retrievalModels]);
 
   useEffect(() => {
