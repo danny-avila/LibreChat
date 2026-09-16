@@ -118,7 +118,8 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     const step = current == null || afterToolCall ? begin() : current;
     step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
-  if (steps.length === 0 && message?.text) {
+  /** A failed turn's row stores the failure as its text; the model never wrote it. */
+  if (steps.length === 0 && message?.text && message.error !== true) {
     return { steps: [{ text: compact(message.text), toolCalls: [] }], fromText: true };
   }
   return { steps, fromText: false };

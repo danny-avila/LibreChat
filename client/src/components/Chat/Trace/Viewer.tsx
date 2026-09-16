@@ -158,9 +158,14 @@ export default function Viewer({
   const bounds = useMemo(() => boundsOf(model, scale), [model, scale]);
   const minSpan = minimumSpan(bounds, scale);
   const previews = useMemo(() => buildPreviews(messages), [messages]);
+  /** Pages split a response at the oldest loaded turn, whose earlier steps are still unloaded;
+   *  its rounds cannot be numbered against the message until they are. */
+  const partialMessageId =
+    recordsQuery.hasNextPage === true ? model.turns[0]?.messageId : undefined;
   const previewOf = useCallback(
-    (node: TraceNode) => previewFor(node, model, previews),
-    [model, previews],
+    (node: TraceNode) =>
+      node.record.messageId === partialMessageId ? undefined : previewFor(node, model, previews),
+    [model, previews, partialMessageId],
   );
   const labelsFor = useCallback(
     (record: TTraceRecord) => {

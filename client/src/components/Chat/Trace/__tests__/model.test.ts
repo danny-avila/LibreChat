@@ -42,7 +42,7 @@ const noFilter: TraceFilter = {
   scale: 'time',
 };
 const rowKeys = (rows: ReturnType<typeof flattenRows>) => rows.map((row) => row.key);
-const step = (index: number, messageId = 'response-1') => stepKey(messageId, 'run', index);
+const step = (anchorId: string, messageId = 'response-1') => stepKey(messageId, 'run', anchorId);
 
 /** An agent turn as the SDK exports it: an agent span holding model calls, tools, and chain spans. */
 const agentTurn: TTraceRecord[] = [
@@ -285,8 +285,12 @@ describe('simple mode', () => {
   it('starts a step at each model call and gives it the tools that ran after it', () => {
     const turn = model.turns[0];
     expect(turn.steps).toBe(2);
-    expect(turn.stepKeys).toEqual([step(1), step(2), stepKey('response-1', 'title', 1)]);
-    expect(model.steps.get(step(1))).toMatchObject({
+    expect(turn.stepKeys).toEqual([
+      step('llm-1'),
+      step('llm-2'),
+      stepKey('response-1', 'title', 'title-llm'),
+    ]);
+    expect(model.steps.get(step('llm-1'))).toMatchObject({
       index: 1,
       origin: 'run',
       generationId: 'llm-1',
@@ -296,9 +300,12 @@ describe('simple mode', () => {
       recordCount: 3,
       toolCalls: 2,
     });
-    expect([...(model.steps.get(step(1))?.toolNames ?? [])]).toEqual([['web_search', 2]]);
-    expect(model.steps.get(step(2))).toMatchObject({ generationId: 'llm-2', rootIds: ['llm-2'] });
-    expect(model.steps.get(stepKey('response-1', 'title', 1))).toMatchObject({
+    expect([...(model.steps.get(step('llm-1'))?.toolNames ?? [])]).toEqual([['web_search', 2]]);
+    expect(model.steps.get(step('llm-2'))).toMatchObject({
+      generationId: 'llm-2',
+      rootIds: ['llm-2'],
+    });
+    expect(model.steps.get(stepKey('response-1', 'title', 'title-llm'))).toMatchObject({
       origin: 'title',
       rootIds: ['title-llm'],
     });
@@ -327,11 +334,11 @@ describe('simple mode', () => {
 
     expect(rowKeys(flattenRows(failed, noFilter))).toEqual([
       turnKey('response-1'),
-      step(1),
+      step('llm'),
       'llm',
       'dispatch',
     ]);
-    expect(failed.steps.get(step(1))?.errorCount).toBe(1);
+    expect(failed.steps.get(step('llm'))?.errorCount).toBe(1);
   });
 
   it('gives tools that ran before any model call their own step, and a turn with no model call one step', () => {
@@ -343,13 +350,16 @@ describe('simple mode', () => {
     ]);
     const toolsOnly = buildTraceModel([record({ id: 'only', kind: 'tool' })]);
 
-    expect(leading.steps.get(step(1))?.rootIds).toEqual(['early']);
-    expect(leading.steps.get(step(2))?.rootIds).toEqual(['llm', 'late']);
-    expect([...(leading.steps.get(step(2))?.toolNames.keys() ?? [])]).toEqual(['late']);
-    expect(leading.steps.get(step(3))?.rootIds).toEqual(['llm-2']);
+    expect(leading.steps.get(step('early'))?.rootIds).toEqual(['early']);
+    expect(leading.steps.get(step('llm'))?.rootIds).toEqual(['llm', 'late']);
+    expect([...(leading.steps.get(step('llm'))?.toolNames.keys() ?? [])]).toEqual(['late']);
+    expect(leading.steps.get(step('llm-2'))?.rootIds).toEqual(['llm-2']);
     expect(leading.turns[0].steps).toBe(3);
     expect(toolsOnly.turns[0].steps).toBe(1);
-    expect(toolsOnly.steps.get(step(1))).toMatchObject({ generationId: null, rootIds: ['only'] });
+    expect(toolsOnly.steps.get(step('only'))).toMatchObject({
+      generationId: null,
+      rootIds: ['only'],
+    });
   });
 
   it('keeps a failed wrapper visible without folding the model calls beneath it into one step', () => {
@@ -375,10 +385,10 @@ describe('simple mode', () => {
     expect(failed.nodes.get('llm-1')?.viewParentId).toBeNull();
     expect(rowKeys(flattenRows(failed, noFilter))).toEqual([
       turnKey('response-1'),
-      step(1),
+      step('llm-1'),
       'root',
       'llm-1',
-      step(2),
+      step('llm-2'),
       'llm-2',
     ]);
   });
@@ -406,11 +416,26 @@ describe('simple mode', () => {
     expect(rebaseWindow(inTime, previous, previous, 'time')).toBe(inTime);
   });
 
+  it('keeps a step key stable when an older page adds an earlier model call', () => {
+    const newest = buildTraceModel([
+      record({ id: 'llm-2', kind: 'generation', startTime: at(4000), endTime: at(5000) }),
+    ]);
+    const complete = buildTraceModel([
+      record({ id: 'llm-1', kind: 'generation', startTime: at(0), endTime: at(1000) }),
+      record({ id: 'llm-2', kind: 'generation', startTime: at(4000), endTime: at(5000) }),
+    ]);
+
+    expect(newest.turns[0].stepKeys).toEqual([step('llm-2')]);
+    expect(newest.steps.get(step('llm-2'))?.index).toBe(1);
+    expect(complete.turns[0].stepKeys).toEqual([step('llm-1'), step('llm-2')]);
+    expect(complete.steps.get(step('llm-2'))?.index).toBe(2);
+  });
+
   it('numbers shown records in ledger order for the sequence scale', () => {
     const order = ['llm-1', 'search-1', 'search-2', 'llm-2', 'title-llm'];
     expect(order.map((id) => model.nodes.get(id)?.sequence)).toEqual([0, 1, 2, 3, 4]);
     expect(model.count).toBe(5);
-    expect(model.steps.get(step(1))?.sequence).toEqual({ start: 0, end: 3 });
+    expect(model.steps.get(step('llm-1'))?.sequence).toEqual({ start: 0, end: 3 });
     expect(model.turns[0].sequence).toEqual({ start: 0, end: 5 });
     expect(spanOf(model.nodes.get('search-2') as never, 'sequence')).toEqual({ start: 2, end: 3 });
     expect(boundsOf(model, 'sequence')).toEqual({ start: 0, end: 5 });
@@ -421,13 +446,13 @@ describe('simple mode', () => {
     const rows = flattenRows(model, noFilter);
     expect(rows.map((row) => [row.key, row.level])).toEqual([
       [turnKey('response-1'), 1],
-      [step(1), 2],
+      [step('llm-1'), 2],
       ['llm-1', 3],
       ['search-1', 3],
       ['search-2', 3],
-      [step(2), 2],
+      [step('llm-2'), 2],
       ['llm-2', 3],
-      [stepKey('response-1', 'title', 1), 2],
+      [stepKey('response-1', 'title', 'title-llm'), 2],
       ['title-llm', 3],
     ]);
     expect(rows[1]).toMatchObject({ type: 'step', position: 1, setSize: 3 });
@@ -435,19 +460,26 @@ describe('simple mode', () => {
   });
 
   it('folds a step and a turn, and offers steps as collapsible keys', () => {
-    expect(rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set([step(1)]) }))).toEqual([
+    expect(
+      rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set([step('llm-1')]) })),
+    ).toEqual([
       turnKey('response-1'),
-      step(1),
-      step(2),
+      step('llm-1'),
+      step('llm-2'),
       'llm-2',
-      stepKey('response-1', 'title', 1),
+      stepKey('response-1', 'title', 'title-llm'),
       'title-llm',
     ]);
     expect(
       rowKeys(flattenRows(model, { ...noFilter, collapsed: new Set([turnKey('response-1')]) })),
     ).toEqual([turnKey('response-1')]);
     expect(new Set(collapsibleKeys(model))).toEqual(
-      new Set([turnKey('response-1'), step(1), step(2), stepKey('response-1', 'title', 1)]),
+      new Set([
+        turnKey('response-1'),
+        step('llm-1'),
+        step('llm-2'),
+        stepKey('response-1', 'title', 'title-llm'),
+      ]),
     );
   });
 
@@ -458,7 +490,7 @@ describe('simple mode', () => {
       window: { start: 1, end: 3 },
     });
 
-    expect(rowKeys(rows)).toEqual([turnKey('response-1'), step(1), 'search-1', 'search-2']);
+    expect(rowKeys(rows)).toEqual([turnKey('response-1'), step('llm-1'), 'search-1', 'search-2']);
   });
 
   it('shows every span again in full mode', () => {

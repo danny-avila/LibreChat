@@ -128,8 +128,9 @@ const EMPTY_SUMMARY: TraceSummary = {
 const EMPTY_SPAN: TraceSpan = { start: 0, end: 0 };
 
 export const turnKey = (messageId: string): string => `turn:${messageId}`;
-export const stepKey = (messageId: string, origin: TraceStep['origin'], index: number): string =>
-  `step:${messageId}:${origin}:${index}`;
+/** Keyed by the step's own record, so a fold survives an older page renumbering the steps. */
+export const stepKey = (messageId: string, origin: TraceStep['origin'], anchorId: string): string =>
+  `step:${messageId}:${origin}:${anchorId}`;
 
 const byStart = (nodes: Map<string, TraceNode>) => (a: string, b: string) => {
   const left = nodes.get(a);
@@ -315,13 +316,14 @@ function groupSteps(
       groups.push(leading);
     }
     groups.forEach((rootIds, index) => {
-      const key = stepKey(turn.messageId, origin, index + 1);
+      const generationId = rootIds.find(isGenerationId(nodes)) ?? null;
+      const key = stepKey(turn.messageId, origin, generationId ?? rootIds[0]);
       const step: TraceStep = {
         key,
         messageId: turn.messageId,
         index: index + 1,
         origin,
-        generationId: rootIds.find(isGenerationId(nodes)) ?? null,
+        generationId,
         rootIds,
         start: Number.POSITIVE_INFINITY,
         end: Number.NEGATIVE_INFINITY,

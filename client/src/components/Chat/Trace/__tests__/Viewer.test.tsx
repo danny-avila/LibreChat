@@ -241,6 +241,54 @@ describe('Trace Viewer', () => {
     expect(screen.queryByRole('treeitem', { name: recordName('later-a') })).not.toBeInTheDocument();
   });
 
+  it('withholds previews for a response split across pages until its earlier steps load', async () => {
+    const generation = (id: string, offset: number) =>
+      record({
+        id,
+        messageId: 'response-2',
+        traceId: 'trace-2',
+        name: id,
+        kind: 'generation',
+        startTime: at(offset),
+        endTime: at(offset + 500),
+      });
+    jest
+      .spyOn(dataService, 'getConversationTraceRecords')
+      .mockImplementation(async ({ cursor }) =>
+        cursor == null
+          ? { records: [generation('later-2', 12_000)], nextCursor: 'older' }
+          : { records: [generation('later-1', 10_000), ...records] },
+      );
+    const { client } = renderViewer();
+    act(() =>
+      client.setQueryData(
+        [QueryKeys.messages, 'convo-1'],
+        [
+          {
+            ...responseMessage,
+            messageId: 'response-2',
+            content: [
+              { type: ContentTypes.TEXT, text: 'First round.' },
+              { type: ContentTypes.TOOL_CALL, tool_call: { name: 'noop', args: {}, stepId: 's1' } },
+              { type: ContentTypes.TEXT, text: 'Second round.' },
+            ],
+          },
+        ],
+      ),
+    );
+    await recordRow('later-2,');
+    expect(
+      screen.queryByRole('treeitem', { name: /later-2: First round/ }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
+
+    expect(await recordRow('later-2: Second round\\.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('treeitem', { name: recordName('later-1: First round\\.') }),
+    ).toBeInTheDocument();
+  });
+
   it('previews what a step wrote and what a tool was asked, from the chat message', async () => {
     const { client } = renderViewer();
     await recordRow('llm');

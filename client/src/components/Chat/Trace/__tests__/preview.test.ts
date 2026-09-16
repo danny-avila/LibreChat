@@ -258,6 +258,16 @@ describe('previewFor', () => {
     expect(previewFor(twins.nodes.get('two') as never, twins, parallel)).toBeUndefined();
   });
 
+  it("never treats a failed turn's error text as model output", () => {
+    const one = buildTraceModel([
+      record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),
+    ]);
+    const failed = buildPreviews([message({ text: 'Generation failed', error: true })]);
+
+    expect(buildStepPreviews(message({ text: 'Generation failed', error: true }))).toEqual([]);
+    expect(previewFor(one.nodes.get('llm') as never, one, failed)).toBeUndefined();
+  });
+
   it('does not preview messages the user wrote', () => {
     expect(previews.has('user-1')).toBe(false);
   });
