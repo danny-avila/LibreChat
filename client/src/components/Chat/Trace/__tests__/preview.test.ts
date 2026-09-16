@@ -1,6 +1,11 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TTraceRecord } from 'librechat-data-provider';
-import { buildPreviews, buildStepPreviews, buildPreviewIndex } from '../preview';
+import {
+  buildPreviews,
+  buildStepPreviews,
+  buildPreviewIndex,
+  buildMessagePreview,
+} from '../preview';
 import { buildTraceModel } from '../model';
 
 const BASE = Date.UTC(2026, 8, 12, 11, 30, 0);
@@ -350,9 +355,11 @@ describe('buildPreviewIndex', () => {
       message({ unfinished: true, content: [{ type: ContentTypes.TEXT, text: 'Started well.' }] }),
     ]);
 
-    expect(buildPreviewIndex(two, failed).get('first')).toBe('Started well.');
+    expect(buildPreviewIndex(two, failed).size).toBe(0);
+    expect(failed.get('response-1')?.finalOnly).toBe(false);
     expect(buildPreviewIndex(two, failed).get('last')).toBeUndefined();
-    expect(buildPreviewIndex(two, unfinished).get('first')).toBe('Started well.');
+    expect(buildPreviewIndex(two, unfinished).size).toBe(0);
+    expect(unfinished.get('response-1')?.finalOnly).toBe(false);
     expect(buildPreviewIndex(two, unfinished).get('last')).toBeUndefined();
   });
 
@@ -382,6 +389,90 @@ describe('buildPreviewIndex', () => {
 
     expect(buildPreviewIndex(one, answer).get('llm')).toBe('Answer.');
     expect(buildPreviewIndex(one, answer, 'response-1').get('llm')).toBeUndefined();
+  });
+
+  it('keeps text and tool previews for a single attributed lane', () => {
+    const single = message({
+      content: response.content?.map((part) => ({ ...part, agentId: 'agent-a', groupId: 1 })),
+    });
+    const index = buildPreviewIndex(model, buildPreviews([single]));
+    expect(index.get('llm-1')).toBe('Let me check the weather for you.');
+    expect(index.get('search-paris')).toBe('query: weather in Paris, limit: 3');
+    expect(index.get('llm-2')).toBe('Paris is sunny, Lyon is not.');
+  });
+
+  it.each([false, true])('aligns output across consecutive steers (reasoning: %s)', (reasoning) => {
+    const steered = message({
+      content: [
+        { type: ContentTypes.TEXT, text: 'Before.' },
+        { type: ContentTypes.STEER, steer: 'Change direction.' },
+        { type: ContentTypes.STEER, steer: 'And be brief.' },
+        ...(reasoning ? [{ type: ContentTypes.THINK, think: 'New direction.' }] : []),
+        { type: ContentTypes.TEXT, text: 'After.' },
+      ],
+    } as Partial<TMessage>);
+    const two = buildTraceModel([
+      record({ id: 'first', kind: 'generation', startTime: at(0) }),
+      record({ id: 'last', kind: 'generation', startTime: at(200) }),
+    ]);
+    expect(buildStepPreviews(steered)).toEqual([
+      { text: 'Before.', toolCalls: [] },
+      { text: 'After.', toolCalls: [] },
+    ]);
+    expect([...buildPreviewIndex(two, buildPreviews([steered]))]).toEqual([
+      ['first', 'Before.'],
+      ['last', 'After.'],
+    ]);
+  });
+
+  it('withholds filtered mixed output until every round can be aligned', () => {
+    const records = [
+      record({ id: 'a', kind: 'generation', startTime: at(0) }),
+      record({ id: 'b', kind: 'generation', startTime: at(100) }),
+      record({ id: 'tool-b', kind: 'tool', name: 'search', startTime: at(200) }),
+      record({ id: 'c', kind: 'generation', startTime: at(300) }),
+    ];
+    const filtered = message({
+      content: [
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'search', args: { q: 'B' } } },
+        { type: ContentTypes.TEXT, text: 'Final C.' },
+      ],
+    } as Partial<TMessage>);
+    for (const mode of ['simple', 'full'] as const) {
+      expect(
+        buildPreviewIndex(buildTraceModel(records, mode), buildPreviews([filtered])).size,
+      ).toBe(0);
+      const restored = message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Round A.', agentId: 'agent-a' },
+          { type: ContentTypes.THINK, think: 'Round B.', agentId: 'agent-b' },
+          ...(filtered.content ?? []),
+        ],
+      } as Partial<TMessage>);
+      expect([
+        ...buildPreviewIndex(buildTraceModel(records, mode), buildPreviews([restored])),
+      ]).toEqual([
+        ['a', 'Round A.'],
+        ['tool-b', 'q: B'],
+        ['c', 'Final C.'],
+      ]);
+    }
+  });
+
+  it('does not final-align unfinished flat text or text followed by a steer', () => {
+    expect(
+      buildMessagePreview(message({ text: 'Still working.', unfinished: true })).finalOnly,
+    ).toBe(false);
+    expect(
+      buildMessagePreview(
+        message({
+          content: [
+            { type: ContentTypes.TEXT, text: 'Before.' },
+            { type: ContentTypes.STEER, steer: 'Continue.' },
+          ],
+        } as Partial<TMessage>),
+      ).finalOnly,
+    ).toBe(false);
   });
 
   it('does not preview messages the user wrote', () => {

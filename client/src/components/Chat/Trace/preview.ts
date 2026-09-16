@@ -1,6 +1,7 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TraceModel } from './model';
+import { hasParallelLanes } from '~/utils/lanes';
 
 const PREVIEW_LENGTH = 160;
 const ELLIPSIS = '…';
@@ -93,7 +94,7 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   let afterToolCall = false;
   let lastRunStep: string | undefined;
   let roundAgent: string | undefined;
-  let parallel = false;
+  const parallel = hasParallelLanes(parts);
   let sealed = false;
   const begin = () => {
     current = { text: '', toolCalls: [] };
@@ -104,9 +105,6 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   };
   /** A handoff: output from another agent is that agent's own model call. */
   const handoff = (part: TMessageContentParts): boolean => {
-    if (part.groupId != null) {
-      parallel = true;
-    }
     const agentId = part.agentId;
     const changed = agentId != null && roundAgent != null && agentId !== roundAgent;
     roundAgent = agentId ?? roundAgent;
@@ -134,7 +132,7 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     }
     if (part.type === ContentTypes.THINK) {
       const handedOff = handoff(part);
-      if (afterToolCall || handedOff) {
+      if (current == null || sealed || afterToolCall || handedOff) {
         begin();
       }
       continue;
@@ -145,6 +143,10 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
       sealed = true;
       continue;
     }
+    if (part.type === ContentTypes.STEER) {
+      sealed = true;
+      continue;
+    }
     if (part.type !== ContentTypes.TEXT) {
       continue;
     }
@@ -152,17 +154,21 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     const step = current == null || sealed || afterToolCall || handedOff ? begin() : current;
     step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
-  /** A failed turn's row stores the failure as its text; the model never wrote it. */
-  if (steps.length === 0 && message?.text && message.error !== true) {
-    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true, parallel };
-  }
   /** A run that failed or never finished kept its early text, not a final answer. */
   const endedEarly =
     message?.error === true ||
     message?.unfinished === true ||
     parts.some((part) => part?.type === ContentTypes.ERROR);
+  /** A failed turn's row stores the failure as its text; the model never wrote it. */
+  if (steps.length === 0 && message?.text && !endedEarly) {
+    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true, parallel };
+  }
   const finalOnly =
-    !endedEarly && steps.length === 1 && steps[0].toolCalls.length === 0 && steps[0].text !== '';
+    !endedEarly &&
+    !sealed &&
+    steps.length === 1 &&
+    steps[0].toolCalls.length === 0 &&
+    steps[0].text !== '';
   return { steps, finalOnly, parallel };
 }
 
@@ -204,6 +210,11 @@ export function buildPreviewIndex(
       if (step.index === stepsByTurn.get(step.messageId) && step.generationId != null && text) {
         index.set(step.generationId, text);
       }
+      continue;
+    }
+    /** Filtering, incomplete traces and silent calls can remove rounds on either side.
+     *  Without a shared call id, an unequal count cannot be aligned by ordinal. */
+    if (message.steps.length !== stepsByTurn.get(step.messageId)) {
       continue;
     }
     const round = message.steps[step.index - 1];

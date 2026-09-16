@@ -451,8 +451,8 @@ describe('simple mode', () => {
     ]);
   });
 
-  it('keeps a tool with the model call of its own lane when agents run in parallel', () => {
-    const lanes = buildTraceModel([
+  it('keeps parallel tools in their own lanes across wrapper pagination', () => {
+    const records = [
       record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(10_000) }),
       record({ id: 'lane-a', parentId: 'root', startTime: at(0), endTime: at(5000) }),
       record({ id: 'lane-b', parentId: 'root', startTime: at(0), endTime: at(5000) }),
@@ -484,10 +484,14 @@ describe('simple mode', () => {
         startTime: at(1300),
         endTime: at(2100),
       }),
-    ]);
-
-    expect(lanes.steps.get(step('llm-a'))?.rootIds).toEqual(['llm-a', 'tool-a']);
-    expect(lanes.steps.get(step('llm-b'))?.rootIds).toEqual(['llm-b', 'tool-b']);
+    ];
+    for (const mode of ['simple', 'full'] as const) {
+      for (const page of [records.slice(3), records.slice(1), records]) {
+        const lanes = buildTraceModel(page, mode);
+        expect(lanes.steps.get(step('llm-a'))?.rootIds).toEqual(['llm-a', 'tool-a']);
+        expect(lanes.steps.get(step('llm-b'))?.rootIds).toEqual(['llm-b', 'tool-b']);
+      }
+    }
   });
 
   it('keeps a tool whose lane has no loaded model call in a step of its own lane', () => {

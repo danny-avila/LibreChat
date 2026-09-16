@@ -347,9 +347,11 @@ function groupSteps(
    *  agents run in separate wrappers, so a tool joins the model call of its own lane. Records
    *  directly under that root, or with no parent at all, share one lane. */
   const laneOf = (id: string): string => {
-    const parentId = nodes.get(id)?.parentId ?? null;
+    const node = nodes.get(id);
+    const parentId = node?.parentId ?? null;
     if (parentId == null) {
-      return '';
+      const unloaded = node?.record.parentId;
+      return unloaded != null && !nodes.has(unloaded) ? unloaded : '';
     }
     let child = id;
     let parent: string = parentId;
