@@ -3223,9 +3223,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
      * metadata rather than being re-read from live config. Validation is unaffected:
      * `assertResourceBoundToServer` runs on both paths before the exchange.
      */
-    const exchangeFlowState = (
-      sendResourceParameter?: boolean,
-    ): FlowStateManager<MCPOAuthTokens> =>
+    const exchangeFlowState = (sendResourceParameter?: boolean): FlowStateManager<MCPOAuthTokens> =>
       ({
         getFlowState: jest.fn().mockResolvedValue({
           status: 'PENDING',
@@ -3255,12 +3253,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         expires_in: 3600,
       });
 
-      await MCPOAuthHandler.completeOAuthFlow(
-        'flow-id',
-        'auth-code',
-        exchangeFlowState(false),
-        {},
-      );
+      await MCPOAuthHandler.completeOAuthFlow('flow-id', 'auth-code', exchangeFlowState(false), {});
 
       expect(mockExchangeAuthorization).toHaveBeenCalledTimes(1);
       expect(mockExchangeAuthorization.mock.calls[0][1].resource).toBeUndefined();
