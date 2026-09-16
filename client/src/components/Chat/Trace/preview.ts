@@ -94,10 +94,12 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   let lastRunStep: string | undefined;
   let roundAgent: string | undefined;
   let parallel = false;
+  let sealed = false;
   const begin = () => {
     current = { text: '', toolCalls: [] };
     steps.push(current);
     afterToolCall = false;
+    sealed = false;
     return current;
   };
   /** A handoff: output from another agent is that agent's own model call. */
@@ -121,7 +123,7 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
       const nextRound =
         handedOff ||
         (afterToolCall && runStep != null && lastRunStep != null && runStep !== lastRunStep);
-      const step = current == null || nextRound ? begin() : current;
+      const step = current == null || sealed || nextRound ? begin() : current;
       const call = callOf(part.tool_call);
       if (call != null) {
         step.toolCalls.push(call);
@@ -136,11 +138,17 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
       }
       continue;
     }
+    /** Compaction is a model call of its own; its round previews nothing, but it holds its place. */
+    if (part.type === ContentTypes.SUMMARY) {
+      begin();
+      sealed = true;
+      continue;
+    }
     if (part.type !== ContentTypes.TEXT) {
       continue;
     }
     const handedOff = handoff(part);
-    const step = current == null || afterToolCall || handedOff ? begin() : current;
+    const step = current == null || sealed || afterToolCall || handedOff ? begin() : current;
     step.text = compact(`${step.text} ${textOf(part.text)}`);
   }
   /** A failed turn's row stores the failure as its text; the model never wrote it. */

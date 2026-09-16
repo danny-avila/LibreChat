@@ -314,26 +314,43 @@ function groupSteps(
     rootsByOrigin.set(origin, roots);
   }
 
+  /** The wrapper a root sits under, one level below the turn's structural root: concurrent
+   *  agents run in separate wrappers, so a tool joins the model call of its own lane. */
+  const laneOf = (id: string): string => {
+    let current = id;
+    let below = id;
+    for (;;) {
+      const parentId = nodes.get(current)?.parentId;
+      if (parentId == null) {
+        return below;
+      }
+      below = current;
+      current = parentId;
+    }
+  };
+
   for (const [origin, roots] of rootsByOrigin) {
     roots.sort(compare);
-    const groups: string[][] = [];
+    const groups: Array<{ rootIds: string[]; lane: string }> = [];
     let leading: string[] = [];
     for (const id of roots) {
       const kind = nodes.get(id)?.record.kind;
+      const lane = laneOf(id);
       const current = groups[groups.length - 1];
       if (kind === 'generation' || (kind === 'tool' && current == null)) {
-        groups.push([...leading, id]);
+        groups.push({ rootIds: [...leading, id], lane });
         leading = [];
       } else if (current == null) {
         leading.push(id);
       } else {
-        current.push(id);
+        const own = [...groups].reverse().find((group) => group.lane === lane);
+        (own ?? current).rootIds.push(id);
       }
     }
     if (leading.length > 0) {
-      groups.push(leading);
+      groups.push({ rootIds: leading, lane: laneOf(leading[0]) });
     }
-    groups.forEach((rootIds, index) => {
+    groups.forEach(({ rootIds }, index) => {
       const generationId = rootIds.find(isGenerationId(nodes)) ?? null;
       const key = stepKey(turn.messageId, origin, generationId ?? rootIds[0]);
       const step: TraceStep = {

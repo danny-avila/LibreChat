@@ -114,6 +114,24 @@ describe('buildStepPreviews', () => {
     ]);
   });
 
+  it('reserves a round for a compaction summary, which is a model call of its own', () => {
+    const compacted = message({
+      content: [
+        { type: ContentTypes.TEXT, text: 'Before.' },
+        { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 'Summary.' }] },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'ls', args: {} } },
+        { type: ContentTypes.TEXT, text: 'After.' },
+      ],
+    } as Partial<TMessage>);
+
+    expect(buildStepPreviews(compacted)).toEqual([
+      { text: 'Before.', toolCalls: [] },
+      { text: '', toolCalls: [] },
+      { text: '', toolCalls: [{ name: 'ls', args: '' }] },
+      { text: 'After.', toolCalls: [] },
+    ]);
+  });
+
   it('skips the holes a streaming message leaves in its content', () => {
     const sparse = new Array<TMessage['content'] extends (infer P)[] | undefined ? P : never>(3);
     sparse[0] = { type: ContentTypes.TEXT, text: 'Streaming' };
