@@ -13,6 +13,7 @@ import {
   notifyMCPToolsChanged,
   getMCPAppToolsPublicationGeneration,
 } from './toolsChanged';
+import { applyRequestHeaders } from './utils';
 
 const createEvent = (name = 'one'): MCPToolsChangedEvent => ({
   serverName: 'dynamic',
@@ -63,6 +64,29 @@ describe('MCP tools-changed dispatch', () => {
     expect(getMCPAppToolsPublicationGeneration(first)).not.toBe(
       getMCPAppToolsPublicationGeneration(changed),
     );
+  });
+
+  it('addresses one server identically whether or not requestHeaders were merged', () => {
+    const declared = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      headers: { 'X-Workspace': 'workspace-1' },
+      requestHeaders: { 'X-Conversation-Id': 'conv-1' },
+    } as ParsedServerConfig;
+
+    /** Connection paths hold the merged config, cache paths the declared one;
+     *  two tokens would send publications into a slice nobody reads. */
+    expect(getMCPAppToolsPublicationGeneration(applyRequestHeaders(declared))).toBe(
+      getMCPAppToolsPublicationGeneration(declared),
+    );
+
+    /** Still content-addressed: changing a chat-only value rotates the token. */
+    expect(
+      getMCPAppToolsPublicationGeneration({
+        ...declared,
+        requestHeaders: { 'X-Conversation-Id': 'conv-2' },
+      } as ParsedServerConfig),
+    ).not.toBe(getMCPAppToolsPublicationGeneration(declared));
   });
 
   it('includes the resolved runtime environment in app publication generations', () => {

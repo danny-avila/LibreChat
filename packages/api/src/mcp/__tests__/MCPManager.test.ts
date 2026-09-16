@@ -2343,6 +2343,42 @@ describe('MCPManager', () => {
       );
     });
 
+    it('detects direct-bearer mode when the Authorization template lives in requestHeaders', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [] }),
+        on: jest.fn(),
+      } as unknown as MCPConnection;
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (config) => config);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'live-token' });
+
+      await manager.getUserConnection({
+        serverName,
+        user: { id: 'direct-user', provider: 'openid', openidId: 'direct-subject' } as IUser,
+        serverConfig: {
+          ...serverConfig,
+          source: 'yaml',
+          requestHeaders: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        } as t.ParsedServerConfig,
+        flowManager: {} as Parameters<typeof manager.getUserConnection>[0]['flowManager'],
+        upstreamTokenProvider,
+      });
+
+      /** The manager's own bearer decisions read the config directly, so the map
+       *  has to be folded in before them or a 401 never reaches recovery. */
+      expect(upstreamTokenProvider).toHaveBeenCalled();
+      const createCalls = (MCPConnectionFactory.create as jest.Mock).mock.calls;
+      const [basic] = createCalls[createCalls.length - 1];
+      expect(basic.directBearerSourceConfig).toBeDefined();
+      expect(basic.serverConfig.headers).toEqual({ Authorization: 'Bearer live-token' });
+      expect(basic.serverConfig).not.toHaveProperty('requestHeaders');
+    });
+
     it('waits for an active recovery before reusing a cached connection', async () => {
       mockAppConnections({
         has: jest.fn().mockResolvedValue(false),

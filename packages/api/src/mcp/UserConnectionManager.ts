@@ -610,9 +610,17 @@ export abstract class UserConnectionManager {
       );
     }
 
-    const config =
+    const declaredConfig =
       providedConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    /**
+     * Normalized at the birth of this pipeline's config, not deeper: the
+     * direct-bearer decisions below read it directly, so an `Authorization`
+     * template declared in `requestHeaders` must already sit in `headers` by
+     * the time they run. Publication tokens stay stable across the two
+     * spellings because `getMCPAppToolsPublicationGeneration` normalizes too.
+     */
+    const config = declaredConfig && applyRequestHeaders(declaredConfig);
 
     /** Capture before resolving credentials/creating the connection. If another replica rotates
      *  the generation while creation is in flight, this connection's publications are fenced. */

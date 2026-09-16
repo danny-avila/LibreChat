@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { MCPOptionsSchema } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOptions, ParsedServerConfig } from './types';
+import { applyRequestHeaders } from './utils';
 import { processMCPEnv } from '../utils/env';
 
 const RETRY_BASE_DELAY_MS = 250;
@@ -36,7 +37,14 @@ export function getMCPAppToolsPublicationGeneration(config: ParsedServerConfig):
    * a rolling deployment. Address the catalog by the effective runtime config so an old replica's
    * live connection cannot publish into the new replica's slice. DB-sourced configs deliberately
    * remain literal because processMCPEnv derives that rule from dbId. */
-  const runtimeConfig = processMCPEnv({ options: config });
+  /**
+   * Normalized first so the token is invariant under `applyRequestHeaders`: the
+   * connection paths hold a merged config while the cache paths hold the
+   * declared one, and two spellings of one server must address the same catalog
+   * slice. Changing a `requestHeaders` value still rotates the token, because
+   * the merge carries it into `headers`.
+   */
+  const runtimeConfig = processMCPEnv({ options: applyRequestHeaders(config) });
   const parsedConfig = MCPOptionsSchema.parse(runtimeConfig) as StableConfigValue;
   return createHash('sha256')
     .update(JSON.stringify(sortConfigValue(parsedConfig)))
