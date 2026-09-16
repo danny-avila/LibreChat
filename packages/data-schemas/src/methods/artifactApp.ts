@@ -63,7 +63,7 @@ class ArtifactSyncRetryError extends Error {}
 
 export type SyncArtifactAppCallOptions = Partial<ArtifactAppSyncOptions> & {
   assertSourceAvailable?: () => Promise<void>;
-  /** Test hook: runs after the final source/tombstone check and before first insert. */
+  /** Test hook: runs after the final source/tombstone check and before the mutating write. */
   afterSourceCheck?: () => Promise<void>;
 };
 
@@ -71,6 +71,13 @@ export class ArtifactAppDeletedError extends Error {
   constructor() {
     super('Artifact app source has been deleted');
     this.name = 'ArtifactAppDeletedError';
+  }
+}
+
+export class ArtifactAppRestoreNotFoundError extends Error {
+  constructor() {
+    super('Deleted artifact app source was not found');
+    this.name = 'ArtifactAppRestoreNotFoundError';
   }
 }
 
@@ -218,6 +225,13 @@ export interface ArtifactAppMethods {
   ) => Promise<SyncArtifactAppResult>;
   getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
   getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
+  getDeletedArtifactAppBySource: (
+    query: ArtifactAppSourceQuery,
+  ) => Promise<ArtifactAppRecord | null>;
+  restoreArtifactAppWithVersion: (
+    input: CreateArtifactAppInput,
+    options?: SyncArtifactAppCallOptions,
+  ) => Promise<SyncArtifactAppResult>;
   resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<string | null>;
   listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
   getArtifactAppsByIds: (ids: string[]) => Promise<ArtifactAppRecord[]>;
@@ -773,6 +787,301 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         .exec();
     }
     return app ? toAppRecord(app) : null;
+  }
+
+  async function getDeletedArtifactAppBySource(
+    query: ArtifactAppSourceQuery,
+  ): Promise<ArtifactAppRecord | null> {
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(query.sourceKey);
+    const sourceKeys: Array<string | RegExp> = [canonicalSourceKey];
+    const legacySourceKey = getLegacySourceKey(canonicalSourceKey);
+    if (legacySourceKey) {
+      sourceKeys.push(legacySourceKey);
+      const legacyPattern = legacyTypedSourceKeyPattern(legacySourceKey);
+      if (legacyPattern) {
+        sourceKeys.push(legacyPattern);
+      }
+    }
+    const app = await getApp()
+      .findOne({
+        ...buildSourceOwnerFilter({ ...query, sourceKey: canonicalSourceKey }),
+        'sourceMetadata.sourceKey': { $in: sourceKeys },
+        'deletion.finalizedAt': { $exists: true },
+      })
+      .sort({ updatedAt: -1, _id: -1 })
+      .lean<IArtifactApp>()
+      .exec();
+    return app ? toAppRecord(app) : null;
+  }
+
+  /**
+   * Explicitly restores a user-deleted catalog entry from its current chat snapshot.
+   * The tombstone stays authoritative for normal sync; only this method can replace it
+   * with a new draft version. Standalone deployments use the same recoverable staging
+   * pattern as automatic synchronization so a process interruption cannot lose the restore.
+   */
+  async function restoreArtifactAppWithVersion(
+    input: CreateArtifactAppInput,
+    options: SyncArtifactAppCallOptions = {},
+  ): Promise<SyncArtifactAppResult> {
+    const source = input.sourceMetadata;
+    if (!source?.conversationId || !source.sourceKey) {
+      throw new Error('[restoreArtifactAppWithVersion] Stable source metadata is required');
+    }
+    await options.assertSourceAvailable?.();
+    if (await hasArtifactSourceTombstone(mongoose, input.createdBy, source.conversationId)) {
+      throw new ArtifactAppDeletedError();
+    }
+
+    const canonicalSourceKey = canonicalizeArtifactSourceKey(source.sourceKey);
+    const canonicalSource = { ...source, sourceKey: canonicalSourceKey };
+    const sourceQuery: ArtifactAppSourceQuery = {
+      tenantId: input.tenantId,
+      createdBy: input.createdBy,
+      conversationId: source.conversationId,
+      sourceKey: canonicalSourceKey,
+    };
+    const sourceKeys: Array<string | RegExp> = [canonicalSourceKey];
+    const legacySourceKey = getLegacySourceKey(canonicalSourceKey);
+    if (legacySourceKey) {
+      sourceKeys.push(legacySourceKey);
+      const legacyPattern = legacyTypedSourceKeyPattern(legacySourceKey);
+      if (legacyPattern) {
+        sourceKeys.push(legacyPattern);
+      }
+    }
+    const deletedFilter: FilterQuery<IArtifactApp> = {
+      ...buildSourceOwnerFilter(sourceQuery),
+      'sourceMetadata.sourceKey': { $in: sourceKeys },
+      'deletion.finalizedAt': { $exists: true },
+    };
+    const syncOptions: ArtifactAppSyncOptions = {
+      syncLockLeaseMs: options.syncLockLeaseMs ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockLeaseMs,
+      syncLockRetryDelayMs:
+        options.syncLockRetryDelayMs ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryDelayMs,
+      syncLockRetryAttempts:
+        options.syncLockRetryAttempts ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockRetryAttempts,
+      syncWriteRetryAttempts:
+        options.syncWriteRetryAttempts ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncWriteRetryAttempts,
+    };
+    const ArtifactApp = getApp();
+    const ArtifactVersion = getVersion();
+    const restoreSourceHash = computeSourceHash(
+      input.version.artifactType,
+      input.version.sourceSnapshot,
+      input.version.runtimeConfig ?? {},
+    );
+
+    async function assertRestoreSourceAvailable(): Promise<void> {
+      await options.assertSourceAvailable?.();
+      if (await hasArtifactSourceTombstone(mongoose, input.createdBy, sourceQuery.conversationId)) {
+        throw new ArtifactAppDeletedError();
+      }
+    }
+
+    async function detachRestoredSource(
+      appId: IArtifactApp['_id'],
+      session?: ClientSession,
+    ): Promise<void> {
+      const detachQuery = ArtifactApp.updateMany(
+        {
+          _id: appId,
+          createdBy: input.createdBy,
+          'sourceMetadata.conversationId': sourceQuery.conversationId,
+        },
+        [
+          {
+            $set: {
+              'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
+            },
+          },
+          { $unset: 'sourceMetadata.conversationId' },
+        ],
+      );
+      if (session) {
+        detachQuery.session(session);
+      }
+      await detachQuery.exec();
+    }
+
+    async function resolveRestoreVersion(
+      app: IArtifactApp,
+      session?: ClientSession,
+    ): Promise<IArtifactVersion> {
+      let versionNumber = app.latestVersionNumber + 1;
+      for (;;) {
+        const existingQuery = ArtifactVersion.findOne({
+          artifactAppId: app.artifactAppId,
+          versionNumber,
+        });
+        if (session) {
+          existingQuery.session(session);
+        }
+        const existing = await existingQuery.exec();
+        if (!existing) {
+          const versionSeed = buildVersionDoc(
+            app.artifactAppId,
+            app.tenantId,
+            versionNumber,
+            input.version,
+            'draft',
+          );
+          if (session) {
+            const [created] = await ArtifactVersion.create([versionSeed], { session });
+            return created;
+          }
+          const [created] = await ArtifactVersion.create([versionSeed]);
+          return created;
+        }
+        if (existing.integrity.sourceHash === restoreSourceHash) {
+          return existing;
+        }
+        versionNumber += 1;
+      }
+    }
+
+    const finishRestore = async (
+      app: IArtifactApp,
+      version: IArtifactVersion,
+      lockToken?: string,
+      session?: ClientSession,
+    ): Promise<SyncArtifactAppResult> => {
+      await assertRestoreSourceAvailable();
+      await options.afterSourceCheck?.();
+      const updateQuery = ArtifactApp.findOneAndUpdate(
+        {
+          _id: app._id,
+          latestVersionNumber: app.latestVersionNumber,
+          'deletion.finalizedAt': { $exists: true },
+          ...(lockToken ? { 'syncLock.token': lockToken } : {}),
+          ...liveSourceGuard(),
+        },
+        {
+          $set: {
+            title: input.title,
+            sourceMetadata: canonicalSource,
+            status: 'draft',
+            'marketplace.listed': true,
+            latestVersionNumber: version.versionNumber,
+            activeVersionId: version.artifactVersionId,
+            ...(input.version.preview ? { preview: input.version.preview } : {}),
+          },
+          $unset: {
+            deletion: 1,
+            archivedAt: 1,
+            syncLock: 1,
+            ...(!input.version.preview ? { preview: 1 } : {}),
+          },
+        },
+        { new: true, ...(session ? { session } : {}) },
+      );
+      const restored = await updateQuery.exec();
+      if (!restored) {
+        await assertRestoreSourceAvailable();
+        const blockedApp = await ArtifactApp.findOne({ _id: app._id })
+          .select({ deletion: 1, 'sourceMetadata.detachedConversationId': 1 })
+          .lean<ArtifactAppAvailabilityRecord>()
+          .exec();
+        if (sourceWasRemoved(blockedApp)) {
+          throw new ArtifactAppDeletedError();
+        }
+        throw new ArtifactSyncRetryError(
+          '[restoreArtifactAppWithVersion] Concurrent restore update',
+        );
+      }
+      try {
+        await assertRestoreSourceAvailable();
+      } catch (error) {
+        await detachRestoredSource(app._id, session);
+        throw error;
+      }
+      return {
+        app: toAppRecord(restored),
+        version: toVersionRecord(version),
+        created: false,
+        versionCreated: true,
+      };
+    };
+
+    const returnAlreadyRestored = async (): Promise<SyncArtifactAppResult> => {
+      const live = await getArtifactAppBySource(sourceQuery);
+      if (!live) {
+        throw new ArtifactAppRestoreNotFoundError();
+      }
+      return syncArtifactAppWithVersion({ ...input, sourceMetadata: canonicalSource }, options);
+    };
+
+    if (!(await supportsTransactions(mongoose))) {
+      for (let attempt = 0; attempt < syncOptions.syncLockRetryAttempts; attempt += 1) {
+        const now = new Date();
+        const lockToken = `restore_${nanoid()}`;
+        const app = await ArtifactApp.findOneAndUpdate(
+          {
+            ...deletedFilter,
+            $or: [{ syncLock: { $exists: false } }, { 'syncLock.expiresAt': { $lte: now } }],
+          },
+          {
+            $set: {
+              syncLock: {
+                token: lockToken,
+                expiresAt: new Date(now.getTime() + syncOptions.syncLockLeaseMs),
+              },
+            },
+          },
+          { new: true },
+        ).exec();
+        if (!app) {
+          if (await getArtifactAppBySource(sourceQuery)) {
+            return returnAlreadyRestored();
+          }
+          if (!(await ArtifactApp.exists(deletedFilter))) {
+            throw new ArtifactAppRestoreNotFoundError();
+          }
+          await waitForSyncLock(syncOptions.syncLockRetryDelayMs);
+          continue;
+        }
+
+        try {
+          const version = await resolveRestoreVersion(app);
+          return await finishRestore(app, version, lockToken);
+        } catch (error) {
+          await ArtifactApp.updateOne(
+            { _id: app._id, 'syncLock.token': lockToken },
+            { $unset: { syncLock: 1 } },
+          ).exec();
+          if (!isRetryableWriteError(error)) {
+            throw error;
+          }
+        }
+      }
+      throw new Error('[restoreArtifactAppWithVersion] Timed out waiting for restore lock');
+    }
+
+    for (let attempt = 0; attempt < syncOptions.syncWriteRetryAttempts; attempt += 1) {
+      const session = await mongoose.startSession();
+      try {
+        let result: SyncArtifactAppResult | undefined;
+        await session.withTransaction(async () => {
+          const app = await ArtifactApp.findOne(deletedFilter).session(session).exec();
+          if (!app) {
+            return;
+          }
+          const version = await resolveRestoreVersion(app, session);
+          result = await finishRestore(app, version, undefined, session);
+        });
+        if (result) {
+          return result;
+        }
+        return returnAlreadyRestored();
+      } catch (error) {
+        if (!isRetryableWriteError(error) || attempt === syncOptions.syncWriteRetryAttempts - 1) {
+          throw error;
+        }
+      } finally {
+        await session.endSession();
+      }
+    }
+    throw new Error('[restoreArtifactAppWithVersion] Transaction restore exhausted retries');
   }
 
   /**
@@ -1758,6 +2067,8 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     syncArtifactAppWithVersion,
     getArtifactAppByAppId,
     getArtifactAppBySource,
+    getDeletedArtifactAppBySource,
+    restoreArtifactAppWithVersion,
     resolveArtifactAppId,
     listArtifactApps,
     getArtifactAppsByIds,

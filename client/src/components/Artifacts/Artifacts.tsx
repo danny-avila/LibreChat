@@ -3,8 +3,15 @@ import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { DEFAULT_ARTIFACT_APPS_CONFIG } from 'librechat-data-provider';
-import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
-import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
+import { Code, Maximize2, Minimize2, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
+import {
+  Button,
+  Spinner,
+  TooltipAnchor,
+  useMediaQuery,
+  useToastContext,
+  Radio,
+} from '@librechat/client';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import type { ProcessedMermaidSvg } from '~/utils/diagram/export';
 import useClearArtifactNavigationRequest from '~/hooks/Artifacts/useClearArtifactNavigationRequest';
@@ -30,6 +37,7 @@ const MAX_BACKDROP_OPACITY = 0.3;
 
 export default function Artifacts() {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
@@ -134,7 +142,7 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
-  const { artifactEntry, isSyncing } = useArtifactCatalogSync(
+  const { artifactEntry, isDeleted, restoreArtifact, isSyncing } = useArtifactCatalogSync(
     isSharedConvo ? null : currentArtifact,
   );
 
@@ -391,6 +399,21 @@ export default function Artifacts() {
     }
   };
 
+  const handleRestore = async () => {
+    if (!restoreArtifact) {
+      return;
+    }
+    try {
+      await restoreArtifact();
+      showToast({
+        status: 'success',
+        message: localize('com_ui_artifact_restore_success'),
+      });
+    } catch {
+      showToast({ status: 'error', message: localize('com_ui_artifact_restore_error') });
+    }
+  };
+
   const backdropOpacity =
     blurAmount > 0
       ? (Math.min(blurAmount, MAX_BLUR_AMOUNT) / MAX_BLUR_AMOUNT) * MAX_BACKDROP_OPACITY
@@ -503,24 +526,29 @@ export default function Artifacts() {
                   renderer has no such client and offers its own retry, so the
                   action would spin over an unchanged diagram. */}
               {displayedTab === 'preview' && !isMermaidArtifact && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-9 w-9"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  aria-label={localize('com_ui_refresh')}
-                >
-                  {isRefreshing ? (
-                    <Spinner size={16} />
-                  ) : (
-                    <RefreshCw
-                      size={16}
-                      className="transition-transform duration-200 motion-reduce:transition-none"
-                      aria-hidden="true"
-                    />
-                  )}
-                </Button>
+                <TooltipAnchor
+                  description={localize('com_ui_refresh')}
+                  render={
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-9 w-9"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
+                      aria-label={localize('com_ui_refresh')}
+                    >
+                      {isRefreshing ? (
+                        <Spinner size={16} />
+                      ) : (
+                        <RefreshCw
+                          size={16}
+                          className="transition-transform duration-200 motion-reduce:transition-none"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </Button>
+                  }
+                />
               )}
               {(displayedTab === 'preview' || isFullscreen) && document.fullscreenEnabled && (
                 <Button
@@ -585,6 +613,27 @@ export default function Artifacts() {
                 <ArtifactAppShareDialog
                   app={artifactEntry}
                   buttonClassName="border-0 bg-transparent hover:bg-surface-hover"
+                />
+              )}
+              {!isSharedConvo && isDeleted && restoreArtifact && (
+                <TooltipAnchor
+                  description={localize('com_ui_artifact_restore')}
+                  render={
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-9 w-9"
+                      onClick={() => void handleRestore()}
+                      disabled={isSyncing}
+                      aria-label={localize('com_ui_artifact_restore')}
+                    >
+                      {isSyncing ? (
+                        <Spinner size={16} />
+                      ) : (
+                        <RotateCcw size={16} aria-hidden="true" />
+                      )}
+                    </Button>
+                  }
                 />
               )}
               <Button

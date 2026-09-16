@@ -62,6 +62,7 @@ describe('Artifact App sharing policy', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(response.statusCode).toBe(200);
+    expect(getArtifactAppsByIds).toHaveBeenCalledWith(['artifact-resource-id']);
   });
 
   it.each([AccessRoleIds.ARTIFACT_APP_EDITOR, AccessRoleIds.ARTIFACT_APP_OWNER])(
@@ -176,5 +177,24 @@ describe('Artifact App sharing policy', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(getArtifactAppsByIds).not.toHaveBeenCalled();
+  });
+
+  it('rejects public sharing when the artifact has been deleted', async () => {
+    getArtifactAppsByIds.mockResolvedValueOnce([]);
+    const response = makeResponse();
+
+    await policy(
+      makeRequest({
+        updated: [],
+        removed: [],
+        public: true,
+        publicAccessRoleId: AccessRoleIds.ARTIFACT_APP_VIEWER,
+      }),
+      response,
+      next,
+    );
+
+    expect(response.statusCode).toBe(404);
+    expect(next).not.toHaveBeenCalled();
   });
 });

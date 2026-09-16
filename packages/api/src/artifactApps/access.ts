@@ -68,10 +68,6 @@ export function createArtifactAppSharingPolicy(deps: ArtifactAppSharingPolicyDep
     const userMutations = [...updated, ...removed].filter(
       (principal) => principal.type === PrincipalType.USER,
     );
-    if (userMutations.length === 0) {
-      next();
-      return;
-    }
 
     try {
       const [app] = await deps.getArtifactAppsByIds([req.params.resourceId]);
