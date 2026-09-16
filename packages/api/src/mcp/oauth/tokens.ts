@@ -241,7 +241,8 @@ export class MCPTokenStorage {
    * a replica that died mid-redemption from blocking refresh for longer than one window, with no
    * renewal heartbeat to get wrong.
    */
-  private static readonly REFRESH_FLIGHT_LEASE_MS = MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS;
+  private static readonly REFRESH_FLIGHT_LEASE_MS: number =
+    MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS;
 
   /**
    * How long a replica waits on a flight another replica holds before failing the attempt as
@@ -256,7 +257,8 @@ export class MCPTokenStorage {
    * redemption whose stale timer aborts it, and the other half is what remains to redeem once the
    * flight is acquired. A larger value would hand the outcome to that abort instead of the wait.
    */
-  static readonly MAX_REFRESH_FLIGHT_WAIT_MS = MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS / 2;
+  static readonly MAX_REFRESH_FLIGHT_WAIT_MS: number =
+    MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS / 2;
 
   /** Interval between checks for a peer's rotation landing, or for its flight coming free. */
   private static readonly REFRESH_FLIGHT_POLL_MS = 250;
