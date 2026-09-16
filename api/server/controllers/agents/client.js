@@ -3023,6 +3023,9 @@ class AgentClient extends BaseClient {
         logger,
         mcpManager,
         configServers,
+        /** Deployment-wide context. Ahead of the agent's own instructions, so a
+         *  saved agent carries it too — it never sees the model spec. */
+        systemContext: this.options.req.config?.systemContext,
         sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
       });

@@ -236,6 +236,25 @@ describe('Agent Context Utilities', () => {
       expect(result).toBeUndefined();
     });
 
+    it('should place the system context ahead of everything else', () => {
+      const result = buildAgentInstructions({
+        systemContext: 'Company context',
+        baseInstructions: 'Base instructions',
+        mcpInstructions: 'MCP instructions',
+      });
+
+      expect(result).toBe('Company context\n\nBase instructions\n\nMCP instructions');
+    });
+
+    it('should behave exactly as before when no system context is set', () => {
+      const result = buildAgentInstructions({
+        baseInstructions: 'Base instructions',
+        mcpInstructions: 'MCP instructions',
+      });
+
+      expect(result).toBe('Base instructions\n\nMCP instructions');
+    });
+
     it('should handle only base instructions', () => {
       const result = buildAgentInstructions({
         baseInstructions: 'Base instructions only',
@@ -341,6 +360,48 @@ describe('Agent Context Utilities', () => {
       expect(agent.instructions).toBe('Original instructions\n\nMCP instructions');
       expect(agent.additional_instructions).toBe('Shared context');
       expect(mockLogger.debug).toHaveBeenCalledWith('[AgentContext] Applied context to agent');
+    });
+
+    it('should prepend the system context to a saved agent', async () => {
+      /** The case the feature exists for: a saved agent never sees the model
+       *  spec, so a promptPrefix cannot reach it. */
+      const agent: AgentWithTools = {
+        id: 'saved-agent',
+        instructions: 'Agent own instructions',
+        tools: [],
+      };
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('');
+
+      await applyContextToAgent({
+        agent,
+        systemContext: 'Company context',
+        sharedRunContext: 'Shared context',
+        mcpManager: mockMCPManager,
+        logger: mockLogger,
+      });
+
+      expect(agent.instructions).toBe('Company context\n\nAgent own instructions');
+      expect(agent.additional_instructions).toBe('Shared context');
+    });
+
+    it('should leave instructions untouched when no system context is set', async () => {
+      const agent: AgentWithTools = {
+        id: 'saved-agent',
+        instructions: 'Agent own instructions',
+        tools: [],
+      };
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('');
+
+      await applyContextToAgent({
+        agent,
+        sharedRunContext: 'Shared context',
+        mcpManager: mockMCPManager,
+        logger: mockLogger,
+      });
+
+      expect(agent.instructions).toBe('Agent own instructions');
     });
 
     it('should use ephemeral agent MCP servers when provided', async () => {

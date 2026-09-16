@@ -99,13 +99,15 @@ export async function getMCPInstructionsForServers(
  * @returns {string | undefined} Combined instructions, or undefined if empty
  */
 export function buildAgentInstructions({
+  systemContext,
   baseInstructions,
   mcpInstructions,
 }: {
+  systemContext?: string;
   baseInstructions?: string;
   mcpInstructions?: string;
 }): string | undefined {
-  const parts = [baseInstructions, mcpInstructions].filter(Boolean);
+  const parts = [systemContext, baseInstructions, mcpInstructions].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }
@@ -132,6 +134,8 @@ export function buildAgentAdditionalInstructions({
  *
  * @param {Object} params
  * @param {Agent} params.agent - The agent to update
+ * @param {string} [params.systemContext] - Deployment-wide context, placed ahead of
+ *   the agent's own instructions. Unset means unchanged behaviour.
  * @param {string} params.sharedRunContext - Run-level shared context
  * @param {MCPManager} params.mcpManager - MCP manager instance
  * @param {Object} [params.ephemeralAgent] - Ephemeral agent config (for MCP override)
@@ -141,6 +145,7 @@ export function buildAgentAdditionalInstructions({
  */
 export async function applyContextToAgent({
   agent,
+  systemContext,
   sharedRunContext,
   mcpManager,
   ephemeralAgent,
@@ -149,6 +154,7 @@ export async function applyContextToAgent({
   configServers,
 }: {
   agent: AgentWithTools;
+  systemContext?: string;
   sharedRunContext: string;
   mcpManager: MCPManager;
   ephemeralAgent?: TEphemeralAgent;
@@ -169,6 +175,7 @@ export async function applyContextToAgent({
     );
 
     agent.instructions = buildAgentInstructions({
+      systemContext,
       baseInstructions,
       mcpInstructions,
     });
@@ -182,6 +189,7 @@ export async function applyContextToAgent({
     }
   } catch {
     agent.instructions = buildAgentInstructions({
+      systemContext,
       baseInstructions,
       mcpInstructions: '',
     });

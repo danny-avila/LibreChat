@@ -2850,6 +2850,18 @@ export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  /**
+   * Deployment-wide system context, prepended to every agent's instructions.
+   *
+   * Applies to ephemeral agents built from a model spec and to saved agents
+   * alike, which is the point: `loadAgent()` returns a saved agent unchanged,
+   * so a model spec's `promptPrefix` never reaches it. Organisations that need
+   * one text in front of every conversation have no other place to put it.
+   *
+   * Leave unset to keep the previous behaviour — an unset value is the off
+   * switch.
+   */
+  systemContext: z.string().optional(),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
