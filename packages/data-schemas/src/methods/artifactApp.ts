@@ -11,6 +11,7 @@ import type {
   IAclEntry,
   IArtifactApp,
   IArtifactVersion,
+  IArtifactPreview,
   ArtifactAppQuery,
   ArtifactVersionQuery,
   CreateArtifactAppInput,
@@ -18,6 +19,7 @@ import type {
   ArtifactAppWithVersion,
   ArtifactAppSourceQuery,
   SyncArtifactAppResult,
+  IArtifactSourceTombstone,
   IArtifactVersionRuntimeConfig,
   ArtifactAppListOptions,
   ArtifactAppListPage,
@@ -30,6 +32,7 @@ import type {
   ArtifactVersionSummaryRecord,
   ArtifactAppDeletionResult,
 } from '~/types';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { supportsTransactions } from '~/utils/transactions';
 import { escapeRegExp } from '~/utils/string';
 
@@ -39,6 +42,7 @@ export const ARTIFACT_SCHEMA_VERSION = 1;
 interface MongoWriteError {
   code?: number;
   errorLabels?: string[];
+  writeErrors?: Array<{ code?: number }>;
 }
 
 interface ArtifactAppIdentityRecord {
@@ -47,10 +51,21 @@ interface ArtifactAppIdentityRecord {
   status?: string;
   deletion?: { requestedBy: string };
   updatedAt?: Date;
-  sourceMetadata?: { sourceKey?: string };
+  sourceMetadata?: { sourceKey?: string; detachedConversationId?: string };
+}
+
+interface ArtifactAppAvailabilityRecord {
+  deletion?: { requestedBy: string };
+  sourceMetadata?: { detachedConversationId?: string };
 }
 
 class ArtifactSyncRetryError extends Error {}
+
+export type SyncArtifactAppCallOptions = Partial<ArtifactAppSyncOptions> & {
+  assertSourceAvailable?: () => Promise<void>;
+  /** Test hook: runs after the final source/tombstone check and before first insert. */
+  afterSourceCheck?: () => Promise<void>;
+};
 
 export class ArtifactAppDeletedError extends Error {
   constructor() {
@@ -81,6 +96,70 @@ function legacyTypedSourceKeyPattern(sourceKey: string): RegExp | null {
     return null;
   }
   return new RegExp(`^${escapeRegExp(sourceKey)}:(?:application|text|image)/[^:]+$`);
+}
+
+function getArtifactSourceTombstoneModel(
+  mongoose: typeof import('mongoose'),
+): Model<IArtifactSourceTombstone> | undefined {
+  return mongoose.models.ArtifactSourceTombstone as Model<IArtifactSourceTombstone> | undefined;
+}
+
+export async function hasArtifactSourceTombstone(
+  mongoose: typeof import('mongoose'),
+  createdBy: string,
+  conversationId: string,
+): Promise<boolean> {
+  const Tombstone = getArtifactSourceTombstoneModel(mongoose);
+  if (!Tombstone) {
+    return false;
+  }
+  return (await Tombstone.exists({ createdBy, conversationId })) != null;
+}
+
+export async function recordArtifactSourceTombstones(
+  mongoose: typeof import('mongoose'),
+  createdBy: string,
+  conversationIds: readonly string[],
+): Promise<void> {
+  const uniqueIds = [...new Set(conversationIds.filter((id) => id.length > 0))];
+  const Tombstone = getArtifactSourceTombstoneModel(mongoose);
+  if (!Tombstone || uniqueIds.length === 0) {
+    return;
+  }
+
+  try {
+    await tenantSafeBulkWrite(
+      Tombstone,
+      uniqueIds.map((conversationId) => ({
+        updateOne: {
+          filter: { createdBy, conversationId },
+          update: { $setOnInsert: { createdBy, conversationId } },
+          upsert: true,
+        },
+      })),
+      { ordered: false },
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+    const confirmed = await Promise.all(
+      uniqueIds.map((conversationId) =>
+        hasArtifactSourceTombstone(mongoose, createdBy, conversationId),
+      ),
+    );
+    if (confirmed.some((exists) => !exists)) {
+      throw error;
+    }
+  }
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  const writeError = error as MongoWriteError;
+  return (
+    writeError.code === 11000 ||
+    writeError.writeErrors?.some((entry) => entry.code === 11000) === true
+  );
 }
 
 function isRetryableWriteError(error: unknown): boolean {
@@ -135,12 +214,13 @@ export interface ArtifactAppMethods {
   createArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<ArtifactAppWithVersion>;
   syncArtifactAppWithVersion: (
     input: CreateArtifactAppInput,
-    options?: Partial<ArtifactAppSyncOptions>,
+    options?: SyncArtifactAppCallOptions,
   ) => Promise<SyncArtifactAppResult>;
   getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
   getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
   resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<string | null>;
   listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
+  getArtifactAppsByIds: (ids: string[]) => Promise<ArtifactAppRecord[]>;
   updateArtifactApp: (
     query: ArtifactAppQuery,
     update: ArtifactAppUpdate,
@@ -153,6 +233,10 @@ export interface ArtifactAppMethods {
     requestedBy: string,
   ) => Promise<ArtifactAppDeletionResult>;
   finalizeArtifactAppDeletion: (query: ArtifactAppQuery, requestedBy: string) => Promise<boolean>;
+  deleteUserArtifactApps: (
+    userId: string,
+  ) => Promise<{ deletedApps: number; deletedVersions: number }>;
+  recordArtifactSourceTombstones: (createdBy: string, conversationIds: string[]) => Promise<void>;
   getArtifactVersion: (query: ArtifactVersionQuery) => Promise<ArtifactVersionRecord | null>;
   listArtifactVersions: (options: ArtifactVersionListOptions) => Promise<ArtifactVersionListPage>;
   releaseArtifactVersion: (
@@ -393,7 +477,15 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       allowAnonymousView: app.allowAnonymousView,
       toolPolicy: app.toolPolicy,
       marketplace: app.marketplace,
-      sourceMetadata: app.sourceMetadata,
+      preview: toPreviewRecord(app.preview),
+      sourceMetadata: app.sourceMetadata
+        ? {
+            conversationId: app.sourceMetadata.conversationId,
+            messageId: app.sourceMetadata.messageId,
+            originalArtifactId: app.sourceMetadata.originalArtifactId,
+            sourceKey: app.sourceMetadata.sourceKey,
+          }
+        : undefined,
       deletion: app.deletion,
       review: app.review,
       createdAt: app.createdAt,
@@ -413,6 +505,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       artifactType: version.artifactType,
       sourceSnapshot: version.sourceSnapshot,
       runtimeConfig: version.runtimeConfig,
+      preview: toPreviewRecord(version.preview),
       integrity: version.integrity,
       createdBy: version.createdBy,
       createdAt: version.createdAt,
@@ -429,13 +522,26 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       versionLabel: version.versionLabel,
       changelog: version.changelog,
       artifactType: version.artifactType,
+      preview: toPreviewRecord(version.preview),
       createdBy: version.createdBy,
       createdAt: version.createdAt,
       publication: version.publication,
     };
   }
 
-  function encodeAppCursor(app: IArtifactApp): string {
+  function toPreviewRecord(preview: IArtifactPreview | undefined): IArtifactPreview | undefined {
+    if (!preview) {
+      return undefined;
+    }
+
+    return {
+      type: preview.type,
+      imageUrl: preview.imageUrl,
+      ...(preview.alt != null && { alt: preview.alt }),
+    };
+  }
+
+  function encodeAppCursor(app: Pick<IArtifactApp, '_id' | 'updatedAt'>): string {
     return Buffer.from(
       JSON.stringify({ updatedAt: app.updatedAt.toISOString(), id: app._id.toString() }),
     ).toString('base64');
@@ -505,6 +611,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       artifactType: input.artifactType,
       sourceSnapshot: input.sourceSnapshot,
       runtimeConfig,
+      preview: input.preview,
       integrity: {
         sourceHash: computeSourceHash(input.artifactType, input.sourceSnapshot, runtimeConfig),
         schemaVersion: ARTIFACT_SCHEMA_VERSION,
@@ -541,6 +648,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       allowAnonymousView: input.allowAnonymousView ?? false,
       toolPolicy: input.toolPolicy as IArtifactApp['toolPolicy'],
       marketplace: input.marketplace as IArtifactApp['marketplace'],
+      preview: input.version.preview,
       sourceMetadata: input.sourceMetadata,
     };
 
@@ -609,6 +717,28 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     };
   }
 
+  function buildDetachedSourceFilter(query: ArtifactAppSourceQuery): FilterQuery<IArtifactApp> {
+    const filter: FilterQuery<IArtifactApp> = {
+      createdBy: query.createdBy,
+      'sourceMetadata.detachedConversationId': query.conversationId,
+      'sourceMetadata.sourceKey': query.sourceKey,
+    };
+    if (query.tenantId != null) {
+      filter.tenantId = query.tenantId;
+    } else {
+      filter.tenantId = { $exists: false };
+    }
+    return filter;
+  }
+
+  function liveSourceGuard(): FilterQuery<IArtifactApp> {
+    return { 'sourceMetadata.detachedConversationId': { $exists: false } };
+  }
+
+  function sourceWasRemoved(app: ArtifactAppAvailabilityRecord | null | undefined): boolean {
+    return app?.deletion != null || typeof app?.sourceMetadata?.detachedConversationId === 'string';
+  }
+
   async function getArtifactAppBySource(
     query: ArtifactAppSourceQuery,
   ): Promise<ArtifactAppRecord | null> {
@@ -652,7 +782,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
    */
   async function syncArtifactAppWithVersion(
     input: CreateArtifactAppInput,
-    options: Partial<ArtifactAppSyncOptions> = {},
+    options: SyncArtifactAppCallOptions = {},
   ): Promise<SyncArtifactAppResult> {
     const syncOptions: ArtifactAppSyncOptions = {
       syncLockLeaseMs: options.syncLockLeaseMs ?? DEFAULT_ARTIFACT_APPS_CONFIG.syncLockLeaseMs,
@@ -679,11 +809,81 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     let filter = buildSourceFilter(sourceQuery);
     let existing = await getApp()
       .findOne(filter)
-      .select({ _id: 1, artifactAppId: 1, status: 1, deletion: 1 })
+      .select({
+        _id: 1,
+        artifactAppId: 1,
+        status: 1,
+        deletion: 1,
+        'sourceMetadata.detachedConversationId': 1,
+      })
       .lean<ArtifactAppIdentityRecord>()
       .exec();
-    if (existing?.deletion || existing?.status === 'archived') {
+    if (existing?.deletion || existing?.status === 'archived' || sourceWasRemoved(existing)) {
       throw new ArtifactAppDeletedError();
+    }
+
+    const detachedSource = await getApp()
+      .findOne(buildDetachedSourceFilter(sourceQuery))
+      .select({ _id: 1, deletion: 1, 'sourceMetadata.detachedConversationId': 1 })
+      .lean<ArtifactAppAvailabilityRecord>()
+      .exec();
+    if (sourceWasRemoved(detachedSource)) {
+      throw new ArtifactAppDeletedError();
+    }
+
+    if (await hasArtifactSourceTombstone(mongoose, input.createdBy, source.conversationId)) {
+      throw new ArtifactAppDeletedError();
+    }
+
+    async function throwIfSourceUnavailable(appId?: Types.ObjectId): Promise<void> {
+      if (await hasArtifactSourceTombstone(mongoose, input.createdBy, sourceQuery.conversationId)) {
+        throw new ArtifactAppDeletedError();
+      }
+      const query = appId
+        ? { _id: appId }
+        : { $or: [filter, buildDetachedSourceFilter(sourceQuery)] };
+      const current = await getApp()
+        .findOne(query)
+        .select({ deletion: 1, 'sourceMetadata.detachedConversationId': 1 })
+        .lean<ArtifactAppAvailabilityRecord>()
+        .exec();
+      if (sourceWasRemoved(current)) {
+        throw new ArtifactAppDeletedError();
+      }
+    }
+
+    async function abandonFirstInsert(artifactAppId: string): Promise<void> {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < syncOptions.syncWriteRetryAttempts; attempt += 1) {
+        try {
+          await getApp()
+            .updateMany(
+              {
+                artifactAppId,
+                createdBy: input.createdBy,
+                'sourceMetadata.conversationId': sourceQuery.conversationId,
+              },
+              [
+                {
+                  $set: {
+                    'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
+                  },
+                },
+                { $unset: 'sourceMetadata.conversationId' },
+              ],
+            )
+            .exec();
+          await deleteArtifactApp({ artifactAppId });
+          return;
+        } catch (error) {
+          lastError = error;
+          if (!isRetryableWriteError(error) || attempt === syncOptions.syncWriteRetryAttempts - 1) {
+            throw error;
+          }
+          await waitForSyncLock(syncOptions.syncLockRetryDelayMs);
+        }
+      }
+      throw lastError;
     }
 
     // A versioned key makes legacy interpretation explicit. Collect every
@@ -810,20 +1010,32 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     }
 
     if (!existing) {
+      await options.assertSourceAvailable?.();
+      if (await hasArtifactSourceTombstone(mongoose, input.createdBy, source.conversationId)) {
+        throw new ArtifactAppDeletedError();
+      }
+      await options.afterSourceCheck?.();
+      let created: ArtifactAppWithVersion | undefined;
       try {
-        const { app, version } = await createArtifactAppWithVersion({
+        created = await createArtifactAppWithVersion({
           ...input,
           sourceMetadata: canonicalSource,
           visibility: 'private',
           marketplace: { ...input.marketplace, listed: true },
         });
-        return { app, version, created: true, versionCreated: true };
       } catch (error) {
         // A concurrent first sync may win the unique source index. Re-enter the
         // update path so both requests resolve to the same catalog record.
         if (!isRetryableWriteError(error)) {
           throw error;
         }
+      }
+      if (created) {
+        if (await hasArtifactSourceTombstone(mongoose, input.createdBy, source.conversationId)) {
+          await abandonFirstInsert(created.app.artifactAppId);
+          throw new ArtifactAppDeletedError();
+        }
+        return { app: created.app, version: created.version, created: true, versionCreated: true };
       }
     }
 
@@ -834,6 +1046,45 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       input.version.sourceSnapshot,
       input.version.runtimeConfig,
     );
+
+    /**
+     * Preview capture can finish just after the initial no-preview sync. Backfill only a missing
+     * preview on the active draft: an existing preview wins, and the schema's query guard keeps
+     * released/withdrawn snapshots immutable. Re-read after a lost race so the app always mirrors
+     * the version that actually won.
+     */
+    const backfillActiveVersionPreview = async (
+      activeVersion: IArtifactVersion,
+      session?: ClientSession,
+    ): Promise<IArtifactVersion> => {
+      if (activeVersion.preview || !input.version.preview) {
+        return activeVersion;
+      }
+
+      const updateQuery = ArtifactVersion.findOneAndUpdate(
+        {
+          _id: activeVersion._id,
+          artifactAppId: activeVersion.artifactAppId,
+          artifactVersionId: activeVersion.artifactVersionId,
+          preview: { $exists: false },
+        },
+        { $set: { preview: input.version.preview } },
+        { new: true },
+      );
+      if (session) updateQuery.session(session);
+      const backfilledVersion = await updateQuery.exec();
+      if (backfilledVersion) {
+        return backfilledVersion;
+      }
+
+      const rereadQuery = ArtifactVersion.findOne({
+        _id: activeVersion._id,
+        artifactAppId: activeVersion.artifactAppId,
+        artifactVersionId: activeVersion.artifactVersionId,
+      });
+      if (session) rereadQuery.session(session);
+      return (await rereadQuery.exec()) ?? activeVersion;
+    };
 
     const applyStandaloneSync = async (): Promise<SyncArtifactAppResult> => {
       const lockToken = `sync_${nanoid()}`;
@@ -846,6 +1097,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           {
             ...filter,
             deletion: { $exists: false },
+            ...liveSourceGuard(),
             $or: [{ syncLock: { $exists: false } }, { 'syncLock.expiresAt': { $lte: now } }],
           },
           {
@@ -861,8 +1113,13 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         if (app) {
           break;
         }
-        const blockedApp = await ArtifactApp.findOne(filter).select({ deletion: 1 }).lean().exec();
-        if (blockedApp?.deletion) {
+        const blockedApp = await ArtifactApp.findOne({
+          $or: [filter, buildDetachedSourceFilter(sourceQuery)],
+        })
+          .select({ deletion: 1, 'sourceMetadata.detachedConversationId': 1 })
+          .lean<ArtifactAppAvailabilityRecord>()
+          .exec();
+        if (sourceWasRemoved(blockedApp)) {
           throw new ArtifactAppDeletedError();
         }
         if (!blockedApp) {
@@ -874,6 +1131,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       }
 
       if (!app) {
+        await throwIfSourceUnavailable();
         throw new Error('[syncArtifactAppWithVersion] Timed out waiting for artifact sync lock');
       }
 
@@ -890,19 +1148,20 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
               'syncLock.token': lockToken,
               latestVersionNumber: app.latestVersionNumber,
               deletion: { $exists: false },
+              ...liveSourceGuard(),
             },
             {
               $set: {
                 latestVersionNumber: recoverableVersion.versionNumber,
                 activeVersionId: recoverableVersion.artifactVersionId,
+                ...(recoverableVersion.preview ? { preview: recoverableVersion.preview } : {}),
               },
+              ...(!recoverableVersion.preview ? { $unset: { preview: 1 } } : {}),
             },
             { new: true },
           ).exec();
           if (!recoveredApp) {
-            if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
-              throw new ArtifactAppDeletedError();
-            }
+            await throwIfSourceUnavailable(app._id);
             throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
           }
           app = recoveredApp;
@@ -921,31 +1180,32 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
         const metadata = canonicalSource;
 
         if (activeVersion?.integrity.sourceHash === sourceHash) {
+          const versionWithPreview = await backfillActiveVersionPreview(activeVersion);
           const updatedApp = await ArtifactApp.findOneAndUpdate(
             {
               _id: app._id,
               'syncLock.token': lockToken,
               deletion: { $exists: false },
+              ...liveSourceGuard(),
             },
             {
               $set: {
                 title: input.title,
                 sourceMetadata: metadata,
                 'marketplace.listed': true,
+                ...(versionWithPreview.preview ? { preview: versionWithPreview.preview } : {}),
               },
-              $unset: { syncLock: 1 },
+              $unset: { syncLock: 1, ...(!versionWithPreview.preview ? { preview: 1 } : {}) },
             },
             { new: true },
           ).exec();
           if (!updatedApp) {
-            if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
-              throw new ArtifactAppDeletedError();
-            }
+            await throwIfSourceUnavailable(app._id);
             throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
           }
           return {
             app: toAppRecord(updatedApp),
-            version: toVersionRecord(activeVersion),
+            version: toVersionRecord(versionWithPreview),
             created: false,
             versionCreated: recoveredVersion,
           };
@@ -971,6 +1231,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             'syncLock.token': lockToken,
             latestVersionNumber: app.latestVersionNumber,
             deletion: { $exists: false },
+            ...liveSourceGuard(),
           },
           {
             $set: {
@@ -979,17 +1240,16 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
               'marketplace.listed': true,
               latestVersionNumber: nextVersionNumber,
               activeVersionId: version.artifactVersionId,
+              ...(input.version.preview ? { preview: input.version.preview } : {}),
             },
-            $unset: { syncLock: 1 },
+            $unset: { syncLock: 1, ...(!input.version.preview ? { preview: 1 } : {}) },
           },
           { new: true },
         ).exec();
         if (!updatedApp) {
-          if (await ArtifactApp.exists({ _id: app._id, deletion: { $exists: true } })) {
-            await ArtifactVersion.deleteOne({ artifactVersionId: stagedVersionId }).exec();
-            versionStaged = false;
-            throw new ArtifactAppDeletedError();
-          }
+          await ArtifactVersion.deleteOne({ artifactVersionId: stagedVersionId }).exec();
+          versionStaged = false;
+          await throwIfSourceUnavailable(app._id);
           throw new Error('[syncArtifactAppWithVersion] Artifact sync lock was lost');
         }
         return {
@@ -1017,9 +1277,10 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       if (session) appQuery.session(session);
       const app = await appQuery.exec();
       if (!app) {
+        await throwIfSourceUnavailable();
         throw new Error('[syncArtifactAppWithVersion] Artifact app not found after source lookup');
       }
-      if (app.deletion) {
+      if (sourceWasRemoved(app)) {
         throw new ArtifactAppDeletedError();
       }
 
@@ -1032,17 +1293,32 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       if (session) versionQuery.session(session);
       const activeVersion = await versionQuery.exec();
 
-      app.title = input.title;
-      app.sourceMetadata = {
-        ...canonicalSource,
-      };
-      app.set('marketplace.listed', true);
-
       if (activeVersion?.integrity.sourceHash === sourceHash) {
-        await app.save(session ? { session } : undefined);
+        const versionWithPreview = await backfillActiveVersionPreview(activeVersion, session);
+        const updatedApp = await ArtifactApp.findOneAndUpdate(
+          {
+            _id: app._id,
+            deletion: { $exists: false },
+            ...liveSourceGuard(),
+          },
+          {
+            $set: {
+              title: input.title,
+              sourceMetadata: canonicalSource,
+              'marketplace.listed': true,
+              ...(versionWithPreview.preview ? { preview: versionWithPreview.preview } : {}),
+            },
+            ...(!versionWithPreview.preview ? { $unset: { preview: 1 } } : {}),
+          },
+          { new: true, ...(session ? { session } : {}) },
+        ).exec();
+        if (!updatedApp) {
+          await throwIfSourceUnavailable(app._id);
+          throw new ArtifactSyncRetryError('[syncArtifactAppWithVersion] Concurrent app update');
+        }
         return {
-          app: toAppRecord(app),
-          version: toVersionRecord(activeVersion),
+          app: toAppRecord(updatedApp),
+          version: toVersionRecord(versionWithPreview),
           created: false,
           versionCreated: false,
         };
@@ -1063,6 +1339,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           latestVersionNumber: app.latestVersionNumber,
           activeVersionId: app.activeVersionId ?? null,
           deletion: { $exists: false },
+          ...liveSourceGuard(),
         },
         {
           $set: {
@@ -1071,11 +1348,14 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
             'marketplace.listed': true,
             latestVersionNumber: nextNumber,
             activeVersionId: versionSeed.artifactVersionId,
+            ...(input.version.preview ? { preview: input.version.preview } : {}),
           },
+          ...(!input.version.preview ? { $unset: { preview: 1 } } : {}),
         },
         { new: true, ...createOptions },
       ).exec();
       if (!updatedApp) {
+        await throwIfSourceUnavailable(app._id);
         throw new ArtifactSyncRetryError('[syncArtifactAppWithVersion] Concurrent app update');
       }
       const [version] = await ArtifactVersion.create([versionSeed], createOptions);
@@ -1180,18 +1460,39 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     }
     const apps = await getApp()
       .find(filters.length === 1 ? filters[0] : { $and: filters })
+      .select({ _id: 1, updatedAt: 1 })
       .sort({ updatedAt: -1, _id: -1 })
       .limit(options.limit + 1)
-      .lean<IArtifactApp[]>()
+      .lean<Array<Pick<IArtifactApp, '_id' | 'updatedAt'>>>()
       .exec();
     const hasMore = apps.length > options.limit;
     const page = hasMore ? apps.slice(0, options.limit) : apps;
-    const entries = page.map((app) => ({ app: toAppRecord(app), cursor: encodeAppCursor(app) }));
+    const entries = page.map((app) => ({ id: app._id.toString(), cursor: encodeAppCursor(app) }));
     return {
       entries,
       hasMore,
       after: hasMore ? (entries[entries.length - 1]?.cursor ?? null) : null,
     };
+  }
+
+  async function getArtifactAppsByIds(ids: string[]): Promise<ArtifactAppRecord[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(ids)];
+    const apps = await getApp()
+      .find({
+        _id: { $in: uniqueIds },
+        deletion: { $exists: false },
+        status: { $ne: 'archived' },
+      })
+      .lean<IArtifactApp[]>()
+      .exec();
+    const appsById = new Map(apps.map((app) => [app._id.toString(), toAppRecord(app)]));
+    return ids.flatMap((id) => {
+      const app = appsById.get(id);
+      return app ? [app] : [];
+    });
   }
 
   async function updateArtifactApp(
@@ -1397,6 +1698,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       return null;
     }
     app.activeVersionId = version.artifactVersionId;
+    app.preview = version.preview;
     await app.save();
     return { app: toAppRecord(app), version: toVersionRecord(version) };
   }
@@ -1413,6 +1715,44 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     return toVersionRecord(version);
   }
 
+  async function deleteUserArtifactApps(
+    userId: string,
+  ): Promise<{ deletedApps: number; deletedVersions: number }> {
+    const apps = await getApp()
+      .find({ createdBy: userId })
+      .select({ _id: 1, artifactAppId: 1 })
+      .lean<Array<{ _id: Types.ObjectId; artifactAppId: string }>>()
+      .exec();
+    const Tombstone = getArtifactSourceTombstoneModel(mongoose);
+    if (Tombstone) {
+      await Tombstone.deleteMany({ createdBy: userId }).exec();
+    }
+    if (apps.length === 0) {
+      return { deletedApps: 0, deletedVersions: 0 };
+    }
+
+    const resourceIds = apps.map((app) => app._id);
+    const artifactAppIds = apps.map((app) => app.artifactAppId);
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry> | undefined;
+    if (AclEntry) {
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: { $in: resourceIds },
+      }).exec();
+    }
+
+    const versionResult = await getVersion()
+      .deleteMany({ artifactAppId: { $in: artifactAppIds } })
+      .exec();
+    const appResult = await getApp()
+      .deleteMany({ createdBy: userId, _id: { $in: resourceIds } })
+      .exec();
+    return {
+      deletedApps: appResult.deletedCount ?? 0,
+      deletedVersions: versionResult.deletedCount ?? 0,
+    };
+  }
+
   return {
     createArtifactAppWithVersion,
     syncArtifactAppWithVersion,
@@ -1420,10 +1760,14 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     getArtifactAppBySource,
     resolveArtifactAppId,
     listArtifactApps,
+    getArtifactAppsByIds,
     updateArtifactApp,
     deleteArtifactApp,
     prepareArtifactAppDeletion,
     finalizeArtifactAppDeletion,
+    deleteUserArtifactApps,
+    recordArtifactSourceTombstones: (createdBy, conversationIds) =>
+      recordArtifactSourceTombstones(mongoose, createdBy, conversationIds),
     getArtifactVersion,
     listArtifactVersions,
     releaseArtifactVersion,

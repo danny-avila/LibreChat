@@ -3,6 +3,7 @@ import type { TranslationKeys } from '~/hooks/useLocalize';
 
 export interface ResourceConfig {
   resourceType: ResourceType;
+  allowRoleSelection?: boolean;
   defaultViewerRoleId: AccessRoleIds;
   defaultEditorRoleId: AccessRoleIds;
   defaultOwnerRoleId: AccessRoleIds;
@@ -84,6 +85,7 @@ export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
   },
   [ResourceType.ARTIFACT_APP]: {
     resourceType: ResourceType.ARTIFACT_APP,
+    allowRoleSelection: false,
     defaultViewerRoleId: AccessRoleIds.ARTIFACT_APP_VIEWER,
     defaultEditorRoleId: AccessRoleIds.ARTIFACT_APP_EDITOR,
     defaultOwnerRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,

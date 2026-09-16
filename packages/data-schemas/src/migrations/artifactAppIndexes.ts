@@ -44,10 +44,27 @@ const COLLECTION_INDEXES: Record<string, IndexDefinition[]> = {
         },
       },
     },
+    {
+      spec: {
+        tenantId: 1,
+        createdBy: 1,
+        'sourceMetadata.detachedConversationId': 1,
+        'sourceMetadata.sourceKey': 1,
+      },
+      options: {
+        partialFilterExpression: {
+          'sourceMetadata.detachedConversationId': { $type: 'string' },
+          'sourceMetadata.sourceKey': { $type: 'string' },
+        },
+      },
+    },
   ],
   artifactversions: [
     { spec: { tenantId: 1, artifactAppId: 1, versionNumber: 1 }, options: { unique: true } },
     { spec: { tenantId: 1, artifactVersionId: 1 }, options: { unique: true } },
+  ],
+  artifactsourcetombstones: [
+    { spec: { tenantId: 1, createdBy: 1, conversationId: 1 }, options: { unique: true } },
   ],
 };
 

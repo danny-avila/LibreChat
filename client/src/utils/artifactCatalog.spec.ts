@@ -52,13 +52,19 @@ describe('artifact catalog identity', () => {
   });
 
   it('builds an automatic sync request from the LLM-authored artifact title', () => {
-    expect(toArtifactSyncRequest(artifact(), 'conversation-1')).toMatchObject({
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Revenue chart',
+    };
+    expect(toArtifactSyncRequest(artifact({ preview }), 'conversation-1')).toMatchObject({
       title: 'Revenue chart',
       source: {
         conversationId: 'conversation-1',
         sourceKey: 'artifact:v1:identifier:revenue-chart',
       },
-      artifact: { type: 'react' },
+      artifact: { type: 'react', preview },
     });
   });
 

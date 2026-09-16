@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { isAllowedArtifactPreviewUrl } from 'librechat-data-provider';
 import type { IArtifactApp } from '~/types';
 
 const toolPolicySchema = new Schema(
@@ -30,12 +31,30 @@ const marketplaceSchema = new Schema(
   { _id: false },
 );
 
+const artifactPreviewSchema = new Schema(
+  {
+    type: { type: String, enum: ['image'], required: true },
+    imageUrl: {
+      type: String,
+      required: true,
+      maxlength: 75_000,
+      validate: {
+        validator: isAllowedArtifactPreviewUrl,
+        message: 'Artifact preview must be a base64 PNG, JPEG, or WebP image',
+      },
+    },
+    alt: { type: String, maxlength: 500 },
+  },
+  { _id: false },
+);
+
 const sourceMetadataSchema = new Schema(
   {
     conversationId: { type: String },
     messageId: { type: String },
     originalArtifactId: { type: String },
     sourceKey: { type: String },
+    detachedConversationId: { type: String },
   },
   { _id: false },
 );
@@ -136,6 +155,10 @@ const artifactAppSchema: Schema<IArtifactApp> = new Schema<IArtifactApp>(
       type: marketplaceSchema,
       default: () => ({}),
     },
+    preview: {
+      type: artifactPreviewSchema,
+      default: undefined,
+    },
     sourceMetadata: {
       type: sourceMetadataSchema,
       default: undefined,
@@ -180,6 +203,20 @@ artifactAppSchema.index(
     unique: true,
     partialFilterExpression: {
       'sourceMetadata.conversationId': { $type: 'string' },
+      'sourceMetadata.sourceKey': { $type: 'string' },
+    },
+  },
+);
+artifactAppSchema.index(
+  {
+    tenantId: 1,
+    createdBy: 1,
+    'sourceMetadata.detachedConversationId': 1,
+    'sourceMetadata.sourceKey': 1,
+  },
+  {
+    partialFilterExpression: {
+      'sourceMetadata.detachedConversationId': { $type: 'string' },
       'sourceMetadata.sourceKey': { $type: 'string' },
     },
   },

@@ -1,7 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalModel, PrincipalType, ResourceType } from 'librechat-data-provider';
-import type { IAclEntry, IArtifactApp, IArtifactVersion, CreateArtifactAppInput } from '~/types';
+import type {
+  IAclEntry,
+  IArtifactApp,
+  IArtifactVersion,
+  IArtifactSourceTombstone,
+  CreateArtifactAppInput,
+} from '~/types';
 import {
   ArtifactAppDeletedError,
   createArtifactAppMethods,
@@ -21,6 +27,7 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let ArtifactApp: mongoose.Model<IArtifactApp>;
 let ArtifactVersion: mongoose.Model<IArtifactVersion>;
+let ArtifactSourceTombstone: mongoose.Model<IArtifactSourceTombstone>;
 let AclEntry: mongoose.Model<IAclEntry>;
 let modelsToCleanup: string[] = [];
 let methods: ArtifactAppMethods;
@@ -45,10 +52,16 @@ beforeAll(async () => {
   modelsToCleanup = Object.keys(models);
   ArtifactApp = mongoose.models.ArtifactApp as mongoose.Model<IArtifactApp>;
   ArtifactVersion = mongoose.models.ArtifactVersion as mongoose.Model<IArtifactVersion>;
+  ArtifactSourceTombstone = mongoose.models
+    .ArtifactSourceTombstone as mongoose.Model<IArtifactSourceTombstone>;
   AclEntry = mongoose.models.AclEntry as mongoose.Model<IAclEntry>;
   methods = createArtifactAppMethods(mongoose);
   await mongoose.connect(mongoServer.getUri());
-  await Promise.all([ArtifactApp.syncIndexes(), ArtifactVersion.syncIndexes()]);
+  await Promise.all([
+    ArtifactApp.syncIndexes(),
+    ArtifactVersion.syncIndexes(),
+    ArtifactSourceTombstone.syncIndexes(),
+  ]);
 }, 30000);
 
 afterAll(async () => {
@@ -68,6 +81,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await ArtifactApp.deleteMany({});
   await ArtifactVersion.deleteMany({});
+  await ArtifactSourceTombstone.deleteMany({});
   await AclEntry.deleteMany({});
 });
 
@@ -96,6 +110,51 @@ describe('createArtifactAppWithVersion', () => {
     );
     expect(version.integrity.sourceHash).toBe(expected);
     expect(version.integrity.schemaVersion).toBe(1);
+  });
+
+  test('stores the active thumbnail preview with the app and version', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Preview of My Chart',
+    };
+    const { app, version } = await methods.createArtifactAppWithVersion(
+      baseInput({ version: { ...baseInput().version, preview } }),
+    );
+
+    expect(app.preview).toEqual(preview);
+    expect(version.preview).toEqual(preview);
+  });
+
+  test('rejects remote preview URLs at the app and version persistence boundaries', async () => {
+    const unsafePreview = {
+      type: 'image' as const,
+      imageUrl: 'https://attacker.example/pixel.png',
+      alt: 'Unsafe preview',
+    };
+
+    await expect(
+      methods.createArtifactAppWithVersion(
+        baseInput({ version: { ...baseInput().version, preview: unsafePreview } }),
+      ),
+    ).rejects.toThrow('Artifact preview must be a base64 PNG, JPEG, or WebP image');
+    expect(await ArtifactApp.countDocuments()).toBe(0);
+    expect(await ArtifactVersion.countDocuments()).toBe(0);
+
+    const created = await methods.createArtifactAppWithVersion(baseInput());
+    const version = await ArtifactVersion.findOne({
+      artifactVersionId: created.version.artifactVersionId,
+    }).orFail();
+    version.preview = unsafePreview;
+    await expect(version.save()).rejects.toThrow(
+      'Artifact preview must be a base64 PNG, JPEG, or WebP image',
+    );
+    expect(
+      await ArtifactVersion.findOne({ artifactVersionId: created.version.artifactVersionId })
+        .lean()
+        .orFail(),
+    ).not.toHaveProperty('preview');
   });
 
   test('snapshot is independent — later app edits do not mutate the version source', async () => {
@@ -298,7 +357,21 @@ describe('syncArtifactAppWithVersion', () => {
   });
 
   test('is idempotent when the source snapshot has not changed', async () => {
-    const input = baseInput({ sourceMetadata });
+    const originalPreview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Original preview',
+    };
+    const replacementPreview = {
+      type: 'image' as const,
+      imageUrl: 'data:image/webp;base64,UklGRgQAAABXRUJQ',
+      alt: 'Replacement preview',
+    };
+    const input = baseInput({
+      sourceMetadata,
+      version: { ...baseInput().version, preview: originalPreview },
+    });
     const first = await methods.syncArtifactAppWithVersion(input);
     const second = await methods.syncArtifactAppWithVersion({
       ...input,
@@ -307,15 +380,82 @@ describe('syncArtifactAppWithVersion', () => {
         messageId: 'message-2',
         originalArtifactId: 'render-id-2',
       },
+      version: { ...input.version, preview: replacementPreview },
     });
+    const persistedApp = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId })
+      .lean()
+      .orFail();
 
     expect(first.created).toBe(true);
     expect(second.created).toBe(false);
     expect(second.versionCreated).toBe(false);
     expect(second.app.artifactAppId).toBe(first.app.artifactAppId);
+    expect(second.app.preview).toEqual(originalPreview);
+    expect(second.version.preview).toEqual(originalPreview);
+    expect(persistedApp.preview).toEqual(originalPreview);
     expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(
       1,
     );
+  });
+
+  test('backfills a missing preview without creating a new version', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Captured preview',
+    };
+    const input = baseInput({ sourceMetadata });
+    const first = await methods.syncArtifactAppWithVersion(input);
+    const second = await methods.syncArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, preview },
+    });
+    const [persistedApp, persistedVersion] = await Promise.all([
+      ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId }).lean().orFail(),
+      ArtifactVersion.findOne({ artifactAppId: first.app.artifactAppId }).lean().orFail(),
+    ]);
+
+    expect(second.versionCreated).toBe(false);
+    expect(second.app.preview).toEqual(preview);
+    expect(second.version.preview).toEqual(preview);
+    expect(persistedApp.preview).toEqual(preview);
+    expect(persistedVersion.preview).toEqual(preview);
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(
+      1,
+    );
+  });
+
+  test('does not backfill a missing preview onto a released version', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    };
+    const input = baseInput({ sourceMetadata });
+    const first = await methods.syncArtifactAppWithVersion(input);
+    await methods.releaseArtifactVersion(
+      {
+        artifactAppId: first.app.artifactAppId,
+        artifactVersionId: first.version.artifactVersionId,
+      },
+      'user-1',
+    );
+
+    const second = await methods.syncArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, preview },
+    });
+    const persistedVersion = await ArtifactVersion.findOne({
+      artifactVersionId: first.version.artifactVersionId,
+    })
+      .lean()
+      .orFail();
+
+    expect(second.app.preview).toBeUndefined();
+    expect(second.version.preview).toBeUndefined();
+    expect(persistedVersion.preview).toBeUndefined();
+    expect(persistedVersion.publication.state).toBe('released');
   });
 
   test('adopts typed identifier source keys created by the previous implementation', async () => {
@@ -563,6 +703,12 @@ describe('syncArtifactAppWithVersion', () => {
     const input = baseInput({ sourceMetadata });
     const first = await methods.syncArtifactAppWithVersion(input);
     const orphanSnapshot = 'export default () => <div>recover me</div>;';
+    const recoveredPreview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Recovered preview',
+    };
     await ArtifactVersion.create({
       artifactVersionId: 'ver_recoverable',
       artifactAppId: first.app.artifactAppId,
@@ -576,6 +722,7 @@ describe('syncArtifactAppWithVersion', () => {
       },
       createdBy: 'user-1',
       publication: { state: 'draft' },
+      preview: recoveredPreview,
     });
 
     const recovered = await methods.syncArtifactAppWithVersion({
@@ -590,6 +737,8 @@ describe('syncArtifactAppWithVersion', () => {
     expect(recovered.version.artifactVersionId).toBe('ver_recoverable');
     expect(persistedApp?.latestVersionNumber).toBe(2);
     expect(persistedApp?.activeVersionId).toBe('ver_recoverable');
+    expect(recovered.app.preview).toEqual(recoveredPreview);
+    expect(persistedApp?.preview).toEqual(recoveredPreview);
     expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(
       2,
     );
@@ -618,6 +767,27 @@ describe('CRUD', () => {
     expect(await methods.getArtifactAppByAppId({ artifactAppId: app.artifactAppId })).toBeNull();
   });
 
+  test('lists lightweight ACL candidates before hydrating preview metadata', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    };
+    await methods.createArtifactAppWithVersion(
+      baseInput({ version: { ...baseInput().version, preview } }),
+    );
+
+    const candidates = await methods.listArtifactApps({ createdBy: 'user-1', limit: 20 });
+    expect(candidates.entries[0]).toEqual({
+      id: expect.any(String),
+      cursor: expect.any(String),
+    });
+
+    const hydrated = await methods.getArtifactAppsByIds(candidates.entries.map(({ id }) => id));
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated[0]?.preview).toEqual(preview);
+  });
+
   test('resolveArtifactAppId returns a plain string id for ACL checks', async () => {
     const { app } = await methods.createArtifactAppWithVersion(baseInput());
     const resolved = await methods.resolveArtifactAppId({ artifactAppId: app.artifactAppId });
@@ -643,9 +813,7 @@ describe('CRUD', () => {
     expect(firstPage.after).toEqual(expect.any(String));
     expect(secondPage.entries).toHaveLength(1);
     expect(secondPage.hasMore).toBe(false);
-    const appIds = new Set(
-      [...firstPage.entries, ...secondPage.entries].map(({ app }) => app.artifactAppId),
-    );
+    const appIds = new Set([...firstPage.entries, ...secondPage.entries].map(({ id }) => id));
     expect(appIds.size).toBe(3);
     await expect(
       methods.listArtifactApps({ createdBy: 'user-1', limit: 2, cursor: 'not-json' }),
@@ -675,7 +843,8 @@ describe('CRUD', () => {
       limit: 10,
     });
 
-    expect(titleResult.entries.map(({ app }) => app.title)).toEqual(['Needle Artifact']);
+    const titleApps = await methods.getArtifactAppsByIds(titleResult.entries.map(({ id }) => id));
+    expect(titleApps.map(({ title }) => title)).toEqual(['Needle Artifact']);
     expect(tagResult.entries).toHaveLength(1);
   });
 
@@ -754,6 +923,269 @@ describe('CRUD', () => {
       entries: [],
     });
     expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(0);
+  });
+});
+
+describe('deleteUserArtifactApps', () => {
+  test('deletes the user apps, versions, and every resource ACL grant', async () => {
+    const { app } = await methods.createArtifactAppWithVersion(baseInput());
+    const other = await methods.createArtifactAppWithVersion(
+      baseInput({ createdBy: 'user-2', title: 'Other Chart' }),
+    );
+    const ownerId = new mongoose.Types.ObjectId();
+    const viewerId = new mongoose.Types.ObjectId();
+    await AclEntry.create([
+      {
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: ownerId,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(app.id),
+        permBits: 7,
+      },
+      {
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: viewerId,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(app.id),
+        permBits: 1,
+      },
+      {
+        principalType: PrincipalType.PUBLIC,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(app.id),
+        permBits: 1,
+      },
+      {
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: viewerId,
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(other.app.id),
+        permBits: 1,
+      },
+    ]);
+
+    const result = await methods.deleteUserArtifactApps('user-1');
+
+    expect(result).toEqual({ deletedApps: 1, deletedVersions: 1 });
+    expect(await ArtifactApp.findOne({ artifactAppId: app.artifactAppId })).toBeNull();
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(0);
+    expect(
+      await AclEntry.countDocuments({
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(app.id),
+      }),
+    ).toBe(0);
+    expect(await ArtifactApp.findOne({ artifactAppId: other.app.artifactAppId })).not.toBeNull();
+    expect(
+      await AclEntry.countDocuments({
+        resourceType: ResourceType.ARTIFACT_APP,
+        resourceId: new mongoose.Types.ObjectId(other.app.id),
+      }),
+    ).toBe(1);
+  });
+
+  test('is a no-op when the user has no artifact apps', async () => {
+    await expect(methods.deleteUserArtifactApps('missing-user')).resolves.toEqual({
+      deletedApps: 0,
+      deletedVersions: 0,
+    });
+  });
+});
+
+describe('detached source tombstones', () => {
+  const sourceMetadata = {
+    conversationId: 'conversation-detached',
+    sourceKey: 'artifact:v1:identifier:detached-report',
+  };
+
+  async function detachSource(artifactAppId: string, conversationId: string) {
+    await ArtifactApp.updateMany(
+      { artifactAppId, 'sourceMetadata.conversationId': conversationId },
+      [
+        {
+          $set: {
+            'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
+          },
+        },
+        { $unset: 'sourceMetadata.conversationId' },
+      ],
+    );
+  }
+
+  test('refuses to recreate a catalog record after the source conversation is detached', async () => {
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await detachSource(app.artifactAppId, sourceMetadata.conversationId);
+
+    await expect(methods.syncArtifactAppWithVersion(input)).rejects.toBeInstanceOf(
+      ArtifactAppDeletedError,
+    );
+    expect(await ArtifactApp.countDocuments({ createdBy: 'user-1' })).toBe(1);
+    expect(
+      (await ArtifactApp.findOne({ artifactAppId: app.artifactAppId }))?.sourceMetadata,
+    ).toMatchObject({
+      sourceKey: sourceMetadata.sourceKey,
+      detachedConversationId: sourceMetadata.conversationId,
+    });
+    expect(
+      (await ArtifactApp.findOne({ artifactAppId: app.artifactAppId }))?.sourceMetadata
+        ?.conversationId,
+    ).toBeUndefined();
+  });
+
+  test('does not restore a detached conversation link when sync races with deletion', async () => {
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    const update = {
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'export default () => <div>next</div>;' },
+    };
+
+    const [syncResult] = await Promise.allSettled([
+      methods.syncArtifactAppWithVersion(update),
+      detachSource(app.artifactAppId, sourceMetadata.conversationId),
+    ]);
+
+    if (syncResult.status === 'fulfilled') {
+      expect(syncResult.value.app.artifactAppId).toBe(app.artifactAppId);
+    } else {
+      expect(syncResult.reason).toBeInstanceOf(ArtifactAppDeletedError);
+    }
+
+    expect(await ArtifactApp.countDocuments({ createdBy: 'user-1' })).toBe(1);
+    const persisted = await ArtifactApp.findOne({ artifactAppId: app.artifactAppId });
+    expect(persisted?.sourceMetadata?.conversationId).toBeUndefined();
+    expect(persisted?.sourceMetadata?.detachedConversationId).toBe(sourceMetadata.conversationId);
+  });
+
+  test('does not create an app when conversation deletion finishes after the final source check', async () => {
+    const conversationId = 'conversation-first-insert-race';
+    const input = baseInput({
+      sourceMetadata: {
+        conversationId,
+        sourceKey: 'artifact:v1:identifier:first-insert-race',
+      },
+    });
+    let releaseCheck: () => void = () => {
+      throw new Error('afterSourceCheck was not reached');
+    };
+    const checkReached = new Promise<void>((resolve) => {
+      releaseCheck = resolve;
+    });
+    let resumeInsert: () => void = () => {
+      throw new Error('insert gate was not armed');
+    };
+    const insertGate = new Promise<void>((resolve) => {
+      resumeInsert = resolve;
+    });
+
+    const syncPromise = methods.syncArtifactAppWithVersion(input, {
+      afterSourceCheck: async () => {
+        releaseCheck();
+        await insertGate;
+      },
+    });
+
+    await checkReached;
+    await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+    resumeInsert();
+
+    await expect(syncPromise).rejects.toBeInstanceOf(ArtifactAppDeletedError);
+    expect(await ArtifactApp.countDocuments({ createdBy: 'user-1' })).toBe(0);
+    expect(
+      await ArtifactApp.countDocuments({ 'sourceMetadata.conversationId': conversationId }),
+    ).toBe(0);
+  });
+
+  test('propagates a transient tombstone write so deletion can retry', async () => {
+    const conversationId = 'conversation-tombstone-transient';
+    const transient = Object.assign(new Error('transient tombstone write'), {
+      code: 112,
+      errorLabels: ['TransientTransactionError'],
+    });
+    const bulkWrite = jest
+      .spyOn(ArtifactSourceTombstone, 'bulkWrite')
+      .mockRejectedValueOnce(transient);
+
+    await expect(methods.recordArtifactSourceTombstones('user-1', [conversationId])).rejects.toBe(
+      transient,
+    );
+    expect(
+      await ArtifactSourceTombstone.findOne({ createdBy: 'user-1', conversationId }),
+    ).toBeNull();
+    bulkWrite.mockRestore();
+  });
+
+  test('ignores a duplicate-key tombstone write only after the tombstone exists', async () => {
+    const conversationId = 'conversation-tombstone-duplicate';
+    await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+    const duplicate = Object.assign(new Error('duplicate key'), { code: 11000 });
+    const bulkWrite = jest
+      .spyOn(ArtifactSourceTombstone, 'bulkWrite')
+      .mockRejectedValueOnce(duplicate);
+
+    await expect(
+      methods.recordArtifactSourceTombstones('user-1', [conversationId]),
+    ).resolves.toBeUndefined();
+
+    bulkWrite.mockReset();
+    bulkWrite.mockRejectedValueOnce(duplicate);
+    await expect(
+      methods.recordArtifactSourceTombstones('user-1', ['conversation-tombstone-missing']),
+    ).rejects.toBe(duplicate);
+    bulkWrite.mockRestore();
+  });
+
+  test('does not return a first insert when abandonment hits a retryable write error', async () => {
+    const conversationId = 'conversation-abandon-retryable';
+    const input = baseInput({
+      sourceMetadata: {
+        conversationId,
+        sourceKey: 'artifact:v1:identifier:abandon-retryable',
+      },
+    });
+    let releaseCheck: () => void = () => {
+      throw new Error('afterSourceCheck was not reached');
+    };
+    const checkReached = new Promise<void>((resolve) => {
+      releaseCheck = resolve;
+    });
+    let resumeInsert: () => void = () => {
+      throw new Error('insert gate was not armed');
+    };
+    const insertGate = new Promise<void>((resolve) => {
+      resumeInsert = resolve;
+    });
+
+    const conflict = Object.assign(new Error('write conflict'), { code: 112 });
+    const updateMany = jest.spyOn(ArtifactApp, 'updateMany').mockImplementation(() => {
+      throw conflict;
+    });
+
+    const syncPromise = methods.syncArtifactAppWithVersion(input, {
+      afterSourceCheck: async () => {
+        releaseCheck();
+        await insertGate;
+      },
+      syncWriteRetryAttempts: 1,
+    });
+
+    try {
+      await checkReached;
+      await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+      resumeInsert();
+
+      await expect(syncPromise).rejects.toBe(conflict);
+      expect(
+        (await ArtifactApp.findOne({ 'sourceMetadata.conversationId': conversationId }))
+          ?.sourceMetadata?.conversationId,
+      ).toBe(conversationId);
+    } finally {
+      updateMany.mockRestore();
+    }
   });
 });
 
@@ -857,6 +1289,54 @@ describe('version lifecycle', () => {
     expect(v2.versionNumber).toBe(2);
   });
 
+  test('rollback restores the active app thumbnail from the selected version', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-preview-rollback',
+      messageId: 'message-1',
+      originalArtifactId: 'artifact-preview-rollback',
+      sourceKey: 'identifier:preview-rollback',
+    };
+    const firstPreview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'First preview',
+    };
+    const secondPreview = {
+      type: 'image' as const,
+      imageUrl: 'data:image/webp;base64,UklGRgQAAABXRUJQ',
+      alt: 'Second preview',
+    };
+    const first = await methods.syncArtifactAppWithVersion(
+      baseInput({ sourceMetadata, version: { ...baseInput().version, preview: firstPreview } }),
+    );
+    await methods.releaseArtifactVersion(
+      { artifactAppId: first.app.artifactAppId, versionNumber: 1 },
+      'user-1',
+    );
+    await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, messageId: 'message-2' },
+        version: { ...baseInput().version, sourceSnapshot: 'v2', preview: secondPreview },
+      }),
+    );
+    await methods.releaseArtifactVersion(
+      { artifactAppId: first.app.artifactAppId, versionNumber: 2 },
+      'user-1',
+    );
+    await methods.activateArtifactVersion({
+      artifactAppId: first.app.artifactAppId,
+      versionNumber: 2,
+    });
+
+    const rolledBack = await methods.activateArtifactVersion({
+      artifactAppId: first.app.artifactAppId,
+      versionNumber: 1,
+    });
+
+    expect(rolledBack?.app.preview).toEqual(firstPreview);
+  });
+
   test('released version snapshot/hash are immutable across lifecycle transitions', async () => {
     const { app } = await methods.createArtifactAppWithVersion(baseInput());
     const released = await methods.releaseArtifactVersion(
@@ -920,10 +1400,34 @@ describe('tenant isolation', () => {
     );
     expect(fromA?.artifactAppId).toBe(appA.app.artifactAppId);
 
-    const listB = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
-      methods.listArtifactApps({ limit: 20 }),
-    );
-    expect(listB.entries).toHaveLength(1);
-    expect(listB.entries[0]?.app.tenantId).toBe('tenant-b');
+    const listB = await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      const candidates = await methods.listArtifactApps({ limit: 20 });
+      return methods.getArtifactAppsByIds(candidates.entries.map(({ id }) => id));
+    });
+    expect(listB).toHaveLength(1);
+    expect(listB[0]?.tenantId).toBe('tenant-b');
+  });
+
+  test('tenant-scoped deletion tombstones remain visible to later sync', async () => {
+    const conversationId = 'conversation-tenant-tombstone';
+    const input = baseInput({
+      tenantId: 'tenant-a',
+      sourceMetadata: {
+        conversationId,
+        sourceKey: 'artifact:v1:identifier:tenant-tombstone',
+      },
+    });
+
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+      const raw = await mongoose.connection.db
+        ?.collection('artifactsourcetombstones')
+        .findOne({ createdBy: 'user-1', conversationId });
+      expect(raw?.tenantId).toBe('tenant-a');
+      await expect(methods.syncArtifactAppWithVersion(input)).rejects.toBeInstanceOf(
+        ArtifactAppDeletedError,
+      );
+      expect(await ArtifactApp.countDocuments({ createdBy: 'user-1' })).toBe(0);
+    });
   });
 });

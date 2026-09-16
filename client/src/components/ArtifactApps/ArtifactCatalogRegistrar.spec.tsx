@@ -114,7 +114,7 @@ describe('ArtifactCatalogRegistrar', () => {
 
     expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
     expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].source.sourceKey).toContain('new-chart');
-    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(500);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(5_500);
   });
 
   it('continues observing previews that resolve after generation completion', async () => {
@@ -240,7 +240,9 @@ describe('ArtifactCatalogRegistrar', () => {
   });
 
   it('uses the configured settle delay when persisting registration work', async () => {
-    mockStartupConfig = { artifactApps: { clientSyncSettleDelayMs: 25 } };
+    mockStartupConfig = {
+      artifactApps: { clientSyncSettleDelayMs: 25, clientPreviewCaptureTimeoutMs: 750 },
+    };
     artifacts = {};
     const { rerender } = render(<ArtifactCatalogRegistrar />);
 
@@ -252,6 +254,56 @@ describe('ArtifactCatalogRegistrar', () => {
     rerender(<ArtifactCatalogRegistrar />);
     await act(async () => Promise.resolve());
 
-    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(25);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(775);
+  });
+
+  it('queues a captured preview promptly and includes it in the sync request', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Revenue chart',
+    };
+    artifacts = {};
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, isSubmitting: true };
+    rerender(<ArtifactCatalogRegistrar />);
+    artifacts = { 'artifact-new': makeArtifact({ preview }) };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[1].artifact.preview).toEqual(preview);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(500);
+  });
+
+  it('supersedes the delayed fallback when a preview arrives after generation', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    };
+    artifacts = {};
+    const { rerender } = render(<ArtifactCatalogRegistrar />);
+
+    context = { ...context, isSubmitting: true };
+    rerender(<ArtifactCatalogRegistrar />);
+    artifacts = { 'artifact-new': makeArtifact() };
+    rerender(<ArtifactCatalogRegistrar />);
+    context = { ...context, isSubmitting: false };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    artifacts = { 'artifact-new': makeArtifact({ preview }) };
+    rerender(<ArtifactCatalogRegistrar />);
+    await act(async () => Promise.resolve());
+
+    expect(mockEnqueueArtifactSync).toHaveBeenCalledTimes(2);
+    expect(mockEnqueueArtifactSync.mock.calls[0]?.[3]).toBe(5_500);
+    expect(mockEnqueueArtifactSync.mock.calls[1]?.[1].artifact.preview).toEqual(preview);
+    expect(mockEnqueueArtifactSync.mock.calls[1]?.[3]).toBe(500);
   });
 });

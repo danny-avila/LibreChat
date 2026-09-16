@@ -70,6 +70,13 @@ function makeReq(overrides: ReqOverrides = {}): ServerRequest {
   } as unknown as ServerRequest;
 }
 
+const samplePreview = {
+  type: 'image' as const,
+  imageUrl:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  alt: 'Chart preview',
+};
+
 const samplePublish = {
   title: 'My Chart',
   description: 'A bar chart',
@@ -78,6 +85,7 @@ const samplePublish = {
     type: 'react' as const,
     content: 'export default () => <div>hello</div>;',
     title: 'Chart',
+    preview: samplePreview,
   },
 };
 
@@ -120,6 +128,7 @@ beforeAll(async () => {
     recordAuditEntry: async (input) => {
       auditActions.push(input.action);
     },
+    sourceConversationExists: async () => true,
   });
 });
 
@@ -145,13 +154,20 @@ describe('publish', () => {
 
     expect(res.statusCode).toBe(201);
     const body = res.body as {
-      app: { artifactAppId: string; createdBy: string };
-      version: { versionNumber: number; sourceSnapshot: string; integrity: { sourceHash: string } };
+      app: { artifactAppId: string; createdBy: string; preview?: { imageUrl: string } };
+      version: {
+        versionNumber: number;
+        sourceSnapshot: string;
+        preview?: { imageUrl: string };
+        integrity: { sourceHash: string };
+      };
     };
     expect(body.app.artifactAppId).toMatch(/^app_/);
     expect(body.app.createdBy).toBe('user-1');
+    expect(body.app.preview).toEqual(samplePreview);
     expect(body.version.versionNumber).toBe(1);
     expect(body.version.sourceSnapshot).toBe(samplePublish.artifact.content);
+    expect(body.version.preview).toEqual(samplePreview);
     expect(body.version.integrity.sourceHash).toHaveLength(64);
 
     expect(grants).toHaveLength(1);
@@ -180,6 +196,29 @@ describe('publish', () => {
     const res = makeRes();
     await handlers.publish(req, res);
     expect(res.statusCode).toBe(400);
+  });
+
+  test('rejects remote artifact previews before persistence', async () => {
+    const req = makeReq({
+      body: {
+        ...samplePublish,
+        artifact: {
+          ...samplePublish.artifact,
+          preview: {
+            ...samplePreview,
+            imageUrl: 'https://attacker.example/pixel.png',
+          },
+        },
+      },
+    });
+    const res = makeRes();
+
+    await handlers.publish(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(await methods.listArtifactApps({ createdBy: 'user-1', limit: 20 })).toMatchObject({
+      entries: [],
+    });
   });
 
   test('snapshot is independent of later publishes of a mutated artifact', async () => {
@@ -271,6 +310,22 @@ describe('automatic catalog sync', () => {
     );
 
     expect(first.statusCode).toBe(201);
+    expect(
+      (
+        first.body as {
+          app: { preview?: { imageUrl: string } };
+          version: { preview?: { imageUrl: string } };
+        }
+      ).app.preview?.imageUrl,
+    ).toBe(samplePreview.imageUrl);
+    expect(
+      (
+        first.body as {
+          app: { preview?: { imageUrl: string } };
+          version: { preview?: { imageUrl: string } };
+        }
+      ).version.preview?.imageUrl,
+    ).toBe(samplePreview.imageUrl);
     expect(second.statusCode).toBe(200);
     expect(second.body as { created: boolean; versionCreated: boolean }).toMatchObject({
       created: false,
@@ -329,6 +384,57 @@ describe('get / list', () => {
     await handlers.list(makeReq({}), res);
     const body = res.body as { apps: unknown[] };
     expect(body.apps).toHaveLength(1);
+  });
+
+  test('hydrates previews only after ACL filtering', async () => {
+    const allowed = await methods.createArtifactAppWithVersion({
+      createdBy: 'user-1',
+      title: 'Allowed',
+      visibility: 'private',
+      version: {
+        artifactType: 'react',
+        sourceSnapshot: 'allowed',
+        createdBy: 'user-1',
+        preview: samplePreview,
+      },
+    });
+    await methods.createArtifactAppWithVersion({
+      createdBy: 'user-1',
+      title: 'Denied',
+      visibility: 'private',
+      version: {
+        artifactType: 'react',
+        sourceSnapshot: 'denied',
+        createdBy: 'user-1',
+        preview: samplePreview,
+      },
+    });
+    const getArtifactAppsByIds = jest.fn(methods.getArtifactAppsByIds);
+    const filteringHandlers = createArtifactAppHandlers({
+      ...methods,
+      getArtifactAppsByIds,
+      getResourcePermissionsMap: async ({ resourceIds }) =>
+        new Map(
+          resourceIds
+            .filter((id) => id === allowed.app.id)
+            .map((id) => [id, PermissionBits.VIEW | PermissionBits.SHARE]),
+        ),
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      recordAuditEntry: async () => undefined,
+    });
+
+    const res = makeRes();
+    await filteringHandlers.list(makeReq({ query: { scope: 'personal' } }), res);
+
+    expect(getArtifactAppsByIds).toHaveBeenCalledWith([allowed.app.id]);
+    expect((res.body as { apps: Array<{ title: string; permissionBits?: number }> }).apps).toEqual([
+      expect.objectContaining({
+        title: 'Allowed',
+        preview: samplePreview,
+        permissionBits: PermissionBits.VIEW | PermissionBits.SHARE,
+      }),
+    ]);
   });
 
   test('list separates personal and shared artifacts while all returns both', async () => {
@@ -750,6 +856,86 @@ describe('remove', () => {
     await handlers.sync(makeReq({ body: syncBody }), res);
 
     expect(res.statusCode).toBe(410);
+  });
+
+  test('returns 410 when the source conversation no longer exists', async () => {
+    const missingSourceHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      recordAuditEntry: async () => undefined,
+      sourceConversationExists: async () => false,
+    });
+
+    const res = makeRes();
+    await missingSourceHandlers.sync(makeReq({ body: syncBody }), res);
+
+    expect(res.statusCode).toBe(410);
+    expect(res.body).toEqual({ error: 'Artifact was deleted and will not be synchronized' });
+    expect(await mongoose.models.ArtifactApp.countDocuments()).toBe(0);
+  });
+
+  test('returns 410 when queued sync races with source conversation deletion', async () => {
+    const ArtifactApp = mongoose.models.ArtifactApp;
+    const created = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), created);
+    const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
+
+    let conversationExists = true;
+    const racingHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      recordAuditEntry: async () => undefined,
+      sourceConversationExists: async () => conversationExists,
+    });
+
+    const queued = makeRes();
+    const [syncResult] = await Promise.allSettled([
+      racingHandlers.sync(
+        makeReq({
+          body: {
+            ...syncBody,
+            artifact: {
+              ...syncBody.artifact,
+              content: 'export default () => <div>later</div>;',
+            },
+          },
+        }),
+        queued,
+      ),
+      (async () => {
+        conversationExists = false;
+        await ArtifactApp.updateMany({ artifactAppId: appId }, [
+          {
+            $set: {
+              'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
+            },
+          },
+          { $unset: 'sourceMetadata.conversationId' },
+        ]);
+      })(),
+    ]);
+
+    expect(syncResult.status).toBe('fulfilled');
+    if (queued.statusCode !== 0) {
+      expect([200, 201, 410]).toContain(queued.statusCode);
+    }
+
+    expect(await ArtifactApp.countDocuments()).toBe(1);
+    const persisted = await ArtifactApp.findOne({ artifactAppId: appId }).lean<{
+      sourceMetadata?: { conversationId?: string; detachedConversationId?: string };
+    }>();
+    expect(persisted?.sourceMetadata?.conversationId).toBeUndefined();
+    expect(persisted?.sourceMetadata?.detachedConversationId).toBe(syncBody.source.conversationId);
+
+    conversationExists = false;
+    const retry = makeRes();
+    await racingHandlers.sync(makeReq({ body: syncBody }), retry);
+    expect(retry.statusCode).toBe(410);
+    expect(await ArtifactApp.countDocuments()).toBe(1);
   });
 });
 

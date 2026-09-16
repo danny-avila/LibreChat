@@ -13,6 +13,7 @@ const {
   getArtifactAppByAppId,
   getArtifactAppBySource,
   listArtifactApps,
+  getArtifactAppsByIds,
   updateArtifactApp,
   deleteArtifactApp,
   prepareArtifactAppDeletion,
@@ -24,6 +25,7 @@ const {
   withdrawArtifactVersion,
   recordAuditEntry,
   getRoleByName,
+  getConvo,
 } = require('~/models');
 const { requireJwtAuth, canAccessArtifactAppResource } = require('~/server/middleware');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
@@ -56,6 +58,7 @@ const handlers = createArtifactAppHandlers({
   getArtifactAppByAppId,
   getArtifactAppBySource,
   listArtifactApps,
+  getArtifactAppsByIds,
   updateArtifactApp,
   deleteArtifactApp,
   prepareArtifactAppDeletion,
@@ -71,6 +74,10 @@ const handlers = createArtifactAppHandlers({
   hasResourceManagementCapability: (user) =>
     hasCapability(user, ResourceCapabilityMap[ResourceType.ARTIFACT_APP]),
   recordAuditEntry,
+  sourceConversationExists: async ({ userId, conversationId }) => {
+    const conversation = await getConvo(userId, conversationId);
+    return conversation != null;
+  },
   getConfig: (req) => req.config?.artifactApps,
 });
 

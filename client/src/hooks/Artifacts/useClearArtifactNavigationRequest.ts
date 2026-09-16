@@ -1,15 +1,15 @@
 import { useCallback } from 'react';
-import { useResetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { useLocation, useNavigate } from 'react-router-dom';
-import store from '~/store';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
 
 export default function useClearArtifactNavigationRequest(): () => void {
   const location = useLocation();
   const navigate = useNavigate();
-  const resetArtifactNavigationRequest = useResetRecoilState(store.artifactNavigationRequest);
+  const setArtifactNavigationRequest = useSetAtom(artifactNavigationRequestAtom);
 
   return useCallback(() => {
-    resetArtifactNavigationRequest();
+    setArtifactNavigationRequest(null);
     const params = new URLSearchParams(location.search);
     const hadArtifactRequest = params.has('artifact');
     params.delete('artifact');
@@ -33,6 +33,6 @@ export default function useClearArtifactNavigationRequest(): () => void {
     location.search,
     location.state,
     navigate,
-    resetArtifactNavigationRequest,
+    setArtifactNavigationRequest,
   ]);
 }
