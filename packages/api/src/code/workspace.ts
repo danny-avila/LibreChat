@@ -258,12 +258,27 @@ export class WorkspaceToolHttpError extends Error {
     public readonly upstreamBodyTruncated = false,
   ) {
     super(
-      `Workspace tool request ${reason}` +
+      (reason === 'rejected' &&
+      isWorkspaceAdmissionTimeout(upstreamStatus, upstreamBody, upstreamBodyTruncated)
+        ? 'Workspace capacity was unavailable before the queue deadline. The operation was not started. Wait for active work to finish or select an independent workspace on a machine with available capacity.'
+        : `Workspace tool request ${reason}`) +
         (upstreamStatus == null ? '' : ` (upstreamStatus: ${upstreamStatus})`) +
         (upstreamBody ? `; upstreamBody: ${JSON.stringify(upstreamBody)}` : '') +
         (upstreamBodyTruncated ? ' [body truncated or incomplete]' : ''),
     );
     this.name = 'WorkspaceToolHttpError';
+  }
+}
+
+function isWorkspaceAdmissionTimeout(status?: number, body?: string, truncated = false): boolean {
+  if (status !== 503 || !body || truncated || body.length > MAX_ERROR_BODY_BYTES) {
+    return false;
+  }
+  try {
+    const parsed: { code?: string } | null = JSON.parse(body);
+    return parsed?.code === 'WORKSPACE_QUEUE_TIMEOUT';
+  } catch {
+    return false;
   }
 }
 
