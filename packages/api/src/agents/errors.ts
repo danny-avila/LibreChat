@@ -114,6 +114,27 @@ export function getUserFacingProviderError(error: unknown, protectionEnabled: bo
   return stripLangChainTroubleshootingUrl(error.message) || GENERIC_PROVIDER_ERROR;
 }
 
+/** Longest provider text a failure carries to a reader; error bodies are unbounded. */
+const MAX_PROVIDER_ERROR_TEXT = 2000;
+
+/**
+ * The provider's own words for a failure, or `undefined` when it has none to give. A gateway,
+ * proxy or OpenAI-compatible endpoint answers a rejection it alone can explain, and that sentence
+ * is more specific than any generic string we could write.
+ *
+ * Read defensively: an SDK error's `message` may be a hostile accessor or a body object rather
+ * than a string, and the docs URL LangChain stamps in is not for a reader.
+ */
+export function getProviderErrorMessage(error: unknown): string | undefined {
+  const raw =
+    error != null && typeof error === 'object' ? readErrorProperty(error, 'message') : error;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const message = stripLangChainTroubleshootingUrl(raw).trim();
+  return message.length === 0 ? undefined : message.slice(0, MAX_PROVIDER_ERROR_TEXT);
+}
+
 /**
  * LangGraph's stable machine identifier for "the graph ran out of supersteps".
  * Set as `lc_error_code` on the `GraphRecursionError` thrown by the Pregel loop

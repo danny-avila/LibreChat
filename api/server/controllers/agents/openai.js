@@ -383,6 +383,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     logger,
     responseMessageId: responseId,
     source: '[OpenAI API]',
+    protectionEnabled: hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    ),
   });
   const created = Math.floor(Date.now() / 1000);
 

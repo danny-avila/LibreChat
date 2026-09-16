@@ -3,6 +3,7 @@ import { GraphRecursionError } from '@langchain/langgraph';
 import {
   GENERIC_PROVIDER_ERROR,
   getLangChainErrorCode,
+  getProviderErrorMessage,
   resolveLangChainError,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
@@ -126,6 +127,42 @@ describe('LangChain provider error text', () => {
     it('coerces an Error whose message was overwritten with an object', () => {
       const error = Object.assign(new Error('replaced'), { message: { error: 'rate limited' } });
       expect(getUserFacingProviderError(error, false)).toBe('[object Object]');
+    });
+  });
+
+  describe('getProviderErrorMessage', () => {
+    it('reports the provider wording without the docs URL', () => {
+      const error = new Error(`400 masking unavailable${troubleshooting('MODEL_NOT_FOUND')}`);
+      expect(getProviderErrorMessage(error)).toBe('400 masking unavailable');
+    });
+
+    it('bounds an unbounded provider body', () => {
+      const error = new Error('x'.repeat(4096));
+      expect(getProviderErrorMessage(error)).toBe('x'.repeat(2000));
+    });
+
+    it.each([
+      ['a rejection thrown as a string', 'proxy refused the request', 'proxy refused the request'],
+      ['an error with nothing to say', new Error('   '), undefined],
+      [
+        'a non-string message',
+        Object.assign(new Error('replaced'), { message: { a: 1 } }),
+        undefined,
+      ],
+      ['a non-object rejection', 42, undefined],
+    ])('reads %s defensively', (_case, error, expected) => {
+      expect(getProviderErrorMessage(error)).toBe(expected);
+    });
+
+    it('contains a hostile message accessor', () => {
+      const error = Object.create(null, {
+        message: {
+          get() {
+            throw new Error('hostile message getter');
+          },
+        },
+      });
+      expect(getProviderErrorMessage(error)).toBeUndefined();
     });
   });
 });

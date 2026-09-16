@@ -632,6 +632,10 @@ const executeResponse = async (envelope, { req, res }) => {
     logger,
     responseMessageId: responseId,
     source: '[Responses API]',
+    protectionEnabled: hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    ),
   });
   const context = createResponseContext(request, responseId);
 
