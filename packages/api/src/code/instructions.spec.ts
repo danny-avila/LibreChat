@@ -61,9 +61,8 @@ describe('repository instruction loading', () => {
       ).toBeUndefined();
       const controller = new AbortController();
       const cancelled = load({ ...args, signal: controller.signal });
-      const assertion = expect(cancelled).rejects.toThrow('cancelled');
       controller.abort(new Error('cancelled'));
-      await assertion;
+      await expect(cancelled).rejects.toThrow('cancelled');
     } finally {
       jest.useRealTimers();
     }
