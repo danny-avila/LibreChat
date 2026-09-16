@@ -280,6 +280,7 @@ export function projectAgentManagementResponse(
     stateful_code_environment: source.stateful_code_environment,
     code_environment_id: source.code_environment_id,
     code_workspace_id: source.code_workspace_id,
+    repositoryInstructions: source.repositoryInstructions,
     git_identity: source.git_identity,
     artifacts: source.artifacts,
     recursion_limit: source.recursion_limit,

@@ -37,6 +37,38 @@ const response = () =>
   );
 
 describe('repository instruction loading', () => {
+  it('bounds optional authorization waits and preserves explicit cancellation', async () => {
+    jest.useFakeTimers();
+    try {
+      const load = createRepositoryInstructionLoader();
+      const args = {
+        enabled: true,
+        context,
+        principalId: 'test',
+        assertContent: jest.fn(),
+        authHeaders: () => new Promise<Record<string, string>>(() => {}),
+      };
+      const pending = load(args);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(await pending).toBeUndefined();
+      expect(
+        await load({
+          ...args,
+          authHeaders: async () => {
+            throw new Error('unavailable');
+          },
+        }),
+      ).toBeUndefined();
+      const controller = new AbortController();
+      const cancelled = load({ ...args, signal: controller.signal });
+      const assertion = expect(cancelled).rejects.toThrow('cancelled');
+      controller.abort(new Error('cancelled'));
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('checks authorization and content policy on cache hits, without cross-principal reuse', async () => {
     const load = createRepositoryInstructionLoader();
     const fetchImpl = jest.fn(async () => response());

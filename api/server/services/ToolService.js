@@ -49,7 +49,7 @@ const {
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
-  createRepositoryInstructionLoader,
+  createRepositoryInstructionSource,
   resolveAttachedWorkspaceCommandTimeoutMax,
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
@@ -106,7 +106,6 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
-const loadRepositoryInstructions = createRepositoryInstructionLoader();
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
@@ -1563,6 +1562,12 @@ async function loadToolDefinitionsWrapper({
     primedCodeFiles,
     oauthActionToolNames,
     codeExecutionContext: resolvedCodeExecutionContext,
+    repositoryInstructionSource: createRepositoryInstructionSource({
+      enabled: codeExecutionEnabled,
+      context: resolvedCodeExecutionContext,
+      principalId: JSON.stringify([getTenantId(), req.user.id]),
+      getAuthHeaders: (workerId) => getCodeApiAuthHeaders(req, workerId),
+    }),
   };
 }
 
@@ -1759,23 +1764,11 @@ async function loadAgentTools({
     getAppConfig,
   });
 
-  const repositoryInstructionBlock = await loadRepositoryInstructions({
-    assertContent: (content) =>
-      assertModelBoundContent({
-        filters: appConfig.filters,
-        agents: [{ instructions: content }],
-        onTraversalFailure: reportLocatorTraversalFailure,
-      }),
+  const repositoryInstructionSource = createRepositoryInstructionSource({
     enabled: codeExecutionEnabled,
     context: codeExecutionContext,
-    mode: agent.repositoryInstructions,
     principalId: JSON.stringify([getTenantId(), req.user.id]),
-    signal,
-    authHeaders: () =>
-      codeExecutionAuthHeaders(
-        (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
-        codeExecutionContext,
-      ),
+    getAuthHeaders: (workerId) => getCodeApiAuthHeaders(req, workerId),
   });
   const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
@@ -1879,7 +1872,7 @@ async function loadAgentTools({
 
   if (preparedActionSnapshot == null) {
     return {
-      repositoryInstructionBlock,
+      repositoryInstructionSource,
       toolRegistry,
       requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
@@ -1901,7 +1894,7 @@ async function loadAgentTools({
       logger.warn(`No tools found for ${_agentTools.length} specified tool call(s)`);
     }
     return {
-      repositoryInstructionBlock,
+      repositoryInstructionSource,
       toolRegistry,
       requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
@@ -2034,7 +2027,7 @@ async function loadAgentTools({
     toolRegistry,
     requestScopedConnections: getMCPRequestContext(req, res),
     toolContextMap,
-    repositoryInstructionBlock,
+    repositoryInstructionSource,
     dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions,
