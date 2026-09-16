@@ -1471,6 +1471,12 @@ export function resolveReasoningSettingForTarget({
       return override == null ? setting : { ...setting, ...override };
     },
   );
+  const explicitReasoningKey = paramDefinitions?.find((setting) =>
+    reasoningSettingKeys.includes(setting.key as ReasoningSettingKey),
+  )?.key as ReasoningSettingKey | undefined;
+  if (explicitReasoningKey != null) {
+    return findReasoningSetting(settings, explicitReasoningKey);
+  }
   const resolutionEndpoint = isKnownReasoningProvider(effectiveDefaultParamsEndpoint)
     ? effectiveDefaultParamsEndpoint
     : endpoint;
