@@ -327,6 +327,24 @@ describe('buildPreviewIndex', () => {
     expect(buildPreviewIndex(two, parallel).size).toBe(0);
   });
 
+  it('recognizes a handoff whose new agent starts by reasoning', () => {
+    const handoff = buildStepPreviews(
+      message({
+        content: [
+          { type: ContentTypes.TEXT, text: 'Agent A.', agentId: 'agent-a' },
+          { type: ContentTypes.TOOL_CALL, tool_call: { name: 'ls', args: {} }, agentId: 'agent-a' },
+          { type: ContentTypes.THINK, think: 'Taking over.', agentId: 'agent-b' },
+          { type: ContentTypes.TEXT, text: 'Agent B.', agentId: 'agent-b' },
+        ],
+      } as Partial<TMessage>),
+    );
+
+    expect(handoff).toEqual([
+      { text: 'Agent A.', toolCalls: [{ name: 'ls', args: '' }] },
+      { text: 'Agent B.', toolCalls: [] },
+    ]);
+  });
+
   it('withholds previews for the turn a page boundary splits', () => {
     const one = buildTraceModel([
       record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),

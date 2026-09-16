@@ -332,19 +332,21 @@ function groupSteps(
   for (const [origin, roots] of rootsByOrigin) {
     roots.sort(compare);
     const groups: Array<{ rootIds: string[]; lane: string }> = [];
+    const latestByLane = new Map<string, { rootIds: string[]; lane: string }>();
     let leading: string[] = [];
     for (const id of roots) {
       const kind = nodes.get(id)?.record.kind;
       const lane = laneOf(id);
       const current = groups[groups.length - 1];
       if (kind === 'generation' || (kind === 'tool' && current == null)) {
-        groups.push({ rootIds: [...leading, id], lane });
+        const group = { rootIds: [...leading, id], lane };
+        groups.push(group);
+        latestByLane.set(lane, group);
         leading = [];
       } else if (current == null) {
         leading.push(id);
       } else {
-        const own = [...groups].reverse().find((group) => group.lane === lane);
-        (own ?? current).rootIds.push(id);
+        (latestByLane.get(lane) ?? current).rootIds.push(id);
       }
     }
     if (leading.length > 0) {

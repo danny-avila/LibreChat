@@ -133,7 +133,8 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
       continue;
     }
     if (part.type === ContentTypes.THINK) {
-      if (afterToolCall) {
+      const handedOff = handoff(part);
+      if (afterToolCall || handedOff) {
         begin();
       }
       continue;
