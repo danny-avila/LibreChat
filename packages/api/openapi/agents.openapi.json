@@ -2010,6 +2010,14 @@
               }
             ]
           },
+          "repositoryInstructions": {
+            "type": "string",
+            "enum": [
+              "prefer",
+              "defer",
+              "off"
+            ]
+          },
           "git_identity": {
             "type": "object",
             "properties": {
@@ -2437,6 +2445,14 @@
                 "type": "string",
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
               }
+            ]
+          },
+          "repositoryInstructions": {
+            "type": "string",
+            "enum": [
+              "prefer",
+              "defer",
+              "off"
             ]
           },
           "git_identity": {
@@ -2893,6 +2909,14 @@
                 "type": "string",
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
               }
+            ]
+          },
+          "repositoryInstructions": {
+            "type": "string",
+            "enum": [
+              "prefer",
+              "defer",
+              "off"
             ]
           },
           "git_identity": {
