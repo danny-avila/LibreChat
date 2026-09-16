@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Artifacts from './Artifacts';
 import store from '~/store';
 
@@ -8,6 +8,12 @@ const mockUseArtifacts = jest.fn();
 const mockCaptureArtifactPreview = jest.fn<Promise<string | null>, []>();
 let mockIsMobile = false;
 let mockPrefersReducedMotion = false;
+let mockArtifactCatalogSync: {
+  artifactEntry?: undefined;
+  isDeleted: boolean;
+  restoreArtifact?: () => Promise<unknown>;
+  isSyncing: boolean;
+};
 const pngPreview =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -76,7 +82,7 @@ jest.mock('~/hooks/Artifacts/useClearArtifactNavigationRequest', () => ({
 
 jest.mock('~/hooks/Artifacts/useArtifactCatalogSync', () => ({
   __esModule: true,
-  default: () => ({ artifactEntry: null, isSyncing: false }),
+  default: () => mockArtifactCatalogSync,
 }));
 
 jest.mock('~/hooks/Artifacts/useArtifacts', () => ({
@@ -123,6 +129,11 @@ describe('Artifacts panel accessibility', () => {
     mockIsMobile = false;
     mockPrefersReducedMotion = false;
     mockCaptureArtifactPreview.mockReset().mockResolvedValue(null);
+    mockArtifactCatalogSync = {
+      artifactEntry: undefined,
+      isDeleted: false,
+      isSyncing: false,
+    };
     mockUseArtifacts.mockReturnValue({
       activeTab: 'code',
       setActiveTab: jest.fn(),
@@ -189,6 +200,28 @@ describe('Artifacts panel accessibility', () => {
 
     await screen.findByRole('region', { name: 'Page' });
     expect(screen.getByRole('button', { name: 'com_ui_refresh' })).toBeInTheDocument();
+  });
+
+  it('replaces sharing with an explicit restore action for a deleted artifact', async () => {
+    const restoreArtifact = jest.fn().mockResolvedValue({});
+    mockArtifactCatalogSync = {
+      artifactEntry: undefined,
+      isDeleted: true,
+      restoreArtifact,
+      isSyncing: false,
+    };
+
+    render(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    const restoreButton = await screen.findByRole('button', {
+      name: 'com_ui_artifact_restore',
+    });
+    fireEvent.click(restoreButton);
+    await waitFor(() => expect(restoreArtifact).toHaveBeenCalledTimes(1));
   });
 
   it('stores a captured thumbnail on the generated artifact for automatic synchronization', async () => {

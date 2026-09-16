@@ -10,8 +10,10 @@ const {
 const {
   createArtifactAppWithVersion,
   syncArtifactAppWithVersion,
+  restoreArtifactAppWithVersion,
   getArtifactAppByAppId,
   getArtifactAppBySource,
+  getDeletedArtifactAppBySource,
   listArtifactApps,
   getArtifactAppsByIds,
   updateArtifactApp,
@@ -55,8 +57,10 @@ const checkArtifactCreate = generateCheckAccess({
 const handlers = createArtifactAppHandlers({
   createArtifactAppWithVersion,
   syncArtifactAppWithVersion,
+  restoreArtifactAppWithVersion,
   getArtifactAppByAppId,
   getArtifactAppBySource,
+  getDeletedArtifactAppBySource,
   listArtifactApps,
   getArtifactAppsByIds,
   updateArtifactApp,
@@ -85,6 +89,7 @@ const handlers = createArtifactAppHandlers({
 router.get('/', checkArtifactAccess, handlers.list);
 router.post('/', checkArtifactCreate, handlers.publish);
 router.post('/sync', checkArtifactCreate, handlers.sync);
+router.post('/restore', checkArtifactCreate, handlers.restore);
 router.get('/source', checkArtifactAccess, handlers.getBySource);
 
 // Single app

@@ -1,4 +1,8 @@
-import { ArtifactAppDeletedError, logger } from '@librechat/data-schemas';
+import {
+  ArtifactAppDeletedError,
+  ArtifactAppRestoreNotFoundError,
+  logger,
+} from '@librechat/data-schemas';
 import {
   ResourceType,
   AccessRoleIds,
@@ -56,8 +60,17 @@ export interface ArtifactAppHandlersDeps {
       assertSourceAvailable?: () => Promise<void>;
     },
   ) => Promise<SyncArtifactAppResult>;
+  restoreArtifactAppWithVersion: (
+    input: CreateArtifactAppInput,
+    options?: Partial<ArtifactAppSyncOptions> & {
+      assertSourceAvailable?: () => Promise<void>;
+    },
+  ) => Promise<SyncArtifactAppResult>;
   getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppRecord | null>;
   getArtifactAppBySource: (query: ArtifactAppSourceQuery) => Promise<ArtifactAppRecord | null>;
+  getDeletedArtifactAppBySource: (
+    query: ArtifactAppSourceQuery,
+  ) => Promise<ArtifactAppRecord | null>;
   listArtifactApps: (options: ArtifactAppListOptions) => Promise<ArtifactAppListPage>;
   getArtifactAppsByIds: (ids: string[]) => Promise<ArtifactAppRecord[]>;
   updateArtifactApp: (
@@ -244,6 +257,7 @@ function requireUser(req: ServerRequest, res: Response): ServerRequest['user'] |
 export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   publish: (req: ServerRequest, res: Response) => Promise<Response>;
   sync: (req: ServerRequest, res: Response) => Promise<Response>;
+  restore: (req: ServerRequest, res: Response) => Promise<Response>;
   list: (req: ServerRequest, res: Response) => Promise<Response>;
   getBySource: (req: ServerRequest, res: Response) => Promise<Response>;
   get: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -258,8 +272,10 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   const {
     createArtifactAppWithVersion,
     syncArtifactAppWithVersion,
+    restoreArtifactAppWithVersion,
     getArtifactAppByAppId,
     getArtifactAppBySource,
+    getDeletedArtifactAppBySource,
     listArtifactApps,
     getArtifactAppsByIds,
     updateArtifactApp,
@@ -484,6 +500,101 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     }
   }
 
+  async function restore(req: ServerRequest, res: Response) {
+    try {
+      const user = requireUser(req, res);
+      if (!user) {
+        return res as Response;
+      }
+      const parsed = syncArtifactAppSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Validation failed', issues: parsed.error.issues });
+      }
+
+      const userId = user.id as string;
+      const data = parsed.data;
+      const assertSourceAvailable = async () => {
+        if (
+          sourceConversationExists &&
+          !(await sourceConversationExists({
+            userId,
+            conversationId: data.source.conversationId,
+          }))
+        ) {
+          throw new ArtifactAppDeletedError();
+        }
+      };
+      const config = artifactAppsConfigSchema.parse(getConfig?.(req));
+      const result = await restoreArtifactAppWithVersion(
+        {
+          tenantId: user.tenantId,
+          createdBy: userId,
+          title: data.title,
+          visibility: 'private',
+          marketplace: { listed: true },
+          sourceMetadata: data.source,
+          version: toVersionInput(data.artifact, undefined, undefined, userId),
+        },
+        { ...config, assertSourceAvailable },
+      );
+
+      try {
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.ARTIFACT_APP,
+          resourceId: result.app.id,
+          accessRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
+          grantedBy: userId,
+        });
+      } catch (permissionError) {
+        logger.error(
+          `[POST /artifact-apps/restore] Failed to restore owner permission for ${result.app.artifactAppId}:`,
+          permissionError,
+        );
+        const prepared = await prepareArtifactAppDeletion(
+          { artifactAppId: result.app.artifactAppId },
+          userId,
+        );
+        if (prepared.resourceId) {
+          await removeAllPermissions({
+            resourceType: ResourceType.ARTIFACT_APP,
+            resourceId: prepared.resourceId,
+          });
+        }
+        await finalizeArtifactAppDeletion({ artifactAppId: result.app.artifactAppId }, userId);
+        return res.status(500).json({ error: 'Failed to restore artifact permissions' });
+      }
+
+      audit({
+        tenantId: user.tenantId,
+        action: 'artifact_app.updated',
+        actor: { type: 'user', id: userId, name: user.name ?? user.username ?? userId },
+        target: {
+          type: ResourceType.ARTIFACT_APP,
+          id: result.app.artifactAppId,
+          name: result.app.title,
+        },
+        metadata: { versionNumber: result.version.versionNumber, restored: true },
+      });
+      return res.status(200).json({
+        app: serializeApp(result.app, userId),
+        version: serializeVersion(result.version),
+        created: result.created,
+        versionCreated: result.versionCreated,
+      });
+    } catch (error) {
+      if (error instanceof ArtifactAppRestoreNotFoundError) {
+        return res.status(404).json({ error: 'Deleted artifact was not found' });
+      }
+      if (error instanceof ArtifactAppDeletedError) {
+        return res.status(410).json({ error: 'The source conversation is no longer available' });
+      }
+      logger.error('[POST /artifact-apps/restore] Error restoring artifact', error);
+      return res.status(500).json({ error: 'Error restoring artifact' });
+    }
+  }
+
   async function list(req: ServerRequest, res: Response) {
     try {
       const user = requireUser(req, res);
@@ -605,6 +716,15 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
         sourceKey,
       });
       if (!app) {
+        const deletedApp = await getDeletedArtifactAppBySource({
+          tenantId: user.tenantId,
+          createdBy: user.id as string,
+          conversationId,
+          sourceKey,
+        });
+        if (deletedApp) {
+          return res.status(410).json({ error: 'Artifact was deleted' });
+        }
         return res.status(404).json({ error: 'Artifact not found' });
       }
       return res.status(200).json(await serializeDetail(app, user.id as string));
@@ -877,6 +997,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   return {
     publish,
     sync,
+    restore,
     list,
     getBySource,
     get,

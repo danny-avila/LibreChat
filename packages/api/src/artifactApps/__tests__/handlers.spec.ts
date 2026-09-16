@@ -822,6 +822,47 @@ describe('remove', () => {
     expect(removeAllPermissions).toHaveBeenCalledTimes(2);
   });
 
+  test('does not restore after deletion when ACL cleanup has not finished', async () => {
+    const created = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), created);
+    const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
+    const removeAllPermissions = jest.fn().mockRejectedValue(new Error('temporary ACL failure'));
+    const incompleteHandlers = createArtifactAppHandlers({
+      ...methods,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async (params) => {
+        grants.push({
+          principalId: String(params.principalId),
+          resourceType: params.resourceType,
+          resourceId: String(params.resourceId),
+          accessRoleId: params.accessRoleId,
+        });
+      },
+      removeAllPermissions,
+      recordAuditEntry: async () => undefined,
+    });
+
+    const removed = makeRes();
+    await incompleteHandlers.remove(makeReq({ params: { id: appId } as never }), removed);
+    expect(removed.statusCode).toBe(500);
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toMatchObject({
+      deletion: { requestedBy: 'user-1' },
+    });
+    expect(
+      (await methods.getArtifactAppByAppId({ artifactAppId: appId }))?.deletion?.finalizedAt,
+    ).toBeUndefined();
+
+    grants = [];
+    const restored = makeRes();
+    await incompleteHandlers.restore(makeReq({ body: syncBody }), restored);
+
+    expect(restored.statusCode).toBe(404);
+    expect(grants).toEqual([]);
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toMatchObject({
+      deletion: { requestedBy: 'user-1' },
+    });
+  });
+
   test('allows a resource administrator to delete without an artifact ACL', async () => {
     const { appId } = await createSyncedVersions(1);
     const administrativeHandlers = createArtifactAppHandlers({
@@ -856,6 +897,39 @@ describe('remove', () => {
     await handlers.sync(makeReq({ body: syncBody }), res);
 
     expect(res.statusCode).toBe(410);
+  });
+
+  test('reports a deleted source and explicitly restores it with owner access', async () => {
+    const created = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), created);
+    const appId = (created.body as { app: { artifactAppId: string } }).app.artifactAppId;
+    const removed = makeRes();
+    await handlers.remove(makeReq({ params: { id: appId } as never }), removed);
+
+    const lookup = makeRes();
+    await handlers.getBySource(
+      makeReq({
+        query: {
+          conversationId: syncBody.source.conversationId,
+          sourceKey: syncBody.source.sourceKey,
+        },
+      }),
+      lookup,
+    );
+    expect(lookup.statusCode).toBe(410);
+
+    grants = [];
+    const restored = makeRes();
+    await handlers.restore(makeReq({ body: syncBody }), restored);
+
+    expect(restored.statusCode).toBe(200);
+    expect((restored.body as { app: { artifactAppId: string } }).app.artifactAppId).toBe(appId);
+    expect(grants).toEqual([
+      expect.objectContaining({
+        principalId: 'user-1',
+        accessRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
+      }),
+    ]);
   });
 
   test('returns 410 when the source conversation no longer exists', async () => {

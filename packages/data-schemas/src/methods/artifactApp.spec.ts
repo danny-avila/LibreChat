@@ -10,6 +10,7 @@ import type {
 } from '~/types';
 import {
   ArtifactAppDeletedError,
+  ArtifactAppRestoreNotFoundError,
   createArtifactAppMethods,
   computeSourceHash,
   type ArtifactAppMethods,
@@ -924,6 +925,185 @@ describe('CRUD', () => {
     });
     expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(0);
   });
+
+  test('explicitly restores a deleted source with a new draft snapshot', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-restored',
+      sourceKey: 'artifact:v1:identifier:restored-report',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    expect(
+      await methods.getDeletedArtifactAppBySource({
+        createdBy: 'user-1',
+        conversationId: sourceMetadata.conversationId,
+        sourceKey: sourceMetadata.sourceKey,
+      }),
+    ).toMatchObject({ artifactAppId: app.artifactAppId });
+
+    const restored = await methods.restoreArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'restored content' },
+    });
+
+    expect(restored.app).toMatchObject({
+      artifactAppId: app.artifactAppId,
+      status: 'draft',
+      deletion: undefined,
+    });
+    expect(restored.version).toMatchObject({
+      versionNumber: 2,
+      sourceSnapshot: 'restored content',
+    });
+    expect(
+      await methods.getDeletedArtifactAppBySource({
+        createdBy: 'user-1',
+        conversationId: sourceMetadata.conversationId,
+        sourceKey: sourceMetadata.sourceKey,
+      }),
+    ).toBeNull();
+  });
+
+  test('does not restore an app whose deletion cleanup is unfinished', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-incomplete-delete',
+      sourceKey: 'artifact:v1:identifier:incomplete-delete',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    expect(
+      await methods.getDeletedArtifactAppBySource({
+        createdBy: 'user-1',
+        conversationId: sourceMetadata.conversationId,
+        sourceKey: sourceMetadata.sourceKey,
+      }),
+    ).toBeNull();
+    await expect(methods.restoreArtifactAppWithVersion(input)).rejects.toBeInstanceOf(
+      ArtifactAppRestoreNotFoundError,
+    );
+
+    const unfinished = await ArtifactApp.findOne({ artifactAppId: app.artifactAppId });
+    expect(unfinished?.deletion).toEqual(expect.objectContaining({ requestedBy: 'user-1' }));
+    expect(unfinished?.deletion?.finalizedAt).toBeUndefined();
+    expect(unfinished?.sourceMetadata?.conversationId).toBe(sourceMetadata.conversationId);
+
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    const restored = await methods.restoreArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'restored after finalize' },
+    });
+    expect(restored.app).toMatchObject({
+      artifactAppId: app.artifactAppId,
+      status: 'draft',
+      deletion: undefined,
+    });
+  });
+
+  test('creates a new restore version when staged content no longer matches', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-stale-restore',
+      sourceKey: 'artifact:v1:identifier:stale-restore',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    const staleSnapshot = 'stale staged snapshot';
+    const stalePreview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'Stale preview',
+    };
+    await ArtifactVersion.create({
+      artifactVersionId: 'ver_stale_restore',
+      artifactAppId: app.artifactAppId,
+      versionNumber: 2,
+      artifactType: 'react',
+      sourceSnapshot: staleSnapshot,
+      runtimeConfig: {},
+      integrity: {
+        sourceHash: computeSourceHash('react', staleSnapshot),
+        schemaVersion: 1,
+      },
+      createdBy: 'user-1',
+      publication: { state: 'draft' },
+      preview: stalePreview,
+    });
+
+    const restoredPreview = {
+      ...stalePreview,
+      alt: 'Current preview',
+    };
+    const restored = await methods.restoreArtifactAppWithVersion({
+      ...input,
+      title: 'Restored Chart',
+      version: {
+        ...input.version,
+        sourceSnapshot: 'current restore snapshot',
+        preview: restoredPreview,
+      },
+    });
+
+    expect(restored.app).toMatchObject({
+      artifactAppId: app.artifactAppId,
+      title: 'Restored Chart',
+      status: 'draft',
+      deletion: undefined,
+      preview: restoredPreview,
+    });
+    expect(restored.version).toMatchObject({
+      versionNumber: 3,
+      sourceSnapshot: 'current restore snapshot',
+    });
+    expect(restored.version.artifactVersionId).not.toBe('ver_stale_restore');
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(2);
+  });
+
+  test('recovers a matching staged restore version', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-matching-restore',
+      sourceKey: 'artifact:v1:identifier:matching-restore',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    const restoreSnapshot = 'matching staged snapshot';
+    await ArtifactVersion.create({
+      artifactVersionId: 'ver_matching_restore',
+      artifactAppId: app.artifactAppId,
+      versionNumber: 2,
+      artifactType: 'react',
+      sourceSnapshot: restoreSnapshot,
+      runtimeConfig: {},
+      integrity: {
+        sourceHash: computeSourceHash('react', restoreSnapshot),
+        schemaVersion: 1,
+      },
+      createdBy: 'user-1',
+      publication: { state: 'draft' },
+    });
+
+    const restored = await methods.restoreArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: restoreSnapshot },
+    });
+
+    expect(restored.version).toMatchObject({
+      artifactVersionId: 'ver_matching_restore',
+      versionNumber: 2,
+      sourceSnapshot: restoreSnapshot,
+    });
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: app.artifactAppId })).toBe(1);
+  });
 });
 
 describe('deleteUserArtifactApps', () => {
@@ -1098,6 +1278,102 @@ describe('detached source tombstones', () => {
     expect(
       await ArtifactApp.countDocuments({ 'sourceMetadata.conversationId': conversationId }),
     ).toBe(0);
+  });
+
+  test('does not reattach a deleted conversation when restore finishes after source deletion', async () => {
+    const conversationId = 'conversation-restore-race';
+    const sourceMetadata = {
+      conversationId,
+      sourceKey: 'artifact:v1:identifier:restore-race',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    let releaseCheck: () => void = () => {
+      throw new Error('afterSourceCheck was not reached');
+    };
+    const checkReached = new Promise<void>((resolve) => {
+      releaseCheck = resolve;
+    });
+    let resumeRestore: () => void = () => {
+      throw new Error('restore gate was not armed');
+    };
+    const restoreGate = new Promise<void>((resolve) => {
+      resumeRestore = resolve;
+    });
+
+    const restorePromise = methods.restoreArtifactAppWithVersion(
+      {
+        ...input,
+        version: { ...input.version, sourceSnapshot: 'restored after race' },
+      },
+      {
+        afterSourceCheck: async () => {
+          releaseCheck();
+          await restoreGate;
+        },
+      },
+    );
+
+    await checkReached;
+    await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+    await detachSource(app.artifactAppId, conversationId);
+    resumeRestore();
+
+    await expect(restorePromise).rejects.toBeInstanceOf(ArtifactAppDeletedError);
+    const persisted = await ArtifactApp.findOne({ artifactAppId: app.artifactAppId });
+    expect(persisted?.sourceMetadata?.conversationId).toBeUndefined();
+    expect(persisted?.sourceMetadata?.detachedConversationId).toBe(conversationId);
+    expect(persisted?.deletion).toEqual(expect.objectContaining({ requestedBy: 'user-1' }));
+  });
+
+  test('detaches a restored source when a tombstone lands during the restoring update', async () => {
+    const conversationId = 'conversation-restore-tombstone-race';
+    const sourceMetadata = {
+      conversationId,
+      sourceKey: 'artifact:v1:identifier:restore-tombstone-race',
+    };
+    const input = baseInput({ sourceMetadata });
+    const { app } = await methods.syncArtifactAppWithVersion(input);
+    await methods.prepareArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+    await methods.finalizeArtifactAppDeletion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    let releaseCheck: () => void = () => {
+      throw new Error('afterSourceCheck was not reached');
+    };
+    const checkReached = new Promise<void>((resolve) => {
+      releaseCheck = resolve;
+    });
+    let resumeRestore: () => void = () => {
+      throw new Error('restore gate was not armed');
+    };
+    const restoreGate = new Promise<void>((resolve) => {
+      resumeRestore = resolve;
+    });
+
+    const restorePromise = methods.restoreArtifactAppWithVersion(
+      {
+        ...input,
+        version: { ...input.version, sourceSnapshot: 'restored before tombstone' },
+      },
+      {
+        afterSourceCheck: async () => {
+          releaseCheck();
+          await restoreGate;
+        },
+      },
+    );
+
+    await checkReached;
+    await methods.recordArtifactSourceTombstones('user-1', [conversationId]);
+    resumeRestore();
+
+    await expect(restorePromise).rejects.toBeInstanceOf(ArtifactAppDeletedError);
+    const persisted = await ArtifactApp.findOne({ artifactAppId: app.artifactAppId });
+    expect(persisted?.sourceMetadata?.conversationId).toBeUndefined();
+    expect(persisted?.sourceMetadata?.detachedConversationId).toBe(conversationId);
   });
 
   test('propagates a transient tombstone write so deletion can retry', async () => {

@@ -41,6 +41,23 @@ export const useSyncArtifactAppMutation = (): UseMutationResult<
   });
 };
 
+export const useRestoreArtifactAppMutation = (): UseMutationResult<
+  TSyncArtifactAppResponse,
+  Error,
+  TSyncArtifactAppRequest
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload) => dataService.restoreArtifactApp(payload), {
+    onSuccess: (data, payload) => {
+      queryClient.setQueryData(
+        [QueryKeys.artifactApp, 'source', payload.source.conversationId, payload.source.sourceKey],
+        data,
+      );
+      queryClient.invalidateQueries([QueryKeys.artifactApps]);
+    },
+  });
+};
+
 export const useUpdateArtifactAppMutation = (): UseMutationResult<
   TArtifactApp,
   Error,
@@ -66,6 +83,7 @@ export const useDeleteArtifactAppMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation((artifactAppId) => dataService.deleteArtifactApp(artifactAppId), {
     onSuccess: () => {
+      queryClient.removeQueries([QueryKeys.artifactApp]);
       queryClient.invalidateQueries([QueryKeys.artifactApps]);
     },
   });

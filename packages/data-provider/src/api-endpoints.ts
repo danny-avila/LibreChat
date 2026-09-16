@@ -595,6 +595,8 @@ export const artifactApps = () => artifactAppsRoot;
 
 export const syncArtifactApp = () => `${artifactAppsRoot}/sync`;
 
+export const restoreArtifactApp = () => `${artifactAppsRoot}/restore`;
+
 export const artifactAppBySource = (conversationId: string, sourceKey: string) => {
   const params = new URLSearchParams({ conversationId, sourceKey });
   return `${artifactAppsRoot}/source?${params.toString()}`;
