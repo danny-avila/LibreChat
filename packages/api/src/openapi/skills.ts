@@ -13,6 +13,7 @@ import {
 import {
   errorMessageResponseSchema,
   accountDeletionResponseSchema,
+  genericServerErrorContent,
   messageResponseSchema,
   jsonParseErrorSchema,
 } from './errors';
@@ -37,7 +38,6 @@ const skillFileUpdatedSchema = z.object({
   relativePath: z.string(),
   bytes: z.number().int().nonnegative(),
 });
-
 export const skillComponentSchemas: Record<string, ZodTypeAny> = {
   SkillFrontmatterValue: skillFrontmatterValueSchema,
   Skill: skillManagementResponseSchema,
@@ -74,8 +74,10 @@ const errorResponses = [
   },
   {
     status: 500,
-    description: 'Internal server error',
+    description:
+      'Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.',
     schema: z.union([agentManagementErrorSchema, errorMessageResponseSchema]),
+    additionalContent: genericServerErrorContent,
   },
 ];
 

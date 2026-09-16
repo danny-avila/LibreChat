@@ -23,6 +23,8 @@ export type ResponseContract = {
   schema?: ZodTypeAny;
   /** A hand-written media-type object, used when there is no Zod schema. */
   content?: RawContent;
+  /** Hand-written media types added alongside a generated JSON schema. */
+  additionalContent?: RawContent;
 };
 
 export type EndpointContract = {
@@ -69,7 +71,10 @@ function buildResponses(responses: ResponseContract[]): Record<string, unknown> 
     if (response.schema) {
       result[response.status] = {
         description: response.description,
-        content: { 'application/json': { schema: response.schema } },
+        content: {
+          'application/json': { schema: response.schema },
+          ...response.additionalContent,
+        },
       };
       continue;
     }

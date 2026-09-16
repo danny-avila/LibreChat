@@ -113,7 +113,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -124,6 +124,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -242,7 +251,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -253,6 +262,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -363,7 +381,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -374,6 +392,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -492,7 +519,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -503,6 +530,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -611,7 +647,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -622,6 +658,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -771,7 +816,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -782,6 +827,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -890,7 +944,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -901,6 +955,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1020,7 +1083,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1031,6 +1094,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1151,7 +1223,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1162,6 +1234,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1272,7 +1353,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1283,6 +1364,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1408,7 +1498,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1419,6 +1509,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1529,7 +1628,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1540,6 +1639,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1659,7 +1767,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1670,6 +1778,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
@@ -1807,7 +1924,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1818,6 +1935,15 @@
                     {
                       "$ref": "#/components/schemas/ErrorMessage"
                     }
+                  ]
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "An unknown error occurred.",
+                    "Processing error in ErrorController."
                   ]
                 }
               }
