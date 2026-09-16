@@ -1354,14 +1354,15 @@ export class MCPTokenStorage {
     /** The credential as stored once the flight was held. */
     leasedRefreshToken: IToken | null;
   }): Promise<MCPOAuthTokens | null> {
-    if (!observedRefreshToken || !leasedRefreshToken) {
+    if (!leasedRefreshToken || (!observedRefreshToken && !rejectedCredentialSetId)) {
       return null;
     }
     const rotated =
       (rejectedCredentialSetId != null &&
         rejectedCredentialSetId !== getCredentialSetId(leasedRefreshToken)) ||
-      leasedRefreshToken.token !== observedRefreshToken.token ||
-      getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(observedRefreshToken) ||
+      (observedRefreshToken != null &&
+        (leasedRefreshToken.token !== observedRefreshToken.token ||
+          getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(observedRefreshToken))) ||
       (existingAccessToken != null &&
         getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(existingAccessToken));
     if (!rotated && existingAccessToken !== null) {
@@ -1575,7 +1576,20 @@ export class MCPTokenStorage {
         throw new Error('Token refresh aborted before reaching the token endpoint');
       }
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+      let newTokens: MCPOAuthTokens;
+      try {
+        newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+      } catch (error) {
+        // These endpoint responses reject the refresh request permanently; a new grant can recover.
+        // Classify only provider failures here, never a similarly worded persistence failure.
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          /\b(unsupported_grant_type|invalid_request|invalid_scope|access_denied)\b/i.test(message)
+        ) {
+          return null;
+        }
+        throw error;
+      }
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,

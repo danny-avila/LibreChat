@@ -1305,7 +1305,13 @@ describe('MCPTokenStorage', () => {
       );
     });
 
-    it('should handle unauthorized_client refresh error', async () => {
+    it.each([
+      'unauthorized_client',
+      'unsupported_grant_type',
+      'invalid_request',
+      'invalid_scope',
+      'access_denied',
+    ])('handles permanent endpoint rejection %s', async (code) => {
       const { logger } = await import('@librechat/data-schemas');
 
       await createBoundToken(store, {
@@ -1323,7 +1329,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 86400,
       });
 
-      const refreshTokens = jest.fn().mockRejectedValue(new Error('unauthorized_client'));
+      const refreshTokens = jest.fn().mockRejectedValue(new Error(code));
 
       const result = await MCPTokenStorage.getTokens({
         userId: 'u1',
@@ -1334,9 +1340,11 @@ describe('MCPTokenStorage', () => {
       });
 
       expect(result).toBeNull();
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('does not support refresh tokens'),
-      );
+      if (code === 'unauthorized_client') {
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('does not support refresh tokens'),
+        );
+      }
     });
 
     it('should delete client registration and refresh token on invalid_client when deleteTokens provided', async () => {
@@ -2714,9 +2722,14 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).not.toHaveBeenCalled();
       });
 
-      it.each([false, true])(
-        'adopts a credential newer than the rejected connection before its snapshot (contended: %s)',
-        async (contended) => {
+      it.each([
+        [false, false],
+        [true, false],
+        [false, true],
+        [true, true],
+      ])(
+        'adopts a newer rejected credential (contended: %s, failed snapshot: %s)',
+        async (contended, failedSnapshot) => {
           const serverName = `already-stored-${contended}`;
           await seedRefreshableTokens(serverName);
           await MCPTokenStorage.storeTokens({
@@ -2726,6 +2739,10 @@ describe('MCPTokenStorage', () => {
             metadata: storedBindingMetadata,
             expectedCredentialSetId: credentialSetId,
           });
+          const findToken = jest.fn(store.findToken);
+          if (failedSnapshot) {
+            findToken.mockRejectedValueOnce(new Error('transient snapshot failure'));
+          }
           let attempts = 0;
           const flowManager = flightManager(async () => !contended || ++attempts > 1);
           const refreshTokens = jest.fn();
@@ -2734,6 +2751,7 @@ describe('MCPTokenStorage', () => {
               ...refreshParams(refreshTokens, serverName),
               flowManager,
               rejectedCredentialSetId: credentialSetId,
+              findToken,
             }),
           ).resolves.toMatchObject({ access_token: 'at-3', refresh_token: 'rt-3' });
           expect(refreshTokens).not.toHaveBeenCalled();

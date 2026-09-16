@@ -236,6 +236,7 @@ describe('MCPConnection OAuth Events — Real Server', () => {
         userId: 'user-1',
         oauthTokens: {
           access_token: accessToken,
+          credential_set_id: 'expired-credential',
           token_type: 'Bearer',
         } as MCPOAuthTokens,
       });
@@ -250,7 +251,8 @@ describe('MCPConnection OAuth Events — Real Server', () => {
 
       // Reconnect should trigger oauthRequired since token is expired on the server
       let oauthFired = false;
-      connection.on('oauthRequired', () => {
+      connection.on('oauthRequired', (event) => {
+        expect(event.rejectedCredentialSetId).toBe('expired-credential');
         oauthFired = true;
         connection!.emit('oauthFailed', new Error('Will retry with fresh token'));
       });

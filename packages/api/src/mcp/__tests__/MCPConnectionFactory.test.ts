@@ -690,6 +690,32 @@ describe('MCPConnectionFactory', () => {
         );
       });
 
+      it('does not publish adopted tokens superseded by an interactive callback', async () => {
+        const adoptedTokens: MCPOAuthTokens = {
+          access_token: 'peer-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          credential_set_id: 'peer-credential',
+        };
+        mockFlowManager.createFlowWithHandler.mockImplementation(
+          async (_id: string, _type: string, handler: () => Promise<MCPOAuthTokens | null>) =>
+            handler(),
+        );
+        mockMCPTokenStorage.getTokens.mockImplementationOnce(async (params) => {
+          await params.onTokensAdopted?.(adoptedTokens);
+          return adoptedTokens;
+        });
+        const onOAuthCredentialsInvalidated = jest.fn(async () => {
+          mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValueOnce(false);
+          return 'interactive-publication';
+        });
+        await expect(
+          tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
+        ).rejects.toMatchObject({ name: 'MCPTokenStorageUnavailableError' });
+        expect(adoptedTokens.publication_generation).toBeUndefined();
+        expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+      });
+
       it('defers recovery when the re-read loses its flow as well', async () => {
         mockFlowManager.createFlowWithHandler.mockRejectedValue(
           new FlowStateNotFoundError('mcp_get_tokens'),
@@ -2225,10 +2251,16 @@ describe('MCPConnectionFactory', () => {
         .mockRejectedValueOnce(unavailable)
         .mockResolvedValueOnce(tokens);
       await handler({ serverUrl: 'https://api.example.com' });
-      await handler({ serverUrl: 'https://api.example.com' });
+      await handler({
+        serverUrl: 'https://api.example.com',
+        rejectedCredentialSetId: 'request-generation',
+      });
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledWith(
         expect.objectContaining({ rejectedCredentialSetId: 'rejected-generation' }),
+      );
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenLastCalledWith(
+        expect.objectContaining({ rejectedCredentialSetId: 'request-generation' }),
       );
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tokens);
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();

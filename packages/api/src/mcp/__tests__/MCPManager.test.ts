@@ -1535,6 +1535,28 @@ describe('MCPManager', () => {
       expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
     });
 
+    it('carries the request credential through a delayed 401 after the connection rotates', async () => {
+      let credential = 'credential-a';
+      const request = jest
+        .fn()
+        .mockImplementationOnce(async () => {
+          credential = 'credential-b';
+          throw new Error('Non-200 status code (401)');
+        })
+        .mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      connection.getOAuthCredentialSetId = jest.fn(() => credential);
+      const events: unknown[] = [];
+      connection.on('oauthReauthenticationRequired', (event) => events.push(event));
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+      await expect(callTool(manager)).resolves.toBeDefined();
+      expect(events).toEqual([
+        expect.objectContaining({ rejectedCredentialSetId: 'credential-a' }),
+      ]);
+      expect(credential).toBe('credential-b');
+    });
+
     it('joins recovery registered between cached checkout and lease acquisition', async () => {
       const request = jest.fn().mockResolvedValue(toolResult);
       const connection = createConnection(request);
@@ -4418,6 +4440,7 @@ describe('MCPManager', () => {
       });
 
       const onDiscoveryDetached = jest.fn();
+      const onOAuthCredentialsAdopted = jest.fn();
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({
         serverName,
@@ -4425,6 +4448,7 @@ describe('MCPManager', () => {
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
         graphTokenResolver: jest.fn(),
         onDiscoveryDetached,
+        onOAuthCredentialsAdopted,
       });
 
       expect(result.tools).toEqual(mockTools);
@@ -4438,6 +4462,7 @@ describe('MCPManager', () => {
           useOAuth: true,
           graphTokenResolver: expect.any(Function),
           onDiscoveryDetached,
+          onOAuthCredentialsAdopted,
         }),
       );
       const generationSpy = jest

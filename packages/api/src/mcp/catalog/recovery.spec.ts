@@ -1211,6 +1211,24 @@ describe('loadMCPServerCatalogs — credential refresh during discovery', () => 
     expect(result.serversWithoutTools).toEqual([]);
   });
 
+  it.each([false, true])(
+    'tracks peer adoption and still fences a later writer (%s)',
+    async (superseded) => {
+      const fence = createFence();
+      const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => {
+        await fence.rotateOnAnotherReplica();
+        await options.onOAuthCredentialsAdopted?.('generation-2');
+        if (superseded) await fence.rotateOnAnotherReplica();
+        return { tools: listedTools };
+      });
+      const result = await loadCatalogs(fence, discoverServerTools);
+      expect(result.serverTools).toEqual(
+        superseded ? new Map() : new Map([[serverName, recoveredTools]]),
+      );
+      expect(result.serversWithoutTools).toEqual(superseded ? [serverName] : []);
+    },
+  );
+
   it.each([
     ['another replica', 'rotateOnAnotherReplica'],
     ['another request on this replica', 'rotateOnThisReplica'],

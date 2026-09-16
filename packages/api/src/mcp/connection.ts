@@ -1991,6 +1991,7 @@ export class MCPConnection extends EventEmitter {
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
+      const rejectedCredentialSetId = this.getOAuthCredentialSetId();
       try {
         if (this.transport) {
           try {
@@ -2117,6 +2118,7 @@ export class MCPConnection extends EventEmitter {
 
           // Emit the event
           this.emit('oauthRequired', {
+            rejectedCredentialSetId,
             serverName: this.serverName,
             error,
             serverUrl,

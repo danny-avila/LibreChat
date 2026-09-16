@@ -537,6 +537,7 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
+      onOAuthCredentialsAdopted: args.onOAuthCredentialsAdopted,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
       onOAuthCredentialsInvalidated: () =>
         getMCPToolsChangedGeneration({ userId: user.id, serverName }),
@@ -763,6 +764,7 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
+    rejectedCredentialSetId?: string,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
@@ -803,6 +805,7 @@ Please follow these instructions when using tools from the respective MCP server
           connection.emit('oauthReauthenticationRequired', {
             serverName,
             error,
+            rejectedCredentialSetId,
             serverUrl: connection.url,
             userId,
           }),
@@ -1413,6 +1416,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         connection.setRequestHeaders(resolvedHeaders);
 
+        const checkedCredentialSetId = connection.getOAuthCredentialSetId?.();
         const connectionIsActive = await connection.isConnected(options?.signal);
         const connectionCheckError = connectionIsActive
           ? undefined
@@ -1488,6 +1492,7 @@ Please follow these instructions when using tools from the respective MCP server
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
+                checkedCredentialSetId,
               ),
             );
           } catch (recoveryError) {
@@ -1522,6 +1527,7 @@ Please follow these instructions when using tools from the respective MCP server
             },
           );
 
+        const requestedCredentialSetId = connection.getOAuthCredentialSetId?.();
         let result: Awaited<ReturnType<typeof requestTool>>;
         try {
           result = await requestTool();
@@ -1594,6 +1600,7 @@ Please follow these instructions when using tools from the respective MCP server
                   flowManager,
                   options?.signal,
                   !recoveryTakeoverConsumed,
+                  requestedCredentialSetId,
                 ),
               );
             } catch (recoveryError) {
