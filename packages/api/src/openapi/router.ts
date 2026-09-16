@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { logger, type AppConfig } from '@librechat/data-schemas';
-import type { Request, Response, Router } from 'express';
+import type { Request, Response, Router, NextFunction } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
 
 export interface OpenApiRouterDeps {
@@ -84,7 +84,17 @@ export function createOpenApiRouter(deps: OpenApiRouterDeps): Router {
     }
   });
 
-  router.use('/docs/assets', express.static(deps.swaggerAssetsPath));
+  const serveAssets = express.static(deps.swaggerAssetsPath);
+  router.use(
+    '/docs/assets',
+    async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+      if (!(await isEnabled())) {
+        res.status(404).json({ message: 'Not Found' });
+        return;
+      }
+      serveAssets(req, res, next);
+    },
+  );
 
   router.get('/docs', async (_req: Request, res: Response): Promise<void> => {
     if (!(await isEnabled())) {
