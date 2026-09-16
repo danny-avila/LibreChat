@@ -188,10 +188,14 @@ const BaseOptionsSchema = z.object({
   /**
    * How long (ms) a replica waits for another replica's in-flight OAuth refresh-token redemption
    * before failing the attempt as retryable. Raise it for a slow token endpoint; lower it to fail
-   * faster. Default: 15_000. Clamped to 30_000, half the window after which a redemption aborts
-   * itself, because this wait runs inside the redemption that window governs.
+   * faster. Default when unset: 15_000. Clamped to 30_000, half the window after which a
+   * redemption aborts itself, because this wait runs inside the redemption that window governs.
+   *
+   * Positive rather than non-negative: zero would mean "never wait for a peer", which fails every
+   * contended refresh instead of adopting the rotation a peer is about to store, and that is the
+   * common case this wait exists to serve. Omit the field to take the default.
    */
-  oauthRefreshWaitTimeout: z.number().int().nonnegative().optional(),
+  oauthRefreshWaitTimeout: z.number().int().positive().optional(),
   /**
    * Whether the server is offered in chat.
    *

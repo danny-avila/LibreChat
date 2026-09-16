@@ -241,16 +241,23 @@ export class MCPTokenStorage {
   static readonly INFLIGHT_REFRESH_STALE_MS = 60_000;
 
   /**
-   * How long the cross-replica refresh flight is held, equal to the stale window above.
+   * How long the cross-replica refresh flight is held: deliberately longer than the stale window
+   * above, rather than equal to it.
    *
-   * That equality is the safety property the flight rests on: a redemption is aborted at exactly
-   * the moment its flight expires, so an expired flight can never belong to a redemption still able
-   * to reach the token endpoint. Acquiring an expired flight is therefore safe, which is what stops
-   * a replica that died mid-redemption from blocking refresh for longer than one window, with no
-   * renewal heartbeat to get wrong.
+   * Aborting a redemption stops this process from waiting on the response. It does not prove the
+   * token endpoint has not already consumed the refresh token, because the request may have been
+   * processed with its response lost, and a stalled event loop can delay the abort past its own
+   * deadline. A replica that took the flight the instant the abort fired could therefore redeem a
+   * credential the provider had already rotated, which is the replay this fence exists to prevent.
+   * The margin covers that settlement instead of assuming it.
+   *
+   * A live replica releases the flight as soon as its redemption settles, so the margin is paid
+   * only by one that died holding it, and paid as retryable failures rather than a revoked grant.
+   * Expiry remains the only recovery from a dead holder, which is why there is no renewal
+   * heartbeat: nothing has to keep running for the flight to be reclaimed.
    */
   private static readonly REFRESH_FLIGHT_LEASE_MS: number =
-    MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS;
+    MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS * 2;
 
   /**
    * How long a replica waits on a flight another replica holds before failing the attempt as
@@ -1134,23 +1141,29 @@ export class MCPTokenStorage {
     const flightLeaseId = getMCPOAuthRefreshFlightLeaseId(userId, serverName);
     const leaseMs = MCPTokenStorage.REFRESH_FLIGHT_LEASE_MS;
 
-    /** Uncontended: nothing to adopt, and no extra storage read to pay for. */
-    const uncontendedLease = await flowManager.acquireLease(flightLeaseId, { leaseMs, waitMs: 0 });
-    if (uncontendedLease) {
-      return { lease: uncontendedLease };
-    }
-
     /**
-     * Contended: record the credential this replica was about to redeem before waiting,
-     * so the peer's rotation is recognized by the credential changing under us rather
-     * than by comparing timestamps written by another pod's clock.
+     * Snapshot the credential this replica was about to redeem *before* trying for the flight, so
+     * a peer's rotation is recognized by the credential changing under us rather than by comparing
+     * timestamps written by another pod's clock.
+     *
+     * Taken before the first attempt, not after a failed one: a holder that stores and releases in
+     * that gap would otherwise be snapshotted post-rotation, the next attempt would see an
+     * unchanged record, and this replica would redeem the credential it should have adopted. That
+     * redemption is legal, so it trips no replay detection, but providers that invalidate the prior
+     * access token on refresh would revoke the one the holder had just returned to its own caller.
+     * The cost is one indexed read on a path that is about to call an OAuth provider.
      */
-    logger.debug(`${logPrefix} Waiting for a token refresh held by another replica`);
     const observedRefreshToken = await this.readRefreshTokenRecord({
       userId,
       serverName,
       findToken,
     });
+
+    const uncontendedLease = await flowManager.acquireLease(flightLeaseId, { leaseMs, waitMs: 0 });
+    if (uncontendedLease) {
+      return { lease: uncontendedLease };
+    }
+    logger.debug(`${logPrefix} Waiting for a token refresh held by another replica`);
     /**
      * Polled rather than delegated to `acquireLease`'s own wait, for two reasons: OAuth teardown
      * aborts in-flight redemptions and then awaits them, so it must not sit blocked on a peer's

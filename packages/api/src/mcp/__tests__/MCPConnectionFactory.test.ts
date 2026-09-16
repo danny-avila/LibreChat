@@ -575,7 +575,9 @@ describe('MCPConnectionFactory', () => {
       const tokenLoadingFactory = (
         hooks: Pick<
           t.UserConnectionContext,
-          'onOAuthCredentialsAdopted' | 'onOAuthCredentialsInvalidated'
+          | 'onOAuthCredentialsAdopted'
+          | 'onOAuthCredentialsInvalidated'
+          | 'onOAuthCredentialsChanged'
         > = {},
       ) =>
         new InspectableMCPConnectionFactory(
@@ -620,6 +622,53 @@ describe('MCPConnectionFactory', () => {
           mockFlowManager.createFlowWithHandler.mock.invocationCallOrder[1],
         );
         expect(onOAuthCredentialsAdopted).not.toHaveBeenCalled();
+      });
+
+      it('does not announce a second credential change for a peer rotation it adopted', async () => {
+        const adoptedTokens: MCPOAuthTokens = {
+          access_token: 'rotated-by-a-peer',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          credential_set_id: 'peer-generation',
+        };
+        const onOAuthCredentialsChanged = jest.fn().mockResolvedValue(undefined);
+        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+        /** Run the flow handler, so the factory's own `onTokensAdopted` wiring is exercised. */
+        mockFlowManager.createFlowWithHandler.mockImplementation(
+          async (_flowId: string, _type: string, handler: () => Promise<MCPOAuthTokens | null>) =>
+            handler(),
+        );
+        mockMCPTokenStorage.getTokens.mockImplementationOnce(async (params) => {
+          await params.onTokensAdopted?.(adoptedTokens);
+          return adoptedTokens;
+        });
+        mockFlowManager.getFlowState.mockResolvedValue({
+          type: 'mcp_get_tokens',
+          status: 'COMPLETED',
+          metadata: {},
+          createdAt: Date.now(),
+          result: adoptedTokens,
+        });
+
+        await expect(
+          tokenLoadingFactory({
+            onOAuthCredentialsChanged,
+            onOAuthCredentialsInvalidated,
+          }).getOAuthTokensForTest(),
+        ).resolves.toEqual(adoptedTokens);
+
+        /**
+         * The peer persisted and announced this rotation. Announcing it again would advance the
+         * authorization generation a second time for one rotation, retiring the generation
+         * recaptured here and leaving the build fenced against its own tool publication.
+         */
+        expect(onOAuthCredentialsChanged).not.toHaveBeenCalled();
+        expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
+        /** Recapture reads the stored generation, so it must follow the cache write. */
+        expect(mockFlowManager.deleteFlow).toHaveBeenCalled();
+        expect(mockFlowManager.deleteFlow.mock.invocationCallOrder[0]).toBeLessThan(
+          onOAuthCredentialsInvalidated.mock.invocationCallOrder[0],
+        );
       });
 
       it('reports the tokens missing when the re-read loses its flow as well', async () => {

@@ -1216,14 +1216,23 @@ export class MCPConnectionFactory {
    * concurrent waiters do not fail or later publish server-rejected tokens.
    */
   /**
-   * A credential this replica adopted was rotated and published by a peer, so the generation
-   * captured before that rotation is retired. Re-reading it keeps this build from publishing its
-   * tools under the retired one and fencing itself; `adoptPublishedCredentials` cannot do it,
-   * because adopted tokens are read from storage and carry no `publication_generation`.
+   * A credential this replica adopted was rotated, persisted and announced by a peer, so only this
+   * replica's own view is behind: its cached token flow still holds the credential the peer
+   * replaced, and the generation it captured before that rotation is retired.
+   *
+   * Deliberately not `handleOAuthRefreshSuccess`. That path is for a redemption *this* replica
+   * performed, and its `onOAuthCredentialsChanged` announcement advances application authorization
+   * state "after OAuth token persistence succeeds" — persistence this replica did not do. Announcing
+   * again would advance the generation a second time for one rotation, retiring the very generation
+   * recaptured here and leaving the build fenced against itself.
+   *
+   * `adoptPublishedCredentials` cannot serve either: adopted tokens are read from storage and carry
+   * no `publication_generation`, so the recapture reads the stored generation instead, after the
+   * cache write, when nothing this replica does can advance it further.
    */
   private async handleAdoptedCredentials(adoptedTokens: MCPOAuthTokens): Promise<void> {
+    await this.invalidateGetTokensFlow(adoptedTokens);
     await this.onOAuthCredentialsInvalidated?.();
-    await this.handleOAuthRefreshSuccess(adoptedTokens);
   }
 
   private async handleOAuthRefreshSuccess(freshTokens: MCPOAuthTokens): Promise<void> {

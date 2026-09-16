@@ -2445,6 +2445,69 @@ describe('MCPTokenStorage', () => {
         expect(flightIds.size).toBe(1);
       });
 
+      it('holds the flight past the window that aborts a stalled redemption', async () => {
+        await seedRefreshableTokens('margin-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        const leaseWindows: number[] = [];
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (_id: string, options?: { leaseMs?: number }) => {
+            if (options?.leaseMs != null) {
+              leaseWindows.push(options.leaseMs);
+            }
+            return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+          }),
+        };
+
+        await MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'margin-srv'),
+          flowManager: flowManager as never,
+        });
+
+        /**
+         * Aborting a stalled redemption does not prove the token endpoint declined the request, so
+         * the flight has to outlive the abort rather than expire alongside it.
+         */
+        expect(leaseWindows.length).toBeGreaterThan(0);
+        expect(Math.min(...leaseWindows)).toBeGreaterThan(
+          MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS,
+        );
+      });
+
+      it('adopts a rotation that lands while the first flight attempt is failing', async () => {
+        await seedRefreshableTokens('snapshot-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(9));
+        let attempts = 0;
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(async (_id: string, options?: { expectedGeneration?: number }) => {
+            if (options?.expectedGeneration !== undefined) {
+              return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+            }
+            attempts += 1;
+            if (attempts === 1) {
+              /** The holder stores and releases in the gap after this attempt fails. */
+              await peerRotates('snapshot-srv', 4);
+              return null;
+            }
+            return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+          }),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'snapshot-srv'),
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-4' });
+
+        /**
+         * Snapshotting after the failed attempt would have captured the rotated credential as the
+         * baseline, found it unchanged, and redeemed the token the holder had just been issued.
+         */
+        expect(refreshTokens).not.toHaveBeenCalled();
+      });
+
       it('clamps a configured wait into the window the stale abort allows', () => {
         const resolve = (configured?: number) =>
           (
