@@ -26,6 +26,7 @@ const {
   buildWebSearchDynamicContext,
   codeExecutionAuthHeaders,
   resolveCodeExecutionContext,
+  resolveMCPClientCapabilityProfile,
 } = require('@librechat/api');
 const {
   AuthType,
@@ -35,6 +36,7 @@ const {
   EToolResources,
   PermissionTypes,
   AgentCapabilities,
+  resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -626,6 +628,15 @@ const loadTools = async ({
   let index = -1;
   const failedMCPServers = new Set();
   const safeUser = createSafeUser(options.req?.user);
+  const admittedAppConfig = options.req?.config;
+  const admittedMCPAppsPolicy = resolveMCPAppsPolicy(
+    admittedAppConfig?.mcpSettings?.apps,
+    admittedAppConfig?.mcpAppSandbox,
+    admittedAppConfig?.mcpAppSandbox?.maxPersistedAppBytes,
+    admittedAppConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
+    admittedAppConfig?.mcpAppSandbox?.url,
+  );
+  const capabilityProfile = resolveMCPClientCapabilityProfile(admittedMCPAppsPolicy);
   const requestScopedConnections =
     options.requestScopedConnections ?? getMCPRequestContext(options.req, options.res);
   /**
@@ -673,6 +684,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           upstreamTokenProvider,
+          mcpApps: admittedMCPAppsPolicy,
           upstreamTokenProviderResolver,
           oboIdentityContext,
           streamId: options.req?._resumableStreamId || null,
@@ -695,7 +707,12 @@ const loadTools = async ({
         }
         if (!availableTools) {
           try {
-            availableTools = await getMCPServerTools(safeUser.id, serverName, config.config);
+            availableTools = await getMCPServerTools(
+              safeUser.id,
+              serverName,
+              config.config,
+              capabilityProfile,
+            );
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }

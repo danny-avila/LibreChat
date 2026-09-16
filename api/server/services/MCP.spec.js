@@ -43,7 +43,12 @@ jest.mock('@librechat/api', () => {
 });
 
 const { logger } = require('@librechat/data-schemas');
-const { MCPOAuthHandler, GenerationJobManager } = require('@librechat/api');
+const {
+  MCPOAuthHandler,
+  GenerationJobManager,
+  MCP_APPS_CAPABILITY_PROFILE,
+  STANDARD_MCP_CAPABILITY_PROFILE,
+} = require('@librechat/api');
 const { CacheKeys, Constants, Permissions, PermissionTypes } = require('librechat-data-provider');
 const D = Constants.mcp_delimiter;
 const {
@@ -210,7 +215,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
     beforeEach(() => {
       mockGetMCPManager.mockReturnValue({
-        appConnections: { getLoaded: jest.fn(() => new Map()) },
+        getLoadedAppConnections: jest.fn(() => new Map()),
         getUserConnections: jest.fn(() => new Map()),
       });
       mockRegistryInstance.getOAuthServers.mockResolvedValue(new Set());
@@ -229,7 +234,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockUserConnections = new Map([['server2', { status: 'disconnected' }]]);
 
       const mockMCPManager = {
-        appConnections: { getLoaded: jest.fn(() => Promise.resolve(mockAppConnections)) },
+        getLoadedAppConnections: jest.fn(() => Promise.resolve(mockAppConnections)),
         getUserConnections: jest.fn(() => mockUserConnections),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
@@ -242,8 +247,13 @@ describe('tests for the new helper functions used by the MCP connection status e
         expect.any(Object),
       );
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
-      expect(mockMCPManager.appConnections.getLoaded).toHaveBeenCalled();
-      expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
+      expect(mockMCPManager.getLoadedAppConnections).toHaveBeenCalledWith(
+        STANDARD_MCP_CAPABILITY_PROFILE,
+      );
+      expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(
+        mockUserId,
+        STANDARD_MCP_CAPABILITY_PROFILE,
+      );
 
       expect(result.mcpConfig).toEqual(mockConfigWithOAuth);
       expect(result.appConnections).toEqual(mockAppConnections);
@@ -268,11 +278,30 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(mockRegistryInstance.ensureConfigServers).toHaveBeenCalledWith(appConfig.mcpConfig);
     });
 
+    it('reports only the request-admitted Apps connection profile', async () => {
+      const getLoadedAppConnections = jest.fn(() => Promise.resolve(new Map()));
+      const appsConnections = new Map([['server1', { connectionState: 'connected' }]]);
+      const getUserConnections = jest.fn(() => appsConnections);
+      mockGetMCPManager.mockReturnValue({
+        getLoadedAppConnections,
+        getUserConnections,
+      });
+
+      const result = await getMCPSetupData(mockUserId, {
+        appConfig: { mcpConfig: {}, mcpSettings: { apps: true } },
+      });
+
+      expect(getLoadedAppConnections).toHaveBeenCalledWith(MCP_APPS_CAPABILITY_PROFILE);
+      expect(getUserConnections).toHaveBeenCalledWith(mockUserId, MCP_APPS_CAPABILITY_PROFILE);
+      expect(result.appConnections).toEqual(new Map());
+      expect(result.userConnections).toBe(appsConnections);
+    });
+
     it('should handle null values from MCP manager gracefully', async () => {
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
       const mockMCPManager = {
-        appConnections: { getLoaded: jest.fn(() => Promise.resolve(null)) },
+        getLoadedAppConnections: jest.fn(() => Promise.resolve(new Map())),
         getUserConnections: jest.fn(() => null),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
@@ -1544,6 +1573,93 @@ describe('User parameter passing tests', () => {
   });
 
   describe('createMCPTool', () => {
+    it('preserves the full MCP tuple for the Assistants required-action sink', async () => {
+      const mockUser = { id: 'assistants-app-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const mcpApps = { enabled: true, legacyHtmlEnabled: true };
+      const artifact = { ui_resources: { data: [{ uri: 'ui://app' }] } };
+      const callTool = jest.fn().mockResolvedValue(['ordinary output', artifact]);
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({ callTool });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://assistants.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'assistants',
+        mcpApps,
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(mcpTool._call({})).resolves.toEqual(['ordinary output', artifact]);
+      expect(callTool).toHaveBeenCalledWith(expect.objectContaining({ mcpApps }));
+    });
+
+    it('preserves a completed tool result when optional App enrichment observes cancellation', async () => {
+      const mockUser = { id: 'completed-result-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const abortController = new AbortController();
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn().mockImplementation(async () => {
+          abortController.abort();
+          return ['ordinary output', undefined];
+        }),
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://completed.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            signal: abortController.signal,
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ordinary output');
+    });
+
     it('keeps shared OAuth recovery alive when one tool caller aborts', async () => {
       const mockUser = { id: 'shared-recovery-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
@@ -1563,7 +1679,7 @@ describe('User parameter passing tests', () => {
         return new Promise((resolve, reject) => {
           const onAbort = () => {
             signal?.removeEventListener('abort', onAbort);
-            reject(new Error('tool caller aborted'));
+            reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
           };
           signal?.addEventListener('abort', onAbort, { once: true });
           sharedRecovery.then(() => {
@@ -1610,7 +1726,7 @@ describe('User parameter passing tests', () => {
       const waiterCall = mcpTool.invoke({}, createConfig(waiterAbort.signal));
       await new Promise((resolve) => setImmediate(resolve));
 
-      ownerAbort.abort();
+      ownerAbort.abort(new DOMException('Aborted', 'AbortError'));
 
       await expect(ownerCall).rejects.toThrow('Aborted');
       expect(flowManager.failFlow).not.toHaveBeenCalled();

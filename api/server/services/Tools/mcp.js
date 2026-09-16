@@ -9,6 +9,7 @@ const {
   getMissingRuntimeBodyPlaceholderFields,
   isMCPInitializationError,
   prepareMCPAuthorizationMutation,
+  resolveMCPClientCapabilityProfile,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
@@ -50,6 +51,7 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {AbortSignal} [params.signal] - Cancels queued and in-flight catalog reads when the request ends.
  * @param {import('@librechat/api').MCPServerCatalogRecoveryPolicy} [params.recoveryPolicy]
+ * @param {import('librechat-data-provider').TMCPAppsPolicy} [params.mcpApps]
  */
 async function loadMCPServerCatalogs({
   user,
@@ -59,7 +61,9 @@ async function loadMCPServerCatalogs({
   oboIdentityContext,
   signal,
   recoveryPolicy,
+  mcpApps,
 }) {
+  const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
@@ -74,7 +78,12 @@ async function loadMCPServerCatalogs({
       attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
     });
   return loadCatalogs(
-    { user, servers, signal, recoveryPolicy },
+    {
+      user,
+      servers: servers.map((server) => ({ ...server, capabilityProfile })),
+      signal,
+      recoveryPolicy,
+    },
     {
       loadUserMCPAuthMap: (userId, serverNames) =>
         getUserMCPAuthMap({
@@ -147,7 +156,9 @@ async function reinitMCPServer({
   oboIdentityContext,
   oauthEnd,
   recoveryPolicy,
+  mcpApps,
 }) {
+  const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   /** @type {MCPConnection | null} */
   let connection = null;
   let serverConfig = providedConfig;
@@ -281,6 +292,7 @@ async function reinitMCPServer({
         upstreamTokenProvider,
         upstreamTokenProviderResolver,
         oboIdentityContext,
+        capabilityProfile,
       });
 
       logger.info('[MCP Reinitialize] Successfully established connection');
@@ -323,6 +335,7 @@ async function reinitMCPServer({
             upstreamTokenProvider,
             upstreamTokenProviderResolver,
             oboIdentityContext,
+            capabilityProfile,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
@@ -397,6 +410,7 @@ async function reinitMCPServer({
         serverConfig,
         ...(publicationGeneration && { publicationGeneration }),
         ...(publicationRevision && { publicationRevision }),
+        capabilityProfile,
       });
       if (availableTools == null) {
         tools = null;

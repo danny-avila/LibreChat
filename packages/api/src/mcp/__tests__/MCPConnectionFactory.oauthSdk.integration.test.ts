@@ -281,6 +281,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     const manager = new MCPManager();
     jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
     const registrySpy = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      isAppServerConfig: jest.fn().mockResolvedValue(false),
       resolveAllowlists: jest.fn().mockResolvedValue({
         allowedDomains: null,
         allowedAddresses: null,
@@ -368,6 +369,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     const manager = new MCPManager();
     jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
     const registrySpy = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      isAppServerConfig: jest.fn().mockResolvedValue(false),
       resolveAllowlists: jest.fn().mockResolvedValue({
         allowedDomains: null,
         allowedAddresses: null,
@@ -457,6 +459,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     const manager = new MCPManager();
     jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
     const registrySpy = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      isAppServerConfig: jest.fn().mockResolvedValue(false),
       resolveAllowlists: jest.fn().mockResolvedValue({
         allowedDomains: null,
         allowedAddresses: null,

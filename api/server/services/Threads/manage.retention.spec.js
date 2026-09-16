@@ -60,11 +60,21 @@ describe('Assistants message retention', () => {
       );
       // A response must retain the admission policy even if request fields change.
       req.body.isTemporary = !isTemporary;
+      const attachments = [
+        {
+          type: 'ui_resources',
+          messageId: 'assistant-app-message',
+          conversationId,
+          toolCallId: 'call_1',
+          ui_resources: [{ uri: 'ui://app', mimeType: 'text/html;profile=mcp-app' }],
+        },
+      ];
       await saveAssistantMessage(req, {
         ...params,
         messageId: v4(),
         parentMessageId: userMessage.messageId,
         content: [],
+        attachments,
       });
       await checkMessageGaps({
         openai: {
@@ -94,6 +104,7 @@ describe('Assistants message retention', () => {
         expect(row.isTemporary).toBe(isTemporary);
         expect(row.expiredAt).toEqual(userMessage.expiredAt);
       }
+      expect(rows.find((row) => row.isCreatedByUser === false)?.attachments).toEqual(attachments);
     },
   );
 });

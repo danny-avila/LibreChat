@@ -212,6 +212,7 @@ describe('request-scoped MCP lifecycle integration', () => {
     server = await createRequestScopedTestServer();
     manager = createManager();
     jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      isAppServerConfig: jest.fn().mockResolvedValue(false),
       resolveAllowlists: jest.fn(async () => ({
         allowedDomains: null,
         allowedAddresses: null,

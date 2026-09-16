@@ -18,6 +18,7 @@ import type { CodeExecutionContext } from './execution';
 import {
   createOwnedToolEndHandler,
   createToolExecuteHandler,
+  getAttachmentOwnership,
   ToolExecuteOptions,
 } from './handlers';
 import { markSandboxReady } from './prewarm';
@@ -178,6 +179,32 @@ describe('createOwnedToolEndHandler', () => {
       expect.anything(),
       expect.objectContaining({ agent_id: 'agent-a', stepId: 'step-1' }),
     );
+  });
+});
+
+describe('getAttachmentOwnership', () => {
+  it('prefers the executing agent and preserves the graph step', () => {
+    expect(
+      getAttachmentOwnership({
+        executingAgentId: 'executing-agent',
+        agentId: 'saved-agent',
+        agent_id: 'legacy-agent',
+        stepId: 'step-1',
+      }),
+    ).toEqual({ agentId: 'executing-agent', stepId: 'step-1' });
+  });
+
+  it('uses saved and legacy agent identifiers as fallbacks', () => {
+    expect(getAttachmentOwnership({ agentId: 'saved-agent' })).toEqual({
+      agentId: 'saved-agent',
+    });
+    expect(getAttachmentOwnership({ agent_id: 'legacy-agent' })).toEqual({
+      agentId: 'legacy-agent',
+    });
+  });
+
+  it('omits empty and non-string ownership values', () => {
+    expect(getAttachmentOwnership({ executingAgentId: '', agentId: 1, stepId: null })).toEqual({});
   });
 });
 

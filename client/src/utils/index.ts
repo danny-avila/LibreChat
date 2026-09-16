@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UIActionResult } from '@mcp-ui/client';
-import { TAskFunction } from '~/common';
+import type { TAskFunction } from '~/common';
 import logger from './logger';
 
 export * from './map';
@@ -139,15 +139,9 @@ export const extractContent = (
   return '';
 };
 
+/** Converts supported legacy MCP-UI actions into the existing conversation submission path. */
 export const handleUIAction = async (result: UIActionResult, ask: TAskFunction) => {
-  const supportedTypes = ['intent', 'tool', 'prompt'];
-
   const { type, payload } = result;
-
-  if (!supportedTypes.includes(type)) {
-    return;
-  }
-
   let messageText = '';
 
   if (type === 'intent') {
@@ -183,6 +177,8 @@ ${prompt}
 
 Execute the intention of the prompt that is mentioned in the message using the tools available to you.
     `;
+  } else {
+    return;
   }
 
   logger.debug('MCP-UI', 'About to submit message:', messageText);

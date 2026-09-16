@@ -90,6 +90,7 @@ export class MCPConnectionFactory {
   protected readonly allowedAddresses?: string[] | null;
   protected readonly ephemeralConnection: boolean;
   protected readonly directBearerRecoveryEnabled: boolean;
+  protected readonly capabilityProfile: t.BasicConnectionOptions['capabilityProfile'];
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -396,6 +397,7 @@ export class MCPConnectionFactory {
         useSSRFProtection: this.useSSRFProtection,
         allowedAddresses: this.allowedAddresses,
         ephemeralConnection: this.ephemeralConnection,
+        ...(this.capabilityProfile && { capabilityProfile: this.capabilityProfile }),
         ...(this.directBearerRecoveryEnabled && { directBearerRecoveryEnabled: true }),
       });
 
@@ -555,6 +557,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      ...(this.capabilityProfile && { capabilityProfile: this.capabilityProfile }),
     });
 
     unauthConnection.on('oauthRequired', () => {
@@ -606,6 +609,7 @@ export class MCPConnectionFactory {
     this.directBearerRecoveryEnabled = isDirectOpenIDBearerRecoveryEnabled(
       basic.directBearerSourceConfig ?? basic.serverConfig,
     );
+    this.capabilityProfile = basic.capabilityProfile;
     this.connectionTimeout = options?.connectionTimeout;
     this.deadlineMs = options?.deadlineMs;
     this.onOAuthCredentialsChanged = options?.onOAuthCredentialsChanged;
@@ -619,12 +623,12 @@ export class MCPConnectionFactory {
     this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
 
     this.user = options?.user;
+    this.userId = options?.user?.id;
     this.upstreamTokenProvider = options?.upstreamTokenProvider;
     this.upstreamTokenProviderResolver = options?.upstreamTokenProviderResolver;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
-      this.userId = options.user?.id;
       this.flowManager = options.flowManager;
       this.tokenMethods = options.tokenMethods;
       this.oauthStart = options.oauthStart;
@@ -747,6 +751,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      ...(this.capabilityProfile && { capabilityProfile: this.capabilityProfile }),
       ...(this.directBearerRecoveryEnabled && {
         directBearerRecoveryEnabled: true,
       }),
