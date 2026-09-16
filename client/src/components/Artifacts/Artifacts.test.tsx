@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { TArtifactApp } from 'librechat-data-provider';
 import Artifacts from './Artifacts';
 import store from '~/store';
 
@@ -8,8 +9,9 @@ const mockUseArtifacts = jest.fn();
 const mockCaptureArtifactPreview = jest.fn<Promise<string | null>, []>();
 let mockIsMobile = false;
 let mockPrefersReducedMotion = false;
+let mockShareContext: { isSharedConvo?: boolean; shareId?: string };
 let mockArtifactCatalogSync: {
-  artifactEntry?: undefined;
+  artifactEntry?: TArtifactApp;
   isDeleted: boolean;
   restoreArtifact?: () => Promise<unknown>;
   isSyncing: boolean;
@@ -25,7 +27,7 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('~/Providers', () => ({
   useMutationState: () => ({ isMutating: false }),
-  useShareContext: () => ({ isSharedConvo: false }),
+  useShareContext: () => mockShareContext,
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -90,6 +92,11 @@ jest.mock('~/hooks/Artifacts/useArtifacts', () => ({
   default: () => mockUseArtifacts(),
 }));
 
+jest.mock('~/components/ArtifactApps/Share', () => ({
+  __esModule: true,
+  default: () => <button aria-label="artifact-share" />,
+}));
+
 jest.mock('./ArtifactTabs', () => ({
   __esModule: true,
   default: () => <div data-testid="artifact-content" />,
@@ -129,6 +136,7 @@ describe('Artifacts panel accessibility', () => {
     mockIsMobile = false;
     mockPrefersReducedMotion = false;
     mockCaptureArtifactPreview.mockReset().mockResolvedValue(null);
+    mockShareContext = { isSharedConvo: false };
     mockArtifactCatalogSync = {
       artifactEntry: undefined,
       isDeleted: false,
@@ -222,6 +230,27 @@ describe('Artifacts panel accessibility', () => {
     });
     fireEvent.click(restoreButton);
     await waitFor(() => expect(restoreArtifact).toHaveBeenCalledTimes(1));
+  });
+
+  it('hides artifact sharing in an explicitly read-only shared conversation', async () => {
+    mockArtifactCatalogSync = {
+      artifactEntry: {
+        id: 'artifact-resource-id',
+        artifactAppId: 'app-shared',
+        title: 'Shared artifact',
+      } as TArtifactApp,
+      isDeleted: false,
+      isSyncing: false,
+    };
+
+    render(
+      <RecoilRoot>
+        <Artifacts readOnly />
+      </RecoilRoot>,
+    );
+
+    await screen.findByRole('region', { name: 'Diagram' });
+    expect(screen.queryByRole('button', { name: 'artifact-share' })).not.toBeInTheDocument();
   });
 
   it('stores a captured thumbnail on the generated artifact for automatic synchronization', async () => {

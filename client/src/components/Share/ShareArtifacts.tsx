@@ -154,7 +154,7 @@ function ShareArtifactsPanel({ contextValue }: ShareArtifactsPanelProps) {
       <EditorProvider>
         <div className="flex h-full w-full border-l border-border-light bg-surface-primary shadow-2xl">
           <Suspense fallback={null}>
-            <Artifacts />
+            <Artifacts readOnly />
           </Suspense>
         </div>
       </EditorProvider>
