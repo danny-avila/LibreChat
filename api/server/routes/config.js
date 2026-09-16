@@ -229,13 +229,26 @@ router.get('/', async function (req, res) {
 
       const interfaceConfig = baseConfig?.interfaceConfig;
       const buildInfoDisabled = interfaceConfig?.buildInfo === false;
-      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService || buildInfoDisabled) {
+      /* The login footer is content OF the login page, so it has to travel with
+         the pre-login payload — the authenticated branch below never serves a
+         caller who is still looking at it. */
+      const loginFooter =
+        typeof interfaceConfig?.loginFooter === 'string' ? interfaceConfig.loginFooter : undefined;
+      if (
+        interfaceConfig?.privacyPolicy ||
+        interfaceConfig?.termsOfService ||
+        loginFooter ||
+        buildInfoDisabled
+      ) {
         payload.interface = {};
         if (interfaceConfig.privacyPolicy) {
           payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
         }
         if (interfaceConfig.termsOfService) {
           payload.interface.termsOfService = interfaceConfig.termsOfService;
+        }
+        if (loginFooter) {
+          payload.interface.loginFooter = loginFooter;
         }
         if (buildInfoDisabled) {
           payload.interface.buildInfo = false;

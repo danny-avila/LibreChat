@@ -2008,6 +2008,21 @@ export const interfaceSchema = z
       })
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
+    /**
+     * Markdown rendered in the footer of the login page, `|` separating the parts.
+     *
+     * Deliberately not `customFooter`, which the chat footer already renders:
+     * the two footers carry different text from different authors. The chat
+     * footer is the deployment's own note to its users; the login page is the
+     * first thing a visitor sees and belongs to whoever runs the deployment for
+     * them — an operator, an agency, an IT department. A deployment run by
+     * someone other than its users needs both, and `customFooter` can only be
+     * one of them.
+     *
+     * Leave unset to keep the previous behaviour — an unset value is the off
+     * switch.
+     */
+    loginFooter: z.string().optional(),
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
