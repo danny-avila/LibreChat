@@ -1887,7 +1887,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool bad_to_string_tool error',
           expect.objectContaining({
-            name: 'object',
+            errorName: 'object',
             messageTruncated: false,
           }),
         );
@@ -1924,7 +1924,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool plain_object_tool error',
           expect.objectContaining({
-            message: 'plain object timeout',
+            errorMessage: 'plain object timeout',
             messageTruncated: false,
           }),
         );
