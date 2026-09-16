@@ -8,16 +8,13 @@ import { RoleBits } from '~/common';
  * Matches the global default roles, which `seedDefaultRoles` writes without a
  * `tenantId`. Needed because the tenant-isolation plugin only ever adds a
  * positive `{ tenantId: T }` predicate, never one that also accepts the globals.
+ *
+ * Only tenant-scoped lookups consult it. Lookups with no tenant context — and
+ * explicit system-context ones such as GitHub Skill Sync — keep their existing
+ * behavior, so deployments that seed roles per tenant rather than globally are
+ * unaffected.
  */
 const BASE_ROLE_FILTER = { tenantId: { $in: [null, undefined] } } as const;
-
-/**
- * Deliberately scoped to the tenant-scoped case only.
- *
- * Lookups outside a tenant context — including explicit system-context ones such
- * as GitHub Skill Sync — keep their existing behavior, so deployments that seed
- * roles per tenant rather than globally are unaffected by this fallback.
- */
 
 export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
   createRole: (roleData: Partial<IAccessRole>) => Promise<IAccessRole>;
@@ -40,9 +37,15 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
   ) => Promise<IAccessRole | null>;
   findRolesByResourceType: (resourceType: string) => Promise<IAccessRole[]>;
 } {
+  /** True inside a tenant's own context; false with no context or a system one. */
+  function inTenantScope(): boolean {
+    const tenantId = getTenantId();
+    return tenantId != null && tenantId !== SYSTEM_TENANT_ID;
+  }
+
   /**
-   * Runs an access-role lookup against the active tenant, then against the global
-   * default roles.
+   * The access roles visible inside the active tenant: the global defaults with the
+   * tenant's own copies substituted by `accessRoleId`.
    *
    * The default roles are seeded once, globally, with no `tenantId`. A request
    * running inside a tenant context has its queries scoped to `{ tenantId: T }` by
@@ -50,26 +53,30 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
    * resolves a role by identifier — the owner grant on resource creation above all
    * — fails with `Role <id> not found`.
    *
-   * A tenant that carries its own copy of a role keeps precedence; whatever it does
-   * not override resolves to the global role under an explicit system context.
+   * Every tenant-scoped lookup below is a selection over this one set, so a tenant
+   * that redefines `agent_owner` sees its own definition through each method rather
+   * than the shadowed global row through some of them. The unique index on
+   * `(accessRoleId, tenantId)` makes the substitution unambiguous.
    */
-  async function resolveRole<T>(
-    filter: Record<string, unknown>,
-    runQuery: (filter: Record<string, unknown>) => Promise<T>,
-    isResolved: (result: T) => boolean,
-  ): Promise<T> {
-    const tenantId = getTenantId();
-    if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
-      return await runQuery(filter);
-    }
+  async function visibleTenantRoles(filter: Record<string, unknown>): Promise<IAccessRole[]> {
+    const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
+    const runQuery = (roleFilter: Record<string, unknown>) =>
+      AccessRole.find(roleFilter).lean<IAccessRole[]>().exec();
 
-    const scoped = await runQuery(filter);
-    if (isResolved(scoped)) {
-      return scoped;
+    /** The callback must be async and the query awaited inside it: a sync callback
+     * returning a lazy Mongoose query would execute only once awaited outside, after
+     * `runAsSystem` had exited, and be re-scoped to the active tenant — leaving the
+     * base roles unmatched. */
+    const [base, scoped] = await Promise.all([
+      runAsSystem(async () => await runQuery({ ...filter, ...BASE_ROLE_FILTER })),
+      runQuery(filter),
+    ]);
+
+    const rolesById = new Map(base.map((role) => [String(role.accessRoleId), role]));
+    for (const role of scoped) {
+      rolesById.set(String(role.accessRoleId), role);
     }
-    /** The callback must be async: a sync one returning a Mongoose thenable would
-     * execute after `runAsSystem` exits and be re-scoped to the active tenant. */
-    return await runAsSystem(async () => await runQuery({ ...filter, ...BASE_ROLE_FILTER }));
+    return [...rolesById.values()];
   }
 
   /**
@@ -91,11 +98,11 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     accessRoleId: string | Types.ObjectId,
   ): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await resolveRole(
-      { accessRoleId },
-      (filter) => AccessRole.findOne(filter).lean<IAccessRole>().exec(),
-      (role) => role != null,
-    );
+    if (!inTenantScope()) {
+      return await AccessRole.findOne({ accessRoleId }).lean<IAccessRole>().exec();
+    }
+    const [role] = await visibleTenantRoles({ accessRoleId });
+    return role ?? null;
   }
 
   /**
@@ -109,23 +116,10 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
    */
   async function findRolesByResourceType(resourceType: string): Promise<IAccessRole[]> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    const runQuery = (filter: Record<string, unknown>) =>
-      AccessRole.find(filter).lean<IAccessRole[]>().exec();
-
-    const tenantId = getTenantId();
-    if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
-      return await runQuery({ resourceType });
+    if (!inTenantScope()) {
+      return await AccessRole.find({ resourceType }).lean<IAccessRole[]>().exec();
     }
-
-    const [base, scoped] = await Promise.all([
-      runAsSystem(async () => await runQuery({ resourceType, ...BASE_ROLE_FILTER })),
-      runQuery({ resourceType }),
-    ]);
-    const rolesById = new Map(base.map((role) => [String(role.accessRoleId), role]));
-    for (const role of scoped) {
-      rolesById.set(String(role.accessRoleId), role);
-    }
-    return [...rolesById.values()];
+    return await visibleTenantRoles({ resourceType });
   }
 
   /**
@@ -139,11 +133,13 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     permBits: PermissionBits | RoleBits,
   ): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await resolveRole(
-      { resourceType, permBits },
-      (filter) => AccessRole.findOne(filter).lean<IAccessRole>().exec(),
-      (role) => role != null,
-    );
+    if (!inTenantScope()) {
+      return await AccessRole.findOne({ resourceType, permBits }).lean<IAccessRole>().exec();
+    }
+    /** Selected from the visible set rather than queried directly, so a global role
+     * whose identifier the tenant has redefined cannot match on its superseded bits. */
+    const roles = await visibleTenantRoles({ resourceType });
+    return roles.find((role) => role.permBits === permBits) ?? null;
   }
 
   /**
@@ -369,16 +365,18 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     permBits: PermissionBits | RoleBits,
   ): Promise<IAccessRole | null> {
-    const exactMatch = await findRoleByPermissions(resourceType, permBits);
+    /** Both matches come from the one visible set, so an exact hit on a global role
+     * the tenant has redefined cannot win over the tenant's own definition. */
+    const roles = await findRolesByResourceType(resourceType);
+
+    const exactMatch = roles.find((role) => role.permBits === permBits);
     if (exactMatch) {
       return exactMatch;
     }
 
     /** If no exact match, the closest role without exceeding permissions */
-    const roles = await findRolesByResourceType(resourceType);
-
     return (
-      roles
+      [...roles]
         .sort((a, b) => b.permBits - a.permBits)
         .find((role) => (role.permBits & permBits) === role.permBits) || null
     );

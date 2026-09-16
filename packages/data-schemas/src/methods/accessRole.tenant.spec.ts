@@ -35,6 +35,15 @@ const seedGlobalRoles = () => methods.seedDefaultRoles();
 const createTenantRole = (tenantId: string, role: Parameters<typeof methods.createRole>[0]) =>
   tenantStorage.run({ tenantId }, () => methods.createRole(role));
 
+/** A tenant that redefines `agent_owner` with EDITOR bits, shadowing the global OWNER row */
+const shadowAgentOwnerAsEditor = (tenantId: string) =>
+  createTenantRole(tenantId, {
+    accessRoleId: AccessRoleIds.AGENT_OWNER,
+    name: 'tenant-owner',
+    resourceType: ResourceType.AGENT,
+    permBits: RoleBits.EDITOR,
+  });
+
 describe('access role resolution under tenant isolation', () => {
   describe('findRoleByIdentifier', () => {
     it('resolves a global default role from inside a tenant context', async () => {
@@ -67,12 +76,7 @@ describe('access role resolution under tenant isolation', () => {
 
     it("prefers the tenant's own copy of a role over the global one", async () => {
       await seedGlobalRoles();
-      await createTenantRole('tenant-a', {
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        name: 'tenant-owner',
-        resourceType: ResourceType.AGENT,
-        permBits: RoleBits.EDITOR,
-      });
+      await shadowAgentOwnerAsEditor('tenant-a');
 
       const scoped = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
         methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER),
@@ -151,6 +155,30 @@ describe('access role resolution under tenant isolation', () => {
     });
   });
 
+  describe('findRoleByPermissions', () => {
+    it('resolves a global default role from inside a tenant context', async () => {
+      await seedGlobalRoles();
+
+      const role = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.findRoleByPermissions(ResourceType.AGENT, RoleBits.OWNER),
+      );
+
+      expect(role).toEqual(expect.objectContaining({ accessRoleId: AccessRoleIds.AGENT_OWNER }));
+    });
+
+    it('does not match a global role whose identifier the tenant has redefined', async () => {
+      await seedGlobalRoles();
+      await shadowAgentOwnerAsEditor('tenant-a');
+
+      const role = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.findRoleByPermissions(ResourceType.AGENT, RoleBits.OWNER),
+      );
+
+      /** No role visible to the tenant carries OWNER bits any more */
+      expect(role).toBeNull();
+    });
+  });
+
   describe('getRoleForPermissions', () => {
     it('falls back to the global roles from inside a tenant context', async () => {
       await seedGlobalRoles();
@@ -160,6 +188,34 @@ describe('access role resolution under tenant isolation', () => {
       );
 
       expect(role).toEqual(expect.objectContaining({ accessRoleId: AccessRoleIds.AGENT_OWNER }));
+    });
+
+    it('never grants the shadowed global bits when the tenant redefined the role', async () => {
+      await seedGlobalRoles();
+      await shadowAgentOwnerAsEditor('tenant-a');
+
+      const role = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.getRoleForPermissions(ResourceType.AGENT, RoleBits.OWNER),
+      );
+
+      /** The closest visible role without exceeding OWNER, not the global OWNER row */
+      expect(role?.permBits).toBe(RoleBits.EDITOR);
+    });
+
+    it('agrees with findRoleByIdentifier on what a shadowed identifier means', async () => {
+      await seedGlobalRoles();
+      await shadowAgentOwnerAsEditor('tenant-a');
+
+      const [byIdentifier, byPermissions] = await tenantStorage.run(
+        { tenantId: 'tenant-a' },
+        async () => [
+          await methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER),
+          await methods.getRoleForPermissions(ResourceType.AGENT, RoleBits.EDITOR),
+        ],
+      );
+
+      expect(byIdentifier?.permBits).toBe(RoleBits.EDITOR);
+      expect(byPermissions?.permBits).toBe(RoleBits.EDITOR);
     });
   });
 });
