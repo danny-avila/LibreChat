@@ -100,8 +100,12 @@ const errorResponses = [
   { status: 401, description: 'Authentication failed', schema: errorMessageResponseSchema },
   {
     status: 403,
-    description: 'Permission denied, or the caller is banned',
-    schema: z.union([agentManagementErrorSchema, messageResponseSchema]),
+    description: 'Permission denied, the caller is banned, or the request fails tenant isolation',
+    schema: z.union([
+      agentManagementErrorSchema,
+      messageResponseSchema,
+      errorMessageResponseSchema,
+    ]),
   },
   { status: 404, description: 'Not found', schema: agentManagementErrorSchema },
   {

@@ -73,7 +73,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -83,6 +83,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -199,7 +202,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -209,6 +212,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -317,7 +323,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -327,6 +333,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -443,7 +452,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -453,6 +462,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -559,7 +571,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -569,6 +581,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -706,7 +721,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -716,6 +731,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -832,7 +850,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -842,6 +860,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -959,7 +980,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -969,6 +990,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1087,7 +1111,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1097,6 +1121,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1205,7 +1232,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1215,6 +1242,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1331,7 +1361,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1341,6 +1371,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1456,7 +1489,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1466,6 +1499,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1583,7 +1619,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1593,6 +1629,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
@@ -1718,7 +1757,7 @@
             }
           },
           "403": {
-            "description": "Permission denied, or the caller is banned",
+            "description": "Permission denied, the caller is banned, or the request fails tenant isolation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1728,6 +1767,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/MessageError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorMessage"
                     }
                   ]
                 }
