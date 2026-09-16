@@ -422,6 +422,53 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(retainedFile).toBeTruthy();
     });
 
+    it('keeps a file the same agent holds under another tool resource', async () => {
+      const sharedFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: sharedFileId,
+        filename: 'dual-purpose.txt',
+        filepath: '/uploads/dual-purpose.txt',
+        bytes: 100,
+        type: 'text/plain',
+        source: FileSources.vectordb,
+        embedded: true,
+      });
+
+      /* One agent can hold the same file under two resources, so the reference being removed is the
+         `(agent, tool_resource)` pair rather than the agent. */
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: { file_ids: [sharedFileId] },
+          context: { file_ids: [sharedFileId] },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: sharedFileId, filepath: '/uploads/dual-purpose.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+      expect(updatedAgent.tool_resources.context.file_ids).toEqual([sharedFileId]);
+
+      const retainedFile = await File.findOne({ file_id: sharedFileId }).lean();
+      expect(retainedFile).toBeTruthy();
+    });
+
     it('keeps a file a duplicated agent still references, unlinking it here only', async () => {
       const sharedFileId = uuidv4();
       await createFile({

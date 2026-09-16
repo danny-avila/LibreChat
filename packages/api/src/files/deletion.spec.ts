@@ -140,14 +140,19 @@ describe('partition agent resource files', () => {
 describe('delete agent resource files', () => {
   const userId = 'user-1';
 
-  const makeDeps = (sharedFileIds: string[] = []) => ({
+  const makeDeps = (sharedFileIds: string[] = [], calls: string[] = []) => ({
     getSharedResourceFileIds: jest.fn().mockResolvedValue(sharedFileIds),
-    removeAgentResourceFiles: jest.fn().mockResolvedValue(undefined),
-    deleteFiles: jest
-      .fn()
-      .mockImplementation((files: TestFile[]) =>
-        Promise.resolve({ deletedFileIds: files.map((file) => file.file_id), failedFileIds: [] }),
-      ),
+    removeAgentResourceFiles: jest.fn().mockImplementation(() => {
+      calls.push('unlink');
+      return Promise.resolve(undefined);
+    }),
+    deleteFiles: jest.fn().mockImplementation((files: TestFile[]) => {
+      calls.push('destroy');
+      return Promise.resolve({
+        deletedFileIds: files.map((file) => file.file_id),
+        failedFileIds: [],
+      });
+    }),
   });
 
   const run = (
@@ -180,13 +185,14 @@ describe('delete agent resource files', () => {
     });
   });
 
-  it('asks about shared references excluding the agent being edited', async () => {
+  it('asks about shared references excluding only the pair being removed', async () => {
     const deps = makeDeps();
     await run([input('owned', userId)], deps);
 
     expect(deps.getSharedResourceFileIds).toHaveBeenCalledWith({
       file_ids: ['owned'],
       excludeAgentId: 'agent_1',
+      excludeToolResource: 'file_search',
     });
   });
 
@@ -240,6 +246,25 @@ describe('delete agent resource files', () => {
     expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
     expect(deps.deleteFiles).not.toHaveBeenCalled();
     expect(result).toEqual({ outcome: null, unlinkedFileIds: [], destroyedFileIds: [] });
+  });
+
+  it('destroys before removing any reference, so a failed destroy leaves the file attached', async () => {
+    const calls: string[] = [];
+    const deps = makeDeps(['shared'], calls);
+    await run([input('shared', userId), input('owned', userId)], deps);
+
+    expect(calls).toEqual(['destroy', 'unlink']);
+  });
+
+  it('reports what the delete pass deleted rather than what it was handed', async () => {
+    const deps = makeDeps();
+    deps.deleteFiles.mockResolvedValue({
+      deletedFileIds: ['owned'],
+      failedFileIds: ['other-owned'],
+    });
+    const result = await run([input('owned', userId), input('other-owned', userId)], deps);
+
+    expect(result.destroyedFileIds).toEqual(['owned']);
   });
 
   it('passes a partial delete outcome back to the caller', async () => {

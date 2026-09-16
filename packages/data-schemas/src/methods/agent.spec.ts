@@ -4292,6 +4292,49 @@ describe('Agent Methods', () => {
         expect(await getSharedResourceFileIds({ file_ids: [fileId] })).toEqual([fileId]);
       });
 
+      test('reports a file the same agent still holds under another tool resource', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.context,
+          file_id: fileId,
+        });
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentId: agent.id,
+            excludeToolResource: EToolResources.file_search,
+          }),
+        ).toEqual([fileId]);
+      });
+
+      test('does not count the pair being removed', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentId: agent.id,
+            excludeToolResource: EToolResources.file_search,
+          }),
+        ).toEqual([]);
+      });
+
       test('answers without querying when given no file_ids', async () => {
         expect(await getSharedResourceFileIds({ file_ids: [] })).toEqual([]);
       });

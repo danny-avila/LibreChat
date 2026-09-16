@@ -307,24 +307,6 @@ const processDeleteRequest = async ({ req, files }) => {
 
   await Promise.allSettled(promises);
   const deletedFileIds = [...resolvedFileIds];
-
-  /* The unlink follows the delete rather than racing it. A file whose storage or vector delete
-     failed keeps its association, because a detached file_id cannot be resubmitted through the
-     agent route and the client does not queue an agent-scoped batch for retry: unlinking it early
-     is what would strand its bytes and chunks for good. */
-  if (req.body.agent_id && req.body.tool_resource && deletedFileIds.length > 0) {
-    try {
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: deletedFileIds.map((file_id) => ({
-          tool_resource: req.body.tool_resource,
-          file_id,
-        })),
-      });
-    } catch (error) {
-      logger.error('Error unlinking deleted files from agent', error);
-    }
-  }
   let metadataDeletedFileIds = deletedFileIds;
   if (deletedFileIds.length > 0) {
     try {
@@ -335,6 +317,9 @@ const processDeleteRequest = async ({ req, files }) => {
       metadataDeletedFileIds = [];
       throw error;
     }
+    /* The only place a delete removes agent references, and it runs after the metadata delete
+       succeeded: a file that kept its storage, its chunks or its record keeps its references too,
+       so the agent it was removed from can be asked again (see issue #12776). */
     if (metadataDeletedFileIds.length > 0) {
       try {
         await db.removeAgentResourceFilesFromAllAgents({ file_ids: metadataDeletedFileIds });

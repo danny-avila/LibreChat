@@ -2633,9 +2633,10 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['knowledge-file'] });
     expect(db.deleteFiles).not.toHaveBeenCalled();
     expect(db.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
 
-  it('unlinks only the agent files it managed to delete', async () => {
+  it('strips agent references only for the files it deleted', async () => {
     getStrategyFunctions.mockReturnValue({
       deleteFile: jest
         .fn()
@@ -2661,10 +2662,35 @@ describe('processDeleteRequest', () => {
     });
 
     expect(result).toEqual({ deletedFileIds: ['gone-file'], failedFileIds: ['kept-file'] });
-    expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
-      agent_id: 'agent_1',
-      files: [{ tool_resource: 'file_search', file_id: 'gone-file' }],
+    expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
+      file_ids: ['gone-file'],
     });
+  });
+
+  it('keeps agent references when the metadata delete fails', async () => {
+    getStrategyFunctions.mockReturnValue({ deleteFile: jest.fn().mockResolvedValue(undefined) });
+    db.deleteFiles.mockRejectedValue(new Error('mongo unavailable'));
+    const req = {
+      body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+
+    await expect(
+      processDeleteRequest({
+        req,
+        files: [
+          {
+            file_id: 'knowledge-file',
+            filepath: '/uploads/knowledge.txt',
+            source: FileSources.local,
+          },
+        ],
+      }),
+    ).rejects.toThrow('mongo unavailable');
+
+    expect(db.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
 
   it('does not delete vector storage when primary embedded file deletion fails', async () => {

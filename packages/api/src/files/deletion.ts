@@ -35,6 +35,7 @@ export type AgentResourceDeletionDeps<TFile> = {
   getSharedResourceFileIds: (params: {
     file_ids: string[];
     excludeAgentId: string;
+    excludeToolResource: string;
   }) => Promise<string[]>;
   removeAgentResourceFiles: (params: {
     agent_id: string;
@@ -120,7 +121,8 @@ export const partitionAgentResourceFiles = <TFile>({
  * of.
  *
  * Three outcomes, decided per file. A file the caller does not own is unlinked and left whole. A
- * file the caller owns that another agent still references is unlinked here and left whole too:
+ * file the caller owns that any other `(agent, tool_resource)` pair still references is unlinked here
+ * and left whole too:
  * duplicating an agent copies `file_ids` rather than the files behind them, so destroying the bytes
  * would empty the other agent's knowledge without touching its configuration. Only a file the
  * caller owns and this agent was the last to reference goes through the delete pass, which removes
@@ -159,6 +161,7 @@ export const deleteAgentResourceFiles = async <TFile>(
           await deps.getSharedResourceFileIds({
             file_ids: ownedFiles.map((input) => input.file_id),
             excludeAgentId: agentId,
+            excludeToolResource: toolResource,
           }),
         );
 
@@ -172,19 +175,22 @@ export const deleteAgentResourceFiles = async <TFile>(
     destroyable.push(input);
   }
 
+  /* The destroy runs before any reference is removed, and the delete pass strips the references of
+     the files it actually deleted. A reference removed ahead of a destroy that then fails is what
+     strands a file: it leaves the agent panel while its storage, chunks or metadata remain, and
+     neither this route nor the client's retry queue can name it again. */
+  const outcome =
+    destroyable.length === 0
+      ? null
+      : await deps.deleteFiles(destroyable.map((input) => input.file));
+
   if (unlinkOnly.length > 0) {
     await deps.removeAgentResourceFiles({ agent_id: agentId, files: unlinkOnly });
   }
 
-  const unlinkedFileIds = unlinkOnly.map((ref) => ref.file_id);
-  if (destroyable.length === 0) {
-    return { outcome: null, unlinkedFileIds, destroyedFileIds: [] };
-  }
-
-  const outcome = await deps.deleteFiles(destroyable.map((input) => input.file));
   return {
     outcome,
-    unlinkedFileIds,
-    destroyedFileIds: destroyable.map((input) => input.file_id),
+    unlinkedFileIds: unlinkOnly.map((ref) => ref.file_id),
+    destroyedFileIds: outcome?.deletedFileIds ?? [],
   };
 };
