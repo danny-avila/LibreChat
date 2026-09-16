@@ -106,6 +106,14 @@ interface GetTokensParams {
   onRefreshPreparing?: () => Promise<(tokens?: MCPOAuthTokens) => Promise<void>>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
+  /**
+   * Invoked instead of `onRefreshSuccess` when this replica adopted a credential another
+   * replica rotated. Distinct because the two carry different information: after our own
+   * redemption we know the generation we published, whereas an adopted credential was
+   * published by a peer under a generation only the store knows, so the caller has to
+   * re-read it rather than assume the one it captured before the rotation.
+   */
+  onTokensAdopted?: (tokens: MCPOAuthTokens) => Promise<void>;
   /** Per-server `oauthRefreshWaitTimeout`: how long to wait on another replica's redemption. */
   refreshWaitTimeoutMs?: number;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
@@ -1020,7 +1028,11 @@ export class MCPTokenStorage {
            * about to replace. `onRefreshPreparing`'s publication fence is deliberately
            * skipped — that fence exists to order writes this replica makes.
            */
-          await params.onRefreshSuccess?.(flight.adoptedTokens);
+          if (params.onTokensAdopted) {
+            await params.onTokensAdopted(flight.adoptedTokens);
+          } else {
+            await params.onRefreshSuccess?.(flight.adoptedTokens);
+          }
           return flight.adoptedTokens;
         }
         return await this.executeTokenRefresh({
@@ -1593,6 +1605,7 @@ export class MCPTokenStorage {
     flowManager,
     onRefreshSuccess,
     onRefreshPreparing,
+    onTokensAdopted,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1645,6 +1658,7 @@ export class MCPTokenStorage {
           flowManager,
           onRefreshSuccess,
           onRefreshPreparing,
+          onTokensAdopted,
           existingAccessToken: accessTokenData,
         });
       }

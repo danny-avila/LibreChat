@@ -952,6 +952,7 @@ export class MCPConnectionFactory {
               flowManager: this.flowManager,
               onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
               onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
+              onTokensAdopted: (adopted) => this.handleAdoptedCredentials(adopted),
             }),
           );
         },
@@ -1184,6 +1185,7 @@ export class MCPConnectionFactory {
            */
           onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
           onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
+          onTokensAdopted: (adopted) => this.handleAdoptedCredentials(adopted),
           flowManager: this.flowManager,
         }),
       );
@@ -1213,6 +1215,17 @@ export class MCPConnectionFactory {
    * entries are deleted; PENDING entries are completed with fresh tokens so
    * concurrent waiters do not fail or later publish server-rejected tokens.
    */
+  /**
+   * A credential this replica adopted was rotated and published by a peer, so the generation
+   * captured before that rotation is retired. Re-reading it keeps this build from publishing its
+   * tools under the retired one and fencing itself; `adoptPublishedCredentials` cannot do it,
+   * because adopted tokens are read from storage and carry no `publication_generation`.
+   */
+  private async handleAdoptedCredentials(adoptedTokens: MCPOAuthTokens): Promise<void> {
+    await this.onOAuthCredentialsInvalidated?.();
+    await this.handleOAuthRefreshSuccess(adoptedTokens);
+  }
+
   private async handleOAuthRefreshSuccess(freshTokens: MCPOAuthTokens): Promise<void> {
     if (this.userId != null) {
       await this.onOAuthCredentialsChanged?.({

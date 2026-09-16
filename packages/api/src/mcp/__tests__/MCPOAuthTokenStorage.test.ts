@@ -2281,6 +2281,7 @@ describe('MCPTokenStorage', () => {
         await seedRefreshableTokens('adopt-srv');
         const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(9));
         const onRefreshSuccess = jest.fn().mockResolvedValue(undefined);
+        const onTokensAdopted = jest.fn().mockResolvedValue(undefined);
         let attempts = 0;
         const flowManager = flightManager(async () => {
           attempts += 1;
@@ -2297,13 +2298,20 @@ describe('MCPTokenStorage', () => {
             ...refreshParams(refreshTokens, 'adopt-srv'),
             flowManager: flowManager as never,
             onRefreshSuccess,
+            onTokensAdopted,
           }),
         ).resolves.toMatchObject({ access_token: 'at-3', refresh_token: 'rt-3' });
 
         expect(refreshTokens).not.toHaveBeenCalled();
-        expect(onRefreshSuccess).toHaveBeenCalledWith(
+        /**
+         * The adopted credential was published by the peer under a generation only the store
+         * knows, so the caller is told it adopted rather than refreshed: the refresh callback
+         * would leave this replica's captured generation pointing before the peer's rotation.
+         */
+        expect(onTokensAdopted).toHaveBeenCalledWith(
           expect.objectContaining({ access_token: 'at-3' }),
         );
+        expect(onRefreshSuccess).not.toHaveBeenCalled();
       });
 
       it('still redeems when the credential is unchanged after waiting for the flight', async () => {
