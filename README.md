@@ -205,7 +205,7 @@ Open source, actively developed, and built for anyone who values control over th
 ## 📝 Changelog
 
 Keep up with the latest updates by visiting the releases page and notes:
-- [Releases](https://github.com/danny-avila/LibreChat/releases)
+- [Releases](https://github.com/LibreChat-AI/LibreChat/releases)
 - [Changelog](https://www.librechat.ai/changelog) 
 
 **⚠️ Please consult the [changelog](https://www.librechat.ai/changelog) for breaking changes before updating.**
@@ -226,7 +226,7 @@ Keep up with the latest updates by visiting the releases page and notes:
 
 <p align="center">
   <a href="https://trendshift.io/repositories/4685" target="_blank" style="padding: 10px;">
-    <img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
+    <img src="https://trendshift.io/api/badge/repositories/4685" alt="LibreChat-AI%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
   </a>
   <a href="https://runacap.com/ross-index/q1-24/" target="_blank" rel="noopener" style="margin-left: 20px;">
     <img style="width: 260px; height: 56px" src="https://runacap.com/wp-content/uploads/2024/04/ROSS_badge_white_Q1_2024.svg" alt="ROSS Index - Fastest Growing Open-Source Startups in Q1 2024 | Runa Capital" width="260" height="56"/>
@@ -247,8 +247,8 @@ If you'd like to help translate LibreChat into your language, we'd love your con
 
 ## 💖 This project exists in its current state thanks to all the people who contribute
 
-<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
+<a href="https://github.com/LibreChat-AI/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=LibreChat-AI/LibreChat" />
 </a>
 
 ---
