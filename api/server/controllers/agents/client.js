@@ -3,6 +3,7 @@ const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/da
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
+  createMediaNativeFactory,
   isEnabled,
   checkAccess,
   buildRunToolSet,
@@ -4895,6 +4896,11 @@ class AgentClient extends BaseClient {
           activityPhase?.handlers(offsetHandlers) ??
           (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
         const createRunPromise = createRun({
+          nativeMediaFactory: await createMediaNativeFactory({
+            request: this.options.req,
+            conversationId: this.conversationId,
+            messageId: this.responseMessageId,
+          }),
           agents,
           // Conversation-stable identity for the e2e run hook; a resumed run
           // carries no messages, so history cannot identify the conversation.
@@ -5673,6 +5679,11 @@ class AgentClient extends BaseClient {
         activityPhase?.handlers(offsetHandlers) ??
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
+        nativeMediaFactory: await createMediaNativeFactory({
+          request: this.options.req,
+          conversationId: this.conversationId,
+          messageId: this.responseMessageId,
+        }),
         agents,
         conversationId: this.conversationId,
         modelCallbacks: [

@@ -134,6 +134,16 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   filepath: string;
   storageKey?: string;
   storageRegion?: string;
+  mediaOutputKey?: string;
+  mediaRendition?: string;
+  mediaContentDigest?: string;
+  mediaLifecycle?: 'live' | 'retiring' | 'retired';
+  mediaEpoch?: number;
+  mediaRetainers?: string[];
+  mediaDeletionToken?: string;
+  mediaUnlinkedAt?: string;
+  mediaHardExpiresAt?: Date;
+  durationSeconds?: number;
   object: 'file';
   embedded?: boolean;
   type: string;

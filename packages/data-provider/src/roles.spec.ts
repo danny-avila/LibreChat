@@ -14,6 +14,7 @@ const RESOURCE_MANAGEMENT_FIELDS: Permissions[] = [
  * Add new types here if they gate shared/multi-user resources.
  */
 const RESOURCE_PERMISSION_TYPES: PermissionTypes[] = [
+  PermissionTypes.MEDIA,
   PermissionTypes.MCP_SERVERS,
   PermissionTypes.REMOTE_AGENTS,
 ];

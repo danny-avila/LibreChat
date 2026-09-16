@@ -1,0 +1,1604 @@
+diff --git a/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs b/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
+index b465cc8..50d06d1 100644
+--- a/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
+@@ -121,11 +121,14 @@ function getResponseReasoningContent({ responseMessage, reasoningKey }) {
+ function isTextMessageContentPart(contentPart) {
+ 	return typeof contentPart === "object" && "type" in contentPart && typeof contentPart.type === "string" && contentPart.type.startsWith("text");
+ }
++function isNativeMediaContentPart(contentPart) {
++	return typeof contentPart === "object" && (contentPart.type === require_enum.ContentTypes.IMAGE_FILE || contentPart.native_media != null);
++}
+ function isGoogleServerSideToolMessageContentPart(contentPart) {
+ 	return typeof contentPart === "object" && "type" in contentPart && (contentPart.type === "toolCall" || contentPart.type === "toolResponse");
+ }
+ function hasGoogleServerSideToolDeltaContent(provider, content) {
+-	return require_llm.isGoogleLike(provider) && Array.isArray(content) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart));
++	return require_llm.isGoogleLike(provider) && Array.isArray(content) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ }
+ function getMessageDeltaContent(provider, content) {
+ 	if (content == null) return;
+@@ -134,10 +137,10 @@ function getMessageDeltaContent(provider, content) {
+ 		text: content
+ 	}] : void 0;
+ 	if (content.length === 0) return;
+-	const hasGoogleServerSideToolPart = require_llm.isGoogleLike(provider) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart));
++	const hasGoogleServerSideToolPart = require_llm.isGoogleLike(provider) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ 	if (content.every((contentPart) => isTextMessageContentPart(contentPart))) return content;
+ 	if (!hasGoogleServerSideToolPart) return;
+-	const messageContent = content.filter((contentPart) => isTextMessageContentPart(contentPart) || isGoogleServerSideToolMessageContentPart(contentPart));
++	const messageContent = content.filter((contentPart) => isTextMessageContentPart(contentPart) || isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ 	return messageContent.length > 0 ? messageContent : void 0;
+ }
+ function hasTextDeltaContent(content) {
+diff --git a/node_modules/@librechat/agents/dist/cjs/llm/google/index.cjs b/node_modules/@librechat/agents/dist/cjs/llm/google/index.cjs
+index ad7562d..a5fa9b7 100644
+--- a/node_modules/@librechat/agents/dist/cjs/llm/google/index.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/llm/google/index.cjs
+@@ -1,3 +1,4 @@
++const require_native = require("./native.cjs");
+ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+ const require_runtime = require("../../_virtual/_rolldown/runtime.cjs");
+ const require_smoother = require("../stream/smoother.cjs");
+@@ -11,6 +12,8 @@ let _google_generative_ai = require("@google/generative-ai");
+ //#region src/llm/google/index.ts
+ var google_exports = /* @__PURE__ */ require_runtime.__exportAll({ CustomChatGoogleGenerativeAI: () => CustomChatGoogleGenerativeAI });
+ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoogleGenerativeAI {
++	static nativeMediaProtocolVersion = 1;
++	nativeMedia;
+ 	_lc_stream_delay;
+ 	thinkingConfig;
+ 	includeServerSideToolInvocations;
+@@ -19,6 +22,7 @@ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoo
+ 	}
+ 	constructor(fields) {
+ 		super(fields);
++		this.nativeMedia = fields.nativeMedia;
+ 		this._lc_stream_delay = require_smoother.resolveStreamDelay(fields._lc_stream_delay);
+ 		this.model = fields.model.replace(/^models\//, "");
+ 		this.maxOutputTokens = fields.maxOutputTokens ?? this.maxOutputTokens;
+@@ -45,6 +49,7 @@ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoo
+ 			model: this.model,
+ 			safetySettings: this.safetySettings,
+ 			generationConfig: {
++				...(this.nativeMedia && fields.responseModalities ? { responseModalities: fields.responseModalities } : {}),
+ 				stopSequences: this.stopSequences,
+ 				maxOutputTokens: this.maxOutputTokens,
+ 				temperature: this.temperature,
+@@ -108,7 +113,11 @@ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoo
+ 		return params;
+ 	}
+ 	async _generate(messages, options, runManager) {
+-		const prompt = require_common.convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction, this.model);
++		const native = new require_native.NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++		try {
++		const admitted = await native.start();
++		if (admitted?.responseModalities) this.client.generationConfig.responseModalities = admitted.responseModalities;
++		const prompt = require_common.convertBaseMessagesToContent(await native.messages(messages), this._isMultimodalModel, this.useSystemInstruction, this.model);
+ 		let actualPrompt = prompt;
+ 		if (prompt?.[0].role === "system") {
+ 			const [systemInstruction] = prompt;
+@@ -122,19 +131,31 @@ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoo
+ 		};
+ 		const response = (await this.caller.callWithOptions({ signal: options.signal }, async () => this.client.generateContent(request))).response;
+ 		const generationResult = require_common.mapGenerateContentResultToChatResult(response, { usageMetadata: this._convertToUsageMetadata(response.usageMetadata, this.model) });
++		if (generationResult.generations[0]) {
++			generationResult.generations[0].message.content = await native.content(generationResult.generations[0].message.content, 0);
++			generationResult.generations[0].message.lc_kwargs.content = generationResult.generations[0].message.content;
++		}
++		await native.complete();
+ 		await runManager?.handleLLMNewToken(generationResult.generations[0].text || "", void 0, void 0, void 0, void 0, void 0);
+ 		return generationResult;
++		} catch (error) { await native.fail(); throw error; }
+ 	}
+ 	async *_streamResponseChunks(messages, options, runManager) {
++		const native = new require_native.NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++		try {
++		const admitted = await native.start();
++		if (admitted?.responseModalities) this.client.generationConfig.responseModalities = admitted.responseModalities;
+ 		yield* require_chunkAdapters.smoothGenerationChunks({
+-			chunks: this._streamProviderChunks(messages, options),
++			chunks: this._streamProviderChunks(messages, options, native),
+ 			delayMs: this._lc_stream_delay,
+ 			signal: options.signal,
+ 			runManager
+ 		});
++		await native.complete();
++		} finally { await native.fail(); }
+ 	}
+-	async *_streamProviderChunks(messages, options) {
+-		const prompt = require_common.convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction, this.model);
++	async *_streamProviderChunks(messages, options, native) {
++		const prompt = require_common.convertBaseMessagesToContent(await native.messages(messages), this._isMultimodalModel, this.useSystemInstruction, this.model);
+ 		let actualPrompt = prompt;
+ 		if (prompt?.[0].role === "system") {
+ 			const [systemInstruction] = prompt;
+@@ -160,6 +181,8 @@ var CustomChatGoogleGenerativeAI = class extends _langchain_google_genai.ChatGoo
+ 			});
+ 			index += 1;
+ 			if (!chunk) continue;
++			chunk.message.content = await native.content(chunk.message.content, index - 1);
++			chunk.message.lc_kwargs.content = chunk.message.content;
+ 			yield chunk;
+ 		}
+ 		if (lastUsageMetadata) yield new _langchain_core_outputs.ChatGenerationChunk({
+diff --git a/node_modules/@librechat/agents/dist/cjs/llm/google/native.cjs b/node_modules/@librechat/agents/dist/cjs/llm/google/native.cjs
+new file mode 100644
+index 0000000..83682bc
+--- /dev/null
++++ b/node_modules/@librechat/agents/dist/cjs/llm/google/native.cjs
+@@ -0,0 +1,188 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.NativeMediaSession = void 0;
++const messages_1 = require("@langchain/core/messages");
++const uuid_1 = require("uuid");
++/** All durable storage and authorization belongs to the injected host port. */
++class NativeMediaSession {
++    port;
++    model;
++    signal;
++    finished = false;
++    storageFailure = false;
++    modelRunId;
++    constructor(port, model, modelRunId, signal) {
++        this.port = port;
++        this.model = model;
++        this.signal = signal;
++        this.modelRunId = modelRunId ?? (0, uuid_1.v4)();
++    }
++    async start() {
++        return this.port?.start({
++            modelRunId: this.modelRunId,
++            model: this.model,
++            signal: this.signal,
++        });
++    }
++    async complete() {
++        await this.port?.complete({ modelRunId: this.modelRunId });
++        this.finished = true;
++    }
++    async fail() {
++        if (this.finished)
++            return;
++        this.finished = true;
++        await this.port?.fail({
++            modelRunId: this.modelRunId,
++            reason: this.signal?.aborted
++                ? 'aborted'
++                : this.storageFailure
++                    ? 'storage'
++                    : 'provider',
++        });
++    }
++    async content(content, chunkIndex) {
++        if (!this.port) {
++            if (Array.isArray(content) &&
++                content.some((part) => 'inlineData' in part)) {
++                throw new Error('Native media requires configured storage');
++            }
++            return Array.isArray(content)
++                ? content.map(({ thoughtSignature: _signature, ...part }) => part)
++                : content;
++        }
++        const parts = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
++        const output = [];
++        for (let partIndex = 0; partIndex < parts.length; partIndex++) {
++            const part = parts[partIndex];
++            const thoughtSignature = typeof part.thoughtSignature === 'string'
++                ? part.thoughtSignature
++                : undefined;
++            let native;
++            if (part.type === 'text' && typeof part.text === 'string') {
++                if (part.text === '' && thoughtSignature == null)
++                    continue;
++                native = { kind: 'text', text: part.text, thoughtSignature };
++            }
++            else if ('inlineData' in part &&
++                typeof part.inlineData === 'object' &&
++                part.inlineData !== null) {
++                const inline = part.inlineData;
++                if ('mimeType' in inline &&
++                    typeof inline.mimeType === 'string' &&
++                    'data' in inline &&
++                    typeof inline.data === 'string') {
++                    if (!inline.mimeType.startsWith('image/'))
++                        throw new Error('Unsupported native media MIME type');
++                    native = {
++                        kind: 'image',
++                        mimeType: inline.mimeType,
++                        data: inline.data,
++                        thoughtSignature,
++                    };
++                }
++            }
++            if ('inlineData' in part && !native)
++                throw new Error('Malformed native media content');
++            if (!native) {
++                output.push(part);
++                continue;
++            }
++            try {
++                const stored = await this.port.part({
++                    modelRunId: this.modelRunId,
++                    chunkIndex,
++                    partIndex,
++                    part: native,
++                });
++                if (this.signal?.aborted)
++                    throw this.signal.reason ?? new Error('Native media request aborted');
++                if (native.kind === 'text' && stored.type === 'text') {
++                    const { thoughtSignature: _signature, ...visible } = part;
++                    output.push({ ...visible, ...stored });
++                }
++                else if (native.kind === 'image' && stored.type === 'image_file') {
++                    output.push(stored);
++                }
++                else
++                    throw new Error('Native media port returned incompatible content');
++            }
++            catch (error) {
++                this.storageFailure = true;
++                throw error;
++            }
++        }
++        return typeof content === 'string' &&
++            output.length === 1 &&
++            output[0].type === 'text' &&
++            !output[0].native_media
++            ? String(output[0].text)
++            : output;
++    }
++    async messages(messages) {
++        if (!this.port) {
++            if (messages.some((message) => Array.isArray(message.content) &&
++                message.content.some((part) => part.native_media != null))) {
++                throw new Error('Native continuation requires configured storage');
++            }
++            return messages;
++        }
++        const result = [];
++        for (const message of messages) {
++            if (!Array.isArray(message.content)) {
++                result.push(message);
++                continue;
++            }
++            let changed = false;
++            const content = [];
++            for (const part of message.content) {
++                const image = part.type === 'image_file' &&
++                    typeof part.image_file === 'object' &&
++                    part.image_file !== null
++                    ? part.image_file
++                    : undefined;
++                const file_id = image && 'file_id' in image && typeof image.file_id === 'string'
++                    ? image.file_id
++                    : undefined;
++                const reference = typeof part.native_media === 'object' && part.native_media !== null
++                    ? part.native_media
++                    : undefined;
++                const continuationRef = reference &&
++                    'continuationRef' in reference &&
++                    typeof reference.continuationRef === 'string'
++                    ? reference.continuationRef
++                    : undefined;
++                if (!continuationRef) {
++                    content.push(part);
++                    continue;
++                }
++                const restored = await this.port.restore({ file_id, continuationRef });
++                changed = true;
++                if (restored.kind === 'text')
++                    content.push({
++                        type: 'text',
++                        text: restored.text,
++                        thoughtSignature: restored.thoughtSignature,
++                    });
++                else
++                    content.push({
++                        type: 'image_url',
++                        image_url: {
++                            url: `data:${restored.mimeType};base64,${restored.data}`,
++                        },
++                        thoughtSignature: restored.thoughtSignature,
++                    });
++            }
++            if (!changed)
++                result.push(message);
++            else if (message._getType() === 'ai')
++                result.push(new messages_1.AIMessage({ ...message, content }));
++            else if (message._getType() === 'human')
++                result.push(new messages_1.HumanMessage({ ...message, content }));
++            else
++                throw new Error('Native media reference in unsupported message role');
++        }
++        return result;
++    }
++}
++exports.NativeMediaSession = NativeMediaSession;
+diff --git a/node_modules/@librechat/agents/dist/cjs/llm/google/utils/common.cjs b/node_modules/@librechat/agents/dist/cjs/llm/google/utils/common.cjs
+index 7f7fc4f..7148a3b 100644
+--- a/node_modules/@librechat/agents/dist/cjs/llm/google/utils/common.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/llm/google/utils/common.cjs
+@@ -156,7 +156,7 @@ function _getStandardContentBlockConverter(isMultimodalModel) {
+ function _convertLangChainContentToPart(content, isMultimodalModel) {
+ 	if ((0, _langchain_core_messages.isDataContentBlock)(content)) return (0, _langchain_core_messages.convertToProviderContentBlock)(content, _getStandardContentBlockConverter(isMultimodalModel));
+ 	if (isGoogleServerSideToolPart(content)) return convertGoogleServerSideToolPart(content);
+-	if (content.type === "text") return typeof content.text === "string" && content.text !== "" ? { text: content.text } : void 0;
++	if (content.type === "text") return typeof content.text === "string" && content.text !== "" ? { text: content.text, ...(typeof content.thoughtSignature === "string" ? { thoughtSignature: content.thoughtSignature } : {}) } : void 0;
+ 	else if (content.type === "executableCode") return { executableCode: content.executableCode };
+ 	else if (content.type === "codeExecutionResult") return { codeExecutionResult: content.codeExecutionResult };
+ 	else if (content.type === "image_url") {
+@@ -169,10 +169,7 @@ function _convertLangChainContentToPart(content, isMultimodalModel) {
+ 		if (!dm.startsWith("data:")) throw new Error("Please provide image as base64 encoded data URL");
+ 		const [mimeType, encoding] = dm.replace(/^data:/, "").split(";");
+ 		if (encoding !== "base64") throw new Error("Please provide image as base64 encoded data URL");
+-		return { inlineData: {
+-			data,
+-			mimeType
+-		} };
++		return { inlineData: { data, mimeType }, ...(typeof content.thoughtSignature === "string" ? { thoughtSignature: content.thoughtSignature } : {}) };
+ 	} else if (content.type === "media") return messageContentMedia(content);
+ 	else if (content.type === "tool_use") {
+ 		const functionId = getGoogleFunctionId(typeof content.id === "string" ? content.id : void 0);
+@@ -309,7 +306,7 @@ function convertResponseContentToChatGenerationChunk(response, extra) {
+ 	}, []) ?? [];
+ 	let content;
+ 	const reasoningParts = [];
+-	if (candidateContent != null && Array.isArray(candidateContent.parts) && candidateContent.parts.every((p) => "text" in p)) {
++	if (candidateContent != null && Array.isArray(candidateContent.parts) && candidateContent.parts.every((p) => "text" in p && !("thoughtSignature" in p))) {
+ 		const textParts = [];
+ 		for (const part of candidateContent.parts) {
+ 			if ("thought" in part && part.thought === true) {
+@@ -325,7 +322,8 @@ function convertResponseContentToChatGenerationChunk(response, extra) {
+ 			return;
+ 		} else if ("text" in p) return {
+ 			type: "text",
+-			text: p.text
++			text: p.text,
++			...("thoughtSignature" in p ? { thoughtSignature: p.thoughtSignature } : {})
+ 		};
+ 		else if ("executableCode" in p) return {
+ 			type: "executableCode",
+@@ -391,14 +389,15 @@ function mapGenerateContentResultToChatResult(response, extra) {
+ 	}, []) ?? [];
+ 	let content;
+ 	const reasoningParts = [];
+-	if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && (candidateContent.parts[0].text ?? "") !== "" && !("thought" in candidateContent.parts[0] && candidateContent.parts[0].thought === true)) content = candidateContent.parts[0].text;
++	if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && !("thoughtSignature" in candidateContent.parts[0]) && (candidateContent.parts[0].text ?? "") !== "" && !("thought" in candidateContent.parts[0] && candidateContent.parts[0].thought === true)) content = candidateContent.parts[0].text;
+ 	else if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length > 0) content = require_langchain.toLangChainContent(candidateContent.parts.map((p) => {
+ 		if ("text" in p && "thought" in p && p.thought === true) {
+ 			reasoningParts.push(p.text ?? "");
+ 			return;
+ 		} else if ("text" in p) return {
+ 			type: "text",
+-			text: p.text
++			text: p.text,
++			...("thoughtSignature" in p ? { thoughtSignature: p.thoughtSignature } : {})
+ 		};
+ 		else if ("executableCode" in p) return {
+ 			type: "executableCode",
+diff --git a/node_modules/@librechat/agents/dist/cjs/stream.cjs b/node_modules/@librechat/agents/dist/cjs/stream.cjs
+index d47f572..d079922 100644
+--- a/node_modules/@librechat/agents/dist/cjs/stream.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/stream.cjs
+@@ -165,6 +165,9 @@ function hasDirectToolCallChunkStateInStep(args) {
+ function isGoogleServerSideToolContentPart(contentPart) {
+ 	return contentPart.type === "toolCall" || contentPart.type === "toolResponse";
+ }
++function isNativeMediaContentPart(contentPart) {
++	return contentPart.type === require_enum.ContentTypes.IMAGE_FILE || contentPart.native_media != null;
++}
+ function isTextContentPart(contentPart) {
+ 	return contentPart.type?.startsWith("text") ?? false;
+ }
+@@ -208,7 +211,7 @@ async function dispatchMessageContentParts({ graph, stepKey, content, metadata }
+ 			content: [contentPart],
+ 			metadata
+ 		});
+-		if (isGoogleServerSideToolContentPart(contentPart)) markGoogleServerSideToolMessageStep(graph, currentStepId);
++		if (isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)) markGoogleServerSideToolMessageStep(graph, currentStepId);
+ 		await graph.dispatchMessageDelta(currentStepId, { content: [contentPart] }, metadata);
+ 	}
+ }
+@@ -243,7 +246,7 @@ async function dispatchGoogleServerSideToolStreamContent({ graph, stepKey, chunk
+ 	await dispatchMessageContentParts({
+ 		graph,
+ 		stepKey,
+-		content: content.filter((contentPart) => isTextContentPart(contentPart) || isGoogleServerSideToolContentPart(contentPart)),
++		content: content.filter((contentPart) => isTextContentPart(contentPart) || isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)),
+ 		metadata
+ 	});
+ }
+@@ -575,7 +578,7 @@ function startPreparedSubagents(graph, agentContext, chunk, metadata) {
+ 	for (const call of calls) if (call.name === "subagent" && !hasToolOutputReference(call.args)) graph.prestartSubagent(call, attempt, agentContext);
+ }
+ function getChunkContent({ chunk, provider, reasoningKey }) {
+-	if (require_llm.isGoogleLike(provider) && Array.isArray(chunk?.content) && chunk.content.some((c) => isGoogleServerSideToolContentPart(c))) return chunk.content;
++	if (require_llm.isGoogleLike(provider) && Array.isArray(chunk?.content) && chunk.content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c))) return chunk.content;
+ 	if ((provider === "openAI" || provider === "azureOpenAI") && (chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text != null && ((chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text?.length ?? 0) > 0) return (chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text;
+ 	if (provider === "openrouter") {
+ 		if (typeof chunk?.content === "string" && chunk.content !== "") return chunk.content;
+@@ -696,7 +699,7 @@ var ChatModelStreamHandler = class {
+ 		const stepKey = graph.getStepKey(metadata);
+ 		let hasToolCalls = false;
+ 		const hasToolCallChunks = (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) ?? false;
+-		const hasGoogleServerSideToolContent = require_llm.isGoogleLike(agentContext.provider) && Array.isArray(content) && content.some((c) => isGoogleServerSideToolContentPart(c));
++		const hasGoogleServerSideToolContent = require_llm.isGoogleLike(agentContext.provider) && Array.isArray(content) && content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c));
+ 		if (hasGoogleServerSideToolContent && Array.isArray(content)) await dispatchGoogleServerSideToolStreamContent({
+ 			graph,
+ 			stepKey,
+@@ -1036,6 +1039,7 @@ function createContentAggregator() {
+ 			else if (incomingText === void 0 && currentContent.tool_call_ids) update.tool_call_ids = currentContent.tool_call_ids;
+ 			if (incomingCitations !== void 0) update.citations = currentContent.citations !== void 0 ? [...currentContent.citations, ...incomingCitations] : [...incomingCitations];
+ 			else if (currentContent.citations !== void 0) update.citations = currentContent.citations;
++			if (contentPart.native_media != null) update.native_media = contentPart.native_media;
+ 			contentParts[index] = update;
+ 		} else if (partType.startsWith("think") && "think" in contentPart && typeof contentPart.think === "string") contentParts[index] = {
+ 			type: "think",
+@@ -1045,6 +1049,7 @@ function createContentAggregator() {
+ 			type: "agent_update",
+ 			agent_update: contentPart.agent_update
+ 		};
++		else if (partType === require_enum.ContentTypes.IMAGE_FILE && "image_file" in contentPart) contentParts[index] = { ...contentPart };
+ 		else if (partType === "toolCall" || partType === "toolResponse") contentParts[index] = contentPart;
+ 		else if (partType === "summary") {
+ 			const currentSummary = contentParts[index];
+diff --git a/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs b/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
+index 15d5f26..5a826eb 100644
+--- a/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
++++ b/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
+@@ -121,11 +121,14 @@ function getResponseReasoningContent({ responseMessage, reasoningKey }) {
+ function isTextMessageContentPart(contentPart) {
+ 	return typeof contentPart === "object" && "type" in contentPart && typeof contentPart.type === "string" && contentPart.type.startsWith("text");
+ }
++function isNativeMediaContentPart(contentPart) {
++	return typeof contentPart === "object" && (contentPart.type === "image_file" || contentPart.native_media != null);
++}
+ function isGoogleServerSideToolMessageContentPart(contentPart) {
+ 	return typeof contentPart === "object" && "type" in contentPart && (contentPart.type === "toolCall" || contentPart.type === "toolResponse");
+ }
+ function hasGoogleServerSideToolDeltaContent(provider, content) {
+-	return isGoogleLike(provider) && Array.isArray(content) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart));
++	return isGoogleLike(provider) && Array.isArray(content) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ }
+ function getMessageDeltaContent(provider, content) {
+ 	if (content == null) return;
+@@ -134,10 +137,10 @@ function getMessageDeltaContent(provider, content) {
+ 		text: content
+ 	}] : void 0;
+ 	if (content.length === 0) return;
+-	const hasGoogleServerSideToolPart = isGoogleLike(provider) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart));
++	const hasGoogleServerSideToolPart = isGoogleLike(provider) && content.some((contentPart) => isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ 	if (content.every((contentPart) => isTextMessageContentPart(contentPart))) return content;
+ 	if (!hasGoogleServerSideToolPart) return;
+-	const messageContent = content.filter((contentPart) => isTextMessageContentPart(contentPart) || isGoogleServerSideToolMessageContentPart(contentPart));
++	const messageContent = content.filter((contentPart) => isTextMessageContentPart(contentPart) || isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart));
+ 	return messageContent.length > 0 ? messageContent : void 0;
+ }
+ function hasTextDeltaContent(content) {
+diff --git a/node_modules/@librechat/agents/dist/esm/llm/google/index.mjs b/node_modules/@librechat/agents/dist/esm/llm/google/index.mjs
+index 41dba60..4054226 100644
+--- a/node_modules/@librechat/agents/dist/esm/llm/google/index.mjs
++++ b/node_modules/@librechat/agents/dist/esm/llm/google/index.mjs
+@@ -1,3 +1,4 @@
++import { NativeMediaSession } from "./native.mjs";
+ import { __exportAll } from "../../_virtual/_rolldown/runtime.mjs";
+ import { resolveStreamDelay } from "../stream/smoother.mjs";
+ import { smoothGenerationChunks } from "../stream/chunkAdapters.mjs";
+@@ -10,6 +11,8 @@ import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
+ //#region src/llm/google/index.ts
+ var google_exports = /* @__PURE__ */ __exportAll({ CustomChatGoogleGenerativeAI: () => CustomChatGoogleGenerativeAI });
+ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
++	static nativeMediaProtocolVersion = 1;
++	nativeMedia;
+ 	_lc_stream_delay;
+ 	thinkingConfig;
+ 	includeServerSideToolInvocations;
+@@ -18,6 +21,7 @@ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
+ 	}
+ 	constructor(fields) {
+ 		super(fields);
++		this.nativeMedia = fields.nativeMedia;
+ 		this._lc_stream_delay = resolveStreamDelay(fields._lc_stream_delay);
+ 		this.model = fields.model.replace(/^models\//, "");
+ 		this.maxOutputTokens = fields.maxOutputTokens ?? this.maxOutputTokens;
+@@ -44,6 +48,7 @@ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
+ 			model: this.model,
+ 			safetySettings: this.safetySettings,
+ 			generationConfig: {
++				...(this.nativeMedia && fields.responseModalities ? { responseModalities: fields.responseModalities } : {}),
+ 				stopSequences: this.stopSequences,
+ 				maxOutputTokens: this.maxOutputTokens,
+ 				temperature: this.temperature,
+@@ -107,7 +112,11 @@ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
+ 		return params;
+ 	}
+ 	async _generate(messages, options, runManager) {
+-		const prompt = convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction, this.model);
++		const native = new NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++		try {
++		const admitted = await native.start();
++		if (admitted?.responseModalities) this.client.generationConfig.responseModalities = admitted.responseModalities;
++		const prompt = convertBaseMessagesToContent(await native.messages(messages), this._isMultimodalModel, this.useSystemInstruction, this.model);
+ 		let actualPrompt = prompt;
+ 		if (prompt?.[0].role === "system") {
+ 			const [systemInstruction] = prompt;
+@@ -121,19 +130,31 @@ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
+ 		};
+ 		const response = (await this.caller.callWithOptions({ signal: options.signal }, async () => this.client.generateContent(request))).response;
+ 		const generationResult = mapGenerateContentResultToChatResult(response, { usageMetadata: this._convertToUsageMetadata(response.usageMetadata, this.model) });
++		if (generationResult.generations[0]) {
++			generationResult.generations[0].message.content = await native.content(generationResult.generations[0].message.content, 0);
++			generationResult.generations[0].message.lc_kwargs.content = generationResult.generations[0].message.content;
++		}
++		await native.complete();
+ 		await runManager?.handleLLMNewToken(generationResult.generations[0].text || "", void 0, void 0, void 0, void 0, void 0);
+ 		return generationResult;
++		} catch (error) { await native.fail(); throw error; }
+ 	}
+ 	async *_streamResponseChunks(messages, options, runManager) {
++		const native = new NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++		try {
++		const admitted = await native.start();
++		if (admitted?.responseModalities) this.client.generationConfig.responseModalities = admitted.responseModalities;
+ 		yield* smoothGenerationChunks({
+-			chunks: this._streamProviderChunks(messages, options),
++			chunks: this._streamProviderChunks(messages, options, native),
+ 			delayMs: this._lc_stream_delay,
+ 			signal: options.signal,
+ 			runManager
+ 		});
++		await native.complete();
++		} finally { await native.fail(); }
+ 	}
+-	async *_streamProviderChunks(messages, options) {
+-		const prompt = convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction, this.model);
++	async *_streamProviderChunks(messages, options, native) {
++		const prompt = convertBaseMessagesToContent(await native.messages(messages), this._isMultimodalModel, this.useSystemInstruction, this.model);
+ 		let actualPrompt = prompt;
+ 		if (prompt?.[0].role === "system") {
+ 			const [systemInstruction] = prompt;
+@@ -159,6 +180,8 @@ var CustomChatGoogleGenerativeAI = class extends ChatGoogleGenerativeAI {
+ 			});
+ 			index += 1;
+ 			if (!chunk) continue;
++			chunk.message.content = await native.content(chunk.message.content, index - 1);
++			chunk.message.lc_kwargs.content = chunk.message.content;
+ 			yield chunk;
+ 		}
+ 		if (lastUsageMetadata) yield new ChatGenerationChunk({
+diff --git a/node_modules/@librechat/agents/dist/esm/llm/google/native.mjs b/node_modules/@librechat/agents/dist/esm/llm/google/native.mjs
+new file mode 100644
+index 0000000..55b2bc4
+--- /dev/null
++++ b/node_modules/@librechat/agents/dist/esm/llm/google/native.mjs
+@@ -0,0 +1,184 @@
++import { AIMessage, HumanMessage } from '@langchain/core/messages';
++import { v4 } from 'uuid';
++/** All durable storage and authorization belongs to the injected host port. */
++export class NativeMediaSession {
++    port;
++    model;
++    signal;
++    finished = false;
++    storageFailure = false;
++    modelRunId;
++    constructor(port, model, modelRunId, signal) {
++        this.port = port;
++        this.model = model;
++        this.signal = signal;
++        this.modelRunId = modelRunId ?? v4();
++    }
++    async start() {
++        return this.port?.start({
++            modelRunId: this.modelRunId,
++            model: this.model,
++            signal: this.signal,
++        });
++    }
++    async complete() {
++        await this.port?.complete({ modelRunId: this.modelRunId });
++        this.finished = true;
++    }
++    async fail() {
++        if (this.finished)
++            return;
++        this.finished = true;
++        await this.port?.fail({
++            modelRunId: this.modelRunId,
++            reason: this.signal?.aborted
++                ? 'aborted'
++                : this.storageFailure
++                    ? 'storage'
++                    : 'provider',
++        });
++    }
++    async content(content, chunkIndex) {
++        if (!this.port) {
++            if (Array.isArray(content) &&
++                content.some((part) => 'inlineData' in part)) {
++                throw new Error('Native media requires configured storage');
++            }
++            return Array.isArray(content)
++                ? content.map(({ thoughtSignature: _signature, ...part }) => part)
++                : content;
++        }
++        const parts = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
++        const output = [];
++        for (let partIndex = 0; partIndex < parts.length; partIndex++) {
++            const part = parts[partIndex];
++            const thoughtSignature = typeof part.thoughtSignature === 'string'
++                ? part.thoughtSignature
++                : undefined;
++            let native;
++            if (part.type === 'text' && typeof part.text === 'string') {
++                if (part.text === '' && thoughtSignature == null)
++                    continue;
++                native = { kind: 'text', text: part.text, thoughtSignature };
++            }
++            else if ('inlineData' in part &&
++                typeof part.inlineData === 'object' &&
++                part.inlineData !== null) {
++                const inline = part.inlineData;
++                if ('mimeType' in inline &&
++                    typeof inline.mimeType === 'string' &&
++                    'data' in inline &&
++                    typeof inline.data === 'string') {
++                    if (!inline.mimeType.startsWith('image/'))
++                        throw new Error('Unsupported native media MIME type');
++                    native = {
++                        kind: 'image',
++                        mimeType: inline.mimeType,
++                        data: inline.data,
++                        thoughtSignature,
++                    };
++                }
++            }
++            if ('inlineData' in part && !native)
++                throw new Error('Malformed native media content');
++            if (!native) {
++                output.push(part);
++                continue;
++            }
++            try {
++                const stored = await this.port.part({
++                    modelRunId: this.modelRunId,
++                    chunkIndex,
++                    partIndex,
++                    part: native,
++                });
++                if (this.signal?.aborted)
++                    throw this.signal.reason ?? new Error('Native media request aborted');
++                if (native.kind === 'text' && stored.type === 'text') {
++                    const { thoughtSignature: _signature, ...visible } = part;
++                    output.push({ ...visible, ...stored });
++                }
++                else if (native.kind === 'image' && stored.type === 'image_file') {
++                    output.push(stored);
++                }
++                else
++                    throw new Error('Native media port returned incompatible content');
++            }
++            catch (error) {
++                this.storageFailure = true;
++                throw error;
++            }
++        }
++        return typeof content === 'string' &&
++            output.length === 1 &&
++            output[0].type === 'text' &&
++            !output[0].native_media
++            ? String(output[0].text)
++            : output;
++    }
++    async messages(messages) {
++        if (!this.port) {
++            if (messages.some((message) => Array.isArray(message.content) &&
++                message.content.some((part) => part.native_media != null))) {
++                throw new Error('Native continuation requires configured storage');
++            }
++            return messages;
++        }
++        const result = [];
++        for (const message of messages) {
++            if (!Array.isArray(message.content)) {
++                result.push(message);
++                continue;
++            }
++            let changed = false;
++            const content = [];
++            for (const part of message.content) {
++                const image = part.type === 'image_file' &&
++                    typeof part.image_file === 'object' &&
++                    part.image_file !== null
++                    ? part.image_file
++                    : undefined;
++                const file_id = image && 'file_id' in image && typeof image.file_id === 'string'
++                    ? image.file_id
++                    : undefined;
++                const reference = typeof part.native_media === 'object' && part.native_media !== null
++                    ? part.native_media
++                    : undefined;
++                const continuationRef = reference &&
++                    'continuationRef' in reference &&
++                    typeof reference.continuationRef === 'string'
++                    ? reference.continuationRef
++                    : undefined;
++                if (!continuationRef) {
++                    content.push(part);
++                    continue;
++                }
++                const restored = await this.port.restore({ file_id, continuationRef });
++                changed = true;
++                if (restored.kind === 'text')
++                    content.push({
++                        type: 'text',
++                        text: restored.text,
++                        thoughtSignature: restored.thoughtSignature,
++                    });
++                else
++                    content.push({
++                        type: 'image_url',
++                        image_url: {
++                            url: `data:${restored.mimeType};base64,${restored.data}`,
++                        },
++                        thoughtSignature: restored.thoughtSignature,
++                    });
++            }
++            if (!changed)
++                result.push(message);
++            else if (message._getType() === 'ai')
++                result.push(new AIMessage({ ...message, content }));
++            else if (message._getType() === 'human')
++                result.push(new HumanMessage({ ...message, content }));
++            else
++                throw new Error('Native media reference in unsupported message role');
++        }
++        return result;
++    }
++}
+diff --git a/node_modules/@librechat/agents/dist/esm/llm/google/utils/common.mjs b/node_modules/@librechat/agents/dist/esm/llm/google/utils/common.mjs
+index 48894b3..aa8bfc6 100644
+--- a/node_modules/@librechat/agents/dist/esm/llm/google/utils/common.mjs
++++ b/node_modules/@librechat/agents/dist/esm/llm/google/utils/common.mjs
+@@ -156,7 +156,7 @@ function _getStandardContentBlockConverter(isMultimodalModel) {
+ function _convertLangChainContentToPart(content, isMultimodalModel) {
+ 	if (isDataContentBlock(content)) return convertToProviderContentBlock(content, _getStandardContentBlockConverter(isMultimodalModel));
+ 	if (isGoogleServerSideToolPart(content)) return convertGoogleServerSideToolPart(content);
+-	if (content.type === "text") return typeof content.text === "string" && content.text !== "" ? { text: content.text } : void 0;
++	if (content.type === "text") return typeof content.text === "string" && content.text !== "" ? { text: content.text, ...(typeof content.thoughtSignature === "string" ? { thoughtSignature: content.thoughtSignature } : {}) } : void 0;
+ 	else if (content.type === "executableCode") return { executableCode: content.executableCode };
+ 	else if (content.type === "codeExecutionResult") return { codeExecutionResult: content.codeExecutionResult };
+ 	else if (content.type === "image_url") {
+@@ -169,10 +169,7 @@ function _convertLangChainContentToPart(content, isMultimodalModel) {
+ 		if (!dm.startsWith("data:")) throw new Error("Please provide image as base64 encoded data URL");
+ 		const [mimeType, encoding] = dm.replace(/^data:/, "").split(";");
+ 		if (encoding !== "base64") throw new Error("Please provide image as base64 encoded data URL");
+-		return { inlineData: {
+-			data,
+-			mimeType
+-		} };
++		return { inlineData: { data, mimeType }, ...(typeof content.thoughtSignature === "string" ? { thoughtSignature: content.thoughtSignature } : {}) };
+ 	} else if (content.type === "media") return messageContentMedia(content);
+ 	else if (content.type === "tool_use") {
+ 		const functionId = getGoogleFunctionId(typeof content.id === "string" ? content.id : void 0);
+@@ -309,7 +306,7 @@ function convertResponseContentToChatGenerationChunk(response, extra) {
+ 	}, []) ?? [];
+ 	let content;
+ 	const reasoningParts = [];
+-	if (candidateContent != null && Array.isArray(candidateContent.parts) && candidateContent.parts.every((p) => "text" in p)) {
++	if (candidateContent != null && Array.isArray(candidateContent.parts) && candidateContent.parts.every((p) => "text" in p && !("thoughtSignature" in p))) {
+ 		const textParts = [];
+ 		for (const part of candidateContent.parts) {
+ 			if ("thought" in part && part.thought === true) {
+@@ -325,7 +322,8 @@ function convertResponseContentToChatGenerationChunk(response, extra) {
+ 			return;
+ 		} else if ("text" in p) return {
+ 			type: "text",
+-			text: p.text
++			text: p.text,
++			...("thoughtSignature" in p ? { thoughtSignature: p.thoughtSignature } : {})
+ 		};
+ 		else if ("executableCode" in p) return {
+ 			type: "executableCode",
+@@ -391,14 +389,15 @@ function mapGenerateContentResultToChatResult(response, extra) {
+ 	}, []) ?? [];
+ 	let content;
+ 	const reasoningParts = [];
+-	if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && (candidateContent.parts[0].text ?? "") !== "" && !("thought" in candidateContent.parts[0] && candidateContent.parts[0].thought === true)) content = candidateContent.parts[0].text;
++	if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && !("thoughtSignature" in candidateContent.parts[0]) && (candidateContent.parts[0].text ?? "") !== "" && !("thought" in candidateContent.parts[0] && candidateContent.parts[0].thought === true)) content = candidateContent.parts[0].text;
+ 	else if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length > 0) content = toLangChainContent(candidateContent.parts.map((p) => {
+ 		if ("text" in p && "thought" in p && p.thought === true) {
+ 			reasoningParts.push(p.text ?? "");
+ 			return;
+ 		} else if ("text" in p) return {
+ 			type: "text",
+-			text: p.text
++			text: p.text,
++			...("thoughtSignature" in p ? { thoughtSignature: p.thoughtSignature } : {})
+ 		};
+ 		else if ("executableCode" in p) return {
+ 			type: "executableCode",
+diff --git a/node_modules/@librechat/agents/dist/esm/stream.mjs b/node_modules/@librechat/agents/dist/esm/stream.mjs
+index 83a89b3..95285e3 100644
+--- a/node_modules/@librechat/agents/dist/esm/stream.mjs
++++ b/node_modules/@librechat/agents/dist/esm/stream.mjs
+@@ -165,6 +165,9 @@ function hasDirectToolCallChunkStateInStep(args) {
+ function isGoogleServerSideToolContentPart(contentPart) {
+ 	return contentPart.type === "toolCall" || contentPart.type === "toolResponse";
+ }
++function isNativeMediaContentPart(contentPart) {
++	return contentPart.type === "image_file" || contentPart.native_media != null;
++}
+ function isTextContentPart(contentPart) {
+ 	return contentPart.type?.startsWith("text") ?? false;
+ }
+@@ -208,7 +211,7 @@ async function dispatchMessageContentParts({ graph, stepKey, content, metadata }
+ 			content: [contentPart],
+ 			metadata
+ 		});
+-		if (isGoogleServerSideToolContentPart(contentPart)) markGoogleServerSideToolMessageStep(graph, currentStepId);
++		if (isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)) markGoogleServerSideToolMessageStep(graph, currentStepId);
+ 		await graph.dispatchMessageDelta(currentStepId, { content: [contentPart] }, metadata);
+ 	}
+ }
+@@ -243,7 +246,7 @@ async function dispatchGoogleServerSideToolStreamContent({ graph, stepKey, chunk
+ 	await dispatchMessageContentParts({
+ 		graph,
+ 		stepKey,
+-		content: content.filter((contentPart) => isTextContentPart(contentPart) || isGoogleServerSideToolContentPart(contentPart)),
++		content: content.filter((contentPart) => isTextContentPart(contentPart) || isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)),
+ 		metadata
+ 	});
+ }
+@@ -574,7 +577,7 @@ function startPreparedSubagents(graph, agentContext, chunk, metadata) {
+ 	for (const call of calls) if (call.name === "subagent" && !hasToolOutputReference(call.args)) graph.prestartSubagent(call, attempt, agentContext);
+ }
+ function getChunkContent({ chunk, provider, reasoningKey }) {
+-	if (isGoogleLike(provider) && Array.isArray(chunk?.content) && chunk.content.some((c) => isGoogleServerSideToolContentPart(c))) return chunk.content;
++	if (isGoogleLike(provider) && Array.isArray(chunk?.content) && chunk.content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c))) return chunk.content;
+ 	if ((provider === "openAI" || provider === "azureOpenAI") && (chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text != null && ((chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text?.length ?? 0) > 0) return (chunk?.additional_kwargs?.reasoning)?.summary?.[0]?.text;
+ 	if (provider === "openrouter") {
+ 		if (typeof chunk?.content === "string" && chunk.content !== "") return chunk.content;
+@@ -695,7 +698,7 @@ var ChatModelStreamHandler = class {
+ 		const stepKey = graph.getStepKey(metadata);
+ 		let hasToolCalls = false;
+ 		const hasToolCallChunks = (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) ?? false;
+-		const hasGoogleServerSideToolContent = isGoogleLike(agentContext.provider) && Array.isArray(content) && content.some((c) => isGoogleServerSideToolContentPart(c));
++		const hasGoogleServerSideToolContent = isGoogleLike(agentContext.provider) && Array.isArray(content) && content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c));
+ 		if (hasGoogleServerSideToolContent && Array.isArray(content)) await dispatchGoogleServerSideToolStreamContent({
+ 			graph,
+ 			stepKey,
+@@ -1035,6 +1038,7 @@ function createContentAggregator() {
+ 			else if (incomingText === void 0 && currentContent.tool_call_ids) update.tool_call_ids = currentContent.tool_call_ids;
+ 			if (incomingCitations !== void 0) update.citations = currentContent.citations !== void 0 ? [...currentContent.citations, ...incomingCitations] : [...incomingCitations];
+ 			else if (currentContent.citations !== void 0) update.citations = currentContent.citations;
++			if (contentPart.native_media != null) update.native_media = contentPart.native_media;
+ 			contentParts[index] = update;
+ 		} else if (partType.startsWith("think") && "think" in contentPart && typeof contentPart.think === "string") contentParts[index] = {
+ 			type: "think",
+@@ -1044,6 +1048,7 @@ function createContentAggregator() {
+ 			type: "agent_update",
+ 			agent_update: contentPart.agent_update
+ 		};
++		else if (partType === "image_file" && "image_file" in contentPart) contentParts[index] = { ...contentPart };
+ 		else if (partType === "toolCall" || partType === "toolResponse") contentParts[index] = contentPart;
+ 		else if (partType === "summary") {
+ 			const currentSummary = contentParts[index];
+diff --git a/node_modules/@librechat/agents/dist/types/llm/google/index.d.ts b/node_modules/@librechat/agents/dist/types/llm/google/index.d.ts
+index 4300e34..8cebcf1 100644
+--- a/node_modules/@librechat/agents/dist/types/llm/google/index.d.ts
++++ b/node_modules/@librechat/agents/dist/types/llm/google/index.d.ts
+@@ -1,3 +1,4 @@
++import type { NativeMediaPort } from './native';
+ import { ChatGenerationChunk } from '@langchain/core/outputs';
+ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+ import type { GenerateContentRequest } from '@google/generative-ai';
+@@ -5,6 +6,8 @@ import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager
+ import type { BaseMessage } from '@langchain/core/messages';
+ import type { GoogleClientOptions, GoogleThinkingConfig } from '@/types';
+ export declare class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
++    static readonly nativeMediaProtocolVersion = 1;
++    nativeMedia?: NativeMediaPort;
+     _lc_stream_delay: number;
+     thinkingConfig?: GoogleThinkingConfig;
+     includeServerSideToolInvocations?: boolean;
+diff --git a/node_modules/@librechat/agents/dist/types/llm/google/native.d.ts b/node_modules/@librechat/agents/dist/types/llm/google/native.d.ts
+new file mode 100644
+index 0000000..5d4784f
+--- /dev/null
++++ b/node_modules/@librechat/agents/dist/types/llm/google/native.d.ts
+@@ -0,0 +1,74 @@
++import type { BaseMessage, MessageContent } from '@langchain/core/messages';
++export type NativeMediaPart = {
++    kind: 'text';
++    text: string;
++    thoughtSignature?: string;
++} | {
++    kind: 'image';
++    mimeType: string;
++    data: string;
++    thoughtSignature?: string;
++};
++export type NativeMediaReference = {
++    continuationRef: string;
++};
++export type NativeMediaContent = {
++    type: 'text';
++    text: string;
++    native_media?: NativeMediaReference;
++} | {
++    type: 'image_file';
++    image_file: {
++        file_id: string;
++        filepath: string;
++        filename: string;
++        type: string;
++        bytes: number;
++        width?: number;
++        height?: number;
++    };
++    native_media?: NativeMediaReference;
++};
++export interface NativeMediaPort {
++    start(input: {
++        modelRunId: string;
++        model: string;
++        signal?: AbortSignal;
++    }): Promise<void | {
++        responseModalities: string[];
++    }>;
++    part(input: {
++        modelRunId: string;
++        chunkIndex: number;
++        partIndex: number;
++        part: NativeMediaPart;
++    }): Promise<NativeMediaContent>;
++    complete(input: {
++        modelRunId: string;
++    }): Promise<void>;
++    fail(input: {
++        modelRunId: string;
++        reason: 'aborted' | 'provider' | 'storage';
++    }): Promise<void>;
++    restore(input: {
++        file_id?: string;
++        continuationRef?: string;
++    }): Promise<NativeMediaPart>;
++}
++/** All durable storage and authorization belongs to the injected host port. */
++export declare class NativeMediaSession {
++    private readonly port;
++    private readonly model;
++    private readonly signal?;
++    private finished;
++    private storageFailure;
++    private readonly modelRunId;
++    constructor(port: NativeMediaPort | undefined, model: string, modelRunId?: string, signal?: AbortSignal);
++    start(): Promise<void | {
++        responseModalities: string[];
++    }>;
++    complete(): Promise<void>;
++    fail(): Promise<void>;
++    content(content: MessageContent, chunkIndex: number): Promise<MessageContent>;
++    messages(messages: BaseMessage[]): Promise<BaseMessage[]>;
++}
+diff --git a/node_modules/@librechat/agents/dist/types/types/llm.d.ts b/node_modules/@librechat/agents/dist/types/types/llm.d.ts
+index 9a1bcc7..359261f 100644
+--- a/node_modules/@librechat/agents/dist/types/types/llm.d.ts
++++ b/node_modules/@librechat/agents/dist/types/types/llm.d.ts
+@@ -1,3 +1,5 @@
++import type { NativeMediaPort } from '../llm/google/native';
++export type { NativeMediaPort, NativeMediaPart, NativeMediaContent } from '../llm/google/native';
+ import { ChatMistralAI } from '@langchain/mistralai';
+ import type { OpenAIChatInput, ChatOpenAIFields, AzureOpenAIInput, ClientOptions as OAIClientOptions } from '@langchain/openai';
+ import type { BindToolsInput, BaseChatModel, BaseChatModelParams } from '@langchain/core/language_models/chat_models';
+@@ -123,6 +125,8 @@ export type BedrockAnthropicInput = ChatBedrockConverseInput & StreamSmoothingOp
+ export type BedrockConverseClientOptions = BedrockAnthropicInput;
+ export type BedrockAnthropicClientOptions = BedrockAnthropicInput;
+ export type GoogleClientOptions = GoogleGenerativeAIChatInput & StreamSmoothingOptions & {
++    nativeMedia?: NativeMediaPort;
++    responseModalities?: string[];
+     customHeaders?: RequestOptions['customHeaders'];
+     thinkingConfig?: GoogleThinkingConfig;
+     includeServerSideToolInvocations?: boolean;
+diff --git a/node_modules/@librechat/agents/dist/types/types/stream.d.ts b/node_modules/@librechat/agents/dist/types/types/stream.d.ts
+index 59f4f7c..094efe9 100644
+--- a/node_modules/@librechat/agents/dist/types/types/stream.d.ts
++++ b/node_modules/@librechat/agents/dist/types/types/stream.d.ts
+@@ -300,6 +300,7 @@ export interface ReasoningDelta {
+     content?: MessageContentComplex[];
+ }
+ export type MessageDeltaUpdate = {
++  native_media?: { continuationRef: string };
+     type: ContentTypes.TEXT;
+     text: string;
+     tool_call_ids?: string[];
+@@ -409,7 +410,8 @@ export type MessageContentComplex = (ToolResultContent | ThinkingContentText | S
+ }) | (Record<string, any> & {
+     type?: never;
+ })) & {
+-    /** Open Responses-compatible semantic phase for assistant text. */
++    native_media?: { continuationRef: string };
++  /** Open Responses-compatible semantic phase for assistant text. */
+     phase?: AssistantTextPhase;
+     /** LangChain standard-content form of provider-specific block fields. */
+     extras?: {
+diff --git a/node_modules/@librechat/agents/src/graphs/Graph.ts b/node_modules/@librechat/agents/src/graphs/Graph.ts
+index 9861a8c..739c581 100644
+--- a/node_modules/@librechat/agents/src/graphs/Graph.ts
++++ b/node_modules/@librechat/agents/src/graphs/Graph.ts
+@@ -326,6 +326,10 @@ function isTextMessageContentPart(
+   );
+ }
+ 
++function isNativeMediaContentPart(contentPart: MessageContent[number] | t.MessageContentComplex): boolean {
++  return typeof contentPart === 'object' && (contentPart.type === ContentTypes.IMAGE_FILE || contentPart.native_media != null);
++}
++
+ function isGoogleServerSideToolMessageContentPart(
+   contentPart: MessageContent[number] | t.MessageContentComplex
+ ): boolean {
+@@ -344,7 +348,7 @@ function hasGoogleServerSideToolDeltaContent(
+     isGoogleLike(provider) &&
+     Array.isArray(content) &&
+     content.some((contentPart) =>
+-      isGoogleServerSideToolMessageContentPart(contentPart)
++      isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart)
+     )
+   );
+ }
+@@ -368,7 +372,7 @@ function getMessageDeltaContent(
+   const hasGoogleServerSideToolPart =
+     isGoogleLike(provider) &&
+     content.some((contentPart) =>
+-      isGoogleServerSideToolMessageContentPart(contentPart)
++      isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart)
+     );
+   if (content.every((contentPart) => isTextMessageContentPart(contentPart))) {
+     return content as t.MessageDelta['content'];
+@@ -379,7 +383,7 @@ function getMessageDeltaContent(
+   const messageContent = content.filter(
+     (contentPart) =>
+       isTextMessageContentPart(contentPart) ||
+-      isGoogleServerSideToolMessageContentPart(contentPart)
++      isGoogleServerSideToolMessageContentPart(contentPart) || isNativeMediaContentPart(contentPart)
+   );
+   return messageContent.length > 0
+     ? (messageContent as t.MessageDelta['content'])
+diff --git a/node_modules/@librechat/agents/src/llm/google/index.ts b/node_modules/@librechat/agents/src/llm/google/index.ts
+index 93bcd68..034c7a4 100644
+--- a/node_modules/@librechat/agents/src/llm/google/index.ts
++++ b/node_modules/@librechat/agents/src/llm/google/index.ts
+@@ -18,6 +18,8 @@ import type { GeminiApiUsageMetadata, InputTokenDetails } from './types';
+ import type { GoogleClientOptions, GoogleThinkingConfig } from '@/types';
+ import { smoothGenerationChunks } from '@/llm/stream/chunkAdapters';
+ import { resolveStreamDelay } from '@/llm/stream/smoother';
++import { NativeMediaSession } from './native';
++import type { NativeMediaPort } from './native';
+ import {
+   convertResponseContentToChatGenerationChunk,
+   convertBaseMessagesToContent,
+@@ -38,6 +40,8 @@ type GoogleToolConfigWithServerSideInvocations = ToolConfig & {
+ };
+ 
+ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
++  static readonly nativeMediaProtocolVersion = 1;
++  nativeMedia?: NativeMediaPort;
+   _lc_stream_delay: number;
+   thinkingConfig?: GoogleThinkingConfig;
+   includeServerSideToolInvocations?: boolean;
+@@ -57,6 +61,7 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+ 
+   constructor(fields: GoogleClientOptions) {
+     super(fields);
++    this.nativeMedia = fields.nativeMedia;
+ 
+     this._lc_stream_delay = resolveStreamDelay(fields._lc_stream_delay);
+     this.model = fields.model.replace(/^models\//, '');
+@@ -127,6 +132,7 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+         model: this.model,
+         safetySettings: this.safetySettings as SafetySetting[],
+         generationConfig: {
++          ...(this.nativeMedia && fields.responseModalities ? { responseModalities: fields.responseModalities } : {}),
+           stopSequences: this.stopSequences,
+           maxOutputTokens: this.maxOutputTokens,
+           temperature: this.temperature,
+@@ -246,8 +252,15 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+     options: this['ParsedCallOptions'],
+     runManager?: CallbackManagerForLLMRun
+   ): Promise<import('@langchain/core/outputs').ChatResult> {
++    const native = new NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++    try {
++    const admitted = await native.start();
++    if (admitted?.responseModalities) {
++      /** @ts-ignore Google types predate responseModalities. */
++      this.client.generationConfig.responseModalities = admitted.responseModalities;
++    }
+     const prompt = convertBaseMessagesToContent(
+-      messages,
++      await native.messages(messages),
+       this._isMultimodalModel,
+       this.useSystemInstruction,
+       this.model
+@@ -285,6 +298,11 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+       usageMetadata,
+     });
+ 
++    if (generationResult.generations[0]) {
++      generationResult.generations[0].message.content = await native.content(generationResult.generations[0].message.content, 0);
++      generationResult.generations[0].message.lc_kwargs.content = generationResult.generations[0].message.content;
++    }
++    await native.complete();
+     await runManager?.handleLLMNewToken(
+       generationResult.generations[0].text || '',
+       undefined,
+@@ -294,6 +312,7 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+       undefined
+     );
+     return generationResult;
++    } catch (error) { await native.fail(); throw error; }
+   }
+ 
+   async *_streamResponseChunks(
+@@ -301,20 +320,30 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+     options: this['ParsedCallOptions'],
+     runManager?: CallbackManagerForLLMRun
+   ): AsyncGenerator<ChatGenerationChunk> {
++    const native = new NativeMediaSession(this.nativeMedia, this.model, runManager?.runId, options.signal);
++    try {
++    const admitted = await native.start();
++    if (admitted?.responseModalities) {
++      /** @ts-ignore Google types predate responseModalities. */
++      this.client.generationConfig.responseModalities = admitted.responseModalities;
++    }
+     yield* smoothGenerationChunks({
+-      chunks: this._streamProviderChunks(messages, options),
++      chunks: this._streamProviderChunks(messages, options, native),
+       delayMs: this._lc_stream_delay,
+       signal: options.signal,
+       runManager,
+     });
++    await native.complete();
++    } finally { await native.fail(); }
+   }
+ 
+   private async *_streamProviderChunks(
+     messages: BaseMessage[],
+-    options: this['ParsedCallOptions']
++    options: this['ParsedCallOptions'],
++    native: NativeMediaSession
+   ): AsyncGenerator<ChatGenerationChunk> {
+     const prompt = convertBaseMessagesToContent(
+-      messages,
++      await native.messages(messages),
+       this._isMultimodalModel,
+       this.useSystemInstruction,
+       this.model
+@@ -364,6 +393,8 @@ export class CustomChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+         continue;
+       }
+ 
++      chunk.message.content = await native.content(chunk.message.content, index - 1);
++      chunk.message.lc_kwargs.content = chunk.message.content;
+       yield chunk;
+     }
+ 
+diff --git a/node_modules/@librechat/agents/src/llm/google/native.ts b/node_modules/@librechat/agents/src/llm/google/native.ts
+new file mode 100644
+index 0000000..2cc6fbb
+--- /dev/null
++++ b/node_modules/@librechat/agents/src/llm/google/native.ts
+@@ -0,0 +1,245 @@
++import { AIMessage, HumanMessage } from '@langchain/core/messages';
++import { v4 } from 'uuid';
++import type { BaseMessage, MessageContent } from '@langchain/core/messages';
++
++export type NativeMediaPart =
++  | { kind: 'text'; text: string; thoughtSignature?: string }
++  | {
++      kind: 'image';
++      mimeType: string;
++      data: string;
++      thoughtSignature?: string;
++    };
++export type NativeMediaReference = { continuationRef: string };
++export type NativeMediaContent =
++  | { type: 'text'; text: string; native_media?: NativeMediaReference }
++  | {
++      type: 'image_file';
++      image_file: {
++        file_id: string;
++        filepath: string;
++        filename: string;
++        type: string;
++        bytes: number;
++        width?: number;
++        height?: number;
++      };
++      native_media?: NativeMediaReference;
++    };
++export interface NativeMediaPort {
++  start(input: {
++    modelRunId: string;
++    model: string;
++    signal?: AbortSignal;
++  }): Promise<void | { responseModalities: string[] }>;
++  part(input: {
++    modelRunId: string;
++    chunkIndex: number;
++    partIndex: number;
++    part: NativeMediaPart;
++  }): Promise<NativeMediaContent>;
++  complete(input: { modelRunId: string }): Promise<void>;
++  fail(input: {
++    modelRunId: string;
++    reason: 'aborted' | 'provider' | 'storage';
++  }): Promise<void>;
++  restore(input: {
++    file_id?: string;
++    continuationRef?: string;
++  }): Promise<NativeMediaPart>;
++}
++
++/** All durable storage and authorization belongs to the injected host port. */
++export class NativeMediaSession {
++  private finished = false;
++  private storageFailure = false;
++  private readonly modelRunId: string;
++  constructor(
++    private readonly port: NativeMediaPort | undefined,
++    private readonly model: string,
++    modelRunId?: string,
++    private readonly signal?: AbortSignal
++  ) {
++    this.modelRunId = modelRunId ?? v4();
++  }
++  async start(): Promise<void | { responseModalities: string[] }> {
++    return this.port?.start({
++      modelRunId: this.modelRunId,
++      model: this.model,
++      signal: this.signal,
++    });
++  }
++  async complete(): Promise<void> {
++    await this.port?.complete({ modelRunId: this.modelRunId });
++    this.finished = true;
++  }
++  async fail(): Promise<void> {
++    if (this.finished) return;
++    this.finished = true;
++    await this.port?.fail({
++      modelRunId: this.modelRunId,
++      reason: this.signal?.aborted
++        ? 'aborted'
++        : this.storageFailure
++          ? 'storage'
++          : 'provider',
++    });
++  }
++  async content(
++    content: MessageContent,
++    chunkIndex: number
++  ): Promise<MessageContent> {
++    if (!this.port) {
++      if (
++        Array.isArray(content) &&
++        content.some((part) => 'inlineData' in part)
++      ) {
++        throw new Error('Native media requires configured storage');
++      }
++      return Array.isArray(content)
++        ? content.map(({ thoughtSignature: _signature, ...part }) => part)
++        : content;
++    }
++    const parts =
++      typeof content === 'string' ? [{ type: 'text', text: content }] : content;
++    const output: Exclude<MessageContent, string> = [];
++    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
++      const part = parts[partIndex];
++      const thoughtSignature =
++        typeof part.thoughtSignature === 'string'
++          ? part.thoughtSignature
++          : undefined;
++      let native: NativeMediaPart | undefined;
++      if (part.type === 'text' && typeof part.text === 'string') {
++        if (part.text === '' && thoughtSignature == null) continue;
++        native = { kind: 'text', text: part.text, thoughtSignature };
++      } else if (
++        'inlineData' in part &&
++        typeof part.inlineData === 'object' &&
++        part.inlineData !== null
++      ) {
++        const inline = part.inlineData;
++        if (
++          'mimeType' in inline &&
++          typeof inline.mimeType === 'string' &&
++          'data' in inline &&
++          typeof inline.data === 'string'
++        ) {
++          if (!inline.mimeType.startsWith('image/'))
++            throw new Error('Unsupported native media MIME type');
++          native = {
++            kind: 'image',
++            mimeType: inline.mimeType,
++            data: inline.data,
++            thoughtSignature,
++          };
++        }
++      }
++      if ('inlineData' in part && !native)
++        throw new Error('Malformed native media content');
++      if (!native) {
++        output.push(part);
++        continue;
++      }
++      try {
++        const stored = await this.port.part({
++          modelRunId: this.modelRunId,
++          chunkIndex,
++          partIndex,
++          part: native,
++        });
++        if (this.signal?.aborted)
++          throw this.signal.reason ?? new Error('Native media request aborted');
++        if (native.kind === 'text' && stored.type === 'text') {
++          const { thoughtSignature: _signature, ...visible } = part;
++          output.push({ ...visible, ...stored });
++        } else if (native.kind === 'image' && stored.type === 'image_file') {
++          output.push(stored);
++        } else
++          throw new Error('Native media port returned incompatible content');
++      } catch (error) {
++        this.storageFailure = true;
++        throw error;
++      }
++    }
++    return typeof content === 'string' &&
++      output.length === 1 &&
++      output[0].type === 'text' &&
++      !output[0].native_media
++      ? String(output[0].text)
++      : output;
++  }
++  async messages(messages: BaseMessage[]): Promise<BaseMessage[]> {
++    if (!this.port) {
++      if (
++        messages.some(
++          (message) =>
++            Array.isArray(message.content) &&
++            message.content.some((part) => part.native_media != null)
++        )
++      ) {
++        throw new Error('Native continuation requires configured storage');
++      }
++      return messages;
++    }
++    const result: BaseMessage[] = [];
++    for (const message of messages) {
++      if (!Array.isArray(message.content)) {
++        result.push(message);
++        continue;
++      }
++      let changed = false;
++      const content: Exclude<MessageContent, string> = [];
++      for (const part of message.content) {
++        const image =
++          part.type === 'image_file' &&
++          typeof part.image_file === 'object' &&
++          part.image_file !== null
++            ? part.image_file
++            : undefined;
++        const file_id =
++          image && 'file_id' in image && typeof image.file_id === 'string'
++            ? image.file_id
++            : undefined;
++        const reference =
++          typeof part.native_media === 'object' && part.native_media !== null
++            ? part.native_media
++            : undefined;
++        const continuationRef =
++          reference &&
++          'continuationRef' in reference &&
++          typeof reference.continuationRef === 'string'
++            ? reference.continuationRef
++            : undefined;
++        if (!continuationRef) {
++          content.push(part);
++          continue;
++        }
++        const restored = await this.port.restore({ file_id, continuationRef });
++        changed = true;
++        if (restored.kind === 'text')
++          content.push({
++            type: 'text',
++            text: restored.text,
++            thoughtSignature: restored.thoughtSignature,
++          });
++        else
++          content.push({
++            type: 'image_url',
++            image_url: {
++              url: `data:${restored.mimeType};base64,${restored.data}`,
++            },
++            thoughtSignature: restored.thoughtSignature,
++          });
++      }
++      if (!changed) result.push(message);
++      else if (message._getType() === 'ai')
++        result.push(new AIMessage({ ...message, content }));
++      else if (message._getType() === 'human')
++        result.push(new HumanMessage({ ...message, content }));
++      else
++        throw new Error('Native media reference in unsupported message role');
++    }
++    return result;
++  }
++}
+diff --git a/node_modules/@librechat/agents/src/llm/google/utils/common.ts b/node_modules/@librechat/agents/src/llm/google/utils/common.ts
+index 0c423b1..703a0b1 100644
+--- a/node_modules/@librechat/agents/src/llm/google/utils/common.ts
++++ b/node_modules/@librechat/agents/src/llm/google/utils/common.ts
+@@ -391,7 +391,7 @@ function _convertLangChainContentToPart(
+ 
+   if (content.type === 'text') {
+     return typeof content.text === 'string' && content.text !== ''
+-      ? { text: content.text }
++      ? { text: content.text, ...(typeof content.thoughtSignature === 'string' ? { thoughtSignature: content.thoughtSignature } : {}) }
+       : undefined;
+   } else if (content.type === 'executableCode') {
+     return { executableCode: content.executableCode };
+@@ -423,10 +423,8 @@ function _convertLangChainContentToPart(
+     }
+ 
+     return {
+-      inlineData: {
+-        data,
+-        mimeType,
+-      },
++      inlineData: { data, mimeType },
++      ...(typeof content.thoughtSignature === 'string' ? { thoughtSignature: content.thoughtSignature } : {}),
+     };
+   } else if (content.type === 'media') {
+     return messageContentMedia(content);
+@@ -778,7 +776,7 @@ export function convertResponseContentToChatGenerationChunk(
+   if (
+     candidateContent != null &&
+     Array.isArray(candidateContent.parts) &&
+-    candidateContent.parts.every((p) => 'text' in p)
++    candidateContent.parts.every((p) => 'text' in p && !('thoughtSignature' in p))
+   ) {
+     // content = candidateContent.parts.map((p) => p.text).join('');
+     const textParts: string[] = [];
+@@ -801,6 +799,7 @@ export function convertResponseContentToChatGenerationChunk(
+             return {
+               type: 'text',
+               text: p.text,
++              ...('thoughtSignature' in p ? { thoughtSignature: p.thoughtSignature } : {}),
+             };
+           } else if ('executableCode' in p) {
+             return {
+@@ -953,6 +952,7 @@ export function mapGenerateContentResultToChatResult(
+   if (
+     Array.isArray(candidateContent?.parts) &&
+     candidateContent.parts.length === 1 &&
++    !('thoughtSignature' in candidateContent.parts[0]) &&
+     (candidateContent.parts[0].text ?? '') !== '' &&
+     !(
+       'thought' in candidateContent.parts[0] &&
+@@ -974,6 +974,7 @@ export function mapGenerateContentResultToChatResult(
+             return {
+               type: 'text',
+               text: p.text,
++              ...('thoughtSignature' in p ? { thoughtSignature: p.thoughtSignature } : {}),
+             };
+           } else if ('executableCode' in p) {
+             return {
+diff --git a/node_modules/@librechat/agents/src/stream.ts b/node_modules/@librechat/agents/src/stream.ts
+index 4c1ed39..0ac9606 100644
+--- a/node_modules/@librechat/agents/src/stream.ts
++++ b/node_modules/@librechat/agents/src/stream.ts
+@@ -453,6 +453,10 @@ function isGoogleServerSideToolContentPart(
+   return contentPart.type === 'toolCall' || contentPart.type === 'toolResponse';
+ }
+ 
++function isNativeMediaContentPart(contentPart: t.MessageContentComplex): boolean {
++  return contentPart.type === ContentTypes.IMAGE_FILE || contentPart.native_media != null;
++}
++
+ function isTextContentPart(contentPart: t.MessageContentComplex): boolean {
+   return contentPart.type?.startsWith(ContentTypes.TEXT) ?? false;
+ }
+@@ -575,7 +579,7 @@ async function dispatchMessageContentParts({
+       content: [contentPart],
+       metadata,
+     });
+-    if (isGoogleServerSideToolContentPart(contentPart)) {
++    if (isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)) {
+       markGoogleServerSideToolMessageStep(graph, currentStepId);
+     }
+     await graph.dispatchMessageDelta(
+@@ -660,7 +664,7 @@ async function dispatchGoogleServerSideToolStreamContent({
+   const messageContent = content.filter(
+     (contentPart) =>
+       isTextContentPart(contentPart) ||
+-      isGoogleServerSideToolContentPart(contentPart)
++      isGoogleServerSideToolContentPart(contentPart) || isNativeMediaContentPart(contentPart)
+   );
+   await dispatchMessageContentParts({
+     graph,
+@@ -1408,7 +1412,7 @@ export function getChunkContent({
+   if (
+     isGoogleLike(provider) &&
+     Array.isArray(chunk?.content) &&
+-    chunk.content.some((c) => isGoogleServerSideToolContentPart(c))
++    chunk.content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c))
+   ) {
+     return chunk.content;
+   }
+@@ -1792,7 +1796,7 @@ export class ChatModelStreamHandler implements t.EventHandler {
+     const hasGoogleServerSideToolContent =
+       isGoogleLike(agentContext.provider) &&
+       Array.isArray(content) &&
+-      content.some((c) => isGoogleServerSideToolContentPart(c));
++      content.some((c) => isGoogleServerSideToolContentPart(c) || isNativeMediaContentPart(c));
+     if (hasGoogleServerSideToolContent && Array.isArray(content)) {
+       await dispatchGoogleServerSideToolStreamContent({
+         graph,
+@@ -2446,6 +2450,7 @@ export function createContentAggregator(): t.ContentAggregatorResult {
+       } else if (currentContent.citations !== undefined) {
+         update.citations = currentContent.citations;
+       }
++      if (contentPart.native_media != null) update.native_media = contentPart.native_media;
+       contentParts[index] = update;
+     } else if (
+       partType.startsWith(ContentTypes.THINK) &&
+@@ -2469,6 +2474,8 @@ export function createContentAggregator(): t.ContentAggregatorResult {
+       };
+ 
+       contentParts[index] = update;
++    } else if (partType === ContentTypes.IMAGE_FILE && 'image_file' in contentPart) {
++      contentParts[index] = { ...contentPart };
+     } else if (partType === 'toolCall' || partType === 'toolResponse') {
+       contentParts[index] = contentPart;
+     } else if (partType === ContentTypes.SUMMARY) {
+diff --git a/node_modules/@librechat/agents/src/types/llm.ts b/node_modules/@librechat/agents/src/types/llm.ts
+index e0cda70..fe98f0b 100644
+--- a/node_modules/@librechat/agents/src/types/llm.ts
++++ b/node_modules/@librechat/agents/src/types/llm.ts
+@@ -1,3 +1,5 @@
++import type { NativeMediaPort } from '../llm/google/native';
++export type { NativeMediaPort, NativeMediaPart, NativeMediaContent } from '../llm/google/native';
+ // src/types/llm.ts
+ import { ChatMistralAI } from '@langchain/mistralai';
+ import type {
+@@ -155,6 +157,8 @@ export type BedrockConverseClientOptions = BedrockAnthropicInput;
+ export type BedrockAnthropicClientOptions = BedrockAnthropicInput;
+ export type GoogleClientOptions = GoogleGenerativeAIChatInput &
+   StreamSmoothingOptions & {
++    nativeMedia?: NativeMediaPort;
++    responseModalities?: string[];
+     customHeaders?: RequestOptions['customHeaders'];
+     thinkingConfig?: GoogleThinkingConfig;
+     includeServerSideToolInvocations?: boolean;
+diff --git a/node_modules/@librechat/agents/src/types/stream.ts b/node_modules/@librechat/agents/src/types/stream.ts
+index 1aceb61..514f331 100644
+--- a/node_modules/@librechat/agents/src/types/stream.ts
++++ b/node_modules/@librechat/agents/src/types/stream.ts
+@@ -356,6 +356,7 @@ export interface ReasoningDelta {
+ }
+ 
+ export type MessageDeltaUpdate = {
++  native_media?: { continuationRef: string };
+   type: ContentTypes.TEXT;
+   text: string;
+   tool_call_ids?: string[];
+@@ -496,6 +497,7 @@ export type MessageContentComplex = (
+       type?: never;
+     })
+ ) & {
++  native_media?: { continuationRef: string };
+   /** Open Responses-compatible semantic phase for assistant text. */
+   phase?: AssistantTextPhase;
+   /** LangChain standard-content form of provider-specific block fields. */

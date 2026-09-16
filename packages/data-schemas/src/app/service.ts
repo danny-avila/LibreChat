@@ -7,6 +7,7 @@ import {
   langfuseConfigSchema,
   skillSyncConfigSchema,
   summarizationConfigSchema,
+  mediaConfigSchema,
 } from 'librechat-data-provider';
 import type {
   FileSources,
@@ -106,6 +107,13 @@ export function loadFiltersConfig(config: DeepPartial<TCustomConfig>): AppConfig
   return hasActiveFiltersConfig(parsed.data) ? parsed.data : undefined;
 }
 
+export function loadMediaConfig(config: DeepPartial<TCustomConfig>): AppConfig['media'] {
+  if (config.media === undefined) {
+    return undefined;
+  }
+  return mediaConfigSchema.parse(config.media);
+}
+
 export type Paths = {
   root: string;
   uploads: string;
@@ -167,6 +175,7 @@ export const AppService = async (params?: {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
   const filters = loadFiltersConfig(config);
+  const media = loadMediaConfig(config);
   const messageFilter = config.messageFilter;
   const langfuse = loadLangfuseConfig(config);
 
@@ -187,6 +196,7 @@ export const AppService = async (params?: {
     filteredTools,
     includedTools,
     filters,
+    media,
     langfuse,
     messageFilter,
     summarization,

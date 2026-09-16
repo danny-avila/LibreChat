@@ -362,6 +362,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     }
   }
 
+  if (baseConfig.interfaceConfig?.media !== undefined) {
+    merged.interfaceConfig = {
+      ...merged.interfaceConfig,
+      media: baseConfig.interfaceConfig.media,
+    };
+  }
   return preserveRuntimeStops(baseConfig, merged);
 }
 

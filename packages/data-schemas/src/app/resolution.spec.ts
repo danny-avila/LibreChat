@@ -1,4 +1,8 @@
-import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
+import {
+  INTERFACE_PERMISSION_FIELDS,
+  PermissionTypes,
+  resolveMediaConfig,
+} from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { mergeConfigOverrides } from './resolution';
@@ -29,6 +33,30 @@ const baseConfig = {
 } as unknown as AppConfig;
 
 describe('mergeConfigOverrides', () => {
+  it.each(['interface.media', 'interface.media.use', 'interface', 'interfaceConfig'])(
+    'protects media policy and permission seed tombstone %s',
+    (path) => {
+      const base: AppConfig = {
+        ...baseConfig,
+        media: resolveMediaConfig({ enabled: false }),
+        interfaceConfig: { media: { use: false, create: false } },
+      };
+      const merged = mergeConfigOverrides(base, [
+        fakeConfig(
+          {
+            media: { enabled: true, execution: { maxActiveTotal: 999 } },
+            interface: { media: { use: true, create: true } },
+          },
+          10,
+          ['media', path],
+          BASE_CONFIG_PRINCIPAL_ID,
+        ),
+      ]);
+      expect(merged.media).toEqual(base.media);
+      expect(merged.interfaceConfig?.media).toEqual(base.interfaceConfig?.media);
+    },
+  );
+
   it('returns base config when configs array is empty', () => {
     expect(mergeConfigOverrides(baseConfig, [])).toBe(baseConfig);
   });

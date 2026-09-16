@@ -193,3 +193,6 @@ scripts/activity-labels/results/
 !e2e/lighthouse/librechat.yaml
 /.lighthouse/
 /e2e/lighthouse/.test-results/
+
+/e2e/media/.test-results/
+!/e2e/media/librechat.yaml

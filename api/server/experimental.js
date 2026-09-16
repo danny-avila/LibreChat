@@ -14,12 +14,13 @@ const cluster = require('cluster');
 const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
+const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage, decrypt } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -35,6 +36,9 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  createMediaRuntime,
+  createMediaTransport,
+  createMediaAccounting,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
@@ -84,6 +88,7 @@ const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const requireJwtAuth = require('./middleware/requireJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const agentEventMethods = require('~/models');
@@ -501,6 +506,27 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
+    const mediaRuntime = createMediaRuntime({
+      appConfig,
+      repository: agentEventMethods,
+      getUserById: agentEventMethods.getUserById,
+      getRoleByName,
+      getAppConfig,
+      tenantContext: tenantStorage,
+      asSystem: runAsSystem,
+      environment: process.env,
+      decrypt,
+      transport: createMediaTransport({
+        http: axios,
+        allowedAddresses: appConfig.endpoints?.allowedAddresses,
+      }),
+      upload: multer,
+      accounting: createMediaAccounting({ repository: agentEventMethods, now: Date.now }),
+      log: logger.error.bind(logger),
+    });
+    app.locals.mediaRuntime = mediaRuntime;
+    await mediaRuntime.worker.start();
+    registerShutdownTask('media worker', mediaRuntime.worker.stop, { priority: 100 });
     initializeGitHubSkillSync(appConfig);
     // Register configured tool-approval policy hooks (mirrors the standard startup path).
     // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
@@ -652,6 +678,7 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
+    app.use('/api/media', requireJwtAuth, mediaRuntime.router);
     app.use(
       '/images/',
       createValidateImageRequest({

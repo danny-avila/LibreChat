@@ -408,6 +408,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
     return await File.find({
+      // Media originals use a retain/retire CAS before any storage deletion.
+      mediaOutputKey: { $exists: false },
       expiredAt: { $ne: null, $lte: now },
       $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }],
     })
@@ -971,7 +973,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    */
   async function deleteFile(file_id: string): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({ file_id }).lean<IMongoFile>();
+    return File.findOneAndDelete({
+      file_id,
+      mediaOutputKey: { $exists: false },
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -981,7 +986,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    */
   async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete(filter).lean<IMongoFile>();
+    return File.findOneAndDelete({
+      $and: [filter, { mediaOutputKey: { $exists: false } }],
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -999,7 +1006,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     if (user) {
       deleteQuery = { user: user };
     }
-    return File.deleteMany(deleteQuery);
+    return File.deleteMany({ $and: [deleteQuery, { mediaOutputKey: { $exists: false } }] });
   }
 
   /**
@@ -1021,7 +1028,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const File = mongoose.models.File as Model<IMongoFile>;
     const bulkOperations = updates.map((update) => ({
       updateOne: {
-        filter: { file_id: update.file_id },
+        filter: { file_id: update.file_id, mediaOutputKey: { $exists: false } },
         update: {
           $set: {
             filepath: update.filepath,

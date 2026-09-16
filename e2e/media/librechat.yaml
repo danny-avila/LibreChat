@@ -1,0 +1,35 @@
+version: 1.3.6
+cache: true
+interface:
+  media:
+    use: true
+    create: true
+transactions:
+  enabled: false
+endpoints:
+  allowedAddresses: ['127.0.0.1:8768']
+  openAI:
+    titleConvo: false
+  custom:
+    - name: Media Fixture
+      apiKey: local-fixture-key
+      baseURL: http://127.0.0.1:8768/v1
+      models:
+        default: [gpt-image-1]
+        fetch: false
+media:
+  enabled: true
+  integrations:
+    - id: fixture-images
+      label: Local image fixture
+      api: openai.images
+      endpointRef:
+        kind: custom
+        name: Media Fixture
+      catalog:
+        kind: configured
+        models: [gpt-image-1]
+      operations: [image.generate, image.edit]
+  polling:
+    clientIntervalMs: 500
+    clientCatchUpIntervalMs: 1000

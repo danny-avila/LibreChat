@@ -5,8 +5,14 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
+export { isMediaFileId } from './types/media';
 export {
   createMethods,
+  createMediaMethods,
+  createMediaAccountingMethods,
+  createMediaNativeMethods,
+  MediaAccountingError,
+  MediaPersistenceError,
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   RoleConflictError,

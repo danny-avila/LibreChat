@@ -1,6 +1,7 @@
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
 jest.mock('@librechat/data-schemas', () => ({
+  isMediaFileId: jest.requireActual('@librechat/data-schemas').isMediaFileId,
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
   runAsSystem: jest.fn((fn) => fn()),
   createChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
@@ -121,6 +122,8 @@ jest.mock('@librechat/api', () => {
     },
   );
   return {
+    deleteMediaAwareFile: jest.requireActual('../../../../packages/api/src/media/deletion')
+      .deleteMediaAwareFile,
     sanitizeFilename: jest.fn((n) => n),
     /** Grants both; these specs vary the capability set, not the role. */
     resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),

@@ -140,6 +140,23 @@ export async function updateInterfacePermissions({
       Record<PermissionTypes, Record<string, boolean | undefined>>
     > = {};
 
+    const mediaConfig = interfaceConfig?.media;
+    const existingMedia = existingPermissions?.[PermissionTypes.MEDIA];
+    const mediaUpdate: Partial<Record<Permissions, boolean>> = {};
+    for (const [field, configured] of [
+      [Permissions.USE, mediaConfig?.use],
+      [Permissions.CREATE, mediaConfig?.create],
+    ] as const) {
+      if (configured !== undefined) {
+        mediaUpdate[field] = configured;
+      } else if (existingMedia?.[field] === undefined) {
+        mediaUpdate[field] = defaultPerms[PermissionTypes.MEDIA][field];
+      }
+    }
+    if (Object.keys(mediaUpdate).length > 0) {
+      permissionsToUpdate[PermissionTypes.MEDIA] = mediaUpdate;
+    }
+
     /**
      * Helper to add permission if it should be updated
      */

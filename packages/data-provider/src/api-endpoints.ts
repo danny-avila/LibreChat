@@ -1,3 +1,4 @@
+import type { MediaPageRequest, MediaThreadListRequest } from './media';
 import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
 import { ResourceType } from './accessPermissions';
@@ -20,6 +21,37 @@ if (BASE_URL && BASE_URL.endsWith('/')) {
 }
 
 export const apiBaseUrl = () => BASE_URL;
+
+const mediaRoot = () => `${BASE_URL}/api/media`;
+const mediaQuery = (params: MediaThreadListRequest = {}): string => {
+  const query = new URLSearchParams();
+  if (params.cursor) query.set('cursor', params.cursor);
+  if (params.limit !== undefined) query.set('limit', String(params.limit));
+  if (params.filter) query.set('filter', params.filter);
+  const suffix = query.toString();
+  return suffix ? `?${suffix}` : '';
+};
+export const mediaCatalog = () => `${mediaRoot()}/catalog`;
+export const mediaThreads = (params: MediaThreadListRequest = {}) =>
+  `${mediaRoot()}/threads${mediaQuery(params)}`;
+export const mediaThread = (threadId: string) =>
+  `${mediaRoot()}/threads/${encodeURIComponent(threadId)}`;
+export const mediaTurns = (threadId: string, params: MediaPageRequest = {}) =>
+  `${mediaThread(threadId)}/turns${mediaQuery(params)}`;
+export const mediaTurnJobs = (threadId: string, turnId: string, params: MediaPageRequest = {}) =>
+  `${mediaThread(threadId)}/turns/${encodeURIComponent(turnId)}/jobs${mediaQuery(params)}`;
+export const mediaJob = (jobId: string) => `${mediaRoot()}/jobs/${encodeURIComponent(jobId)}`;
+export const mediaJobOutputs = (jobId: string, params: MediaPageRequest = {}) =>
+  `${mediaJob(jobId)}/outputs${mediaQuery(params)}`;
+export const mediaJobCancel = (jobId: string) => `${mediaJob(jobId)}/cancel`;
+export const mediaJobRetry = (jobId: string) => `${mediaJob(jobId)}/retry`;
+export const mediaSubmissions = () => `${mediaRoot()}/submissions`;
+export const mediaSubmission = (clientRequestId: string) =>
+  `${mediaSubmissions()}/${encodeURIComponent(clientRequestId)}`;
+export const mediaUploads = () => `${mediaRoot()}/uploads`;
+export const mediaImports = () => `${mediaRoot()}/imports`;
+export const mediaImport = (clientRequestId: string) =>
+  `${mediaImports()}/${encodeURIComponent(clientRequestId)}`;
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -527,6 +559,8 @@ export const toolFavorite = (itemType: string, itemId: string) =>
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+export const updateMediaPermissions = (roleName: string) =>
+  `${adminRoles()}/${encodeURIComponent(roleName)}/permissions`;
 export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;

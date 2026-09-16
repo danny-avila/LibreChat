@@ -58,6 +58,47 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     type: Number,
     select: false,
   },
+  mediaHolds: {
+    type: [
+      new Schema(
+        {
+          settlementId: { type: String, required: true },
+          jobId: { type: String, required: true },
+          amount: { type: Number, required: true },
+          reviewAt: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+    ],
+    default: undefined,
+    select: false,
+  },
+  mediaDebtCredits: { type: Number, select: false },
+  mediaSettlementSequence: { type: Number, select: false },
+  mediaPendingSettlement: {
+    type: new Schema(
+      {
+        settlementId: { type: String, required: true },
+        sequence: { type: Number, required: true },
+        phase: { type: String, enum: ['allocated', 'applied'], required: true },
+        result: {
+          type: new Schema(
+            {
+              debitedCredits: Number,
+              debtCredits: Number,
+              releasedCredits: Number,
+              remainingCredits: Number,
+            },
+            { _id: false },
+          ),
+          default: undefined,
+        },
+      },
+      { _id: false },
+    ),
+    default: undefined,
+    select: false,
+  },
   pendingRefill: {
     type: {
       transactionId: { type: Schema.Types.ObjectId, required: true },
@@ -68,5 +109,7 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     select: false,
   },
 });
+
+balanceSchema.index({ mediaDebtCredits: 1, user: 1, tenantId: 1 });
 
 export default balanceSchema;

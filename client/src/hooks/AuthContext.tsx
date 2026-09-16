@@ -38,6 +38,8 @@ import {
 } from '~/data-provider';
 import { resetChatFilterSessionAtom } from '~/components/Conversations/chatFilters';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
+import { clearMediaSessionStorage } from '~/components/Media/state';
+import { mediaChatHandoff } from '~/routes/mediaHandoff';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -57,6 +59,8 @@ const endSessionClientState = (): void => {
   getDefaultStore().set(resetChatFilterSessionAtom);
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
+  clearMediaSessionStorage();
+  getDefaultStore().set(mediaChatHandoff, null);
 };
 
 const AuthContextProvider = ({

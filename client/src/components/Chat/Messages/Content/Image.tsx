@@ -1,8 +1,10 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import { cn, toAbsoluteFilePath } from '~/utils';
 import DialogImage from './DialogImage';
+const OpenInStudio = lazy(() => import('~/components/Chat/OpenInStudio'));
 
 /** Max display height for chat images (Tailwind JIT class) */
 export const IMAGE_MAX_H = 'max-h-[45vh]' as const;
@@ -26,6 +28,7 @@ function computeHeightStyle(w: number, h: number): React.CSSProperties {
 
 const Image = ({
   imagePath,
+  file,
   altText,
   className,
   args,
@@ -33,6 +36,9 @@ const Image = ({
   height,
 }: {
   imagePath: string;
+  file?: Partial<
+    Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'bytes' | 'type' | 'width' | 'height'>
+  >;
   altText: string;
   className?: string;
   args?: {
@@ -121,6 +127,11 @@ const Image = ({
           )}
         />
       </button>
+      {file?.file_id && (
+        <Suspense fallback={null}>
+          <OpenInStudio file={file} />
+        </Suspense>
+      )}
       <DialogImage
         isOpen={isOpen}
         onOpenChange={setIsOpen}

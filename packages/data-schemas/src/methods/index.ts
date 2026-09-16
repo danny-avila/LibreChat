@@ -1,4 +1,13 @@
+import type { MediaNativeMethods } from '~/types/mediaNative';
 import type { RoleMethods, RoleDeps } from './role';
+import { createMediaAccountingMethods, MediaAccountingError } from './mediaAccounting';
+import { createMediaNativeMethods } from './mediaNative';
+export { createMediaNativeMethods };
+import type { MediaAccountingMethods } from '~/types/mediaAccounting';
+export { createMediaAccountingMethods, MediaAccountingError };
+import { createMediaMethods, MediaPersistenceError } from './media';
+import type { MediaMethods } from '~/types/media';
+export { createMediaMethods, MediaPersistenceError };
 import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
@@ -218,7 +227,10 @@ export {
   AgentQueuedTurnLaneRetiredError,
 };
 
-export type AllMethods = UserMethods &
+export type AllMethods = MediaNativeMethods &
+  MediaAccountingMethods &
+  MediaMethods &
+  UserMethods &
   SessionMethods &
   TokenMethods &
   RefreshTokenBridgeMethods &
@@ -440,7 +452,11 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
+  const mediaMethods = createMediaMethods(mongoose);
   return {
+    ...mediaMethods,
+    ...createMediaNativeMethods(mongoose, mediaMethods),
+    ...createMediaAccountingMethods(mongoose),
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),

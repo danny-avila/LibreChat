@@ -6,13 +6,14 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
+const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage, decrypt } = require('@librechat/data-schemas');
 const {
   isEnabled,
   issueCsp,
@@ -33,6 +34,9 @@ const {
   agentStartupIngressMiddleware,
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
+  createMediaRuntime,
+  createMediaTransport,
+  createMediaAccounting,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -79,6 +83,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const requireJwtAuth = require('./middleware/requireJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const configureSocialLogins = require('./socialLogins');
@@ -234,6 +239,27 @@ const startServer = async () => {
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
+  const mediaRuntime = createMediaRuntime({
+    appConfig,
+    repository: agentEventMethods,
+    getUserById: agentEventMethods.getUserById,
+    getRoleByName,
+    getAppConfig,
+    tenantContext: tenantStorage,
+    asSystem: runAsSystem,
+    environment: process.env,
+    decrypt,
+    transport: createMediaTransport({
+      http: axios,
+      allowedAddresses: appConfig.endpoints?.allowedAddresses,
+    }),
+    upload: multer,
+    accounting: createMediaAccounting({ repository: agentEventMethods, now: Date.now }),
+    log: logger.error.bind(logger),
+  });
+  app.locals.mediaRuntime = mediaRuntime;
+  await mediaRuntime.worker.start();
+  registerShutdownTask('media worker', mediaRuntime.worker.stop, { priority: 100 });
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
   // without it, declared hook documents load as parsed-but-inert with a warning.
@@ -426,6 +452,7 @@ const startServer = async () => {
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  app.use('/api/media', requireJwtAuth, mediaRuntime.router);
   app.use(
     '/images/',
     createValidateImageRequest({

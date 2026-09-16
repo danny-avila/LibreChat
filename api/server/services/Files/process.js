@@ -52,6 +52,7 @@ const {
   getCodeApiUploadOptions,
   withCodeApiUploadRecovery,
   isLeader,
+  deleteMediaAwareFile,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -202,7 +203,13 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
     }
 
     try {
-      await deleteFile(req, file, openai);
+      await deleteMediaAwareFile({
+        request: req,
+        file,
+        client: openai,
+        deleteFile,
+        repository: db,
+      });
     } catch (err) {
       if (!isMissingStorageError(err)) {
         throw err;

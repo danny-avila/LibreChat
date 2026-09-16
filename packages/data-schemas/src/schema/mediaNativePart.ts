@@ -1,0 +1,27 @@
+import { Schema } from 'mongoose';
+import type { MediaNativePartRecord } from '~/types/mediaNative';
+
+const mediaNativePartSchema: Schema<MediaNativePartRecord> = new Schema(
+  {
+    tenantId: { type: String, default: null },
+    ownerId: { type: String, required: true },
+    continuationRef: { type: String, required: true },
+    jobId: { type: String, required: true },
+    chunkIndex: { type: Number, required: true },
+    partIndex: { type: Number, required: true },
+    fingerprint: { type: String, required: true },
+    part: { type: Schema.Types.Mixed, required: true },
+    fileId: String,
+    createdAt: { type: String, required: true },
+    expiresAt: String,
+  },
+  { versionKey: false, minimize: false },
+);
+mediaNativePartSchema.index(
+  { tenantId: 1, ownerId: 1, jobId: 1, chunkIndex: 1, partIndex: 1 },
+  { unique: true },
+);
+mediaNativePartSchema.index({ tenantId: 1, ownerId: 1, continuationRef: 1 }, { unique: true });
+mediaNativePartSchema.index({ tenantId: 1, ownerId: 1, fileId: 1 });
+mediaNativePartSchema.index({ expiresAt: 1 });
+export default mediaNativePartSchema;

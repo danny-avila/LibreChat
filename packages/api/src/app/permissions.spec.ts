@@ -118,6 +118,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -181,6 +182,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -308,6 +310,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -371,6 +374,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -484,6 +488,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -547,6 +552,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -673,6 +679,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -736,6 +743,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -849,6 +857,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -912,6 +921,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -1030,6 +1040,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -1081,6 +1092,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -1216,6 +1228,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
@@ -1271,6 +1284,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.MEDIA]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,

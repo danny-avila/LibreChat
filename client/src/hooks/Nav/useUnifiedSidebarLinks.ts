@@ -1,15 +1,20 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { BarChart3, MessagesSquare } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { BarChart3, MessagesSquare, Images } from 'lucide-react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
-import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
+import {
+  getConfigDefaults,
+  getEndpointField,
+  Permissions,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import { useGetEndpointsQuery, useGetStartupConfig, useInsightsAccessQuery } from '~/data-provider';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useAuthContext } from '~/hooks';
+import { useAuthContext, useHasAccess } from '~/hooks';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -28,6 +33,11 @@ export default function useUnifiedSidebarLinks() {
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
   );
+  const canUseMedia = useHasAccess({
+    permissionType: PermissionTypes.MEDIA,
+    permission: Permissions.USE,
+  });
+  const mediaVisible = startupConfig?.media?.studio === true && canUseMedia;
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const isInsightsRoute = location.pathname.startsWith('/insights');
   const { data: insightsAccess, isLoading: isInsightsAccessLoading } = useInsightsAccessQuery(
@@ -72,11 +82,23 @@ export default function useUnifiedSidebarLinks() {
       Component: ConversationsSection,
     };
 
+    const nextLinks = [...sideNavLinks];
+    if (mediaVisible) {
+      const agentIndex = nextLinks.findIndex((link) => link.id === 'agents');
+      nextLinks.splice(agentIndex >= 0 ? agentIndex + 1 : nextLinks.length, 0, {
+        title: 'com_media_studio',
+        label: '',
+        icon: Images,
+        id: 'media-studio',
+        onClick: () => navigate('/studio'),
+      });
+    }
+
     if (
       !insightsFeatureEnabled ||
       (!isInsightsRoute && !isInsightsAccessLoading && insightsAccess?.access !== true)
     ) {
-      return [conversationLink, ...sideNavLinks];
+      return [conversationLink, ...nextLinks];
     }
 
     const insightsLink: NavLink = {
@@ -91,12 +113,12 @@ export default function useUnifiedSidebarLinks() {
         }
       },
     };
-    const mcpIndex = sideNavLinks.findIndex((link) => link.id === 'mcp-builder');
-    const nextLinks = [...sideNavLinks];
+    const mcpIndex = nextLinks.findIndex((link) => link.id === 'mcp-builder');
     nextLinks.splice(mcpIndex >= 0 ? mcpIndex + 1 : nextLinks.length, 0, insightsLink);
 
     return [conversationLink, ...nextLinks];
   }, [
+    mediaVisible,
     insightsAccess?.access,
     insightsFeatureEnabled,
     isInsightsAccessLoading,

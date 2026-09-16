@@ -488,7 +488,7 @@ export function createTransactionMethods(
     for (let attempt = 1; attempt <= maxReservationAttempts; attempt++) {
       const record = await Balance.findOne({ user })
         .sort(oldestFirst)
-        .select('+reservations +reservedCredits +pendingRefill')
+        .select('+reservations +reservedCredits +pendingRefill +mediaDebtCredits')
         .lean<IBalance>();
       if (!record) {
         if (!initialBalance) {
@@ -512,7 +512,8 @@ export function createTransactionMethods(
       }
 
       const credits = record.tokenCredits ?? 0;
-      const balance = credits - (record.reservedCredits ?? 0);
+      const mediaDebt = record.mediaDebtCredits ?? 0;
+      const balance = credits - (record.reservedCredits ?? 0) - mediaDebt;
       if (refillSettled && !refilled && balance - amount <= 0 && isAutoRefillDue(record, now)) {
         refilled = await applyAutoRefill(record, now);
         continue;
@@ -530,8 +531,9 @@ export function createTransactionMethods(
           {
             _id: record._id,
             tokenCredits: { $gte: credits },
+            mediaDebtCredits: record.mediaDebtCredits ?? null,
             $or: [
-              { reservedCredits: { $lte: credits - amount } },
+              { reservedCredits: { $lte: credits - amount - mediaDebt } },
               { reservedCredits: { $exists: false } },
             ],
           },
@@ -696,15 +698,17 @@ export function createTransactionMethods(
     if (!options?.includeReservedCredits) {
       return query.lean<IBalance>();
     }
-    const record = await query.select('+reservations').lean<IBalance>();
+    const record = await query
+      .select('+reservations +mediaHolds +mediaDebtCredits')
+      .lean<IBalance>();
     if (!record) {
       return null;
     }
     const now = new Date();
-    const { reservations, ...balance } = record;
+    const { reservations, mediaHolds, mediaDebtCredits, ...balance } = record;
     const reservedCredits = (reservations ?? []).reduce(
       (sum, reservation) => (reservation.expiresAt > now ? sum + reservation.amount : sum),
-      0,
+      (mediaHolds ?? []).reduce((sum, hold) => sum + hold.amount, 0) + (mediaDebtCredits ?? 0),
     );
     return { ...balance, reservedCredits } as IBalance;
   }
@@ -731,7 +735,16 @@ export function createTransactionMethods(
     filter: FilterQuery<IBalance>,
   ): Promise<import('mongodb').DeleteResult> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    return Balance.deleteMany(filter);
+    return Balance.deleteMany({
+      $and: [
+        filter,
+        {
+          'mediaHolds.0': { $exists: false },
+          mediaPendingSettlement: null,
+          $or: [{ mediaDebtCredits: { $lte: 0 } }, { mediaDebtCredits: { $exists: false } }],
+        },
+      ],
+    });
   }
 
   async function bulkInsertTransactions(docs: TransactionData[]): Promise<void> {

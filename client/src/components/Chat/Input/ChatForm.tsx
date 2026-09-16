@@ -68,6 +68,7 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
+import ChatMedia from '../Media';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -851,6 +852,15 @@ const ChatForm = memo(function ChatForm({
                     setFilesLoading={setFilesLoading}
                   />
                 </div>
+                {index === 0 && (
+                  <ChatMedia
+                    conversation={conversation}
+                    files={files}
+                    setFiles={setFiles}
+                    disabled={disableInputs}
+                    temporary={isTemporary}
+                  />
+                )}
                 <BadgeRow
                   showEphemeralBadges={
                     !!endpoint &&

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
+import type { MediaStartupConfig } from './media/responses';
 import {
   filtersConfigSchema,
   MAX_PII_CUSTOM_REGEX_CHARACTERS,
@@ -31,11 +32,15 @@ import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { mediaConfigSchema } from './media/config';
 import { fileConfigSchema } from './file-config';
+import { fileStorageSchema } from './storage';
 import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+export { fileStorageSchema } from './storage';
+export type { FileStorage } from './storage';
 export {
   MAX_SUBAGENTS,
   MAX_SUBAGENTS_CEILING,
@@ -53,7 +58,7 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'media'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -262,19 +267,6 @@ const allowedAddressEntrySchema = z
   );
 
 export const allowedAddressesSchema = z.array(allowedAddressEntrySchema).optional();
-
-/** Storage backend strategies only — use for config fields that set where files are stored. */
-const FILE_STORAGE_BACKENDS = [
-  FileSources.local,
-  FileSources.firebase,
-  FileSources.s3,
-  FileSources.azure_blob,
-  FileSources.cloudfront,
-] as const satisfies ReadonlyArray<FileSources>;
-
-export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
-
-export type FileStorage = z.infer<typeof fileStorageSchema>;
 
 export const fileStrategiesSchema = z
   .object({
@@ -2104,6 +2096,13 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    media: z
+      .object({
+        use: z.boolean().optional(),
+        create: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
     schedules: z
       .union([
         z.boolean(),
@@ -2246,6 +2245,7 @@ export type EndpointsDropParamsMap = Record<string, string[] | Record<string, st
 
 export type TStartupConfig = {
   appTitle: string;
+  media?: MediaStartupConfig;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
@@ -2923,6 +2923,7 @@ export const configSchema = z.object({
     })
     .optional(),
   interface: interfaceSchema,
+  media: mediaConfigSchema.optional(),
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,

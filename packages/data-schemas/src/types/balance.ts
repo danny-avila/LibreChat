@@ -1,5 +1,6 @@
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+import type { MediaHold, MediaPendingSettlement } from './mediaAccounting';
 
 /** Whole credits held against a balance while the request that reserved them is in flight */
 export interface IBalanceReservation {
@@ -29,6 +30,10 @@ export interface IBalance extends Document {
   /** Sum of `reservations` amounts, maintained by the same writes */
   reservedCredits?: number;
   pendingRefill?: IBalancePendingRefill;
+  mediaHolds?: MediaHold[];
+  mediaDebtCredits?: number;
+  mediaSettlementSequence?: number;
+  mediaPendingSettlement?: MediaPendingSettlement;
 }
 
 /** Plain data fields for creating or updating a balance record (no Mongoose Document methods) */

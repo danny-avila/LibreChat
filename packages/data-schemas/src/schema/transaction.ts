@@ -18,6 +18,13 @@ export interface ITransaction extends Document {
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;
+  mediaSettlementId?: string;
+  mediaJobId?: string;
+  mediaDebtCredits?: number;
+  mediaCostUSD?: number;
+  mediaFingerprint?: string;
+  mediaAccountingMode?: 'balance' | 'transactions';
+  mediaOutputTokens?: number;
 }
 
 const transactionSchema: Schema<ITransaction> = new Schema(
@@ -55,6 +62,13 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     writeTokens: { type: Number },
     readTokens: { type: Number },
     messageId: { type: String },
+    mediaSettlementId: String,
+    mediaJobId: String,
+    mediaDebtCredits: Number,
+    mediaCostUSD: Number,
+    mediaFingerprint: String,
+    mediaAccountingMode: { type: String, enum: ['balance', 'transactions'] },
+    mediaOutputTokens: Number,
     tenantId: {
       type: String,
       index: true,

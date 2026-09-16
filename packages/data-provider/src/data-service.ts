@@ -9,6 +9,7 @@ import type {
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as tl from './types/tools';
+import type * as media from './media';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
@@ -26,6 +27,94 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export function getMediaCatalog(signal?: AbortSignal): Promise<media.MediaCatalog> {
+  return request.get(endpoints.mediaCatalog(), signal ? { signal } : undefined);
+}
+export function listMediaThreads(
+  params: media.MediaThreadListRequest = {},
+  signal?: AbortSignal,
+): Promise<media.MediaThreadPage> {
+  return request.get(endpoints.mediaThreads(params), signal ? { signal } : undefined);
+}
+export function getMediaThread(
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<media.MediaThreadDetail> {
+  return request.get(endpoints.mediaThread(threadId), signal ? { signal } : undefined);
+}
+export function listMediaTurns(
+  threadId: string,
+  params: media.MediaPageRequest = {},
+  signal?: AbortSignal,
+): Promise<media.MediaTurnPage> {
+  return request.get(endpoints.mediaTurns(threadId, params), signal ? { signal } : undefined);
+}
+export function listMediaTurnJobs(
+  threadId: string,
+  turnId: string,
+  params: media.MediaPageRequest = {},
+  signal?: AbortSignal,
+): Promise<media.MediaJobPage> {
+  return request.get(
+    endpoints.mediaTurnJobs(threadId, turnId, params),
+    signal ? { signal } : undefined,
+  );
+}
+export function listMediaJobOutputs(
+  jobId: string,
+  params: media.MediaPageRequest = {},
+  signal?: AbortSignal,
+): Promise<media.MediaOutputPage> {
+  return request.get(endpoints.mediaJobOutputs(jobId, params), signal ? { signal } : undefined);
+}
+export function getMediaJob(jobId: string, signal?: AbortSignal): Promise<media.MediaJob> {
+  return request.get(endpoints.mediaJob(jobId), signal ? { signal } : undefined);
+}
+export function submitMedia(
+  payload: media.MediaSubmissionInput,
+): Promise<media.MediaSubmissionReceipt> {
+  return request.post(endpoints.mediaSubmissions(), payload);
+}
+export function getMediaSubmission(
+  clientRequestId: string,
+  signal?: AbortSignal,
+): Promise<media.MediaSubmissionReceipt> {
+  return request.get(endpoints.mediaSubmission(clientRequestId), signal ? { signal } : undefined);
+}
+export function cancelMediaJob(jobId: string): Promise<media.MediaJob> {
+  return request.post(endpoints.mediaJobCancel(jobId), {});
+}
+export function retryMediaJob(
+  jobId: string,
+  payload: media.MediaRetryRequest,
+): Promise<media.MediaSubmissionReceipt> {
+  return request.post(endpoints.mediaJobRetry(jobId), payload);
+}
+export function importMedia(payload: media.MediaImportInput): Promise<media.MediaImportReceipt> {
+  return request.post(endpoints.mediaImports(), payload);
+}
+export function getMediaImport(
+  clientRequestId: string,
+  signal?: AbortSignal,
+): Promise<media.MediaImportReceipt> {
+  return request.get(endpoints.mediaImport(clientRequestId), signal ? { signal } : undefined);
+}
+export function uploadMedia(
+  payload: FormData,
+  signal?: AbortSignal,
+): Promise<media.MediaUploadResponse> {
+  return request.postMultiPart(endpoints.mediaUploads(), payload, signal ? { signal } : undefined);
+}
+export function updateMediaThread(
+  threadId: string,
+  payload: media.MediaThreadUpdate,
+): Promise<media.MediaThread> {
+  return request.patch(endpoints.mediaThread(threadId), payload);
+}
+export function deleteMediaThread(threadId: string): Promise<media.MediaDeletionReceipt> {
+  return request.delete(endpoints.mediaThread(threadId));
+}
 
 export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
   const query = new URLSearchParams();
@@ -1464,6 +1553,16 @@ export function updateSkillPermissions(
   variables: m.UpdateSkillPermVars,
 ): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updateSkillPermissions(variables.roleName), variables.updates);
+}
+
+export async function updateMediaPermissions(
+  variables: m.UpdateMediaPermVars,
+): Promise<m.UpdatePermResponse> {
+  const response: { role: m.UpdatePermResponse } = await request.patch(
+    endpoints.updateMediaPermissions(variables.roleName),
+    { permissions: { MEDIA: variables.updates } },
+  );
+  return response.role;
 }
 
 /* Tags */

@@ -68,6 +68,7 @@ export async function loadDefaultInterface({
     skills: interfaceConfig?.skills,
     sharedLinks: interfaceConfig?.sharedLinks,
     schedules: interfaceConfig?.schedules,
+    media: interfaceConfig?.media,
   });
 
   return loadedInterface;

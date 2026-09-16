@@ -509,6 +509,7 @@ const Part = memo(function Part({
     const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;
     return (
       <Image
+        file={imageFile}
         imagePath={cached ?? imageFile.filepath}
         altText={imageFile.filename ?? 'Uploaded Image'}
         width={imageFile.width}
