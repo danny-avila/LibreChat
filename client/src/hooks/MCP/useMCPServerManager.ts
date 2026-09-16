@@ -551,7 +551,6 @@ export function useMCPServerManager({
           });
 
           selectInitializedMCPServer(mcpValuesRef, setMCPValues, serverName);
-
         }
         return response;
       } catch (error) {

@@ -8,7 +8,6 @@ import { MessagesViewProvider, useChatContext, useFileMapContext } from '~/Provi
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { useChatSurface } from '~/components/Chat/Subagents/surface';
 import useThreadRows from '~/hooks/Messages/useThreadRows';
-import { steerOverlayHeightFamily } from '~/store/steer';
 import { autoScrollAtom } from '~/store/autoScroll';
 import { FLAT_THREAD, ThreadList } from './Thread';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -18,7 +17,6 @@ import PendingTurn from './PendingTurn';
 import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
-
 
 function MessagesViewContent({
   messagesTree: _messagesTree,
@@ -65,11 +63,12 @@ function MessagesViewContent({
     scrollableRef,
   });
 
-  /** The in-flight steer overlay floats above the composer over the bottom of
-   *  the thread; reserve an equal band here so the newest message rests above
-   *  it and older ones scroll behind. */
+  /* The redesign renders pending steers inside the streaming reply rather than
+     as a stack floating over the bottom of the thread, so there is no band to
+     reserve here and nothing publishes an overlay height. Composer panels that
+     do float (an answer popover, a tool-approval review) are handled by
+     `ScrollButton` through `composerOverlayCountFamily`. */
   const overlayConversationId = conversationId ?? Constants.NEW_CONVO;
-  const steerOverlayHeight = useAtomValue(steerOverlayHeightFamily(overlayConversationId));
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
@@ -141,7 +140,6 @@ function MessagesViewContent({
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}
             onNearBottomChange={handleNearBottomChange}
-            overlayHeight={steerOverlayHeight}
           />
 
           <MessageNav scrollableRef={scrollableRef} />
