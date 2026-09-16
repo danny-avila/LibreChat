@@ -3259,6 +3259,48 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(mockExchangeAuthorization.mock.calls[0][1].resource).toBeUndefined();
     });
 
+    it('strips an inherited resource from the token endpoint at exchange when opted out', async () => {
+      // The SDK builds the token request from `token_endpoint` verbatim, so a `resource`
+      // left in the configured `token_url` would survive the opt-out.
+      mockExchangeAuthorization.mockResolvedValue({
+        access_token: 'access-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+      const flowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: 123,
+          metadata: {
+            serverName: 'entra-server',
+            userId: 'user-123',
+            serverUrl: 'https://example.com/mcp',
+            state: 'abc',
+            codeVerifier: 'verifier',
+            clientInfo: { client_id: 'cid' },
+            metadata: {
+              authorization_endpoint: 'https://login.microsoftonline.test/authorize',
+              token_endpoint:
+                'https://login.microsoftonline.test/token?resource=https%3A%2F%2Fstale.example.test%2Fmcp&foo=bar',
+            },
+            resourceMetadata: { resource: 'https://example.com/mcp' },
+            sendResourceParameter: false,
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      await MCPOAuthHandler.completeOAuthFlow('flow-id', 'auth-code', flowManager, {});
+
+      const exchangedTokenEndpoint = mockExchangeAuthorization.mock.calls[0][1].metadata
+        ?.token_endpoint as string | undefined;
+      expect(exchangedTokenEndpoint).toBeDefined();
+      const tokenEndpoint = new URL(exchangedTokenEndpoint as string);
+      expect(tokenEndpoint.searchParams.has('resource')).toBe(false);
+      expect(tokenEndpoint.searchParams.get('foo')).toBe('bar');
+      expect(mockExchangeAuthorization.mock.calls[0][1].resource).toBeUndefined();
+    });
+
     it('sends resource at token exchange for flows initiated before the opt-out existed', async () => {
       // Mixed-version upgrade: flow state has a bounded TTL, so a flow started under
       // older code carries no flag and must keep the previous behavior.

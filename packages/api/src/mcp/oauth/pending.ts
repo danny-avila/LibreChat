@@ -1,5 +1,6 @@
 import { logger, getTenantId } from '@librechat/data-schemas';
 
+import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPOAuthFlowMetadata, MCPOAuthTokens } from './types';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowState } from '~/flow/types';
@@ -22,15 +23,26 @@ export type PendingOAuthStart = {
   options?: t.OAuthStartOptions;
 };
 
+/**
+ * Supplying this enables config-drift checks against the live server definition. It is
+ * opt-in because modules here take their dependencies rather than reading app config, so
+ * a caller without the server's config keeps the previous replay behavior.
+ */
+export type PendingReplayValidation = {
+  oauth?: MCPOptions['oauth'];
+};
+
 export type ReplayablePendingMCPOAuthStartOptions = {
   flowManager?: PendingOAuthFlowManager | null;
   userId: string;
   serverName: string;
+  validation?: PendingReplayValidation;
 };
 
 export function getReplayablePendingMCPOAuthStartFromFlow(
   flow: PendingOAuthFlowState | null | undefined,
   now: number = Date.now(),
+  validation?: PendingReplayValidation,
 ): PendingOAuthStart | undefined {
   if (flow?.status !== 'PENDING') {
     return undefined;
@@ -47,6 +59,18 @@ export function getReplayablePendingMCPOAuthStartFromFlow(
     return undefined;
   }
 
+  /**
+   * The stored URL was built with or without RFC 8707 `resource`. Replaying it after the
+   * operator changed `send_resource_parameter` hands back exactly the request they
+   * reconfigured away from, so the flow is retired and a fresh one is started instead.
+   */
+  if (validation && !MCPOAuthHandler.matchesResourceParameterDecision(metadata, validation.oauth)) {
+    logger.debug(
+      '[MCP OAuth] Pending flow predates a send_resource_parameter change; not replaying it',
+    );
+    return undefined;
+  }
+
   return { authURL: authorizationUrl, options: { expiresAt } };
 }
 
@@ -54,6 +78,7 @@ export async function getReplayablePendingMCPOAuthStart({
   flowManager,
   userId,
   serverName,
+  validation,
 }: ReplayablePendingMCPOAuthStartOptions): Promise<PendingOAuthStart | undefined> {
   if (!flowManager || typeof flowManager.getFlowState !== 'function') {
     return undefined;
@@ -62,7 +87,7 @@ export async function getReplayablePendingMCPOAuthStart({
   try {
     const flowId = MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
     const flowState = await flowManager.getFlowState(flowId, MCP_OAUTH_FLOW_TYPE);
-    return getReplayablePendingMCPOAuthStartFromFlow(flowState);
+    return getReplayablePendingMCPOAuthStartFromFlow(flowState, Date.now(), validation);
   } catch {
     logger.warn('[MCP OAuth] Failed to inspect pending flow');
     return undefined;

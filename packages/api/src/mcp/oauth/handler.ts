@@ -609,6 +609,40 @@ export class MCPOAuthHandler {
    * decline to add one, or the parameter still reaches the provider that rejects it and
    * the flow this option exists to repair keeps failing.
    */
+  /**
+   * Returns `endpoint` without its `resource` query parameter.
+   *
+   * The MCP SDK uses `token_endpoint` verbatim and the refresh paths post to the resolved
+   * token URL as-is, so a `resource` an admin left in `token_url` — or one present on a
+   * discovered token endpoint — still reaches the provider even though every place
+   * LibreChat *adds* the parameter is gated. Only the outbound URL is rewritten: stored
+   * metadata keeps its configured form, so {@link assertStoredClientBinding} still matches
+   * and changing the option does not force re-authentication.
+   */
+  private static withoutResourceParameter(
+    endpoint: string | URL,
+    shouldSend: boolean,
+    serverName: string,
+  ): string | URL {
+    if (shouldSend) {
+      return endpoint;
+    }
+    try {
+      const url = new URL(typeof endpoint === 'string' ? endpoint : endpoint.href);
+      if (!url.searchParams.has('resource')) {
+        return endpoint;
+      }
+      url.searchParams.delete('resource');
+      logger.debug(
+        `[MCPOAuth] Removed inherited resource parameter from the token endpoint for ${serverName}; disabled by send_resource_parameter`,
+      );
+      return typeof endpoint === 'string' ? url.href : url;
+    } catch {
+      /** Endpoints are validated absolute URLs; never fail a refresh over sanitization. */
+      return endpoint;
+    }
+  }
+
   private static stripInheritedResourceParameter(authorizationUrl: URL, serverName: string): void {
     if (!authorizationUrl.searchParams.has('resource')) {
       return;
@@ -1259,6 +1293,7 @@ export class MCPOAuthHandler {
       }
 
       let resource: URL | undefined;
+      const sendResourceParameter = metadata.sendResourceParameter !== false;
       if (metadata.resourceMetadata) {
         /**
          * Defense-in-depth: re-assert the RFC 9728 §3.3 binding against the flow's stored
@@ -1268,7 +1303,7 @@ export class MCPOAuthHandler {
          * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).
          */
         this.assertResourceBoundToServer(metadata.serverUrl, metadata.resourceMetadata);
-        if (metadata.sendResourceParameter === false) {
+        if (!sendResourceParameter) {
           logger.debug(
             `[MCPOAuth] Omitting resource parameter from token exchange for flow ${flowId}; disabled by send_resource_parameter`,
           );
@@ -1278,9 +1313,21 @@ export class MCPOAuthHandler {
         }
       }
 
+      const exchangeMetadata =
+        sendResourceParameter || typeof metadata.metadata.token_endpoint !== 'string'
+          ? metadata.metadata
+          : {
+              ...metadata.metadata,
+              token_endpoint: this.withoutResourceParameter(
+                metadata.metadata.token_endpoint,
+                false,
+                metadata.serverName,
+              ) as string,
+            };
+
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
         redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
-        metadata: metadata.metadata as unknown as SDKOAuthMetadata,
+        metadata: exchangeMetadata as unknown as SDKOAuthMetadata,
         clientInformation: metadata.clientInfo,
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
@@ -1683,7 +1730,13 @@ export class MCPOAuthHandler {
     body: URLSearchParams,
     serverName: string,
     signal?: AbortSignal,
+    config?: MCPOptions['oauth'],
   ): Promise<Response> {
+    tokenUrl = this.withoutResourceParameter(
+      tokenUrl,
+      this.shouldSendResourceParameter(config),
+      serverName,
+    );
     const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
     if (response.ok || !body.has('scope')) {
       return response;
@@ -1961,6 +2014,7 @@ export class MCPOAuthHandler {
           body,
           metadata.serverName,
           signal,
+          config,
         );
 
         if (!response.ok) {
@@ -2049,6 +2103,7 @@ export class MCPOAuthHandler {
           body,
           metadata.serverName,
           signal,
+          config,
         );
 
         if (!response.ok) {
@@ -2107,12 +2162,19 @@ export class MCPOAuthHandler {
       };
 
       const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
-      const response = await oauthFetch(tokenUrl, {
-        method: 'POST',
-        headers,
-        body,
-        signal,
-      });
+      const response = await oauthFetch(
+        this.withoutResourceParameter(
+          tokenUrl,
+          this.shouldSendResourceParameter(config),
+          metadata.serverName,
+        ),
+        {
+          method: 'POST',
+          headers,
+          body,
+          signal,
+        },
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
