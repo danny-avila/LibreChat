@@ -67,7 +67,9 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     if (isResolved(scoped)) {
       return scoped;
     }
-    return await runAsSystem(() => runQuery({ ...filter, ...BASE_ROLE_FILTER }));
+    /** The callback must be async: a sync one returning a Mongoose thenable would
+     * execute after `runAsSystem` exits and be re-scoped to the active tenant. */
+    return await runAsSystem(async () => await runQuery({ ...filter, ...BASE_ROLE_FILTER }));
   }
 
   /**
@@ -91,7 +93,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
     return await resolveRole(
       { accessRoleId },
-      (filter) => AccessRole.findOne(filter).lean<IAccessRole>(),
+      (filter) => AccessRole.findOne(filter).lean<IAccessRole>().exec(),
       (role) => role != null,
     );
   }
@@ -108,7 +110,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
   async function findRolesByResourceType(resourceType: string): Promise<IAccessRole[]> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
     const runQuery = (filter: Record<string, unknown>) =>
-      AccessRole.find(filter).lean<IAccessRole[]>();
+      AccessRole.find(filter).lean<IAccessRole[]>().exec();
 
     const tenantId = getTenantId();
     if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
@@ -116,7 +118,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     }
 
     const [base, scoped] = await Promise.all([
-      runAsSystem(() => runQuery({ resourceType, ...BASE_ROLE_FILTER })),
+      runAsSystem(async () => await runQuery({ resourceType, ...BASE_ROLE_FILTER })),
       runQuery({ resourceType }),
     ]);
     const rolesById = new Map(base.map((role) => [String(role.accessRoleId), role]));
@@ -139,7 +141,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
     return await resolveRole(
       { resourceType, permBits },
-      (filter) => AccessRole.findOne(filter).lean<IAccessRole>(),
+      (filter) => AccessRole.findOne(filter).lean<IAccessRole>().exec(),
       (role) => role != null,
     );
   }
