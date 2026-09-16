@@ -1240,7 +1240,7 @@ export function createOpenIDSessionRefreshService(
   }): Promise<MarkedOIDCTokens | null> {
     if (!resolvedTokens?.access_token) return null;
     if (assertLeaseOwned) await assertLeaseOwned();
-    await reloadOpenIDSessionIfPersisted(req?.session);
+    await reloadOpenIDSessionIfPersisted(req.session);
     if (assertLeaseOwned) await assertLeaseOwned();
     const requestTokens = cloneResolvedTokens(resolvedTokens);
     if (
