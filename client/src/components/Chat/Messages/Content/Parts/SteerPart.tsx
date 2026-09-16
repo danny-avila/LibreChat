@@ -4,14 +4,14 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
+import { cn, hydrateFileDeliveryMetadata, usesImagePreview } from '~/utils';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { useFileMapContext, useShareContext } from '~/Providers';
 import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import Image from '~/components/Chat/Messages/Content/Image';
 import CollapsibleText from './CollapsibleText';
-import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 /**
@@ -49,6 +49,7 @@ const SteerPart = memo(function SteerPart({
    *  user into it, and the public share route mounts outside that provider. */
   const user = useRecoilValue(store.user);
   const { isSharedConvo } = useShareContext();
+  const fileMap = useFileMapContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
   const collapseLongUserMessages = useRecoilValue<boolean>(store.collapseLongUserMessages);
@@ -65,13 +66,14 @@ const SteerPart = memo(function SteerPart({
     () => (createdAt != null ? new Date(createdAt).toISOString() : null),
     [createdAt],
   );
-  const imageFiles = useMemo(
-    () => files?.filter((file) => file.type?.startsWith('image/')) ?? [],
-    [files],
+  const hydratedFiles = useMemo(
+    () => hydrateFileDeliveryMetadata(files, undefined, fileMap),
+    [files, fileMap],
   );
+  const imageFiles = useMemo(() => hydratedFiles?.filter(usesImagePreview) ?? [], [hydratedFiles]);
   const otherFiles = useMemo(
-    () => files?.filter((file) => !file.type?.startsWith('image/')) ?? [],
-    [files],
+    () => hydratedFiles?.filter((file) => !usesImagePreview(file)) ?? [],
+    [hydratedFiles],
   );
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
   const handlePreviewClose = useCallback((open: boolean) => {
@@ -174,6 +176,7 @@ const SteerPart = memo(function SteerPart({
           fileType={selectedFile?.type ?? undefined}
           fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
+          deliveryPath={selectedFile?.llmDeliveryPath}
         />
       )}
     </div>

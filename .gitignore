@@ -81,7 +81,6 @@ librechat.yaml
 librechat.yml
 
 # Environment
-.npmrc
 .env*
 my.secrets
 !**/.env.example

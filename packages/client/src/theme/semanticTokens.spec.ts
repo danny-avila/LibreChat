@@ -33,7 +33,11 @@ describe('shared component color guardrail', () => {
   it('keeps shared primitives free of direct palette utilities and hex colors', () => {
     const directPalette =
       /(?:bg|text|border|ring|from|via|to)-(?:gray|red|green|blue|purple|amber|yellow|orange|pink|indigo|violet|teal|cyan|slate|zinc|neutral|stone)-\d/;
-    const hexColor = /#[0-9a-f]{3,8}\b/i;
+    /** Only CSS-legal hex lengths (3, 4, 6, 8). `{3,8}` also matched a five-
+     *  digit issue reference in a comment — see the PR number in
+     *  `OriginalDialog.tsx` — which reads as a color to a regex and to nobody
+     *  else. */
+    const hexColor = /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b/i;
 
     sharedComponents.forEach((component) => {
       const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
@@ -41,6 +45,14 @@ describe('shared component color guardrail', () => {
       expect(source).not.toMatch(directPalette);
       expect(source).not.toMatch(hexColor);
     });
+
+    /** The guardrail still has to catch what it exists for. */
+    expect('bg-surface-primary text-[#ff0000]').toMatch(hexColor);
+    expect('color: #fff;').toMatch(hexColor);
+    expect('#aabbccdd').toMatch(hexColor);
+    /** …and leave prose alone: an issue reference is not a color. */
+    expect('pinned by #11023').not.toMatch(hexColor);
+    expect('closes #15738').not.toMatch(hexColor);
   });
 
   it('keeps every shared dialog shell on the semantic dialog surface', () => {
@@ -252,7 +264,7 @@ describe.each([
  *  checked capability badges sit on `surface-chat`; dialog option toggles sit
  *  on `surface-dialog`. All have to clear the 3:1 mark-contrast floor. */
 const seriesTokens = Array.from(
-  { length: 7 },
+  { length: 8 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
 );
 const seriesSurfaces: Array<keyof IThemeRGB> = [
@@ -411,6 +423,66 @@ describe('success fill defaults', () => {
     expect(declared).toEqual([
       defaultTheme['rgb-status-success-strong'],
       darkTheme['rgb-status-success-strong'],
+    ]);
+  });
+});
+
+/** `status-verified` paints one thing: the check a first-party item wears next
+ *  to its name. Both of its relationships are graphical objects under WCAG
+ *  1.4.11, so both owe 3:1 and neither owes AA: the badge against the card it
+ *  sits on, and the `text-on-status` check against the badge. That is where it
+ *  parts from the success fill above, which carries a text label and therefore
+ *  owes AA. The card is not one surface — `ToolCard` rests on the dialog and
+ *  repaints to `surface-tertiary` on hover — so the silhouette is checked
+ *  against every background the card can take. Separate from
+ *  `status-success-strong` on purpose: green already means selected on the same
+ *  card, so provenance needs its own hue. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s verified fill', (_name, theme: IThemeRGB) => {
+  it('carries its check at the 3:1 mark floor', () => {
+    const ratio = contrast(toRgb(theme, 'rgb-status-verified'), toRgb(theme, 'rgb-text-on-status'));
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  });
+
+  it('keeps its silhouette at the 3:1 mark floor on every card state', () => {
+    const mark = toRgb(theme, 'rgb-status-verified');
+    /** Resting card, the panel behind the grid, and the hover repaint from
+     *  `ToolCard`'s `hover:bg-surface-tertiary`. */
+    const surfaces: Array<keyof IThemeRGB> = [
+      'rgb-surface-dialog',
+      'rgb-surface-secondary',
+      'rgb-surface-tertiary',
+    ];
+
+    const failures = surfaces.flatMap((surface) => {
+      const ratio = contrast(mark, toRgb(theme, surface));
+      return ratio < WCAG_MARK_MIN ? [`${surface}: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('verified fill defaults', () => {
+  /** Tuned values rather than palette steps in either mode, so the stylesheet
+   *  cannot alias them to a `--blue-*` step and both copies move together. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--status-verified:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    expect(declared).toEqual([
+      defaultTheme['rgb-status-verified'],
+      darkTheme['rgb-status-verified'],
     ]);
   });
 });

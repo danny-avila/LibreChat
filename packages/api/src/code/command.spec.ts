@@ -4,8 +4,10 @@ import type { AddressInfo } from 'node:net';
 import type { CodeBridgeFetch } from './bridge';
 import {
   ATTACHED_WORKSPACE_BASH_SCHEMA,
+  buildAttachedWorkspaceBashSchema,
   createAttachedWorkspaceBashTool,
   createGitIdentityProgrammaticBashTool,
+  resolveAttachedWorkspaceCommandTimeoutMax,
 } from './command';
 
 describe('programmatic Bash Git identity', () => {
@@ -44,6 +46,47 @@ describe('programmatic Bash Git identity', () => {
       await once(server, 'close');
     }
   });
+
+  test('pins a selected project on the real SDK no-tools route', async () => {
+    const received: { url?: string; workspace?: string | string[]; code: string }[] = [];
+    const server = createServer(async (req, res) => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      received.push({
+        url: req.url,
+        workspace: req.headers['x-librechat-code-workspace-id'],
+        code: JSON.parse(body).code,
+      });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'completed', stdout: 'done', stderr: '', files: [] }));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    try {
+      const bashTool = createGitIdentityProgrammaticBashTool(
+        {
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+          workspaceId: 'project-a',
+          authHeaders: () => ({}),
+        },
+        { name: 'Lia', email: 'lia@example.com' },
+      );
+      const invocationConfig = { tags: [], toolCall: { toolDefs: [] } };
+      await bashTool.func(
+        { code: 'printf done', tool_manifest: [], workspaceId: 'forged-project' },
+        undefined,
+        invocationConfig,
+      );
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ url: '/v1/exec/programmatic', workspace: 'project-a' });
+      expect(received[0].code).toContain("GIT_AUTHOR_NAME='Lia'");
+      expect(bashTool.description).toContain('selected persistent workspace');
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
 });
 
 function commandResponse(overrides: Record<string, unknown> = {}): Response {
@@ -51,7 +94,7 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
     JSON.stringify({
       protocolVersion: 1,
       operation: 'execute_command',
-      workspaceId: 'primary',
+      workspaceId: 'project-a',
       exitCode: 0,
       stdout: 'ready\n',
       stderr: '',
@@ -64,7 +107,82 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
-  test('executes in the attached default workspace with per-user bridge authentication', async () => {
+  test('dispatches only advertised named actions with the resolved definition fingerprint', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1/',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      environment: {
+        fingerprint: 'a'.repeat(64),
+        repo: 'example/app',
+        ref: 'main',
+        actions: ['typecheck'],
+      },
+      fetchImpl,
+    });
+    await bashTool.invoke({ environmentAction: 'typecheck' });
+    const [, options] = (fetchImpl as jest.Mock).mock.calls[0];
+    expect(JSON.parse(options.body)).toMatchObject({
+      workspaceId: 'project-a',
+      environmentAction: { name: 'typecheck', fingerprint: 'a'.repeat(64) },
+      timeoutMs: 30000,
+    });
+    for (const input of [
+      { environmentAction: 'missing' },
+      { environmentAction: 'typecheck', command: 'rm x' },
+      { environmentAction: 'typecheck', cwd: 'other' },
+      {},
+    ]) {
+      await expect(bashTool.invoke(input)).rejects.toThrow();
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  test('disconnects the actual HTTP request when an invoked command is cancelled', async () => {
+    let markStarted!: () => void;
+    let markDisconnected!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const disconnected = new Promise<void>((resolve) => {
+      markDisconnected = resolve;
+    });
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) {
+        /* Consume the complete request before cancellation. */
+      }
+      res.once('close', () => {
+        if (!res.writableEnded) markDisconnected();
+      });
+      markStarted();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+    });
+    const controller = new AbortController();
+    try {
+      const invocation = bashTool.invoke({ command: 'sleep 30' }, { signal: controller.signal });
+      const settled = invocation.then(
+        () => ({ rejected: false }),
+        () => ({ rejected: true }),
+      );
+      await started;
+      controller.abort();
+      expect((await settled).rejected).toBe(true);
+      await disconnected;
+    } finally {
+      server.closeAllConnections();
+      server.close();
+      await once(server, 'close');
+    }
+  });
+
+  test('executes in the selected workspace and relative working directory', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const authHeaders = jest.fn().mockResolvedValue({
       Authorization: 'Bearer jwt',
@@ -73,13 +191,13 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1/',
       authHeaders,
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
-    await expect(bashTool.func({ command: 'pwd' }, undefined, {})).resolves.toEqual([
-      'stdout:\nready\n\n[exit code: 0]',
-      {},
-    ]);
+    await expect(
+      bashTool.func({ command: 'pwd', cwd: 'packages/api' }, undefined, {}),
+    ).resolves.toEqual(['stdout:\nready\n\n[exit code: 0]', {}]);
 
     expect(authHeaders).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -95,10 +213,93 @@ describe('createAttachedWorkspaceBashTool', () => {
     expect(request).toEqual({
       protocolVersion: 1,
       operation: 'execute_command',
-      workspaceId: 'primary',
+      workspaceId: 'project-a',
       command: 'pwd',
+      cwd: 'packages/api',
+      timeoutMs: 30_000,
       maxOutputBytes: 256 * 1024,
     });
+  });
+
+  test('forwards a bounded per-call execution timeout', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      maxTimeoutMs: 300_000,
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'npm test', timeoutMs: 300_000 });
+
+    const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    expect(request).toMatchObject({ command: 'npm test', timeoutMs: 300_000 });
+  });
+
+  test('preserves the historical 30-second ceiling unless an administrator raises it', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+
+    await expect(
+      bashTool.func({ command: 'npm test', timeoutMs: 30_001 }, undefined, {}),
+    ).rejects.toThrow('deployment limit of 30000 milliseconds');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('resolves and advertises an administrator-configured timeout ceiling', () => {
+    const maxTimeoutMs = resolveAttachedWorkspaceCommandTimeoutMax({
+      limits: { maxCommandTimeoutMs: 120_000 },
+    });
+    const schema = buildAttachedWorkspaceBashSchema(maxTimeoutMs);
+
+    expect(maxTimeoutMs).toBe(120_000);
+    expect(schema).toMatchObject({
+      properties: { timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } },
+    });
+    expect(resolveAttachedWorkspaceCommandTimeoutMax()).toBe(30_000);
+  });
+
+  test('lowers the omitted timeout when the deployment ceiling is below 30 seconds', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      maxTimeoutMs: 5_000,
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'npm test' });
+
+    const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    expect(request).toMatchObject({ timeoutMs: 5_000 });
+    expect(buildAttachedWorkspaceBashSchema(5_000)).toMatchObject({
+      properties: {
+        timeoutMs: expect.objectContaining({
+          maximum: 5_000,
+          description: expect.stringContaining('Defaults to 5000'),
+        }),
+      },
+    });
+  });
+
+  test.each([0, 300_001, 1.5])('rejects an invalid execution timeout of %p', async (timeoutMs) => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+
+    await expect(bashTool.invoke({ command: 'npm test', timeoutMs })).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test('validates and invokes commands through the LangChain tool runtime', async () => {
@@ -106,6 +307,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
@@ -117,11 +319,52 @@ describe('createAttachedWorkspaceBashTool', () => {
     ).toBeUndefined();
   });
 
+  test('aborts an in-flight command without poisoning subsequent workspace reuse', async () => {
+    let requestCount = 0;
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    const fetchImpl: CodeBridgeFetch = jest.fn(async (_url, init) => {
+      requestCount += 1;
+      if (requestCount > 1) {
+        return commandResponse({ stdout: 'reused\n' });
+      }
+      markRequestStarted();
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+    const controller = new AbortController();
+
+    const cancelled = bashTool.invoke({ command: 'sleep 30' }, { signal: controller.signal });
+    await requestStarted;
+    controller.abort();
+
+    await expect(cancelled).rejects.toThrow('Aborted');
+    await expect(bashTool.invoke({ command: 'pwd' })).resolves.toBe(
+      'stdout:\nreused\n\n[exit code: 0]',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   test('preserves legacy positional args without interpolating shell metacharacters', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
@@ -136,6 +379,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       gitIdentity: { name: "Agent O'Brien", email: 'agent@example.com' },
       fetchImpl,
     });
@@ -163,6 +407,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 

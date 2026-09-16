@@ -3,11 +3,14 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
 import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
-import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
@@ -15,6 +18,11 @@ const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
 const mockUseAgentQueuedTurns = jest.fn();
 const mockExtendActiveJobsGrace = jest.fn();
+let mockFileMap: Record<string, { llmDeliveryPath?: 'provider' | 'text' | 'none' }> = {};
+
+jest.mock('~/Providers', () => ({
+  useFileMapContext: () => mockFileMap,
+}));
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
@@ -185,6 +193,7 @@ function renderUseResumeOnLoad({
 
   return {
     queryClient,
+    jotaiStore,
     getMessages,
     setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
     setIsSubmitting: (value: boolean) => setIsSubmittingState?.(value),
@@ -211,6 +220,7 @@ describe('useResumeOnLoad', () => {
     mockUseAgentQueuedTurns.mockReset();
     mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1 });
     mockExtendActiveJobsGrace.mockReset();
+    mockFileMap = {};
   });
 
   afterEach(() => {
@@ -341,6 +351,53 @@ describe('useResumeOnLoad', () => {
         | null;
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
       expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+    });
+
+    it('restores the composer approval surface from the authoritative status snapshot', async () => {
+      const pendingAction: Agents.PendingAction = {
+        actionId: 'action-1',
+        streamId: CONVERSATION_ID,
+        conversationId: CONVERSATION_ID,
+        createdAt: 4242,
+        payload: {
+          type: 'tool_approval',
+          action_requests: [
+            {
+              name: 'bash_tool',
+              tool_call_id: 'call-1',
+              arguments: { command: 'npm test' },
+            },
+          ],
+          review_configs: [
+            {
+              action_name: 'bash_tool',
+              tool_call_id: 'call-1',
+              allowed_decisions: ['approve', 'reject'],
+            },
+          ],
+        },
+      };
+      mockUseStreamStatus.mockReturnValue({
+        ...ACTIVE_STATUS,
+        data: {
+          ...ACTIVE_STATUS.data,
+          status: 'requires_action',
+          pendingAction,
+          resumeState: {
+            ...ACTIVE_STATUS.data.resumeState,
+            pendingAction,
+          },
+        },
+      });
+
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingApprovalActionFamily(CONVERSATION_ID))).toEqual(pendingAction);
     });
 
     /** The elapsed indicator's baseline must be the generation's real start:
@@ -921,13 +978,48 @@ describe('useResumeOnLoad', () => {
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
     });
 
+    it('retires a remounted reveal after fresh inactive status and restored successor history', async () => {
+      mockUseStreamStatus.mockReturnValue({ ...INACTIVE_STATUS, isSuccess: false });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [] });
+      const messages = [
+        buildUserMessage(CONVERSATION_ID),
+        { messageId: 'successor', parentMessageId: 'response' } as TMessage,
+      ];
+      const { rerender, jotaiStore, queryClient } = renderUseResumeOnLoad({ messages });
+      const family = revealedQueuedTurnFamily(CONVERSATION_ID);
+      act(() => {
+        queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], messages);
+        jotaiStore.set(family, {
+          clientRequestId: 'queued',
+          parentMessageId: 'response',
+          generationCreatedAt: 41,
+          text: 'queued',
+          revealedAt: new Date(Date.now() - 60_000).toISOString(),
+        });
+      });
+      mockUseStreamStatus.mockReturnValue({ ...INACTIVE_STATUS, dataUpdatedAt: Date.now() + 1 });
+      rerender();
+      expect(jotaiStore.get(family)).toBeNull();
+    });
+
     it('lets the owed state lapse once the receipt has gone quiet for the window', async () => {
       jest.useFakeTimers();
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
       mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
-      const { rerender } = renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      const { rerender, jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
       await act(async () => {
         await Promise.resolve();
+      });
+
+      const revealFamily = revealedQueuedTurnFamily(CONVERSATION_ID);
+      jotaiStore.set(revealFamily, {
+        clientRequestId: 'queued',
+        parentMessageId: 'response',
+        generationCreatedAt: 41,
+        text: 'queued',
+        revealedAt: new Date().toISOString(),
       });
 
       /** A long wait behind an unadmitted turn must not burn the window: the
@@ -937,6 +1029,7 @@ describe('useResumeOnLoad', () => {
       });
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
 
+      expect(jotaiStore.get(revealFamily)).not.toBeNull();
       mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
       rerender();
       await act(async () => {
@@ -949,6 +1042,7 @@ describe('useResumeOnLoad', () => {
       });
       rerender();
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      expect(jotaiStore.get(revealFamily)).toBeNull();
       jest.useRealTimers();
     });
 
@@ -1207,6 +1301,47 @@ describe('useResumeOnLoad', () => {
       expect(historyRefetches()).toBe(2);
       nowSpy.mockRestore();
     });
+
+    it.each(['queued', 'claimed', 'admitted'])(
+      'retains off-screen admission ownership while a cached receipt is %s',
+      async (status) => {
+        jest.useFakeTimers();
+        mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+        mockUseAgentQueuedTurns.mockReturnValue({
+          data: [{ queuedTurnId: 'q1', status }],
+          dataUpdatedAt: 2,
+        });
+        const { rerender, queryClient, jotaiStore } = renderUseResumeOnLoad({
+          messages: [buildUserMessage(CONVERSATION_ID)],
+        });
+        const family = revealedQueuedTurnFamily(CONVERSATION_ID);
+        act(() => {
+          jotaiStore.set(family, {
+            clientRequestId: 'request',
+            parentMessageId: 'response',
+            generationCreatedAt: 41,
+            text: 'queued',
+            revealedAt: new Date().toISOString(),
+          });
+          queryClient.setQueryData(agentQueuedTurnsQueryKey(CONVERSATION_ID), [
+            { queuedTurnId: 'q1', status },
+          ]);
+        });
+        mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+        rerender({ conversationId: STALE_CONVERSATION_ID });
+        await act(async () => {
+          jest.advanceTimersByTime(30_001);
+        });
+        expect(jotaiStore.get(family)).not.toBeNull();
+        mockUseAgentQueuedTurns.mockReturnValue({
+          data: [{ queuedTurnId: 'q1', status }],
+          dataUpdatedAt: 4,
+        });
+        rerender({ conversationId: CONVERSATION_ID });
+        expect(jotaiStore.get(family)).not.toBeNull();
+        jest.useRealTimers();
+      },
+    );
 
     it('expires the owed state on an absolute window even while its conversation is off-screen', async () => {
       jest.useFakeTimers();

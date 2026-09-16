@@ -167,7 +167,10 @@ const createFileSearchTool = async ({
             content: docInfo.page_content,
             distance,
             file_id: result.file_id,
-            page: docInfo.metadata.page || null,
+            page:
+              Number.isInteger(docInfo.metadata.page) && docInfo.metadata.page >= 0
+                ? docInfo.metadata.page + 1
+                : null,
           })),
         )
         .sort((a, b) => a.distance - b.distance)

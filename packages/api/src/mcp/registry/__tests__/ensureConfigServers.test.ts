@@ -88,6 +88,24 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     ).toEqual({});
   });
 
+  it('routes each config-source initialization through the supplied limiter', async () => {
+    let limitCalls = 0;
+    const limit = async <T>(task: () => Promise<T>): Promise<T> => {
+      limitCalls += 1;
+      return task();
+    };
+
+    const result = await registry.ensureConfigServers(
+      { first: sseConfig, second: altSseConfig },
+      limit,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({ first: expect.any(Object), second: expect.any(Object) }),
+    );
+    expect(limitCalls).toBe(2);
+  });
+
   it('should skip unchanged YAML-named servers but still process config-only servers', async () => {
     await registry.addServer('yaml_server', yamlConfig, 'CACHE');
     inspectSpy.mockClear();

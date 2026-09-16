@@ -12,6 +12,7 @@ import type {
   ScheduleDeleteResult,
   ScheduleUserContext,
   FireableSchedule,
+  ScheduleMCPPreflight,
   ScheduleLimits,
   FireResult,
 } from './types';
@@ -22,9 +23,11 @@ import {
   computeNextRunAt,
   isValidTimezone,
 } from './cadence';
+import { ScheduleMCPError, getScheduleMCPFailureCode } from './mcp';
 import { resolveScheduleProjectId } from './types';
 
 export interface SchedulesHandlersDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods;
   getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Agent existence + VIEW access for the requesting user. */
@@ -39,7 +42,11 @@ export interface SchedulesHandlersDeps {
    *  hold lapse instead of retaining the upload forever. Throws when any file is gone. */
   markFilesUsed: (fileIds: string[], userId: string) => Promise<void>;
   /** Serialized manual fire (acquires the schedule lease); null if already leased. */
-  fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult | null>;
+  fireNow: (
+    schedule: FireableSchedule,
+    limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
+  ) => Promise<FireResult | null>;
   /**
    * Soft-deletes a schedule with quiescing: stops new claims, aborts in-flight
    * runs, and erases once drained. See ScheduleDeleteResult for the honest states.
@@ -360,6 +367,51 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return false;
   }
 
+  function responseAbortSignal(req: ServerRequest, res: Response): AbortSignal {
+    const controller = new AbortController();
+    const abort = () => controller.abort(new Error('Schedule request closed'));
+    const detach = () => {
+      req.off?.('aborted', abort);
+      res.off?.('close', abort);
+    };
+    req.once?.('aborted', abort);
+    res.once?.('close', abort);
+    res.once?.('finish', detach);
+    if (req.aborted === true || res.destroyed === true) abort();
+    return controller.signal;
+  }
+
+  async function validateMCP(
+    agentId: string,
+    req: ServerRequest,
+    res: Response,
+    signal: AbortSignal,
+    limits: ScheduleLimits,
+    scheduleId: string,
+  ): Promise<boolean> {
+    try {
+      await deps.preflightMCP(agentId, requestUser(req), {
+        scheduleId,
+        signal,
+        concurrency: limits.mcpPreflightConcurrency,
+        deadlineMs: Date.now() + limits.mcpPreflightTimeoutMs,
+      });
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      if (error instanceof ScheduleMCPError) {
+        res.status(error.code === 'mcp_unavailable' ? 503 : 400).json({
+          code: error.code,
+          error: error.message,
+          mcp: error.outcomes,
+        });
+      } else {
+        res.status(503).json({ code: 'mcp_unavailable', error: 'MCP preflight unavailable' });
+      }
+      return false;
+    }
+  }
+
   async function validatePayload(
     req: ServerRequest,
     res: Response,
@@ -565,6 +617,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function createSchedule(req: ServerRequest, res: Response): Promise<void> {
+    const mcpSignal = responseAbortSignal(req, res);
+    if (mcpSignal.aborted) return;
     const parsed = createSchedulePayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
@@ -648,10 +702,17 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       user.id,
       parsed.data.clientRequestId,
     );
+    if (mcpSignal.aborted) return;
     if (replayed != null) {
       await respondToReplay(replayed);
       return;
     }
+    const id = `sched_${randomUUID()}`;
+    if (
+      parsed.data.enabled &&
+      !(await validateMCP(parsed.data.agent_id, req, res, mcpSignal, limits, id))
+    )
+      return;
     // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
     // replay lookup above. A committed create whose response was lost must still be
     // recoverable by an identical retry: applying today's policy first let a raised
@@ -693,7 +754,6 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!withinIntervalFloor(res, parsed.data.cadence, parsed.data.timezone, limits)) {
       return;
     }
-    const id = `sched_${randomUUID()}`;
     const nextRunAt = parsed.data.enabled
       ? computeNextRunAt({
           cadence: parsed.data.cadence,
@@ -711,6 +771,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
     }
+    if (mcpSignal.aborted) return;
     // Atomic cap: createScheduleWithSlot claims a free per-user slot via the
     // {user, slot} partial unique index, so concurrent creates can never exceed
     // maxPerUser. 'limit' means a concurrent racer took the last slot after the
@@ -832,6 +893,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {
+    const mcpSignal = responseAbortSignal(req, res);
+    if (mcpSignal.aborted) return;
     const parsed = updateSchedulePayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
@@ -856,6 +919,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const existing = await deps.methods.getScheduleById(id, user.id);
+    if (mcpSignal.aborted) return;
     if (existing == null) {
       res.status(404).json({ error: 'Schedule not found' });
       return;
@@ -908,6 +972,18 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return;
     }
+    if (
+      enabled &&
+      !(await validateMCP(
+        parsed.data.agent_id ?? existing.agent_id,
+        req,
+        res,
+        mcpSignal,
+        limits,
+        existing.id,
+      ))
+    )
+      return;
     // The destination is re-resolved on every edit that leaves the schedule ENABLED,
     // against the stored id when this PATCH does not touch the field — the same shape
     // as the stored-agent and effective-cadence rechecks above, and for the same
@@ -1018,6 +1094,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         return;
       }
     }
+    if (mcpSignal.aborted) return;
     // FENCED on the revision this edit was computed from. `nextRunAt` above is derived
     // from (cadence, timezone) resolved against the row read at the top of this handler,
     // so two overlapping edits — one changing cadence, one changing timezone — would
@@ -1071,6 +1148,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function runScheduleNow(req: ServerRequest, res: Response): Promise<void> {
+    const signal = responseAbortSignal(req, res);
+    if (signal.aborted) return;
     const { id } = req.params as { id: string };
     if (await rejectIfUserDeleting(deps, requestUser(req).id, res)) {
       return;
@@ -1081,7 +1160,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const limits = await deps.getLimits(requestUser(req));
-    const result = await deps.fireNow(schedule, limits);
+    if (signal.aborted) return;
+    const result = await deps.fireNow(schedule, limits, { signal });
+    if (signal.aborted) return;
     if (result == null) {
       res.status(409).json({ error: 'A run for this schedule is already in progress' });
       return;
@@ -1089,12 +1170,24 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!result.fired) {
       // A limiter refusal is the caller's own quota, not a conflicting schedule state,
       // so answer 429 rather than burying it in the generic 409.
-      res.status(result.skipped === 'rate_limited' ? 429 : 409).json({
-        error:
-          result.skipped === 'rate_limited'
-            ? 'Too many messages. Try running this schedule again shortly.'
-            : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`),
+      const failedMCP = result.mcp?.filter((outcome) => outcome.status !== 'ready') ?? [];
+      const mcpStatus = failedMCP.length > 0 ? getScheduleMCPFailureCode(failedMCP) : undefined;
+      let status = 409;
+      if (result.skipped === 'rate_limited') status = 429;
+      else if (mcpStatus === 'mcp_unavailable' || result.mcpPreflightUnavailable === true)
+        status = 503;
+      else if (mcpStatus != null) status = 400;
+      const error =
+        result.skipped === 'rate_limited'
+          ? 'Too many messages. Try running this schedule again shortly.'
+          : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`);
+      const responseCode =
+        mcpStatus ?? (result.mcpPreflightUnavailable === true ? 'mcp_unavailable' : undefined);
+      res.status(status).json({
+        error,
         skipped: result.skipped,
+        mcp: result.mcp,
+        ...(responseCode != null ? { code: responseCode } : {}),
       });
       return;
     }

@@ -11,13 +11,19 @@ const MAX_LIST_RESULTS = 500;
 export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
 export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
+/** Keep aligned with data-provider's deployment schema defaults and hard cap. */
+export const WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS: number = 30_000;
+export const WORKSPACE_COMMAND_MAX_TIMEOUT_MS: number = 5 * 60_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
+/** Matches Code API's bounded admission wait and command settlement allowance. */
+const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
+const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_ERROR_BODY_BYTES = 4096;
+const ERROR_BODY_TIMEOUT_MS = 1000;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
   'operation',
@@ -92,6 +98,7 @@ export interface WorkspaceReadRequest {
   path: string;
   startLine?: number;
   maxLines?: number;
+  instructionSha256?: string;
 }
 
 export interface WorkspaceSearchRequest {
@@ -120,6 +127,7 @@ export interface WorkspaceExecuteCommandRequest {
   cwd?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  environmentAction?: { name: string; fingerprint: string };
 }
 
 export interface WorkspaceWriteRequest {
@@ -246,10 +254,62 @@ export class WorkspaceToolHttpError extends Error {
   constructor(
     public readonly reason: 'rejected' | 'invalid' | 'timeout' | 'failed',
     public readonly upstreamStatus?: number,
+    public readonly upstreamBody?: string,
+    public readonly upstreamBodyTruncated = false,
   ) {
-    super(`Workspace tool request ${reason}`);
+    super(
+      `Workspace tool request ${reason}` +
+        (upstreamStatus == null ? '' : ` (upstreamStatus: ${upstreamStatus})`) +
+        (upstreamBody ? `; upstreamBody: ${JSON.stringify(upstreamBody)}` : '') +
+        (upstreamBodyTruncated ? ' [body truncated or incomplete]' : ''),
+    );
     this.name = 'WorkspaceToolHttpError';
   }
+}
+
+/** Keep a received HTTP status even if reading its diagnostic body fails or stalls. */
+async function readErrorBody(
+  response: Response,
+  signal: AbortSignal,
+): Promise<{
+  body: string;
+  truncated: boolean;
+}> {
+  if (!response.body) return { body: '', truncated: false };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let body = '';
+  let bytes = 0;
+  let complete = false;
+  let interrupted = false;
+  const cancel = () => {
+    interrupted = true;
+    void reader.cancel().catch(() => undefined);
+  };
+  const timer = setTimeout(cancel, ERROR_BODY_TIMEOUT_MS);
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    if (signal.aborted) return { body, truncated: true };
+    while (bytes <= MAX_ERROR_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) {
+        complete = !interrupted;
+        body += decoder.decode();
+        break;
+      }
+      const remaining = MAX_ERROR_BODY_BYTES - bytes;
+      body += decoder.decode(value.subarray(0, remaining), { stream: true });
+      bytes += value.byteLength;
+    }
+  } catch {
+    complete = false;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', cancel);
+    cancel();
+    reader.releaseLock();
+  }
+  return { body, truncated: !complete || signal.aborted };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -388,6 +448,14 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        /^[a-f0-9]{64}$/.test(request.instructionSha256) &&
+        (request.path === 'AGENTS.md' || request.path === 'CLAUDE.md') &&
+        request.startLine === undefined &&
+        request.maxLines === undefined
+      );
+    }
     return (
       isSafePath(request.path) &&
       (request.startLine == null ||
@@ -410,7 +478,8 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       request.command.trim().length > 0 &&
       !request.command.includes('\0') &&
       (request.cwd == null || isSafePath(request.cwd)) &&
-      (request.timeoutMs == null || isPositiveInteger(request.timeoutMs, MAX_COMMAND_TIMEOUT_MS)) &&
+      (request.timeoutMs == null ||
+        isPositiveInteger(request.timeoutMs, WORKSPACE_COMMAND_MAX_TIMEOUT_MS)) &&
       (request.maxOutputBytes == null ||
         isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
     );
@@ -458,6 +527,18 @@ function isValidResult(
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        hasOnlyKeys(value, READ_RESULT_KEYS) &&
+        value.path === request.path &&
+        typeof value.content === 'string' &&
+        Buffer.byteLength(value.content) <= 32768 &&
+        value.startLine === 1 &&
+        value.endLine === value.content.split('\n').length &&
+        typeof value.truncated === 'boolean' &&
+        value.nextStartLine === undefined
+      );
+    }
     const startLine = request.startLine ?? 1;
     const maxLines = request.maxLines ?? 200;
     const content = typeof value.content === 'string' ? value.content : null;
@@ -599,8 +680,12 @@ function isValidResult(
 }
 
 function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
-  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
-  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
+  const executionBudgetMs =
+    request.operation === 'execute_command'
+      ? (request.timeoutMs ?? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS) +
+        WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
+      : WORKSPACE_TOOL_TIMEOUT_MS;
+  return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
 export async function executeWorkspaceTool({
@@ -639,8 +724,9 @@ export async function executeWorkspaceTool({
       },
     );
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new WorkspaceToolHttpError('rejected', response.status);
+      const { body, truncated } = await readErrorBody(response, requestSignal);
+      signal?.throwIfAborted();
+      throw new WorkspaceToolHttpError('rejected', response.status, body, truncated);
     }
     const result = await readBoundedJson(response, requestSignal);
     if (!isValidResult(request, result)) {

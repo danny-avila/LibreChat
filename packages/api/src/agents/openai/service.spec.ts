@@ -1,5 +1,5 @@
 import { GraphEvents } from '@librechat/agents';
-import { ErrorTypes } from 'librechat-data-provider';
+import { ErrorTypes, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { ChatCompletionDependencies } from './service';
 import { createAgentChatCompletion } from './service';
@@ -154,6 +154,32 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
   });
 
+  it.each([
+    { code_environment_mode: 'without_attached' },
+    { code_workspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }] },
+  ])('rejects code environment decision extensions it cannot persist: %o', async (extension) => {
+    const res = createMockRes();
+    const req = createMockReq(
+      { id: 'user-123' },
+      {
+        model: 'agent_test',
+        messages: [{ role: 'user', content: 'hi' }],
+        conversation_id: 'conversation-123',
+        ...extension,
+      },
+    );
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(getResponseMock(res, 'status')).toHaveBeenCalledWith(400);
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: expect.objectContaining({
+        message: expect.stringContaining('cannot enforce a persisted conversation decision'),
+      }),
+    });
+    expect(deps.initializeAgent).not.toHaveBeenCalled();
+  });
+
   it('adapts runtime tool loading to the request-backed public dependency', async () => {
     const req = createMockReq({ id: 'user-123', role: 'USER' });
     const res = createMockRes();
@@ -255,7 +281,19 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       'agent_test',
       expect.objectContaining({ requestBody: runArgs.requestBody }),
       undefined,
+      processStream.mock.calls[0][1].signal,
+      undefined,
     );
+    expect(loadTools.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
+    await runArgs.customHandlers[GraphEvents.ON_TOOL_EXECUTE].handle(GraphEvents.ON_TOOL_EXECUTE, {
+      toolCalls: [{ id: 'child-call', name: 'deferred_mcp_tool', args: {} }],
+      agentId: 'agent_test',
+      configurable: streamConfig.configurable,
+      metadata: { run_id: 'detached-child' },
+      resolve,
+      reject,
+    });
+    expect(loadTools.mock.calls[1][4]).toBeUndefined();
   });
 
   it('uses the root parent sentinel when chat completions omit a parent id', async () => {
@@ -352,6 +390,74 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
         statefulSessionsAvailable: true,
         allowedStatefulCodeEnvironments: ['user', 'agent-user'],
       }),
+    );
+  });
+
+  it('mirrors the capabilities alone when the embedder wires no role lookup', async () => {
+    deps.appConfig = {
+      endpoints: { agents: { capabilities: ['file_search'] } },
+    } as never;
+
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ fileSearchAvailable: true, codeEnvAvailable: false }),
+    );
+  });
+
+  /** One role read answers both grants, so an embedder that wires
+   *  `getRoleByName` pays for the pairing once and gets each flag separately. */
+  it('pairs each capability with its own grant from a single role read', async () => {
+    deps.appConfig = {
+      endpoints: { agents: { capabilities: ['file_search', 'execute_code'] } },
+    } as never;
+    const getRoleByName = jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: {
+        [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
+        [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      },
+    });
+    deps.getRoleByName = getRoleByName as never;
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ fileSearchAvailable: false, codeEnvAvailable: true }),
+    );
+  });
+
+  /** Provider-native search is a model parameter with no capability of its own,
+   *  so an embedder that omits `appConfig` still gets the role gate. */
+  it('wires the web search grant from the role lookup without appConfig', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue({
+      name: 'USER',
+      permissions: { [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } },
+    });
+    deps.getRoleByName = getRoleByName as never;
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    expect(getRoleByName).not.toHaveBeenCalled();
+    const [[{ resolveWebSearchGrant }]] = (deps.initializeAgent as jest.Mock).mock.calls;
+    await expect(resolveWebSearchGrant()).resolves.toBe(false);
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+  });
+
+  it('wires no web search grant when the embedder supplies no role lookup', async () => {
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveWebSearchGrant: undefined }),
     );
   });
 

@@ -135,15 +135,18 @@ jest.mock('../Part', () => ({
     part,
     idx,
     showCursor,
+    isLast,
   }: {
     part: TMessageContentParts;
     idx: number;
     showCursor?: boolean;
+    isLast?: boolean;
   }) => (
     <div
       data-testid={`real-part-${part.type}`}
       data-index={idx}
       data-show-cursor={String(showCursor === true)}
+      data-is-last={String(isLast === true)}
     />
   ),
 }));
@@ -509,6 +512,48 @@ describe('ContentParts — activity phase state', () => {
     const textParts = screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`);
     expect(textParts[0]).toHaveAttribute('data-show-cursor', 'true');
     expect(textParts[1]).toHaveAttribute('data-show-cursor', 'false');
+  });
+
+  /** Activity phases split one response into several bodies, and every settled
+   *  body has a trailing part. Only the body holding the message's cursor may
+   *  own a live one — otherwise a phase that finished minutes ago keeps its
+   *  reasoning shimmering while later phases stream. */
+  it("leaves an earlier phase's trailing part settled while a later part streams", () => {
+    const think = {
+      type: ContentTypes.THINK,
+      think: 'weighing the options',
+    } as unknown as TMessageContentParts;
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Mapped the schema',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 1,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          think,
+          phase,
+          { type: ContentTypes.TEXT, text: 'Good — schema mapped.' } as TMessageContentParts,
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    expect(screen.getByTestId(`real-part-${ContentTypes.THINK}`)).toHaveAttribute(
+      'data-is-last',
+      'false',
+    );
+    expect(screen.getByTestId(`real-part-${ContentTypes.TEXT}`)).toHaveAttribute(
+      'data-is-last',
+      'true',
+    );
   });
 
   it('renders a completion-appended parent before the final root text', () => {

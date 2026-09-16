@@ -14,6 +14,7 @@ import type {
   IAgentEventActorSuspensionEvidence,
   IChatProject,
   IConversation,
+  AppConfig,
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -122,7 +123,7 @@ describe('Conversation Operations', () => {
     userId: string;
     isTemporary?: boolean;
     expiredAt?: Date;
-    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
+    interfaceConfig?: AppConfig['interfaceConfig'];
   };
   let mockConversationData: {
     conversationId: string;
@@ -172,6 +173,55 @@ describe('Conversation Operations', () => {
       });
       expect(savedConvo).toBeTruthy();
       expect(savedConvo?.title).toBe('Test Conversation');
+    });
+
+    it('rejects actor checkpoint ownership evidence through ordinary saves and imports', async () => {
+      const forged = {
+        agentEventActor: {
+          generation: 1,
+          checkpoint: {
+            threadId: 'other',
+            checkpointNs: 'event-actor/other',
+            checkpointId: 'other',
+          },
+        },
+        agentEventActorCleanup: [
+          { threadId: 'other', checkpointNs: 'event-actor/other', checkpointId: 'other' },
+        ],
+        agentEventActorReconciliations: [
+          {
+            checkpoint: {
+              threadId: 'other',
+              checkpointNs: 'event-actor/other',
+              checkpointId: 'other',
+            },
+          },
+        ],
+        agentEventActorSuspension: { status: 'closed' },
+        'agentEventActor.checkpoint': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+        'agentEventActorCleanup.0': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+      };
+      await saveConvo(mockCtx, { ...mockConversationData, ...forged });
+      await methods.bulkSaveConvos([{ ...mockConversationData, user: mockCtx.userId, ...forged }]);
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select(
+          '+agentEventActor +agentEventActorCleanup +agentEventActorReconciliations +agentEventActorSuspension',
+        )
+        .lean();
+      for (const field of Object.keys(forged)) {
+        expect(saved).not.toHaveProperty(field);
+      }
     });
 
     it('sets immutable agent attribution from server metadata only on insert', async () => {
@@ -1029,6 +1079,228 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('code environment persistence during ordinary saves', () => {
+    const mac = { environmentId: 'code-mac', workspaceId: 'primary' };
+    const vm = { environmentId: 'code-vm', workspaceId: 'primary' };
+    const userId = 'user123';
+    const unsetFields = { codeEnvironmentMode: 1, codeWorkspaces: 1 };
+
+    it.each([
+      { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+      { codeEnvironmentMode: 'without_attached' },
+    ])(
+      'preserves $codeEnvironmentMode through an approval pause and later saves',
+      async (decision) => {
+        const conversationId = uuidv4();
+        await saveConvo({ userId }, { conversationId, ...decision });
+
+        for (const title of ['Approval required', 'Resumed', 'Completed']) {
+          await saveConvo({ userId }, { conversationId, title }, { unsetFields });
+          const stored = await getConvo(userId, conversationId);
+          expect(stored?.codeEnvironmentMode).toBe(decision.codeEnvironmentMode);
+          expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
+          expect(stored?.title).toBe(title);
+        }
+      },
+    );
+
+    it('cannot overwrite an explicit move with a stale turn-start snapshot', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      await saveConvo({ userId }, { conversationId, ...decision });
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+
+      await saveConvo({ userId }, { conversationId, ...decision });
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([vm]);
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: null, codeWorkspaces: [] },
+      );
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('seeds imported decisions without letting repeated imports undo a move', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      const imported = { conversationId, user: userId, ...decision };
+      await methods.bulkSaveConvos([imported]);
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([mac]);
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+      await methods.bulkSaveConvos([imported]);
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it.each([{}, { codeWorkspaces: [mac] }])(
+      'preserves a legacy decision: %j',
+      async (decision) => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({ conversationId, user: userId, ...decision });
+        await saveConvo(
+          { userId },
+          { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [vm] },
+          { unsetFields },
+        );
+        const stored = await getConvo(userId, conversationId);
+        expect(stored?.codeEnvironmentMode).toBeUndefined();
+        expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
+      },
+    );
+  });
+
+  describe('replaceConvoCodeEnvironmentDecision', () => {
+    const anchor = new Date('2026-09-12T11:22:22.976Z');
+    const mac = { environmentId: 'code-mac', workspaceId: 'primary' };
+    const team = { environmentId: 'code-team', workspaceId: 'shared' };
+    const vm = { environmentId: 'code-vm', workspaceId: 'projects' };
+
+    /** Raw inserts bypass Mongoose casting, the way legacy rows and operator repairs are stored. */
+    const seedDecision = async (decision: Record<string, unknown>, user = 'user123') => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user,
+        title: 'Mortgage analysis',
+        endpoint: EModelEndpoint.agents,
+        messages: [],
+        createdAt: anchor,
+        updatedAt: anchor,
+        ...decision,
+      });
+      return conversationId;
+    };
+
+    const moveFromStored = async (
+      conversationId: string,
+      codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>,
+      user = 'user123',
+    ) => {
+      const stored = await getConvo('user123', conversationId);
+      return methods.replaceConvoCodeEnvironmentDecision({
+        user,
+        conversationId,
+        expected: {
+          codeEnvironmentMode: stored?.codeEnvironmentMode,
+          codeWorkspaces: stored?.codeWorkspaces,
+        },
+        codeWorkspaces,
+      });
+    };
+
+    it('replaces the decision it read without disturbing timestamps', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac, team],
+      });
+
+      const result = await moveFromStored(conversationId, [team, vm]);
+
+      expect(result?.codeEnvironmentMode).toBe('attached');
+      expect(result?.codeWorkspaces).toEqual([team, vm]);
+      expect(new Date(result?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+    });
+
+    it('replaces a legacy decision stored without a mode', async () => {
+      const conversationId = await seedDecision({ codeWorkspaces: [mac] });
+
+      const result = await moveFromStored(conversationId, [vm]);
+
+      expect(result?.codeEnvironmentMode).toBe('attached');
+      expect(result?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('replaces a decision that saveConvo persisted', async () => {
+      const conversationId = uuidv4();
+      await saveConvo(
+        { userId: 'user123' },
+        {
+          conversationId,
+          endpoint: EModelEndpoint.agents,
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [mac, team],
+        },
+      );
+      expect((await getConvo('user123', conversationId))?.codeWorkspaces).toEqual([mac, team]);
+
+      const result = await moveFromStored(conversationId, [vm]);
+
+      expect(result?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('leaves a decision that changed after it was read untouched', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+      });
+      const stored = await getConvo('user123', conversationId);
+      await Conversation.collection.updateOne(
+        { conversationId },
+        { $set: { codeWorkspaces: [team] } },
+      );
+
+      const result = await methods.replaceConvoCodeEnvironmentDecision({
+        user: 'user123',
+        conversationId,
+        expected: {
+          codeEnvironmentMode: stored?.codeEnvironmentMode,
+          codeWorkspaces: stored?.codeWorkspaces,
+        },
+        codeWorkspaces: [vm],
+      });
+
+      expect(result).toBeNull();
+      const current = await getConvo('user123', conversationId);
+      expect(current?.codeWorkspaces).toEqual([team]);
+    });
+
+    it('does not treat a reordered selection list as the decision it read', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac, team],
+      });
+
+      const result = await methods.replaceConvoCodeEnvironmentDecision({
+        user: 'user123',
+        conversationId,
+        expected: { codeEnvironmentMode: 'attached', codeWorkspaces: [team, mac] },
+        codeWorkspaces: [vm],
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('cannot move another user’s conversation', async () => {
+      const conversationId = await seedDecision(
+        { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        'other-user',
+      );
+
+      const result = await methods.replaceConvoCodeEnvironmentDecision({
+        user: 'user123',
+        conversationId,
+        expected: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        codeWorkspaces: [vm],
+      });
+
+      expect(result).toBeNull();
+      const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+  });
+
   describe('saveConvo appendMessageIds', () => {
     const ctx = { userId: 'append-user' };
     const conversationId = 'append-conversation';
@@ -1325,6 +1597,73 @@ describe('Conversation Operations', () => {
 
       expect(secondSave?.title).toBe('Updated Title');
       expect(secondSave?.expiredAt).toBeNull();
+    });
+
+    it.each([true, false, undefined])(
+      'uses the independent retention period for isTemporary=%s',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const now = Date.now();
+        const result = await saveConvo(mockCtx, mockConversationData);
+        const expectedHours = isTemporary === true ? 1 : 2160;
+
+        expect(result?.isTemporary).toBe(isTemporary === true);
+        expect(result?.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + expectedHours * 3600000);
+        expect(result?.expiredAt?.getTime()).toBeLessThan(now + expectedHours * 3600000 + 5000);
+      },
+    );
+
+    it('ignores caller-supplied retention fields', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const suppliedExpiration = new Date('2099-01-01T00:00:00.000Z');
+
+      const result = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        isTemporary: true,
+        expiredAt: suppliedExpiration,
+      });
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).not.toEqual(suppliedExpiration);
+    });
+
+    it.each([true, false])(
+      'preserves the stored deadline when chat type %s is omitted',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const first = await saveConvo(mockCtx, mockConversationData);
+        mockCtx.isTemporary = undefined;
+        const second = await saveConvo(mockCtx, { ...mockConversationData });
+        expect(second?.isTemporary).toBe(isTemporary);
+        expect(second?.expiredAt).toEqual(first?.expiredAt);
+      },
+    );
+
+    it('preserves an explicitly inherited deadline with separate retention periods', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.expiredAt = new Date(Date.now() + 60000);
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toEqual(mockCtx.expiredAt);
     });
 
     it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {
@@ -2077,6 +2416,16 @@ describe('Conversation Operations', () => {
       await expect(deleteConvos('user123', { conversationId: 'non-existent' })).rejects.toThrow(
         'Conversation not found or already deleted.',
       );
+    });
+
+    it('allows a single-conversation cleanup retry after topology and messages are gone', async () => {
+      const result = await deleteConvos(
+        'user123',
+        { conversationId: 'already-absent' },
+        { allowEmpty: true },
+      );
+      expect(result.deletedCount).toBe(0);
+      expect(result.conversationIds).toEqual(['already-absent']);
     });
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
@@ -4136,279 +4485,315 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('serializes suspension ownership through claim, re-pause, and resumed commit', async () => {
-      const conversationId = uuidv4();
-      const owner = {
-        user: 'suspended-actor-user',
-        tenantId: 'tenant-a',
-        conversationId,
-      };
-      await Conversation.create({
-        conversationId,
-        user: owner.user,
-        tenantId: owner.tenantId,
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent-player',
-        agentEventBinding: {
-          bindingId: `evtbind_${'s'.repeat(48)}`,
-          sourceKeyId: 'key-a',
-          actorId: 'player-a',
-        },
-        subagentThread: {
-          rootConversationId: 'parent',
-          parentConversationId: 'parent',
-          parentMessageId: 'parent-message',
-          parentToolCallId: 'event-binding',
-          parentAgentId: 'agent-director',
-          subagentType: 'agent-player',
-          subagentKind: 'agent',
-          depth: 1,
-        },
-      });
-      const checkpoint = (suffix: string) => ({
-        threadId: conversationId,
-        checkpointId: `checkpoint-${suffix}`,
-        checkpointNs: `event-actor/${suffix}`,
-      });
-      const suspension = (suffix: string, attempt: number): IAgentEventActorSuspensionEvidence => ({
-        version: 1,
-        suspensionId: `suspension-${suffix}`,
-        attempt,
-        issuedAt: 1_000 + attempt,
-        expiresAt: 100_000 + attempt,
-        invocation: {
-          actorThreadId: conversationId,
-          invocationId: 'event-pause',
-          depth: 1,
-          continuation: 'cold',
-          base: { actorThreadId: conversationId, generation: 0 },
-          fork: { ...checkpoint('fork'), invocationId: 'event-pause' },
-        },
-        checkpoint: {
-          ...checkpoint('fork'),
+    it.each(['owned', 'legacy'])(
+      'serializes %s suspension ownership through claim, re-pause, and resumed commit',
+      async (storage) => {
+        const conversationId = uuidv4();
+        const owner = {
+          user: 'suspended-actor-user',
+          tenantId: 'tenant-a',
+          conversationId,
+        };
+        await Conversation.create({
+          conversationId,
+          user: owner.user,
+          tenantId: owner.tenantId,
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-player',
+          agentEventBinding: {
+            bindingId: `evtbind_${'s'.repeat(48)}`,
+            sourceKeyId: 'key-a',
+            actorId: 'player-a',
+          },
+          subagentThread: {
+            rootConversationId: 'parent',
+            parentConversationId: 'parent',
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'event-binding',
+            parentAgentId: 'agent-director',
+            subagentType: 'agent-player',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        });
+        const checkpoint = (suffix: string) => ({
+          threadId: conversationId,
           checkpointId: `checkpoint-${suffix}`,
-          invocationId: 'event-pause',
-        },
-        interrupt: {
-          id: `interrupt-${suffix}`,
-          payload: { type: 'ask_user_question', actionId: `action-${suffix}` },
-        },
-        suspensionDigest: `digest-${suffix}`,
-      });
-
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
+          checkpointNs: `event-actor/${suffix}`,
+        });
+        const suspension = (
+          suffix: string,
+          attempt: number,
+        ): IAgentEventActorSuspensionEvidence => ({
+          version: 1,
+          suspensionId: `suspension-${suffix}`,
+          attempt,
+          issuedAt: 1_000 + attempt,
+          expiresAt: 100_000 + attempt,
+          invocation: {
+            actorThreadId: conversationId,
             invocationId: 'event-pause',
-            actionAdmitted: true,
-            status: 'invocation_pending',
-            checkpoint: checkpoint('fork'),
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
+            depth: 1,
+            continuation: 'cold',
+            base: { actorThreadId: conversationId, generation: 0 },
+            fork: { ...checkpoint('fork'), invocationId: 'event-pause' },
           },
-        }),
-      ).resolves.toBe(true);
-      const first = suspension('first', 0);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: {
-            ...first,
-            interrupt: {
-              ...first.interrupt,
-              payload: { type: 'ask_user_question', question: 'x'.repeat(65 * 1_024) },
+          checkpoint: {
+            ...checkpoint('fork'),
+            checkpointId: `checkpoint-${suffix}`,
+            invocationId: 'event-pause',
+          },
+          interrupt: {
+            id: `interrupt-${suffix}`,
+            payload: { type: 'ask_user_question', actionId: `action-${suffix}` },
+          },
+          suspensionDigest: `digest-${suffix}`,
+        });
+
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-pause',
+              actionAdmitted: true,
+              status: 'invocation_pending',
+              checkpoint: checkpoint('fork'),
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
             },
-          },
-          actionId: 'action-oversized',
-          jobCreatedAt: 123,
-        }),
-      ).rejects.toThrow('Event actor suspension exceeds maximum payload size');
-      await expect(
-        methods.storeAgentEventActorSuspension({
+          }),
+        ).resolves.toBe(true);
+        const first = suspension('first', 0);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: {
+              ...first,
+              interrupt: {
+                ...first.interrupt,
+                payload: { type: 'ask_user_question', question: 'x'.repeat(65 * 1_024) },
+              },
+            },
+            actionId: 'action-oversized',
+            jobCreatedAt: 123,
+          }),
+        ).rejects.toThrow('Event actor suspension exceeds maximum payload size');
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: first,
+            actionId: 'action-first',
+            jobCreatedAt: 123,
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: { kind: 'human_decision' },
+        });
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: { ...first, suspensionId: 'competing-suspension' },
+            actionId: 'action-first',
+            jobCreatedAt: 123,
+          }),
+        ).resolves.toEqual({ status: 'stale' });
+
+        expect(
+          (await Conversation.collection.findOne({ conversationId }))?.agentEventActorSuspension
+            .status,
+        ).toBe('pending_owned');
+        const oldClaim = await Conversation.collection.updateOne(
+          { conversationId, user: owner.user, 'agentEventActorSuspension.status': 'pending' },
+          { $set: { 'agentEventActorSuspension.status': 'claimed' } },
+        );
+        expect(oldClaim.matchedCount).toBe(0);
+        if (storage === 'legacy') {
+          await Conversation.collection.updateOne(
+            { conversationId },
+            { $set: { 'agentEventActorSuspension.status': 'pending' } },
+          );
+        }
+
+        const claim = {
           ...owner,
-          suspension: first,
+          suspensionId: first.suspensionId,
+          attempt: first.attempt,
           actionId: 'action-first',
           jobCreatedAt: 123,
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: { kind: 'human_decision' },
-      });
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: { ...first, suspensionId: 'competing-suspension' },
-          actionId: 'action-first',
-          jobCreatedAt: 123,
-        }),
-      ).resolves.toEqual({ status: 'stale' });
+          resumeAttemptId: 'resume-one',
+        };
+        const claims = await Promise.all([
+          methods.claimAgentEventActorSuspension(claim),
+          methods.claimAgentEventActorSuspension({ ...claim, resumeAttemptId: 'resume-two' }),
+        ]);
+        expect(claims).toEqual(
+          expect.arrayContaining([{ status: 'claimed' }, { status: 'stale' }]),
+        );
+        const winningResumeAttemptId = claims[0].status === 'claimed' ? 'resume-one' : 'resume-two';
+        expect(
+          (await Conversation.collection.findOne({ conversationId }))?.agentEventActorSuspension
+            .status,
+        ).toBe('claimed_owned');
+        expect(
+          (
+            await Conversation.collection.updateOne(
+              { conversationId, user: owner.user, 'agentEventActorSuspension.status': 'claimed' },
+              { $set: { 'agentEventActorSuspension.status': 'closed' } },
+            )
+          ).matchedCount,
+        ).toBe(0);
 
-      const claim = {
-        ...owner,
-        suspensionId: first.suspensionId,
-        attempt: first.attempt,
-        actionId: 'action-first',
-        jobCreatedAt: 123,
-        resumeAttemptId: 'resume-one',
-      };
-      const claims = await Promise.all([
-        methods.claimAgentEventActorSuspension(claim),
-        methods.claimAgentEventActorSuspension({ ...claim, resumeAttemptId: 'resume-two' }),
-      ]);
-      expect(claims).toEqual(expect.arrayContaining([{ status: 'claimed' }, { status: 'stale' }]));
-      const winningResumeAttemptId = claims[0].status === 'claimed' ? 'resume-one' : 'resume-two';
-
-      const second = suspension('second', 1);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: second,
-          kind: 'internal_completion',
-          actionId: 'action-second',
-          jobCreatedAt: 123,
-          previous: {
-            suspensionId: first.suspensionId,
-            attempt: first.attempt,
-            resumeAttemptId: winningResumeAttemptId,
+        const second = suspension('second', 1);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: second,
+            kind: 'internal_completion',
+            actionId: 'action-second',
+            jobCreatedAt: 123,
+            previous: {
+              suspensionId: first.suspensionId,
+              attempt: first.attempt,
+              resumeAttemptId: winningResumeAttemptId,
+            },
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: {
+            kind: 'internal_completion',
+            suspension: { suspensionId: second.suspensionId },
           },
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: {
-          kind: 'internal_completion',
-          suspension: { suspensionId: second.suspensionId },
-        },
-      });
-      await expect(
-        methods.claimAgentEventActorSuspension({
-          ...owner,
-          suspensionId: second.suspensionId,
-          attempt: second.attempt,
-          actionId: 'action-second',
-          jobCreatedAt: 123,
-          resumeAttemptId: 'resume-three',
-        }),
-      ).resolves.toEqual({ status: 'claimed' });
-
-      await expect(
-        methods.commitAgentEventActorState({
-          ...owner,
-          invocationId: 'event-pause',
-          expectedEpoch: 0,
-          action: { toolName: 'submit_move' },
-          checkpoint: checkpoint('committed'),
-          settlementAuthority: {
+        });
+        await expect(
+          methods.claimAgentEventActorSuspension({
+            ...owner,
             suspensionId: second.suspensionId,
             attempt: second.attempt,
+            actionId: 'action-second',
+            jobCreatedAt: 123,
+            resumeAttemptId: 'resume-three',
+          }),
+        ).resolves.toEqual({ status: 'claimed' });
+
+        await expect(
+          methods.commitAgentEventActorState({
+            ...owner,
+            invocationId: 'event-pause',
+            expectedEpoch: 0,
+            action: { toolName: 'submit_move' },
+            checkpoint: checkpoint('committed'),
+            settlementAuthority: {
+              suspensionId: second.suspensionId,
+              attempt: second.attempt,
+              resumeAttemptId: 'resume-three',
+            },
+          }),
+        ).resolves.toMatchObject({ status: 'committed' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: {
+            status: 'closed',
+            outcome: 'committed',
             resumeAttemptId: 'resume-three',
           },
-        }),
-      ).resolves.toMatchObject({ status: 'committed' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: {
-          status: 'closed',
-          outcome: 'committed',
-          resumeAttemptId: 'resume-three',
-        },
-        state: { generation: 1, checkpoint: checkpoint('committed') },
-      });
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
+          state: { generation: 1, checkpoint: checkpoint('committed') },
+        });
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-pause',
+              actionAdmitted: true,
+              status: 'history_persisted',
+              checkpoint: checkpoint('committed'),
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
+            },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.resolveAgentEventActorReconciliation({
+            ...owner,
             invocationId: 'event-pause',
-            actionAdmitted: true,
-            status: 'history_persisted',
             checkpoint: checkpoint('committed'),
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
-          },
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.resolveAgentEventActorReconciliation({
-          ...owner,
-          invocationId: 'event-pause',
-          checkpoint: checkpoint('committed'),
-          resolution: 'checkpoint_verified',
-        }),
-      ).resolves.toBe(true);
+            resolution: 'checkpoint_verified',
+          }),
+        ).resolves.toBe(true);
 
-      const cancellationCheckpoint = checkpoint('cancel');
-      const cancellationSuspension: IAgentEventActorSuspensionEvidence = {
-        ...suspension('cancel', 0),
-        invocation: {
-          ...suspension('cancel', 0).invocation,
-          invocationId: 'event-cancel',
-          fork: {
+        const cancellationCheckpoint = checkpoint('cancel');
+        const cancellationSuspension: IAgentEventActorSuspensionEvidence = {
+          ...suspension('cancel', 0),
+          invocation: {
+            ...suspension('cancel', 0).invocation,
+            invocationId: 'event-cancel',
+            fork: {
+              ...cancellationCheckpoint,
+              invocationId: 'event-cancel',
+            },
+          },
+          checkpoint: {
             ...cancellationCheckpoint,
             invocationId: 'event-cancel',
           },
-        },
-        checkpoint: {
-          ...cancellationCheckpoint,
-          invocationId: 'event-cancel',
-        },
-      };
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
-            invocationId: 'event-cancel',
-            status: 'invocation_pending',
-            checkpoint: cancellationCheckpoint,
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
-          },
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: cancellationSuspension,
-          actionId: 'action-cancel',
-          jobCreatedAt: 124,
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      const [resumeRace, cancelRace] = await Promise.all([
-        methods.claimAgentEventActorSuspension({
-          ...owner,
-          suspensionId: cancellationSuspension.suspensionId,
-          attempt: 0,
-          actionId: 'action-cancel',
-          jobCreatedAt: 124,
-          resumeAttemptId: 'resume-race',
-        }),
-        methods.cancelAgentEventActorSuspension({
-          ...owner,
-          suspensionId: cancellationSuspension.suspensionId,
-          attempt: 0,
-          invocationId: 'event-cancel',
-          checkpoint: cancellationCheckpoint,
-        }),
-      ]);
-      const raceStatuses = [resumeRace.status, cancelRace.status];
-      expect(raceStatuses.filter((status) => status === 'stale')).toHaveLength(1);
-      expect(raceStatuses).toEqual(
-        expect.arrayContaining([expect.stringMatching(/^(claimed|cancelled)$/), 'stale']),
-      );
-      if (resumeRace.status === 'claimed') {
+        };
         await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-cancel',
+              status: 'invocation_pending',
+              checkpoint: cancellationCheckpoint,
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
+            },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: cancellationSuspension,
+            actionId: 'action-cancel',
+            jobCreatedAt: 124,
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        const [resumeRace, cancelRace] = await Promise.all([
+          methods.claimAgentEventActorSuspension({
+            ...owner,
+            suspensionId: cancellationSuspension.suspensionId,
+            attempt: 0,
+            actionId: 'action-cancel',
+            jobCreatedAt: 124,
+            resumeAttemptId: 'resume-race',
+          }),
           methods.cancelAgentEventActorSuspension({
             ...owner,
             suspensionId: cancellationSuspension.suspensionId,
             attempt: 0,
             invocationId: 'event-cancel',
             checkpoint: cancellationCheckpoint,
-            claimedResumeAttemptId: 'resume-race',
           }),
-        ).resolves.toEqual({ status: 'cancelled' });
-      }
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: { status: 'closed', outcome: 'cancelled' },
-      });
-    });
+        ]);
+        const raceStatuses = [resumeRace.status, cancelRace.status];
+        expect(raceStatuses.filter((status) => status === 'stale')).toHaveLength(1);
+        expect(raceStatuses).toEqual(
+          expect.arrayContaining([expect.stringMatching(/^(claimed|cancelled)$/), 'stale']),
+        );
+        if (resumeRace.status === 'claimed') {
+          await expect(
+            methods.cancelAgentEventActorSuspension({
+              ...owner,
+              suspensionId: cancellationSuspension.suspensionId,
+              attempt: 0,
+              invocationId: 'event-cancel',
+              checkpoint: cancellationCheckpoint,
+              claimedResumeAttemptId: 'resume-race',
+            }),
+          ).resolves.toEqual({ status: 'cancelled' });
+        }
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: { status: 'closed', outcome: 'cancelled' },
+        });
+      },
+    );
 
     it('closes a resumed suspension when the actor-head commit is stale', async () => {
       const conversationId = uuidv4();
@@ -4727,6 +5112,10 @@ describe('Conversation Operations', () => {
         },
         prunableCheckpoint: checkpoint('one'),
       });
+      const pendingPruning = await Conversation.findOne({ conversationId })
+        .select('+agentEventActorCleanup')
+        .lean();
+      expect(pendingPruning?.agentEventActorCleanup).toEqual([checkpoint('one')]);
       await expect(finishInvocation('three', checkpoint('three'))).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({

@@ -91,6 +91,8 @@ export function composeAgentUpdatePayload(
     stateful_code_sessions,
     stateful_code_environment,
     code_environment_id,
+    repositoryInstructions,
+    code_workspace_id,
     git_identity,
     recursion_limit,
     category,
@@ -117,8 +119,17 @@ export function composeAgentUpdatePayload(
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  /** Pruning reads the complete schema, not the rendered subset, so a role-gated
+   *  parameter is preserved rather than deleted when someone without the
+   *  permission saves an unrelated edit. `webSearchAllowed` narrows only
+   *  `visibleParameters`, which this path does not use. */
   const modelParameterSettings = parameterConfig
-    ? resolveAgentParameterSettings({ ...parameterConfig, model, provider })
+    ? resolveAgentParameterSettings({
+        ...parameterConfig,
+        model,
+        provider,
+        webSearchAllowed: true,
+      })
     : undefined;
   const model_parameters = modelParameterSettings
     ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)
@@ -152,6 +163,8 @@ export function composeAgentUpdatePayload(
       stateful_code_sessions: normalizedStatefulCodeSessions,
       stateful_code_environment: normalizedStatefulCodeEnvironment,
       code_environment_id: agent_id ? code_environment_id : (code_environment_id ?? undefined),
+      repositoryInstructions,
+      code_workspace_id,
       git_identity: normalizedGitIdentity,
       recursion_limit,
       category,
@@ -656,6 +669,7 @@ export default function AgentPanel() {
       create.mutate({
         ...basePayload,
         git_identity: basePayload.git_identity ?? undefined,
+        repositoryInstructions: basePayload.repositoryInstructions,
         model,
         tools,
         provider,

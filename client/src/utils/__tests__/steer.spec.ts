@@ -64,6 +64,25 @@ describe('applySteerPart', () => {
     expect(twice).toBe(once);
   });
 
+  it('replaces a persisted steer when a later correction removes rejected files', () => {
+    const withFiles = applySteerPart(
+      assistantMessage(),
+      buildEvent({
+        part: {
+          type: ContentTypes.STEER,
+          [ContentTypes.STEER]: 'change course',
+          steerId: 'steer-1',
+          files: [{ file_id: 'rejected-file' }],
+        },
+      }),
+    );
+    const corrected = applySteerPart(withFiles, buildEvent());
+
+    expect(corrected).not.toBe(withFiles);
+    expect(getSteerPart(corrected.content?.[2])?.files).toBeUndefined();
+    expect(corrected.content).toHaveLength(3);
+  });
+
   it('handles a message without content', () => {
     const message = assistantMessage({ content: undefined });
     const updated = applySteerPart(message, buildEvent({ index: 0 }));

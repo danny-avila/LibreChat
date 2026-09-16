@@ -41,6 +41,7 @@ export {
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   MCPAuthorityProofError,
+  createMCPAuthorizationFenceRetryStorage,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
@@ -50,6 +51,7 @@ export {
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
 export {
+  AGENT_EVENT_ACTOR_SUMMARY_VERSION,
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
   MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
   MAX_AGENT_EVENT_ACTOR_SKILLS,
@@ -99,6 +101,7 @@ export {
   MCPServerNameMigrationError,
   createMCPAuthorityLookupIndexes,
   dropSupersededTenantIndexes,
+  migrateTenantIndexes,
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,
 } from './migrations';

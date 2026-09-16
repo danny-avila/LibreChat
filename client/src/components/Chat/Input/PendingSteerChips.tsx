@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { TooltipAnchor, useToastContext } from '@librechat/client';
 import {
   X,
   Zap,
@@ -27,8 +27,8 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { escalatingSteerFamily, revealedQueuedTurnFamily } from '~/store/steer';
 import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
-import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -77,11 +77,39 @@ function QuoteCount({ count, label }: { count: number; label: string }) {
   );
 }
 
+/**
+ * The one fact a queued row needs to convey ("did my message vanish?" it did
+ * not) rides the clock as a hover hint and its accessible name while a run is
+ * pending, instead of a caption row that costs composer height at rest. The
+ * anchor is a tab stop with a visible ring so keyboard users reach the same
+ * hint: the tooltip opens on focus-visible as well as on hover.
+ */
+function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
+  if (warning) {
+    return <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />;
+  }
+  if (!hint) {
+    return <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />;
+  }
+  return (
+    <TooltipAnchor
+      description={hint}
+      role="img"
+      aria-label={hint}
+      tabIndex={0}
+      className="flex shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+    >
+      <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
+    </TooltipAnchor>
+  );
+}
+
 function QueuedRow({
   message,
   steering,
   conversationId,
   interruptPending,
+  revealed,
   onEditToComposer,
   onRestoreToComposer,
 }: {
@@ -89,6 +117,8 @@ function QueuedRow({
   steering: SteeringControls;
   conversationId: string;
   interruptPending: boolean;
+  /** Shown as the next user turn already; only removal remains meaningful. */
+  revealed?: boolean;
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
@@ -159,12 +189,16 @@ function QueuedRow({
   // Edit/remove are safe because `afterDiscard` tombstones that source first.
   const canSteerNow = steering.duringRunActive && steering.canSteer && !isRecovered;
   const showPrimary =
-    serverActionable && (canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow));
+    revealed !== true &&
+    serverActionable &&
+    (canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow));
   /** `canSteer` is defined as false while paused on approval, but the
    *  escalation control must stay visible-and-disabled there — hiding it
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
-    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
+    revealed !== true &&
+    !isRecovered &&
+    (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
 
   const entries: MenuEntry[] = [
     {
@@ -209,11 +243,10 @@ function QueuedRow({
 
   return (
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
-      {isRejected || isUnconfirmed || isIndeterminate ? (
-        <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />
-      ) : (
-        <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />
-      )}
+      <QueuedIcon
+        warning={isRejected || isUnconfirmed || isIndeterminate}
+        hint={steering.duringRunActive ? localize('com_ui_steer_queued_info') : undefined}
+      />
       <span className="min-w-0 flex-1 truncate" title={message.text}>
         {message.text}
       </span>
@@ -229,6 +262,11 @@ function QueuedRow({
       />
       {(isRejected || isUnconfirmed || isIndeterminate) && (
         <span className="shrink-0 text-xs text-text-warning">{localize(statusLabel)}</span>
+      )}
+      {revealed === true && (
+        <span className="shrink-0 text-xs text-text-secondary">
+          {localize('com_ui_queued_turn_starting')}
+        </span>
       )}
       {showPrimary && (
         <button
@@ -265,7 +303,12 @@ function QueuedRow({
         aria-label={localize(
           isUnconfirmed ? 'com_ui_dismiss_unconfirmed_delivery' : 'com_ui_remove_queued',
         )}
-        disabled={actionPending || (!serverActionable && !isUnconfirmed)}
+        disabled={
+          actionPending ||
+          (!serverActionable &&
+            !isUnconfirmed &&
+            !(message.server?.id != null && message.server.status === 'claimed'))
+        }
         onClick={() => {
           if (isUnconfirmed) {
             steering.removeQueued(message.id);
@@ -294,11 +337,13 @@ function QueuedRow({
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
       </button>
-      <RowMenu
-        label={localize('com_ui_more_options')}
-        entries={entries}
-        preferences={preferences}
-      />
+      {revealed !== true && (
+        <RowMenu
+          label={localize('com_ui_more_options')}
+          entries={entries}
+          preferences={preferences}
+        />
+      )}
     </div>
   );
 }
@@ -446,6 +491,9 @@ function PendingSteerChips({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
+  /** A row already shown as the next user turn keeps only its remove action
+   *  here: the turn can still be retracted until the server admits it. */
+  const revealed = useAtomValue(revealedQueuedTurnFamily(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
   /** Only one interrupt can be in flight: a second preempt while one is
    *  unresolved would arm a second seal, so escalation buttons disable. The
@@ -463,8 +511,6 @@ function PendingSteerChips({
 
   return (
     <div className="flex flex-col gap-1.5 px-2 pt-2" data-testid="pending-steer-chips">
-      {/* The list owns only listitem rows; the caption lives beside it so the
-       *  ARIA list structure stays valid for assistive tech. */}
       <div
         className="flex flex-col gap-1.5"
         role="list"
@@ -485,19 +531,16 @@ function PendingSteerChips({
             steering={steering}
             conversationId={conversationId}
             interruptPending={interruptPending}
+            revealed={
+              revealed != null &&
+              message.clientRequestId != null &&
+              revealed.clientRequestId === message.clientRequestId
+            }
             onEditToComposer={onEditToComposer}
             onRestoreToComposer={onRestoreToComposer}
           />
         ))}
       </div>
-      {/* One caption for the whole queued group: the single fact users need
-       *  ("did my message vanish?" it did not), shown only while a run is
-       *  actually pending — after it, rows drain or convert on their own. */}
-      {queued.length > 0 && steering.duringRunActive && (
-        <div className="px-3 text-xs text-text-secondary" data-testid="queued-caption">
-          {localize('com_ui_steer_queued_info')}
-        </div>
-      )}
     </div>
   );
 }

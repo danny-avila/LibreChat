@@ -110,6 +110,34 @@ describe('fileSearch.js - tuple return validation', () => {
   });
 
   describe('success cases should return tuple with artifact object', () => {
+    it.each([
+      [0, [1]],
+      [2, [3]],
+      [undefined, []],
+      [null, []],
+      [-1, []],
+      [1.5, []],
+      ['2', []],
+    ])('maps RAG page index %s to citation pages %j', async (page, pages) => {
+      generateShortLivedToken.mockReturnValue('mock-jwt-token');
+      axios.post.mockResolvedValue({
+        data: [
+          [{ page_content: 'Synthetic passage', metadata: { source: '/test.pdf', page } }, 0.2],
+        ],
+      });
+
+      const fileSearchTool = await createFileSearchTool({
+        userId: 'user1',
+        files: [{ file_id: 'file-123', filename: 'test.pdf' }],
+        fileCitations: true,
+      });
+      const [, artifact] = await fileSearchTool.func({ query: 'Synthetic page check' });
+      const source = artifact.file_search.sources[0];
+
+      expect(source.pages).toEqual(pages);
+      expect(source.pageRelevance).toEqual(pages.length ? { [pages[0]]: expect.any(Number) } : {});
+    });
+
     it('should return tuple with formatted results and sources artifact', async () => {
       generateShortLivedToken.mockReturnValue('mock-jwt-token');
 
@@ -118,14 +146,14 @@ describe('fileSearch.js - tuple return validation', () => {
           [
             {
               page_content: 'This is test content from the document',
-              metadata: { source: '/path/to/test.pdf', page: 1 },
+              metadata: { source: '/path/to/test.pdf', page: 0 },
             },
             0.2,
           ],
           [
             {
               page_content: 'Additional relevant content',
-              metadata: { source: '/path/to/test.pdf', page: 2 },
+              metadata: { source: '/path/to/test.pdf', page: 1 },
             },
             0.35,
           ],
