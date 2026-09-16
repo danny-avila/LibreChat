@@ -1377,6 +1377,25 @@ export class MCPConnectionFactory {
     return flowTenantId === this.tenantId;
   }
 
+  /**
+   * A pending flow's authorization URL was already built with or without RFC 8707
+   * `resource`, so replaying it after the operator changed `send_resource_parameter`
+   * reissues the request they reconfigured away from.
+   *
+   * Deliberately separate from {@link isCurrentServerOAuthFlow}: that check also gates reuse
+   * of a recent COMPLETED flow's tokens, and this setting must never invalidate tokens that
+   * were already issued.
+   */
+  private isReplayablePendingOAuthFlow(meta: MCPOAuthFlowMetadata | undefined): boolean {
+    if (!MCPOAuthHandler.matchesResourceParameterDecision(meta, this.serverConfig.oauth)) {
+      logger.info(
+        `${this.logPrefix} Pending OAuth flow predates a send_resource_parameter change; starting a new flow`,
+      );
+      return false;
+    }
+    return this.isCurrentServerOAuthFlow(meta);
+  }
+
   /** Prevents server-name keyed OAuth flow cache entries from crossing config bindings. */
   private isCurrentServerOAuthFlow(meta: MCPOAuthFlowMetadata | undefined): boolean {
     const currentServerUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
@@ -1676,7 +1695,7 @@ export class MCPConnectionFactory {
               : Infinity;
             const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
 
-            if (pendingAge < PENDING_STALE_MS && this.isCurrentServerOAuthFlow(flowMeta)) {
+            if (pendingAge < PENDING_STALE_MS && this.isReplayablePendingOAuthFlow(flowMeta)) {
               logger.debug(
                 `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
               );
@@ -2090,7 +2109,7 @@ export class MCPConnectionFactory {
             ? Date.now() - existingFlow.createdAt
             : Infinity;
 
-          if (pendingAge < PENDING_STALE_MS && this.isCurrentServerOAuthFlow(flowMeta)) {
+          if (pendingAge < PENDING_STALE_MS && this.isReplayablePendingOAuthFlow(flowMeta)) {
             logger.debug(
               `${this.logPrefix} Found recent PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), joining instead of creating new one`,
             );
