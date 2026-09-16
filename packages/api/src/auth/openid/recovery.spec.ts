@@ -51,17 +51,17 @@ describe('OpenID authentication publication settlement', () => {
     return { deps, service, input };
   }
 
-  it('settles a missing-session failure immediately and preserves the original error', async () => {
+  it('publishes into a new session when the persisted record expired', async () => {
     const { deps, service, input } = setup();
-    const error = new Error('failed to load session');
-    const req = { session: { reload: (callback: (error: Error) => void) => callback(error) } };
-    await expect(service.sendOpenIDAuthResponse({ ...input, req })).rejects.toBe(error);
-    expect(deps.failOpenIDRefreshFlight).toHaveBeenCalledWith({
-      key: 'publication',
-      ownerId: 'owner',
-      error,
-    });
-    expect(deps.completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+    const req = {
+      session: {
+        reload: (callback: (error: Error) => void) => callback(new Error('failed to load session')),
+        save: (callback: (error?: Error | null) => void) => callback(null),
+      },
+    };
+    await expect(service.sendOpenIDAuthResponse({ ...input, req })).resolves.toBe('app-token');
+    expect(deps.completeOpenIDRefreshFlight).toHaveBeenCalledTimes(1);
+    expect(deps.failOpenIDRefreshFlight).not.toHaveBeenCalled();
   });
 
   it('preserves the request error when failure settlement also fails', async () => {
