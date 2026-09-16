@@ -16,6 +16,7 @@ const mockLogger = {
 
 const mockMeiliHealth = jest.fn();
 const mockMeiliIndex = jest.fn();
+const mockMeiliWaitForTask = jest.fn();
 const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockGetLogStores = jest.fn();
@@ -41,6 +42,7 @@ jest.mock('meilisearch', () => ({
   MeiliSearch: jest.fn(() => ({
     health: mockMeiliHealth,
     index: mockMeiliIndex,
+    waitForTask: mockMeiliWaitForTask,
   })),
 }));
 
@@ -100,9 +102,10 @@ describe('performSync() - syncThreshold logic', () => {
 
     // Mock MeiliSearch client responses
     mockMeiliHealth.mockResolvedValue({ status: 'available' });
+    mockMeiliWaitForTask.mockResolvedValue({ status: 'succeeded' });
     mockMeiliIndex.mockReturnValue({
-      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
-      updateSettings: jest.fn().mockResolvedValue({}),
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user', 'tenantId'] }),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -341,9 +344,20 @@ describe('performSync() - syncThreshold logic', () => {
       isComplete: true,
     });
 
+    const updateSettings = jest.fn().mockResolvedValue({ taskUid: 1 });
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({
+        filterableAttributes: ['user', 'tenantId', 'customAttribute'],
+      }),
+      updateSettings,
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+
     // Act
     const indexSync = require('./indexSync');
     await indexSync();
+
+    expect(updateSettings).not.toHaveBeenCalled();
 
     // Assert: No countDocuments calls
     expect(Message.countDocuments).not.toHaveBeenCalled();
@@ -379,7 +393,7 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock settings update scenario
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -420,9 +434,12 @@ describe('performSync() - syncThreshold logic', () => {
     Conversation.syncWithMeili.mockResolvedValue(undefined);
 
     // Mock settings update scenario
+    const updateSettings = jest.fn().mockResolvedValue({ taskUid: 1 });
     mockMeiliIndex.mockReturnValue({
-      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      getSettings: jest.fn().mockResolvedValue({
+        filterableAttributes: ['user', 'customAttribute'],
+      }),
+      updateSettings,
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -435,6 +452,15 @@ describe('performSync() - syncThreshold logic', () => {
     // Assert: Flags were reset due to settings update
     expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
     expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenCalledWith({
+      filterableAttributes: ['user', 'customAttribute', 'tenantId'],
+    });
+    expect(mockMeiliWaitForTask).toHaveBeenCalledTimes(2);
+    expect(mockMeiliWaitForTask).toHaveBeenCalledWith(1, {
+      timeOutMs: 600_000,
+      intervalMs: 100,
+    });
 
     // Assert: Conversation sync triggered despite being below threshold (50 < 1000)
     expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
@@ -467,7 +493,7 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock settings update scenario
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
