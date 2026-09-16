@@ -8,7 +8,7 @@ const {
   refreshS3FileUrls,
   handleFilesUsageRequest,
   buildDeleteFilesResponse,
-  partitionAgentResourceFiles,
+  deleteAgentResourceFiles,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
@@ -246,31 +246,35 @@ router.delete('/', async (req, res) => {
         });
       }
 
-      const { ownedFiles, unlinkOnlyFiles } = partitionAgentResourceFiles({
-        requestedFileIds: fileIds,
-        attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
-        fileRecords: dbFiles,
-        toolResource: req.body.tool_resource,
-        userId: req.user.id.toString(),
-      });
+      const agentDeletion = await deleteAgentResourceFiles(
+        {
+          agentId: req.body.agent_id,
+          toolResource: req.body.tool_resource,
+          requestedFileIds: fileIds,
+          attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
+          files: dbFiles.map((file) => ({
+            file_id: file.file_id,
+            owner: file.user?.toString() ?? null,
+            file,
+          })),
+          userId: req.user.id.toString(),
+        },
+        {
+          getSharedResourceFileIds: db.getSharedResourceFileIds,
+          removeAgentResourceFiles: db.removeAgentResourceFiles,
+          deleteFiles: (agentFiles) => processDeleteRequest({ req, files: agentFiles }),
+        },
+      );
 
-      if (unlinkOnlyFiles.length > 0) {
-        await db.removeAgentResourceFiles({
-          agent_id: req.body.agent_id,
-          files: unlinkOnlyFiles,
-        });
-      }
-
-      if (ownedFiles.length === 0) {
+      if (agentDeletion.outcome == null) {
         res.status(200).json({ message: 'File associations removed successfully from agent' });
         return;
       }
 
-      const agentDeleteResult = await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
-        `[/files] Agent files deleted successfully: ${ownedFiles.map((f) => f.file_id).join(', ')}`,
+        `[/files] Agent files deleted successfully: ${agentDeletion.destroyedFileIds.join(', ')}`,
       );
-      sendDeleteResult(agentDeleteResult, 'Files deleted successfully');
+      sendDeleteResult(agentDeletion.outcome, 'Files deleted successfully');
       return;
     }
 

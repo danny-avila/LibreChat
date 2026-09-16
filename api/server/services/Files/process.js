@@ -265,16 +265,8 @@ const processDeleteRequest = async ({ req, files }) => {
     await initializeClients();
   }
 
-  const agentFiles = [];
-
   for (const file of files) {
     const source = file.source ?? FileSources.local;
-    if (req.body.agent_id && req.body.tool_resource) {
-      agentFiles.push({
-        tool_resource: req.body.tool_resource,
-        file_id: file.file_id,
-      });
-    }
 
     if (source === FileSources.text) {
       resolvedFileIds.add(file.file_id);
@@ -313,17 +305,26 @@ const processDeleteRequest = async ({ req, files }) => {
     });
   }
 
-  if (agentFiles.length > 0) {
-    promises.push(
-      db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      }),
-    );
-  }
-
   await Promise.allSettled(promises);
   const deletedFileIds = [...resolvedFileIds];
+
+  /* The unlink follows the delete rather than racing it. A file whose storage or vector delete
+     failed keeps its association, because a detached file_id cannot be resubmitted through the
+     agent route and the client does not queue an agent-scoped batch for retry: unlinking it early
+     is what would strand its bytes and chunks for good. */
+  if (req.body.agent_id && req.body.tool_resource && deletedFileIds.length > 0) {
+    try {
+      await db.removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: deletedFileIds.map((file_id) => ({
+          tool_resource: req.body.tool_resource,
+          file_id,
+        })),
+      });
+    } catch (error) {
+      logger.error('Error unlinking deleted files from agent', error);
+    }
+  }
   let metadataDeletedFileIds = deletedFileIds;
   if (deletedFileIds.length > 0) {
     try {

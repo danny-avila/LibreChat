@@ -1,5 +1,7 @@
+import type { AgentResourceFileInput } from './deletion';
 import {
   buildDeleteFilesResponse,
+  deleteAgentResourceFiles,
   partitionAgentResourceFiles,
   PARTIAL_FILE_DELETION_MESSAGE,
 } from './deletion';
@@ -37,17 +39,25 @@ describe('delete files response', () => {
   });
 });
 
+type TestFile = { file_id: string; filename: string };
+
+const input = (file_id: string, owner: string | null): AgentResourceFileInput<TestFile> => ({
+  file_id,
+  owner,
+  file: { file_id, filename: `${file_id}.txt` },
+});
+
 describe('partition agent resource files', () => {
   const userId = 'user-1';
-  const owned = { file_id: 'owned', user: userId };
-  const foreign = { file_id: 'foreign', user: 'user-2' };
+  const owned = input('owned', userId);
+  const foreign = input('foreign', 'user-2');
 
-  it('sends an attached file the caller owns through the full delete pass', () => {
+  it('makes an attached file the caller owns a candidate for the delete pass', () => {
     expect(
       partitionAgentResourceFiles({
         requestedFileIds: ['owned'],
         attachedFileIds: ['owned'],
-        fileRecords: [owned],
+        files: [owned],
         toolResource: 'file_search',
         userId,
       }),
@@ -59,7 +69,7 @@ describe('partition agent resource files', () => {
       partitionAgentResourceFiles({
         requestedFileIds: ['foreign'],
         attachedFileIds: ['foreign'],
-        fileRecords: [foreign],
+        files: [foreign],
         toolResource: 'file_search',
         userId,
       }),
@@ -74,7 +84,7 @@ describe('partition agent resource files', () => {
       partitionAgentResourceFiles({
         requestedFileIds: ['missing'],
         attachedFileIds: ['missing'],
-        fileRecords: [],
+        files: [],
         toolResource: 'file_search',
         userId,
       }),
@@ -84,12 +94,27 @@ describe('partition agent resource files', () => {
     });
   });
 
+  it('does not treat an ownerless record as the caller’s', () => {
+    expect(
+      partitionAgentResourceFiles({
+        requestedFileIds: ['orphan'],
+        attachedFileIds: ['orphan'],
+        files: [input('orphan', null)],
+        toolResource: 'file_search',
+        userId,
+      }),
+    ).toEqual({
+      ownedFiles: [],
+      unlinkOnlyFiles: [{ tool_resource: 'file_search', file_id: 'orphan' }],
+    });
+  });
+
   it('ignores files the tool resource does not hold', () => {
     expect(
       partitionAgentResourceFiles({
         requestedFileIds: ['owned', 'elsewhere'],
         attachedFileIds: ['owned'],
-        fileRecords: [owned, { file_id: 'elsewhere', user: userId }],
+        files: [owned, input('elsewhere', userId)],
         toolResource: 'file_search',
         userId,
       }),
@@ -101,7 +126,7 @@ describe('partition agent resource files', () => {
       partitionAgentResourceFiles({
         requestedFileIds: ['owned', 'foreign', 'owned'],
         attachedFileIds: ['owned', 'foreign'],
-        fileRecords: [owned, foreign],
+        files: [owned, foreign],
         toolResource: 'ocr',
         userId,
       }),
@@ -110,32 +135,119 @@ describe('partition agent resource files', () => {
       unlinkOnlyFiles: [{ tool_resource: 'ocr', file_id: 'foreign' }],
     });
   });
+});
 
-  it('compares an ObjectId owner by value', () => {
-    const record = { file_id: 'owned', user: { toString: () => userId } };
-    expect(
-      partitionAgentResourceFiles({
-        requestedFileIds: ['owned'],
-        attachedFileIds: ['owned'],
-        fileRecords: [record],
-        toolResource: 'file_search',
-        userId,
-      }).ownedFiles,
-    ).toEqual([record]);
+describe('delete agent resource files', () => {
+  const userId = 'user-1';
+
+  const makeDeps = (sharedFileIds: string[] = []) => ({
+    getSharedResourceFileIds: jest.fn().mockResolvedValue(sharedFileIds),
+    removeAgentResourceFiles: jest.fn().mockResolvedValue(undefined),
+    deleteFiles: jest
+      .fn()
+      .mockImplementation((files: TestFile[]) =>
+        Promise.resolve({ deletedFileIds: files.map((file) => file.file_id), failedFileIds: [] }),
+      ),
   });
 
-  it('does not treat an ownerless record as the caller’s', () => {
-    expect(
-      partitionAgentResourceFiles({
-        requestedFileIds: ['orphan'],
-        attachedFileIds: ['orphan'],
-        fileRecords: [{ file_id: 'orphan' }],
+  const run = (
+    files: Array<AgentResourceFileInput<TestFile>>,
+    deps: ReturnType<typeof makeDeps>,
+    attachedFileIds?: string[],
+  ) =>
+    deleteAgentResourceFiles(
+      {
+        agentId: 'agent_1',
         toolResource: 'file_search',
+        requestedFileIds: files.map((file) => file.file_id),
+        attachedFileIds: attachedFileIds ?? files.map((file) => file.file_id),
+        files,
         userId,
-      }),
-    ).toEqual({
-      ownedFiles: [],
-      unlinkOnlyFiles: [{ tool_resource: 'file_search', file_id: 'orphan' }],
+      },
+      deps,
+    );
+
+  it('destroys a file this agent was the last to reference', async () => {
+    const deps = makeDeps();
+    const result = await run([input('owned', userId)], deps);
+
+    expect(deps.deleteFiles).toHaveBeenCalledWith([{ file_id: 'owned', filename: 'owned.txt' }]);
+    expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      outcome: { deletedFileIds: ['owned'], failedFileIds: [] },
+      unlinkedFileIds: [],
+      destroyedFileIds: ['owned'],
     });
+  });
+
+  it('asks about shared references excluding the agent being edited', async () => {
+    const deps = makeDeps();
+    await run([input('owned', userId)], deps);
+
+    expect(deps.getSharedResourceFileIds).toHaveBeenCalledWith({
+      file_ids: ['owned'],
+      excludeAgentId: 'agent_1',
+    });
+  });
+
+  it('keeps a file another agent still references, unlinking it here only', async () => {
+    const deps = makeDeps(['shared']);
+    const result = await run([input('shared', userId)], deps);
+
+    expect(deps.deleteFiles).not.toHaveBeenCalled();
+    expect(deps.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'agent_1',
+      files: [{ tool_resource: 'file_search', file_id: 'shared' }],
+    });
+    expect(result).toEqual({
+      outcome: null,
+      unlinkedFileIds: ['shared'],
+      destroyedFileIds: [],
+    });
+  });
+
+  it('destroys the last-reference file and unlinks the shared one in the same request', async () => {
+    const deps = makeDeps(['shared']);
+    const result = await run([input('shared', userId), input('owned', userId)], deps);
+
+    expect(deps.deleteFiles).toHaveBeenCalledWith([{ file_id: 'owned', filename: 'owned.txt' }]);
+    expect(deps.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'agent_1',
+      files: [{ tool_resource: 'file_search', file_id: 'shared' }],
+    });
+    expect(result.unlinkedFileIds).toEqual(['shared']);
+    expect(result.destroyedFileIds).toEqual(['owned']);
+  });
+
+  it('unlinks a file the caller does not own without asking to destroy it', async () => {
+    const deps = makeDeps();
+    const result = await run([input('foreign', 'user-2')], deps);
+
+    expect(deps.getSharedResourceFileIds).not.toHaveBeenCalled();
+    expect(deps.deleteFiles).not.toHaveBeenCalled();
+    expect(deps.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'agent_1',
+      files: [{ tool_resource: 'file_search', file_id: 'foreign' }],
+    });
+    expect(result.outcome).toBeNull();
+  });
+
+  it('touches nothing when the tool resource holds none of the requested files', async () => {
+    const deps = makeDeps();
+    const result = await run([input('owned', userId)], deps, []);
+
+    expect(deps.getSharedResourceFileIds).not.toHaveBeenCalled();
+    expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(deps.deleteFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({ outcome: null, unlinkedFileIds: [], destroyedFileIds: [] });
+  });
+
+  it('passes a partial delete outcome back to the caller', async () => {
+    const deps = makeDeps();
+    deps.deleteFiles.mockResolvedValue({ deletedFileIds: [], failedFileIds: ['owned'] });
+    const result = await run([input('owned', userId)], deps);
+
+    expect(result.outcome).toEqual({ deletedFileIds: [], failedFileIds: ['owned'] });
+    expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
   });
 });

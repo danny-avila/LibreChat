@@ -422,6 +422,61 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(retainedFile).toBeTruthy();
     });
 
+    it('keeps a file a duplicated agent still references, unlinking it here only', async () => {
+      const sharedFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: sharedFileId,
+        filename: 'shared-knowledge.txt',
+        filepath: '/uploads/shared-knowledge.txt',
+        bytes: 100,
+        type: 'text/plain',
+        source: FileSources.vectordb,
+        embedded: true,
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: { file_search: { file_ids: [sharedFileId] } },
+      });
+
+      /* Duplicating an agent copies file_ids rather than the files behind them, and lands them
+         under `context`, so the second holder is found across tool resources. */
+      const duplicate = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent (copy)',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: { context: { file_ids: [sharedFileId] } },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: sharedFileId, filepath: '/uploads/shared-knowledge.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+
+      const untouchedDuplicate = await Agent.findOne({ id: duplicate.id }).lean();
+      expect(untouchedDuplicate.tool_resources.context.file_ids).toEqual([sharedFileId]);
+
+      const retainedFile = await File.findOne({ file_id: sharedFileId }).lean();
+      expect(retainedFile).toBeTruthy();
+    });
+
     it('leaves an owned file alone when the tool resource does not hold it', async () => {
       const ownedFileId = uuidv4();
       await createFile({

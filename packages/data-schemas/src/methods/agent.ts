@@ -650,6 +650,13 @@ export function createAgentMethods(
   }: {
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  getSharedResourceFileIds: ({
+    file_ids,
+    excludeAgentId,
+  }: {
+    file_ids: string[];
+    excludeAgentId?: string;
+  }) => Promise<string[]>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
@@ -1230,6 +1237,55 @@ export function createAgentMethods(
   }
 
   /**
+   * Reports which of the given file_ids are still referenced by an agent other than
+   * `excludeAgentId`, so a caller can tell a last reference from a shared one.
+   *
+   * Duplicating an agent copies `file_ids` rather than the files behind them, so one file record
+   * can back two agents; destroying its bytes on behalf of one agent would empty the other. This
+   * is deliberately not scoped by tenant: a reference is a reference, whoever holds it.
+   */
+  async function getSharedResourceFileIds({
+    file_ids,
+    excludeAgentId,
+  }: {
+    file_ids: string[];
+    excludeAgentId?: string;
+  }): Promise<string[]> {
+    if (!file_ids || file_ids.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const requested = new Set(file_ids);
+    const searchParameter: FilterQuery<IAgent> = {
+      $or: TOOL_RESOURCE_KEYS.map((key) => ({
+        [`tool_resources.${key}.file_ids`]: { $in: file_ids },
+      })),
+    };
+    if (excludeAgentId != null) {
+      searchParameter.id = { $ne: excludeAgentId };
+    }
+
+    const agents = await Agent.find(searchParameter, { tool_resources: 1 }).lean();
+    const shared = new Set<string>();
+    for (const agent of agents) {
+      for (const key of TOOL_RESOURCE_KEYS) {
+        const fileIds = agent.tool_resources?.[key]?.file_ids;
+        if (fileIds == null) {
+          continue;
+        }
+        for (const fileId of fileIds) {
+          if (requested.has(fileId)) {
+            shared.add(fileId);
+          }
+        }
+      }
+    }
+
+    return [...shared];
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -1696,6 +1752,7 @@ export function createAgentMethods(
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
     removeAgentResourceFilesFromAllAgents,
+    getSharedResourceFileIds,
   };
 }
 
