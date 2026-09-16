@@ -1,12 +1,12 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useSetAtom } from 'jotai';
 import { PermissionBits } from 'librechat-data-provider';
 import type { TArtifactApp } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
-import { useListArtifactAppsQuery } from '~/data-provider';
+import { useDeleteArtifactAppMutation, useListArtifactAppsQuery } from '~/data-provider';
 import ArtifactAppsList from './ArtifactAppsList';
 
 const mockShowToast = jest.fn();
@@ -20,6 +20,7 @@ const getViewedStorageKey = (userId: string, tenantId = '__default__') =>
   `librechat.viewedArtifactApps:${tenantId}:${userId}`;
 
 jest.mock('~/data-provider', () => ({
+  useDeleteArtifactAppMutation: jest.fn(),
   useListArtifactAppsQuery: jest.fn(),
 }));
 
@@ -50,6 +51,10 @@ jest.mock('~/hooks', () => ({
       com_ui_artifact_scope_all: 'All',
       com_ui_artifact_shared_with_you: 'Shared with you',
       com_ui_artifact_link_copied: 'Artifact link copied',
+      com_ui_artifact_delete: 'Delete artifact?',
+      com_ui_artifact_delete_confirm: `Delete "${values?.[0] ?? ''}"? This action cannot be undone.`,
+      com_ui_artifact_delete_error: "Couldn't delete the artifact. Try again.",
+      com_ui_artifact_delete_success: 'Artifact deleted',
       com_ui_artifact_apps_view_mode: 'Artifact view mode',
       com_ui_artifact_apps_list_view: 'List view',
       com_ui_artifact_apps_grid_view: 'Grid view',
@@ -58,6 +63,7 @@ jest.mock('~/hooks', () => ({
       com_ui_artifact_activity_just_now: 'just now',
       com_ui_copy_failed: 'Failed to copy to clipboard',
       com_ui_copy_link: 'Copy link',
+      com_ui_delete: 'Delete',
       com_ui_share: 'Share',
       com_ui_options: 'options',
       com_ui_pin: 'Pin',
@@ -102,16 +108,21 @@ jest.mock('@librechat/client', () => {
           </button>
           {items
             .filter((item) => item.show !== false)
-            .map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={item.ariaChecked}
-                onClick={(event) => item.onClick?.(event)}
-              >
-                {item.label}
-              </button>
-            ))}
+            .map((item) =>
+              item.separate ? (
+                <hr key={item.id} />
+              ) : (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={item.ariaChecked}
+                  className={item.className}
+                  onClick={(event) => item.onClick?.(event)}
+                >
+                  {item.label}
+                </button>
+              ),
+            )}
         </div>
       );
     },
@@ -137,7 +148,9 @@ jest.mock('~/components/Sharing', () => ({
 }));
 
 const mockUseListArtifactAppsQuery = jest.mocked(useListArtifactAppsQuery);
+const mockUseDeleteArtifactAppMutation = jest.mocked(useDeleteArtifactAppMutation);
 const mockSetArtifactNavigationRequest = jest.fn();
+const mockDeleteArtifact = jest.fn();
 
 type ArtifactAppsListQueryResult = ReturnType<typeof useListArtifactAppsQuery>;
 type ArtifactAppsListSuccessResult = Extract<ArtifactAppsListQueryResult, { status: 'success' }>;
@@ -237,6 +250,11 @@ describe('ArtifactAppsList', () => {
       user: { id: 'user-1', role: 'USER', tenantId: undefined },
     });
     mockUseListArtifactAppsQuery.mockReturnValue(makeListQueryResult());
+    mockUseDeleteArtifactAppMutation.mockReturnValue({
+      mutate: mockDeleteArtifact,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDeleteArtifactAppMutation>);
+    mockDeleteArtifact.mockReset();
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: jest.fn().mockResolvedValue(undefined) },
@@ -455,6 +473,74 @@ describe('ArtifactAppsList', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
 
     expect(mockShowToast).toHaveBeenLastCalledWith({ status: 'info', message: 'Unpinned' });
+  });
+
+  it('deletes an owned artifact after confirmation', () => {
+    mockDeleteArtifact.mockImplementation((_artifactAppId, options) =>
+      options?.onSuccess?.({
+        success: true,
+      }),
+    );
+    window.localStorage.setItem(getPinnedStorageKey('user-1'), '["quarterly-report"]');
+    window.localStorage.setItem(
+      getViewedStorageKey('user-1'),
+      JSON.stringify({ 'quarterly-report': '2026-08-20T11:45:00Z' }),
+    );
+
+    render(
+      <BrowserRouter>
+        <ArtifactAppsList />
+      </BrowserRouter>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveClass('text-text-destructive');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(screen.getByText('Delete artifact?')).toBeInTheDocument();
+    expect(
+      screen.getByText('Delete "Quarterly Report"? This action cannot be undone.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
+
+    expect(mockDeleteArtifact).toHaveBeenCalledWith(
+      'quarterly-report',
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+    expect(window.localStorage.getItem(getPinnedStorageKey('user-1'))).toBe('[]');
+    expect(window.localStorage.getItem(getViewedStorageKey('user-1'))).toBe('{}');
+    expect(mockShowToast).toHaveBeenLastCalledWith({
+      status: 'success',
+      message: 'Artifact deleted',
+    });
+  });
+
+  it('shows delete only when the viewer owns the artifact or has DELETE permission', () => {
+    mockUseListArtifactAppsQuery.mockReturnValue(
+      makeListQueryResult({
+        data: {
+          pages: [
+            {
+              apps: [
+                apps[1],
+                { ...apps[1], artifactAppId: 'deletable', permissionBits: PermissionBits.DELETE },
+              ],
+              has_more: false,
+              after: null,
+            },
+          ],
+          pageParams: [undefined],
+        },
+      }),
+    );
+
+    render(
+      <BrowserRouter>
+        <ArtifactAppsList />
+      </BrowserRouter>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
   });
 
   it('shows recent activity as ago text and older activity as a date', () => {
