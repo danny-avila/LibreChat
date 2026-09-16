@@ -422,6 +422,179 @@ describe('useAutoSave — debounced autosave', () => {
   });
 });
 
+describe('useAutoSave — typing as a run finishes', () => {
+  /** Real storage for these, because the loss is in what the record holds at the moment the key
+   * changes: a mock that answers every read with the same string cannot express it. */
+  const actualUtils = jest.requireActual('~/utils');
+
+  const getInputListener = (textAreaRef: React.RefObject<HTMLTextAreaElement>) =>
+    (textAreaRef.current!.addEventListener as unknown as jest.Mock).mock.calls.find(
+      ([event]) => event === 'input',
+    )![1] as (e: unknown) => void;
+
+  /** Types into the composer the way the browser does: the value is already there when the event
+   * fires, so a debounced write reads it whether or not the event carried it. */
+  const type = (textAreaRef: React.RefObject<HTMLTextAreaElement>, value: string) => {
+    textAreaRef.current!.value = value;
+    getInputListener(textAreaRef)({ target: { value } });
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockGetDraft.mockImplementation(actualUtils.getDraft);
+    mockSetDraft.mockImplementation(actualUtils.setDraft);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** The reported bug. The composer is keyed under PENDING while a run streams and under the
+   * conversation once it ends, and the key change tore off whatever the 25ms debounce had not
+   * written yet: the pending record still held the previous flush, run end migrated that record,
+   * and the restore put it back over the composer. Every keystroke since the last flush was
+   * silently rolled back mid-sentence. */
+  it('keeps the keystrokes the debounce had not written when the run ends', () => {
+    const textAreaRef = makeTextAreaRef();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-1',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      type(textAreaRef, 'my follow up');
+      jest.advanceTimersByTime(50);
+    });
+
+    /** Still typing when the response lands, inside the debounce window. */
+    act(() => {
+      type(textAreaRef, 'my follow up question');
+      rerender({ isSubmitting: false });
+    });
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'my follow up question');
+    expect(actualUtils.getDraft('convo-1')).toBe('my follow up question');
+  });
+
+  it('keeps the whole message when the run ends before anything was written', () => {
+    const textAreaRef = makeTextAreaRef();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-1',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      type(textAreaRef, 'a whole sentence typed quickly');
+      rerender({ isSubmitting: false });
+    });
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'a whole sentence typed quickly');
+  });
+
+  /** A draft of one character is deliberately not persisted, so the record cannot speak for the
+   * composer here. The composer still can, and it is what the user is looking at. */
+  it('keeps a single character typed as the run ends', () => {
+    const textAreaRef = makeTextAreaRef();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-1',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      type(textAreaRef, 'k');
+      rerender({ isSubmitting: false });
+    });
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'k');
+  });
+
+  /** The same key change in the other direction. `useSubmitMessage` asks and then resets the form
+   * in one handler, so the composer is already empty when the render that flips to PENDING lands:
+   * the write flushed on the way out records the emptiness. Were it to record the sent text, run
+   * end would migrate it straight back into the composer as a duplicate of the message. */
+  it('does not keep the sent text as a draft when submitting mid-keystroke', () => {
+    const textAreaRef = makeTextAreaRef();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-1',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: false } },
+    );
+
+    act(() => {
+      type(textAreaRef, 'sent message');
+    });
+
+    /** Submit: `ask` then `methods.reset()`, batched into the render that starts the run. */
+    act(() => {
+      textAreaRef.current!.value = '';
+      rerender({ isSubmitting: true });
+    });
+
+    expect(actualUtils.getDraft('convo-1')).toBe('');
+    expect(actualUtils.getDraft(Constants.PENDING_CONVO)).toBe('');
+  });
+
+  /** The other side of the same key change, and the reason the in-flight write was dropped rather
+   * than flushed: a steer consumes the composer and clears it programmatically, and run end must
+   * not put the just-sent text back. An empty composer has nothing to defend, so the record wins. */
+  it('does not resurrect text a steer consumed as the run ended', () => {
+    const textAreaRef = makeTextAreaRef();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-1',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      type(textAreaRef, 'steered message');
+      jest.advanceTimersByTime(50);
+    });
+
+    /** The steer took the text and emptied the composer, and dropped the pending draft with it. */
+    act(() => {
+      actualUtils.clearAllDrafts(Constants.PENDING_CONVO);
+      type(textAreaRef, '');
+      rerender({ isSubmitting: false });
+    });
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', '');
+    expect(actualUtils.getDraft('convo-1')).toBe('');
+  });
+});
+
 describe('useAutoSave — side-by-side pending drafts', () => {
   const pane0PendingId = Constants.PENDING_CONVO;
   const pane1PendingId = `${Constants.PENDING_CONVO}:1`;
