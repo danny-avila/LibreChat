@@ -57,6 +57,7 @@ import type {
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
+import type { RepositoryInstructionSource } from '../code/instructions';
 import type { TextContentFragment } from '../protection/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -861,6 +862,7 @@ export interface InitializeAgentParams {
     primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
     /** Live workspace binding resolved by the execution-side loader. */
     codeExecutionContext?: CodeExecutionContext;
+    repositoryInstructionSource?: RepositoryInstructionSource;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -1964,6 +1966,7 @@ export async function initializeAgent(
     tools: structuredTools,
     primedCodeFiles,
     codeExecutionContext: loadedCodeExecutionContext,
+    repositoryInstructionSource,
   } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
@@ -1979,6 +1982,7 @@ export async function initializeAgent(
     oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
     codeExecutionContext: undefined,
+    repositoryInstructionSource: undefined,
   };
   const trustedCodeExecutionContext = loadedCodeExecutionContext ?? codeExecutionContext;
   const attachedWorkspaceOperations =
@@ -2259,6 +2263,25 @@ export async function initializeAgent(
     } else {
       agent.instructions = resolvedInstructions;
     }
+  }
+
+  const repositoryInstructionBlock = repositoryInstructionSource
+    ? await repositoryInstructionSource.load({
+        ...repositoryInstructionSource,
+        mode: agent.repositoryInstructions,
+        signal: params.signal,
+        timeoutMs: appConfig?.endpoints?.agents?.repositoryInstructions?.timeoutMs,
+        assertContent: (content) =>
+          assertModelBoundContent({
+            filters: appConfig?.filters,
+            agents: [{ instructions: content }],
+          }),
+      })
+    : undefined;
+  if (repositoryInstructionBlock) {
+    agent.instructions = [agent.instructions, repositoryInstructionBlock]
+      .filter(Boolean)
+      .join('\n\n');
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {

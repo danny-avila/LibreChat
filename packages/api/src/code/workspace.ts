@@ -98,6 +98,7 @@ export interface WorkspaceReadRequest {
   path: string;
   startLine?: number;
   maxLines?: number;
+  instructionSha256?: string;
 }
 
 export interface WorkspaceSearchRequest {
@@ -447,6 +448,14 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        /^[a-f0-9]{64}$/.test(request.instructionSha256) &&
+        (request.path === 'AGENTS.md' || request.path === 'CLAUDE.md') &&
+        request.startLine === undefined &&
+        request.maxLines === undefined
+      );
+    }
     return (
       isSafePath(request.path) &&
       (request.startLine == null ||
@@ -518,6 +527,18 @@ function isValidResult(
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        hasOnlyKeys(value, READ_RESULT_KEYS) &&
+        value.path === request.path &&
+        typeof value.content === 'string' &&
+        Buffer.byteLength(value.content) <= 32768 &&
+        value.startLine === 1 &&
+        value.endLine === value.content.split('\n').length &&
+        typeof value.truncated === 'boolean' &&
+        value.nextStartLine === undefined
+      );
+    }
     const startLine = request.startLine ?? 1;
     const maxLines = request.maxLines ?? 200;
     const content = typeof value.content === 'string' ? value.content : null;
