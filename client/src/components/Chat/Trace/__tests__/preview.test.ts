@@ -228,15 +228,22 @@ describe('previewFor', () => {
     expect(nested.turns[0].steps).toBe(1);
   });
 
-  it('attaches a message stored as flat text to the last model call', () => {
+  it('attaches a message that kept only its final text to the last model call', () => {
     const two = buildTraceModel([
       record({ id: 'first', kind: 'generation', startTime: at(0), endTime: at(100) }),
       record({ id: 'last', kind: 'generation', startTime: at(200), endTime: at(300) }),
     ]);
     const flat = buildPreviews([message({ text: 'The final answer.' })]);
+    const filtered = buildPreviews([
+      message({ content: [{ type: ContentTypes.TEXT, text: 'Only the answer survived.' }] }),
+    ]);
 
     expect(previewFor(two.nodes.get('first') as never, two, flat)).toBeUndefined();
     expect(previewFor(two.nodes.get('last') as never, two, flat)).toBe('The final answer.');
+    expect(previewFor(two.nodes.get('first') as never, two, filtered)).toBeUndefined();
+    expect(previewFor(two.nodes.get('last') as never, two, filtered)).toBe(
+      'Only the answer survived.',
+    );
   });
 
   it('gives no preview to same-name calls that started in the same millisecond', () => {

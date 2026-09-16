@@ -416,6 +416,41 @@ describe('simple mode', () => {
     expect(rebaseWindow(inTime, previous, previous, 'time')).toBe(inTime);
   });
 
+  it('orders a model call before the tool it asked for when both start in the same millisecond', () => {
+    const tied = buildTraceModel([
+      record({ id: 'a-tool', kind: 'tool', name: 'web_search', startTime: at(0), endTime: at(50) }),
+      record({ id: 'b-llm', kind: 'generation', startTime: at(0), endTime: at(10) }),
+    ]);
+
+    expect(tied.turns[0].steps).toBe(1);
+    expect(tied.steps.get(step('b-llm'))?.rootIds).toEqual(['b-llm', 'a-tool']);
+    expect(tied.nodes.get('b-llm')?.sequence).toBe(0);
+  });
+
+  it('shows a title run recorded as a plain span as its own Title step', () => {
+    const titled = buildTraceModel([
+      record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),
+      record({
+        id: 'title-chain',
+        traceId: 'trace-title',
+        name: 'chain',
+        origin: 'title',
+        startTime: at(200),
+        endTime: at(300),
+      }),
+    ]);
+
+    expect(titled.nodes.get('title-chain')?.shown).toBe(true);
+    expect(titled.turns[0].steps).toBe(1);
+    expect(rowKeys(flattenRows(titled, noFilter))).toEqual([
+      turnKey('response-1'),
+      step('llm'),
+      'llm',
+      stepKey('response-1', 'title', 'title-chain'),
+      'title-chain',
+    ]);
+  });
+
   it('keeps a step key stable when an older page adds an earlier model call', () => {
     const newest = buildTraceModel([
       record({ id: 'llm-2', kind: 'generation', startTime: at(4000), endTime: at(5000) }),

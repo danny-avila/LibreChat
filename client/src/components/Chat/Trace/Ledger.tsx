@@ -434,9 +434,12 @@ function Ledger({
             {row.hasChildren && chevron(row.expanded)}
           </span>
           <Icon aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
-          <span className="min-w-[3ch] shrink-0 truncate">{record.name}</span>
+          <span className="min-w-[3ch] max-w-[60%] truncate">{record.name}</span>
           {preview != null && (
-            <span className="min-w-0 truncate text-xs text-text-secondary" title={preview}>
+            <span
+              className="min-w-[4ch] flex-1 truncate text-xs text-text-secondary"
+              title={preview}
+            >
               {preview}
             </span>
           )}

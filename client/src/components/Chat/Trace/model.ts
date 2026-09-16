@@ -132,15 +132,33 @@ export const turnKey = (messageId: string): string => `turn:${messageId}`;
 export const stepKey = (messageId: string, origin: TraceStep['origin'], anchorId: string): string =>
   `step:${messageId}:${origin}:${anchorId}`;
 
+/** Ties at one millisecond are broken causally: the model call that asked comes before the tool that ran. */
+const KIND_ORDER: Record<TTraceRecord['kind'], number> = {
+  agent: 0,
+  span: 0,
+  generation: 1,
+  tool: 2,
+  event: 3,
+};
+
 const byStart = (nodes: Map<string, TraceNode>) => (a: string, b: string) => {
   const left = nodes.get(a);
   const right = nodes.get(b);
-  return (left?.start ?? 0) - (right?.start ?? 0) || a.localeCompare(b);
+  return (
+    (left?.start ?? 0) - (right?.start ?? 0) ||
+    KIND_ORDER[left?.record.kind ?? 'span'] - KIND_ORDER[right?.record.kind ?? 'span'] ||
+    a.localeCompare(b)
+  );
 };
 
-/** The records the simple mode lists: what the model did, plus anything that failed. */
+/** The records the simple mode lists: what the model did, anything that failed, and the title run. */
 function isSimpleRecord(record: TTraceRecord): boolean {
-  return record.kind === 'generation' || record.kind === 'tool' || record.status === 'error';
+  return (
+    record.kind === 'generation' ||
+    record.kind === 'tool' ||
+    record.status === 'error' ||
+    record.origin === 'title'
+  );
 }
 
 /** The records others hang from: what the model called. A failed wrapper stays visible but holds nothing. */

@@ -11,10 +11,11 @@ type ToolCallPreview = { name: string; args: string };
 export type StepPreview = { text: string; toolCalls: ToolCallPreview[] };
 
 /**
- * A response's previews by model call. `fromText` marks a message stored with
- * only its final text, which belongs to the last model call, not the first.
+ * A response's previews by model call. `finalOnly` marks a message that kept
+ * only its final text (stored as flat text, or with intermediate output
+ * filtered out), which belongs to the last model call, not the first.
  */
-export type MessagePreview = { steps: StepPreview[]; fromText: boolean };
+export type MessagePreview = { steps: StepPreview[]; finalOnly: boolean };
 
 function compact(text: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
@@ -120,9 +121,10 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   }
   /** A failed turn's row stores the failure as its text; the model never wrote it. */
   if (steps.length === 0 && message?.text && message.error !== true) {
-    return { steps: [{ text: compact(message.text), toolCalls: [] }], fromText: true };
+    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true };
   }
-  return { steps, fromText: false };
+  const finalOnly = steps.length === 1 && steps[0].toolCalls.length === 0 && steps[0].text !== '';
+  return { steps, finalOnly };
 }
 
 export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
@@ -154,7 +156,7 @@ export function previewFor(
   if (!step.rootIds.includes(record.id)) {
     return undefined;
   }
-  if (message.fromText) {
+  if (message.finalOnly) {
     const turn = model.turns.find((candidate) => candidate.messageId === record.messageId);
     const last = record.kind === 'generation' && turn != null && step.index === turn.steps;
     return last ? message.steps[0]?.text || undefined : undefined;
