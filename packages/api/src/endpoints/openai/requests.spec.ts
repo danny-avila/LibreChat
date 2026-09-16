@@ -359,6 +359,7 @@ describe('prompt cache parameters', () => {
         'promptCacheKey',
         'promptCacheKeyEnabled',
         'promptCacheScope',
+        'promptCacheScopeId',
         'promptCacheRetention',
       ]) {
         expect(first).not.toHaveProperty(key);

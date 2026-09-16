@@ -982,6 +982,15 @@ export function getOpenAILLMConfig({
     if (promptCacheScope != null) {
       llmConfig.promptCacheScope = promptCacheScope;
     }
+    /**
+     * Capture the partition identity here rather than reading `user` back at
+     * finalization: `dropParams` can remove that field, and the gpt-4o search
+     * models drop it unconditionally further down, which would silently turn
+     * per-user accounting into one shared entry.
+     */
+    if (typeof llmConfig.user === 'string') {
+      llmConfig.promptCacheScopeId = llmConfig.user;
+    }
   }
   if (firstPartyEndpoint && promptCacheRetention != null) {
     llmConfig.promptCacheRetention = promptCacheRetention;

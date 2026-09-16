@@ -1895,11 +1895,17 @@ function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unkn
       responseSchema: options.response_format,
       responsesTextFormat: options.text?.format,
       handoffEdges,
-      scopeId: options.promptCacheScope === 'shared' ? null : options.user,
+      /**
+       * The captured marker, not the `user` field: `dropParams` and the
+       * gpt-4o search models can remove that field, which would quietly
+       * collapse every user onto one shared entry.
+       */
+      scopeId: options.promptCacheScope === 'shared' ? null : options.promptCacheScopeId,
     });
   }
   delete options.promptCacheKeyEnabled;
   delete options.promptCacheScope;
+  delete options.promptCacheScopeId;
 }
 
 /**
@@ -1923,6 +1929,17 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
      */
     prompt: typeof edge.prompt === 'string' ? edge.prompt : edge.prompt != null,
   };
+}
+
+/**
+ * The edges that leave one agent, which are the ones the SDK turns into
+ * handoff tools on it. A grouped `from` waits on all of its sources, so any
+ * member of the group carries the edge.
+ */
+function outgoingHandoffEdges(edges: readonly GraphEdge[] | undefined, agentId: string): unknown[] {
+  return (edges ?? [])
+    .filter((edge) => (Array.isArray(edge.from) ? edge.from : [edge.from]).includes(agentId))
+    .map(handoffEdgeIdentity);
 }
 
 /**
@@ -1984,11 +2001,12 @@ function buildIsolatedAgentInputs(
 function sealSubagentInputs(
   childInputs: AgentInputs,
   descendants: SubagentConfigEntry[],
+  handoffEdges?: readonly unknown[],
 ): AgentInputs {
   if (descendants.length > 0) {
     childInputs.subagentConfigs = descendants;
   }
-  finalizePromptCacheKey(childInputs);
+  finalizePromptCacheKey(childInputs, handoffEdges);
   return childInputs;
 }
 
@@ -2157,14 +2175,16 @@ function buildSubagentConfigs(
       name: definition.name,
       description: definition.description,
       /**
-       * A graph member delegates through the graph's edges rather than through
-       * a delegation tool of its own, so no descendants are attached and the
-       * input is final as soon as it is built.
+       * A graph member attaches no descendants — it delegates through the
+       * graph's edges rather than through a delegation tool of its own — but
+       * those edges are exactly what the SDK turns into its handoff tools, so
+       * each member is sealed with the ones that leave it.
        */
       agents: memberConfigs.map((member) =>
         sealSubagentInputs(
           prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
           [],
+          outgoingHandoffEdges(definition.edges, member.id),
         ),
       ),
       /**
@@ -2802,12 +2822,7 @@ export async function createRun({
      * carrying this agent's own outgoing handoff edges — the tools the graph
      * generates for it are as much of its prefix as its own tool arrays.
      */
-    finalizePromptCacheKey(
-      agentInput,
-      runEdges
-        .filter((edge) => (Array.isArray(edge.from) ? edge.from : [edge.from]).includes(agent.id))
-        .map(handoffEdgeIdentity),
-    );
+    finalizePromptCacheKey(agentInput, outgoingHandoffEdges(runEdges, agent.id));
     agentInputs.push(agentInput);
   }
 

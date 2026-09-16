@@ -2031,6 +2031,32 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScope');
   });
 
+  it('keeps the partition identity when dropParams removes the user field', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6', user: 'user-abc' },
+      dropParams: ['user'],
+    });
+
+    /** Dropping the wire field must not collapse every user onto one entry. */
+    expect(result.llmConfig).not.toHaveProperty('user');
+    expect(result.llmConfig.promptCacheScopeId).toBe('user-abc');
+  });
+
+  it('keeps it for a search model that drops the user field on its own', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-4o-search-preview', user: 'user-abc' },
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('user');
+    expect(result.llmConfig.promptCacheScopeId).toBe('user-abc');
+  });
+
   it('withholds explicit cache controls from models that reject them', () => {
     const unsupported = getOpenAILLMConfig({
       apiKey: 'test-api-key',
