@@ -23,6 +23,7 @@ import {
   DIALOG_MORPH_DEPENDENCY,
   MORPH_OPEN_TRANSITION,
 } from './morph';
+import Description, { getPlainDescription, isHtmlDescription } from '~/components/ui/Description';
 import AgentContact, { resolveAgentContact } from './AgentContact';
 import { useMarketplaceHost } from './MarketplaceContext';
 import { useFavorites, useLocalize } from '~/hooks';
@@ -145,9 +146,13 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
     ? { initial: DETAIL_INITIAL, animate: morph === 'closing' ? DETAIL_EXIT : DETAIL_ENTER }
     : { initial: DETAIL_FADE_INITIAL, animate: DETAIL_FADE_ENTER };
   const contact = resolveAgentContact(agent);
-  const description = agent.description?.trim() || localize('com_agents_description_empty');
-  /* Nothing to morph the copy out of without the card that owns it. */
-  const morphedDescription = morphing && descriptionSource != null;
+  const richDescription = isHtmlDescription(agent.description);
+  const description =
+    getPlainDescription(agent.description).trim() || localize('com_agents_description_empty');
+  /* Nothing to morph the copy out of without the card that owns it, and a rich
+     description is markup rather than the text nodes the word morph measures, so
+     it hands over as one paragraph instead of word by word. */
+  const morphedDescription = morphing && !richDescription && descriptionSource != null;
   const readDescriptionSource = useCallback(
     () => descriptionSource?.(agent.id) ?? null,
     [agent.id, descriptionSource],
@@ -275,15 +280,20 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                   className="relative mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-text-secondary sm:text-base"
                   {...shared}
                 >
-                  {morphedDescription ? (
+                  {morphedDescription && (
                     <DescriptionWords
                       text={description}
                       source={readDescriptionSource}
                       phase={morph === 'closing' ? 'closing' : 'open'}
                     />
-                  ) : (
-                    description
                   )}
+                  {!morphedDescription && richDescription && (
+                    <Description
+                      description={agent.description}
+                      className="[&_a]:underline [&_a]:underline-offset-2 [&_img]:inline-block [&_img]:max-w-full"
+                    />
+                  )}
+                  {!morphedDescription && !richDescription && description}
                 </motion.p>
               </div>
             </div>
