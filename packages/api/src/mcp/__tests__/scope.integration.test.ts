@@ -479,6 +479,30 @@ describe('operator requestHeaders integration', () => {
     expect(server.toolCallCount()).toBe(2);
   });
 
+  it('admits a chat whose request override removes a catalog body requirement', async () => {
+    const config = createRequestHeadersConfig(server.url);
+    await manager.callTool({
+      user,
+      serverName,
+      toolName: 'echo',
+      provider: 'openai',
+      toolArguments: { value: 'shadowed' },
+      serverConfig: {
+        ...config,
+        headers: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+        requestHeaders: {
+          'x-conversation-id': 'fixed',
+          'X-Trace-Id': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      } as ParsedServerConfig,
+      requestBody: { messageId: 'msg-1' },
+      requestScopedConnections: createContext(),
+      flowManager,
+    });
+    expect(server.toolCallCount()).toBe(1);
+    expect(conversationIdsSeen()).toEqual(new Set(['fixed']));
+  });
+
   it('fails closed when a runtime value the request headers need is missing', async () => {
     await expect(
       callEchoWithBody({

@@ -12,6 +12,7 @@ import {
 import { PENDING_STALE_MS, FlowStateNotFoundError } from '~/flow/manager';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPAuthenticationRejectedError } from '~/mcp/errors';
+import { getMCPServerGeneration } from '~/mcp/oauth/cleanup';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
@@ -4227,6 +4228,43 @@ describe('MCPConnectionFactory', () => {
         expect.stringContaining('OAuth required, stopping connection attempts'),
       );
     });
+  });
+
+  describe('declared identity across connection transformations', () => {
+    it.each(['create', 'discoverTools'] as const)(
+      '%s retains the callback identity while transforming only wire headers',
+      async (entry) => {
+        const declared: t.ParsedServerConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          source: 'yaml',
+          headers: { 'X-Workspace': 'catalog' },
+          requestHeaders: { 'X-Workspace': 'chat' },
+        };
+        let definition: t.MCPOptions | undefined;
+        let wireConfig: t.MCPOptions | undefined;
+        class IdentityFactory extends MCPConnectionFactory {
+          protected async createConnection(): Promise<MCPConnection> {
+            definition = this.serverDefinition;
+            wireConfig = this.serverConfig;
+            return mockConnectionInstance;
+          }
+
+          protected async discoverToolsInternal() {
+            await this.createConnection();
+            return { tools: [], connection: null, oauthRequired: false, oauthUrl: null };
+          }
+        }
+        mockProcessMCPEnv.mockImplementation(({ options }) => options);
+        await IdentityFactory[entry]({ serverName: 'identity', serverConfig: declared });
+        expect(definition).toBe(declared);
+        expect(getMCPServerGeneration(definition!)).toBe(getMCPServerGeneration(declared));
+        expect(wireConfig).not.toHaveProperty('requestHeaders');
+        expect(wireConfig).toMatchObject({
+          headers: { 'X-Workspace': entry === 'create' ? 'chat' : 'catalog' },
+        });
+      },
+    );
   });
 
   describe('discoverTools static method', () => {

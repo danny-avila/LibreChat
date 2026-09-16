@@ -3,6 +3,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type * as t from './types';
 import {
   applyRequestHeaders,
+  canUseAppConnection,
   canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
@@ -603,23 +604,20 @@ export abstract class UserConnectionManager {
   ): Promise<MCPConnection> {
     signal?.throwIfAborted();
     this.assertCreationNotCancelled(creationGuard, userId, serverName);
-    if (await this.appConnections!.has(serverName)) {
+    const declaredConfig =
+      providedConfig ??
+      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    if (
+      (!declaredConfig || canUseAppConnection(declaredConfig)) &&
+      (await this.appConnections!.has(serverName))
+    ) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
       );
     }
 
-    const declaredConfig =
-      providedConfig ??
-      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
-    /**
-     * Normalized at the birth of this pipeline's config, not deeper: the
-     * direct-bearer decisions below read it directly, so an `Authorization`
-     * template declared in `requestHeaders` must already sit in `headers` by
-     * the time they run. Publication tokens stay stable across the two
-     * spellings because `getMCPAppToolsPublicationGeneration` normalizes too.
-     */
+    /** Resolution uses effective headers; identity and persistence keep the declaration. */
     const config = declaredConfig && applyRequestHeaders(declaredConfig);
 
     /** Capture before resolving credentials/creating the connection. If another replica rotates
@@ -650,7 +648,9 @@ export abstract class UserConnectionManager {
     const existingPublicationGeneration = connection
       ? this.toolPublicationGenerations.get(connection)
       : undefined;
-    const configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+    const configGeneration = declaredConfig
+      ? getMCPAppToolsPublicationGeneration(declaredConfig)
+      : undefined;
     const existingConfigGeneration = connection
       ? this.toolConfigGenerations.get(connection)
       : undefined;
@@ -748,7 +748,7 @@ export abstract class UserConnectionManager {
     }
 
     // Now check if config exists for new connection creation
-    if (!config) {
+    if (!config || !declaredConfig) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
@@ -795,7 +795,7 @@ export abstract class UserConnectionManager {
         serverConfig: runtimeConfig,
         /** Runtime OAuth detection enriches the connection config. Keep the durable definition
          * separate so callback liveness compares against the config that actually owns it. */
-        serverDefinition: config,
+        serverDefinition: declaredConfig,
         ...(usesDirectOpenIDBearerRecovery(config) && { directBearerSourceConfig: config }),
         directBearerRecoveryState,
         serverName: serverName,
@@ -912,7 +912,7 @@ export abstract class UserConnectionManager {
           tools,
           userId,
           serverName,
-          serverConfig: config,
+          serverConfig: declaredConfig,
           ...(effectiveGeneration && { publicationGeneration: effectiveGeneration }),
           ...(publicationRevision && { publicationRevision }),
         });
@@ -967,7 +967,7 @@ export abstract class UserConnectionManager {
               connectionTimeout,
               graphTokenResolver,
               ephemeralConnection,
-              serverConfig: config,
+              serverConfig: declaredConfig,
               directBearerRecoveryState,
               directBearerResolvedConfig: refreshedConfig,
             },
@@ -987,7 +987,7 @@ export abstract class UserConnectionManager {
       }
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
-      await this.backfillResolvedInstructions(serverName, config, connection, userId);
+      await this.backfillResolvedInstructions(serverName, declaredConfig, connection, userId);
       signal?.throwIfAborted();
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);

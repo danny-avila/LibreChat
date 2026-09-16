@@ -162,6 +162,7 @@ export class MCPConnectionFactory {
     const runtime: t.BasicConnectionOptions = {
       ...basic,
       serverConfig: applyRequestHeaders(basic.serverConfig),
+      serverDefinition: basic.serverDefinition ?? basic.serverConfig,
     };
     const directBearerRecoveryState = runtime.directBearerRecoveryState ?? { attempted: false };
     const directBearerSourceConfig =
@@ -249,6 +250,7 @@ export class MCPConnectionFactory {
            *  refreshed for direct-bearer recovery comes from the untouched
            *  definition and would otherwise carry the chat-only map back in. */
           serverConfig: toCatalogConnectionConfig(candidate.serverConfig),
+          serverDefinition: basic.serverDefinition ?? basic.serverConfig,
           directBearerSourceConfig,
         },
         options,

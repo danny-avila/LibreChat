@@ -234,18 +234,30 @@ type UserScopedConnectionConfig = Pick<
   url?: string;
 };
 
+function mergeHeaderMaps<T extends string | undefined>(
+  headers: Record<string, T> | undefined,
+  requestHeaders: Record<string, T>,
+): Record<string, T> {
+  const overridden = new Set(Object.keys(requestHeaders).map((name) => name.toLowerCase()));
+  const merged: Record<string, T> = {};
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (!overridden.has(name.toLowerCase())) {
+      merged[name] = value;
+    }
+  }
+  return { ...merged, ...requestHeaders };
+}
+
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
   return [
     config.apiKey?.key,
     config.args,
     config.env,
-    config.headers,
+    config.requestHeaders == null
+      ? config.headers
+      : mergeHeaderMaps(config.headers, config.requestHeaders),
     config.oauth,
     config.oauth_headers,
-    /** Chat-only, so it makes a connection request-scoped like any other field.
-     *  A CATALOG connection never carries it: `toCatalogConnectionConfig`
-     *  removes it first, which is what leaves discovery unscoped. */
-    config.requestHeaders,
     config.url,
   ];
 }
@@ -381,14 +393,6 @@ export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPReque
 }
 
 /**
- * Strips the operator's chat-only `requestHeaders` for a catalog (discovery)
- * connection. Discovery has no conversation or message to resolve a
- * `{{LIBRECHAT_BODY_*}}` placeholder against, so sending the map at all would
- * either leak a literal placeholder upstream or resolve it to an empty value.
- *
- * Returns the same reference when there is nothing to strip.
- */
-/**
  * Folds the operator's chat-only `requestHeaders` into `headers`, so everything
  * downstream — direct-bearer detection, Graph preprocessing, `processMCPEnv`,
  * the transports — keeps reading ONE header map and never has to learn about a
@@ -411,19 +415,22 @@ export function applyRequestHeaders<T extends MCPOptions>(config: T): T {
     return config;
   }
 
-  const overridden = new Set(Object.keys(carrier.requestHeaders).map((name) => name.toLowerCase()));
-  const headers: Record<string, string> = {};
-  for (const [name, value] of Object.entries(carrier.headers ?? {})) {
-    if (!overridden.has(name.toLowerCase())) {
-      headers[name] = value;
-    }
-  }
-
-  const merged = { ...carrier, headers: { ...headers, ...carrier.requestHeaders } };
+  const merged = {
+    ...carrier,
+    headers: mergeHeaderMaps(carrier.headers, carrier.requestHeaders),
+  };
   delete merged.requestHeaders;
   return merged;
 }
 
+/**
+ * Strips the operator's chat-only `requestHeaders` for a catalog (discovery)
+ * connection. Discovery has no conversation or message to resolve a
+ * `{{LIBRECHAT_BODY_*}}` placeholder against, so sending the map at all would
+ * either leak a literal placeholder upstream or resolve it to an empty value.
+ *
+ * Returns the same reference when there is nothing to strip.
+ */
 export function toCatalogConnectionConfig<T extends MCPOptions>(config: T): T {
   const carrier = config as T & { requestHeaders?: Record<string, string> };
   if (carrier.requestHeaders == null) {
@@ -571,7 +578,6 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
   );
 }
 
-/** Whether a server can share one operator-owned connection across all users. */
 /**
  * Whether the config declares chat-only headers. Guards against a truthy `{}`
  * the way `hasCustomUserVars` does.
@@ -580,6 +586,7 @@ function hasChatOnlyHeaders(config: UserScopedConnectionConfig): boolean {
   return !!config.requestHeaders && Object.keys(config.requestHeaders).length > 0;
 }
 
+/** Whether a server can share one operator-owned connection across all users. */
 export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
   return (
     config.startup !== false &&
@@ -607,6 +614,7 @@ export function canUseAppConnection(config: UserScopedConnectionConfig): boolean
 export function canBackfillSharedServerInstructions(config: UserScopedConnectionConfig): boolean {
   return (
     config.startup === false &&
+    !hasChatOnlyHeaders(config) &&
     !requiresUserScopedConnection(config) &&
     /** A configured `oauth` block is identity-scoped even when `requiresOAuth`
      *  is unset or was stamped `false` by the skipped startup inspection —

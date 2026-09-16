@@ -9,6 +9,7 @@ import {
   redactServerSecrets,
   requiresUserScopedConnection,
   canUseAppConnection,
+  canBackfillSharedServerInstructions,
   isInvalidClientMessage,
   isClientRejectionMessage,
   getMissingCustomUserVars,
@@ -1079,6 +1080,38 @@ describe('operator requestHeaders', () => {
     expect(canUseAppConnection({ ...shareable, requestHeaders: {} } as ParsedServerConfig)).toBe(
       true,
     );
+  });
+
+  it('does not require body values from headers shadowed by the runtime map', () => {
+    const declared: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      source: 'yaml',
+      headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      requestHeaders: { 'x-conversation': 'fixed' },
+    };
+    expect(getMissingRuntimeBodyPlaceholderFields(declared)).toEqual([]);
+    expect(hasRuntimeContextPlaceholders(declared)).toBe(false);
+    expect(getMissingRuntimeBodyPlaceholderFields(toCatalogConnectionConfig(declared))).toEqual([
+      'conversationId',
+    ]);
+  });
+
+  it('keeps chat-only instructions out of the shared catalog, including static headers', () => {
+    const deferred: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      source: 'yaml',
+      startup: false,
+    };
+    expect(canBackfillSharedServerInstructions(deferred)).toBe(true);
+    expect(canBackfillSharedServerInstructions({ ...deferred, requestHeaders: {} })).toBe(true);
+    expect(
+      canBackfillSharedServerInstructions({
+        ...deferred,
+        requestHeaders: { 'X-Workspace': 'chat' },
+      }),
+    ).toBe(false);
   });
 
   it('never returns either header map to a client', () => {

@@ -26,7 +26,6 @@ import {
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
-  requiresUserScopedConnection,
   resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
@@ -365,7 +364,7 @@ export class MCPManager extends UserConnectionManager {
         ? await MCPServersRegistry.getInstance().getServerConfig(args.serverName, userId)
         : undefined);
 
-    if (effectiveConfig && userId && requiresUserScopedConnection(effectiveConfig)) {
+    if (effectiveConfig && userId && !canUseAppConnection(effectiveConfig)) {
       return this.getUserConnection({
         ...args,
         serverConfig: effectiveConfig,
@@ -480,6 +479,7 @@ export class MCPManager extends UserConnectionManager {
       dbSourced,
       serverName,
       serverConfig: catalogConfig,
+      serverDefinition: serverConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
@@ -899,7 +899,7 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         recoverySignal.throwIfAborted();
         const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-          config: serverConfig,
+          config: applyRequestHeaders(serverConfig),
           upstreamTokenProvider,
           forceRefresh: true,
           signal: recoverySignal,
@@ -1258,7 +1258,7 @@ Please follow these instructions when using tools from the respective MCP server
          *  direct-bearer resolution, so this pipeline sees the same single
          *  header map the factory does. */
         const rawConfig = declaredConfig && applyRequestHeaders(declaredConfig);
-        if (!rawConfig) {
+        if (!rawConfig || !declaredConfig) {
           throw new McpError(
             ErrorCode.InvalidRequest,
             `${logPrefix} Configuration for server "${serverName}" not found.`,
@@ -1396,6 +1396,7 @@ Please follow these instructions when using tools from the respective MCP server
               {
                 serverName,
                 serverConfig: currentOptions,
+                serverDefinition: declaredConfig,
                 dbSourced: isDbSourced,
                 skipEnvProcessing: true,
                 useSSRFProtection,
@@ -1450,7 +1451,7 @@ Please follow these instructions when using tools from the respective MCP server
           const recovery = this.recoverDirectOpenIDBearerConnection({
             connection,
             serverName,
-            serverConfig: rawConfig,
+            serverConfig: declaredConfig,
             user,
             flowManager,
             tokenMethods,
@@ -1541,7 +1542,7 @@ Please follow these instructions when using tools from the respective MCP server
             const recovery = this.recoverDirectOpenIDBearerConnection({
               connection,
               serverName,
-              serverConfig: rawConfig,
+              serverConfig: declaredConfig,
               user,
               flowManager,
               tokenMethods,

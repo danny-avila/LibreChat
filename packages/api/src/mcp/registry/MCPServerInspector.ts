@@ -5,6 +5,7 @@ import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import {
   hasCustomUserVars,
+  applyRequestHeaders,
   hasRuntimeContextPlaceholders,
   hasRuntimeUrlPlaceholders,
   toCatalogConnectionConfig,
@@ -96,6 +97,7 @@ export class MCPServerInspector {
         tempConnection = true;
         this.connection = await MCPConnectionFactory.create({
           serverConfig: catalogConfig,
+          serverDefinition: this.config,
           serverName: this.serverName,
           dbSourced: isUserSourced(this.config),
           useSSRFProtection: this.useSSRFProtection,
@@ -131,7 +133,7 @@ export class MCPServerInspector {
   }
 
   private async detectOAuth(): Promise<void> {
-    if (isDirectOpenIDBearerRecoveryEnabled(this.config)) {
+    if (isDirectOpenIDBearerRecoveryEnabled(applyRequestHeaders(this.config))) {
       this.config.requiresOAuth = false;
       this.config.oauthMetadata = null;
       return;

@@ -97,6 +97,26 @@ describe('MCPServerInspector', () => {
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
 
+    it('recognizes a chat-only direct bearer before probing OAuth metadata', async () => {
+      const rawConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        source: 'yaml',
+        requestHeaders: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      };
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+      expect(result.requiresOAuth).toBe(false);
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverDefinition: rawConfig,
+          serverConfig: expect.not.objectContaining({ requestHeaders: expect.anything() }),
+        }),
+      );
+      expect(result.toolFunctions).toBeDefined();
+    });
+
     it('should skip capabilities fetch when startup=false', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
