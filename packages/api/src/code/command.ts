@@ -13,6 +13,7 @@ import type {
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { LCTool } from '@librechat/agents';
 import type { WorkspaceExecuteCommandResult } from './workspace';
+import type { CodeExecutionContext } from '~/agents/execution';
 import type { CodeBridgeFetch } from './bridge';
 import {
   executeWorkspaceTool,
@@ -169,6 +170,34 @@ function commandWithGitIdentity(
     throw new Error('Invalid agent Git identity');
   }
   return `export GIT_AUTHOR_NAME=${quoteShellArgument(name)} GIT_AUTHOR_EMAIL=${quoteShellArgument(email)} GIT_COMMITTER_NAME=${quoteShellArgument(name)} GIT_COMMITTER_EMAIL=${quoteShellArgument(email)}; ${command}`;
+}
+
+/** Apply authorship before the SDK prepares the script and its replay requests. */
+export function createContextProgrammaticBashTool(
+  authHeaders: NonNullable<
+    Parameters<typeof createBashProgrammaticToolCallingTool>[0]
+  >['authHeaders'],
+  context?: CodeExecutionContext,
+  identity?: AgentGitIdentity | null,
+): DynamicStructuredTool {
+  const attached = context?.environmentType === 'attached';
+  return createGitIdentityProgrammaticBashTool(
+    {
+      authHeaders,
+      baseUrl: context?.baseUrl,
+      executionProfile: context?.executionProfile,
+      runtimeSessionHint: context?.runtimeSessionHint,
+      ...(attached
+        ? {
+            workspaceId: context.codeWorkspace?.workspaceId,
+            runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+              context.codeEnvironmentConfigSchema,
+            ),
+          }
+        : {}),
+    },
+    attached ? identity : undefined,
+  );
 }
 
 /** Apply authorship before the SDK prepares the script and its replay requests. */

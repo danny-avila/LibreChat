@@ -36,6 +36,7 @@ export type CodeBridgeWorkerStatus = {
   runtimes?: string[];
   operations?: CodeWorkspaceOperation[];
   workspaces?: CodeWorkspaceDescriptor[];
+  programmaticLanguages?: ['bash'];
 };
 
 export type CodeBridgeFetch = (
@@ -166,6 +167,7 @@ function validWorkspaceCapabilities(value: unknown): value is {
   protocolVersion: 1;
   operations: CodeWorkspaceOperation[];
   workspaces: CodeWorkspaceDescriptor[];
+  programmaticLanguages?: unknown;
 } {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
   const capabilities = value as Record<string, unknown>;
@@ -322,7 +324,10 @@ export async function getCodeBridgeWorkerStatus({
     if (status.online) {
       workerStatus = status.ready ? 'ready' : 'starting';
     }
-    let workspaceStatus: Pick<CodeBridgeWorkerStatus, 'operations' | 'workspaces'> = {};
+    let workspaceStatus: Pick<
+      CodeBridgeWorkerStatus,
+      'operations' | 'workspaces' | 'programmaticLanguages'
+    > = {};
     if (validWorkspaceCapabilities(capabilities?.workspaceTools)) {
       workspaceStatus = {
         operations: [...capabilities.workspaceTools.operations],
@@ -331,6 +336,15 @@ export async function getCodeBridgeWorkerStatus({
           ...(workspace.operations ? { operations: [...workspace.operations] } : {}),
         })),
       };
+      if (
+        Array.isArray(capabilities.workspaceTools.programmaticLanguages) &&
+        capabilities.workspaceTools.programmaticLanguages.every(
+          (language) => typeof language === 'string',
+        ) &&
+        capabilities.workspaceTools.programmaticLanguages.includes('bash')
+      ) {
+        workspaceStatus.programmaticLanguages = ['bash'];
+      }
     } else if (validLegacyWorkspaceCapabilities(capabilities?.workspaceTools)) {
       workspaceStatus = { operations: [...capabilities.workspaceTools.operations] };
     }
