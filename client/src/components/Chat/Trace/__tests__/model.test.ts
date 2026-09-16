@@ -451,6 +451,33 @@ describe('simple mode', () => {
     ]);
   });
 
+  it.each(['simple', 'full'] as const)(
+    'bounds ancestry work for deeply nested failed wrappers in %s mode',
+    (mode) => {
+      const count = 3000;
+      let kindReads = 0;
+      const records = Array.from({ length: count }, (_, index) => {
+        const entry = record({
+          id: `failed-${index}`,
+          parentId: index > 0 ? `failed-${index - 1}` : null,
+          status: 'error',
+        });
+        Object.defineProperty(entry, 'kind', {
+          get: () => {
+            kindReads++;
+            return 'span';
+          },
+        });
+        return entry;
+      }).reverse();
+      const nested = buildTraceModel(records, mode);
+      expect(nested.count).toBe(count);
+      expect(nested.turns[0].steps).toBe(1);
+      expect([...nested.steps.values()][0].recordCount).toBe(count);
+      expect(kindReads).toBeLessThan(count * 60);
+    },
+  );
+
   it('keeps parallel tools in their own lanes across wrapper pagination', () => {
     const records = [
       record({ id: 'root', kind: 'agent', startTime: at(0), endTime: at(10_000) }),
@@ -492,6 +519,24 @@ describe('simple mode', () => {
         expect(lanes.steps.get(step('llm-b'))?.rootIds).toEqual(['llm-b', 'tool-b']);
       }
     }
+  });
+
+  it('keeps unrelated unloaded parents separate until their connecting wrapper arrives', () => {
+    const partial = [
+      record({ id: 'llm', parentId: 'chain', kind: 'generation', startTime: at(100) }),
+      record({ id: 'tool', parentId: 'dispatch', kind: 'tool', startTime: at(200) }),
+    ];
+    const before = buildTraceModel(partial);
+    expect(before.steps.get(step('llm'))?.rootIds).toEqual(['llm']);
+    expect(before.steps.get(step('tool'))?.rootIds).toEqual(['tool']);
+    const after = buildTraceModel([
+      record({ id: 'root', kind: 'agent' }),
+      record({ id: 'chain', parentId: 'root' }),
+      record({ id: 'dispatch', parentId: 'chain' }),
+      ...partial,
+    ]);
+    expect(after.steps.get(step('llm'))?.rootIds).toEqual(['llm', 'tool']);
+    expect(after.turns[0].steps).toBe(1);
   });
 
   it('keeps a tool whose lane has no loaded model call in a step of its own lane', () => {

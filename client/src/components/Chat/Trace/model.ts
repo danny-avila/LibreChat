@@ -232,21 +232,33 @@ function resolveParents(nodes: Map<string, TraceNode>): void {
   }
 }
 
-/** The nearest ancestor that passes `keep`, or `null` when none does. */
-function nearestAncestor(
+/** Nearest model/tool ancestor, cached across both projections with iterative path compression. */
+function nearestStepAncestor(
   nodes: Map<string, TraceNode>,
   node: TraceNode,
-  keep: (candidate: TraceNode) => boolean,
+  ancestors: Map<string, string | null>,
 ): string | null {
-  let ancestorId = node.parentId;
-  while (ancestorId != null) {
-    const ancestor = nodes.get(ancestorId);
-    if (ancestor == null || keep(ancestor)) {
-      return ancestor == null ? null : ancestorId;
+  const path: string[] = [];
+  let current = node;
+  let result: string | null;
+  for (;;) {
+    const cached = ancestors.get(current.record.id);
+    if (cached !== undefined) {
+      result = cached;
+      break;
     }
-    ancestorId = ancestor.parentId;
+    path.push(current.record.id);
+    const parent = current.parentId != null ? nodes.get(current.parentId) : undefined;
+    if (parent == null || isStepAnchor(parent.record)) {
+      result = parent?.record.id ?? null;
+      break;
+    }
+    current = parent;
   }
-  return null;
+  for (const id of path) {
+    ancestors.set(id, result);
+  }
+  return result;
 }
 
 /**
@@ -276,6 +288,7 @@ function resolveViewTree(
   nodes: Map<string, TraceNode>,
   mode: TraceMode,
   turnsWithWork: ReadonlySet<string>,
+  ancestors: Map<string, string | null>,
 ): void {
   for (const node of nodes.values()) {
     node.shown = mode === 'full' || isListed(node, turnsWithWork);
@@ -284,11 +297,8 @@ function resolveViewTree(
     if (!node.shown) {
       continue;
     }
-    node.viewParentId = nearestAncestor(
-      nodes,
-      node,
-      (candidate) => mode === 'full' || (candidate.shown && isStepAnchor(candidate.record)),
-    );
+    node.viewParentId =
+      mode === 'full' ? node.parentId : nearestStepAncestor(nodes, node, ancestors);
     if (node.viewParentId != null) {
       nodes.get(node.viewParentId)?.viewChildIds.push(id);
     }
@@ -303,13 +313,14 @@ function resolveViewTree(
 function stepRoots(
   nodes: Map<string, TraceNode>,
   turnsWithWork: ReadonlySet<string>,
+  ancestors: Map<string, string | null>,
 ): Map<string, string[]> {
   const roots = new Map<string, string[]>();
   for (const [id, node] of nodes) {
     if (!isListed(node, turnsWithWork)) {
       continue;
     }
-    const ancestor = nearestAncestor(nodes, node, (candidate) => isStepAnchor(candidate.record));
+    const ancestor = nearestStepAncestor(nodes, node, ancestors);
     if (ancestor != null) {
       continue;
     }
@@ -343,26 +354,39 @@ function groupSteps(
     rootsByOrigin.set(origin, roots);
   }
 
-  /** The wrapper a root sits under, one level below the turn's structural root: concurrent
-   *  agents run in separate wrappers, so a tool joins the model call of its own lane. Records
-   *  directly under that root, or with no parent at all, share one lane. */
+  /** A wrapper's branch immediately below its structural root, cached for nested failure rows. */
+  const branches = new Map<string, string>();
+  const branchOf = (id: string): string => {
+    const path: string[] = [];
+    let current = id;
+    let branch: string;
+    for (;;) {
+      const cached = branches.get(current);
+      if (cached != null) {
+        branch = cached;
+        break;
+      }
+      path.push(current);
+      const parent = nodes.get(current)?.parentId;
+      if (parent == null || nodes.get(parent)?.parentId == null) {
+        branch = current;
+        break;
+      }
+      current = parent;
+    }
+    for (const entry of path) {
+      branches.set(entry, branch);
+    }
+    return branch;
+  };
+  /** Unloaded parents remain distinct: merging them would guess at absent lane relationships. */
   const laneOf = (id: string): string => {
     const node = nodes.get(id);
-    const parentId = node?.parentId ?? null;
-    if (parentId == null) {
-      const unloaded = node?.record.parentId;
-      return unloaded != null && !nodes.has(unloaded) ? unloaded : '';
+    if (node?.parentId != null) {
+      return branchOf(node.parentId);
     }
-    let child = id;
-    let parent: string = parentId;
-    for (;;) {
-      const above = nodes.get(parent)?.parentId ?? null;
-      if (above == null) {
-        return child === id ? parent : child;
-      }
-      child = parent;
-      parent = above;
-    }
+    const unloaded = node?.record.parentId;
+    return unloaded != null && !nodes.has(unloaded) ? unloaded : '';
   };
 
   for (const [origin, roots] of rootsByOrigin) {
@@ -410,7 +434,7 @@ function groupSteps(
       const stack = [...rootIds].reverse();
       while (stack.length > 0) {
         const node = nodes.get(stack.pop() ?? '');
-        if (!node) {
+        if (!node || node.stepKey === key) {
           continue;
         }
         node.stepKey = key;
@@ -489,8 +513,9 @@ export function buildTraceModel(
 
   resolveParents(nodes);
   const turnsWithWork = turnsWithSimpleRecords(nodes);
-  resolveViewTree(nodes, mode, turnsWithWork);
-  const rootsByTurn = stepRoots(nodes, turnsWithWork);
+  const ancestors = new Map<string, string | null>();
+  resolveViewTree(nodes, mode, turnsWithWork, ancestors);
+  const rootsByTurn = stepRoots(nodes, turnsWithWork, ancestors);
 
   const turnsByMessage = new Map<string, TraceTurn>();
   const summary: TraceSummary = { ...EMPTY_SUMMARY };
