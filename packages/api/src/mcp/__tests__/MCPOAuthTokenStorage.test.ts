@@ -12,6 +12,8 @@ import {
   MCPTokenRefreshUnavailableError,
   MCPTokenStorageUnavailableError,
   ReauthenticationRequiredError,
+  getMCPOAuthLeaseId,
+  getMCPOAuthRefreshFlightLeaseId,
 } from '~/mcp/oauth';
 import { InMemoryTokenStore } from './helpers/oauthTestServer';
 
@@ -2155,7 +2157,13 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
       const flowManager = {
         getLeaseGeneration: jest.fn().mockResolvedValue(7),
-        acquireLease: jest.fn().mockResolvedValue(null),
+        /** The refresh flight is free; the persistence fence is what teardown holds. */
+        acquireLease: jest.fn(
+          async (_leaseId: string, options?: { expectedGeneration?: number }) =>
+            options?.expectedGeneration === undefined
+              ? { generation: 0, release: jest.fn().mockResolvedValue(undefined) }
+              : null,
+        ),
       };
 
       await expect(
@@ -2203,6 +2211,136 @@ describe('MCPTokenStorage', () => {
           identifier: 'mcp:release-failure-srv:refresh',
         }),
       ).toMatchObject({ token: 'enc:rt-2' });
+    });
+
+    /**
+     * The process-local `inflightRefreshes` map coalesces one Node process; these cover the
+     * cross-replica flight that keeps two pods from redeeming the same refresh token.
+     */
+    describe('cross-replica refresh flight', () => {
+      /** Simulates the peer replica's completed redemption landing in shared storage. */
+      const peerRotates = async (serverName: string, generation: number) => {
+        await createBoundToken(store, {
+          userId: 'u1',
+          type: 'mcp_oauth',
+          identifier: `mcp:${serverName}`,
+          token: `enc:at-${generation}`,
+          expiresIn: 3600,
+        });
+        await createBoundToken(store, {
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: `mcp:${serverName}:refresh`,
+          token: `enc:rt-${generation}`,
+          expiresIn: 86400,
+        });
+      };
+
+      /** Answers the persistence fence, and the flight only once `freeFlight` is true. */
+      const flightManager = (isFlightFree: () => Promise<boolean>) => ({
+        getLeaseGeneration: jest.fn().mockResolvedValue(0),
+        acquireLease: jest.fn(
+          async (_leaseId: string, options?: { expectedGeneration?: number }) => {
+            if (options?.expectedGeneration !== undefined) {
+              return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+            }
+            return (await isFlightFree())
+              ? { generation: 0, release: jest.fn().mockResolvedValue(undefined) }
+              : null;
+          },
+        ),
+      });
+
+      it('holds a flight distinct from the teardown lease and releases it after redeeming', async () => {
+        await seedRefreshableTokens('flight-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+        const release = jest.fn().mockResolvedValue(undefined);
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn().mockResolvedValue({ generation: 0, release }),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'flight-srv'),
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-2' });
+
+        const flightLeaseId = getMCPOAuthRefreshFlightLeaseId('u1', 'flight-srv', undefined);
+        expect(flightLeaseId).not.toBe(getMCPOAuthLeaseId('u1', 'flight-srv'));
+        expect(flowManager.acquireLease).toHaveBeenCalledWith(
+          flightLeaseId,
+          expect.objectContaining({ waitMs: 0 }),
+        );
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+        expect(release).toHaveBeenCalled();
+      });
+
+      it('adopts the tokens another replica rotated while the flight was held', async () => {
+        await seedRefreshableTokens('adopt-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(9));
+        const onRefreshSuccess = jest.fn().mockResolvedValue(undefined);
+        let attempts = 0;
+        const flowManager = flightManager(async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return false;
+          }
+          /** The peer completed its redemption and rotated the credential. */
+          await peerRotates('adopt-srv', 3);
+          return true;
+        });
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'adopt-srv'),
+            flowManager: flowManager as never,
+            onRefreshSuccess,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-3', refresh_token: 'rt-3' });
+
+        expect(refreshTokens).not.toHaveBeenCalled();
+        expect(onRefreshSuccess).toHaveBeenCalledWith(
+          expect.objectContaining({ access_token: 'at-3' }),
+        );
+      });
+
+      it('still redeems when the credential is unchanged after waiting for the flight', async () => {
+        await seedRefreshableTokens('unchanged-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(4));
+        let attempts = 0;
+        const flowManager = flightManager(async () => ++attempts > 1);
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'unchanged-srv'),
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-4' });
+
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
+      it('redeems after the wait window when the holder never releases the flight', async () => {
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+        try {
+          await seedRefreshableTokens('wedged-srv');
+          const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+          const flowManager = flightManager(async () => false);
+
+          const refresh = MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'wedged-srv'),
+            flowManager: flowManager as never,
+          });
+          await jest.advanceTimersByTimeAsync(MCPTokenStorage.REFRESH_FLIGHT_WAIT_MS + 200);
+
+          await expect(refresh).resolves.toMatchObject({ access_token: 'at-2' });
+          expect(refreshTokens).toHaveBeenCalledTimes(1);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
     });
 
     it('does not fence a colon-prefixed sibling server', async () => {
