@@ -206,6 +206,7 @@ export async function initializeOpenAI(
     ...clientOptions,
     modelOptions,
     promptCacheKeyEnabled: allConfig?.promptCacheKey ?? cacheConfig.promptCacheKey,
+    promptCacheScope: allConfig?.promptCacheScope ?? cacheConfig.promptCacheScope,
     promptCacheRetention: allConfig?.promptCacheRetention ?? cacheConfig.promptCacheRetention,
     promptCacheExplicit: allConfig?.promptCacheExplicit ?? cacheConfig.promptCacheExplicit,
   };

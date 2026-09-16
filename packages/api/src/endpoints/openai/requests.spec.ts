@@ -355,7 +355,12 @@ describe('prompt cache parameters', () => {
       expect(second.prompt_cache_key).toBe(first.prompt_cache_key);
       expect(first.prompt_cache_retention).toBe('24h');
       expect(first.prompt_cache_options).toEqual(expect.objectContaining({ mode: 'explicit' }));
-      for (const key of ['promptCacheKey', 'promptCacheKeyEnabled', 'promptCacheRetention']) {
+      for (const key of [
+        'promptCacheKey',
+        'promptCacheKeyEnabled',
+        'promptCacheScope',
+        'promptCacheRetention',
+      ]) {
         expect(first).not.toHaveProperty(key);
       }
     },

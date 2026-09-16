@@ -1843,10 +1843,11 @@ export function anyAgentReplaysReasoningContent(
  * first assembled — background-task tools are registered on the parent, and
  * isolated children drop background and intent definitions they inherited.
  * Hashing earlier would let two different wire prefixes share one identity.
- *
- * Keyed on prompt identity and never on the conversation, so two chats — and
- * two users — that share a prefix reach one cache entry rather than each
- * writing their own.
+ * Keyed on prompt identity and never on the conversation, so one user's chats
+ * share a cache entry across conversations instead of each writing their own.
+ * The user stays in the key unless an administrator opts into `shared` scope,
+ * which is what keeps today's per-user cache accounting — and the probing
+ * boundary it provides — intact by default.
  */
 function finalizePromptCacheKey(input: AgentInputs): void {
   const options = input.clientOptions as
@@ -1888,9 +1889,11 @@ function finalizePromptCacheKey(input: AgentInputs): void {
       ],
       responseSchema: options.response_format,
       responsesTextFormat: options.text?.format,
+      scopeId: options.promptCacheScope === 'shared' ? null : options.user,
     });
   }
   delete options.promptCacheKeyEnabled;
+  delete options.promptCacheScope;
 }
 
 /**

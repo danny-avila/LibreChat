@@ -100,4 +100,30 @@ describe('buildPromptCacheKey', () => {
       buildPromptCacheKey({ model: 'gpt-5.6', boundTools: [], instructions: '' }),
     );
   });
+
+  describe('cache-accounting scope', () => {
+    it('separates two users running the same agent', () => {
+      expect(buildPromptCacheKey({ ...base, scopeId: 'user-a' })).not.toBe(
+        buildPromptCacheKey({ ...base, scopeId: 'user-b' }),
+      );
+    });
+
+    it('keeps one user stable across their conversations', () => {
+      expect(buildPromptCacheKey({ ...base, scopeId: 'user-a' })).toBe(
+        buildPromptCacheKey({ ...base, scopeId: 'user-a' }),
+      );
+    });
+
+    it('collapses users onto one entry once the scope is dropped', () => {
+      expect(buildPromptCacheKey({ ...base, scopeId: null })).toBe(
+        buildPromptCacheKey({ ...base, scopeId: undefined }),
+      );
+    });
+
+    it('still retires a shared key when the prefix changes', () => {
+      expect(buildPromptCacheKey({ ...base, scopeId: null, instructions: 'Other.' })).not.toBe(
+        buildPromptCacheKey({ ...base, scopeId: null }),
+      );
+    });
+  });
 });

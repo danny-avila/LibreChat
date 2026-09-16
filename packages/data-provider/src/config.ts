@@ -755,12 +755,23 @@ export const baseEndpointSchema = z.object({
    * but not the caching contract.
    *
    * `promptCacheKey` sends a deterministic `prompt_cache_key` derived from the
-   * stable instruction prefix, tool schemas and output schema, so requests
-   * sharing a prefix share a cache entry instead of being partitioned per user
-   * by the `user` field OpenAI otherwise routes on. Default enabled; set
-   * `false` to keep per-user routing.
+   * stable instruction prefix, tool schemas and output schema, so a prefix
+   * change retires its own cache identity and older models get a stable key to
+   * route on. Default enabled; set `false` to send no key and leave routing to
+   * the `user` field alone.
    */
   promptCacheKey: z.boolean().optional(),
+  /**
+   * What that key partitions by.
+   *
+   * `user` (default) gives every user their own cache accounting, matching the
+   * per-user partitioning the `user` field already produces today. `shared`
+   * drops the user from the key so that everyone running the same agent reuses
+   * one cached prefix — one cache write instead of one per user — at the cost
+   * of shared accounting and of letting a user detect, by observing a cache
+   * hit, that some other user had already sent a prompt they can guess.
+   */
+  promptCacheScope: z.union([z.literal('user'), z.literal('shared')]).optional(),
   /**
    * `prompt_cache_retention`. Omitted by default, which is the provider's own
    * in-memory lifetime; `24h` opts into extended retention and is billed for
@@ -1672,6 +1683,7 @@ export const azureEndpointSchema = z
         reasoningLabelUpdateIntervalMs: true,
         reasoningLabelMaxPerRun: true,
         promptCacheKey: true,
+        promptCacheScope: true,
         promptCacheRetention: true,
         promptCacheExplicit: true,
       })
