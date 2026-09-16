@@ -2661,14 +2661,30 @@ describe('BaseClient', () => {
         metadata: { destinationChosen: false },
       };
 
+      /** A tool serves a file only once it holds it, so a record left to the sandbox needs the
+       *  reference provisioning writes for that tool to count as its reader. */
+      const sandboxCsv = {
+        ...routedCsv,
+        metadata: {
+          destinationChosen: false,
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'session-1',
+            file_id: 'sandbox-csv-file',
+          },
+        },
+      };
+
       const replayCsv = async (
         fileConsumers,
         endpointConfig = {
           defaultLLMDeliveryPath: { overrides: { 'text/csv': 'none' } },
           textFallbackWithoutTools: true,
         },
+        file = routedCsv,
       ) => {
-        getFiles.mockResolvedValueOnce([routedCsv]);
+        getFiles.mockResolvedValueOnce([file]);
         TestClient.options.req.config = {
           fileConfig: { endpoints: { [EModelEndpoint.openAI]: endpointConfig } },
         };
@@ -2743,12 +2759,29 @@ describe('BaseClient', () => {
         ]);
       });
 
-      test('keeps the file off the prompt when this turn can read it with code', async () => {
-        const message = await replayCsv({ executeCode: true, fileSearch: false });
+      test('keeps the file off the prompt when the sandbox running it holds the file', async () => {
+        const message = await replayCsv(
+          { executeCode: true, fileSearch: false },
+          undefined,
+          sandboxCsv,
+        );
 
         expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([]);
         expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
         expect(message.fileContext).toBeUndefined();
+      });
+
+      test('replays the stored text when file search never received the file', async () => {
+        /* An earlier turn's upload that named no destination was filed under no tool, so the
+         * vector store holds nothing to search. Withholding the text for the enabled tool left
+         * the file unreadable on every later turn as well as the one it arrived on. */
+        const message = await replayCsv({ executeCode: false, fileSearch: true });
+        const replayed = { ...routedCsv, llmDeliveryPath: 'text' };
+
+        expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([replayed]);
+        expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [replayed]);
+        expect(message.fileContext).toBe('region,total');
+        expect(routedCsv.llmDeliveryPath).toBe('none');
       });
     });
 
@@ -3520,7 +3553,7 @@ describe('BaseClient', () => {
       });
     });
 
-    test('keeps a tool-routed file off the prompt when this turn can read it with code', () => {
+    test('keeps a tool-routed file off the prompt when the sandbox running it holds the file', () => {
       routeCsvToTools();
       TestClient.options.agent = {
         provider: EModelEndpoint.openAI,
@@ -3536,11 +3569,49 @@ describe('BaseClient', () => {
         type: 'text/csv',
         text: 'region,total',
         llmDeliveryPath: 'none',
-        metadata: { destinationChosen: false },
+        metadata: {
+          destinationChosen: false,
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'session-1',
+            file_id: 'sandbox-code-csv',
+          },
+        },
       };
 
       expect(TestClient.getAttachmentDeliveryPath(file)).toBe('none');
       expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+    });
+
+    test('delivers the text when the tool that would read the file has yet to receive it', () => {
+      /* An upload that named no destination is filed under no tool, so the enabled tool alone
+       * cannot serve it and withholding the text left it readable by nothing. */
+      routeCsvToTools();
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: true, fileSearch: true },
+      };
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req?.config,
+      });
+      const file = {
+        file_id: 'unprovisioned-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getAttachmentDeliveryPath(file)).toBe('text');
+      /* The filter selects records by the route this turn resolves, so it returns the record as
+       * stored; marking the copy admission reads is `resolveTurnAttachments`. */
+      expect(TestClient.getTextContextAttachments([file])).toEqual([file]);
+      expect(TestClient.resolveTurnAttachments([file])).toEqual([
+        { ...file, llmDeliveryPath: 'text' },
+      ]);
     });
 
     test('does not fall back on an endpoint that has not enabled it', () => {
