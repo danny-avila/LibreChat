@@ -35,6 +35,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           useResponsesApi: true,
           firstPartyEndpoint: true,
           promptCacheKeyEnabled: true,
+          promptCacheScopeId: 'some-user',
           user: 'some-user',
           apiKey: 'sk-proj-somekey',
           reasoning: {
@@ -168,6 +169,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           useResponsesApi: true,
           firstPartyEndpoint: true,
           promptCacheKeyEnabled: true,
+          promptCacheScopeId: 'some_user_id',
           user: 'some_user_id',
           apiKey: 'some_azure_key',
           reasoning: {

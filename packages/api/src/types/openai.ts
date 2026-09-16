@@ -67,6 +67,12 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    */
   promptCacheScope?: OpenAIPromptCacheScope;
   /**
+   * Partition identity captured when the policy was resolved, because the
+   * `user` field it comes from can be removed from the request afterwards.
+   * Consumed by `createRun` and, like the other markers, never sent.
+   */
+  promptCacheScopeId?: string;
+  /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6
    * Astra: Responses-only tool calls, rejected sampling parameters,
