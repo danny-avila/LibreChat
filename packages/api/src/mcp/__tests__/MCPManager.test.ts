@@ -1127,6 +1127,19 @@ describe('MCPManager', () => {
         }),
         connection,
       );
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('request-peer-generation');
+      try {
+        const oauthOptions = (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mock
+          .calls[0][1];
+        await expect(oauthOptions.onOAuthCredentialsInvalidated()).resolves.toBe(
+          'request-peer-generation',
+        );
+        expect(generationSpy).toHaveBeenCalledWith({ userId: mockUser.id, serverName });
+      } finally {
+        generationSpy.mockRestore();
+      }
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
@@ -4427,6 +4440,18 @@ describe('MCPManager', () => {
           onDiscoveryDetached,
         }),
       );
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('discovery-peer-generation');
+      try {
+        const oauthOptions = (MCPConnectionFactory.discoverTools as jest.Mock).mock.calls[0][1];
+        await expect(oauthOptions.onOAuthCredentialsInvalidated()).resolves.toBe(
+          'discovery-peer-generation',
+        );
+        expect(generationSpy).toHaveBeenCalledWith({ userId: mockUser.id, serverName });
+      } finally {
+        generationSpy.mockRestore();
+      }
     });
   });
 

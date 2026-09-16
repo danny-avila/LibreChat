@@ -538,6 +538,8 @@ export class MCPManager extends UserConnectionManager {
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
+      onOAuthCredentialsInvalidated: () =>
+        getMCPToolsChangedGeneration({ userId: user.id, serverName }),
       onDiscoveryDetached: args.onDiscoveryDetached,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
@@ -1402,6 +1404,8 @@ Please follow these instructions when using tools from the respective MCP server
                 requestBody,
                 onOAuthCredentialsChanged,
                 onOAuthCredentialsChanging,
+                onOAuthCredentialsInvalidated: () =>
+                  getMCPToolsChangedGeneration({ userId, serverName }),
               },
               connection!,
             );
