@@ -44,7 +44,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * The access roles visible inside the active tenant: the global defaults with the
+   * Every access role visible inside the active tenant: the global defaults with the
    * tenant's own copies substituted by `accessRoleId`.
    *
    * The default roles are seeded once, globally, with no `tenantId`. A request
@@ -53,12 +53,17 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
    * resolves a role by identifier — the owner grant on resource creation above all
    * — fails with `Role <id> not found`.
    *
-   * Every tenant-scoped lookup below is a selection over this one set, so a tenant
-   * that redefines `agent_owner` sees its own definition through each method rather
-   * than the shadowed global row through some of them. The unique index on
-   * `(accessRoleId, tenantId)` makes the substitution unambiguous.
+   * Unfiltered by design: the merge happens first and every selection is applied to
+   * its result. Substitution by identifier is only total that way — a tenant copy
+   * that changes a field the caller selects on, `resourceType` above all, still has
+   * to displace the global row it overrides, and a query that narrowed both sides
+   * first would miss the copy and leave that row visible under its old type. Both
+   * reads are bounded to one tenant's roles plus the global defaults, so this is a
+   * few dozen small documents rather than a collection scan.
+   *
+   * The unique index on `(accessRoleId, tenantId)` makes the substitution unambiguous.
    */
-  async function visibleTenantRoles(filter: Record<string, unknown>): Promise<IAccessRole[]> {
+  async function visibleTenantRoles(): Promise<IAccessRole[]> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
     const runQuery = (roleFilter: Record<string, unknown>) =>
       AccessRole.find(roleFilter).lean<IAccessRole[]>().exec();
@@ -68,8 +73,8 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
      * `runAsSystem` had exited, and be re-scoped to the active tenant — leaving the
      * base roles unmatched. */
     const [base, scoped] = await Promise.all([
-      runAsSystem(async () => await runQuery({ ...filter, ...BASE_ROLE_FILTER })),
-      runQuery(filter),
+      runAsSystem(async () => await runQuery(BASE_ROLE_FILTER)),
+      runQuery({}),
     ]);
 
     const rolesById = new Map(base.map((role) => [String(role.accessRoleId), role]));
@@ -101,8 +106,8 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     if (!inTenantScope()) {
       return await AccessRole.findOne({ accessRoleId }).lean<IAccessRole>().exec();
     }
-    const [role] = await visibleTenantRoles({ accessRoleId });
-    return role ?? null;
+    const roles = await visibleTenantRoles();
+    return roles.find((role) => String(role.accessRoleId) === String(accessRoleId)) ?? null;
   }
 
   /**
@@ -119,7 +124,12 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     if (!inTenantScope()) {
       return await AccessRole.find({ resourceType }).lean<IAccessRole[]>().exec();
     }
-    return await visibleTenantRoles({ resourceType });
+    /** Filtered after the merge, so a tenant copy that moves an identifier to another
+     * resource type withdraws the global row from this list instead of leaving it
+     * visible — and callers such as `bulkUpdatePermissions`, which key this result by
+     * `accessRoleId`, cannot grant bits the tenant has superseded. */
+    const roles = await visibleTenantRoles();
+    return roles.filter((role) => role.resourceType === resourceType);
   }
 
   /**
@@ -138,7 +148,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')): {
     }
     /** Selected from the visible set rather than queried directly, so a global role
      * whose identifier the tenant has redefined cannot match on its superseded bits. */
-    const roles = await visibleTenantRoles({ resourceType });
+    const roles = await findRolesByResourceType(resourceType);
     return roles.find((role) => role.permBits === permBits) ?? null;
   }
 

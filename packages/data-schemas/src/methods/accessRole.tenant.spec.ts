@@ -155,6 +155,68 @@ describe('access role resolution under tenant isolation', () => {
     });
   });
 
+  describe('a tenant override that moves an identifier to another resource type', () => {
+    /** The tenant reuses `agent_owner` as a skill role, withdrawing it from agents */
+    const moveAgentOwnerToSkill = (tenantId: string) =>
+      createTenantRole(tenantId, {
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        name: 'tenant-skill-owner',
+        resourceType: ResourceType.SKILL,
+        permBits: RoleBits.OWNER,
+      });
+
+    it('withdraws the shadowed global role from its old resource type', async () => {
+      await seedGlobalRoles();
+      await moveAgentOwnerToSkill('tenant-a');
+
+      const roles = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.findRolesByResourceType(ResourceType.AGENT),
+      );
+
+      expect(roles.map((role) => role.accessRoleId)).not.toContain(AccessRoleIds.AGENT_OWNER);
+    });
+
+    it('lists the override under its new resource type', async () => {
+      await seedGlobalRoles();
+      await moveAgentOwnerToSkill('tenant-a');
+
+      const roles = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.findRolesByResourceType(ResourceType.SKILL),
+      );
+
+      expect(roles.find((role) => role.accessRoleId === AccessRoleIds.AGENT_OWNER)).toEqual(
+        expect.objectContaining({ tenantId: 'tenant-a', resourceType: ResourceType.SKILL }),
+      );
+    });
+
+    it('never yields the withdrawn owner bits through a permission lookup', async () => {
+      await seedGlobalRoles();
+      await moveAgentOwnerToSkill('tenant-a');
+
+      const [exact, closest] = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => [
+        await methods.findRoleByPermissions(ResourceType.AGENT, RoleBits.OWNER),
+        await methods.getRoleForPermissions(ResourceType.AGENT, RoleBits.OWNER),
+      ]);
+
+      expect(exact).toBeNull();
+      /** The closest agent role still visible, not the superseded global owner */
+      expect(closest?.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
+    });
+
+    it('agrees with findRoleByIdentifier on the identifier’s new meaning', async () => {
+      await seedGlobalRoles();
+      await moveAgentOwnerToSkill('tenant-a');
+
+      const role = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER),
+      );
+
+      expect(role).toEqual(
+        expect.objectContaining({ tenantId: 'tenant-a', resourceType: ResourceType.SKILL }),
+      );
+    });
+  });
+
   describe('findRoleByPermissions', () => {
     it('resolves a global default role from inside a tenant context', async () => {
       await seedGlobalRoles();
