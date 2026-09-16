@@ -447,6 +447,10 @@ describe('useAutoSave — typing as a run finishes', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    /** Hand the rest of the suite its stubs back. An implementation set here outlives the block,
+     * and a real `setDraft` leaking into a later test writes records that test never asked for. */
+    mockGetDraft.mockReset();
+    mockSetDraft.mockReset();
   });
 
   /** The reported bug. The composer is keyed under PENDING while a run streams and under the
