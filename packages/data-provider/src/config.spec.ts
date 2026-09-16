@@ -24,6 +24,41 @@ const endpointsConfig: TEndpointsConfig = {
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
+describe('resumable streams config', () => {
+  it.each([{ version: '1.0' }, { version: '1.0', resumableStreams: {} }])(
+    'defaults terminal recovery retries to five for %j',
+    (config) => {
+      expect(configSchema.parse(config).resumableStreams).toEqual({
+        terminalRecoveryMaxRetries: 5,
+      });
+    },
+  );
+
+  it.each([0, 2, 8, Number.MAX_SAFE_INTEGER])(
+    'preserves terminalRecoveryMaxRetries=%s',
+    (terminalRecoveryMaxRetries) => {
+      expect(
+        configSchema.parse({
+          version: '1.0',
+          resumableStreams: { terminalRecoveryMaxRetries },
+        }).resumableStreams,
+      ).toEqual({ terminalRecoveryMaxRetries });
+    },
+  );
+
+  it.each([-1, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, '2'])(
+    'rejects terminalRecoveryMaxRetries=%s',
+    (terminalRecoveryMaxRetries) => {
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          resumableStreams: { terminalRecoveryMaxRetries },
+        }).success,
+      ).toBe(false);
+    },
+  );
+});
+
 describe('ask user retained answers', () => {
   it('leaves the block unconfigured by default and accepts an operator budget', () => {
     expect(agentsEndpointSchema.parse({}).askUserQuestion).toBeUndefined();

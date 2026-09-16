@@ -1,10 +1,15 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import '@testing-library/jest-dom';
 import { render, screen } from 'test/layout-test-utils';
 import ChatView from '../ChatView';
+import store from '~/store';
 
 const mockParams = jest.fn();
 const mockConversation = jest.fn();
+const mockGetMessages = jest
+  .fn()
+  .mockReturnValue({ data: null, isLoading: false, isFetching: false });
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -18,7 +23,7 @@ jest.mock('~/hooks/AuthContext', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
-  useGetMessagesByConvoId: () => ({ data: null, isLoading: false, isFetching: false }),
+  useGetMessagesByConvoId: (...args: unknown[]) => mockGetMessages(...args),
 }));
 
 /**
@@ -134,5 +139,28 @@ describe('ChatView composer column', () => {
     expect(composerColumn).not.toBeNull();
     expect(composerColumn).not.toHaveClass('overflow-y-auto');
     expect(composerColumn).not.toHaveClass('scrollbar-gutter-stable');
+  });
+});
+
+describe('ChatView foreground recovery', () => {
+  test.each([false, true])('only refreshes history when not submitting (%s)', (isSubmitting) => {
+    mockParams.mockReturnValue({ conversationId: 'convo-1' });
+    mockConversation.mockReturnValue({ conversationId: 'convo-1' });
+    mockGetMessages.mockClear();
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(store.isSubmittingFamily(0), isSubmitting)}>
+        <ChatView />
+      </RecoilRoot>,
+    );
+
+    expect(mockGetMessages).toHaveBeenLastCalledWith(
+      'convo-1',
+      expect.objectContaining({
+        refetchOnWindowFocus: !isSubmitting,
+        refetchOnReconnect: !isSubmitting,
+      }),
+      { isStreaming: isSubmitting },
+    );
   });
 });
