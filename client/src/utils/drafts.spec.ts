@@ -4,6 +4,7 @@ import {
   applyPendingPastesToDraft,
   clearAllDrafts,
   clearComposerDrafts,
+  clearFilesDraft,
   decodeBase64,
   encodeBase64,
   resolvePendingPasteInsertStart,
@@ -793,6 +794,57 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
 
     expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(stamped);
+  });
+});
+
+describe('clearFilesDraft', () => {
+  const newChatKey = getNewConversationDraftId();
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('discards the attachments and keeps the text', () => {
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).fileIds).toEqual([]);
+    expect(getDraft(newChatKey)).toBe('half-written message');
+  });
+
+  it('keeps this tab claim on the text it left behind', () => {
+    /** `setFilesDraft` drops the whole record once nothing is attached, and that record is the
+     * only ownership stamp the shared text draft has: without it another tab's New Chat would be
+     * free to clear text this tab is still holding. */
+    setDraft({ id: newChatKey, value: 'half-written message' });
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).tabId).toBe(getBrowserTabId());
+  });
+
+  it('leaves no claim behind when there was no text to hold', () => {
+    setFilesDraft(newChatKey, { fileIds: ['file-1'], pendingPastes: {} });
+
+    clearFilesDraft(newChatKey);
+
+    expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${newChatKey}`)).toBeNull();
+  });
+
+  it('refuses a record another live tab owns', () => {
+    markTabLive('other-tab');
+    localStorage.setItem(
+      `${LocalStorageKeys.FILES_DRAFT}${newChatKey}`,
+      JSON.stringify({ fileIds: ['other-tab-file'], tabId: 'other-tab' }),
+    );
+
+    clearFilesDraft(newChatKey);
+
+    expect(getFilesDraft(newChatKey).fileIds).toEqual(['other-tab-file']);
   });
 });
 

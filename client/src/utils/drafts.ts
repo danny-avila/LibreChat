@@ -1246,6 +1246,25 @@ export const setDraft = ({
 export const getDraft = (id?: string): string | null =>
   decodeBase64((getLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '');
 
+/** Discards a key's attachments while leaving its text where it is. New Chat deletes the uploads
+ * the draft was holding, so restoring those chips would put back a file the server no longer has;
+ * a typed message has no such resource behind it, and losing it is what made an unsaved chat the
+ * one composer whose draft did not survive leaving and coming back.
+ *
+ * The tab claim is re-stamped rather than dropped with the record: on a shared key it is the only
+ * thing that stops another tab's New Chat from clearing text this tab is still holding, and
+ * `setFilesDraft` removes the whole stub once nothing is attached. */
+export const clearFilesDraft = (id: string): void => {
+  if (!mayClearComposerDrafts(id)) {
+    return;
+  }
+  filesDraftCache = null;
+  removeLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  if (isSharedComposerDraftId(id) && (getDraft(id) ?? '') !== '') {
+    claimComposerDraftTab(id);
+  }
+};
+
 /**
  * Draft-key prefix for a live `ask_user_question` answer phase. While the
  * composer doubles as the free-form answer box, its autosave switches to a key
