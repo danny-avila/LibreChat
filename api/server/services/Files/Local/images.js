@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { stripCacheBust } = require('@librechat/api');
 const { resizeImageBuffer } = require('../images/resize');
-const { stripCacheBust } = require('./paths');
 const { updateUser, updateFile } = require('~/models');
 
 /**

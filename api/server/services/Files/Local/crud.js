@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const {
   deleteRagFile,
+  stripCacheBust,
   assertRemoteFileURL,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
@@ -13,7 +14,6 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
-const { stripCacheBust } = require('./paths');
 
 /**
  * Saves a file to a specified output path with a new filename.

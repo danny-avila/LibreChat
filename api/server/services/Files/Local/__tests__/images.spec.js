@@ -1,4 +1,7 @@
 jest.mock('sharp', () => ({}));
+jest.mock('@librechat/api', () => ({
+  stripCacheBust: jest.fn((filepath) => filepath.split('?')[0]),
+}));
 jest.mock('../../images/resize', () => ({ resizeImageBuffer: jest.fn() }));
 jest.mock('~/models', () => ({
   updateUser: jest.fn(),
