@@ -38,6 +38,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  applyAppTitle,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -534,6 +535,10 @@ if (cluster.isMaster) {
         indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
       }
     }
+
+    /* The deployment's own title, written into the shell so the first paint
+       carries it instead of the built-in one, like index.js. */
+    indexHTML = applyAppTitle(indexHTML, process.env.APP_TITLE);
 
     /* The composer lays out against whether a footer bar sits beneath it, and
        `/api/config` answers that only after it has painted. One shell serves

@@ -44,6 +44,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  applyAppTitle,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -284,6 +285,13 @@ const startServer = async () => {
       indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
     }
   }
+
+  /* The shell carries the built-in title, and the client replaces it from
+     `startupConfig.appTitle` only once `/api/config` has answered — so every
+     first paint shows the built-in name before the deployment's own arrives.
+     The server knows the name here, so it writes it and nothing has to be
+     corrected. Unset leaves the shell as it was. */
+  indexHTML = applyAppTitle(indexHTML, process.env.APP_TITLE);
 
   /* The composer lays out against whether a footer bar sits beneath it, and
      `/api/config` answers that only after it has painted. One shell serves every
