@@ -119,6 +119,12 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   reusedClientCredentialSetId?: string;
   /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
   tenantId?: string;
+  /**
+   * False when `oauth.send_resource_parameter` opted this server out of RFC 8707
+   * `resource`. Captured at flow initiation so the token exchange sends the same
+   * parameters as the authorization request that produced the code.
+   */
+  sendResourceParameter?: boolean;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

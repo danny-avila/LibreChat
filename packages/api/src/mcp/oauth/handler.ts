@@ -589,8 +589,24 @@ export class MCPOAuthHandler {
     }
   }
 
-  private static appendResourceParameter(body: URLSearchParams, resource?: string): void {
-    if (!resource) {
+  /**
+   * RFC 8707 makes `resource` OPTIONAL, and authorization servers that reject it cannot
+   * complete a flow that sends it — Entra ID v2.0 answers `AADSTS9010010` when `resource`
+   * accompanies `scope`. Opting out suppresses the parameter without weakening the
+   * RFC 9728 §3.3 binding, which {@link discoverResourceMetadata} asserts at discovery and
+   * {@link completeOAuthFlow} re-asserts at token exchange regardless of this setting.
+   * See `OAuthOptionsSchema.send_resource_parameter`.
+   */
+  private static shouldSendResourceParameter(config?: MCPOptions['oauth']): boolean {
+    return config?.send_resource_parameter !== false;
+  }
+
+  private static appendResourceParameter(
+    body: URLSearchParams,
+    resource?: string,
+    config?: MCPOptions['oauth'],
+  ): void {
+    if (!resource || !this.shouldSendResourceParameter(config)) {
       return;
     }
     body.set('resource', resource);
@@ -730,6 +746,7 @@ export class MCPOAuthHandler {
 
     try {
       this.assertNoUnpinnedClientSecret(config);
+      const sendResourceParameter = this.shouldSendResourceParameter(config);
 
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
@@ -883,11 +900,15 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
-        if (resourceMetadata?.resource) {
+        if (resourceMetadata?.resource && sendResourceParameter) {
           const canonicalResource = new URL(resourceMetadata.resource).href;
           authorizationUrl.searchParams.set('resource', canonicalResource);
           logger.debug(
             `[MCPOAuth] Added resource parameter to pre-configured authorization URL: ${canonicalResource}`,
+          );
+        } else if (resourceMetadata?.resource) {
+          logger.debug(
+            `[MCPOAuth] Omitting resource parameter from pre-configured authorization URL for ${serverName}; disabled by send_resource_parameter`,
           );
         }
 
@@ -911,6 +932,7 @@ export class MCPOAuthHandler {
           clientSource: 'configured',
           metadata,
           resourceMetadata,
+          ...(!sendResourceParameter && { sendResourceParameter: false }),
           ...(allowedDomains !== undefined && { allowedDomains }),
           ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
@@ -1067,7 +1089,11 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
-        if (resourceMetadata?.resource) {
+        if (!sendResourceParameter) {
+          logger.debug(
+            `[MCPOAuth] Omitting resource parameter from authorization URL for ${serverName}; disabled by send_resource_parameter`,
+          );
+        } else if (resourceMetadata?.resource) {
           /**
            * `resource` was already canonicalized and bound to `serverUrl` inside
            * {@link discoverMetadata} via {@link assertResourceBoundToServer}, so `new URL`
@@ -1117,6 +1143,7 @@ export class MCPOAuthHandler {
         clientSource,
         metadata,
         resourceMetadata,
+        ...(!sendResourceParameter && { sendResourceParameter: false }),
         ...(allowedDomains !== undefined && { allowedDomains }),
         ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
@@ -1203,7 +1230,11 @@ export class MCPOAuthHandler {
          * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).
          */
         this.assertResourceBoundToServer(metadata.serverUrl, metadata.resourceMetadata);
-        if (metadata.resourceMetadata.resource) {
+        if (metadata.sendResourceParameter === false) {
+          logger.debug(
+            `[MCPOAuth] Omitting resource parameter from token exchange for flow ${flowId}; disabled by send_resource_parameter`,
+          );
+        } else if (metadata.resourceMetadata.resource) {
           resource = new URL(metadata.resourceMetadata.resource);
           logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
         }
@@ -1819,7 +1850,7 @@ export class MCPOAuthHandler {
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
         }
-        this.appendResourceParameter(body, metadata.resource);
+        this.appendResourceParameter(body, metadata.resource, config);
 
         /**
          * Forward Auth0-style `audience` on refresh by default — Auth0 strips the
@@ -1924,7 +1955,7 @@ export class MCPOAuthHandler {
         if (config.scope) {
           body.append('scope', config.scope);
         }
-        this.appendResourceParameter(body, metadata.resource);
+        this.appendResourceParameter(body, metadata.resource, config);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -2029,7 +2060,7 @@ export class MCPOAuthHandler {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
-      this.appendResourceParameter(body, metadata.resource);
+      this.appendResourceParameter(body, metadata.resource, config);
 
       const headers: HeadersInit = {
         Accept: 'application/json',
