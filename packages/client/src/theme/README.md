@@ -102,13 +102,18 @@ function App() {
 
 ### 3. Set Up Your Base CSS
 
-Ensure your app has CSS variables defined as fallbacks. Every theme variable must
-hold a **bare `R G B` channel triplet**, not a complete CSS color, because the
-Tailwind color map wraps them as `rgb(var(--x) / <alpha-value>)` so that opacity
-modifiers such as `bg-surface-primary/50` work:
+Import the published token stylesheet and define the variables it resolves. Every theme
+variable must hold a **bare `R G B` channel triplet**, not a complete CSS color, because
+each token wraps them as `rgb(var(--x))` so that opacity modifiers such as
+`bg-surface-primary/50` work:
 
 ```css
 /* style.css */
+@import 'tailwindcss';
+/* Declares --color-text-primary, --color-surface-primary and the rest of the tokens as
+ * `@theme inline`, so every utility resolves the custom property below at runtime. */
+@import '@librechat/client/theme.css';
+
 :root {
   --white: 255 255 255;
   --gray-800: 33 33 33;
@@ -136,6 +141,11 @@ itself: `color: rgb(var(--text-primary));`.
 > (`--text-primary: #212121`). Hex, `rgb(...)`, and named colors now produce
 > invalid declarations and must be converted to channel triplets.
 
+> **Breaking change:** the color map used to be built in JavaScript by
+> `createTailwindColors()` and spread into `theme.extend.colors`. Both are gone. The tokens
+> are declared in CSS, which is what lets a linter and an editor resolve them; a config that
+> still defines a `colors` block for these names shadows them and can be deleted.
+
 ### 4. Configure Tailwind
 
 Update your `tailwind.config.js`:
@@ -151,19 +161,11 @@ module.exports = {
     './node_modules/@librechat/client/dist/**/*.js',
   ],
   darkMode: ['class'],
-  theme: {
-    extend: {
-      colors: {
-        // Wrap each channel triplet so opacity modifiers keep working
-        'text-primary': 'rgb(var(--text-primary) / <alpha-value>)',
-        'surface-primary': 'rgb(var(--surface-primary) / <alpha-value>)',
-        'brand-purple': 'rgb(var(--brand-purple) / <alpha-value>)',
-        // ... other colors
-      },
-    },
-  },
 };
 ```
+
+The colors come from the stylesheet imported in step 3, so the config carries only content,
+dark mode and the preset.
 
 The published preset supplies the semantic appearance utilities used by theme-aware component
 variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
@@ -174,7 +176,7 @@ variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compa
 ```tsx
 function MyComponent() {
   return (
-    <div className="border border-border-light bg-surface-primary text-text-primary">
+    <div className="border-border-light bg-surface-primary text-text-primary border">
       <h1 className="text-text-secondary">Hello World</h1>
       <button className="bg-surface-submit text-text-on-status hover:bg-surface-submit-hover">
         Submit
