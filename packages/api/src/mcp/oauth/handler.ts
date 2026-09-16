@@ -601,6 +601,42 @@ export class MCPOAuthHandler {
     return config?.send_resource_parameter !== false;
   }
 
+  /**
+   * Removes a `resource` parameter that came from the authorization endpoint itself.
+   * {@link startAuthorization} copies the endpoint's query string verbatim, so a `resource`
+   * an admin left in `authorization_url` — or one present on a discovered endpoint —
+   * survives into the generated request. Opting out has to delete it rather than merely
+   * decline to add one, or the parameter still reaches the provider that rejects it and
+   * the flow this option exists to repair keeps failing.
+   */
+  private static stripInheritedResourceParameter(authorizationUrl: URL, serverName: string): void {
+    if (!authorizationUrl.searchParams.has('resource')) {
+      return;
+    }
+    authorizationUrl.searchParams.delete('resource');
+    logger.debug(
+      `[MCPOAuth] Removed inherited resource parameter from the authorization URL for ${serverName}; disabled by send_resource_parameter`,
+    );
+  }
+
+  /**
+   * Whether a pending flow's captured RFC 8707 decision still matches the live config.
+   *
+   * {@link assertStoredClientBinding} deliberately ignores this setting so that flipping it
+   * does not invalidate stored tokens. A pending flow cannot be treated the same way: its
+   * authorization URL was already built with or without `resource`, so replaying it would
+   * reissue exactly the request the operator just reconfigured away from. A flow initiated
+   * before this field existed carries no flag and reads as "sending", which is what it did.
+   */
+  public static matchesResourceParameterDecision(
+    flowMetadata: Pick<MCPOAuthFlowMetadata, 'sendResourceParameter'> | undefined,
+    config?: MCPOptions['oauth'],
+  ): boolean {
+    return (
+      (flowMetadata?.sendResourceParameter !== false) === this.shouldSendResourceParameter(config)
+    );
+  }
+
   private static appendResourceParameter(
     body: URLSearchParams,
     resource?: string,
@@ -900,15 +936,16 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
-        if (resourceMetadata?.resource && sendResourceParameter) {
+        if (!sendResourceParameter) {
+          this.stripInheritedResourceParameter(authorizationUrl, serverName);
+          logger.debug(
+            `[MCPOAuth] Omitting resource parameter from pre-configured authorization URL for ${serverName}; disabled by send_resource_parameter`,
+          );
+        } else if (resourceMetadata?.resource) {
           const canonicalResource = new URL(resourceMetadata.resource).href;
           authorizationUrl.searchParams.set('resource', canonicalResource);
           logger.debug(
             `[MCPOAuth] Added resource parameter to pre-configured authorization URL: ${canonicalResource}`,
-          );
-        } else if (resourceMetadata?.resource) {
-          logger.debug(
-            `[MCPOAuth] Omitting resource parameter from pre-configured authorization URL for ${serverName}; disabled by send_resource_parameter`,
           );
         }
 
@@ -1090,6 +1127,7 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         if (!sendResourceParameter) {
+          this.stripInheritedResourceParameter(authorizationUrl, serverName);
           logger.debug(
             `[MCPOAuth] Omitting resource parameter from authorization URL for ${serverName}; disabled by send_resource_parameter`,
           );

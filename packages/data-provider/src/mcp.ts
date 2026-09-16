@@ -175,6 +175,7 @@ const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
     revocation_endpoint: userOAuthEndpointUrlSchema.optional(),
     audience: z.never().optional(),
     forward_audience_on_refresh: z.never().optional(),
+    send_resource_parameter: z.never().optional(),
   })
   .superRefine(validateOAuthClientCredentials);
 

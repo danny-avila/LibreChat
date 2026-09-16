@@ -1326,6 +1326,12 @@ export class MCPConnectionFactory {
   /** Prevents server-name keyed OAuth flow cache entries from crossing config bindings. */
   private isCurrentServerOAuthFlow(meta: MCPOAuthFlowMetadata | undefined): boolean {
     const currentServerUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
+    if (!MCPOAuthHandler.matchesResourceParameterDecision(meta, this.serverConfig.oauth)) {
+      logger.info(
+        `${this.logPrefix} Cached OAuth flow predates a send_resource_parameter change; starting a new flow`,
+      );
+      return false;
+    }
     try {
       MCPOAuthHandler.assertStoredClientBinding(
         this.serverName,

@@ -184,6 +184,107 @@ describe('MCP OAuth send_resource_parameter', () => {
     });
   });
 
+  describe('resource inherited from the authorization endpoint', () => {
+    const entraAuthorize = 'https://login.microsoftonline.test/tenant/oauth2/v2.0/authorize';
+
+    /**
+     * `startAuthorization` copies the configured endpoint's query string verbatim, so a
+     * `resource` left in `authorization_url` reaches the provider even though discovery
+     * never supplied it. Declining to add one is not enough; it has to be removed.
+     */
+    it('removes a resource parameter carried by the configured authorization_url', async () => {
+      const { serverUrl, close } = await startProtectedResourceServer();
+      try {
+        const { authorizationUrl } = await MCPOAuthHandler.initiateOAuthFlow(
+          'entra-server',
+          serverUrl,
+          'user-1',
+          {},
+          {
+            authorization_url: `${entraAuthorize}?resource=${encodeURIComponent('https://stale.example.test/mcp')}`,
+            token_url: 'https://login.microsoftonline.test/tenant/oauth2/v2.0/token',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scope: 'api://test-client/access_as_user openid offline_access',
+            token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+            send_resource_parameter: false,
+          },
+        );
+
+        const params = new URL(authorizationUrl).searchParams;
+        expect(params.has('resource')).toBe(false);
+        /** Unrelated parameters on the configured URL survive. */
+        expect(params.get('scope')).toBe('api://test-client/access_as_user openid offline_access');
+      } finally {
+        await close();
+      }
+    });
+
+    it('replaces an inherited resource with the discovered identifier when enabled', async () => {
+      const { serverUrl, close } = await startProtectedResourceServer();
+      try {
+        const { authorizationUrl } = await MCPOAuthHandler.initiateOAuthFlow(
+          'entra-server',
+          serverUrl,
+          'user-1',
+          {},
+          {
+            authorization_url: `${entraAuthorize}?resource=${encodeURIComponent('https://stale.example.test/mcp')}`,
+            token_url: 'https://login.microsoftonline.test/tenant/oauth2/v2.0/token',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scope: 'api://test-client/access_as_user openid offline_access',
+            token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+          },
+        );
+
+        expect(new URL(authorizationUrl).searchParams.get('resource')).toBe(serverUrl);
+      } finally {
+        await close();
+      }
+    });
+  });
+
+  /**
+   * Stored tokens intentionally survive a change to this setting, but a pending flow
+   * cannot: its authorization URL was already built, so replaying it would reissue the
+   * request the operator just reconfigured away from.
+   */
+  describe('matchesResourceParameterDecision', () => {
+    it('keeps a pending flow whose decision still matches the config', () => {
+      expect(MCPOAuthHandler.matchesResourceParameterDecision({}, {})).toBe(true);
+      expect(
+        MCPOAuthHandler.matchesResourceParameterDecision(
+          { sendResourceParameter: false },
+          { send_resource_parameter: false },
+        ),
+      ).toBe(true);
+    });
+
+    it('retires a pending flow that still sends resource after the opt-out', () => {
+      expect(
+        MCPOAuthHandler.matchesResourceParameterDecision({}, { send_resource_parameter: false }),
+      ).toBe(false);
+    });
+
+    it('retires a pending opted-out flow after the opt-out is withdrawn', () => {
+      expect(
+        MCPOAuthHandler.matchesResourceParameterDecision({ sendResourceParameter: false }, {}),
+      ).toBe(false);
+    });
+
+    it('treats a flow initiated before the field existed as sending resource', () => {
+      // No flag on stored metadata: the flow did send `resource`, so it stays valid
+      // only while the config still asks for it.
+      expect(MCPOAuthHandler.matchesResourceParameterDecision(undefined, undefined)).toBe(true);
+      expect(
+        MCPOAuthHandler.matchesResourceParameterDecision(undefined, {
+          send_resource_parameter: false,
+        }),
+      ).toBe(false);
+    });
+  });
+
   describe('refresh_token grant', () => {
     it('sends resource= by default', async () => {
       const { url, bodies, close } = await startRecordingTokenServer();
