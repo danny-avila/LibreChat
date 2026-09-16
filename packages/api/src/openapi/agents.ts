@@ -13,6 +13,7 @@ import {
 import {
   errorMessageResponseSchema,
   accountDeletionResponseSchema,
+  genericServerErrorContent,
   messageResponseSchema,
   jsonParseErrorSchema,
 } from './errors';
@@ -78,7 +79,6 @@ const agentFileDeletedSchema = z.object({
   id: z.string(),
   deleted: z.literal(true),
 });
-
 export const agentComponentSchemas: Record<string, ZodTypeAny> = {
   AgentCreateRequest: agentCreateRequestSchema,
   AgentUpdateRequest: agentUpdateRequestSchema,
@@ -115,8 +115,10 @@ const errorResponses = [
   },
   {
     status: 500,
-    description: 'Internal server error',
+    description:
+      'Internal server error. Errors normalized by the route use JSON; the final application error controller sends a text body with the text/html media type.',
     schema: z.union([agentManagementErrorSchema, errorMessageResponseSchema]),
+    additionalContent: genericServerErrorContent,
   },
 ];
 

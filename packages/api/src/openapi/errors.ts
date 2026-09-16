@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import type { RawContent } from './adapter';
+
+/** String fallbacks that Express serves as `text/html` from the final application error controller. */
+export const genericServerErrorContent: RawContent = {
+  'text/html': {
+    schema: {
+      type: 'string',
+      enum: ['An unknown error occurred.', 'Processing error in ErrorController.'],
+    },
+  },
+};
 
 /**
  * The flat `{ error }` envelope the auth middleware sends for 401 (`{ error: 'Unauthorized' }`)

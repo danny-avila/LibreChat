@@ -38,7 +38,11 @@ const DOCS_HTML = `<!DOCTYPE html>
         var script = document.createElement('script');
         script.src = apiBase + '/docs/assets/swagger-ui-bundle.js';
         script.onload = function () {
-          window.ui = SwaggerUIBundle({ url: apiBase + '/openapi.json', dom_id: '#swagger-ui' });
+          window.ui = SwaggerUIBundle({
+            url: apiBase + '/openapi.json',
+            dom_id: '#swagger-ui',
+            validatorUrl: null,
+          });
         };
         document.body.appendChild(script);
       });

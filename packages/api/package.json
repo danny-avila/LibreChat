@@ -47,6 +47,7 @@
     "b:build": "bun run b:clean && bun run tsdown && bun run openapi:copy",
     "b:build:dev": "bun run b:clean && bun run tsdown && bun run openapi:copy",
     "openapi:generate": "cross-env TS_NODE_PROJECT=tsconfig.openapi.json ts-node -r tsconfig-paths/register src/openapi/generate.ts --write",
+    "openapi:test": "node openapi/router.smoke.cjs",
     "openapi:check": "cross-env TS_NODE_PROJECT=tsconfig.openapi.json ts-node -r tsconfig-paths/register src/openapi/generate.ts --check",
     "start:everything-sse": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/examples/everything/sse.ts",
     "start:everything": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/everything.ts",
